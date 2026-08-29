@@ -136,7 +136,8 @@ for orientation, `docs/decisions/` for why the architecture is the way it is.
 ## Security
 
 Do not open a public issue for anything exploitable in mail handling,
-authentication or certificate issuance. Mail it to the maintainer instead.
+authentication or certificate issuance. Report it privately through the
+Security tab; `SECURITY.md` has the details and says what is in scope.
 
 ## Licence
 

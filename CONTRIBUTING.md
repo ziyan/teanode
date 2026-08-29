@@ -112,4 +112,5 @@ document in `docs/planning/active/` first, moved to `done/` when it lands.
 ## Reporting a security problem
 
 Do not open a public issue for anything exploitable in mail handling,
-authentication or certificate issuance. Mail it to the address in `README.md`.
+authentication or certificate issuance. `SECURITY.md` says where it goes:
+GitHub's private vulnerability reporting, on the Security tab.

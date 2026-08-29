@@ -45,4 +45,4 @@ self-hostable open-source server. The full narrative is in
 
 `20260902-mail-is-composed-in-the-dashboard.md` covers what came after:
 sending from the dashboard, and templates in more than one language. Its
-narrative is `docs/planning/active/20260902-compose-and-templates-in-the-dashboard.md`.
+narrative is `docs/planning/done/20260902-compose-and-templates-in-the-dashboard.md`.

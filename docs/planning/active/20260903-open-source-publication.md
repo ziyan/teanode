@@ -33,10 +33,21 @@ publishes.
 - [x] (2026-09-03) Audited the tree: `make check-secrets` passes; the leaks
       that remain are prose, not patterns.
 - [x] (2026-09-03) Settled the two questions with the owner. See `Decision Log`.
-- [ ] Milestone one: the tree tells the truth.
-- [ ] Milestone two: nothing in the tree is about one deployment.
-- [ ] Milestone three: one commit.
-- [ ] Milestone four: published, and proved from a fresh clone.
+- [x] (2026-09-03) Milestone one: the tree tells the truth. Changelog caught
+      up, SEC-5 corrected and the summary with it, restructure progress fixed.
+- [x] (2026-09-03) Milestone two: nothing in the tree is about one deployment.
+      The parity plan is on the server it describes; the media plan's rollout
+      note says why the picture host is a setting rather than describing one
+      gateway.
+- [x] (2026-09-03) Milestone three: one commit. History pushed to the archive
+      first, bundled to disk second, `ziyan/teanode` renamed to
+      `ziyan/teanode-private` third, and only then an orphan branch. `.git`
+      went from 122 MB to 7.4 MB.
+- [x] (2026-09-03) Milestone four: pushed to a new `ziyan/teanode`, and a fresh
+      clone of it passes `make lint-ci`, 619 unit tests, and the 84-check
+      deployment test that builds the image from the tree.
+- [ ] The repository is created private. Flipping it public is the owner's,
+      and is the last step.
 
 ## Surprises & Discoveries
 
@@ -159,6 +170,22 @@ megabytes; `git rev-list --objects --all | wc -l` is the tree and nothing else.
 
 Acceptance: a clone of the public URL builds, tests, and brings the stack up
 end to end.
+
+## Outcomes & Retrospective
+
+The audit was worth more than the reset it justified. Resetting the history
+was decided a year of commits ago; what was not known was whether anything had
+to be rotated, and the answer — no production key was ever committed — could
+only come from looking. Three other things came out of the same pass and none
+of them were on the list: a domain field that was never written to the
+database, a security review that overstated a live defect, and a changelog
+that had stopped a week ago.
+
+Two gaps found while checking publication readiness rather than secrecy: the
+contributing guide sent a security reporter to an address in the README that
+was not there, and the plan directory had no `done/` although the guide
+promised one. `SECURITY.md` now says where a report goes and what is in
+scope, and four finished plans have moved.
 
 ## Idempotence and Recovery
 
