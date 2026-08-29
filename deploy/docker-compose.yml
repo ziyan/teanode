@@ -1,0 +1,206 @@
+# A complete TeaNode deployment: the server plus everything it can optionally
+# use.
+#
+#     teanode config env --output .env     # then edit it
+#     docker compose up -d
+#
+# Configuration lives in PostgreSQL, not in a file. The .env beside this file
+# says how to reach that database, and — on the very first start, against an
+# empty one — what kind of server to create. After that the dashboard is where
+# settings change, and the variables marked "first run only" are ignored; the
+# server says so in its log if it finds one that disagrees.
+#
+# The server uses host networking so that it sees the real client address of a
+# connecting mail server. SPF checks the connecting address, so behind a bridge
+# network every sender would appear to come from the Docker gateway and SPF
+# would be meaningless.
+#
+# Running more than one instance against this database works, and is what the
+# object store and the Redis below are for: they share the configuration
+# through PostgreSQL, the stored messages through MinIO, and half-finished
+# passkey sign-ins through Redis. Give each one its own TEANODE_INSTANCE_ID.
+services:
+  postgres:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: teanode
+      POSTGRES_USER: teanode
+      POSTGRES_PASSWORD: teanode
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teanode"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Only needed for more than one instance: where the raw messages go, so
+  # that every instance can read a message any of them handled. With one
+  # instance the local spool is enough.
+  #
+  #     docker compose --profile cluster up -d
+  #
+  # Uncomment the TEANODE_S3_* block in .env at the same time; the credentials
+  # here are the same ones, because the server is the thing connecting.
+  #
+  # MinIO is used because it needs no account anywhere. Any S3-compatible
+  # store works, including S3 itself: drop the endpoint and the path style,
+  # and give it a region and credentials.
+  minio:
+    image: minio/minio:latest
+    profiles: [cluster]
+    restart: always
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${TEANODE_S3_ACCESS_KEY_ID:-teanode}
+      MINIO_ROOT_PASSWORD: ${TEANODE_S3_SECRET_ACCESS_KEY:-}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./data/minio:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Creates the bucket and exits. MinIO cannot declare one at startup, and a
+  # server that finds no bucket cannot store a message.
+  minio-bucket:
+    image: minio/mc:latest
+    profiles: [cluster]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/"$${BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${TEANODE_S3_ACCESS_KEY_ID:-teanode}
+      MINIO_ROOT_PASSWORD: ${TEANODE_S3_SECRET_ACCESS_KEY:-}
+      BUCKET: ${TEANODE_S3_BUCKET:-teanode}
+
+  # Only needed for more than one instance, and only when passkeys are on.
+  #
+  #     docker compose --profile cluster up -d
+  #
+  # A WebAuthn sign-in is two requests, and behind a load balancer the browser
+  # has no reason to come back to the instance it started with. The challenge
+  # minted by the first request has to be somewhere the second one can find
+  # it, and that is all this holds: keys that expire in five minutes and are
+  # deleted as they are read. Losing the lot costs one retry, which is why
+  # there is no volume here and no persistence configured.
+  #
+  # With one instance it is not needed at all — leave passkey.redis.address
+  # empty and the challenges stay in the process.
+  redis:
+    image: redis:8-alpine
+    profiles: [cluster]
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Optional. Remove this service and set antivirus.enabled to false if you do
+  # not want virus scanning; it wants about 2GB of memory for its signatures.
+  clamav:
+    image: clamav/clamav:stable
+    restart: always
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - ./data/clamav:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 60s
+      retries: 3
+      start_period: 120s
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Optional. Remove this service and set antispam.enabled to false to skip
+  # spam scoring.
+  spamassassin:
+    image: tiredofit/spamassassin
+    restart: always
+    ports:
+      - "127.0.0.1:783:783"
+    volumes:
+      - ./data/spamassassin/config:/config
+      - ./data/spamassassin/data:/data
+      - ./data/spamassassin/logs:/logs
+    environment:
+      UPDATE_PERIOD: '*/15 * * * *'
+      CHILD_MAX: 2
+      CHILD_MAX_SPARE: 1
+      ENABLE_LEARNING: 'FALSE'
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  teanode:
+    image: teanode:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Not depended on: MinIO is in a profile, and a dependency on a service
+      # that is not started would stop the default single-instance stack from
+      # coming up at all.
+    network_mode: host
+    # The image runs as uid 65532. This is the one privilege it still needs:
+    # binding 25, 80, 443 and 587, all below 1024. Everything else root was
+    # carrying along with it is gone.
+    #
+    # The mounted directory has to be readable and writable by that uid. On a
+    # server that ran an earlier version as root it will not be:
+    #
+    #     chown -R 65532:65532 ./data/teanode
+    cap_add:
+      - NET_BIND_SERVICE
+    env_file:
+      - .env
+    volumes:
+      - ./data/teanode:/var/lib/teanode:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/ssl:/etc/ssl:ro
+    command: ["run"]
+    logging:
+      options:
+        max-size: 50M
+        max-file: "20"

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- user-scalable=1 is explicit rather than assumed: pinch to zoom is how
+         somebody reads a long header or a DNS record value on a phone, and a
+         dashboard has no business taking it away. viewport-fit=cover lets the
+         page paint under a notch, which the safe-area padding then respects. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>TeaNode</title>
+  </head>
+  <body>
+    <!-- Applied before the bundle runs, so a reader who chose light does not
+         watch the page paint dark and then correct itself. -->
+    <script>
+      try {
+        var stored = window.localStorage.getItem('teanode.theme')
+        if (stored === 'light' || stored === 'dark') {
+          document.documentElement.setAttribute('data-theme', stored)
+        }
+      } catch (error) {
+        /* Private browsing refuses local storage; the default is fine. */
+      }
+    </script>
+    <div id="teanode"></div>
+  </body>
+</html>

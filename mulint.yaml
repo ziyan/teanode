@@ -1,0 +1,46 @@
+# TeaNode coding-standard enforcement via mulint.
+#
+# mulint is a local-only check. `make lint` runs it, CI does not, so a
+# contributor who does not have it installed is never blocked by it. Run
+# `make mulint` before sending a change.
+
+linters:
+  mulint_camelcase:    true
+  mulint_naming:       true
+  mulint_abbreviation: true
+  mulint_singleletter: true
+  mulint_errorprefix:  true
+  mulint_log:          true
+  mulint_recover:      true
+  mulint_structtag:    true
+
+reports:
+  maximumReportsPerLinter: 25
+
+extra:
+  compounds:
+    # A DKIM term of art. One English word that the default segmentation
+    # splits; everything else mulint flagged was renamed instead.
+    - canonicalization
+    # One word in universal use; nobody writes "webHook".
+    - webhook
+
+  acronyms:
+    # Mail protocol vocabulary. Each is a real acronym from the relevant RFC,
+    # so it is written in full caps when the identifier starts with a capital.
+    # Anything that could be spelled out instead was spelled out.
+    - ACME     # Automatic Certificate Management Environment, RFC 8555
+    - AFRF     # Authentication Failure Reporting Format, a DMARC report format
+    - ALPN     # Application-Layer Protocol Negotiation, RFC 7301
+    - ARC      # Authenticated Received Chain, RFC 8617
+    - DKIM     # DomainKeys Identified Mail, RFC 6376
+    - DMARC    # Domain-based Message Authentication, Reporting and Conformance
+    - DSN      # Delivery Status Notification, RFC 3464
+    - MX       # Mail Exchange, the DNS record naming a domain's mail servers
+    - RDNS     # Reverse DNS, the PTR record for a connecting address
+    - RUA      # DMARC aggregate report address
+    - RUF      # DMARC forensic report address
+    - SMTP     # Simple Mail Transfer Protocol, RFC 5321
+    - SPF      # Sender Policy Framework, RFC 7208
+    - TLSALPN  # forced by acme.Client.TLSALPN01ChallengeCert
+    - TXT      # the DNS TXT record type

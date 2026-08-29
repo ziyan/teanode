@@ -1,0 +1,7 @@
+# Hide vendor directories from diffs and pull requests
+**/vendor/** linguist-vendored
+**/vendor/** -diff
+
+# Common vendor/dependency directories to hide
+**/node_modules/** linguist-vendored
+**/node_modules/** -diff

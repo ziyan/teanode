@@ -1,0 +1,2808 @@
+/* One stylesheet, no framework. The dashboard is a handful of tables and
+   forms; a component library would be more code than the application.
+
+   THE LOOK: quiet chrome, colour only where it means something.
+
+   Almost nothing here is coloured. The rail is a warm grey against a white
+   page, the selected row is a raised pill rather than a highlight, and what
+   you press is near-black. Colour is kept for the few things that carry state
+   — whether a DNS record is published, whether a delivery failed, whether a
+   session is the one you are reading this in — so that when something is
+   coloured it is worth looking at.
+
+   It inverts rather than dims for dark. A near-black button on white becomes
+   a near-white button on black; the rail stays one step darker than the page
+   in both, so the same shape reads the same way round.
+
+   The TeaNode mark keeps its green. It is the one piece of brand here, and
+   chrome that competed with it would make it just another coloured thing —
+   which is what an accent taken from the logo did: every button, link and
+   active row was the brand colour, so none of them meant anything. */
+
+:root {
+  --background: #ffffff;
+  /* The rail, one step off the page so the two read as separate surfaces
+     without a rule between them. */
+  --rail: #f7f7f6;
+  /* What sits on the page: cards, menus, the selected pill. Level with the
+     page in light, so a card is told apart by its outline rather than by a
+     wash — which is why everything using it carries a border. */
+  --surface: #ffffff;
+  --border: #e7e7e4;
+  /* What you type into inside the rail: filled rather than outlined, because
+     it is a place to type and not a value being edited. */
+  --field: #eeeeea;
+  /* A row in the rail under the pointer. One step further from the page than
+     the rail itself, so hovering reads as pressing in rather than lifting. */
+  --sidebar-hover: #efefec;
+  /* The border under a pointer. One step darker, so a field says it can be
+     interacted with before it is focused. */
+  --border-strong: #d8d8d4;
+  --text: #18181b;
+  --muted: #6f6f76;
+  /* What you press. Near-black rather than true black, which reads as heavy.
+     This is the accent, and it is deliberately not a colour. */
+  --accent: #1f1f22;
+  --accent-text: #ffffff;
+  --accent-hover: #000000;
+  --good: #16a34a;
+  --bad: #dc2626;
+  --warn: #d97706;
+
+  /* Spacing, on an 8px unit. Quarter steps below one unit, half steps above;
+     anything between these is drift, not a finer scale.
+       1  icon and label pairs, chip to chip
+       2  button clusters, card content
+       3  toolbar internals, rows in a card list
+       4  panel to panel, page section gaps
+       6  page level separation */
+  --space-1: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  /* Was referenced in three places and never defined, so every one of them
+     had no margin at all: a section's intro ran straight into its first
+     row. */
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Corner radius derives from one unit rather than a literal per rule.
+       1  a chip, a tag, something the size of a word
+       2  a control: button, input, the selected pill
+       3  a panel: card, menu, dialog */
+  --radius-1: 6px;
+  --radius-2: 8px;
+  --radius-3: 12px;
+  --radius-round: 999px;
+
+  /* Type roles, not sizes. A new role is a token here, never a number at a
+     call site.
+       title      the page title and the current breadcrumb
+       body       running text and values, the default
+       label      field labels, timestamps, secondary metadata
+       overline   the label over a group, in the rail and over a section */
+  --text-title: 15px;
+  --text-body: 14px;
+  --text-label: 12px;
+  /* Not small caps. At this size the letter-spacing does the separating, and
+     uppercase only makes it harder to read. */
+  --text-overline: 12.5px;
+
+  /* How wide prose is allowed to get. One number, because two paragraphs on
+     one page wrapping in different places is the kind of thing that looks
+     like a bug and is one. Controls, tables and panels are not prose and are
+     not capped. */
+  --measure: 74ch;
+
+  /* Shadow means "this responds to you". Menus float above the page and cast
+     one; a static panel is an outline and a background, never a shadow.
+
+     The one exception is the selected pill in the rail, which lifts by a
+     single pixel — enough to read as raised off the grey without becoming a
+     second floating thing. */
+  --shadow-floating: 0 8px 28px rgb(0 0 0 / 22%);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+/* Light is the palette above, and is what a reader gets unless something says
+   otherwise. Dark is defined once and applied twice: for somebody whose system
+   asks for it and who has not overridden it, and for somebody who chose it
+   outright. Written this way so that choosing light wins over a dark system,
+   and choosing dark wins over a light one — a toggle that only worked in one
+   direction would be worse than no toggle. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: #141416;
+    --rail: #0c0c0e;
+    --surface: #1a1a1d;
+    --border: #2a2a2e;
+    --field: #18181b;
+    --sidebar-hover: #17171a;
+    --border-strong: #3a3a40;
+    --text: #f4f4f5;
+    --muted: #a0a0a8;
+    /* Inverted, not dimmed: the near-black button becomes a near-white one,
+       and the text on it becomes near-black. */
+    --accent: #f4f4f5;
+    --accent-text: #18181b;
+    --accent-hover: #ffffff;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #fbbf24;
+  }
+}
+
+:root[data-theme='dark'] {
+    --background: #141416;
+  --rail: #0c0c0e;
+  --surface: #1a1a1d;
+  --border: #2a2a2e;
+  --field: #18181b;
+  --sidebar-hover: #17171a;
+  --border-strong: #3a3a40;
+  --text: #f4f4f5;
+  --muted: #a0a0a8;
+  /* Inverted, not dimmed: the near-black button becomes a near-white one,
+     and the text on it becomes near-black. */
+  --accent: #f4f4f5;
+  --accent-text: #18181b;
+  --accent-hover: #ffffff;
+  --good: #4ade80;
+  --bad: #f87171;
+  --warn: #fbbf24;
+}
+
+* { box-sizing: border-box; }
+
+/* A scrollbar that does not draw a grey slab down the side of a quiet page. */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: var(--radius-2);
+  border: 3px solid var(--background);
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
+
+html {
+  /* Landscape on iOS inflates text in a way that breaks the table layouts. */
+  -webkit-text-size-adjust: 100%;
+  /* Tells the browser which form controls and scrollbars to draw. */
+  color-scheme: light dark;
+}
+
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* A link in running text is the text colour, underlined. The accent is what
+   you press, and painting every link with it turns a page of prose into a
+   page of buttons. */
+a { color: var(--text); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+a:hover { text-decoration-color: var(--text); }
+
+/* A link in a table, a card header or the rail is a destination, not prose.
+   Underlining every one of them turns a list of subjects into a wall of
+   rules; the row already says it can be clicked. */
+td a,
+th a,
+.sidebar a,
+.surface-card,
+.tile,
+.breadcrumb a {
+  text-decoration: none;
+}
+
+td a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text);
+}
+
+/* The window, once. A row of two: the rail down the left at full height, and
+   everything else in a column beside it. The page itself never scrolls — the
+   content area does — which is what keeps the rail and the bar in place while
+   a long list moves under them.
+
+   min-height: 0 on the flex children is what makes that scroller work: a flex
+   item defaults to min-height: auto and refuses to shrink below its content,
+   so without it the whole page grows instead. */
+.layout {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* --- the bar across the top ----------------------------------------------
+   Left to right: the control that collapses the rail, the product, where you
+   are, and then the things that are about you rather than about the page. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  height: 56px;
+  padding: 0 var(--space-3);
+  padding-top: env(safe-area-inset-top);
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  z-index: 20;
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* A square, quiet until it is under the pointer. Used by the hamburger and by
+   each of the menus on the right, so they line up and behave alike. */
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.icon-button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* --- where you are --------------------------------------------------------
+   Directly above the heading, in the content: the trail says how you got to
+   this page and the heading names it, so they belong together. Ancestors
+   only — see Breadcrumb() for why the page's own name is not repeated. */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-bottom: var(--space-2);
+  overflow: hidden;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+/* Each crumb carries the chevron that precedes it, so the air either side of
+   the separator is the same everywhere and comes from one rule. */
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The crumbs behind you keep their full width; the one you are on gives way,
+   because it is the only one that can be arbitrarily long — a message subject
+   is a sentence. */
+.crumb:not(:last-child) {
+  flex: 0 0 auto;
+}
+
+.crumb:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.breadcrumb a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.breadcrumb .separator {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* --- menus hanging off the bar -------------------------------------------- */
+.menu-button {
+  position: relative;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.menu {
+  /* Fixed, and placed from the button's rectangle: it is rendered into the
+     body so that a table's scroll container cannot clip it. */
+  position: fixed;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  /* Wide enough for a domain name. The trigger is as narrow as its column,
+     and the menu is not: it is positioned, so it can be wider than the cell
+     it hangs from, and truncating "example.com" to "exam…" in a menu whose
+     whole job is telling them apart is no help at all. */
+  min-width: 240px;
+  max-width: 340px;
+  padding: 6px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-floating);
+  z-index: 30;
+}
+
+/* A rule between groups of menu items. Ten items in one column read as a
+   list to search; three short groups read as three choices. */
+.menu-separator {
+  height: 1px;
+  margin: 4px -6px;
+  background: var(--border);
+}
+
+.menu-header {
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.menu button,
+.menu a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu button:hover,
+.menu a:hover {
+  background: var(--sidebar-hover);
+}
+
+/* The option in effect. A tick would need a column of its own for the sake of
+   one row; the accent says the same thing in the space already there. */
+.menu button.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- a grid of destination cards ------------------------------------------
+   Used by the settings hub and the domain list: a handful of things, each
+   with a name, a line about it, and somewhere it goes. A table would be
+   denser and would say less. */
+.surface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.surface-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* A shadow means "this responds to you", so the one thing on the page that is
+   entirely a link gets one when the pointer is over it. */
+.surface-card:hover {
+  border-color: var(--muted);
+  box-shadow: var(--shadow-floating);
+}
+
+.surface-card > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.surface-card strong {
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.surface-card .muted {
+  font-size: var(--text-label);
+  line-height: 1.45;
+}
+
+/* Status chips inside a card, below its description. */
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.surface-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-1);
+  background: var(--background);
+  color: var(--accent);
+}
+
+/* A group label above a grid or a list. */
+/* The small grey label over a group, in the rail and over a section of
+   settings. Not uppercase: at this size the weight and the colour do the
+   separating, and capitals only make it harder to read. */
+.overline {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+
+/* A line above a list: what it is on the left, what you can do to it on the
+   right. */
+.page-actions {
+  display: flex;
+  /* Top, not centre: the heading is above and the action belongs level with
+     the first line of the intro, not halfway down a paragraph. */
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* The text beside the action takes the room; the action does not. Excluding
+   the controls by name, because a page whose first child IS the button had it
+   stretched across the whole width — :first-child outranks the rule below
+   that says a button keeps its size. */
+.page-actions > :first-child:not(button):not(a):not(.tag) {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.icon-button.active {
+  color: var(--accent);
+  background: var(--border);
+}
+
+button.destructive {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* --- overview bands -------------------------------------------------------
+   A band is a small heading and a row of tiles under it, after the reference:
+   the heading names what the row is about so the tiles do not have to repeat
+   it, and the rows read as groups rather than as one long grid. */
+.band {
+  margin-bottom: var(--space-6);
+}
+
+.band-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.band-icon {
+  display: flex;
+  color: var(--muted);
+}
+
+/* Anything that belongs to the heading rather than to a tile: a period the
+   numbers cover, a link to the full list. */
+.band-aside {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+/* Equal columns and equal heights, so tiles with different amounts to say
+   still end level. */
+/* auto-fit rather than auto-fill: a band of five tiles should fill the row it
+   is given rather than leave a fifth stranded under four. The track is narrow
+   enough that a normal desktop takes all five, and tiles stretch to the tallest
+   in the row so a wrapped detail line does not stagger them. */
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+/* The whole tile is the target when it has somewhere to go — one thing to aim
+   at, the size of the thing you are aiming at. */
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.tile:hover {
+  border-color: var(--muted);
+}
+
+/* The border, and nothing else. Hover used to recolour the number as well,
+   which meant a green "20 accepted" turned near-black under the pointer and a
+   red one turned near-black too — the colour that was carrying the meaning
+   disappeared exactly when somebody reached for it. */
+a.tile:hover strong {
+  color: var(--accent);
+}
+
+/* --- a tile that is a number --------------------------------------------- */
+.tile-label {
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The answer, in the size the eye lands on first. Tabular figures so a column
+   of them does not jitter as they change. */
+.tile-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* No colour on the number. It said "this many were accepted" in green and
+   "this many were rejected" in red, which reads as a verdict on the number —
+   but a rejection count is not bad news, it is the count of a thing that
+   happened, and zero of them is not good news either. The word beside it says
+   which it is. What is left coloured is the warning mark on a tile that
+   actually wants attention, which is the one place the colour means
+   something. */
+
+/* The unit belongs to the number but is not part of it, so it stays the
+   weight of ordinary text. */
+.tile-unit {
+  font-size: var(--text-body);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* The line under the number, and the last thing in a tile: pushed to the
+   bottom so a row of tiles lines up along it. */
+.tile-detail {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+/* An icon in the tile's own corner, for a state worth seeing before the
+   number is read. */
+.tile-corner {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  color: var(--warn);
+}
+
+/* A number that is not known yet, rather than one that is zero. */
+.tile-unknown {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* --- a tile that is a destination ---------------------------------------- */
+.tile.resource strong {
+  margin-top: var(--space-3);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.tile-corner-icon {
+  display: flex;
+  color: var(--accent);
+}
+
+/* --- a modal asking for one thing ---------------------------------------- */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-4);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-floating);
+}
+
+.dialog h3 {
+  margin-top: 0;
+}
+
+.dialog label {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* --- the rail ------------------------------------------------------------- */
+/* The product, at the top of its own rail. */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  height: 56px;
+  /* 18px, which is where the icons below start: 8px of row margin and 10px of
+     row padding. The mark is the first thing in that column, not a thing
+     beside it. */
+  padding: 0 var(--space-4) 0 18px;
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  margin-bottom: var(--space-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* No rule under the mark. The rail is already a step off the page, and a
+   border on top of that is a second line saying the same thing. */
+.sidebar-brand:hover {
+  opacity: 0.75;
+}
+
+/* The mark stays exactly where it is when the rail narrows. Centring it while
+   collapsed looked right in a screenshot and wrong in motion: the rule applies
+   the instant the class changes, so the mark jumped to the middle of a rail
+   that was still full width and then slid left as the rail caught up. It sits
+   at the same offset as the icons below it in both states, and nothing about
+   it moves. */
+.sidebar.collapsed .sidebar-brand {
+  padding-right: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 232px;
+  flex: 0 0 232px;
+  min-height: 0;
+  background: var(--rail);
+  border-right: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+  overflow-y: auto;
+}
+
+/* Collapsed, it keeps the icons and drops the words. Wide enough for a
+   comfortable target around a centred icon and nothing more. */
+.sidebar.collapsed {
+  width: 60px;
+  flex: 0 0 60px;
+}
+
+.sidebar.collapsed .sidebar-label {
+  display: none;
+}
+
+.sidebar.collapsed nav a {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* A rule between the group that answers "what is happening" and the group
+   that answers "what is configured". */
+.sidebar-group + .sidebar-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/* A row in the rail is quiet until you are on it: muted text, no fill, and a
+   1px transparent border so that becoming selected does not move it. */
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 1px 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sidebar nav a:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.sidebar nav a:hover .sidebar-icon {
+  color: var(--text);
+}
+/* The row you are on: a raised pill rather than a wash of colour. It says
+   "you are here" without spending the one accent the page has on navigation,
+   and it still reads as selected when the rail is collapsed to icons. */
+.sidebar nav a.active {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-raised);
+  color: var(--text);
+  font-weight: 550;
+  font-weight: 600;
+}
+
+.sidebar nav a.active .sidebar-icon {
+  color: var(--accent);
+}
+
+/* The one thing on the page that scrolls. */
+.content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-6) 32px;
+}
+
+h2 { margin-top: 0; font-size: 20px; }
+h3 { font-size: 16px; margin-bottom: 8px; }
+
+table { width: 100%; border-collapse: collapse; font-size: var(--text-body); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+/* --- the shared table -----------------------------------------------------
+   An outlined surface holding the table, so the header, the rows and the
+   empty state share one edge. Following the reference: small uppercase
+   headers, alternating rows, a hairline between them, and the count and
+   pagination on a bar underneath rather than inside the frame. */
+.table-surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  overflow: auto;
+}
+
+.table-surface table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A column given a width means it: a relative timestamp and a file size are
+   short, and wrapping them onto two lines to save eight pixels makes every
+   row taller for nothing. Only the columns that hold sentences may wrap, and
+   those say so with .wrap. */
+.table-surface th,
+.table-surface td.shrink,
+.table-surface time {
+  white-space: nowrap;
+}
+
+.table-surface td:not(.wrap) {
+  white-space: nowrap;
+}
+
+.table-surface th {
+  padding: 12px 10px;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.table-surface td {
+  padding: 14px 10px;
+  vertical-align: middle;
+}
+
+/* Alternating rows, lighter than the page rather than darker, so a row can be
+   followed across a wide table. */
+/* No zebra stripe. A stripe is a second way of saying what the rules under
+   each row already say, and on a page this quiet it reads as two greys
+   arguing. Rows are told apart by their height and their rule. */
+
+.table-surface tbody tr:hover > td {
+  background: var(--sidebar-hover);
+}
+
+/* A row that has somewhere to go is the target, not the one link inside it.
+   The cursor is the only thing that says so: a hover tint the whole table
+   already has cannot distinguish a row you can open from one you cannot. */
+.table-surface tbody tr.linked {
+  cursor: pointer;
+}
+
+/* The last row's border would stack against the surface's own edge and read
+   as a two-pixel rule. */
+.table-surface tbody tr:last-of-type > td {
+  border-bottom: none;
+}
+
+.table-empty {
+  margin: 0;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+/* Count on the left, pagination on the right. */
+.table-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--text-label);
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.table-pagination label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--muted);
+}
+
+.table-pagination select {
+  padding: 3px 6px;
+  min-height: 28px;
+  font-size: var(--text-label);
+}
+
+.table-pagination .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.table-pagination .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.table-pagination .icon-button:disabled:hover {
+  background: none;
+  color: var(--muted);
+}
+
+/* The same chevron, pointing the other way. */
+.flip {
+  display: flex;
+  transform: rotate(180deg);
+}
+
+/* A timestamp is exact on hover, which is worth signposting. */
+time[title] {
+  cursor: help;
+}
+
+/* A list is scanned down, not read across: one line per row, and anything
+   too long for its column ends in an ellipsis rather than growing the row to
+   five lines. max-width: 0 is the table-layout trick that makes
+   text-overflow work in a cell — the percentage width on the column decides
+   the real size. */
+td.truncate {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A table of rules, not a grid of boxes. The head is a quiet label in the
+   same case as everything else — uppercase at this size is harder to read and
+   buys nothing that weight and colour do not already give. */
+th { color: var(--muted); font-weight: 550; font-size: 13px; letter-spacing: 0; }
+tbody tr:hover { background: var(--sidebar-hover); }
+td.shrink { width: 1%; white-space: nowrap; }
+
+/* A static panel: an outline and a background. No shadow — that is reserved
+   for things that float, so a shadow always means the same thing. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* The first heading in a panel sits at the top of it. A browser's default
+   margin above an h3 pushes the whole panel's content down by a line and
+   makes the padding look uneven. */
+.card > h3:first-child {
+  margin-top: 0;
+}
+
+/* Prose stops at a readable measure. These pages carry real explanation, and
+   on a wide screen a paragraph that fills the panel runs past 200 characters
+   a line — far enough that the eye loses which line comes next. Controls and
+   tables are unaffected; only the text is capped. */
+.card > p,
+.content > p,
+.settings-section > p {
+  max-width: var(--measure);
+}
+
+/* The name of a record is short, and it is the thing a reader scans down the
+   column for. Without a floor it is squeezed to a few characters by the
+   signing key in the cell beside it, which asks for as much width as it can
+   get. Wide enough for <selector>._domainkey.<domain>, which is the longest
+   name this table shows. */
+.record-name {
+  min-width: 28ch;
+}
+
+/* A sentence under a value in a table is prose, and the rule above misses it:
+   it caps the direct children of a card, and this sits inside a cell. The
+   column is as wide as the table, so an explanation left uncapped runs to two
+   hundred characters a line — the case that made this necessary is the advice
+   under a failing check, which is the most important text on the page and was
+   the hardest to read. The table itself is unaffected. */
+td .cell-note {
+  display: block;
+  /* A sentence breaks at its spaces. It sits inside a cell that may allow
+     breaking anywhere for the value above it, and inheriting that turns
+     "no mail arrives" into "no mai / l arrives". */
+  overflow-wrap: normal;
+  word-break: normal;
+  /* Asked for rather than capped. A ceiling alone makes it worse: automatic
+     table layout sizes a column from the widest thing it must fit, so a
+     capped block reports a narrow preference and the column collapses to
+     something narrower still. Naming the width makes it the preference, and
+     the ceiling keeps it inside a narrow window. */
+  width: var(--measure);
+  max-width: 100%;
+}
+
+/* A chip is the size of the word in it. Neutral by default — most of them
+   say what something is, not that anything is wrong — and tinted only for the
+   three that carry state. The tint is the colour at low opacity rather than a
+   second palette, so it follows the theme without a dark variant of its own. */
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-1);
+  font-size: 12px;
+  font-weight: 550;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tag.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, transparent); background: color-mix(in srgb, var(--good) 10%, transparent); }
+.tag.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+
+/* --- what happened to a message -------------------------------------------
+   The first line of a mail: its verdict, its kind, and one sentence saying
+   what became of it. The page used to open with the subject and the sender,
+   which are the two things the reader already knew — they clicked the row to
+   get here. Whether it was accepted was nowhere on the page. */
+.verdict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* A label-and-value table inside a panel: the label column takes what it
+   needs and the value takes the rest. */
+.detail td:first-child {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+/* Each authentication check on its own line: mechanism, verdict, and what was
+   examined to reach it. The third column is the one that was missing — a row
+   of bare tags says nothing went wrong and never says why something did. */
+.checks td {
+  vertical-align: top;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.checks td:first-child {
+  font-weight: 550;
+}
+
+/* One block per recipient rather than one row. A failed delivery carries a
+   remote server, an enhanced status code and a diagnostic line from the far
+   end, and none of the three fit in a column. */
+.delivery + .delivery {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.delivery-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.delivery-recipient {
+  font-weight: 600;
+}
+
+/* Three weights of button, and the difference between them is how much they
+   ask for. The default is outlined and quiet; .primary is the near-black one
+   and there is at most one per view; .link is text that happens to act. */
+button, .button {
+  font: inherit;
+  font-weight: 550;
+  padding: 7px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button:disabled { opacity: 0.5; cursor: default; }
+
+/* The one confirming button that takes something away. Red is reserved for
+   that, so that a red button always means the same thing — signing out takes
+   nothing away and is not one of these. */
+button.primary.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+
+button.primary.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 85%, black);
+  border-color: color-mix(in srgb, var(--bad) 85%, black);
+}
+
+button.link {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  font-weight: inherit;
+  text-decoration: underline;
+}
+
+button.link:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+
+input, select, textarea {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+
+input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--text);
+}
+
+/* A checkbox is not a text field. The full-width rule above is meant for the
+   things you type into; applied to a tick box it produces a control the width
+   of its row that shoves its own label off the end.
+
+   The accent is here too, because a tick box is the one control that ignores
+   the palette and draws itself in the browser's blue. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  padding: 0;
+  accent-color: var(--accent);
+  vertical-align: -0.15em;
+  margin-right: var(--space-1);
+}
+
+label { display: block; margin-bottom: 10px; font-size: 14px; }
+
+/* A label whose control is a tick box is a row, not a block: the box and its
+   text line up on one baseline and stay lined up when the text wraps onto a
+   second line, which on a phone it does. */
+label:has(> input[type='checkbox']),
+label:has(> input[type='radio']) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+label:has(> input[type='checkbox']) > input,
+label:has(> input[type='radio']) > input {
+  flex: 0 0 auto;
+  margin-right: 0;
+  vertical-align: baseline;
+}
+label span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 3px; }
+
+.row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 140px; }
+.row > .shrink { flex: 0 0 auto; min-width: 0; }
+
+.muted { color: var(--muted); }
+.error { color: var(--bad); }
+/* Monospace, and allowed to break inside a word — but only when the word
+   cannot fit on a line of its own. That is the difference between
+   overflow-wrap:anywhere and word-break:break-all, and it matters here: a
+   four-hundred character signing key has to break somewhere, while a record
+   name of twenty-seven characters was being shredded into five lines beside
+   it because break-all breaks at the fill point whether it needs to or not. */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* --- signing in ----------------------------------------------------------
+   A card in the middle of an empty page. There is no shell yet — no rail, no
+   breadcrumb — because there is nothing to navigate to until you are in. */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-6);
+  /* The rail's grey rather than the page's white, so the card is a card. On
+     white it was a white rectangle held together by a hairline, and the eye
+     had nothing to land on. */
+  background: var(--rail);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+
+/* What you have reached, before it asks you for anything. This page has no
+   navigation, no heading and nothing else on it, so the mark and the name are
+   the only things that say where you are — centred and given room, rather
+   than tucked into the corner above the first field. */
+.auth-header {
+  text-align: center;
+  margin-bottom: var(--space-6);
+}
+
+.auth-header h1 {
+  margin: var(--space-3) 0 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+/* One line saying what to do here. Close under the name, because the two are
+   one block: the name is what this is and this is what it wants. */
+.auth-header p {
+  margin: 6px 0 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+.auth-field {
+  display: block;
+  margin-bottom: var(--space-4);
+}
+
+.auth-field > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--text-label);
+  font-weight: 550;
+  color: var(--text);
+}
+
+.auth-field input {
+  width: 100%;
+  min-height: 40px;
+}
+
+/* Under the field it belongs to, in the gap the field already leaves. */
+.auth-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--text-label);
+}
+
+.auth-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+}
+
+/* The primary sits directly under the last field: they are one column, and a
+   gap here would read as the form having ended. */
+.auth-card > button.primary {
+  margin-top: var(--space-2);
+}
+
+/* A rule with a word in it. Two ways to sign in need something between them
+   saying they are alternatives rather than steps. */
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* The footnote: how to get out of trouble. Above a rule, because it is not
+   part of the form — it is what to read when the form has not worked. */
+.auth-footnote {
+  margin: var(--space-5) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-label);
+  line-height: 1.55;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* On a line of its own, and selectable as one thing. Set through the middle
+   of a centred sentence it wrapped in the middle of the command. */
+.auth-command {
+  display: block;
+  margin-top: var(--space-2);
+  padding: 8px 10px;
+  background: var(--field);
+  border-radius: var(--radius-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.banner {
+  padding: 10px 14px;
+  border-radius: 5px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font-weight: 550; padding: 8px 2px; margin-right: 22px; }
+.tabs button:hover:not(:disabled) { background: none; color: var(--text); }
+
+/* An action sitting with the tabs rather than being one: it does not change
+   what is below, it takes a copy away with you. */
+.tabs .tab-action {
+  margin-left: auto;
+  align-self: center;
+  padding: 8px 12px;
+  font-size: var(--text-body);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.tabs .tab-action:hover {
+  text-decoration: underline;
+}
+/* The indicator is the text colour rather than the accent. Switching a
+   section of the page is not an action to be pressed, and colouring it spends
+   the one emphasis the page has on something you are already looking at. */
+.tabs button.active { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
+
+/* The message body is rendered inside a sandboxed frame. It is mail written
+   by a stranger, so it gets no scripts, no same-origin access, and a white
+   background regardless of the dashboard theme, because messages assume one. */
+/* The height is set from the measured content, so this never scrolls on its
+   own — the page does. The white is deliberate and not themed: mail is
+   written assuming a white page, and forcing dark on a stranger's markup
+   produces invisible text. */
+.message-frame {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: #ffffff;
+}
+
+/* --- column filters -------------------------------------------------------
+   A second header row: the name of the column above, the question you can ask
+   of it below. Filters belong on the column they filter, not in a bar above
+   the table where you have to work out which one they apply to. */
+.filter-row td {
+  padding: 0 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  background: none;
+}
+
+.column-filter {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: var(--text-label);
+  min-height: 28px;
+}
+
+/* The trigger for a multiselect: reads as the current answer, not as a
+   control shouting for attention. */
+.column-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--background);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-label);
+  line-height: 1.2;
+  min-height: 28px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.column-filter-button:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* A filter that is doing something says so, so a list that looks short is
+   never a mystery. */
+.column-filter-button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.column-filter-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chevron points down when it opens a menu below it. */
+.column-filter-button svg {
+  flex: 0 0 auto;
+  transform: rotate(90deg);
+}
+
+.menu-search {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  font-size: var(--text-label);
+  min-height: 30px;
+}
+
+.menu-clear {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-clear:hover {
+  background: var(--sidebar-hover);
+}
+
+/* Bounded, because a server with fifty domains should scroll the menu rather
+   than the page. */
+.menu-options {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border-radius: var(--radius-1);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.menu-option:hover {
+  background: var(--sidebar-hover);
+}
+
+.menu-option input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* The generic "label span" is a field caption above its input: block, muted,
+   with a gap under it. Inside a menu the span is the option itself, sitting
+   beside its tick box. */
+.menu-option span {
+  display: inline;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How many rows an option would leave, sitting at the end of its row. */
+.menu-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: var(--text-label);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A sortable header is a button, and has to keep the header's own type. */
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort-header:hover {
+  color: var(--text);
+}
+
+/* The chevrons are a hint until the column is the one in force. */
+.sort-header svg {
+  opacity: 0.4;
+}
+
+.sort-header:hover svg,
+.sort-header.active svg {
+  opacity: 1;
+}
+
+.sort-header.active {
+  color: var(--accent);
+}
+
+.menu-empty {
+  padding: 8px;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+pre.message-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 14px;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* --- narrow screens ---------------------------------------------------------
+
+   A mail server gets checked from a phone more often than from a desk: it is
+   the thing you look at when somebody says "did you get my email?". The
+   sidebar becomes a row of tabs across the top, forms stop trying to sit side
+   by side, and every table can be scrolled sideways rather than forcing the
+   page to.
+*/
+
+/* Where the toggle sits when there is no sidebar to put it in: the login and
+   first-run pages, which are a centred card on an empty page. */
+.page-corner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 20;
+}
+
+@media (max-width: 760px) {
+  /* The rail is an overlay here, not a column: it sits above the page, slides
+     in from the left, and is dismissed by tapping what is behind it. On a
+     phone there is no room to give a permanent rail, and a row of tabs cannot
+     hold a rail that grows. */
+  .sidebar,
+  .sidebar.collapsed {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: 264px;
+    flex-basis: 264px;
+    transform: translateX(-100%);
+    transition: transform 160ms ease;
+    box-shadow: var(--shadow-floating);
+  }
+
+  .sidebar.open {
+    transform: none;
+  }
+
+  /* Collapsing is a desktop idea; the overlay is always full width. */
+  .sidebar.collapsed .sidebar-label,
+  .sidebar.collapsed .sidebar-brand {
+    display: flex;
+  }
+  .sidebar.collapsed nav a {
+    justify-content: flex-start;
+    padding: 8px 10px;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .topbar {
+    gap: var(--space-1);
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .content {
+    padding: var(--space-4) max(14px, env(safe-area-inset-right))
+      max(32px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  }
+
+  .surface-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tables carry more columns than a phone has room for. Scrolling the table
+     itself keeps the rest of the page still. */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  /* Subject lines and error messages are the exception: they are the content,
+     and there is no pointer here to hover over a truncated one, so they wrap
+     instead. */
+  td.wrap,
+  td.truncate {
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    min-width: 200px;
+  }
+
+  /* Columns that are context rather than answer. */
+  .optional {
+    display: none;
+  }
+
+  /* A filter per column needs a column header to sit under, and the table is
+     already scrolling sideways here. The filters that matter most stay, in a
+     stack above the table. */
+  .filter-row td {
+    padding: 0 4px 6px;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .row > *,
+  .row > .shrink {
+    width: 100%;
+  }
+
+  /* Comfortable to hit with a thumb. */
+  button,
+  .button,
+  input,
+  select {
+    min-height: 40px;
+  }
+
+  /* iOS zooms the whole page in when a field smaller than 16px takes focus,
+     and does not zoom back out. Sizing the fields at 16px is the only way to
+     prevent it without disabling zoom altogether, which would be worse. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Neither of these is a form field, so the rule above does not apply and
+     they keep the size they have on the bar. */
+  .icon-button,
+  .avatar {
+    min-height: 0;
+  }
+
+  /* A DNS record value is a long unbroken string. Let it wrap instead of
+     forcing the page sideways, and keep it selectable for copying. */
+  code,
+  .record-value,
+  /* --- column filters -------------------------------------------------------
+   A second header row: the name of the column above, the question you can ask
+   of it below. Filters belong on the column they filter, not in a bar above
+   the table where you have to work out which one they apply to. */
+.filter-row td {
+  padding: 0 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  background: none;
+}
+
+.column-filter {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: var(--text-label);
+  min-height: 28px;
+}
+
+/* The trigger for a multiselect: reads as the current answer, not as a
+   control shouting for attention. */
+.column-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--background);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-label);
+  line-height: 1.2;
+  min-height: 28px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.column-filter-button:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* A filter that is doing something says so, so a list that looks short is
+   never a mystery. */
+.column-filter-button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.column-filter-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chevron points down when it opens a menu below it. */
+.column-filter-button svg {
+  flex: 0 0 auto;
+  transform: rotate(90deg);
+}
+
+.menu-search {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  font-size: var(--text-label);
+  min-height: 30px;
+}
+
+.menu-clear {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-clear:hover {
+  background: var(--sidebar-hover);
+}
+
+/* Bounded, because a server with fifty domains should scroll the menu rather
+   than the page. */
+.menu-options {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border-radius: var(--radius-1);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.menu-option:hover {
+  background: var(--sidebar-hover);
+}
+
+.menu-option input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* The generic "label span" is a field caption above its input: block, muted,
+   with a gap under it. Inside a menu the span is the option itself, sitting
+   beside its tick box. */
+.menu-option span {
+  display: inline;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How many rows an option would leave, sitting at the end of its row. */
+.menu-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: var(--text-label);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A sortable header is a button, and has to keep the header's own type. */
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort-header:hover {
+  color: var(--text);
+}
+
+/* The chevrons are a hint until the column is the one in force. */
+.sort-header svg {
+  opacity: 0.4;
+}
+
+.sort-header:hover svg,
+.sort-header.active svg {
+  opacity: 1;
+}
+
+.sort-header.active {
+  color: var(--accent);
+}
+
+.menu-empty {
+  padding: 8px;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+pre.message-text {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .auth-page {
+    align-items: flex-start;
+    padding: var(--space-6) max(16px, env(safe-area-inset-left)) var(--space-6)
+      max(16px, env(safe-area-inset-right));
+  }
+
+  .login {
+    padding: var(--space-6);
+  }
+
+}
+
+/* Nothing should ever make the page itself scroll sideways. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* The shell owns the height, so the document must not add its own scrollbar
+   on top of the content area's. */
+html,
+body,
+#teanode {
+  height: 100%;
+}
+
+/* A short list of facts about one thing: the label on the left, the value on
+   the right, aligned down the column. Used where a table would be too much
+   furniture for four rows. */
+.properties {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  align-items: baseline;
+}
+
+.properties dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.properties dd {
+  margin: 0;
+}
+
+/* One line the reader is meant to stop at, rather than the running commentary
+   that .muted carries. Neutral by default; .good and .bad colour the edge for
+   something that went right or something to be careful about. */
+.notice {
+  border-left: 3px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0;
+  background: var(--surface-sunken, transparent);
+  border-radius: 0 var(--radius-1) var(--radius-1) 0;
+}
+
+.notice.good {
+  border-left-color: var(--good);
+}
+
+.notice.bad {
+  border-left-color: var(--bad);
+}
+
+@media (max-width: 600px) {
+  .properties {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+
+  .properties dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* A ruled list of things that each have a name, a line of detail and maybe an
+   action: sessions, tokens. A table would be too much furniture for two
+   columns of prose, and would wrap badly on a phone. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* The detail takes the space and the actions keep their size, so a long user
+   agent truncates instead of pushing the revoke button off the row. */
+.settings-row-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-detail strong,
+.settings-row-detail .muted {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-detail .muted {
+  font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  /* On a phone the detail wraps onto its own line rather than being squeezed
+     to nothing beside the tag and the button. */
+  .settings-row {
+    flex-wrap: wrap;
+  }
+
+  .settings-row-detail {
+    flex-basis: 100%;
+  }
+}
+
+/* --- the rail, structured ---------------------------------------------------
+   Groups under their own labels, a foot that stays at the bottom however
+   short the list, and the account below everything. */
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The label over a group. Sentence case and quiet: it separates, it is not
+   read. */
+.sidebar-group-label {
+  padding: 10px 18px 4px;
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+
+/* Collapsed to icons there is no room to read one, and a label with no room
+   is a grey smear above the icons. */
+.sidebar.collapsed .sidebar-group-label {
+  display: none;
+}
+
+/* The way back out of settings mode. A row like any other, but it changes
+   what the rail is showing rather than where in it you are, so it reads in
+   the muted colour and does not take the selected pill. */
+.sidebar-back {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 1px 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sidebar-back:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+/* Narrowing the rail, and who you are, under a rule at its foot. */
+.sidebar-account {
+  flex: 0 0 auto;
+  padding: var(--space-2) 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Reads like a navigation row rather than a button, because that is what it
+   sits among. The chevron points the way the rail is about to move. */
+.sidebar-collapse {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-collapse:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.sidebar-collapse .sidebar-icon {
+  transform: rotate(180deg);
+  transition: transform 120ms ease;
+}
+
+.sidebar.collapsed .sidebar-collapse .sidebar-icon {
+  transform: none;
+}
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--text);
+  font-weight: 550;
+  text-align: left;
+  overflow: hidden;
+}
+
+.account-button:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+}
+
+.account-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Says the row opens something. Without it the account is a name that happens
+   to be clickable, which nobody clicks. */
+.account-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.sidebar.collapsed .account-button {
+  justify-content: center;
+  padding: 7px 0;
+}
+
+/* --- the name of the page ---------------------------------------------------
+   At the top of the content, big and first. It is the only large thing on a
+   page, which is what makes it findable without a rule under it. */
+.page-heading {
+  margin: 0 0 var(--space-4);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* When the page's action sits under the title, the two are one header block
+   rather than two things with a gap between them. */
+.page-heading:has(+ .page-actions) {
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 760px) {
+  .page-heading {
+    font-size: 24px;
+  }
+}
+
+/* The sentence under a field, saying what it is for. Under rather than beside:
+   a hint beside a field is read after the field has already been filled in. */
+.field-hint {
+  margin: -6px 0 var(--space-3);
+  font-size: var(--text-label);
+  max-width: var(--measure);
+}
+
+/* --- lists of account things ----------------------------------------------
+   Tokens, sessions: each carries a name, two or three dates, an address and
+   an action. A table wide enough for all of that is a table nobody can read
+   on a laptop, let alone a phone. A row can wrap; a column cannot. */
+.settings-section {
+  margin-bottom: var(--space-6);
+}
+
+.settings-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.settings-section-head > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-section-head h3 {
+  margin: 0 0 4px;
+}
+
+.settings-section-head p {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+
+.settings-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.settings-row-subtitle {
+  margin-top: 3px;
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.settings-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+/* Having none of something is ordinary, so it is said rather than shown as an
+   error — and given the room a row would have taken, so the page does not
+   collapse to a sentence squeezed against a heading. Dashed, so an empty list
+   does not read as a row that is there. */
+.settings-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  margin: 0;
+  padding: var(--space-6) var(--space-5);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-3);
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.6;
+}
+
+/* A secret, shown once, in a block wide enough to select in one gesture. */
+.secret {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dialog-wide {
+  max-width: 560px;
+}
+
+/* A destructive action written as text rather than as a button: it sits at
+   the end of a row among ordinary information, and a red button on every row
+   makes a list look like a warning. */
+button.link.danger {
+  color: var(--bad);
+}
+
+/* A checkbox and its label on one line, which is how a checkbox reads. The
+   form styles put labels in a column, which is right for a field and wrong
+   for this. */
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--space-3);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+label.checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+/* A form is read down a column, and a field stretched across a wide screen is
+   a line the eye has to travel to get back from. Wide enough for an address
+   and a hostname, no wider. */
+.form-narrow {
+  max-width: 520px;
+}
+
+/* The picture button under a source editor, and the reason beside it. The
+   button is the same one the rich text toolbar uses, so it carries an icon;
+   here it has a word too, because there is no toolbar around it to make its
+   purpose obvious. */
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.editor-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-actions .muted {
+  font-size: var(--text-label);
+  max-width: var(--measure);
+}
+
+/* An upload that failed says so where the button is, not in a corner. */
+.richtext-error {
+  font-size: var(--text-label);
+}
+
+/* --- highlighted markup ---------------------------------------------------
+   Five colours and no more. A highlighter that gives every token type its own
+   hue is a rainbow to read past; what a reader needs here is to tell the
+   structure from the content, so the tags recede and the values stand out.
+   The palette follows the page's, light and dark, so this looks like the rest
+   of the dashboard rather than like somebody's editor theme. */
+.code {
+  --tok-punctuation: #8a8a93;
+  --tok-name: #2f6f4f;
+  --tok-attribute: #7a5a1e;
+  --tok-value: #2b5b8c;
+  --tok-comment: #9a9aa2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .code {
+    --tok-punctuation: #7c7c85;
+    --tok-name: #86c9a2;
+    --tok-attribute: #d8bc7d;
+    --tok-value: #93bde6;
+    --tok-comment: #71717a;
+  }
+}
+
+:root[data-theme='dark'] .code {
+  --tok-punctuation: #7c7c85;
+  --tok-name: #86c9a2;
+  --tok-attribute: #d8bc7d;
+  --tok-value: #93bde6;
+  --tok-comment: #71717a;
+}
+
+.code .tok-tag { color: var(--tok-punctuation); }
+.code .tok-name { color: var(--tok-name); }
+.code .tok-attribute { color: var(--tok-attribute); }
+.code .tok-value { color: var(--tok-value); }
+.code .tok-comment { color: var(--tok-comment); font-style: italic; }
+.code .tok-doctype { color: var(--tok-comment); }
+
+/* --- the control above a table --------------------------------------------
+   The filter fields used to be a permanent row of empty inputs under every
+   header: the widest thing on the page, and used on a fraction of visits. They
+   open from here now, and this row is also what gives the table air above it —
+   the fields sat hard against the header rule with nothing between. */
+.table-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.table-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: var(--text-label);
+}
+
+/* Open, or narrowing the list: either way it is doing something, and it says
+   so the way a selected row in the rail does. */
+.table-tools button.active {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--field);
+}
+
+.table-tools button.link {
+  padding: 5px 2px;
+}
+
+/* Air above the fields, so they read as a row that opened rather than as part
+   of the header. */
+.filter-row > td {
+  padding-top: var(--space-2);
+}
+
+/* --- a secret that is stored but never shown ------------------------------
+   Whether one is set belongs beside the label, not in the placeholder. A
+   placeholder is a hint about what to type: it disappears the moment somebody
+   types, so a status written there vanishes exactly when the reader is acting
+   on it. And the way to remove one hung under the field as a bare underlined
+   link, in the gap between two controls, belonging to neither. */
+.secret-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Pushed to the end of the label's row, where a destructive action can be
+   found without being in the way of the field. */
+.secret-clear {
+  margin-left: auto;
+  padding: 0;
+  font-size: var(--text-label);
+}
+
+/* The generic label rule makes a label's span a block with a gap under it,
+   which is right for a caption and wrong for a row that also holds a tag. */
+.secret-field > .secret-label {
+  display: flex;
+  margin-bottom: 6px;
+}
+
+/* --- editors ---------------------------------------------------------------
+   A template, a layout, a message being written: the form on the left and
+   what it produces on the right, side by side while the screen is wide enough
+   for both, because the point of a preview is to be looked at while typing.
+   Below the width where two columns would each be too narrow to read, the
+   preview follows the form. */
+.editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.editor-preview {
+  position: sticky;
+  top: var(--space-6);
+}
+
+.editor-form .page-actions {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.editor-preview > h3 {
+  margin-top: 0;
+}
+
+/* Markup and template text are read by their shape, so they are set in the
+   monospace face. Long lines wrap rather than scroll: a template pasted from
+   somewhere else is often one long line, and a box that scrolls sideways
+   hides most of it. */
+.code-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 220px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+.plain-editor {
+  min-height: 240px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.locale-tabs {
+  margin-top: var(--space-2);
+}
+
+/* A row of fields is followed by the next field at the distance a field is
+   followed by one. */
+.row.fields {
+  margin-bottom: 10px;
+}
+
+/* The languages a template or layout is written in, beside its name: chips
+   on the name's own line, centred on it. */
+.languages {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* One field per variable, as many across as fit. */
+.variables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.preview-subject {
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.preview-subject .muted {
+  font-weight: 400;
+}
+
+/* One column, held to a readable width: a message with no preview beside it
+   should not stretch across a wide screen either. */
+.editor-single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 900px;
+}
+
+/* A link dressed as a button, for an action that goes somewhere. The
+   button rules above give it the look; this gives it the sizing a link
+   lacks and takes the underline away. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  text-decoration: none;
+  line-height: normal;
+}
+
+a.button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+a.button:hover {
+  background: var(--sidebar-hover);
+}
+
+a.button.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* --- composing a message ---------------------------------------------------
+   The local part is typed and the domain is fixed beside it: what is being
+   chosen is the mailbox, and the domain was chosen a field earlier. */
+.address-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.address-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The wrapper and the @ are spans inside a label, which the rule for a
+   label's caption would otherwise style: a caption's margin under the
+   wrapper made this control taller than the one beside it, so the two
+   labels no longer lined up. */
+.address-input,
+.address-input > span {
+  margin: 0;
+  font-size: inherit;
+}
+
+.address-input select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+/* A select draws itself a little taller than an input with the same padding,
+   which put the caption of this field two pixels above its neighbour's. */
+.address-input > input,
+.address-input > select {
+  height: 36px;
+}
+
+.address-domain {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.editor-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-label);
+}
+
+.editor-switch button {
+  padding: 3px 10px;
+  border-radius: var(--radius-round);
+  font-size: var(--text-label);
+}
+
+.editor-switch button.active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+}
+
+.richtext {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  margin-bottom: var(--space-3);
+}
+
+.richtext:focus-within {
+  border-color: var(--text);
+}
+
+.richtext-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.richtext-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.richtext-toolbar button:hover {
+  background: var(--sidebar-hover);
+}
+
+.richtext-bold { font-weight: 700; }
+.richtext-italic { font-style: italic; }
+.richtext-underline { text-decoration: underline; }
+
+.richtext-link {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.richtext-link input {
+  width: 260px;
+  padding: 4px 8px;
+}
+
+.richtext-editor {
+  min-height: 240px;
+  padding: 12px 14px;
+  outline: none;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.richtext-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.richtext-editor p { margin: 0 0 0.6em; }
+.richtext-editor h2 { margin: 0.4em 0; font-size: 1.3em; }
+.richtext-editor blockquote { margin: 0.4em 0; padding-left: 12px; border-left: 3px solid var(--border-strong); color: var(--muted); }
+.richtext-editor a { color: var(--accent); }
+
+.attachments {
+  margin: var(--space-3) 0;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 0;
+  font-size: var(--text-body);
+}
+
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}

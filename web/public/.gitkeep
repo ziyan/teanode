@@ -1,0 +1,4 @@
+The dashboard build output goes into internal/frontend/static. That directory
+is committed with this placeholder so that go:embed succeeds on a clean
+checkout, before `make web` has ever run. The build copies this file back,
+because webpack empties the output directory first.
