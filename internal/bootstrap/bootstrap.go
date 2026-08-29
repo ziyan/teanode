@@ -328,7 +328,6 @@ var seedVariables = []struct {
 	}},
 }
 
-
 func (self *Bootstrap) loadSeed() error {
 	for _, variable := range seedVariables {
 		value, ok := lookup(variable.name)
