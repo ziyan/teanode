@@ -46,8 +46,12 @@ publishes.
 - [x] (2026-09-03) Milestone four: pushed to a new `ziyan/teanode`, and a fresh
       clone of it passes `make lint-ci`, 619 unit tests, and the 84-check
       deployment test that builds the image from the tree.
+- [x] (2026-09-03) CI is green on the new repository: dashboard, container
+      image and server, the last of which runs the tests under `-race`.
 - [ ] The repository is created private. Flipping it public is the owner's,
-      and is the last step.
+      and is the last step. After the flip, enable private vulnerability
+      reporting — the API refuses it on a private repository, and
+      `SECURITY.md` links to it.
 
 ## Surprises & Discoveries
 
@@ -73,6 +77,12 @@ publishes.
   the ACME retry loop has no ceiling. It has had per-certificate exponential
   backoff, five minutes doubling to a day, since `2026-09-02`. A published
   review that overstates a defect is as wrong as one that hides it.
+
+- **The first commit failed its own CI.** `make check` — gofmt — was not part
+  of `make lint-ci`, although that target's help text says it runs the linters
+  CI runs, and CI runs both. One blank line in `internal/bootstrap` had been
+  wrong for some time and nothing on a developer's machine would say so.
+  `lint-ci` now includes it.
 
 - **The changelog stops before today.** Everything since the compose merge —
   pictures in mail, opens, the picture host, three API fixes — is absent, on a
