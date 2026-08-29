@@ -1,0 +1,26 @@
+name: Changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    # An explicit label is the escape hatch, for changes an operator genuinely
+    # cannot observe.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no changelog') }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for an entry
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          .github/scripts/check-pr-changelog.sh "origin/${{ github.base_ref }}"

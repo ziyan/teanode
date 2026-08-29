@@ -1,0 +1,156 @@
+# A whole TeaNode deployment, on one machine, that proves the thing works
+# before it goes anywhere near a real server.
+#
+#     make test-deployment
+#
+# It is the production stack with three differences, each of which is about
+# not needing the internet or a privileged port:
+#
+#   - a bridge network with the ports shifted, rather than host networking on
+#     25, 80, 443 and 587
+#   - a self-signed certificate, rather than one from a certificate authority
+#     that would have to validate a domain nobody owns
+#   - mailpit standing in for the internet, so a forwarded message has
+#     somewhere real to arrive and the test can go and look at it
+#   - a DNS server answering for .test, so SPF, DKIM and DMARC are exercised
+#     rather than skipped. Without it a sender domain either does not resolve,
+#     which is an SPF error, or is a real domain, which is somebody else's
+#     record to depend on.
+#
+# MinIO is here for the same reason it is in production: it is where the raw
+# messages go when more than one instance shares a spool, and a store that is
+# never exercised is a store nobody knows is broken.
+#
+# Everything else — the image, the migrations, the SMTP conversation, DKIM
+# signing, the dashboard, the API — is what runs in production.
+name: teanode-test
+
+# Fixed addresses, because a container's DNS server has to be given as an
+# address and the SPF record has to name the range mail arrives from.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: teanode
+      POSTGRES_USER: teanode
+      POSTGRES_PASSWORD: teanode
+    # Published so that the command line client can set the deployment up
+    # before the server starts, the same way an operator would. Shifted off
+    # 5432 to miss a real PostgreSQL, and off the development port to miss
+    # that too.
+    ports:
+      - "127.0.0.1:15433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teanode"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    # Published so the test can look in the bucket, rather than trust that a
+    # message the server said it stored is really there.
+    ports:
+      - "127.0.0.1:19100:9000"
+    environment:
+      MINIO_ROOT_USER: teanode
+      MINIO_ROOT_PASSWORD: teanodeteanode
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio-bucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 teanode teanodeteanode
+        mc mb --ignore-existing local/teanode
+
+  # Stands in for the mail server an alias forwards to. Its API is how the
+  # test checks that a message actually arrived, rather than only that TeaNode
+  # said it sent one.
+  # Answers for .test: an SPF record for the sending domain, and the MX, DKIM
+  # and DMARC records for the domain being served. The zone is written by
+  # scripts/test-deployment.bash, because the DKIM key is generated per run.
+  coredns:
+    image: coredns/coredns:latest
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./test/dns:/etc/coredns:ro
+    networks:
+      default:
+        ipv4_address: 172.28.0.53
+
+  mailpit:
+    image: axllent/mailpit:latest
+    networks:
+      default:
+        ipv4_address: 172.28.0.20
+    environment:
+      # Port 25, so that mail TeaNode sends by looking up an MX record arrives
+      # here too, not only mail handed straight to it by an alias.
+      MP_SMTP_BIND_ADDR: "0.0.0.0:25"
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "127.0.0.1:18025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  teanode:
+    image: teanode:test
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-bucket:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+      coredns:
+        condition: service_started
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
+    # Resolve through the zone above rather than through the internet, so the
+    # authentication checks have records to read.
+    dns:
+      - 172.28.0.53
+    # The image runs as uid 65532. This is the one privilege it still needs:
+    # binding 25, 80, 443 and 587, all below 1024.
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "127.0.0.1:12525:25"    # incoming mail
+      - "127.0.0.1:12587:587"   # submission
+      - "127.0.0.1:12580:80"    # dashboard and API
+    volumes:
+      - ./test/data:/var/lib/teanode:rw
+    env_file:
+      - ./test/.env
+    environment:
+      # Overrides the same variable in the env file, which points at the
+      # published port because the command line client runs on the host. In
+      # here the database is a service name.
+      TEANODE_DATABASE_URL: postgres://teanode:teanode@postgres:5432/teanode?sslmode=disable
+      TEANODE_S3_ENDPOINT: http://minio:9000
+    command: ["run"]

@@ -1,0 +1,101 @@
+# Services a development server needs. Started by `make dev-up`.
+#
+# Ports are shifted away from the defaults so this never collides with a real
+# PostgreSQL or a real mail stack on the same machine.
+#
+# Service state lives in named volumes rather than under dev/. A bind mount
+# would be created root-owned by the container, and the rest of dev/ has to
+# stay writable by you.
+name: teanode-dev
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: teanode
+      POSTGRES_USER: teanode
+      POSTGRES_PASSWORD: teanode
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teanode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Where half-finished passkey sign-ins wait. Development uses it for the
+  # same reason it uses MinIO: the path several instances share is the one
+  # worth exercising while working on it.
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional; started only with `make dev-up PROFILE=full`. ClamAV wants a
+  # couple of gigabytes for its signature database, which is a lot to ask of a
+  # laptop that is only working on the SMTP conversation.
+  clamav:
+    image: clamav/clamav:stable
+    profiles: [full]
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav:/var/lib/clamav
+
+  # The object store the .eml files go in. Development uses it too, rather
+  # than local disk, so that the path several instances share is the one that
+  # gets exercised while working on it.
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: teanode
+      MINIO_ROOT_PASSWORD: teanodeteanode
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Creates the bucket and exits. MinIO has no way to declare one at startup,
+  # and a server that finds no bucket cannot store a message.
+  minio-bucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 teanode teanodeteanode
+        mc mb --ignore-existing local/teanode
+
+  spamassassin:
+    image: tiredofit/spamassassin
+    profiles: [full]
+    ports:
+      - "127.0.0.1:783:783"
+    environment:
+      UPDATE_PERIOD: '*/15 * * * *'
+      CHILD_MAX: 2
+      CHILD_MAX_SPARE: 1
+      ENABLE_LEARNING: 'FALSE'
+
+volumes:
+  postgres:
+  minio:
+  clamav:
