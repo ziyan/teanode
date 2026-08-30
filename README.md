@@ -17,7 +17,7 @@ flowchart LR
     A["hello@example.com"] --> T
     B["billing@example.com"] --> T
     C["anything else@example.com"] --> T
-    T["**TeaNode**<br/>SPF · DKIM · DMARC · ARC"]
+    T["TeaNode<br/>SPF · DKIM · DMARC · ARC"]
     T --> D["you@example.net"]
     T --> E["an HTTP endpoint"]
     T --> F["another mail server"]
