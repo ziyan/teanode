@@ -99,9 +99,13 @@ now with no memory of the conversation that produced it.
 
 ## Changelog
 
-User-visible changes get an entry in `CHANGELOG.md` under Unreleased, in the
-Keep a Changelog categories. Internal refactoring that an operator cannot
-observe does not need one.
+User-visible changes get a changelog entry, and there are two places to put
+one. The Changelog block of the pull request description is where most of them
+belong: it is reviewed alongside the change it describes, and the release bot
+collects it. Writing straight into `CHANGELOG.md` under Unreleased is the other
+way, and is what somebody committing to main does. Internal refactoring that an
+operator cannot observe needs neither; say so in the description and label the
+pull request `no changelog`.
 
 That entry is also what releases the change. Every push to `main` that leaves
 something under Unreleased is cut into a release: the version comes from the
@@ -113,6 +117,10 @@ To see what would happen before pushing:
 
     .github/scripts/cut-release.sh          # says the version, writes nothing
     .github/scripts/changelog.sh 0.2.0      # the notes that version would carry
+
+On a laptop that reads only `CHANGELOG.md`; it says so, and says why. Reading
+the pull requests takes `GITHUB_REPOSITORY` and a token, which the workflow
+passes it.
 
 A major version is never inferred. Deciding that a change breaks whoever is
 running this is a judgement, so it is the "Major release" workflow, run by

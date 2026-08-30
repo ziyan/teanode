@@ -20,7 +20,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Through a file rather than an argument: a description is somebody
+      # else's text, and text that reaches a shell as an argument is text that
+      # can end a command and start another.
+      - name: Take the description
+        env:
+          DESCRIPTION: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$DESCRIPTION" > /tmp/pull-request-body.md
+
       - name: Check for an entry
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}"
-          .github/scripts/check-pr-changelog.sh "origin/${{ github.base_ref }}"
+          .github/scripts/check-pr-changelog.sh "origin/${{ github.base_ref }}" /tmp/pull-request-body.md
