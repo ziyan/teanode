@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   cut:
@@ -45,6 +46,8 @@ jobs:
 
       - name: Work out the version and date the changelog
         id: cut
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/cut-release.sh --write --major
 
       - name: Refuse a release with nothing in it

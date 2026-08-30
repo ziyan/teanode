@@ -20,6 +20,9 @@ concurrency:
 
 permissions:
   contents: write
+  # The entries live in the descriptions of the pull requests merged since the
+  # last tag, and reading those takes a token with this.
+  pull-requests: read
 
 jobs:
   cut:
@@ -58,6 +61,13 @@ jobs:
       - name: Work out the version and date the changelog
         id: cut
         if: steps.token.outputs.have == 'true'
+        # Actions does not put a token in the environment by itself, and
+        # without one no description is read — so there are no entries, and a
+        # release with no entries is a legitimate outcome that fails nothing.
+        # It would report "nothing to release", which would be true and would
+        # not be the reason.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/cut-release.sh --write
 
       - name: Check the notes read back
