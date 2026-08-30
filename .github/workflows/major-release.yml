@@ -1,0 +1,70 @@
+name: Major release
+
+# A major release is never automatic. Deciding that a change breaks whoever is
+# running the thing is a judgement, and it is made by a person who then has to
+# type the word.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type MAJOR to confirm a major version bump.'
+        required: true
+        default: ''
+
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    name: Cut a major release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check the confirmation and the token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ "${{ inputs.confirm }}" != "MAJOR" ]; then
+            echo "::error::Type MAJOR to confirm. Nothing was released."
+            exit 1
+          fi
+          if [ -z "${RELEASE_TOKEN}" ]; then
+            echo "::error::No RELEASE_TOKEN is set, so nothing can be pushed. Nothing was released."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Work out the version and date the changelog
+        id: cut
+        run: .github/scripts/cut-release.sh --write --major
+
+      - name: Refuse a release with nothing in it
+        if: steps.cut.outputs.released != 'true'
+        run: |
+          echo "::error::There is nothing under [Unreleased] to release."
+          exit 1
+
+      - name: Check the notes read back
+        run: .github/scripts/changelog.sh "${{ steps.cut.outputs.version }}" >/dev/null
+
+      - name: Commit and tag
+        run: |
+          git config user.name "teanode-release"
+          git config user.email "teanode-release@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.cut.outputs.tag }}"
+          git tag -a "${{ steps.cut.outputs.tag }}" -m "${{ steps.cut.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.cut.outputs.tag }}"
+
+      - name: Say what happened
+        run: echo "Released ${{ steps.cut.outputs.tag }}." >> "$GITHUB_STEP_SUMMARY"

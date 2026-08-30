@@ -1,0 +1,89 @@
+name: Auto release
+
+# Every push to main that leaves something under "Unreleased" in the changelog
+# becomes a release. Pushes that do not — a refactor, a test, a comment — do
+# nothing, which is most of them.
+#
+# The tag this pushes is what triggers release.yml, which does the building and
+# the publishing. Keeping the two apart means a release can also be cut by
+# pushing a tag by hand, and that path is exercised by every release this makes.
+
+on:
+  push:
+    branches: [main]
+
+# One at a time. Two pushes in quick succession would otherwise both read the
+# same last version and try to create the same tag.
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    name: Cut a release if there is one
+    runs-on: ubuntu-latest
+    # Skip the commit this workflow itself pushes, or it would release for
+    # ever.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+
+    steps:
+      # A fork has no RELEASE_TOKEN, and a fork's pushes should not turn red
+      # for want of a credential it was never meant to have. The secrets
+      # context cannot be read in a job-level condition, so it is read here and
+      # every later step asks this one.
+      - name: Look for the release token
+        id: token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "${RELEASE_TOKEN}" ]; then
+            echo "have=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.have == 'true'
+        with:
+          fetch-depth: 0 # the version comes from the tags
+          # RELEASE_TOKEN rather than the default token: a push made with the
+          # default token does not start another workflow, and the whole point
+          # of the tag this creates is to start release.yml. It also has to be
+          # able to push to main, which is protected.
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Work out the version and date the changelog
+        id: cut
+        if: steps.token.outputs.have == 'true'
+        run: .github/scripts/cut-release.sh --write
+
+      - name: Check the notes read back
+        if: steps.cut.outputs.released == 'true'
+        # The publishing workflow reads the section by version. Finding out
+        # here that it cannot costs seconds; finding out there costs a tag that
+        # has to be deleted.
+        run: .github/scripts/changelog.sh "${{ steps.cut.outputs.version }}" >/dev/null
+
+      - name: Commit and tag
+        if: steps.cut.outputs.released == 'true'
+        run: |
+          git config user.name "teanode-release"
+          git config user.email "teanode-release@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.cut.outputs.tag }}"
+          git tag -a "${{ steps.cut.outputs.tag }}" -m "${{ steps.cut.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.cut.outputs.tag }}"
+
+      - name: Say what happened
+        run: |
+          if [ "${{ steps.token.outputs.have }}" != "true" ]; then
+            echo "No RELEASE_TOKEN is set, so nothing was released. Set one to turn this on." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.cut.outputs.released }}" = "true" ]; then
+            echo "Released ${{ steps.cut.outputs.tag }}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Nothing under [Unreleased] in the changelog, so nothing was released." >> "$GITHUB_STEP_SUMMARY"
+          fi

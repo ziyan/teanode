@@ -103,6 +103,21 @@ User-visible changes get an entry in `CHANGELOG.md` under Unreleased, in the
 Keep a Changelog categories. Internal refactoring that an operator cannot
 observe does not need one.
 
+That entry is also what releases the change. Every push to `main` that leaves
+something under Unreleased is cut into a release: the version comes from the
+entries — `Added` or `Removed` means a new minor, anything else a new patch —
+and the tag it pushes is what builds the binaries and the container image. A
+push with nothing under Unreleased releases nothing, which is most pushes.
+
+To see what would happen before pushing:
+
+    .github/scripts/cut-release.sh          # says the version, writes nothing
+    .github/scripts/changelog.sh 0.2.0      # the notes that version would carry
+
+A major version is never inferred. Deciding that a change breaks whoever is
+running this is a judgement, so it is the "Major release" workflow, run by
+hand, with the word MAJOR typed into it.
+
 ## Decisions
 
 If your change makes a choice a future reader would question, write a decision
