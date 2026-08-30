@@ -13,7 +13,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-readonly BASE="${1:-origin/master}"
+readonly BASE="${1:-origin/main}"
 
 changed="$(git diff --name-only "${BASE}"...HEAD)"
 

@@ -290,7 +290,7 @@ const header = `# TeaNode configuration.
 # It holds signing keys, credential keys and the server secret, so it is as
 # sensitive as a private key. Paths are relative to server.dataDirectory
 # unless they start with a "/".
-# Documentation: https://github.com/ziyan/teanode/blob/master/docs/configuration.md
+# Documentation: https://github.com/ziyan/teanode/blob/main/docs/configuration.md
 `
 
 // Save writes a configuration to disk atomically: the new content goes to a
