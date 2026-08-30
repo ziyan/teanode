@@ -102,7 +102,7 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 # has run against this database, the settings below marked "first run only"
 # are ignored, and the dashboard is where they change.
 #
-# Documentation: https://github.com/ziyan/teanode/blob/master/docs/configuration.md
+# Documentation: https://github.com/ziyan/teanode/blob/main/docs/configuration.md
 
 # Required. Where the configuration, the mail and the counters are kept.
 %sDATABASE_URL=%s
