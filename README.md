@@ -12,9 +12,16 @@ It is deliberately **not** a mailbox server. There is no IMAP and no inbox.
 Keep reading mail wherever you read it now; TeaNode owns the domain, the
 authentication and the routing.
 
-    hello@example.com    ─┐
-    billing@example.com  ├─►  TeaNode  ─►  you@example.net
-    anything-else@...     ─┘
+```mermaid
+flowchart LR
+    A["hello@example.com"] --> T
+    B["billing@example.com"] --> T
+    C["anything else@example.com"] --> T
+    T["**TeaNode**<br/>SPF · DKIM · DMARC · ARC"]
+    T --> D["you@example.net"]
+    T --> E["an HTTP endpoint"]
+    T --> F["another mail server"]
+```
 
 ## Why
 
@@ -23,6 +30,18 @@ assembling Postfix, Dovecot, OpenDKIM, OpenDMARC, SpamAssassin and a policy
 daemon and keeping them in agreement. This is one executable and a PostgreSQL
 database, with the authentication that decides whether your mail is trusted
 built in rather than bolted on.
+
+## What it looks like
+
+The dashboard is compiled into the binary; there is nothing else to deploy.
+
+![The mail list, filtered to one domain](docs/images/mail-list.jpg)
+
+Every message this server has handled, what it decided about each one, and —
+for mail sent from a template — whether the recipient's mail program fetched
+the pictures in it. Clicking a row shows the authentication verdicts with the
+evidence behind them, every delivery attempt and why any of them failed, and
+the message itself with scripts stripped.
 
 ## Getting started
 
@@ -48,10 +67,6 @@ generated with the domain. Publish it, along with an MX record pointing at your
 server, then:
 
     teanode run
-
-Configuration lives in the database from here on, so a second instance sharing
-that database serves the same domains, and the `.env` is only ever read for
-where the database is.
 
 The dashboard is on the same host. It lists exactly which DNS records are still
 missing, so you can see what is left rather than guessing.
@@ -88,6 +103,10 @@ authentication verdicts, the delivery attempts and why any of them failed, and
 the body itself with scripts stripped and remote images blocked until you ask
 for them.
 
+**Sends mail you write.** Templates with variables and translations, a layout
+around them, pictures served from your own domain, and a record of whether the
+recipient's mail program fetched them.
+
 **Reports on your domains.** Incoming DMARC aggregate reports are parsed and
 kept, which is how you find out somebody is forging your domain.
 
@@ -95,14 +114,32 @@ kept, which is how you find out somebody is forging your domain.
 mirror of stored messages, an outbound SOCKS5 proxy for hosts whose address has
 a poor reputation, and DNS-01 certificates if you need a wildcard.
 
+## How a message gets through it
+
+```mermaid
+flowchart TD
+    internet["The internet<br/>port 25"] --> smtpd["SMTP listener"]
+    devices["Your devices<br/>port 587, with a credential"] --> smtpd
+    smtpd --> route{"What is this?"}
+
+    route -->|"a signed bounce or report address"| reports["Bounce, or a DMARC<br/>aggregate report"]
+    route -->|"an authenticated credential"| outbound["Sign with the domain's key<br/>and relay it"]
+    route -->|"anything else"| inbound["Inbound mail"]
+
+    inbound --> checks["SPF · DKIM · DMARC · ARC<br/>optional virus and spam scan"]
+    checks --> stored["Recorded, with what<br/>each check decided"]
+    stored --> aliases["Match the local part against<br/>this domain's aliases"]
+    aliases --> delivery["One delivery per match:<br/>mailbox, webhook, or relay"]
+```
+
+Every arrow above is a place the dashboard can show you what happened, which is
+the point of recording it.
+
 ## Configuration
 
-One file. It is read at startup, re-read on `SIGHUP`, and rewritten by the
-dashboard when you change something there.
-
-    server:
-      name: mail.example.com
-      dataDirectory: /opt/teanode/data
+Configuration lives in the database, so several instances share one answer and
+a change made in the dashboard reaches all of them. The environment says only
+where that database is; everything else is stored.
 
     domains:
       - id: 01K2ZQ7B8MPJ3F9XV4T6WYNRC0
@@ -118,7 +155,10 @@ dashboard when you change something there.
             kind: email
             email: everything@example.net
 
-Every field is documented in `docs/configuration.md`.
+That is what `teanode config show` prints and what `teanode config import`
+reads, so a whole server can be described in a file, put under version control
+and loaded — but the running server's answer is the database. Every field is
+documented in `docs/configuration.md`.
 
 ## Running it
 
@@ -138,6 +178,9 @@ for orientation, `docs/decisions/` for why the architecture is the way it is.
 Do not open a public issue for anything exploitable in mail handling,
 authentication or certificate issuance. Report it privately through the
 Security tab; `SECURITY.md` has the details and says what is in scope.
+
+`docs/security/security-review.md` records a review of the whole program: what
+was found, what was fixed, and what is still open.
 
 ## Licence
 
