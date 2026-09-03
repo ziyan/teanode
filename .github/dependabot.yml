@@ -1,0 +1,42 @@
+# Dependency updates, proposed as pull requests.
+#
+# Weekly rather than daily: this is a mail server, and a pull request every
+# morning is a pull request nobody reads. Weekly is often enough that an
+# update is a small diff and rare enough that somebody looks at it.
+#
+# The Go dependencies are vendored, and Dependabot updates vendor/ along with
+# go.mod and go.sum — without that the build, which uses -mod=vendor, would
+# break on every one of these.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request for the AWS SDK rather than nine. It moves as a set,
+      # and reviewing nine identical version bumps teaches nobody anything.
+      aws:
+        patterns: ['github.com/aws/aws-sdk-go-v2*']
+      golang-x:
+        patterns: ['golang.org/x/*']
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # The dashboard's build tooling, which changes together and is not
+      # shipped to anybody: webpack, its loaders, the TypeScript compiler.
+      build:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -1,0 +1,44 @@
+name: Vulnerabilities
+
+# govulncheck against the current database, on a schedule rather than on every
+# push. A vulnerability is found when somebody publishes it, not when somebody
+# pushes a commit, and a check that only runs on a change would first report a
+# month-old problem on an unrelated pull request.
+#
+# The security review that opened this repository found forty-three reachable
+# vulnerabilities nobody had looked for. This is the part of that review that
+# repeats.
+
+on:
+  schedule:
+    # Monday morning, off the hour: everything scheduled on the hour queues
+    # behind everything else scheduled on the hour.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: Known vulnerabilities
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false # dependencies are vendored
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # Reachability, not presence: govulncheck reports a vulnerability only
+      # when this program actually calls the affected code, which is the
+      # difference between a list worth reading and a list nobody reads.
+      - name: Check
+        env:
+          GOFLAGS: -mod=vendor
+        run: govulncheck ./...

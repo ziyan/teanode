@@ -162,8 +162,14 @@ documented in `docs/configuration.md`.
 
 ## Running it
 
-`deploy/` has a systemd unit and a docker compose file. The container image
-carries the dashboard and nothing else — no shell, no package manager.
+`deploy/` has a systemd unit and a docker compose file that pulls the
+published image:
+
+    docker pull ghcr.io/ziyan/teanode:latest
+
+The image carries the dashboard and nothing else — no shell, no package
+manager. `docker compose build` still builds the checkout, which is what you
+want when the change you are running is one you just made.
 
 ## Contributing
 

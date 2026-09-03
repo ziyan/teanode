@@ -170,7 +170,13 @@ services:
         max-file: "10"
 
   teanode:
-    image: teanode:latest
+    # The published image, so "docker compose up -d" pulls rather than builds.
+    # Pin the version rather than following latest on a mail server somebody
+    # depends on: an upgrade should be a thing you did, on a day you chose.
+    image: ghcr.io/ziyan/teanode:latest
+    # Kept, so that "docker compose build" still builds this checkout — which
+    # is what you want when the change you are running is the one you just
+    # made.
     build:
       context: ..
       dockerfile: deploy/Dockerfile
