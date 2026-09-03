@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-03
+
+### Changed
+
+- `deploy/docker-compose.yml` pulls `ghcr.io/ziyan/teanode` rather than naming
+  a locally built image, so `docker compose up -d` works on a machine that has
+  never built this. `docker compose build` still builds the checkout. The tag
+  is `latest` and the comment beside it says to pin a version: an upgrade to a
+  mail server should be a thing you did, on a day you chose. (#2)
 ## [0.1.1] - 2026-09-03
 
 ### Fixed
