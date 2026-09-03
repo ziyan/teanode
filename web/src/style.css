@@ -281,14 +281,20 @@ td a:hover {
   display: flex;
   align-items: center;
   min-width: 0;
+  /* The same air between a crumb and the chevron after it as the crumb below
+     puts between that chevron and its own label. Without it the gap fell on
+     one side only, and the trail read as "Domains> example.com> Templates" —
+     each chevron stuck to the word behind it. */
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
   overflow: hidden;
   font-size: var(--text-label);
   color: var(--muted);
 }
 
-/* Each crumb carries the chevron that precedes it, so the air either side of
-   the separator is the same everywhere and comes from one rule. */
+/* Each crumb carries the chevron that precedes it, so one rule sets the air
+   on both sides of every separator: this gap after it, the container's gap
+   before it. */
 .crumb {
   display: flex;
   align-items: center;
@@ -369,7 +375,13 @@ td a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-floating);
-  z-index: 30;
+  /* Above the rail, which on a phone is a fixed overlay at 40 with a scrim at
+     35 — and the menu is rendered into the body, so it is the rail's sibling
+     rather than its child and does not inherit its layer. At 30 the account
+     menu opened behind the rail that triggered it: invisible, and nothing on
+     it could be tapped. Below the dialog scrim at 50, because a dialog is
+     modal and a menu is not. */
+  z-index: 45;
 }
 
 /* A rule between groups of menu items. Ten items in one column read as a
@@ -1413,7 +1425,35 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   font-size: 14px;
 }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+/* Scrolls sideways rather than wrapping, because tabs are a row: wrapped onto
+   a second line they stop reading as one set of alternatives, and the line
+   they wrap onto moves as the labels change with the language. Five tabs are
+   wider than a phone, so the row that does not fit is scrolled and the tab
+   half in view says so. */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  overflow-x: auto;
+  /* No scrollbar under the tabs: on a phone it is an overlay that appears
+     while scrolling, and on a desktop the row fits and a permanent gutter
+     under it would be a line that means nothing. */
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* A tab keeps its width in a row that scrolls; the default would squeeze them
+   all until every label was unreadable. */
+.tabs button,
+.tabs .tab-action {
+  flex: 0 0 auto;
+}
+
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font-weight: 550; padding: 8px 2px; margin-right: 22px; }
 .tabs button:hover:not(:disabled) { background: none; color: var(--text); }
 
@@ -1430,6 +1470,22 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 
 .tabs .tab-action:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  /* Closer together, so more of the row is in view before it has to be
+     scrolled. */
+  .tabs button {
+    margin-right: 12px;
+  }
+
+  /* The download is not offered here. It saves an .eml, which on a phone is a
+     file most things refuse to open, and in a scrolling row it sat past the
+     end where nobody would find it anyway. The message itself is on the page,
+     and the same link is a tap away on anything larger. */
+  .tabs .tab-action {
+    display: none;
+  }
 }
 /* The indicator is the text colour rather than the accent. Switching a
    section of the page is not an action to be pressed, and colouring it spends
@@ -2324,6 +2380,30 @@ body,
   align-items: center;
   gap: var(--space-3);
   flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  /* Stacked. The action is as wide as its words, and beside it on a phone the
+     description is left a column four words across with a tall empty space
+     under the button — the heading of a section should not be the widest
+     thing in it.
+
+     The row goes the same way: what the actions act on takes the line, and
+     the actions take the next one. Half a row each meant a subtitle wrapping
+     to four lines next to two buttons and a lot of nothing under them. */
+  .settings-section-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .settings-row-body {
+    min-width: 100%;
+  }
+
+  .settings-row-actions {
+    width: 100%;
+  }
 }
 
 /* Having none of something is ordinary, so it is said rather than shown as an
