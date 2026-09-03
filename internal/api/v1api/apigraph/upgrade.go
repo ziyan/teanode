@@ -62,6 +62,9 @@ type Upgrade struct {
 	// Whether the release list is consulted at all
 	Enabled bool `json:"enabled"`
 
+	// The hours an automatic upgrade may run in, as stored
+	Window string `json:"window,omitempty"`
+
 	// Why the last check failed, which is a different thing from why the last
 	// upgrade did
 	CheckError string `json:"checkError,omitempty"`
@@ -130,7 +133,10 @@ func (self *graph) ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArgum
 	}
 	status, err := self.upgrade.Start(expected)
 	if err != nil {
-		if errors.Is(err, upgrade.ErrNotApplicable) {
+		// Both are answers rather than failures: this deployment cannot
+		// upgrade itself, or one is already going. A caller should see the
+		// sentence, not a five hundred.
+		if errors.Is(err, upgrade.ErrNotApplicable) || errors.Is(err, upgrade.ErrAlreadyRunning) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 		}
 		return nil, err
@@ -151,6 +157,7 @@ func describeUpgrade(status upgrade.Status) *Upgrade {
 		Automatic:  status.Automatic,
 		Upgrading:  status.Upgrading,
 		Enabled:    status.Enabled,
+		Window:     status.Window,
 		CheckError: status.CheckError,
 	}
 }

@@ -754,5 +754,6 @@ export const zh: Catalog = {
     '会下载该版本，根据随它一起发布的校验和核对，然后覆盖当前二进制；旧的一份会保留在旁边。随后服务器重启，期间数秒不接收邮件，发件方会重试。',
   'upgrade.confirmUpgrade': '下载并重启',
   'upgrade.cannot': '无法在此升级：{reason}。',
+  'upgrade.automaticOnWindow': '已开启自动升级（本地时间 {window}）：新版本会在不询问的情况下安装。',
   'upgrade.automaticOn': '已开启自动升级：新版本会在不询问的情况下安装。',
 }

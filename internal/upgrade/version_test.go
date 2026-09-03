@@ -27,9 +27,15 @@ func TestIsUpgrade(t *testing.T) {
 		// and every development server would otherwise carry a notice.
 		{"a development build", developmentVersion, "9.9.9", false},
 
-		// A prerelease is something somebody asks for by name.
+		// A prerelease is something somebody asks for by name, so it is
+		// never offered.
 		{"a prerelease candidate", "0.1.0", "0.2.0-rc.1", false},
-		{"running a prerelease", "0.2.0-rc.1", "0.2.0", false},
+
+		// But somebody already on one should be moved off it: the release is
+		// what the candidate was a candidate for.
+		{"the release a candidate led to", "0.2.0-rc.1", "0.2.0", true},
+		{"a later release than the candidate", "0.2.0-rc.1", "0.3.0", true},
+		{"an earlier release than the candidate", "0.2.0-rc.1", "0.1.0", false},
 
 		// Unreadable on either side answers no, which leaves a working server
 		// alone.

@@ -66,6 +66,12 @@ type Status struct {
 	Applicable bool   `json:"applicable"`
 	Reason     string `json:"reason,omitempty"`
 
+	// Window is the hours an automatic upgrade may run in, as it is stored.
+	// Settable through the API, so it has to be readable through it: every
+	// other setting has a matching read, and one that can only be written is
+	// one nobody can check.
+	Window string `json:"window,omitempty"`
+
 	// Automatic says upgrades are installed without being asked, and Enabled
 	// that the release list is consulted at all. Turning checking off means
 	// off: the button on the page stops asking too, rather than the setting
@@ -291,6 +297,7 @@ func (self *manager) describe() Status {
 		settings := self.config.Current().Upgrade
 		status.Automatic = settings.Automatic
 		status.Enabled = settings.Enabled
+		status.Window = settings.Window
 	}
 	return status
 }
@@ -403,6 +410,13 @@ func (self *manager) spinOnce(_ context.Context) error {
 
 // Start begins an upgrade and returns immediately.
 func (self *manager) Start(expected string) (Status, error) {
+	if !self.config.Current().Upgrade.Enabled {
+		// Enforced, not hidden. The button disappears because nothing is
+		// known to be available, but the API is reachable from the command
+		// line and from any other client, and "checking is off" should mean
+		// this server does not fetch and run a binary from the internet.
+		return self.Status(), fmt.Errorf("%w: upgrade.enabled is off", ErrNotApplicable)
+	}
 	if applicable, reason := self.applicableNow(); !applicable {
 		return self.Status(), fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
@@ -500,9 +514,20 @@ func (self *manager) sayOnce(message string) {
 	log.Warning(message)
 }
 
-// CheckSoon asks in the background, once at a time.
+// manualCheckInterval is the least time between checks somebody asks for.
+//
+// Single-flighting is not a rate limit: a loop calling GetUpgrade(check: true)
+// finishes each request in a few hundred milliseconds and would spend the
+// endpoint's sixty-an-hour allowance in a minute — and then the scheduled
+// check fails too, for everybody on that address.
+const manualCheckInterval = time.Minute
+
+// CheckSoon asks in the background, once at a time and not too often.
 func (self *manager) CheckSoon() {
 	if !self.config.Current().Upgrade.Enabled {
+		return
+	}
+	if !self.attemptedRecently() {
 		return
 	}
 	if !self.checking.TryLock() {
@@ -516,6 +541,15 @@ func (self *manager) CheckSoon() {
 			log.Warningf("could not check for a release: %s", err)
 		}
 	}()
+}
+
+// attemptedRecently reports whether a check asked for by hand may run: not
+// within a minute of the last one, whoever asked for it.
+func (self *manager) attemptedRecently() bool {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+
+	return self.lastAttempt.IsZero() || time.Since(self.lastAttempt) >= manualCheckInterval
 }
 
 // checkDue reports whether enough time has passed to ask again.
@@ -538,16 +572,20 @@ func (self *manager) checkDue() bool {
 func (self *manager) Check(ctx context.Context) (Status, error) {
 	found, err := latestRelease(ctx, self.client, self.endpoint)
 
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-
-	self.lastAttempt = time.Now()
-
 	// Whether this deployment could apply one is asked again here rather than
 	// only at startup: a directory that was briefly unwritable at boot should
 	// not hide the button for ever, and one that has since been remounted
 	// read-only should not keep offering it.
+	//
+	// Asked before the lock, because it writes a file to find out: on a slow
+	// mount that would block every dashboard read behind it, including the
+	// two-second poll during an upgrade.
 	applicable, reason := self.applicableNow()
+
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	self.lastAttempt = time.Now()
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 

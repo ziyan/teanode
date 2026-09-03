@@ -19,7 +19,7 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes checkedAt error checkError applicable reason automatic enabled upgrading
+      current latest available notes checkedAt error checkError applicable reason automatic enabled window upgrading
     }
   }`
 
@@ -42,6 +42,7 @@ type UpgradeStatus = {
   reason?: string
   automatic: boolean
   enabled: boolean
+  window?: string
   upgrading: boolean
 }
 
@@ -371,7 +372,18 @@ export function ServerPage() {
 // So: an answer is anything the server managed to say, and only a request that
 // never got one is treated as the restart having beaten the reply.
 function isLostConnection(failure: unknown): boolean {
-  return failure instanceof TypeError || (failure instanceof Error && /fetch|network/i.test(failure.message))
+  if (failure instanceof TypeError) {
+    return true
+  }
+  if (!(failure instanceof Error)) {
+    return false
+  }
+  // A gateway's answer for a server that is not there. Behind a reverse proxy
+  // — the ordinary way this dashboard is exposed — a restart produces 502 or
+  // 503 rather than a connection that fails, and reading those as "the server
+  // answered" left the page waiting the full fifteen minutes for an upgrade
+  // that had already finished.
+  return /fetch|network/i.test(failure.message) || /the server returned 50[234]/.test(failure.message)
 }
 
 // UpgradeCard says what is running, what is available, and either offers the
@@ -444,7 +456,13 @@ function UpgradeCard({
 
       {!status.enabled && <p className="notice">{t('upgrade.checkingOff')}</p>}
 
-      {status.automatic && <p className="notice">{t('upgrade.automaticOn')}</p>}
+      {status.automatic && (
+        <p className="notice">
+          {status.window
+            ? t('upgrade.automaticOnWindow', { window: status.window })
+            : t('upgrade.automaticOn')}
+        </p>
+      )}
 
       {!status.applicable && status.reason && (
         <p className="notice" style={{ marginBottom: 0 }}>
