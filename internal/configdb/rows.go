@@ -86,6 +86,7 @@ const (
 	settingGeoIP     = "geoip"
 	settingStorage   = "storage"
 	settingPasskey   = "passkey"
+	settingUpgrade   = "upgrade"
 )
 
 // FromRows builds a configuration from what the database holds.
@@ -110,6 +111,7 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 		settingGeoIP:     &configuration.GeoIP,
 		settingStorage:   &configuration.Storage,
 		settingPasskey:   &configuration.Passkey,
+		settingUpgrade:   &configuration.Upgrade,
 	}
 	for key, target := range sections {
 		stored, ok := rows.Settings[key]
@@ -250,6 +252,7 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 		settingGeoIP:     self.GeoIP,
 		settingStorage:   self.Storage,
 		settingPasskey:   self.Passkey,
+		settingUpgrade:   self.Upgrade,
 	}
 	for key, value := range sections {
 		encoded, err := yaml.Marshal(value)

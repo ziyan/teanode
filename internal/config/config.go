@@ -66,6 +66,9 @@ type Configuration struct {
 	// Signing in with a passkey, and where the half-finished ceremonies wait
 	Passkey Passkey `yaml:"passkey"`
 
+	// Checking for new releases, and installing them
+	Upgrade Upgrade `yaml:"upgrade"`
+
 	// Directory holding the configuration file. Relative paths in the file
 	// resolve against it rather than against the process working directory,
 	// so that "teanode credential list" run from a different directory reads
@@ -77,6 +80,47 @@ type Configuration struct {
 	// immutable once it is active, so the tables never go stale; Store
 	// replaces the whole Configuration rather than editing one in place.
 	index index
+}
+
+// Upgrade is how this server learns about new releases, and what it may do
+// about them.
+//
+// Checking is on by default and installing is not. Knowing that a version
+// exists is not the same as installing it, and an operator who is never told
+// is an operator running last year's bugs — but a release can change how mail
+// is handled, and nobody installs a mail server expecting it to change
+// underneath them.
+type Upgrade struct {
+	// Enabled asks the release list what the newest version is, on
+	// CheckInterval, and shows it in the dashboard. One HTTPS request to a
+	// public endpoint, carrying nothing about this deployment.
+	Enabled bool `yaml:"enabled"`
+
+	// Automatic installs what it finds without being asked: download, verify
+	// against the release's checksums, replace this binary, restart.
+	//
+	// It takes any newer release, minor and major alike. A rule that stopped
+	// at a minor version would be a rule that quietly stopped upgrading, and
+	// somebody who turns this on has said they would rather not think about
+	// it. Read the changelog before turning it on, not after.
+	//
+	// It is refused, with the reason on the dashboard, where an upgrade could
+	// not work: in a container, whose image is the thing to replace, and
+	// where nothing would start the process again after it exits.
+	Automatic bool `yaml:"automatic"`
+
+	// CheckInterval is how often to look. Six hours by default: often enough
+	// that a security release is noticed the same day, rarely enough that it
+	// is not a request anybody would notice.
+	CheckInterval Duration `yaml:"checkInterval"`
+
+	// Window restricts automatic upgrades to a time of day, in local time,
+	// as "02:00-04:00". It may cross midnight. Empty means any time.
+	//
+	// An upgrade restarts the server, which takes a few seconds during which
+	// mail is not accepted — senders retry, but a busy hour is still a worse
+	// time than a quiet one.
+	Window string `yaml:"window"`
 }
 
 // Server describes this instance's identity and its state directory.

@@ -27,6 +27,7 @@ import (
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/web"
@@ -44,11 +45,12 @@ func New(
 	locator geoip.Locator,
 	verifier dns.Verifier,
 	sender mailer.Mailer,
+	upgrader upgrade.Manager,
 	authenticator web.Authenticator,
 	ceremonies ceremony.Store,
 	settings *api.Settings,
 ) (web.Component, error) {
-	graph, err := apigraph.New(database, configuration, messages, locator, verifier, sender, authenticator, ceremonies, settings)
+	graph, err := apigraph.New(database, configuration, messages, locator, verifier, sender, upgrader, authenticator, ceremonies, settings)
 	if err != nil {
 		return nil, err
 	}

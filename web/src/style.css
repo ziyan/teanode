@@ -2886,3 +2886,13 @@ a.button.primary:hover {
   align-items: center;
   gap: var(--space-3);
 }
+
+/* The release notes on the version card. A changelog entry is prose with
+   bullets in it, so it keeps its line breaks and is given a bounded height:
+   somebody deciding whether to upgrade should be able to read it here, and
+   should not have to scroll past a year of it to reach the button. */
+.upgrade-notes {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: var(--space-3) 0;
+}

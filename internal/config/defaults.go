@@ -93,6 +93,13 @@ func Default() *Configuration {
 				Region: "us-east-1",
 			},
 		},
+		Upgrade: Upgrade{
+			// Checking is on, installing is not. Being told that a release
+			// exists costs one request every six hours; installing one
+			// without being asked is a decision about somebody's mail.
+			Enabled:       true,
+			CheckInterval: Duration(6 * time.Hour),
+		},
 	}
 }
 

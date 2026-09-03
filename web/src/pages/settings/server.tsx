@@ -16,6 +16,27 @@ const STATUS = `
 
 const RESTART = `mutation { RestartServer { started instance supervision } }`
 
+const UPGRADE = `
+  query ($check: Boolean) {
+    GetUpgrade(check: $check) {
+      current latest available notes checkedAt error applicable reason automatic
+    }
+  }`
+
+const APPLY = `mutation { ApplyUpgrade { current latest available applicable reason } }`
+
+type UpgradeStatus = {
+  current: string
+  latest?: string
+  available: boolean
+  notes?: string
+  checkedAt?: string
+  error?: string
+  applicable: boolean
+  reason?: string
+  automatic: boolean
+}
+
 type ServerStatus = {
   instance: string
   version: string
@@ -45,6 +66,13 @@ export function ServerPage() {
     () => graphql<{ GetServerStatus: ServerStatus }>(STATUS),
     [],
   )
+
+  // Asked separately from the status, and allowed to fail on its own: a
+  // server that cannot reach the release list is a server with an out-of-date
+  // answer to one question, not a broken page.
+  const upgrade = useQuery(() => graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false }), [])
+  const [checking, setChecking] = useState(false)
+  const [upgrading, setUpgrading] = useState(false)
 
   const [confirming, setConfirming] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -79,6 +107,13 @@ export function ServerPage() {
       void caught
     }
 
+    await waitForServer()
+  }
+
+  // The server goes away and is looked for again. Shared by the restart button
+  // and the upgrade button, because an upgrade ends in a restart and the two
+  // waits were the same wait.
+  async function waitForServer() {
     const deadline = Date.now() + RESTART_TIMEOUT_MS
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
@@ -87,6 +122,7 @@ export function ServerPage() {
         setRestarting(false)
         setCameBack(true)
         await reload()
+        await upgrade.reload()
         return
       } catch (caught) {
         void caught
@@ -97,6 +133,36 @@ export function ServerPage() {
         return
       }
     }
+  }
+
+  async function checkForUpgrade() {
+    setProblem(null)
+    setChecking(true)
+    try {
+      await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: true })
+      await upgrade.reload()
+    } catch (failure) {
+      setProblem(String(failure))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  // The reply comes back before the restart, so what follows is the same wait
+  // the restart button does: the server goes away and is looked for again.
+  async function applyUpgrade() {
+    setProblem(null)
+    setUpgrading(true)
+    try {
+      await graphql(APPLY)
+    } catch (failure) {
+      setProblem(String(failure))
+      setUpgrading(false)
+      return
+    }
+    setRestarting(true)
+    await waitForServer()
+    setUpgrading(false)
   }
 
   return (
@@ -132,6 +198,19 @@ export function ServerPage() {
           </dd>
         </dl>
       </div>
+
+      {/* What has been released since this build, and — where it is possible
+          — the button. Above restarting rather than below it because an
+          upgrade is the reason most people arrive at this page, and because
+          an upgrade is a restart with a download in front of it. */}
+      <UpgradeCard
+        status={upgrade.data?.GetUpgrade}
+        loading={upgrade.loading && !upgrade.data}
+        checking={checking}
+        upgrading={upgrading}
+        onCheck={checkForUpgrade}
+        onApply={applyUpgrade}
+      />
 
       <div className="card">
         <h3>{t('server.restart')}</h3>
@@ -171,5 +250,120 @@ export function ServerPage() {
         {restarting && <p className="muted">{t('server.waiting')}</p>}
       </div>
     </>
+  )
+}
+
+// UpgradeCard says what is running, what is available, and either offers the
+// button or says why there is none.
+//
+// The reason matters more than the button. Most deployments of this are
+// containers, where the answer is that the image is the thing to replace —
+// somebody who is told that goes and does it, and somebody shown a greyed-out
+// control goes looking for a bug.
+function UpgradeCard({
+  status,
+  loading,
+  checking,
+  upgrading,
+  onCheck,
+  onApply,
+}: {
+  status?: UpgradeStatus
+  loading: boolean
+  checking: boolean
+  upgrading: boolean
+  onCheck: () => void
+  onApply: () => void
+}) {
+  const { t } = useTranslation()
+  const [confirming, setConfirming] = useState(false)
+
+  if (loading || !status) {
+    return null
+  }
+
+  return (
+    <div className="card">
+      <h3>{t('upgrade.title')}</h3>
+
+      <dl className="properties">
+        <dt>{t('upgrade.running')}</dt>
+        <dd>{status.current}</dd>
+
+        <dt>{t('upgrade.available')}</dt>
+        <dd>
+          {status.available ? (
+            <Tag value={status.latest ?? ''} tone="good" />
+          ) : status.latest ? (
+            <span className="muted">{t('upgrade.upToDate', { version: status.latest })}</span>
+          ) : (
+            <span className="muted">{t('upgrade.notCheckedYet')}</span>
+          )}
+        </dd>
+
+        <dt>{t('upgrade.checked')}</dt>
+        <dd>
+          {status.checkedAt ? (
+            <RelativeTime value={status.checkedAt} />
+          ) : (
+            <span className="muted">{t('common.none')}</span>
+          )}
+          {status.error && <div className="error">{status.error}</div>}
+        </dd>
+      </dl>
+
+      {/* The notes as they were written, in a box that scrolls: a release
+          somebody is deciding about is a release whose changelog they should
+          be able to read here rather than in another tab. */}
+      {status.available && status.notes && (
+        <pre className="message-text upgrade-notes">{status.notes}</pre>
+      )}
+
+      {status.automatic && <p className="notice">{t('upgrade.automaticOn')}</p>}
+
+      {!status.applicable && status.reason && (
+        <p className="notice" style={{ marginBottom: 0 }}>
+          {t('upgrade.cannot', { reason: status.reason })}
+        </p>
+      )}
+
+      <div className="page-actions" style={{ marginTop: 12 }}>
+        <span />
+        <span>
+          <button onClick={onCheck} disabled={checking || upgrading}>
+            {checking ? t('upgrade.checking') : t('upgrade.checkNow')}
+          </button>{' '}
+          {status.available && status.applicable && !confirming && (
+            <button className="primary" onClick={() => setConfirming(true)} disabled={upgrading}>
+              {upgrading ? t('upgrade.upgrading') : t('upgrade.upgradeTo', { version: status.latest ?? '' })}
+            </button>
+          )}
+        </span>
+      </div>
+
+      {confirming && (
+        <>
+          <p style={{ marginBottom: 8 }}>
+            <strong>{t('upgrade.confirmQuestion', { version: status.latest ?? '' })}</strong>
+          </p>
+          <p className="muted">{t('upgrade.confirmExplained')}</p>
+          <button
+            className="primary"
+            disabled={upgrading}
+            onClick={() => {
+              setConfirming(false)
+              onApply()
+            }}
+          >
+            {t('upgrade.confirmUpgrade')}
+          </button>{' '}
+          <button onClick={() => setConfirming(false)} disabled={upgrading}>
+            {t('common.cancel')}
+          </button>
+        </>
+      )}
+
+      {upgrading && <p className="muted">{t('upgrade.waiting')}</p>}
+    </div>
   )
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/autoacme"
 	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/clamav"
@@ -628,7 +629,21 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		log.Noticef("parking passkey ceremonies in redis at %s", address)
 	}
 
-	apiComponent, err := v1api.New(self.database, self.store, self.storage, self.locator, verifier, mailerComponent, authenticator, ceremonies, &api.Settings{
+	// What has been released since this was built, and — if it is turned on
+	// and this deployment can — installing it. Built after the restarter,
+	// because an upgrade ends in a restart and a manager with nothing to ask
+	// for one would swap a binary and leave the old one running.
+	upgrader, err := upgrade.New(self.store, self.restarter)
+	if err != nil {
+		return err
+	}
+	self.defer_(func() {
+		if err := upgrader.Close(); err != nil {
+			log.Errorf("failed to stop the upgrade checker: %s", err)
+		}
+	})
+
+	apiComponent, err := v1api.New(self.database, self.store, self.storage, self.locator, verifier, mailerComponent, upgrader, authenticator, ceremonies, &api.Settings{
 		Secret: self.secret,
 		// The instance, not the server name: the name is the same on every
 		// instance sharing this database, and this is the field that says

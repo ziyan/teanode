@@ -718,6 +718,43 @@ it.
 
 **`database`** — Database number, zero unless something else shares the server.
 
+### `upgrade`
+
+**`enabled`** — Enabled asks the release list what the newest version is, on
+CheckInterval, and shows it in the dashboard. One HTTPS request to a public
+endpoint, carrying nothing about this deployment. On by default: knowing that a
+version exists is not the same as installing it, and an operator who is never
+told is an operator running last year's bugs.
+
+**`automatic`** — Automatic installs what it finds without being asked:
+download, verify against the release's checksums, replace this binary, restart.
+Off by default, because a release can change how mail is handled and nobody
+installs a mail server expecting it to change underneath them. It takes any
+newer release, minor and major alike — a rule that stopped at a minor version
+would be a rule that quietly stopped upgrading. It is refused, with the reason
+shown in the dashboard, where an upgrade could not work: in a container, whose
+image is the thing to replace, and where nothing would start the process again
+after it exits.
+
+**`checkInterval`** — CheckInterval is how often to look. Six hours by default:
+often enough that a security release is noticed the same day, rarely enough
+that it is not a request anybody would notice.
+
+**`window`** — Window restricts automatic upgrades to a time of day, in local
+time, as `02:00-04:00`. It may cross midnight. Empty means any time. An upgrade
+restarts the server, which takes a few seconds during which mail is not
+accepted — senders retry, but a busy hour is still a worse time than a quiet
+one.
+
+What verification means here, said plainly: the binary and the release's
+`SHA256SUMS` are fetched over HTTPS from the repository this server was built
+from, and the hash must match. That proves the bytes are the ones GitHub is
+serving for that release and that the download was not corrupted. It does not
+prove a human meant to publish them: anybody who can publish a release to that
+repository can publish a binary, and this will install it. The repository is
+compiled in rather than configured, so a stolen dashboard session cannot point
+a server at somebody else's builds.
+
 ### `users[].tokens[]`
 
 **`id`** — ID identifies the token, and is the half of the token string that

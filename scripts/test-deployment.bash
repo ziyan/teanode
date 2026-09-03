@@ -1028,6 +1028,39 @@ PYTHON
   fi
 }
 
+# --- upgrades -----------------------------------------------------------------
+
+# This stack is a container, which is the deployment that cannot upgrade itself
+# — the binary is on a read-only layer and the image is what needs replacing.
+# What it must do is say so, with the reason, rather than offering a button
+# that would swap a file and lose it at the next start.
+check_upgrades() {
+  step "Upgrades"
+
+  local status
+  status="$(teanode_cli api call GetUpgrade --select "{ current applicable reason automatic }" 2>&1 || true)"
+
+  if grep -q '"applicable": false' <<<"${status}"; then
+    pass "a container is not offered an upgrade it cannot apply"
+  else
+    fail "the container says it can upgrade itself: $(tr -d '\n' <<<"${status}")"
+  fi
+  if grep -qi 'container' <<<"${status}"; then
+    pass "and the reason says why, so an operator knows to replace the image"
+  else
+    fail "no reason was given: $(tr -d '\n' <<<"${status}")"
+  fi
+  if grep -q '"automatic": false' <<<"${status}"; then
+    pass "automatic upgrades are off unless somebody turns them on"
+  else
+    fail "automatic upgrades are on by default"
+  fi
+
+  # And the refusal is a refusal, not a button that fails halfway through.
+  check_fails_with "applying one is refused rather than half done" "cannot upgrade itself" \
+    teanode_cli api call ApplyUpgrade --select "{ current }"
+}
+
 check_restart() {
   step "Restarting"
 
@@ -1310,6 +1343,7 @@ main() {
   check_rejections
   check_submission
   check_media
+  check_upgrades
   check_restart
   check_upgrade_seals_keys
   check_relay

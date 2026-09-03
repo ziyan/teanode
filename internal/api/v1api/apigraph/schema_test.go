@@ -17,7 +17,7 @@ import (
 func TestSchemaBuilds(t *testing.T) {
 	t.Parallel()
 
-	component, err := New(nil, nil, nil, nil, nil, nil, nil, nil, &api.Settings{})
+	component, err := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, &api.Settings{})
 	if err != nil {
 		t.Fatalf("the schema does not build: %s", err)
 	}
@@ -62,6 +62,21 @@ func TestSchemaBuilds(t *testing.T) {
 		if strings.HasSuffix(field.Type.String(), "!") {
 			t.Errorf("domainParameters.%s is %s; a required field makes every partial update fail",
 				name, field.Type)
+		}
+	}
+
+	// An argument that is only sometimes wanted has to be optional, for the
+	// same reason a partial update's fields are: a plain bool becomes
+	// Boolean!, and then a caller who wants what is already known has to pass
+	// an argument saying so. The deployment test found this one.
+	if field := schema.QueryType().Fields()["GetUpgrade"]; field == nil {
+		t.Error("GetUpgrade is not in the schema")
+	} else {
+		for _, argument := range field.Args {
+			if strings.HasSuffix(argument.Type.String(), "!") {
+				t.Errorf("GetUpgrade's %s is %s; nothing about a check is required",
+					argument.Name(), argument.Type)
+			}
 		}
 	}
 
