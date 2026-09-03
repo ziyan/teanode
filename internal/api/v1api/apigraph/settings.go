@@ -287,6 +287,21 @@ type CertificateParameters struct {
 	PerDomain *bool `json:"perDomain"`
 }
 
+// UpgradeParameters are the release settings an operator can change.
+//
+// The two that take effect immediately. enabled and checkInterval are read
+// when the checker is built, so they are not here: a setting that appears to
+// save and does nothing is the thing the startup-only warning exists to
+// prevent, and offering it in a form would be inviting exactly that.
+type UpgradeParameters struct {
+	// Whether a new release is installed without being asked
+	Automatic *bool `json:"automatic"`
+
+	// The hours an automatic upgrade may run in, local time, as
+	// "02:00-04:00". Empty means any time.
+	Window *string `json:"window"`
+}
+
 // ProxyParameters are the outbound proxy settings an operator can change.
 type ProxyParameters struct {
 	// Address of the SOCKS5 proxy, as host:port. Empty clears it.
@@ -301,6 +316,7 @@ type UpdateSettingsArguments struct {
 	Relay      *RelayParameters      `json:"relay"`
 	Submission *SubmissionParameters `json:"submission"`
 	Proxy      *ProxyParameters      `json:"proxy"`
+	Upgrade    *UpgradeParameters    `json:"upgrade"`
 
 	// Certificates changes what this server obtains certificates for.
 	Certificates *CertificateParameters `json:"certificates"`
@@ -341,6 +357,10 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 			applyBool(&configuration.Antispam.Enabled, parameters.Enabled)
 			applyString(&configuration.Antispam.Host, parameters.Host)
 			applyPort(&configuration.Antispam.Port, parameters.Port)
+		}
+		if parameters := arguments.Upgrade; parameters != nil {
+			applyBool(&configuration.Upgrade.Automatic, parameters.Automatic)
+			applyString(&configuration.Upgrade.Window, parameters.Window)
 		}
 		if parameters := arguments.Submission; parameters != nil {
 			applyString(&configuration.SMTP.Submission.Host, parameters.Host)

@@ -159,6 +159,7 @@ export function ServerPage() {
   // made the button look broken.
   async function checkForUpgrade() {
     const before = upgrade.data?.GetUpgrade?.checkedAt
+    const beforeError = upgrade.data?.GetUpgrade?.checkError
     setProblem(null)
     setChecking(true)
     try {
@@ -168,9 +169,11 @@ export function ServerPage() {
       for (;;) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
         const status = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false })).GetUpgrade
-        // A check that failed says so rather than leaving this waiting: the
-        // error is the answer.
-        if (status.checkedAt !== before || status.error) {
+        // checkError, not error: the second is the last upgrade's failure,
+        // which stays set until another upgrade starts — watching it meant
+        // breaking on the first poll and showing the answer from before the
+        // check, which is what this loop exists to avoid.
+        if (status.checkedAt !== before || status.checkError !== beforeError) {
           break
         }
         if (Date.now() > deadline) {
@@ -217,6 +220,7 @@ export function ServerPage() {
     // which is the restart and is handled by the wait below, or it comes back
     // with an error to show.
     const deadline = Date.now() + UPGRADE_TIMEOUT_MS
+    let lost = 0
     for (;;) {
       // Checked at the top, because it is the only way out of this loop for an
       // upgrade that never finishes — and a "continue" below skipped it, so
@@ -237,11 +241,21 @@ export function ServerPage() {
         // restart, and breaking out here left the page waiting ninety
         // seconds for a server that was still downloading, then telling
         // somebody it had not come back.
+        //
+        // And twice, not once: a single dropped request is a proxy hiccup as
+        // often as it is a server going away, and reading one as the restart
+        // declared the upgrade finished while it was still downloading.
         if (isLostConnection(caught)) {
-          break
+          lost += 1
+          if (lost >= 2) {
+            break
+          }
+        } else {
+          lost = 0
         }
         continue
       }
+      lost = 0
       if (status && !status.upgrading) {
         // Back, and not upgrading: it failed before it got as far as
         // restarting, and the reason is on the status.

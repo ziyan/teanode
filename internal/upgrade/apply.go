@@ -133,6 +133,15 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 		return fmt.Errorf("upgrade: %s does not match its checksum: expected %s, got %s", name, checksum, actual)
 	}
 
+	// Asked again, because minutes have passed. If something else has
+	// requested a restart while this was downloading — an operator pressing
+	// the button, a startup-only setting changed — then swapping now would
+	// turn their plain restart into an upgrade, at an hour nobody chose and
+	// outside any window.
+	if self.restarter != nil && self.restarter.Requested() {
+		return fmt.Errorf("upgrade: a restart began while this was downloading; nothing was replaced")
+	}
+
 	if err := self.swap(downloaded); err != nil {
 		return err
 	}

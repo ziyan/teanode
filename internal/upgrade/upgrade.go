@@ -315,6 +315,14 @@ const (
 // finishing. The manager's own context is the one Close cancels.
 func (self *manager) spinOnce(_ context.Context) error {
 	ctx := self.ctx
+
+	// Turned off while running: the loop was built at startup and would
+	// otherwise keep asking until a restart, which is not what somebody who
+	// turned it off meant.
+	if !self.config.Current().Upgrade.Enabled {
+		return nil
+	}
+
 	status := self.Status()
 
 	if self.checkDue() {
@@ -398,6 +406,14 @@ func (self *manager) Start(expected string) (Status, error) {
 	if applicable, reason := self.applicableNow(); !applicable {
 		return self.Status(), fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
+	// The same guard the loop has: a restart already asked for means an
+	// upgrade has already swapped the binary, and this process is on its way
+	// out. A second one in that window — another tab, another operator, the
+	// command line — would link the rollback copy to the binary just
+	// installed.
+	if self.restarter != nil && self.restarter.Requested() {
+		return self.Status(), fmt.Errorf("%w: a restart is already under way", ErrAlreadyRunning)
+	}
 
 	// The lock is taken here and released by the goroutine, so it is a
 	// reservation rather than a question. Taking it and letting it go before
@@ -416,7 +432,12 @@ func (self *manager) Start(expected string) (Status, error) {
 	self.status.Error = ""
 	self.mutex.Unlock()
 
+	// Counted, so that Close does not return while this is between chmod and
+	// rename. Cancelling the context stops the download; it does not stop a
+	// swap that has started.
+	self.waitGroup.Add(1)
 	go func() {
+		defer self.waitGroup.Done()
 		defer self.applying.Unlock()
 
 		// The manager's context, not the request's: the request is answered
@@ -487,7 +508,9 @@ func (self *manager) CheckSoon() {
 	if !self.checking.TryLock() {
 		return
 	}
+	self.waitGroup.Add(1)
 	go func() {
+		defer self.waitGroup.Done()
 		defer self.checking.Unlock()
 		if _, err := self.Check(self.ctx); err != nil {
 			log.Warningf("could not check for a release: %s", err)
@@ -608,6 +631,7 @@ func (self *manager) checkApplicable() (bool, string) {
 // as well — with a warning, because refusing to upgrade for ever over a typo
 // is worse than upgrading at the wrong hour.
 func withinWindow(window string, now time.Time) bool {
+	window = strings.TrimSpace(window)
 	if window == "" {
 		return true
 	}
