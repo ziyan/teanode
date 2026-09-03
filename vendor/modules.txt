@@ -251,7 +251,7 @@ github.com/lib/pq/scram
 # github.com/miekg/dns v1.1.68
 ## explicit; go 1.23.0
 github.com/miekg/dns
-# github.com/oklog/ulid/v2 v2.1.1
+# github.com/oklog/ulid/v2 v2.1.2
 ## explicit; go 1.15
 github.com/oklog/ulid/v2
 # github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
