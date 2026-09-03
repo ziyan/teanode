@@ -18,8 +18,9 @@ type UpgradeQuery interface {
 
 type UpgradeMutation interface {
 	// Install the newest release: download it, check it against the release's
-	// checksums, replace this binary and restart. The reply is sent before
-	// the restart, because after it there is nothing left to reply with.
+	// checksums, replace this binary and restart. It answers as soon as the
+	// upgrade has started, not when it has finished — the download takes
+	// minutes and this request holds a database transaction open.
 	ApplyUpgrade(ctx context.Context) (*Upgrade, error)
 }
 
@@ -54,6 +55,9 @@ type Upgrade struct {
 
 	// Whether releases are installed without being asked
 	Automatic bool `json:"automatic"`
+
+	// Whether one is running now, download included
+	Upgrading bool `json:"upgrading"`
 }
 
 type GetUpgradeArguments struct {
@@ -97,13 +101,19 @@ func (self *graph) ApplyUpgrade(ctx context.Context) (*Upgrade, error) {
 	// told where to look.
 	log.Warningf("%s asked this instance to upgrade", api.ContextAuthenticatedUsername(ctx))
 
-	if err := self.upgrade.Apply(ctx); err != nil {
+	// Started rather than done. Every GraphQL request runs inside a database
+	// transaction, and a forty-five megabyte download is not something to
+	// hold one open for: a deployment with idle_in_transaction_session_timeout
+	// would kill the session part way through and answer that the upgrade
+	// failed, after the binary had already been replaced.
+	status, err := self.upgrade.Start()
+	if err != nil {
 		if errors.Is(err, upgrade.ErrNotApplicable) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 		}
 		return nil, err
 	}
-	return describeUpgrade(self.upgrade.Status()), nil
+	return describeUpgrade(status), nil
 }
 
 func describeUpgrade(status upgrade.Status) *Upgrade {
@@ -117,5 +127,6 @@ func describeUpgrade(status upgrade.Status) *Upgrade {
 		Applicable: status.Applicable,
 		Reason:     status.Reason,
 		Automatic:  status.Automatic,
+		Upgrading:  status.Upgrading,
 	}
 }

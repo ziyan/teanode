@@ -370,3 +370,73 @@ func TestApplyKeepsTheBinaryMode(t *testing.T) {
 		t.Errorf("the new binary is %s, want 0750", info.Mode().Perm())
 	}
 }
+
+// A failing automatic upgrade must not download the release again every time
+// the loop wakes. The loop ticks every five minutes; the ordinary failure —
+// a checksum that does not match, a link that keeps dropping — is one that
+// will keep failing, and without a backoff this is forty-five megabytes three
+// hundred times a day, for ever.
+func TestFailedUpgradesBackOff(t *testing.T) {
+	t.Parallel()
+
+	manager := &manager{}
+
+	// Nothing has failed, so an attempt may run.
+	if _, ok := manager.attemptTooSoon(); !ok {
+		t.Fatal("the first attempt was held back")
+	}
+
+	manager.failed()
+	wait, ok := manager.attemptTooSoon()
+	if ok {
+		t.Fatal("a second attempt ran immediately after a failure")
+	}
+	if wait > attemptBackoff {
+		t.Errorf("the first wait is %s, want no more than %s", wait, attemptBackoff)
+	}
+
+	// Doubling, and capped.
+	for range 20 {
+		manager.failed()
+	}
+	if wait, _ := manager.attemptTooSoon(); wait > attemptBackoffMax {
+		t.Errorf("the wait grew to %s, past the %s cap", wait, attemptBackoffMax)
+	}
+
+	// And an upgrade that works clears it, so the next release is not held
+	// behind a day of backoff somebody else earned.
+	manager.succeeded()
+	if _, ok := manager.attemptTooSoon(); !ok {
+		t.Error("a successful upgrade did not clear the backoff")
+	}
+}
+
+// A check that fails still counts as a check. Measuring from the last success
+// meant a server with outbound HTTPS blocked asked again every five minutes
+// and logged a warning every time.
+func TestAFailedCheckStillCounts(t *testing.T) {
+	t.Parallel()
+
+	manager := &manager{checkInterval: time.Hour}
+	if !manager.checkDue() {
+		t.Fatal("the first check was not due")
+	}
+
+	// A failure records the attempt, not a success.
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "no", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	manager.client = server.Client()
+	manager.endpoint = server.URL
+
+	if _, err := manager.Check(context.Background()); err == nil {
+		t.Fatal("the check should have failed")
+	}
+	if manager.checkDue() {
+		t.Error("a failed check is due again immediately")
+	}
+	if manager.Status().CheckedAt != nil {
+		t.Error("a failed check counted as having checked")
+	}
+}

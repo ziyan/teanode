@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -40,7 +41,7 @@ func (self *manager) Apply(ctx context.Context) error {
 	}
 	defer self.applying.Unlock()
 
-	if applicable, reason := self.applicable(); !applicable {
+	if applicable, reason := self.applicableNow(); !applicable {
 		return fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
 
@@ -109,16 +110,28 @@ func (self *manager) Apply(ctx context.Context) error {
 // within one filesystem, where it is atomic: there is no moment at which the
 // path names a half-written file.
 func (self *manager) swap(downloaded string) error {
-	// The mode the replaced binary had, not a mode invented here. A
-	// deployment that installs it 0750 root:teanode should not find it world
-	// readable and executable after an upgrade — and CreateTemp makes 0600,
-	// which would not run at all.
+	// The mode the replaced binary had, not a mode invented here: a
+	// deployment that installs it 0750 should not find it world readable and
+	// executable after an upgrade, and CreateTemp makes 0600, which would not
+	// run at all.
+	//
+	// Ownership is attempted and not promised. The new file belongs to
+	// whoever this process runs as, which for a binary installed root:teanode
+	// is only half of what the operator expressed — and a process that is not
+	// root cannot put the other half back. It tries, and says so when it
+	// cannot, rather than leaving somebody to discover it.
 	mode := os.FileMode(0o755)
 	if info, err := os.Stat(self.executable); err == nil {
 		mode = info.Mode().Perm()
 		// It has to stay runnable by whoever ran it. A binary that was
 		// somehow not executable is not a reason to install one that is not.
 		mode |= 0o100
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			if err := os.Chown(downloaded, int(stat.Uid), int(stat.Gid)); err != nil {
+				log.Warningf("the new binary is owned by this process's user rather than %d:%d: %s",
+					stat.Uid, stat.Gid, err)
+			}
+		}
 	}
 	if err := os.Chmod(downloaded, mode); err != nil {
 		return fmt.Errorf("upgrade: cannot set the new binary's mode: %w", err)

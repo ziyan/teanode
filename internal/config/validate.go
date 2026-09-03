@@ -494,6 +494,12 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		validator.add("dns.checkInterval", "must be positive, for example 30m")
 	}
 
+	if self.Upgrade.Automatic && !self.Upgrade.Enabled {
+		// Installing what has been released requires knowing what has been
+		// released. Refused rather than ignored: an operator who turns
+		// checking off and leaves this on believes upgrades still happen.
+		validator.add("upgrade.automatic", "requires upgrade.enabled: nothing can be installed without checking for it")
+	}
 	if self.Upgrade.Enabled && self.Upgrade.CheckInterval <= 0 {
 		// Zero is not "as often as possible": the loop would ask the release
 		// list again the moment it finished, until the address is rate

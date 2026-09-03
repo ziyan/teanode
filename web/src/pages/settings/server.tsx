@@ -19,11 +19,11 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes checkedAt error applicable reason automatic
+      current latest available notes checkedAt error applicable reason automatic upgrading
     }
   }`
 
-const APPLY = `mutation { ApplyUpgrade { current latest available applicable reason } }`
+const APPLY = `mutation { ApplyUpgrade { current latest available applicable reason upgrading } }`
 
 type UpgradeStatus = {
   current: string
@@ -35,6 +35,7 @@ type UpgradeStatus = {
   applicable: boolean
   reason?: string
   automatic: boolean
+  upgrading: boolean
 }
 
 type ServerStatus = {
@@ -158,11 +159,12 @@ export function ServerPage() {
   // is the reply the reader needs.
   async function applyUpgrade() {
     setProblem(null)
+    setCameBack(false)
     setUpgrading(true)
     try {
       await graphql(APPLY)
     } catch (failure) {
-      if (isRefusal(failure)) {
+      if (!isLostConnection(failure)) {
         setProblem(String(failure))
         setUpgrading(false)
         return
@@ -261,14 +263,17 @@ export function ServerPage() {
   )
 }
 
-// isRefusal separates an answer from a lost connection.
+// isLostConnection separates a connection that dropped from an answer.
 //
-// The server says why it will not upgrade — a container, no supervisor, a
-// checksum that did not match — and every one of those arrives as a complete
-// reply. A connection that dropped has no message worth showing, and showing
-// it would be showing a failure for an upgrade that is happening.
-function isRefusal(failure: unknown): boolean {
-  return failure instanceof Error && /upgrade:|invalid arguments/.test(failure.message)
+// The wrong way round was tried first: look for the phrases a refusal uses and
+// swallow everything else. Then a session that had expired mid-confirm threw
+// "not logged in", matched neither phrase, and the page sat waiting ninety
+// seconds for a server that was never restarting.
+//
+// So: an answer is anything the server managed to say, and only a request that
+// never got one is treated as the restart having beaten the reply.
+function isLostConnection(failure: unknown): boolean {
+  return failure instanceof TypeError || (failure instanceof Error && /fetch|network/i.test(failure.message))
 }
 
 // UpgradeCard says what is running, what is available, and either offers the

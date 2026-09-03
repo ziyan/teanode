@@ -56,6 +56,10 @@ type Status struct {
 
 	// Automatic says upgrades are installed without being asked.
 	Automatic bool `json:"automatic"`
+
+	// Upgrading says one is running now. It stays true through the restart,
+	// because the process that would set it back does not survive one.
+	Upgrading bool `json:"upgrading"`
 }
 
 // Manager knows what has been released and can replace this server with it.
@@ -70,6 +74,17 @@ type Manager interface {
 	// and restarts. It returns when the restart has been requested, not when
 	// the new process is running: there is no new process to hear from here.
 	Apply(ctx context.Context) error
+
+	// Start begins an upgrade in the background and returns as soon as it has
+	// been accepted, with whatever is known now.
+	//
+	// It exists because the API request that asks for one is wrapped in a
+	// database transaction, and a forty-five megabyte download is not
+	// something to hold a transaction open for: on a deployment with
+	// idle_in_transaction_session_timeout the session is killed part way
+	// through and the caller is told the upgrade failed, after the binary has
+	// already been replaced.
+	Start() (Status, error)
 
 	Close() error
 }
@@ -99,6 +114,14 @@ type manager struct {
 
 	mutex  sync.RWMutex
 	status Status
+
+	// lastAttempt is when the release list was last asked, successfully or
+	// not, and failures and nextAttempt hold off an upgrade that keeps
+	// failing.
+	lastAttempt time.Time
+	failures    int
+	nextAttempt time.Time
+	refusalSaid string
 
 	// applying is held for the whole of an upgrade, download included. Two
 	// at once would each swap the binary, and the second would keep the
@@ -168,7 +191,7 @@ func New(configuration config.Store, restarter *api.Restarter) (Manager, error) 
 
 	self.applicable = self.checkApplicable
 
-	applicable, reason := self.applicable()
+	applicable, reason := self.applicableNow()
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 
@@ -242,6 +265,15 @@ func (self *manager) describe() Status {
 // the narrowest window anybody would write is hit, long enough to be nothing.
 const tick = 5 * time.Minute
 
+// attemptBackoff is how long to wait after an automatic upgrade fails,
+// doubling to attemptBackoffMax. The same shape as the certificate manager's,
+// and for the same reason: the ordinary failure is one that will keep
+// failing, and the loop wakes far more often than it is worth retrying.
+const (
+	attemptBackoff    = 5 * time.Minute
+	attemptBackoffMax = 24 * time.Hour
+)
+
 // spinOnce is the scheduled half: look if a look is due, and install if that
 // is what this deployment was told to do.
 // The context is ignored on purpose: periodic hands its handler a background
@@ -275,7 +307,11 @@ func (self *manager) spinOnce(_ context.Context) error {
 		return nil
 	}
 	if !status.Applicable {
-		log.Warningf("not installing %s automatically: %s", status.Latest, status.Reason)
+		// Once, not once a tick. A container with automatic upgrades turned
+		// on is an easy thing to have configured before discovering that a
+		// container is refused, and it would otherwise say so every five
+		// minutes for the life of the process.
+		self.sayOnce(fmt.Sprintf("not installing %s automatically: %s", status.Latest, status.Reason))
 		return nil
 	}
 	if !withinWindow(settings.Window, time.Now()) {
@@ -286,31 +322,142 @@ func (self *manager) spinOnce(_ context.Context) error {
 		return nil
 	}
 
+	if wait, ok := self.attemptTooSoon(); !ok {
+		log.Debugf("not retrying the upgrade to %s for another %s", status.Latest, wait.Round(time.Minute))
+		return nil
+	}
+
 	log.Noticef("installing %s automatically", status.Latest)
 	if err := self.Apply(ctx); err != nil {
+		// Backed off, because the loop wakes every five minutes and the
+		// ordinary failure here is one that will keep failing: a checksum
+		// that does not match, a release with no asset for this platform, a
+		// link that keeps dropping. Without this it downloads forty-five
+		// megabytes, throws it away, and does it again — three hundred times
+		// a day, for ever.
+		self.failed()
 		log.Errorf("automatic upgrade to %s failed: %s", status.Latest, err)
+		return nil
 	}
+	self.succeeded()
 	return nil
+}
+
+// Start begins an upgrade and returns immediately.
+func (self *manager) Start() (Status, error) {
+	if applicable, reason := self.applicableNow(); !applicable {
+		return self.Status(), fmt.Errorf("%w: %s", ErrNotApplicable, reason)
+	}
+	if !self.applying.TryLock() {
+		return self.Status(), fmt.Errorf("upgrade: an upgrade is already running")
+	}
+	self.applying.Unlock()
+
+	self.mutex.Lock()
+	self.status.Upgrading = true
+	self.status.Error = ""
+	self.mutex.Unlock()
+
+	go func() {
+		// The manager's context, not the request's: the request is answered
+		// before this finishes, and its context is cancelled the moment it
+		// is.
+		if err := self.Apply(self.ctx); err != nil {
+			log.Errorf("upgrade failed: %s", err)
+			self.mutex.Lock()
+			self.status.Upgrading = false
+			self.status.Error = err.Error()
+			self.mutex.Unlock()
+			return
+		}
+		// Left as upgrading: what follows is the restart, and this process
+		// does not come back from it.
+	}()
+
+	return self.Status(), nil
+}
+
+// attemptTooSoon reports whether an automatic attempt may run now, and how
+// long is left if not.
+func (self *manager) attemptTooSoon() (time.Duration, bool) {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+
+	if self.failures == 0 || time.Now().After(self.nextAttempt) {
+		return 0, true
+	}
+	return time.Until(self.nextAttempt), false
+}
+
+// failed records an automatic attempt that did not work, and puts the next one
+// off: five minutes, doubling to a day.
+func (self *manager) failed() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	self.failures++
+	wait := attemptBackoff << min(self.failures-1, 16)
+	if wait > attemptBackoffMax {
+		wait = attemptBackoffMax
+	}
+	self.nextAttempt = time.Now().Add(wait)
+	log.Warningf("not retrying the upgrade for %s (%d failures)", wait, self.failures)
+}
+
+func (self *manager) succeeded() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	self.failures = 0
+	self.nextAttempt = time.Time{}
+}
+
+// sayOnce logs a message the first time it is said, and not again until it
+// changes. For the things the loop notices every tick and that stay true.
+func (self *manager) sayOnce(message string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	if self.refusalSaid == message {
+		return
+	}
+	self.refusalSaid = message
+	log.Warning(message)
 }
 
 // Check reads the release list and remembers what it found.
 // checkDue reports whether enough time has passed to ask again.
+//
+// Measured from the last attempt, not the last success. Measuring from
+// success meant that a server which cannot reach the release list at all —
+// outbound HTTPS blocked, which is an ordinary way to run a mail server —
+// asked again every five minutes and logged a warning every time.
 func (self *manager) checkDue() bool {
 	self.mutex.RLock()
 	defer self.mutex.RUnlock()
 
-	// Never checked, or the last attempt failed: ask.
-	if self.status.CheckedAt == nil {
+	if self.lastAttempt.IsZero() {
 		return true
 	}
-	return time.Since(*self.status.CheckedAt) >= self.checkInterval
+	return time.Since(self.lastAttempt) >= self.checkInterval
 }
 
+// Check reads the release list and remembers what it found.
 func (self *manager) Check(ctx context.Context) (Status, error) {
 	found, err := latestRelease(ctx, self.client, self.endpoint)
 
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+
+	self.lastAttempt = time.Now()
+
+	// Whether this deployment could apply one is asked again here rather than
+	// only at startup: a directory that was briefly unwritable at boot should
+	// not hide the button for ever, and one that has since been remounted
+	// read-only should not keep offering it.
+	applicable, reason := self.applicableNow()
+	self.status.Applicable = applicable
+	self.status.Reason = reason
 
 	if err != nil {
 		self.status.Error = err.Error()
@@ -326,12 +473,32 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	return self.describe(), nil
 }
 
+// applicableNow asks the question through whatever seam is in place, and
+// answers it directly when there is none. A function field that is nil until a
+// constructor fills it in is a panic waiting for the first caller who builds
+// the struct another way — which is what happened, in a test.
+func (self *manager) applicableNow() (bool, string) {
+	if self.applicable != nil {
+		return self.applicable()
+	}
+	return self.checkApplicable()
+}
+
 // checkApplicable answers whether an upgrade could be applied at all, and why
 // not.
 //
 // Asked at startup and shown on the page, so that the button is absent with a
 // reason beside it rather than present and disappointing.
 func (self *manager) checkApplicable() (bool, string) {
+	// Nothing to ask for a restart means nothing that could finish an
+	// upgrade. api.Settings documents this as possible, so it is answered
+	// rather than assumed.
+	if self.restarter == nil {
+		return false, "this server was started without anything that can restart it, " +
+			"so it cannot finish an upgrade. Upgrade it by hand: download the release, " +
+			"replace the binary, and start it again"
+	}
+
 	// Every reason says what to do instead. A refusal that only explains
 	// itself leaves somebody knowing they are out of date and not knowing
 	// where to go next, which is the same place they started.
