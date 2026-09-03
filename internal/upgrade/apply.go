@@ -32,22 +32,22 @@ const previousSuffix = ".previous"
 // server that cannot restart must not end up with a new binary on disk and an
 // old one running, because the next unrelated restart would then be an
 // unplanned upgrade.
-func (self *manager) Apply(ctx context.Context) error {
+func (self *manager) Apply(ctx context.Context, expected string) error {
 	// Refused rather than queued: the caller is a person watching a button or
 	// a scheduled loop, and neither should wait behind a download that may
 	// have ten minutes left in it.
 	if !self.applying.TryLock() {
-		return fmt.Errorf("upgrade: an upgrade is already running")
+		return ErrAlreadyRunning
 	}
 	defer self.applying.Unlock()
 
-	return self.apply(ctx)
+	return self.apply(ctx, expected)
 }
 
 // apply is the work, with the caller holding self.applying. Start holds it
 // across handing the work to a goroutine, which is why the lock is not taken
 // in here.
-func (self *manager) apply(ctx context.Context) (err error) {
+func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	// Said on the status, not only in the log, so that a dashboard opened
 	// while the scheduled loop is downloading shows what is happening rather
 	// than a button that answers "an upgrade is already running".
@@ -85,6 +85,13 @@ func (self *manager) apply(ctx context.Context) (err error) {
 	if !isUpgrade(running, found.version()) {
 		return fmt.Errorf("upgrade: %s is not newer than %s", found.version(), running)
 	}
+	// The version somebody agreed to, when they named one. A dashboard left
+	// open across a release would otherwise install whatever is newest now
+	// rather than the version its confirmation said.
+	if expected != "" && strings.TrimPrefix(expected, "v") != found.version() {
+		return fmt.Errorf("upgrade: %s was asked for but %s is the newest release; check again",
+			strings.TrimPrefix(expected, "v"), found.version())
+	}
 
 	name := assetName()
 	binaryURL := found.assetURL(name)
@@ -102,7 +109,7 @@ func (self *manager) apply(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("upgrade: cannot read %s: %w", checksumsAsset, err)
 	}
-	expected, err := checksumFor(string(sums), name)
+	checksum, err := checksumFor(string(sums), name)
 	if err != nil {
 		return err
 	}
@@ -122,8 +129,8 @@ func (self *manager) apply(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	if actual != expected {
-		return fmt.Errorf("upgrade: %s does not match its checksum: expected %s, got %s", name, expected, actual)
+	if actual != checksum {
+		return fmt.Errorf("upgrade: %s does not match its checksum: expected %s, got %s", name, checksum, actual)
 	}
 
 	if err := self.swap(downloaded); err != nil {
@@ -228,6 +235,11 @@ func (self *manager) download(ctx context.Context, url string) (string, error) {
 }
 
 // fetch reads a small asset into memory.
+//
+// One byte past the limit, so that something too large is an error rather than
+// a truncated buffer: a proxy's error page in place of SHA256SUMS would
+// otherwise arrive cut off mid-line and be reported as a missing checksum,
+// which is the wrong thing to go and look at.
 func (self *manager) fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
 	body, err := self.open(ctx, url)
 	if err != nil {
@@ -236,7 +248,15 @@ func (self *manager) fetch(ctx context.Context, url string, limit int64) ([]byte
 	defer func() {
 		_ = body.Close()
 	}()
-	return io.ReadAll(io.LimitReader(body, limit))
+
+	content, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > limit {
+		return nil, fmt.Errorf("upgrade: the answer is larger than %d bytes", limit)
+	}
+	return content, nil
 }
 
 // open makes the request. Redirects are followed, because a release asset is

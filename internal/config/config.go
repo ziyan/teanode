@@ -13,6 +13,7 @@ package config
 
 import (
 	"github.com/op/go-logging"
+	"time"
 )
 
 var log = logging.MustGetLogger("config")
@@ -111,7 +112,10 @@ type Upgrade struct {
 
 	// CheckInterval is how often to look. Six hours by default: often enough
 	// that a security release is noticed the same day, rarely enough that it
-	// is not a request anybody would notice.
+	// is not a request anybody would notice. At least
+	// MinimumUpgradeCheckInterval, because the endpoint allows sixty requests
+	// an hour to an address that is not signed in and this is not the only
+	// thing behind that address.
 	CheckInterval Duration `yaml:"checkInterval"`
 
 	// Window restricts automatic upgrades to a time of day, in local time,
@@ -122,6 +126,10 @@ type Upgrade struct {
 	// time than a quiet one.
 	Window string `yaml:"window"`
 }
+
+// MinimumUpgradeCheckInterval is the shortest upgrade.checkInterval that is
+// accepted.
+const MinimumUpgradeCheckInterval = Duration(15 * time.Minute)
 
 // Server describes this instance's identity and its state directory.
 type Server struct {

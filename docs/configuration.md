@@ -726,7 +726,12 @@ endpoint, carrying nothing about this deployment. On by default: knowing that a
 version exists is not the same as installing it, and an operator who is never
 told is an operator running last year's bugs.
 
-**`automatic`** — Automatic installs what it finds without being asked:
+**`automatic`** — One case it cannot refuse before it is too late: a systemd
+unit with `Restart=no`. Whether a unit comes back cannot be read from inside
+the process, so an automatic upgrade there swaps the binary, exits and stays
+down — at whatever hour the window names, with nobody watching. Check the unit
+before turning this on. Otherwise: Automatic installs what it finds without
+being asked:
 download, verify against the release's checksums, replace this binary, restart.
 Off by default, because a release can change how mail is handled and nobody
 installs a mail server expecting it to change underneath them. It takes any

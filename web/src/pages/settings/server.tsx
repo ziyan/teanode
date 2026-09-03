@@ -19,11 +19,16 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes checkedAt error applicable reason automatic upgrading
+      current latest available notes checkedAt error checkError applicable reason automatic enabled upgrading
     }
   }`
 
-const APPLY = `mutation { ApplyUpgrade { current latest available applicable reason upgrading } }`
+const APPLY = `
+  mutation ($version: String) {
+    ApplyUpgrade(version: $version) {
+      current latest available applicable reason upgrading
+    }
+  }`
 
 type UpgradeStatus = {
   current: string
@@ -32,9 +37,11 @@ type UpgradeStatus = {
   notes?: string
   checkedAt?: string
   error?: string
+  checkError?: string
   applicable: boolean
   reason?: string
   automatic: boolean
+  enabled: boolean
   upgrading: boolean
 }
 
@@ -58,6 +65,10 @@ const RESTART_TIMEOUT_MS = 90_000
 // happen before the restart the wait above covers. Generous, because it is a
 // forty-five megabyte download over whatever link the server has.
 const UPGRADE_TIMEOUT_MS = 15 * 60_000
+
+// CHECK_TIMEOUT_MS bounds the wait for a release check, which has a
+// thirty-second timeout of its own on the server.
+const CHECK_TIMEOUT_MS = 40_000
 
 // ServerPage is what this instance is, and the one control that acts on the
 // process rather than on the configuration.
@@ -141,11 +152,31 @@ export function ServerPage() {
     }
   }
 
+  // The check runs in the background — the request that asks for one cannot
+  // wait for somebody else's endpoint while holding a database transaction —
+  // so this waits for an answer newer than the one on screen. Reading straight
+  // back, which is what it did, showed the answer from before the check and
+  // made the button look broken.
   async function checkForUpgrade() {
+    const before = upgrade.data?.GetUpgrade?.checkedAt
     setProblem(null)
     setChecking(true)
     try {
       await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: true })
+
+      const deadline = Date.now() + CHECK_TIMEOUT_MS
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const status = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false })).GetUpgrade
+        // A check that failed says so rather than leaving this waiting: the
+        // error is the answer.
+        if (status.checkedAt !== before || status.error) {
+          break
+        }
+        if (Date.now() > deadline) {
+          break
+        }
+      }
       await upgrade.reload()
     } catch (failure) {
       setProblem(String(failure))
@@ -162,12 +193,12 @@ export function ServerPage() {
   //
   // A refusal is different: it answers before anything is downloaded, and it
   // is the reply the reader needs.
-  async function applyUpgrade() {
+  async function applyUpgrade(version?: string) {
     setProblem(null)
     setCameBack(false)
     setUpgrading(true)
     try {
-      await graphql(APPLY)
+      await graphql(APPLY, { version })
     } catch (failure) {
       if (!isLostConnection(failure)) {
         setProblem(String(failure))
@@ -187,6 +218,15 @@ export function ServerPage() {
     // with an error to show.
     const deadline = Date.now() + UPGRADE_TIMEOUT_MS
     for (;;) {
+      // Checked at the top, because it is the only way out of this loop for an
+      // upgrade that never finishes — and a "continue" below skipped it, so
+      // an expired session turned a fifteen-minute bound into a page that
+      // polled for ever.
+      if (Date.now() > deadline) {
+        setUpgrading(false)
+        setProblem(t('upgrade.tookTooLong'))
+        return
+      }
       await new Promise((resolve) => setTimeout(resolve, 2000))
       let status: UpgradeStatus | undefined
       try {
@@ -210,11 +250,6 @@ export function ServerPage() {
         if (status.error) {
           setProblem(status.error)
         }
-        return
-      }
-      if (Date.now() > deadline) {
-        setUpgrading(false)
-        setProblem(t('upgrade.tookTooLong'))
         return
       }
     }
@@ -345,7 +380,7 @@ function UpgradeCard({
   checking: boolean
   upgrading: boolean
   onCheck: () => void
-  onApply: () => void
+  onApply: (version?: string) => void
 }) {
   const { t } = useTranslation()
   const [confirming, setConfirming] = useState(false)
@@ -380,7 +415,7 @@ function UpgradeCard({
           ) : (
             <span className="muted">{t('common.none')}</span>
           )}
-          {status.error && <div className="error">{status.error}</div>}
+          {status.checkError && <div className="error">{status.checkError}</div>}
         </dd>
       </dl>
 
@@ -390,6 +425,10 @@ function UpgradeCard({
       {status.available && status.notes && (
         <pre className="message-text upgrade-notes">{status.notes}</pre>
       )}
+
+      {status.error && <p className="error">{t('upgrade.failed', { reason: status.error })}</p>}
+
+      {!status.enabled && <p className="notice">{t('upgrade.checkingOff')}</p>}
 
       {status.automatic && <p className="notice">{t('upgrade.automaticOn')}</p>}
 
@@ -402,7 +441,7 @@ function UpgradeCard({
       <div className="page-actions" style={{ marginTop: 12 }}>
         <span />
         <span>
-          <button onClick={onCheck} disabled={checking || upgrading}>
+          <button onClick={onCheck} disabled={checking || upgrading || !status.enabled}>
             {checking ? t('upgrade.checking') : t('upgrade.checkNow')}
           </button>{' '}
           {status.available && status.applicable && !confirming && (
@@ -428,7 +467,10 @@ function UpgradeCard({
             disabled={upgrading}
             onClick={() => {
               setConfirming(false)
-              onApply()
+              // The version this card is showing, so the upgrade installs what
+              // the sentence above the button said rather than whatever is
+              // newest by the time it runs.
+              onApply(status.latest)
             }}
           >
             {t('upgrade.confirmUpgrade')}

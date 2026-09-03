@@ -21,7 +21,7 @@ type UpgradeMutation interface {
 	// checksums, replace this binary and restart. It answers as soon as the
 	// upgrade has started, not when it has finished — the download takes
 	// minutes and this request holds a database transaction open.
-	ApplyUpgrade(ctx context.Context) (*Upgrade, error)
+	ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArguments) (*Upgrade, error)
 }
 
 // Upgrade is what is running, what is available, and what may be done.
@@ -58,6 +58,13 @@ type Upgrade struct {
 
 	// Whether one is running now, download included
 	Upgrading bool `json:"upgrading"`
+
+	// Whether the release list is consulted at all
+	Enabled bool `json:"enabled"`
+
+	// Why the last check failed, which is a different thing from why the last
+	// upgrade did
+	CheckError string `json:"checkError,omitempty"`
 }
 
 type GetUpgradeArguments struct {
@@ -91,7 +98,15 @@ func (self *graph) GetUpgrade(ctx context.Context, arguments GetUpgradeArguments
 	return describeUpgrade(self.upgrade.Status()), nil
 }
 
-func (self *graph) ApplyUpgrade(ctx context.Context) (*Upgrade, error) {
+type ApplyUpgradeArguments struct {
+	// The version this was agreed to install, as the page showed it. Omit to
+	// take whatever is newest; give it and anything else is refused, so that
+	// a tab left open across a release cannot install a version nobody
+	// confirmed.
+	Version *string `json:"version"`
+}
+
+func (self *graph) ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArguments) (*Upgrade, error) {
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
 	}
@@ -109,7 +124,11 @@ func (self *graph) ApplyUpgrade(ctx context.Context) (*Upgrade, error) {
 	// hold one open for: a deployment with idle_in_transaction_session_timeout
 	// would kill the session part way through and answer that the upgrade
 	// failed, after the binary had already been replaced.
-	status, err := self.upgrade.Start()
+	expected := ""
+	if arguments.Version != nil {
+		expected = *arguments.Version
+	}
+	status, err := self.upgrade.Start(expected)
 	if err != nil {
 		if errors.Is(err, upgrade.ErrNotApplicable) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
@@ -131,5 +150,7 @@ func describeUpgrade(status upgrade.Status) *Upgrade {
 		Reason:     status.Reason,
 		Automatic:  status.Automatic,
 		Upgrading:  status.Upgrading,
+		Enabled:    status.Enabled,
+		CheckError: status.CheckError,
 	}
 }

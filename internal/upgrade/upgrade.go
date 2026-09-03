@@ -26,6 +26,11 @@ var log = logging.MustGetLogger("upgrade")
 // as a bug.
 var ErrNotApplicable = errors.New("upgrade: this deployment cannot upgrade itself")
 
+// ErrAlreadyRunning is returned when one is already going. Not a failure: the
+// scheduled loop meets it whenever somebody has pressed the button, and
+// treating it as one would put the schedule off for hours over nothing.
+var ErrAlreadyRunning = errors.New("upgrade: an upgrade is already running")
+
 // Status is what is running, what is available, and whether anything can be
 // done about the difference.
 type Status struct {
@@ -42,11 +47,18 @@ type Status struct {
 	Notes string `json:"notes,omitempty"`
 
 	// CheckedAt is when the release list was last read successfully, and
-	// Error why the last attempt did not. Both are shown: "it has not managed
-	// to check since Tuesday" is the thing an operator needs to be told, and
-	// an error that is only logged is an error nobody sees.
-	CheckedAt *time.Time `json:"checkedAt,omitempty"`
-	Error     string     `json:"error,omitempty"`
+	// CheckError why the last attempt did not. Both are shown: "it has not
+	// managed to check since Tuesday" is the thing an operator needs to be
+	// told, and an error that is only logged is an error nobody sees.
+	CheckedAt  *time.Time `json:"checkedAt,omitempty"`
+	CheckError string     `json:"checkError,omitempty"`
+
+	// Error is why the last upgrade failed, which is a different sentence in
+	// a different place on the page. They were one field, so a checksum that
+	// did not match was shown as though the release list could not be read,
+	// and pressing Upgrade erased a genuine "cannot reach the release list"
+	// that somebody needed to see.
+	Error string `json:"error,omitempty"`
 
 	// Applicable says whether an upgrade could be applied here at all, and
 	// Reason says what stands in the way when it cannot: a container, whose
@@ -54,8 +66,12 @@ type Status struct {
 	Applicable bool   `json:"applicable"`
 	Reason     string `json:"reason,omitempty"`
 
-	// Automatic says upgrades are installed without being asked.
+	// Automatic says upgrades are installed without being asked, and Enabled
+	// that the release list is consulted at all. Turning checking off means
+	// off: the button on the page stops asking too, rather than the setting
+	// applying only to the schedule.
 	Automatic bool `json:"automatic"`
+	Enabled   bool `json:"enabled"`
 
 	// Upgrading says one is running now. It stays true through the restart,
 	// because the process that would set it back does not survive one.
@@ -79,10 +95,16 @@ type Manager interface {
 	// Apply downloads the newest release, verifies it, replaces this binary
 	// and restarts. It returns when the restart has been requested, not when
 	// the new process is running: there is no new process to hear from here.
-	Apply(ctx context.Context) error
+	//
+	// An empty expected takes whatever is newest; anything else has to match
+	// the version found or nothing is installed.
+	Apply(ctx context.Context, expected string) error
 
 	// Start begins an upgrade in the background and returns as soon as it has
-	// been accepted, with whatever is known now.
+	// been accepted, with whatever is known now. When expected is not empty,
+	// it refuses anything else: the dashboard's confirmation names a version,
+	// and a tab left open across a release should not install a different one
+	// than the one somebody agreed to.
 	//
 	// It exists because the API request that asks for one is wrapped in a
 	// database transaction, and a forty-five megabyte download is not
@@ -90,7 +112,7 @@ type Manager interface {
 	// idle_in_transaction_session_timeout the session is killed part way
 	// through and the caller is told the upgrade failed, after the binary has
 	// already been replaced.
-	Start() (Status, error)
+	Start(expected string) (Status, error)
 
 	Close() error
 }
@@ -266,7 +288,9 @@ func (self *manager) Status() Status {
 func (self *manager) describe() Status {
 	status := self.status
 	if self.config != nil {
-		status.Automatic = self.config.Current().Upgrade.Automatic
+		settings := self.config.Current().Upgrade
+		status.Automatic = settings.Automatic
+		status.Enabled = settings.Enabled
 	}
 	return status
 }
@@ -346,14 +370,22 @@ func (self *manager) spinOnce(_ context.Context) error {
 	}
 
 	log.Noticef("installing %s automatically", status.Latest)
-	if err := self.Apply(ctx); err != nil {
+	if err := self.Apply(ctx, ""); err != nil {
 		// Backed off, because the loop wakes every five minutes and the
 		// ordinary failure here is one that will keep failing: a checksum
 		// that does not match, a release with no asset for this platform, a
 		// link that keeps dropping. Without this it downloads forty-five
 		// megabytes, throws it away, and does it again — three hundred times
 		// a day, for ever.
-		self.failed()
+		//
+		// A refusal is not one of those. An upgrade somebody started from the
+		// dashboard holds the lock for the length of its download, and the
+		// tick that lands during it must not spend the allowance on a
+		// refusal it was never going to get past: that pushed automatic
+		// upgrades hours into the future for a reason that never failed.
+		if !errors.Is(err, ErrNotApplicable) && !errors.Is(err, ErrAlreadyRunning) {
+			self.failed()
+		}
 		log.Errorf("automatic upgrade to %s failed: %s", status.Latest, err)
 		return nil
 	}
@@ -362,7 +394,7 @@ func (self *manager) spinOnce(_ context.Context) error {
 }
 
 // Start begins an upgrade and returns immediately.
-func (self *manager) Start() (Status, error) {
+func (self *manager) Start(expected string) (Status, error) {
 	if applicable, reason := self.applicableNow(); !applicable {
 		return self.Status(), fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
@@ -374,7 +406,7 @@ func (self *manager) Start() (Status, error) {
 	// was downloading, so the dashboard reported a failure for an upgrade
 	// that was about to restart the server.
 	if !self.applying.TryLock() {
-		return self.Status(), fmt.Errorf("upgrade: an upgrade is already running")
+		return self.Status(), ErrAlreadyRunning
 	}
 
 	// Marked here as well as in apply, so that the status says so before this
@@ -391,7 +423,7 @@ func (self *manager) Start() (Status, error) {
 		// before this finishes, and its context is cancelled the moment it
 		// is. apply puts the status back if it fails; a success is followed
 		// by the restart, which this process does not return from.
-		if err := self.apply(self.ctx); err != nil {
+		if err := self.apply(self.ctx, expected); err != nil {
 			log.Errorf("upgrade failed: %s", err)
 		}
 	}()
@@ -449,6 +481,9 @@ func (self *manager) sayOnce(message string) {
 
 // CheckSoon asks in the background, once at a time.
 func (self *manager) CheckSoon() {
+	if !self.config.Current().Upgrade.Enabled {
+		return
+	}
 	if !self.checking.TryLock() {
 		return
 	}
@@ -494,12 +529,12 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.status.Reason = reason
 
 	if err != nil {
-		self.status.Error = err.Error()
+		self.status.CheckError = err.Error()
 		return self.describe(), err
 	}
 
 	now := time.Now()
-	self.status.Error = ""
+	self.status.CheckError = ""
 	self.status.CheckedAt = &now
 	self.status.Latest = found.version()
 	self.status.Notes = found.Notes

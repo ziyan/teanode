@@ -500,11 +500,12 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		// checking off and leaves this on believes upgrades still happen.
 		validator.add("upgrade.automatic", "requires upgrade.enabled: nothing can be installed without checking for it")
 	}
-	if self.Upgrade.Enabled && self.Upgrade.CheckInterval <= 0 {
+	if self.Upgrade.Enabled && self.Upgrade.CheckInterval < MinimumUpgradeCheckInterval {
 		// Zero is not "as often as possible": the loop would ask the release
-		// list again the moment it finished, until the address is rate
-		// limited.
-		validator.add("upgrade.checkInterval", "must be positive, for example 6h")
+		// list again the moment it finished. A minute is not much better —
+		// the endpoint allows sixty requests an hour to an address that is
+		// not signed in, and this is not the only thing behind that address.
+		validator.add("upgrade.checkInterval", "must be at least %s, for example 6h", MinimumUpgradeCheckInterval)
 	}
 	if window := strings.TrimSpace(self.Upgrade.Window); window != "" {
 		if _, _, err := parseUpgradeWindow(window); err != nil {

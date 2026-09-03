@@ -101,7 +101,7 @@ func TestApplyReplacesTheBinary(t *testing.T) {
 	restarted := make(chan struct{})
 	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() { close(restarted) })
 
-	if err := manager.Apply(context.Background()); err != nil {
+	if err := manager.Apply(context.Background(), ""); err != nil {
 		t.Fatalf("Apply: %s", err)
 	}
 
@@ -168,7 +168,7 @@ func TestApplyRefusesAWrongChecksum(t *testing.T) {
 
 	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
 
-	err := manager.Apply(context.Background())
+	err := manager.Apply(context.Background(), "")
 	if err == nil {
 		t.Fatal("a binary that does not match its checksum was installed")
 	}
@@ -208,7 +208,7 @@ func TestApplyRefusesAnOlderRelease(t *testing.T) {
 	defer server.Close()
 
 	manager := testManager(t, executable, server.URL, server.Client(), "0.2.0", func() {})
-	if err := manager.Apply(context.Background()); err == nil {
+	if err := manager.Apply(context.Background(), ""); err == nil {
 		t.Fatal("an older release was installed")
 	}
 }
@@ -307,7 +307,7 @@ func TestApplyRefusesToRunTwice(t *testing.T) {
 
 	first := make(chan error, 1)
 	go func() {
-		first <- manager.Apply(context.Background())
+		first <- manager.Apply(context.Background(), "")
 	}()
 
 	// Wait until the first call is inside the download, which is where it
@@ -321,7 +321,7 @@ func TestApplyRefusesToRunTwice(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	if err := manager.Apply(context.Background()); err == nil {
+	if err := manager.Apply(context.Background(), ""); err == nil {
 		t.Error("a second upgrade ran while the first was still going")
 	} else if !strings.Contains(err.Error(), "already running") {
 		t.Errorf("the second call failed for the wrong reason: %s", err)
@@ -358,7 +358,7 @@ func TestApplyKeepsTheBinaryMode(t *testing.T) {
 	defer server.Close()
 
 	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
-	if err := manager.Apply(context.Background()); err != nil {
+	if err := manager.Apply(context.Background(), ""); err != nil {
 		t.Fatalf("Apply: %s", err)
 	}
 
@@ -457,7 +457,7 @@ func TestAFailedUpgradeStopsSayingItIsUpgrading(t *testing.T) {
 	defer server.Close()
 
 	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
-	if err := manager.Apply(context.Background()); err == nil {
+	if err := manager.Apply(context.Background(), ""); err == nil {
 		t.Fatal("the upgrade should have failed")
 	}
 
@@ -467,5 +467,39 @@ func TestAFailedUpgradeStopsSayingItIsUpgrading(t *testing.T) {
 	}
 	if status.Error == "" {
 		t.Error("nothing says why it failed")
+	}
+}
+
+// The dashboard's confirmation names a version, so that is the version
+// installed. A tab left open across a release would otherwise agree to one
+// thing and install another.
+func TestApplyRefusesAVersionNobodyConfirmed(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	binary := []byte("the new binary")
+	server := releaseServer(t, "0.9.0", binary, sha256Of(binary))
+	defer server.Close()
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
+
+	// The page was showing 0.8.0 when somebody pressed the button.
+	err := manager.Apply(context.Background(), "0.8.0")
+	if err == nil {
+		t.Fatal("a version nobody confirmed was installed")
+	}
+	if !strings.Contains(err.Error(), "check again") {
+		t.Errorf("the error does not say what to do: %s", err)
+	}
+	if kept, _ := os.ReadFile(executable); string(kept) != "the old binary" {
+		t.Errorf("the running binary was replaced anyway: %q", kept)
+	}
+
+	// The version it is actually offering goes through, with or without a v.
+	if err := manager.Apply(context.Background(), "v0.9.0"); err != nil {
+		t.Fatalf("the confirmed version was refused: %s", err)
 	}
 }
