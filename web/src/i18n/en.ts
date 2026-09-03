@@ -773,6 +773,6 @@ export const en = {
   'upgrade.confirmExplained':
     'The release is downloaded, checked against the checksums published with it, and written over this binary; the previous one is kept beside it. The server then restarts, which takes a few seconds during which mail is not accepted — senders retry.',
   'upgrade.confirmUpgrade': 'Download and restart',
-  'upgrade.cannot': 'This server cannot upgrade itself: {reason}.',
+  'upgrade.cannot': 'No upgrade from here: {reason}.',
   'upgrade.automaticOn': 'Automatic upgrades are on: a new release is installed without being asked.',
 }

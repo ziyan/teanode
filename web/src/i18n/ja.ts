@@ -765,6 +765,6 @@ export const ja: Catalog = {
   'upgrade.confirmExplained':
     'リリースをダウンロードし、一緒に公開されたチェックサムと照合してからこのバイナリに上書きします。以前のバイナリは隣に残ります。その後再起動し、数秒間メールを受け付けませんが、送信側は再試行します。',
   'upgrade.confirmUpgrade': 'ダウンロードして再起動',
-  'upgrade.cannot': 'このサーバーは自分で更新できません: {reason}。',
+  'upgrade.cannot': 'ここからは更新できません: {reason}。',
   'upgrade.automaticOn': '自動更新が有効です。新しいリリースは確認なしに導入されます。',
 }

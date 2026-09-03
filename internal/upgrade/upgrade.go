@@ -240,14 +240,24 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 // Asked at startup and shown on the page, so that the button is absent with a
 // reason beside it rather than present and disappointing.
 func (self *manager) checkApplicable() (bool, string) {
+	// Every reason says what to do instead. A refusal that only explains
+	// itself leaves somebody knowing they are out of date and not knowing
+	// where to go next, which is the same place they started.
 	switch self.restarter.Supervision() {
 	case api.SupervisionContainer:
-		return false, "this server runs in a container: the image is what to replace, and a binary swapped inside a container is undone the next time it starts"
+		return false, "the binary is inside a container image, so replacing it here would be undone " +
+			"the next time the container starts. Upgrade the image instead: " +
+			"\"docker compose pull && docker compose up -d\" where this is run by compose, " +
+			"or pull ghcr.io/ziyan/teanode and recreate the container"
 	case api.SupervisionUnknown:
-		return false, "nothing recognisable would start this process again, so replacing the binary and exiting would leave the server down"
+		return false, "nothing recognisable would start this process again, so replacing the binary " +
+			"and exiting would leave the server down. Run it under systemd or a container with a " +
+			"restart policy and this button appears; until then, upgrade it by hand: download the " +
+			"release, replace the binary, and start it again"
 	}
 	if self.executable == "" {
-		return false, "this server cannot find its own executable"
+		return false, "this server cannot find its own executable, so there is nothing to replace. " +
+			"Upgrade it by hand: download the release and put it where this one is"
 	}
 	// Written beside the current binary and renamed over it, so the directory
 	// is what has to be writable, not the file. Asked by writing, because the
@@ -256,7 +266,9 @@ func (self *manager) checkApplicable() (bool, string) {
 	directory := filepath.Dir(self.executable)
 	probe, err := os.CreateTemp(directory, ".teanode-upgrade-probe-*")
 	if err != nil {
-		return false, fmt.Sprintf("%s is not writable by this process", directory)
+		return false, fmt.Sprintf("%s is not writable by this process, and the new binary has to be "+
+			"written there before it can replace the old one. Either make it writable by the user "+
+			"this runs as, or upgrade by hand: download the release and put it there yourself", directory)
 	}
 	_ = probe.Close()
 	_ = os.Remove(probe.Name())

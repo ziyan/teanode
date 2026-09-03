@@ -1050,6 +1050,12 @@ check_upgrades() {
   else
     fail "no reason was given: $(tr -d '\n' <<<"${status}")"
   fi
+  # Knowing you are stuck is not the same as knowing what to do about it.
+  if grep -qi 'docker compose pull' <<<"${status}"; then
+    pass "and says how to upgrade by hand instead"
+  else
+    fail "the reason does not say what to do: $(tr -d '\n' <<<"${status}")"
+  fi
   if grep -q '"automatic": false' <<<"${status}"; then
     pass "automatic upgrades are off unless somebody turns them on"
   else
