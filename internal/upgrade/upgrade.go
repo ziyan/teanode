@@ -70,6 +70,12 @@ type Manager interface {
 	// Check asks the release list and returns what it found.
 	Check(ctx context.Context) (Status, error)
 
+	// CheckSoon asks in the background and returns at once, for a caller that
+	// must not wait — a GraphQL request, which runs inside a database
+	// transaction that a thirty-second call to somebody else's endpoint has
+	// no business holding open.
+	CheckSoon()
+
 	// Apply downloads the newest release, verifies it, replaces this binary
 	// and restarts. It returns when the restart has been requested, not when
 	// the new process is running: there is no new process to hear from here.
@@ -122,6 +128,10 @@ type manager struct {
 	failures    int
 	nextAttempt time.Time
 	refusalSaid string
+
+	// checking is held while a background check is in flight, so that a
+	// dashboard being clicked repeatedly asks once.
+	checking sync.Mutex
 
 	// applying is held for the whole of an upgrade, download included. Two
 	// at once would each swap the binary, and the second would keep the
@@ -322,6 +332,14 @@ func (self *manager) spinOnce(_ context.Context) error {
 		return nil
 	}
 
+	// A restart has been asked for, so this process is on its way out and the
+	// upgrade that asked for it has already swapped the binary. Doing it
+	// again would link the rollback copy to the binary just installed, which
+	// is the copy nobody wants back.
+	if self.restarter != nil && self.restarter.Requested() {
+		return nil
+	}
+
 	if wait, ok := self.attemptTooSoon(); !ok {
 		log.Debugf("not retrying the upgrade to %s for another %s", status.Latest, wait.Round(time.Minute))
 		return nil
@@ -348,10 +366,16 @@ func (self *manager) Start() (Status, error) {
 	if applicable, reason := self.applicableNow(); !applicable {
 		return self.Status(), fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
+
+	// The lock is taken here and released by the goroutine, so it is a
+	// reservation rather than a question. Taking it and letting it go before
+	// the goroutine starts let two requests both pass — and the loser then
+	// wrote "an upgrade is already running" onto the status while the winner
+	// was downloading, so the dashboard reported a failure for an upgrade
+	// that was about to restart the server.
 	if !self.applying.TryLock() {
 		return self.Status(), fmt.Errorf("upgrade: an upgrade is already running")
 	}
-	self.applying.Unlock()
 
 	self.mutex.Lock()
 	self.status.Upgrading = true
@@ -359,10 +383,12 @@ func (self *manager) Start() (Status, error) {
 	self.mutex.Unlock()
 
 	go func() {
+		defer self.applying.Unlock()
+
 		// The manager's context, not the request's: the request is answered
 		// before this finishes, and its context is cancelled the moment it
 		// is.
-		if err := self.Apply(self.ctx); err != nil {
+		if err := self.apply(self.ctx); err != nil {
 			log.Errorf("upgrade failed: %s", err)
 			self.mutex.Lock()
 			self.status.Upgrading = false
@@ -426,6 +452,19 @@ func (self *manager) sayOnce(message string) {
 }
 
 // Check reads the release list and remembers what it found.
+// CheckSoon asks in the background, once at a time.
+func (self *manager) CheckSoon() {
+	if !self.checking.TryLock() {
+		return
+	}
+	go func() {
+		defer self.checking.Unlock()
+		if _, err := self.Check(self.ctx); err != nil {
+			log.Warningf("could not check for a release: %s", err)
+		}
+	}()
+}
+
 // checkDue reports whether enough time has passed to ask again.
 //
 // Measured from the last attempt, not the last success. Measuring from

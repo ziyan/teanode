@@ -61,8 +61,10 @@ type Upgrade struct {
 }
 
 type GetUpgradeArguments struct {
-	// Ask the release list now rather than answering from the last scheduled
-	// check. What the dashboard does when somebody presses "check again".
+	// Ask the release list again rather than only answering from the last
+	// scheduled check. What the dashboard does when somebody presses "check
+	// again" — the reply is what is known now, and the fresh answer arrives
+	// on a later read.
 	//
 	// A pointer, so the schema makes it optional: a plain bool becomes
 	// Boolean! and then every caller that only wants to know what is already
@@ -79,11 +81,12 @@ func (self *graph) GetUpgrade(ctx context.Context, arguments GetUpgradeArguments
 	}
 
 	if arguments.Check != nil && *arguments.Check {
-		// The error is on the status rather than returned: "it could not
-		// reach the release list" is an answer to the question, not a failure
-		// of the request that asked it.
-		status, _ := self.upgrade.Check(ctx)
-		return describeUpgrade(status), nil
+		// Started, not waited for. This request runs inside a database
+		// transaction, and a thirty-second call to somebody else's endpoint
+		// — which is what it is on a server whose outbound HTTPS is blocked,
+		// an ordinary way to run a mail server — has no business holding one
+		// open. The answer arrives on the next read; the dashboard polls.
+		self.upgrade.CheckSoon()
 	}
 	return describeUpgrade(self.upgrade.Status()), nil
 }

@@ -745,6 +745,7 @@ export const zh: Catalog = {
   'upgrade.checking': '检查中…',
   'upgrade.upgradeTo': '升级到 {version}',
   'upgrade.upgrading': '升级中…',
+  'upgrade.tookTooLong': '升级耗时过长。请查看服务器日志；只要没有重启，正在运行的二进制就没有被替换。',
   'upgrade.waiting': '正在下载、替换二进制并重启，大约需要一分钟。',
   'upgrade.confirmQuestion': '确定将本服务器升级到 {version}？',
   'upgrade.confirmExplained':

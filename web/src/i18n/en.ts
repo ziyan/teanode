@@ -768,6 +768,7 @@ export const en = {
   'upgrade.checking': 'Checking…',
   'upgrade.upgradeTo': 'Upgrade to {version}',
   'upgrade.upgrading': 'Upgrading…',
+  'upgrade.tookTooLong': 'The upgrade is taking longer than it should. Check the server’s log; the running binary has not been replaced unless it restarts.',
   'upgrade.waiting': 'Downloading, replacing the binary and restarting. This takes a minute.',
   'upgrade.confirmQuestion': 'Upgrade this server to {version}?',
   'upgrade.confirmExplained':

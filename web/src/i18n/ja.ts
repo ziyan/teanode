@@ -760,6 +760,7 @@ export const ja: Catalog = {
   'upgrade.checking': '確認中…',
   'upgrade.upgradeTo': '{version} に更新',
   'upgrade.upgrading': '更新中…',
+  'upgrade.tookTooLong': '更新に時間がかかりすぎています。サーバーのログを確認してください。再起動しない限り、実行中のバイナリは置き換えられていません。',
   'upgrade.waiting': 'ダウンロードし、バイナリを置き換えて再起動します。1 分ほどかかります。',
   'upgrade.confirmQuestion': 'このサーバーを {version} に更新しますか？',
   'upgrade.confirmExplained':

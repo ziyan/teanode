@@ -41,6 +41,20 @@ func (self *manager) Apply(ctx context.Context) error {
 	}
 	defer self.applying.Unlock()
 
+	return self.apply(ctx)
+}
+
+// apply is the work, with the caller holding self.applying. Start holds it
+// across handing the work to a goroutine, which is why the lock is not taken
+// in here.
+func (self *manager) apply(ctx context.Context) error {
+	// Said on the status, not only in the log, so that a dashboard opened
+	// while the scheduled loop is downloading shows what is happening rather
+	// than a button that answers "an upgrade is already running".
+	self.mutex.Lock()
+	self.status.Upgrading = true
+	self.mutex.Unlock()
+
 	if applicable, reason := self.applicableNow(); !applicable {
 		return fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}

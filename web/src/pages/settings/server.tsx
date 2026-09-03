@@ -54,6 +54,11 @@ type ServerStatus = {
 // use than a spinner that never stops.
 const RESTART_TIMEOUT_MS = 90_000
 
+// UPGRADE_TIMEOUT_MS bounds the wait for the download and the swap, which
+// happen before the restart the wait above covers. Generous, because it is a
+// forty-five megabyte download over whatever link the server has.
+const UPGRADE_TIMEOUT_MS = 15 * 60_000
+
 // ServerPage is what this instance is, and the one control that acts on the
 // process rather than on the configuration.
 //
@@ -170,6 +175,44 @@ export function ServerPage() {
         return
       }
     }
+
+    // The server answers as soon as the upgrade starts and stays up for the
+    // whole download, which is minutes. Waiting for it to answer again — what
+    // restarting does — declared success a second and a half in, re-enabled
+    // the buttons and said it had come back, and then the real restart broke
+    // the page underneath somebody who had been told it was finished.
+    //
+    // So: wait for it to stop saying it is upgrading. Either it goes away,
+    // which is the restart and is handled by the wait below, or it comes back
+    // with an error to show.
+    const deadline = Date.now() + UPGRADE_TIMEOUT_MS
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      let status: UpgradeStatus | undefined
+      try {
+        status = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false })).GetUpgrade
+      } catch (caught) {
+        // Gone: the swap is done and the restart is under way.
+        void caught
+        break
+      }
+      if (status && !status.upgrading) {
+        // Back, and not upgrading: it failed before it got as far as
+        // restarting, and the reason is on the status.
+        setUpgrading(false)
+        await upgrade.reload()
+        if (status.error) {
+          setProblem(status.error)
+        }
+        return
+      }
+      if (Date.now() > deadline) {
+        setUpgrading(false)
+        setProblem(t('upgrade.tookTooLong'))
+        return
+      }
+    }
+
     setRestarting(true)
     await waitForServer()
     setUpgrading(false)
@@ -357,7 +400,11 @@ function UpgradeCard({
             {checking ? t('upgrade.checking') : t('upgrade.checkNow')}
           </button>{' '}
           {status.available && status.applicable && !confirming && (
-            <button className="primary" onClick={() => setConfirming(true)} disabled={upgrading}>
+            <button
+              className="primary"
+              onClick={() => setConfirming(true)}
+              disabled={upgrading || status.upgrading}
+            >
               {upgrading ? t('upgrade.upgrading') : t('upgrade.upgradeTo', { version: status.latest ?? '' })}
             </button>
           )}
@@ -386,7 +433,7 @@ function UpgradeCard({
         </>
       )}
 
-      {upgrading && <p className="muted">{t('upgrade.waiting')}</p>}
+      {(upgrading || status.upgrading) && <p className="muted">{t('upgrade.waiting')}</p>}
     </div>
   )
 }
