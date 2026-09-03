@@ -60,7 +60,7 @@ jobs:
         run: .github/scripts/release.sh "${{ steps.version.outputs.version }}" dist
 
       - name: Publish the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
