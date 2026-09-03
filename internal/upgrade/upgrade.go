@@ -85,6 +85,10 @@ type manager struct {
 	// been moved under it should fail the same way every time.
 	executable string
 
+	// checkInterval is how often the release list may actually be asked,
+	// which is not how often the loop wakes.
+	checkInterval time.Duration
+
 	// endpoint is where the release list is read from, and applicable decides
 	// whether this deployment may replace itself. Both are fields rather than
 	// constants so that a test can point them elsewhere: everything else in
@@ -96,10 +100,43 @@ type manager struct {
 	mutex  sync.RWMutex
 	status Status
 
+	// applying is held for the whole of an upgrade, download included. Two
+	// at once would each swap the binary, and the second would keep the
+	// first's new binary as the rollback copy — losing the one an operator
+	// would actually want back. Two operators pressing the button, or the
+	// schedule firing while somebody presses it, is the ordinary way that
+	// happens.
+	applying sync.Mutex
+
 	waitGroup sync.WaitGroup
 	loop      periodic.Periodic
 	ctx       context.Context
 	cancel    context.CancelFunc
+}
+
+// newClient is the one used for the release list and the download.
+//
+// No Timeout: the deadline belongs to each request's context, and a client
+// timeout silently wins over it — five minutes here quietly cut a
+// forty-megabyte download on any link slower than about 150 KB/s, for ever,
+// with a re-download every cycle.
+//
+// Redirects stay on https. A release asset is served from a redirect, and the
+// thing at the end of it is executed as the user that receives mail: one
+// cleartext hop is enough for somebody on the path to hand over both the
+// binary and the checksums that would have caught it.
+func newClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if request.URL.Scheme != "https" {
+				return fmt.Errorf("upgrade: refusing a redirect to %s", request.URL.Scheme)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("upgrade: too many redirects")
+			}
+			return nil
+		},
+	}
 }
 
 // New builds the manager. It does not reach the network; the first check
@@ -121,7 +158,7 @@ func New(configuration config.Store, restarter *api.Restarter) (Manager, error) 
 		restarter:  restarter,
 		repository: Repository,
 		endpoint:   fmt.Sprintf(releaseEndpoint, Repository),
-		client:     &http.Client{Timeout: 5 * time.Minute},
+		client:     newClient(),
 		executable: executable,
 		status: Status{
 			Current: version.Version(),
@@ -141,8 +178,21 @@ func New(configuration config.Store, restarter *api.Restarter) (Manager, error) 
 		return self, nil
 	}
 
+	self.checkInterval = settings.CheckInterval.Duration()
+
+	// The loop wakes far more often than it asks anybody anything, and the
+	// two are separate on purpose. A check every six hours happens four times
+	// a day at whatever times the process started at; an upgrade window two
+	// hours wide would then be hit or missed depending on that phase, and
+	// missing it means automatic upgrades silently never happen. Waking every
+	// few minutes and deciding each time — with the release list asked only
+	// when checkInterval has passed — costs nothing and honours the window.
+	interval := self.checkInterval
+	if interval > tick {
+		interval = tick
+	}
 	self.loop = periodic.New(self.ctx, &self.waitGroup, self.spinOnce, &periodic.Settings{
-		Interval: settings.CheckInterval.Duration(),
+		Interval: interval,
 		Name:     "upgrade",
 	})
 	self.loop.Start()
@@ -170,28 +220,55 @@ func (self *manager) currentVersion() string {
 func (self *manager) Status() Status {
 	self.mutex.RLock()
 	defer self.mutex.RUnlock()
+	return self.describe()
+}
 
+// describe is the status as a caller should see it, with the settings folded
+// in. Held by the caller's lock.
+//
+// One function rather than two, because there were two: Check returned the
+// stored status directly and therefore always said automatic upgrades were
+// off, while Status said the truth. The dashboard hid it by re-reading after
+// a check; the command line did not.
+func (self *manager) describe() Status {
 	status := self.status
-	status.Automatic = self.config.Current().Upgrade.Automatic
+	if self.config != nil {
+		status.Automatic = self.config.Current().Upgrade.Automatic
+	}
 	return status
 }
 
-// spinOnce is the scheduled half: look, and install if that is what this
-// deployment was told to do.
-func (self *manager) spinOnce(ctx context.Context) error {
-	status, err := self.Check(ctx)
-	if err != nil {
-		// Said once at warning, not once a cycle at error: a server behind a
-		// firewall that blocks this would otherwise fill a log with something
-		// nobody can act on.
-		log.Warningf("could not check for a release: %s", err)
-		return nil
+// tick is how often the loop wakes when a check is not due. Short enough that
+// the narrowest window anybody would write is hit, long enough to be nothing.
+const tick = 5 * time.Minute
+
+// spinOnce is the scheduled half: look if a look is due, and install if that
+// is what this deployment was told to do.
+// The context is ignored on purpose: periodic hands its handler a background
+// context, so a stop would otherwise wait out a download that is minutes from
+// finishing. The manager's own context is the one Close cancels.
+func (self *manager) spinOnce(_ context.Context) error {
+	ctx := self.ctx
+	status := self.Status()
+
+	if self.checkDue() {
+		var err error
+		status, err = self.Check(ctx)
+		if err != nil {
+			// Said once at warning, not once a cycle at error: a server
+			// behind a firewall that blocks this would otherwise fill a log
+			// with something nobody can act on.
+			log.Warningf("could not check for a release: %s", err)
+			return nil
+		}
+		if status.Available {
+			log.Noticef("version %s is available; this server is running %s", status.Latest, status.Current)
+		}
 	}
+
 	if !status.Available {
 		return nil
 	}
-
-	log.Noticef("version %s is available; this server is running %s", status.Latest, status.Current)
 
 	settings := self.config.Current().Upgrade
 	if !settings.Automatic {
@@ -202,7 +279,10 @@ func (self *manager) spinOnce(ctx context.Context) error {
 		return nil
 	}
 	if !withinWindow(settings.Window, time.Now()) {
-		log.Noticef("not installing %s yet: outside upgrade.window", status.Latest)
+		// At debug, because this is the ordinary answer for most of the day
+		// once a window is set: an hourly notice saying "not yet" is a log
+		// nobody reads.
+		log.Debugf("not installing %s yet: outside upgrade.window %q", status.Latest, settings.Window)
 		return nil
 	}
 
@@ -214,6 +294,18 @@ func (self *manager) spinOnce(ctx context.Context) error {
 }
 
 // Check reads the release list and remembers what it found.
+// checkDue reports whether enough time has passed to ask again.
+func (self *manager) checkDue() bool {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+
+	// Never checked, or the last attempt failed: ask.
+	if self.status.CheckedAt == nil {
+		return true
+	}
+	return time.Since(*self.status.CheckedAt) >= self.checkInterval
+}
+
 func (self *manager) Check(ctx context.Context) (Status, error) {
 	found, err := latestRelease(ctx, self.client, self.endpoint)
 
@@ -222,7 +314,7 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 
 	if err != nil {
 		self.status.Error = err.Error()
-		return self.status, err
+		return self.describe(), err
 	}
 
 	now := time.Now()
@@ -231,7 +323,7 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.status.Latest = found.version()
 	self.status.Notes = found.Notes
 	self.status.Available = isUpgrade(self.status.Current, self.status.Latest)
-	return self.status, nil
+	return self.describe(), nil
 }
 
 // checkApplicable answers whether an upgrade could be applied at all, and why

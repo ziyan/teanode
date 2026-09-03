@@ -32,6 +32,14 @@ const previousSuffix = ".previous"
 // old one running, because the next unrelated restart would then be an
 // unplanned upgrade.
 func (self *manager) Apply(ctx context.Context) error {
+	// Refused rather than queued: the caller is a person watching a button or
+	// a scheduled loop, and neither should wait behind a download that may
+	// have ten minutes left in it.
+	if !self.applying.TryLock() {
+		return fmt.Errorf("upgrade: an upgrade is already running")
+	}
+	defer self.applying.Unlock()
+
 	if applicable, reason := self.applicable(); !applicable {
 		return fmt.Errorf("%w: %s", ErrNotApplicable, reason)
 	}
@@ -101,8 +109,19 @@ func (self *manager) Apply(ctx context.Context) error {
 // within one filesystem, where it is atomic: there is no moment at which the
 // path names a half-written file.
 func (self *manager) swap(downloaded string) error {
-	if err := os.Chmod(downloaded, 0o755); err != nil {
-		return fmt.Errorf("upgrade: cannot make the new binary executable: %w", err)
+	// The mode the replaced binary had, not a mode invented here. A
+	// deployment that installs it 0750 root:teanode should not find it world
+	// readable and executable after an upgrade — and CreateTemp makes 0600,
+	// which would not run at all.
+	mode := os.FileMode(0o755)
+	if info, err := os.Stat(self.executable); err == nil {
+		mode = info.Mode().Perm()
+		// It has to stay runnable by whoever ran it. A binary that was
+		// somehow not executable is not a reason to install one that is not.
+		mode |= 0o100
+	}
+	if err := os.Chmod(downloaded, mode); err != nil {
+		return fmt.Errorf("upgrade: cannot set the new binary's mode: %w", err)
 	}
 
 	previous := self.executable + previousSuffix

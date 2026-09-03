@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"time"
 
 	"github.com/op/go-logging"
 	"golang.org/x/crypto/bcrypt"
@@ -493,6 +494,18 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		validator.add("dns.checkInterval", "must be positive, for example 30m")
 	}
 
+	if self.Upgrade.Enabled && self.Upgrade.CheckInterval <= 0 {
+		// Zero is not "as often as possible": the loop would ask the release
+		// list again the moment it finished, until the address is rate
+		// limited.
+		validator.add("upgrade.checkInterval", "must be positive, for example 6h")
+	}
+	if window := strings.TrimSpace(self.Upgrade.Window); window != "" {
+		if _, _, err := parseUpgradeWindow(window); err != nil {
+			validator.add("upgrade.window", "%q is not a window, for example 02:00-04:00", self.Upgrade.Window)
+		}
+	}
+
 	if self.Antivirus.Enabled {
 		if self.Antivirus.Host == "" {
 			validator.add("antivirus.host", "required when antivirus is enabled: where clamd is listening")
@@ -631,4 +644,27 @@ func (self *Configuration) ValidateFiles() error {
 		return nil
 	}
 	return validator.errors
+}
+
+// parseUpgradeWindow reads "HH:MM-HH:MM" so that a window can be refused when
+// the configuration is checked rather than ignored with a warning at three in
+// the morning. internal/upgrade parses it again to use it; this exists so a
+// typo is a validation error at the point somebody types it.
+func parseUpgradeWindow(window string) (int, int, error) {
+	halves := strings.SplitN(window, "-", 2)
+	if len(halves) != 2 {
+		return 0, 0, fmt.Errorf("a window looks like 02:00-04:00")
+	}
+	var minutes [2]int
+	for index, half := range halves {
+		parsed, err := time.Parse("15:04", strings.TrimSpace(half))
+		if err != nil {
+			return 0, 0, fmt.Errorf("%q is not a time of day", strings.TrimSpace(half))
+		}
+		minutes[index] = parsed.Hour()*60 + parsed.Minute()
+	}
+	if minutes[0] == minutes[1] {
+		return 0, 0, fmt.Errorf("a window that starts and ends at the same minute is not a window")
+	}
+	return minutes[0], minutes[1], nil
 }

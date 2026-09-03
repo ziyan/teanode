@@ -112,11 +112,13 @@ func TestApplyReplacesTheBinary(t *testing.T) {
 	if string(replaced) != string(newBinary) {
 		t.Errorf("the binary is %q", replaced)
 	}
-	// Executable, or the restart brings back nothing.
+	// The mode the old binary had, not one invented by the upgrade: a
+	// deployment that installs it 0750 should not find it world readable
+	// afterwards.
 	if info, err := os.Stat(executable); err != nil {
 		t.Fatal(err)
-	} else if info.Mode().Perm()&0o111 == 0 {
-		t.Errorf("the new binary is not executable: %s", info.Mode())
+	} else if info.Mode().Perm() != 0o755 {
+		t.Errorf("the new binary is %s, want the 0755 the old one had", info.Mode().Perm())
 	}
 
 	previous, err := os.ReadFile(executable + previousSuffix)
@@ -263,5 +265,108 @@ func testManager(t *testing.T, executable, base string, client *http.Client, cur
 		// Whether this process is supervised is not what these tests are
 		// about, and the answer for a test binary is "no".
 		applicable: func() (bool, string) { return true, "" },
+	}
+}
+
+// Two upgrades at once would each swap the binary, and the second would keep
+// the first's new binary as the rollback copy — losing the one somebody would
+// actually want back. The second caller is turned away rather than queued,
+// because the callers are a person watching a button and a scheduled loop.
+func TestApplyRefusesToRunTwice(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A release whose download blocks until the test lets it finish, so that
+	// the second call arrives while the first is still going.
+	holding := make(chan struct{})
+	binary := []byte("the new binary")
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+	mux.HandleFunc("/binary", func(writer http.ResponseWriter, _ *http.Request) {
+		<-holding
+		_, _ = writer.Write(binary)
+	})
+	mux.HandleFunc("/sums", func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(writer, "%s  %s\n", sha256Of(binary), assetName())
+	})
+	mux.HandleFunc("/release", func(writer http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"tag_name": "v0.9.0",
+			"assets": []map[string]any{
+				{"name": assetName(), "browser_download_url": server.URL + "/binary"},
+				{"name": checksumsAsset, "browser_download_url": server.URL + "/sums"},
+			},
+		})
+	})
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
+
+	first := make(chan error, 1)
+	go func() {
+		first <- manager.Apply(context.Background())
+	}()
+
+	// Wait until the first call is inside the download, which is where it
+	// holds the lock for the longest.
+	deadline := time.Now().Add(5 * time.Second)
+	for manager.applying.TryLock() {
+		manager.applying.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("the first upgrade never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := manager.Apply(context.Background()); err == nil {
+		t.Error("a second upgrade ran while the first was still going")
+	} else if !strings.Contains(err.Error(), "already running") {
+		t.Errorf("the second call failed for the wrong reason: %s", err)
+	}
+
+	close(holding)
+	if err := <-first; err != nil {
+		t.Fatalf("the first upgrade failed: %s", err)
+	}
+
+	// And the rollback copy is the binary that was replaced, not one this
+	// upgrade wrote.
+	previous, err := os.ReadFile(executable + previousSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(previous) != "the old binary" {
+		t.Errorf("the rollback copy is %q", previous)
+	}
+}
+
+// The replaced binary's permissions are kept. An operator who installed it
+// 0750 root:teanode has said something about who may run it, and an upgrade is
+// not the place to change their mind.
+func TestApplyKeepsTheBinaryMode(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	binary := []byte("the new binary")
+	server := releaseServer(t, "0.9.0", binary, sha256Of(binary))
+	defer server.Close()
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
+	if err := manager.Apply(context.Background()); err != nil {
+		t.Fatalf("Apply: %s", err)
+	}
+
+	info, err := os.Stat(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o750 {
+		t.Errorf("the new binary is %s, want 0750", info.Mode().Perm())
 	}
 }

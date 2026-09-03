@@ -730,6 +730,12 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		"antivirus":            configuration.Antivirus,
 		"antispam":             configuration.Antispam,
 		"geoip":                configuration.GeoIP,
+		// Read once when the checker is built. Automatic and window are
+		// re-read every cycle and are deliberately not here: changing those
+		// takes effect without a restart, and listing them would ask for one
+		// that is not needed.
+		"upgrade.enabled":       configuration.Upgrade.Enabled,
+		"upgrade.checkInterval": configuration.Upgrade.CheckInterval,
 	}
 }
 

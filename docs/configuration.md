@@ -738,7 +738,13 @@ after it exits.
 
 **`checkInterval`** — CheckInterval is how often to look. Six hours by default:
 often enough that a security release is noticed the same day, rarely enough
-that it is not a request anybody would notice.
+that it is not a request anybody would notice. Read once at startup, along with
+`enabled`, so changing either takes a restart — the dashboard says so.
+
+The loop itself wakes more often than this and asks nothing most of the time.
+That is what makes `window` work: a check every six hours happens at four fixed
+times a day, and a two-hour window would be hit or missed depending on when the
+process started.
 
 **`window`** — Window restricts automatic upgrades to a time of day, in local
 time, as `02:00-04:00`. It may cross midnight. Empty means any time. An upgrade

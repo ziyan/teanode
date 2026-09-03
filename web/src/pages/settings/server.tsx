@@ -148,17 +148,25 @@ export function ServerPage() {
     }
   }
 
-  // The reply comes back before the restart, so what follows is the same wait
-  // the restart button does: the server goes away and is looked for again.
+  // The server replies and then restarts, so a connection that closes
+  // mid-reply is a success that looks like a failure — the same trap the
+  // restart button already knew about. Whether it worked is decided by the
+  // wait, not by this: showing an error beside a server that is coming back
+  // new invites somebody to press the button again.
+  //
+  // A refusal is different: it answers before anything is downloaded, and it
+  // is the reply the reader needs.
   async function applyUpgrade() {
     setProblem(null)
     setUpgrading(true)
     try {
       await graphql(APPLY)
     } catch (failure) {
-      setProblem(String(failure))
-      setUpgrading(false)
-      return
+      if (isRefusal(failure)) {
+        setProblem(String(failure))
+        setUpgrading(false)
+        return
+      }
     }
     setRestarting(true)
     await waitForServer()
@@ -251,6 +259,16 @@ export function ServerPage() {
       </div>
     </>
   )
+}
+
+// isRefusal separates an answer from a lost connection.
+//
+// The server says why it will not upgrade — a container, no supervisor, a
+// checksum that did not match — and every one of those arrives as a complete
+// reply. A connection that dropped has no message worth showing, and showing
+// it would be showing a failure for an upgrade that is happening.
+function isRefusal(failure: unknown): boolean {
+  return failure instanceof Error && /upgrade:|invalid arguments/.test(failure.message)
 }
 
 // UpgradeCard says what is running, what is available, and either offers the
