@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-03
+
+### Fixed
+
+- The account menu opens on a phone. It is drawn at a layer below the
+  navigation rail, and on a narrow screen the rail is an overlay rather than a
+  column — so the menu opened behind the rail that had just been tapped:
+  invisible, with nothing on it reachable. (#1)
+- The row of tabs on a message no longer runs off the side of a phone. It
+  scrolls sideways instead, and the link that downloads the `.eml` is not
+  offered there: a phone has little use for the file, and in a scrolling row it
+  sat past the end where nobody would find it. (#1)
+- Lists in the dashboard stack on a phone rather than putting a button beside a
+  paragraph and leaving each of them a column four words wide. (#1)
+- Every chevron in the breadcrumb has the same air on both sides. The gap fell
+  on one side only, so the trail read as `Domains> example.com> Templates`. (#1)
 ## [0.1.0] - 2026-09-03
 
 First open-source release. TeaNode began as the private backend of a hosted
