@@ -377,6 +377,8 @@ func (self *manager) Start() (Status, error) {
 		return self.Status(), fmt.Errorf("upgrade: an upgrade is already running")
 	}
 
+	// Marked here as well as in apply, so that the status says so before this
+	// request is answered rather than whenever the goroutine gets to run.
 	self.mutex.Lock()
 	self.status.Upgrading = true
 	self.status.Error = ""
@@ -387,17 +389,11 @@ func (self *manager) Start() (Status, error) {
 
 		// The manager's context, not the request's: the request is answered
 		// before this finishes, and its context is cancelled the moment it
-		// is.
+		// is. apply puts the status back if it fails; a success is followed
+		// by the restart, which this process does not return from.
 		if err := self.apply(self.ctx); err != nil {
 			log.Errorf("upgrade failed: %s", err)
-			self.mutex.Lock()
-			self.status.Upgrading = false
-			self.status.Error = err.Error()
-			self.mutex.Unlock()
-			return
 		}
-		// Left as upgrading: what follows is the restart, and this process
-		// does not come back from it.
 	}()
 
 	return self.Status(), nil
@@ -451,7 +447,6 @@ func (self *manager) sayOnce(message string) {
 	log.Warning(message)
 }
 
-// Check reads the release list and remembers what it found.
 // CheckSoon asks in the background, once at a time.
 func (self *manager) CheckSoon() {
 	if !self.checking.TryLock() {

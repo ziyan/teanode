@@ -192,9 +192,15 @@ export function ServerPage() {
       try {
         status = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false })).GetUpgrade
       } catch (caught) {
-        // Gone: the swap is done and the restart is under way.
-        void caught
-        break
+        // Gone means gone. Anything the server managed to say — a session
+        // that expired, a request whose transaction failed — is not the
+        // restart, and breaking out here left the page waiting ninety
+        // seconds for a server that was still downloading, then telling
+        // somebody it had not come back.
+        if (isLostConnection(caught)) {
+          break
+        }
+        continue
       }
       if (status && !status.upgrading) {
         // Back, and not upgrading: it failed before it got as far as

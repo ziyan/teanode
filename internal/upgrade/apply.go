@@ -47,13 +47,31 @@ func (self *manager) Apply(ctx context.Context) error {
 // apply is the work, with the caller holding self.applying. Start holds it
 // across handing the work to a goroutine, which is why the lock is not taken
 // in here.
-func (self *manager) apply(ctx context.Context) error {
+func (self *manager) apply(ctx context.Context) (err error) {
 	// Said on the status, not only in the log, so that a dashboard opened
 	// while the scheduled loop is downloading shows what is happening rather
 	// than a button that answers "an upgrade is already running".
+	//
+	// And put back here, on every way out, rather than by the caller: one
+	// caller did it and the other did not, so a scheduled upgrade that failed
+	// left the dashboard saying "downloading, replacing the binary and
+	// restarting" for the life of the process, with the button disabled and
+	// no error beside it. A success is the exception: it is followed by the
+	// restart, and this process does not come back to unset anything.
 	self.mutex.Lock()
 	self.status.Upgrading = true
+	self.status.Error = ""
 	self.mutex.Unlock()
+
+	defer func() {
+		if err == nil {
+			return
+		}
+		self.mutex.Lock()
+		self.status.Upgrading = false
+		self.status.Error = err.Error()
+		self.mutex.Unlock()
+	}()
 
 	if applicable, reason := self.applicableNow(); !applicable {
 		return fmt.Errorf("%w: %s", ErrNotApplicable, reason)

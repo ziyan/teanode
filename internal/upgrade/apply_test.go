@@ -440,3 +440,32 @@ func TestAFailedCheckStillCounts(t *testing.T) {
 		t.Error("a failed check counted as having checked")
 	}
 }
+
+// A failed upgrade must not leave the dashboard saying one is running. It did:
+// the flag was set in the shared path and cleared only by the caller that
+// starts one from the API, so a scheduled upgrade that failed left "downloading,
+// replacing the binary and restarting" on screen for the life of the process,
+// with the button disabled and no error beside it.
+func TestAFailedUpgradeStopsSayingItIsUpgrading(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	server := releaseServer(t, "0.9.0", []byte("not what was promised"), sha256Of([]byte("the promise")))
+	defer server.Close()
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
+	if err := manager.Apply(context.Background()); err == nil {
+		t.Fatal("the upgrade should have failed")
+	}
+
+	status := manager.Status()
+	if status.Upgrading {
+		t.Error("it still says an upgrade is running")
+	}
+	if status.Error == "" {
+		t.Error("nothing says why it failed")
+	}
+}
