@@ -24,8 +24,10 @@ readonly PARSER=".github/scripts/pull-request-entries.awk"
 
 changed="$(git diff --name-only "${BASE}"...HEAD)"
 
-# Anything here is code that ends up in the binary an operator runs.
-shipping="$(grep -E '^(cmd|internal|web/src)/.*\.(go|ts|tsx)$|^main\.go$' <<<"${changed}" \
+# Anything here is code that ends up in the binary an operator runs. CSS
+# counts: a stylesheet is where the dashboard says what fits on a phone, and a
+# change nobody can see is not the same as a change with no code in it.
+shipping="$(grep -E '^(cmd|internal|web/src)/.*\.(go|ts|tsx|css)$|^main\.go$' <<<"${changed}" \
   | grep -vE '_test\.go$' || true)"
 
 if [[ -z "${shipping}" ]]; then
