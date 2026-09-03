@@ -214,6 +214,9 @@ type LoadOptions struct {
 	// The inclusive min bytes of a request body that could be compressed
 	RequestMinCompressSizeBytes *int64
 
+	// Specifies whether SDK clock skew correction is disabled
+	DisableClockSkewCorrection *bool
+
 	// Whether S3 Express auth is disabled.
 	S3DisableExpressAuth *bool
 
@@ -235,6 +238,15 @@ type LoadOptions struct {
 
 	// Priority list of preferred auth scheme names (e.g. sigv4a).
 	AuthSchemePreference []string
+
+	// ServiceOptions provides service specific configuration options that will be applied
+	// when constructing clients for specific services. Each callback function receives the service ID
+	// and the service's Options struct, allowing for dynamic configuration based on the service.
+	ServiceOptions []func(string, any)
+
+	// Controls whether the SDK restricts file permissions on credential
+	// cache files it creates.
+	RestrictFilePermissions aws.RestrictFilePermissions
 }
 
 func (o LoadOptions) getDefaultsMode(ctx context.Context) (aws.DefaultsMode, bool, error) {
@@ -290,6 +302,14 @@ func (o LoadOptions) getDisableRequestCompression(ctx context.Context) (bool, bo
 	return *o.DisableRequestCompression, true, nil
 }
 
+// getDisableClockSkewCorrection returns DisableClockSkewCorrection from config's LoadOptions
+func (o LoadOptions) getDisableClockSkewCorrection(ctx context.Context) (bool, bool, error) {
+	if o.DisableClockSkewCorrection == nil {
+		return false, false, nil
+	}
+	return *o.DisableClockSkewCorrection, true, nil
+}
+
 // getRequestMinCompressSizeBytes returns RequestMinCompressSizeBytes from config's LoadOptions
 func (o LoadOptions) getRequestMinCompressSizeBytes(ctx context.Context) (int64, bool, error) {
 	if o.RequestMinCompressSizeBytes == nil {
@@ -312,6 +332,10 @@ func (o LoadOptions) getResponseChecksumValidation(ctx context.Context) (aws.Res
 
 func (o LoadOptions) getBaseEndpoint(context.Context) (string, bool, error) {
 	return o.BaseEndpoint, o.BaseEndpoint != "", nil
+}
+
+func (o LoadOptions) getServiceOptions(context.Context) ([]func(string, any), bool, error) {
+	return o.ServiceOptions, len(o.ServiceOptions) > 0, nil
 }
 
 // GetServiceBaseEndpoint satisfies (internal/configsources).ServiceBaseEndpointProvider.
@@ -352,6 +376,18 @@ func WithDisableRequestCompression(DisableRequestCompression *bool) LoadOptionsF
 			return nil
 		}
 		o.DisableRequestCompression = DisableRequestCompression
+		return nil
+	}
+}
+
+// WithDisableClockSkewCorrection is a helper function to construct functional
+// options that sets DisableClockSkewCorrection on config's LoadOptions.
+func WithDisableClockSkewCorrection(DisableClockSkewCorrection *bool) LoadOptionsFunc {
+	return func(o *LoadOptions) error {
+		if DisableClockSkewCorrection == nil {
+			return nil
+		}
+		o.DisableClockSkewCorrection = DisableClockSkewCorrection
 		return nil
 	}
 }
@@ -1215,6 +1251,15 @@ func WithBaseEndpoint(v string) LoadOptionsFunc {
 	}
 }
 
+// WithServiceOptions is a helper function to construct functional options
+// that sets ServiceOptions on config's LoadOptions.
+func WithServiceOptions(callbacks ...func(string, any)) LoadOptionsFunc {
+	return func(o *LoadOptions) error {
+		o.ServiceOptions = append(o.ServiceOptions, callbacks...)
+		return nil
+	}
+}
+
 // WithBeforeExecution adds the BeforeExecutionInterceptor to config.
 func WithBeforeExecution(i smithyhttp.BeforeExecutionInterceptor) LoadOptionsFunc {
 	return func(o *LoadOptions) error {
@@ -1334,4 +1379,16 @@ func (o LoadOptions) getAuthSchemePreference() ([]string, bool) {
 		return o.AuthSchemePreference, true
 	}
 	return nil, false
+}
+
+func (o LoadOptions) getRestrictFilePermissions(context.Context) (aws.RestrictFilePermissions, bool, error) {
+	return o.RestrictFilePermissions, len(o.RestrictFilePermissions) > 0, nil
+}
+
+// WithRestrictFilePermissions sets the RestrictFilePermissions mode on config.
+func WithRestrictFilePermissions(m aws.RestrictFilePermissions) LoadOptionsFunc {
+	return func(o *LoadOptions) error {
+		o.RestrictFilePermissions = m
+		return nil
+	}
 }
