@@ -248,8 +248,8 @@ github.com/jinzhu/now
 github.com/lib/pq
 github.com/lib/pq/oid
 github.com/lib/pq/scram
-# github.com/miekg/dns v1.1.68
-## explicit; go 1.23.0
+# github.com/miekg/dns v1.1.73
+## explicit; go 1.25.0
 github.com/miekg/dns
 # github.com/oklog/ulid/v2 v2.1.1
 ## explicit; go 1.15
