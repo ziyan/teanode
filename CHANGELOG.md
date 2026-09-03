@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-03
+
 First open-source release. TeaNode began as the private backend of a hosted
 service; this release turns it into something anybody can run for their own
 domains. Almost everything below is a consequence of that.
