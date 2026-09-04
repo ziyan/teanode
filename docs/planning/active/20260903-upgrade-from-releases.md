@@ -70,6 +70,33 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The second upgrade of a container took the wrong road.** `swap` chose
+  between replacing in place and staging by asking whether the target differed
+  from this process's executable — and once a process has been exec'd out of
+  the staging directory, the staged path *is* its executable. So the second
+  upgrade replaced in place, wrote no version and no checksum, and left the
+  directory describing the release before last. The next recreate refused the
+  staged binary over the mismatch and ran the image's old one. The question is
+  where the binary goes, not whether that happens to be the file this process
+  was started from.
+
+- **Refusing to run a staged binary is safe for the binary and was not safe
+  for the schema.** Everything the exec refuses — a crash-loop marker, a
+  checksum that does not match — ends with this older binary carrying on and
+  opening the database, and `Migrate` reverts what it does not recognise. A
+  release that migrated and then crashed before serving would therefore have
+  its columns dropped by the very guard that was protecting the server from
+  it. So a start that has refused a staged upgrade and finds migrations it
+  does not know now stops instead, and says which, where, and the two ways
+  out. An ordinary downgrade — nothing staged — still reverts as documented.
+
+- **`teanode config init` and `config import` migrate too.** Both are run with
+  `docker compose exec` against a live container, and both would have let the
+  image's older binary revert a staged upgrade's schema under a running
+  server. They reach past it the same way a start does, without spending the
+  crash-loop mark: a command that runs and exits proves nothing about whether
+  a release can serve.
+
 - **`git describe` makes every development build look like a candidate.**
   `VERSION ?= $(shell git describe --tags)` produces `0.1.2-9-g6a8860b`, whose
   prerelease field sorts it below the tag it came after. Plain semantic

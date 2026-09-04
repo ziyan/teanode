@@ -573,8 +573,12 @@ func (self *manager) CheckSoon() {
 		return
 	}
 	if !self.checking.TryLock() {
+		// One is already running, and this caller will see its answer. The
+		// allowance is not spent on it: a request that started no check must
+		// not be the reason the next one is turned away.
 		return
 	}
+	self.recordCheckByHand()
 	self.waitGroup.Add(1)
 	go func() {
 		defer self.waitGroup.Done()
@@ -594,18 +598,20 @@ func (self *manager) CheckSoon() {
 // and the dashboard, which waits for the recorded time to move, waited forty
 // seconds for something that was never going to happen and then gave up
 // without a word.
-//
-// It also records the attempt, so that two people pressing the button at once
-// produce one check rather than two that both passed the test.
 func (self *manager) mayCheckByHand() bool {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+
+	return self.lastManualCheck.IsZero() || time.Since(self.lastManualCheck) >= manualCheckInterval
+}
+
+// recordCheckByHand spends the allowance, and is called only once a check is
+// actually about to run.
+func (self *manager) recordCheckByHand() {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	if !self.lastManualCheck.IsZero() && time.Since(self.lastManualCheck) < manualCheckInterval {
-		return false
-	}
 	self.lastManualCheck = time.Now()
-	return true
 }
 
 // checkDue reports whether enough time has passed to ask again.

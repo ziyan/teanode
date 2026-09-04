@@ -28,6 +28,25 @@ about the newer schema. It also means the reverse SQL has to be correct at the
 time the migration is written, because by the time it runs, the code that
 described it is gone.
 
+## The one time it refuses
+
+Reverting is right for a downgrade somebody chose and wrong for one nobody
+did — and the upgrade feature makes the second kind possible. A release
+installed from the dashboard can migrate the database and then crash before it
+serves, in which case the next start refuses it by design and would otherwise
+run the older binary out of the image, which would revert those migrations and
+drop what is in the columns they added.
+
+So `cmd.migrate` asks first. If a staged binary is waiting in
+`TEANODE_UPGRADE_DIRECTORY` and this binary does not recognise every migration
+the database has applied, nothing is migrated and nothing is opened: the server
+stops and says which migrations, where the binary is, and the two ways out —
+remove the `pending` marker to run the upgrade again, or remove the staged
+binary to go back to this version on purpose. Mail stops, which is the smaller
+loss: a dropped column does not come back.
+
+Nothing staged means an ordinary downgrade, and it reverts as above.
+
 ## Writing one
 
 1. Add both files with the next number and a short descriptive slug.

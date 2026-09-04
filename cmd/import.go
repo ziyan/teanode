@@ -9,6 +9,8 @@ import (
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
+	"github.com/ziyan/teanode/internal/upgrade"
+	"github.com/ziyan/teanode/internal/version"
 )
 
 // newConfigImportCommand builds "teanode config import", which reads an
@@ -82,6 +84,11 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	// Reaching past the image's binary first, for the same reason a start
+	// does: this command migrates, and an older binary migrating undoes what a
+	// newer one did rather than adding to it.
+	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
+
 	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
 	if err != nil {
 		return err
@@ -91,8 +98,8 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	// Migrating here, unlike every other command, because this one's whole
 	// job is to set a database up from a file — and a migration it refused to
 	// run would just be a second command to run first.
-	if err := database.Migrate(); err != nil {
-		return fmt.Errorf("cannot migrate the database: %w", err)
+	if err := migrate(database, bootstrapped.UpgradeDirectory); err != nil {
+		return err
 	}
 
 	// A database with a configuration in it is one somebody has already set

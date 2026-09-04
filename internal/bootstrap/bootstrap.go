@@ -102,22 +102,29 @@ func Load() (*Bootstrap, error) {
 
 // loadUpgradeDirectory works out where a staged binary goes.
 //
-// TEANODE_UPGRADE_DIRECTORY when it is set, and otherwise "upgrade" under the
-// data directory the environment names — which for a container is the volume
-// the spool and the keys already live on, so the ordinary deployment gets a
-// working answer without being told twice.
+// TEANODE_UPGRADE_DIRECTORY when it is set, and otherwise "upgrade" under
+// TEANODE_SERVER_DATA_DIRECTORY when that is — which for a container is the
+// volume the spool and the keys already live on, so the ordinary deployment
+// gets a working answer without being told twice.
 //
-// Note which data directory that is: the one from the environment, not the
-// one in the database. They are usually the same, and when they are not, this
-// is the honest half — the database is not readable at the moment this
-// matters.
+// Nothing when neither is set, and the deployment is then told it cannot
+// upgrade itself. Deliberately not falling back to the compiled-in default
+// data directory: that path is a guess, and a wrong guess here is not a
+// harmless one — on a container running as root it would put the new binary
+// inside the image, where it works until the container is recreated and then
+// silently is not there. The variables above are read straight from the
+// environment rather than from the seed for the same reason. The seed is
+// applied on a first run only, so a deployment that set its data directory in
+// the dashboard has the default sitting in the seed and nothing in its
+// environment, and following the seed would name a directory nobody chose.
 func (self *Bootstrap) loadUpgradeDirectory() error {
 	directory, ok := lookup("UPGRADE_DIRECTORY")
 	if !ok || directory == "" {
-		if self.Seed == nil || self.Seed.Server.DataDirectory == "" {
+		data, ok := lookup("SERVER_DATA_DIRECTORY")
+		if !ok || data == "" {
 			return nil
 		}
-		directory = filepath.Join(self.Seed.Server.DataDirectory, "upgrade")
+		directory = filepath.Join(data, "upgrade")
 	}
 
 	// Absolute, because it is read again at the next start and a process

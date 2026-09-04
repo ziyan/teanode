@@ -12,6 +12,8 @@ import (
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
+	"github.com/ziyan/teanode/internal/upgrade"
+	"github.com/ziyan/teanode/internal/version"
 )
 
 // NewConfigCommand builds the "teanode config" command group.
@@ -205,14 +207,19 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
+	// This command migrates, so it is one of the three that must not reach the
+	// database ahead of a staged upgrade. It is run with "docker compose exec"
+	// against a running container as often as anything here.
+	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
+
 	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
 	if err != nil {
 		return err
 	}
 	defer closeDatabase()
 
-	if err := database.Migrate(); err != nil {
-		return fmt.Errorf("cannot migrate the database: %w", err)
+	if err := migrate(database, bootstrapped.UpgradeDirectory); err != nil {
+		return err
 	}
 
 	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)

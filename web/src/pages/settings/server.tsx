@@ -224,6 +224,11 @@ export function ServerAboutPage() {
     // with an error to show.
     const deadline = Date.now() + UPGRADE_TIMEOUT_MS
     let lost = 0
+    // Whether the server has said, in so many words, that it is upgrading.
+    // Until it has, a run of failed requests is much more likely to be
+    // something between here and it than the restart: the restart cannot
+    // happen before the download does.
+    let confirmed = false
     for (;;) {
       // Checked at the top, because it is the only way out of this loop for an
       // upgrade that never finishes — and a "continue" below skipped it, so
@@ -245,12 +250,16 @@ export function ServerAboutPage() {
         // seconds for a server that was still downloading, then telling
         // somebody it had not come back.
         //
-        // And twice, not once: a single dropped request is a proxy hiccup as
-        // often as it is a server going away, and reading one as the restart
-        // declared the upgrade finished while it was still downloading.
+        // And a run of them, not one: a single dropped request is a proxy
+        // hiccup as often as it is a server going away, and reading one as
+        // the restart declared the upgrade finished while it was still
+        // downloading. Two was not enough either — a reverse proxy reloading
+        // mid-download produces two 502s in a row as easily as a restart
+        // does — so the run has to be longer, and longer still while the
+        // server has never once said it was upgrading.
         if (isLostConnection(caught)) {
           lost += 1
-          if (lost >= 2) {
+          if (lost >= (confirmed ? 3 : 5)) {
             break
           }
         } else {
@@ -259,6 +268,9 @@ export function ServerAboutPage() {
         continue
       }
       lost = 0
+      if (status?.upgrading) {
+        confirmed = true
+      }
       if (status && !status.upgrading) {
         // Back, and not upgrading: it failed before it got as far as
         // restarting, and the reason is on the status.

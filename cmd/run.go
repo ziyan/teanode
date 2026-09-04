@@ -194,9 +194,9 @@ func openDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := database.Migrate(); err != nil {
+	if err := migrate(database, bootstrapped.UpgradeDirectory); err != nil {
 		closeDatabase()
-		return nil, nil, fmt.Errorf("cannot migrate the database: %w", err)
+		return nil, nil, err
 	}
 	return database, closeDatabase, nil
 }

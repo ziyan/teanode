@@ -98,6 +98,29 @@ func Staged(directory string) string {
 //     anything else write into that directory has given it the server.
 //   - Run one that was tried and did not get as far as serving.
 func ExecStagedIfNewer(directory, current string) {
+	execStaged(directory, current, true)
+}
+
+// ExecStagedBeforeMigrating is the same for a command that is about to touch
+// the database and then exit.
+//
+// The same because of what reverting means here: this program undoes
+// migrations it does not recognise, so an older binary that reaches the
+// database first drops the columns a newer one added. "teanode config init"
+// and "teanode config import" both migrate, and both are run with
+// "docker compose exec" against a container that may have staged an upgrade —
+// so they have to reach past the image's binary exactly as a start does.
+//
+// Different in one way: it does not record that the staged binary was tried.
+// That mark is the crash-loop guard, and what clears it is a server that got
+// as far as serving. A command that runs and exits proves nothing either way,
+// and spending the mark would leave the next start refusing a binary that
+// nothing was ever wrong with.
+func ExecStagedBeforeMigrating(directory, current string) {
+	execStaged(directory, current, false)
+}
+
+func execStaged(directory, current string, mark bool) {
 	staged := stagedToRun(directory, current)
 	if staged == "" {
 		return
@@ -107,16 +130,20 @@ func ExecStagedIfNewer(directory, current string) {
 	// once it is serving. Written here rather than inside the decision so that
 	// the decision can be asked in a test without arming anything.
 	marker := filepath.Join(directory, pending)
-	if err := os.WriteFile(marker, []byte("started\n"), 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "teanode: cannot mark %s as being tried, so it will not be run: %s\n", staged, err)
-		return
+	if mark {
+		if err := os.WriteFile(marker, []byte("started\n"), 0o600); err != nil {
+			fmt.Fprintf(os.Stderr, "teanode: cannot mark %s as being tried, so it will not be run: %s\n", staged, err)
+			return
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "teanode: running the upgraded binary at %s\n", staged)
 	if err := syscall.Exec(staged, os.Args, os.Environ()); err != nil {
 		// Exec only replaces the image when it succeeds, so this process is
 		// still here and can carry on with the binary it has.
-		_ = os.Remove(marker)
+		if mark {
+			_ = os.Remove(marker)
+		}
 		fmt.Fprintf(os.Stderr, "teanode: cannot run %s, carrying on with this one: %s\n", staged, err)
 	}
 }
@@ -223,6 +250,18 @@ func discard(directory string) {
 	}
 }
 
+// discardMetadata removes everything the staging directory says about the
+// binary in it, leaving the binary. A binary with nothing beside it is refused
+// at the next start, which is what makes this the safe half-way state.
+func discardMetadata(directory string) error {
+	for _, name := range []string{stagedVersion, stagedChecksum, pending} {
+		if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, name), err)
+		}
+	}
+	return nil
+}
+
 // record writes one of the small files beside a staged binary.
 func record(directory, name, content string) error {
 	return os.WriteFile(filepath.Join(directory, name), []byte(content+"\n"), 0o600)
@@ -238,6 +277,26 @@ func readStagedFile(directory, name string) (string, error) {
 		return "", fmt.Errorf("%s is empty", filepath.Join(directory, name))
 	}
 	return value, nil
+}
+
+// Waiting reports whether a staged binary is sitting in the directory and is
+// not the one this process is.
+//
+// Asked after ExecStagedIfNewer has already had its say, so the answer is
+// always "one is there and it was refused" — the marker was still down, the
+// checksum did not match, somebody else can write the directory. Which is the
+// one situation where letting this older binary open the database would undo
+// an upgrade rather than perform a downgrade somebody asked for.
+//
+// Deliberately about the file and not about its version: the reasons a staged
+// binary is refused include not being able to read what version it is.
+func Waiting(directory string) bool {
+	staged := Staged(directory)
+	if staged == "" || running(staged) {
+		return false
+	}
+	_, err := os.Stat(staged)
+	return err == nil
 }
 
 // Started clears the marker, once this process has got far enough to be

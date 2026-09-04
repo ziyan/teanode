@@ -568,3 +568,70 @@ func TestTarget(t *testing.T) {
 		}
 	})
 }
+
+// The second upgrade of a container, which is where this broke.
+//
+// Once a process has been exec'd out of the staging directory, the staged path
+// is its own executable — so a rule of "stage when the target is not me" sent
+// the second upgrade down the replace-in-place road, which writes no version
+// and no checksum. The directory was left describing the release before last,
+// the next container recreate refused the staged binary over the mismatch and
+// ran the image's old one, and that old one reverted the schema the staged one
+// had migrated.
+func TestUpgradingAStagedBinaryStagesAgain(t *testing.T) {
+	staging := t.TempDir()
+	if err := os.Chmod(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable := Staged(staging)
+	if err := os.WriteFile(executable, []byte("the staged binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// What the first upgrade left behind.
+	if err := record(staging, stagedVersion, "0.2.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := record(staging, stagedChecksum, sha256Of([]byte("the staged binary"))); err != nil {
+		t.Fatal(err)
+	}
+
+	newBinary := []byte("the newer binary")
+	server := releaseServer(t, "0.3.0", newBinary, sha256Of(newBinary))
+	defer server.Close()
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.2.0", func() {})
+	manager.upgradeDirectory = staging
+	manager.containerized = true
+
+	if err := manager.Apply(context.Background(), ""); err != nil {
+		t.Fatalf("Apply: %s", err)
+	}
+
+	// The three things the next start reads, and they have to agree.
+	if replaced, err := os.ReadFile(executable); err != nil {
+		t.Fatal(err)
+	} else if string(replaced) != string(newBinary) {
+		t.Errorf("the staged binary is %q", replaced)
+	}
+	if version, err := readStagedFile(staging, stagedVersion); err != nil {
+		t.Fatal(err)
+	} else if version != "0.3.0" {
+		t.Errorf("the directory says %q was staged, want 0.3.0", version)
+	}
+	if recorded, err := readStagedFile(staging, stagedChecksum); err != nil {
+		t.Fatal(err)
+	} else if recorded != sha256Of(newBinary) {
+		t.Errorf("the recorded checksum is the previous binary's")
+	}
+
+	// And nothing was kept as a rollback: staging replaces nothing, and the
+	// binary in the image is what going back means.
+	if _, err := os.Stat(executable + previousSuffix); !os.IsNotExist(err) {
+		t.Errorf("a rollback copy was left in the staging directory: %v", err)
+	}
+
+	// The whole point: the next start would run it.
+	if got := stagedToRun(staging, "0.2.0"); got != executable {
+		t.Errorf("the next start would not run the staged binary: %q", got)
+	}
+}

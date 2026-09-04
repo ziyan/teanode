@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/upgrade"
 )
 
 // openLocalStore opens the configuration where the server keeps it: the
@@ -100,4 +103,51 @@ func updateLocalConfiguration(mutate func(*config.Configuration) error) error {
 		_ = store.Close()
 	}()
 	return store.Update(mutate)
+}
+
+// migrator is the two things migrate needs of a database. Narrow so that the
+// refusal below can be exercised without one.
+type migrator interface {
+	UnknownMigrations() ([]string, error)
+	Migrate() error
+}
+
+// migrate brings the database up to date, having first made sure that doing so
+// would not undo an upgrade this deployment has installed.
+//
+// Migrate reverts every migration it does not recognise. That is how a
+// deliberate downgrade works here, and it is exactly wrong when the downgrade
+// is not deliberate — which is what this process is when a newer binary is
+// sitting staged beside it and was refused. That happens: a release that
+// crashes on startup is refused at the next start by design, and if it had
+// already migrated the database, letting this older binary carry on would drop
+// the columns it added and everything in them.
+//
+// So in that one case nothing is migrated and nothing is opened. Mail stops,
+// which is a real cost and is the smaller one: a schema and the rows in it
+// cannot be brought back, and the message says what to do to get either
+// outcome deliberately.
+func migrate(database migrator, upgradeDirectory string) error {
+	if upgrade.Waiting(upgradeDirectory) {
+		unknown, err := database.UnknownMigrations()
+		if err != nil {
+			return fmt.Errorf("cannot read which migrations this database has: %w", err)
+		}
+		if len(unknown) > 0 {
+			return fmt.Errorf("this database was migrated by a newer version of teanode (%s), and %s "+
+				"holds an upgraded binary that this start refused to run — the reason is above. "+
+				"Carrying on would revert those migrations and lose what is in the columns they "+
+				"added, so nothing has been changed and nothing has been opened. Two ways on, and "+
+				"they are not equivalent: remove %s to run the upgraded binary again, which keeps "+
+				"everything; or remove %s to go back to this version, which reverts those "+
+				"migrations and discards what they were holding",
+				strings.Join(unknown, ", "), upgradeDirectory,
+				filepath.Join(upgradeDirectory, "pending"), upgrade.Staged(upgradeDirectory))
+		}
+	}
+
+	if err := database.Migrate(); err != nil {
+		return fmt.Errorf("cannot migrate the database: %w", err)
+	}
+	return nil
 }
