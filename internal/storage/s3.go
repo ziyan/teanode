@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
@@ -47,10 +47,8 @@ type S3Settings struct {
 }
 
 type s3Storage struct {
-	settings   *S3Settings
-	uploader   *manager.Uploader
-	downloader *manager.Downloader
-	client     *s3.Client
+	settings *S3Settings
+	client   *s3.Client
 }
 
 func openS3(settings *S3Settings) (*s3Storage, error) {
@@ -83,12 +81,46 @@ func openS3(settings *S3Settings) (*s3Storage, error) {
 			options.UsePathStyle = true
 		}
 	})
-	return &s3Storage{
-		settings:   settings,
-		client:     client,
-		uploader:   manager.NewUploader(client),
-		downloader: manager.NewDownloader(client),
-	}, nil
+	return &s3Storage{settings: settings, client: client}, nil
+}
+
+// putObject writes one object in a single request.
+//
+// A message is bounded by smtp.maxMessageSize and a picture by the upload
+// limit, both a few tens of megabytes at the most, so the multipart upload
+// the SDK's transfer manager exists for would never be used — and the
+// manager the code used to reach for is deprecated. The body is a seekable
+// reader so the SDK can send a length and retry without buffering it again.
+func (self *s3Storage) putObject(ctx context.Context, key string, content []byte) error {
+	_, err := self.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(self.settings.Bucket),
+		Key:    aws.String(key),
+		Body:   bytes.NewReader(content),
+	})
+	return err
+}
+
+// getObject reads one object whole. ErrNotFound when it does not exist.
+func (self *s3Storage) getObject(ctx context.Context, key, id string) ([]byte, error) {
+	output, err := self.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(self.settings.Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var noSuchKey *types.NoSuchKey
+		if errors.As(err, &noSuchKey) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
+		}
+		return nil, fmt.Errorf("storage: cannot download %s: %w", id, err)
+	}
+	defer func() {
+		_ = output.Body.Close()
+	}()
+	content, err := io.ReadAll(output.Body)
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot download %s: %w", id, err)
+	}
+	return content, nil
 }
 
 // keyPrefix is where messages go in the bucket, and what the sweep lists.
@@ -106,29 +138,18 @@ func (self *s3Storage) Put(ctx context.Context, id string, headers []string, bod
 		return err
 	}
 
-	if _, err := self.uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(self.settings.Bucket),
-		Key:    aws.String(self.key(id)),
-		Body:   buffer,
-	}); err != nil {
+	if err := self.putObject(ctx, self.key(id), buffer.Bytes()); err != nil {
 		return fmt.Errorf("storage: cannot upload %s: %w", id, err)
 	}
 	return nil
 }
 
 func (self *s3Storage) Get(ctx context.Context, id string) ([]string, []byte, error) {
-	writeAtBuffer := manager.NewWriteAtBuffer(nil)
-	if _, err := self.downloader.Download(ctx, writeAtBuffer, &s3.GetObjectInput{
-		Bucket: aws.String(self.settings.Bucket),
-		Key:    aws.String(self.key(id)),
-	}); err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
-			return nil, nil, fmt.Errorf("%w: %s", ErrNotFound, id)
-		}
-		return nil, nil, fmt.Errorf("storage: cannot download %s: %w", id, err)
+	content, err := self.getObject(ctx, self.key(id), id)
+	if err != nil {
+		return nil, nil, err
 	}
-	return mailparse.Split(bytes.NewReader(writeAtBuffer.Bytes()))
+	return mailparse.Split(bytes.NewReader(content))
 }
 
 func (self *s3Storage) Delete(ctx context.Context, id string) error {
