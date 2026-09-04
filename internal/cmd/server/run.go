@@ -261,7 +261,7 @@ type server struct {
 	}
 }
 
-func (self *server) defer_(close func()) {
+func (self *server) onClose(close func()) {
 	self.closers = append(self.closers, close)
 }
 
@@ -302,7 +302,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		if err != nil {
 			return nil, err
 		}
-		self.defer_(stopDebugServer)
+		self.onClose(stopDebugServer)
 	}
 
 	if err := self.listen(configuration); err != nil {
@@ -337,7 +337,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		return nil, err
 	}
 	if antispamClient != nil {
-		self.defer_(func() {
+		self.onClose(func() {
 			if err := antispamClient.Close(); err != nil {
 				log.Errorf("failed to close spamassassin: %s", err)
 			}
@@ -349,7 +349,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		return nil, err
 	}
 	if antivirusClient != nil {
-		self.defer_(func() {
+		self.onClose(func() {
 			if err := antivirusClient.Close(); err != nil {
 				log.Errorf("failed to close clamav: %s", err)
 			}
@@ -372,7 +372,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	if err != nil {
 		return nil, fmt.Errorf("cannot open the drop list: %w", err)
 	}
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := self.dropper.Close(); err != nil {
 			log.Errorf("failed to close drop list: %s", err)
 		}
@@ -403,7 +403,7 @@ func (self *server) listen(configuration *config.Configuration) error {
 		}
 		log.Noticef("listening for %s on %s", entry.name, entry.address)
 		*entry.target = listener
-		self.defer_(func() {
+		self.onClose(func() {
 			_ = listener.Close()
 		})
 	}
@@ -525,7 +525,7 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 		return fmt.Errorf("cannot set up automatic certificates: %w", err)
 	}
 	self.acme = manager
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := manager.Close(); err != nil {
 			log.Errorf("failed to close acme: %s", err)
 		}
@@ -602,7 +602,7 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 		return err
 	}
 	self.storage = opened
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := opened.Close(); err != nil {
 			log.Errorf("failed to close storage: %s", err)
 		}
@@ -626,7 +626,7 @@ func (self *server) openExchange(configuration *config.Configuration, antispamCl
 		return err
 	}
 	self.exchange = exchange
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := exchange.Close(); err != nil {
 			log.Warningf("failed to close exchange: %s", err)
 		}
@@ -643,7 +643,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	if err != nil {
 		return fmt.Errorf("cannot create the mailer: %w", err)
 	}
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := mailerComponent.Close(); err != nil {
 			log.Errorf("failed to close mailer: %s", err)
 		}
@@ -656,7 +656,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	if err != nil {
 		return fmt.Errorf("cannot create the DNS verifier: %w", err)
 	}
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := verifier.Close(); err != nil {
 			log.Errorf("failed to close dns verifier: %s", err)
 		}
@@ -678,7 +678,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		Name:     "web:scavenge",
 	})
 	scavenger.Start()
-	self.defer_(func() {
+	self.onClose(func() {
 		scavenger.Stop()
 		stopScavenging()
 		scavengeGroup.Wait()
@@ -697,7 +697,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 			Password: configuration.Passkey.Redis.Password,
 			DB:       configuration.Passkey.Redis.Database,
 		})
-		self.defer_(func() {
+		self.onClose(func() {
 			if err := client.Close(); err != nil {
 				log.Errorf("failed to close the redis connection: %s", err)
 			}
@@ -715,7 +715,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		return err
 	}
 	self.upgrader = upgrader
-	self.defer_(func() {
+	self.onClose(func() {
 		if err := upgrader.Close(); err != nil {
 			log.Errorf("failed to stop the upgrade checker: %s", err)
 		}

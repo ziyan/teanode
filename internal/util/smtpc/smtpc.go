@@ -263,13 +263,13 @@ func (self *client) data(data []byte) error {
 	return nil
 }
 
-func (self *client) sendCommand(expectedStatusCode int, format string, args ...interface{}) (int, string, error) {
+func (self *client) sendCommand(expectedStatusCode int, format string, arguments ...interface{}) (int, string, error) {
 	if err := self.conn.SetWriteDeadline(time.Now().Add(time.Minute)); err != nil {
 		return 0, "", err
 	}
 
-	log.Debugf("%s: sending: %s", self, fmt.Sprintf(format, args...))
-	id, err := self.text.Cmd(format, args...)
+	log.Debugf("%s: sending: %s", self, fmt.Sprintf(format, arguments...))
+	id, err := self.text.Cmd(format, arguments...)
 	if err != nil {
 		return 0, "", err
 	}

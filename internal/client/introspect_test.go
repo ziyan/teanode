@@ -8,10 +8,10 @@ import (
 // newTestSchema builds a schema by hand, standing in for what the server
 // reports, so the query builder can be tested without one.
 func newTestSchema() *Schema {
-	scalar := func(name string) *TypeRef { return &TypeRef{Kind: "SCALAR", Name: name} }
-	required := func(inner *TypeRef) *TypeRef { return &TypeRef{Kind: "NON_NULL", OfType: inner} }
-	object := func(name string) *TypeRef { return &TypeRef{Kind: "OBJECT", Name: name} }
-	list := func(inner *TypeRef) *TypeRef { return &TypeRef{Kind: "LIST", OfType: inner} }
+	scalar := func(name string) *TypeReference { return &TypeReference{Kind: "SCALAR", Name: name} }
+	required := func(inner *TypeReference) *TypeReference { return &TypeReference{Kind: "NON_NULL", OfType: inner} }
+	object := func(name string) *TypeReference { return &TypeReference{Kind: "OBJECT", Name: name} }
+	list := func(inner *TypeReference) *TypeReference { return &TypeReference{Kind: "LIST", OfType: inner} }
 
 	schema := &Schema{
 		QueryType:    "RootQuery",
@@ -54,7 +54,7 @@ func newTestSchema() *Schema {
 	schema.Operations["CreateDomain"] = &Operation{
 		Name: "CreateDomain", Kind: "mutation", Type: object("Domain"),
 		Arguments: []*Argument{
-			{Name: "domainParameters", Type: &TypeRef{Kind: "INPUT_OBJECT", Name: "DomainParametersInput"}},
+			{Name: "domainParameters", Type: &TypeReference{Kind: "INPUT_OBJECT", Name: "DomainParametersInput"}},
 		},
 	}
 	return schema

@@ -17,9 +17,9 @@ func Format(identity string, results []Result) string {
 
 	for _, r := range results {
 		method := resultMethod(r)
-		value, params := r.format()
+		value, parameters := r.format()
 
-		s += ";\r\n " + method + "=" + string(value) + " " + formatParams(params)
+		s += ";\r\n " + method + "=" + string(value) + " " + formatParameters(parameters)
 	}
 
 	return s
@@ -50,23 +50,23 @@ func resultMethod(r Result) string {
 	}
 }
 
-func formatParams(params map[string]string) string {
-	keys := make([]string, 0, len(params))
-	for k := range params {
+func formatParameters(parameters map[string]string) string {
+	keys := make([]string, 0, len(parameters))
+	for k := range parameters {
 		if k == "reason" {
 			continue
 		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if params["reason"] != "" {
+	if parameters["reason"] != "" {
 		keys = append([]string{"reason"}, keys...)
 	}
 
 	s := ""
 	i := 0
 	for _, k := range keys {
-		if params[k] == "" {
+		if parameters[k] == "" {
 			continue
 		}
 
@@ -76,9 +76,9 @@ func formatParams(params map[string]string) string {
 
 		var value string
 		if k == "reason" {
-			value = formatValue(params[k])
+			value = formatValue(parameters[k])
 		} else {
-			value = formatPvalue(params[k])
+			value = formatPvalue(parameters[k])
 		}
 		s += k + "=" + value
 		i++
@@ -104,8 +104,8 @@ func formatValue(s string) string {
 	//               ; to use within parameter values
 
 	shouldQuote := false
-	for _, ch := range s {
-		if _, special := tspecials[ch]; ch <= ' ' /* SPACE or CTL */ || special {
+	for _, channel := range s {
+		if _, special := tspecials[channel]; channel <= ' ' /* SPACE or CTL */ || special {
 			shouldQuote = true
 		}
 	}
@@ -143,8 +143,8 @@ func formatPvalue(s string) string {
 	// will catch most of the cases and we can fallback to quoting
 	// for others.
 	addressLike := true
-	for _, ch := range s {
-		if _, ok := addressOk[ch]; !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && !ok {
+	for _, channel := range s {
+		if _, ok := addressOk[channel]; !unicode.IsLetter(channel) && !unicode.IsDigit(channel) && !ok {
 			addressLike = false
 		}
 	}

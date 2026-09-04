@@ -51,21 +51,21 @@ type crlfFixer struct {
 }
 
 func (cf *crlfFixer) Fix(b []byte) []byte {
-	res := make([]byte, 0, len(b))
-	for _, ch := range b {
+	result := make([]byte, 0, len(b))
+	for _, channel := range b {
 		previousCarriageReturn := cf.cr
 		cf.cr = false
-		switch ch {
+		switch channel {
 		case '\r':
 			cf.cr = true
 		case '\n':
 			if !previousCarriageReturn {
-				res = append(res, '\r')
+				result = append(result, '\r')
 			}
 		}
-		res = append(res, ch)
+		result = append(result, channel)
 	}
-	return res
+	return result
 }
 
 type simpleCanonicalizer struct{}
@@ -75,14 +75,14 @@ func (self *simpleCanonicalizer) CanonicalizeHeader(value string) string {
 }
 
 type simpleBodyCanonicalizer struct {
-	w         io.Writer
-	crlfBuf   []byte
-	crlfFixer crlfFixer
+	w          io.Writer
+	crlfBuffer []byte
+	crlfFixer  crlfFixer
 }
 
 func (c *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
 	written := len(b)
-	b = append(c.crlfBuf, b...)
+	b = append(c.crlfBuffer, b...)
 
 	b = c.crlfFixer.Fix(b)
 
@@ -101,7 +101,7 @@ func (c *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
 		end -= 2
 	}
 
-	c.crlfBuf = b[end:]
+	c.crlfBuffer = b[end:]
 
 	var err error
 	if end > 0 {
@@ -111,13 +111,13 @@ func (c *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
 }
 
 func (c *simpleBodyCanonicalizer) Close() error {
-	// Flush crlfBuf if it ends with a single \r (without a matching \n)
-	if len(c.crlfBuf) > 0 && c.crlfBuf[len(c.crlfBuf)-1] == '\r' {
-		if _, err := c.w.Write(c.crlfBuf); err != nil {
+	// Flush crlfBuffer if it ends with a single \r (without a matching \n)
+	if len(c.crlfBuffer) > 0 && c.crlfBuffer[len(c.crlfBuffer)-1] == '\r' {
+		if _, err := c.w.Write(c.crlfBuffer); err != nil {
 			return err
 		}
 	}
-	c.crlfBuf = nil
+	c.crlfBuffer = nil
 
 	if _, err := c.w.Write([]byte(crlf)); err != nil {
 		return err
@@ -142,11 +142,11 @@ func (self *relaxedCanonicalizer) CanonicalizeHeader(header string) string {
 }
 
 type relaxedBodyCanonicalizer struct {
-	w         io.Writer
-	crlfBuf   []byte
-	wsp       bool
-	written   bool
-	crlfFixer crlfFixer
+	w          io.Writer
+	crlfBuffer []byte
+	wsp        bool
+	written    bool
+	crlfFixer  crlfFixer
 }
 
 func (c *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
@@ -155,24 +155,24 @@ func (c *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
 	b = c.crlfFixer.Fix(b)
 
 	canonical := make([]byte, 0, len(b))
-	for _, ch := range b {
-		switch ch {
+	for _, channel := range b {
+		switch channel {
 		case ' ', '\t':
 			c.wsp = true
 		case '\r', '\n':
 			c.wsp = false
-			c.crlfBuf = append(c.crlfBuf, ch)
+			c.crlfBuffer = append(c.crlfBuffer, channel)
 		default:
-			if len(c.crlfBuf) > 0 {
-				canonical = append(canonical, c.crlfBuf...)
-				c.crlfBuf = c.crlfBuf[:0]
+			if len(c.crlfBuffer) > 0 {
+				canonical = append(canonical, c.crlfBuffer...)
+				c.crlfBuffer = c.crlfBuffer[:0]
 			}
 			if c.wsp {
 				canonical = append(canonical, ' ')
 				c.wsp = false
 			}
 
-			canonical = append(canonical, ch)
+			canonical = append(canonical, channel)
 		}
 	}
 

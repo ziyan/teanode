@@ -24,8 +24,8 @@ const (
 
 // Result is an authentication result.
 type Result interface {
-	parse(value ResultValue, params map[string]string)
-	format() (value ResultValue, params map[string]string)
+	parse(value ResultValue, parameters map[string]string)
+	format() (value ResultValue, parameters map[string]string)
 }
 
 type AuthResult struct {
@@ -34,10 +34,10 @@ type AuthResult struct {
 	Auth   string
 }
 
-func (r *AuthResult) parse(value ResultValue, params map[string]string) {
+func (r *AuthResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.Auth = params["smtp.auth"]
+	r.Reason = parameters["reason"]
+	r.Auth = parameters["smtp.auth"]
 }
 
 func (r *AuthResult) format() (ResultValue, map[string]string) {
@@ -51,11 +51,11 @@ type DKIMResult struct {
 	Identifier string
 }
 
-func (r *DKIMResult) parse(value ResultValue, params map[string]string) {
+func (r *DKIMResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.Domain = params["header.d"]
-	r.Identifier = params["header.i"]
+	r.Reason = parameters["reason"]
+	r.Domain = parameters["header.d"]
+	r.Identifier = parameters["header.i"]
 }
 
 func (r *DKIMResult) format() (ResultValue, map[string]string) {
@@ -74,12 +74,12 @@ type DomainKeysResult struct {
 	Sender string
 }
 
-func (r *DomainKeysResult) parse(value ResultValue, params map[string]string) {
+func (r *DomainKeysResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.Domain = params["header.d"]
-	r.From = params["header.from"]
-	r.Sender = params["header.sender"]
+	r.Reason = parameters["reason"]
+	r.Domain = parameters["header.d"]
+	r.From = parameters["header.from"]
+	r.Sender = parameters["header.sender"]
 }
 
 func (r *DomainKeysResult) format() (ResultValue, map[string]string) {
@@ -97,10 +97,10 @@ type IPRevResult struct {
 	IP     string
 }
 
-func (r *IPRevResult) parse(value ResultValue, params map[string]string) {
+func (r *IPRevResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.IP = params["policy.iprev"]
+	r.Reason = parameters["reason"]
+	r.IP = parameters["policy.iprev"]
 }
 
 func (r *IPRevResult) format() (ResultValue, map[string]string) {
@@ -117,11 +117,11 @@ type SenderIDResult struct {
 	HeaderValue string
 }
 
-func (r *SenderIDResult) parse(value ResultValue, params map[string]string) {
+func (r *SenderIDResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
+	r.Reason = parameters["reason"]
 
-	for k, v := range params {
+	for k, v := range parameters {
 		if strings.HasPrefix(k, "header.") {
 			r.HeaderKey = strings.TrimPrefix(k, "header.")
 			r.HeaderValue = v
@@ -130,7 +130,7 @@ func (r *SenderIDResult) parse(value ResultValue, params map[string]string) {
 	}
 }
 
-func (r *SenderIDResult) format() (value ResultValue, params map[string]string) {
+func (r *SenderIDResult) format() (value ResultValue, parameters map[string]string) {
 	return r.Value, map[string]string{
 		"reason":                                 r.Reason,
 		"header." + strings.ToLower(r.HeaderKey): r.HeaderValue,
@@ -144,11 +144,11 @@ type SPFResult struct {
 	Helo   string
 }
 
-func (r *SPFResult) parse(value ResultValue, params map[string]string) {
+func (r *SPFResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.From = params["smtp.mailfrom"]
-	r.Helo = params["smtp.helo"]
+	r.Reason = parameters["reason"]
+	r.From = parameters["smtp.mailfrom"]
+	r.Helo = parameters["smtp.helo"]
 }
 
 func (r *SPFResult) format() (ResultValue, map[string]string) {
@@ -165,10 +165,10 @@ type DMARCResult struct {
 	From   string
 }
 
-func (r *DMARCResult) parse(value ResultValue, params map[string]string) {
+func (r *DMARCResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
-	r.From = params["header.from"]
+	r.Reason = parameters["reason"]
+	r.From = parameters["header.from"]
 }
 
 func (r *DMARCResult) format() (ResultValue, map[string]string) {
@@ -183,9 +183,9 @@ type ARCResult struct {
 	Reason string
 }
 
-func (r *ARCResult) parse(value ResultValue, params map[string]string) {
+func (r *ARCResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Reason = params["reason"]
+	r.Reason = parameters["reason"]
 }
 
 func (r *ARCResult) format() (ResultValue, map[string]string) {
@@ -195,18 +195,18 @@ func (r *ARCResult) format() (ResultValue, map[string]string) {
 }
 
 type GenericResult struct {
-	Method string
-	Value  ResultValue
-	Params map[string]string
+	Method     string
+	Value      ResultValue
+	Parameters map[string]string
 }
 
-func (r *GenericResult) parse(value ResultValue, params map[string]string) {
+func (r *GenericResult) parse(value ResultValue, parameters map[string]string) {
 	r.Value = value
-	r.Params = params
+	r.Parameters = parameters
 }
 
 func (r *GenericResult) format() (ResultValue, map[string]string) {
-	return r.Value, r.Params
+	return r.Value, r.Parameters
 }
 
 type newResultFunc func() Result
@@ -279,20 +279,20 @@ func parseResult(s string) (Result, error) {
 		return nil, nil
 	}
 
-	k, v, err := parseParam(parts[0])
+	k, v, err := parseParameter(parts[0])
 	if err != nil {
 		return nil, err
 	}
 	method, value := k, ResultValue(strings.ToLower(v))
 
-	params := make(map[string]string)
+	parameters := make(map[string]string)
 	for i := 1; i < len(parts); i++ {
-		k, v, err := parseParam(parts[i])
+		k, v, err := parseParameter(parts[i])
 		if err != nil {
 			continue
 		}
 
-		params[k] = v
+		parameters[k] = v
 	}
 
 	newResult, ok := results[method]
@@ -302,17 +302,17 @@ func parseResult(s string) (Result, error) {
 		r = newResult()
 	} else {
 		r = &GenericResult{
-			Method: method,
-			Value:  value,
-			Params: params,
+			Method:     method,
+			Value:      value,
+			Parameters: parameters,
 		}
 	}
 
-	r.parse(value, params)
+	r.parse(value, parameters)
 	return r, nil
 }
 
-func parseParam(s string) (k string, v string, err error) {
+func parseParameter(s string) (k string, v string, err error) {
 	kv := strings.SplitN(s, "=", 2)
 	if len(kv) != 2 {
 		return "", "", errors.New("msgauth: malformed authentication method and value")
