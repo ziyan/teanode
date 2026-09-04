@@ -53,9 +53,9 @@ the configured domains.
       content security policy widened for that page only; tests.
 - [x] (2026-09-03 21:35Z) Milestone 3: configuration commands. `domain`, `alias`, `credential`
       (with `update`), `user` (with `update`), `server`, `settings`.
-- [ ] Milestone 4: data commands. `mail` (list, get, content, download, opens,
+- [x] (2026-09-03 22:10Z) Milestone 4: data commands. `mail` (list, get, content, download, opens,
       count, send), `delivery`, `report`, `session`, `passkey`.
-- [ ] Milestone 5: content commands. `template`, `layout`.
+- [x] (2026-09-03 22:10Z) Milestone 5: content commands. `template`, `layout`.
 - [ ] Milestone 6: the deployment test drives the new commands; documentation
       (`docs/reference/command-line.md`, project structure, local
       development, README, getting started, changelog); a decision record for
