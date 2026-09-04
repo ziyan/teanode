@@ -89,7 +89,7 @@ func runTokenCreate(ctx context.Context, command *cli.Command) error {
 	}
 
 	if command.Bool("json") {
-		return printJSON(map[string]any{"token": token, "secret": secret})
+		return PrintJSON(map[string]any{"token": token, "secret": secret})
 	}
 
 	fmt.Printf("Issued %s for %s. Only its hash is stored, so this is the only time\n", token.ID, token.Username)
@@ -112,7 +112,7 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 		return describeConnectionError(command, err)
 	}
 	if command.Bool("json") {
-		return printJSON(tokens)
+		return PrintJSON(tokens)
 	}
 	if len(tokens) == 0 {
 		fmt.Println("no tokens; issue one with 'teanode token create <name>'")

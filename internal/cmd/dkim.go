@@ -86,7 +86,7 @@ func runDKIMShow(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 		if command.Bool("json") {
-			return printJSON(describeDKIM(domain))
+			return PrintJSON(describeDKIM(domain))
 		}
 		return printDomainKey(domain)
 	}
@@ -101,7 +101,7 @@ func runDKIMShow(ctx context.Context, command *cli.Command) error {
 		for _, domain := range domains {
 			listing = append(listing, describeDKIM(domain))
 		}
-		return printJSON(listing)
+		return PrintJSON(listing)
 	}
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -177,7 +177,7 @@ func showDKIMOffline(command *cli.Command, configuration *config.Configuration, 
 			if err != nil {
 				return err
 			}
-			return printJSON(described)
+			return PrintJSON(described)
 		}
 		return printDomainKeyOffline(domain)
 	}
@@ -191,7 +191,7 @@ func showDKIMOffline(command *cli.Command, configuration *config.Configuration, 
 			}
 			listing = append(listing, described)
 		}
-		return printJSON(listing)
+		return PrintJSON(listing)
 	}
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

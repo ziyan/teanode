@@ -1,4 +1,4 @@
-package cmd
+package server
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/atomicfile"
 )
@@ -56,7 +57,7 @@ func NewTLSCommand() *cli.Command {
 }
 
 func runTLSSelfSigned(ctx context.Context, command *cli.Command) error {
-	store, closeDatabase, err := openLocalStore()
+	store, closeDatabase, err := cmd.OpenLocalStore()
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,8 @@
-// Command teanode is a self-hosted mail forwarding and relay server.
+// Command teanode-server is a self-hosted mail forwarding and relay server.
+//
+// It is administered with teanode, the client, which talks to it over its
+// API. The commands here are the ones only the server's own host can run:
+// starting it, preparing its database, and recovering its accounts.
 package main
 
 import (
@@ -10,27 +14,18 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/ziyan/teanode/cmd"
+	"github.com/ziyan/teanode/internal/cmd"
+	"github.com/ziyan/teanode/internal/cmd/server"
 	"github.com/ziyan/teanode/internal/version"
 )
 
 func main() {
 	command := &cli.Command{
-		Name:                  "teanode",
+		Name:                  "teanode-server",
 		Usage:                 "self-hosted mail forwarding and relay server",
 		Version:               version.String(),
 		EnableShellCompletion: true,
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "url",
-				Usage:   "administer a server over the network instead of the one this environment points at",
-				Sources: cli.EnvVars("TEANODE_URL"),
-			},
-			&cli.StringFlag{
-				Name:    "token",
-				Usage:   "API token for --url; created with 'teanode token create'",
-				Sources: cli.EnvVars("TEANODE_TOKEN"),
-			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Aliases: []string{"l"},
@@ -43,16 +38,12 @@ func main() {
 			return ctx, nil
 		},
 		Commands: []*cli.Command{
-			cmd.NewRunCommand(),
-			cmd.NewConfigCommand(),
-			cmd.NewPasswordCommand(),
-			cmd.NewDKIMCommand(),
-			cmd.NewTLSCommand(),
-			cmd.NewCredentialCommand(),
-			cmd.NewUserCommand(),
-			cmd.NewTokenCommand(),
-			cmd.NewAPICommand(),
-			cmd.NewVersionCommand(),
+			server.NewRunCommand(),
+			server.NewConfigCommand(),
+			server.NewTLSCommand(),
+			server.NewUserCommand(),
+			server.NewPasswordCommand(),
+			cmd.NewVersionCommand("teanode-server"),
 		},
 	}
 

@@ -130,7 +130,7 @@ func runAPIList(ctx context.Context, command *cli.Command) error {
 	}
 
 	if command.Bool("json") {
-		return printJSON(operations)
+		return PrintJSON(operations)
 	}
 	if len(operations) == 0 {
 		fmt.Printf("no operation matches %q\n", command.Args().First())
@@ -162,7 +162,7 @@ func runAPIDescribe(ctx context.Context, command *cli.Command) error {
 	}
 
 	if command.Bool("json") {
-		return printJSON(describeOperation(schema, operation))
+		return PrintJSON(describeOperation(schema, operation))
 	}
 
 	fmt.Printf("%s %s\n", operation.Kind, operation.Name)
@@ -234,7 +234,7 @@ func runAPICall(ctx context.Context, command *cli.Command) error {
 	if err := connection.Execute(ctx, query, arguments, &result); err != nil {
 		return err
 	}
-	return printJSON(result[operation.Name])
+	return PrintJSON(result[operation.Name])
 }
 
 func runAPIGraphQL(ctx context.Context, command *cli.Command) error {
@@ -258,7 +258,7 @@ func runAPIGraphQL(ctx context.Context, command *cli.Command) error {
 	if err := connection.Execute(ctx, query, variables, &result); err != nil {
 		return describeConnectionError(command, err)
 	}
-	return printJSON(result)
+	return PrintJSON(result)
 }
 
 func readQuery(command *cli.Command) (string, error) {
@@ -481,12 +481,6 @@ func argumentSignature(operation *client.Operation) string {
 	return strings.Join(described, ", ")
 }
 
-func printJSON(value any) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
-}
-
 func firstLine(text string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
 	return line
@@ -508,14 +502,4 @@ func readAllStdin() (string, error) {
 		return "", err
 	}
 	return string(content), nil
-}
-
-// JSONFlag is offered by every command that prints a table, so that a script
-// or a language model driving the tool gets structured output from the same
-// command a person reads.
-func JSONFlag() cli.Flag {
-	return &cli.BoolFlag{
-		Name:  "json",
-		Usage: "print the result as JSON",
-	}
 }

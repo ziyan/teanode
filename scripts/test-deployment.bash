@@ -17,6 +17,7 @@ readonly COMPOSE=(docker compose -f deploy/docker-compose.test.yml)
 readonly TEST_DIR="deploy/test"
 readonly ENVIRONMENT="${TEST_DIR}/.env"
 readonly BINARY="build/teanode"
+readonly SERVER_BINARY="build/teanode-server"
 
 # The database, as seen from this script. The server sees it as a service name
 # on the compose network; docker-compose.test.yml overrides the variable.
@@ -145,15 +146,23 @@ remove_test_directory() {
 
 # --- the configuration this deployment runs on --------------------------------
 
-# teanode_local runs the command line client against the deployment's own
-# database, which is what an operator on the server does. It is the same
-# environment the container gets, except for the address of the database.
-teanode_local() {
+# teanode_server runs the server binary's own commands — the ones that write
+# the database directly — against the deployment's database, which is what an
+# operator on the server does. It is the same environment the container gets,
+# except for the address of the database.
+teanode_server() {
   # The database address is the only thing that differs from what the
   # container gets. Nothing else is overridden — in particular not the object
   # store endpoint, which is a service name: no command run here connects to
   # it, and storing the host's view of it would leave the container reaching
   # for an address that means something else inside.
+  env TEANODE_DATABASE_URL="${DATABASE_URL}" "${SERVER_BINARY}" "$@"
+}
+
+# teanode_local runs the client the way somebody on the server's own console
+# would: with the server's environment and no token, so it reaches the server
+# over loopback with a token minted from the stored secret.
+teanode_local() {
   env TEANODE_DATABASE_URL="${DATABASE_URL}" "${BINARY}" "$@"
 }
 
@@ -246,13 +255,13 @@ configure_deployment() {
 
   # Migrate, and store the configuration the environment describes. This is
   # the first-run path: the same thing "teanode run" would do by itself.
-  teanode_local config init >/dev/null
+  teanode_server config init >/dev/null
   pass "the database was migrated and configured from the environment"
 
   # A certificate for STARTTLS, without which the submission port will not
   # accept a password. Self-signed, because no authority will validate a
   # domain that does not exist.
-  teanode_local tls self-signed >/dev/null
+  teanode_server tls self-signed >/dev/null
   pass "a self-signed certificate was generated"
 
   # The rest cannot come from the environment: an alias forwarding to mailpit,
@@ -261,7 +270,7 @@ configure_deployment() {
   # which also exercises the pair of commands a migration depends on.
   local exported
   exported="$(mktemp)"
-  teanode_local config export --file "${exported}" --force >/dev/null
+  teanode_server config export --file "${exported}" --force >/dev/null
 
   python3 - "${exported}" "${DOMAIN}" "${FORWARD_HOST}" "${FORWARD_PORT}" <<'PYTHON'
 import sys
@@ -300,7 +309,7 @@ with open(path, "w") as handle:
     handle.write(content)
 PYTHON
 
-  teanode_local config import --file "${exported}" --force >/dev/null
+  teanode_server config import --file "${exported}" --force >/dev/null
   rm -f "${exported}"
   pass "the aliases and the data directory were loaded back in"
 
@@ -531,7 +540,7 @@ check_cli() {
   teanode_cli api call CreateDomain \
     domainParameters:='{"domain":"second.test","subdomain":"mail"}' >/dev/null 2>&1 || true
   check_contains "a change made through the API reaches the database" "second.test" \
-    teanode_local config show
+    teanode_server config show
 }
 
 domain_id() {
@@ -1013,7 +1022,7 @@ PYTHON
     else
       fail "the configured name was not used: $(grep -io 'src="[^"]*"' <<<"${elsewhereBody}" | head -1)"
       printf '    the server says: %s\n' "$(teanode_cli api call GetDomain domainId="$(domain_id)" --select "{ linkHost linkHostname mailHosts }" 2>&1 | tr -d '\n')"
-      printf '    the database says: %s\n' "$(teanode_local config show 2>/dev/null | grep -i linkhost | tr -d '\n')"
+      printf '    the database says: %s\n' "$(teanode_server config show 2>/dev/null | grep -i linkhost | tr -d '\n')"
     fi
   else
     fail "the message naming another host never arrived"
@@ -1183,7 +1192,7 @@ check_relay() {
 
   local exported
   exported="$(mktemp)"
-  teanode_local config export --file "${exported}" --force >/dev/null
+  teanode_server config export --file "${exported}" --force >/dev/null
 
   python3 - "${exported}" "${FORWARD_HOST}" <<'PYTHON'
 import sys
@@ -1208,7 +1217,7 @@ block = [
 open(path, "w").write("\n".join(lines[:start] + block + lines[end:]))
 PYTHON
 
-  teanode_local config import --file "${exported}" --force >/dev/null
+  teanode_server config import --file "${exported}" --force >/dev/null
   rm -f "${exported}"
   pass "the relay was configured"
 
@@ -1276,10 +1285,10 @@ check_secrets_not_leaked() {
   step "Secrets"
 
   check_contains "config show redacts the secrets" "(redacted)" \
-    teanode_local config show
+    teanode_server config show
 
   local shown
-  shown="$(teanode_local config show 2>/dev/null)"
+  shown="$(teanode_server config show 2>/dev/null)"
   # Assembled rather than written out, so that the secret scanner does not
   # flag this check for containing the thing it checks for.
   if grep -q "BEGIN .*PRIVATE KEY" <<<"${shown}"; then
@@ -1291,7 +1300,7 @@ check_secrets_not_leaked() {
   # The secret every SMTP password is derived from. Printing it in a support
   # bundle would hand over every credential on the server.
   local secret
-  secret="$(teanode_local config show --show-secrets 2>/dev/null | grep -oP '(?<=^  secret: ).*' | head -1)"
+  secret="$(teanode_server config show --show-secrets 2>/dev/null | grep -oP '(?<=^  secret: ).*' | head -1)"
   if [[ -z "${secret}" ]]; then
     fail "the server never generated a secret"
   elif grep -qF "${secret}" <<<"${shown}"; then

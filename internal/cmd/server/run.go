@@ -1,4 +1,4 @@
-package cmd
+package server
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
@@ -163,7 +164,7 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	// A level given on the command line has already been applied and wins;
 	// otherwise the configured level takes effect now.
 	if command.Root().String("log-level") == "" {
-		SetLogLevel(configuration.Server.LogLevel)
+		cmd.SetLogLevel(configuration.Server.LogLevel)
 	}
 	log.Noticef("starting teanode %s as instance %q", version.String(), bootstrapped.InstanceID)
 
@@ -204,7 +205,7 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 // openDatabase connects and migrates, before there is any configuration to
 // read, because the configuration is in there.
 func openDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error) {
-	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
+	database, closeDatabase, err := cmd.OpenBootstrapDatabase(bootstrapped)
 	if err != nil {
 		return nil, nil, err
 	}

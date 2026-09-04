@@ -79,7 +79,7 @@ func runCredentialAdd(ctx context.Context, command *cli.Command) error {
 	}
 
 	if command.Bool("json") {
-		return printJSON(created)
+		return PrintJSON(created)
 	}
 
 	fmt.Printf("Created a credential for %s. The password is shown here and can be\n", domain.Domain)
@@ -137,7 +137,7 @@ func runCredentialList(ctx context.Context, command *cli.Command) error {
 				listing = append(listing, entry)
 			}
 		}
-		return printJSON(listing)
+		return PrintJSON(listing)
 	}
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

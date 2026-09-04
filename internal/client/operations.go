@@ -13,6 +13,7 @@ import (
 // User is an account that may administer a server.
 type User struct {
 	Username string `json:"username"`
+	Name     string `json:"name"`
 	Email    string `json:"email"`
 }
 
@@ -21,7 +22,7 @@ func ListUsers(ctx context.Context, connection *Client) ([]*User, error) {
 	var result struct {
 		ListUsers []*User `json:"ListUsers"`
 	}
-	if err := connection.Execute(ctx, `query { ListUsers { username email } }`, nil, &result); err != nil {
+	if err := connection.Execute(ctx, `query { ListUsers { username name email } }`, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.ListUsers, nil
@@ -34,7 +35,7 @@ func GetCurrentUser(ctx context.Context, connection *Client) (*User, error) {
 	var result struct {
 		GetCurrentUser *User `json:"GetCurrentUser"`
 	}
-	if err := connection.Execute(ctx, `query { GetCurrentUser { username email } }`, nil, &result); err != nil {
+	if err := connection.Execute(ctx, `query { GetCurrentUser { username name email } }`, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.GetCurrentUser, nil
@@ -46,7 +47,7 @@ func CreateUser(ctx context.Context, connection *Client, username, password, ema
 		CreateUser *User `json:"CreateUser"`
 	}
 	query := `mutation ($username: String!, $password: String!, $email: String) {
-		CreateUser(username: $username, password: $password, email: $email) { username email }
+		CreateUser(username: $username, password: $password, email: $email) { username name email }
 	}`
 	variables := map[string]any{"username": username, "password": password}
 	if email != "" {
@@ -64,7 +65,7 @@ func SetUserPassword(ctx context.Context, connection *Client, username, password
 		SetUserPassword *User `json:"SetUserPassword"`
 	}
 	query := `mutation ($username: String!, $password: String!) {
-		SetUserPassword(username: $username, password: $password) { username email }
+		SetUserPassword(username: $username, password: $password) { username name email }
 	}`
 	if err := connection.Execute(ctx, query, map[string]any{"username": username, "password": password}, &result); err != nil {
 		return nil, err

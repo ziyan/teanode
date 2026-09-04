@@ -1,4 +1,4 @@
-package cmd
+package server
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/upgrade"
@@ -212,7 +213,7 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 	// against a running container as often as anything here.
 	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
 
-	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
+	database, closeDatabase, err := cmd.OpenBootstrapDatabase(bootstrapped)
 	if err != nil {
 		return err
 	}
@@ -269,7 +270,7 @@ func newConfigValidateCommand() *cli.Command {
 				return nil
 			}
 
-			configuration, err := loadLocalConfiguration()
+			configuration, err := cmd.LoadLocalConfiguration()
 			if err != nil {
 				return err
 			}
@@ -293,7 +294,7 @@ func newConfigShowCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			configuration, err := loadLocalConfiguration()
+			configuration, err := cmd.LoadLocalConfiguration()
 			if err != nil {
 				return err
 			}
@@ -343,7 +344,7 @@ func newConfigExportCommand() *cli.Command {
 				return fmt.Errorf("%s already exists; pass --force to overwrite it", filename)
 			}
 
-			configuration, err := loadLocalConfiguration()
+			configuration, err := cmd.LoadLocalConfiguration()
 			if err != nil {
 				return err
 			}

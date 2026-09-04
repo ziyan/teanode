@@ -37,7 +37,7 @@ func openClient(command *cli.Command) (*client.Client, error) {
 		if token != "" {
 			return nil, fmt.Errorf("--token needs --url; without one the local configuration file is used to authenticate")
 		}
-		configuration, err := loadLocalConfiguration()
+		configuration, err := LoadLocalConfiguration()
 		if err != nil {
 			return nil, err
 		}
@@ -104,24 +104,6 @@ func isConnectionRefused(err error) bool {
 	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
-// loadOfflineConfiguration reads the stored configuration for a command
-// running with --offline.
-func loadOfflineConfiguration(command *cli.Command) (*config.Configuration, error) {
-	return loadLocalConfiguration()
-}
-
-// updateOffline changes the stored configuration directly, for the commands
-// that have to work when the server will not start or nobody can log in.
-//
-// There is no longer a check that the server is stopped. It used to be
-// necessary because the running process would rewrite the configuration file
-// from memory and lose the edit; now both writers go to the same rows, the
-// write is rejected if the configuration moved underneath it, and a running
-// server picks the change up within seconds.
-func updateOffline(command *cli.Command, mutate func(*config.Configuration) error) error {
-	return updateLocalConfiguration(mutate)
-}
-
 // openClientForRead connects to the server, falling back to reading the
 // configuration file when there is no server to reach.
 //
@@ -144,7 +126,7 @@ func openClientForRead(ctx context.Context, command *cli.Command) (*client.Clien
 		return connection, nil, nil
 	}
 
-	configuration, err := loadLocalConfiguration()
+	configuration, err := LoadLocalConfiguration()
 	if err != nil {
 		return nil, nil, err
 	}

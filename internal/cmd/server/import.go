@@ -1,4 +1,4 @@
-package cmd
+package server
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/upgrade"
@@ -110,7 +111,7 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("cannot import without a database")
 	}
 
-	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
+	database, closeDatabase, err := cmd.OpenBootstrapDatabase(bootstrapped)
 	if err != nil {
 		return err
 	}
