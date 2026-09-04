@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,9 +9,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/ziyan/teanode/internal/util/atomicfile"
 )
@@ -146,29 +143,14 @@ func (self *s3Storage) fileKey(id string) string {
 }
 
 func (self *s3Storage) PutFile(ctx context.Context, id string, content []byte) error {
-	if _, err := self.uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(self.settings.Bucket),
-		Key:    aws.String(self.fileKey(id)),
-		Body:   bytes.NewReader(content),
-	}); err != nil {
+	if err := self.putObject(ctx, self.fileKey(id), content); err != nil {
 		return fmt.Errorf("storage: cannot upload %s: %w", id, err)
 	}
 	return nil
 }
 
 func (self *s3Storage) GetFile(ctx context.Context, id string) ([]byte, error) {
-	writeAtBuffer := manager.NewWriteAtBuffer(nil)
-	if _, err := self.downloader.Download(ctx, writeAtBuffer, &s3.GetObjectInput{
-		Bucket: aws.String(self.settings.Bucket),
-		Key:    aws.String(self.fileKey(id)),
-	}); err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
-			return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
-		}
-		return nil, fmt.Errorf("storage: cannot download %s: %w", id, err)
-	}
-	return writeAtBuffer.Bytes(), nil
+	return self.getObject(ctx, self.fileKey(id), id)
 }
 
 func (self *s3Storage) DeleteFile(ctx context.Context, id string) error {
