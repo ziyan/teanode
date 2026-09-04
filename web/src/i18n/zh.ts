@@ -765,10 +765,9 @@ export const zh: Catalog = {
 
   'cli.title': '授权命令行',
   'cli.notOpenedByCommand': '此页面由命令行客户端在登录时打开。在终端中运行以下命令，它会把你带回这里：',
-  'cli.intro': '你电脑上的命令行客户端正在请求一个令牌，以便以 {username} 的身份管理此服务器。',
-  'cli.tokenName': '令牌名称：',
-  'cli.expires': '它将在 {lifetime} 后过期。',
-  'cli.neverExpires': '它不会过期；不再需要时，请在“API 令牌”中吊销。',
+  'cli.intro': '你电脑上的命令行客户端正在请求一个令牌，以便管理此服务器。',
+  'cli.signedInAs': '当前登录账户',
+  'cli.tokenLabel': '令牌名称',
   'cli.authorize': '授权',
   'cli.working': '正在签发令牌…',
   'cli.noToken': '服务器没有签发令牌。',

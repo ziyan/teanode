@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { Session, getSession, logout } from './api'
 import { LoginPage } from './pages/login'
@@ -37,6 +37,7 @@ export function App() {
   const desktop = useIsDesktop()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
+  const location = useLocation()
 
   const refresh = useCallback(async () => {
     try {
@@ -86,6 +87,18 @@ export function App() {
       <div className="auth-page">
         {corner}
         <LoginPage onLoggedIn={refresh} />
+      </div>
+    )
+  }
+
+  // The page "teanode auth login" opens is drawn like the login form — one
+  // card and nothing else — because the reader was brought here to answer
+  // one question, and the rail would be a list of other places to go.
+  if (location.pathname === '/cli') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <CommandLinePage username={session.username} />
       </div>
     )
   }
@@ -186,10 +199,6 @@ export function App() {
               <Route path="/settings/passkeys" element={<PasskeysPage />} />
               <Route path="/settings/tokens" element={<TokensPage />} />
               <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
-
-              {/* Opened by "teanode auth login", which is waiting on a
-                  loopback port for the token this page hands it. */}
-              <Route path="/cli" element={<CommandLinePage username={session.username} />} />
 
               {/* Where these used to live. Somebody's bookmark should not
                   break because the navigation was reorganised. */}

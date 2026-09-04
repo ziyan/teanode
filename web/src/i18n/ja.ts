@@ -780,10 +780,9 @@ export const ja: Catalog = {
 
   'cli.title': 'コマンドラインを承認',
   'cli.notOpenedByCommand': 'このページはコマンドラインクライアントがサインインするときに開くものです。ターミナルで次を実行すると、ここに戻ってきます:',
-  'cli.intro': 'お使いのコンピュータのコマンドラインクライアントが、{username} としてこのサーバーを管理するためのトークンを求めています。',
-  'cli.tokenName': 'トークンの名前:',
-  'cli.expires': '{lifetime} 後に期限切れになります。',
-  'cli.neverExpires': '期限はありません。不要になったら「APIトークン」で失効させてください。',
+  'cli.intro': 'お使いのコンピュータのコマンドラインクライアントが、このサーバーを管理するためのトークンを求めています。',
+  'cli.signedInAs': 'サインイン中のアカウント',
+  'cli.tokenLabel': 'トークンの名前',
   'cli.authorize': '承認',
   'cli.working': 'トークンを発行しています…',
   'cli.noToken': 'サーバーはトークンを発行しませんでした。',

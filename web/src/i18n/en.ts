@@ -788,10 +788,9 @@ export const en = {
 
   'cli.title': 'Authorize the command line',
   'cli.notOpenedByCommand': 'This page is opened by the command line client when it signs in. Run this in a terminal and it will bring you back here:',
-  'cli.intro': 'The command line client on your computer is asking for a token, so that it can administer this server as {username}.',
-  'cli.tokenName': 'The token will be called',
-  'cli.expires': 'It expires after {lifetime}.',
-  'cli.neverExpires': 'It does not expire; revoke it under API tokens when you no longer need it.',
+  'cli.intro': 'The command line client on your computer is asking for a token, so that it can administer this server.',
+  'cli.signedInAs': 'Signed in as',
+  'cli.tokenLabel': 'The token will be called',
   'cli.authorize': 'Authorize',
   'cli.working': 'Issuing the token…',
   'cli.noToken': 'The server issued no token.',
