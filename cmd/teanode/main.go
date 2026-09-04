@@ -70,6 +70,7 @@ func main() {
 			cmd.NewPasskeyCommand(),
 			cmd.NewSettingsCommand(),
 			cmd.NewServerCommand(),
+			cmd.NewUpgradeCommand(),
 			cmd.NewMailCommand(),
 			cmd.NewDeliveryCommand(),
 			cmd.NewReportCommand(),

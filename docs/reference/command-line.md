@@ -106,6 +106,7 @@ so one command serves a person and a script.
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
 | `settings` | the optional integrations; `settings set <section> key=value` |
 | `server` | the running instance: `status`, `restart`, `addresses`, `identity` |
+| `upgrade` | the newest release, and installing it: `status [--check]`, `apply` |
 | `mail` | handled mail: `list` with filters, `get`, `content`, `download`, `opens`, `count`, `send` |
 | `delivery` | what happened on the way out, and `delivery pending`, the queue |
 | `report` | DMARC aggregate reports received about your domains |

@@ -16,8 +16,8 @@ Notable changes to TeaNode. The format follows
   `auth list`, `auth switch`, `auth status` and `auth logout`, which revokes
   the token. `--profile` and `TEANODE_PROFILE` pick another for one command.
 - A command for every part of the API: `domain`, `alias`, `settings`,
-  `server`, `session`, `passkey`, `mail`, `delivery`, `report`, `template`
-  and `layout` join `user`, `token`, `credential` and `dkim`, each with
+  `server`, `upgrade`, `session`, `passkey`, `mail`, `delivery`, `report`,
+  `template` and `layout` join `user`, `token`, `credential` and `dkim`, each with
   `list`, `get`, `create`, `update` and `delete` where the API has them and
   the verbs particular to the resource — `alias match`, `domain check`,
   `mail send`, `template render`, `delivery pending`, `server restart`.
