@@ -1093,9 +1093,18 @@ td.shrink { width: 1%; white-space: nowrap; }
    on a wide screen a paragraph that fills the panel runs past 200 characters
    a line — far enough that the eye loses which line comes next. Controls and
    tables are unaffected; only the text is capped. */
-.card > p,
-.content > p,
-.settings-section > p {
+/* Any explanatory paragraph, however deeply it sits. This was three child
+   combinators, which meant the cap held only for a paragraph that happened to
+   be a direct child: the steps under "Getting mail flowing" are a paragraph
+   inside a div inside a row inside the card, so they escaped it and ran the
+   full 2161px of a wide window while every passage around them stopped at 617.
+   A rule that depends on how deeply somebody nested a div is a rule that will
+   keep being wrong.
+   
+   :where() so the whole selector counts as nothing: the exceptions below are
+   the same weight and win by being written after, rather than by an escalation
+   nobody can follow later. */
+:where(.card, .content, .settings-section) p.muted {
   max-width: var(--measure);
 }
 
@@ -1107,6 +1116,12 @@ td.shrink { width: 1%; white-space: nowrap; }
 p.settings-empty,
 p.notice,
 p.table-empty {
+  max-width: none;
+}
+
+/* A paragraph that is the whole of a table cell is bounded by its column
+   already, and a measure inside one only makes the column look mis-set. */
+td p.muted {
   max-width: none;
 }
 
