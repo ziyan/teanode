@@ -499,12 +499,19 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
 
         <label>
           <span>{t('serverSettings.logLevel')}</span>
-          <select value={logLevel} onChange={(event) => setLogLevel(event.target.value)}>
-            <option value="debug">debug</option>
-            <option value="info">info</option>
-            <option value="notice">notice</option>
-            <option value="warning">warning</option>
-            <option value="error">error</option>
+          {/* Upper case, which is how the configuration stores them and how
+              validation reads them back — a lower-case list left the field
+              matching nothing and showing the first entry, so opening the page
+              and saving anything else would have quietly set the log level to
+              debug. CRITICAL is offered because validation accepts it, though
+              a mail server that only logs those is one nobody is watching. */}
+          <select value={logLevel.toUpperCase()} onChange={(event) => setLogLevel(event.target.value)}>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="NOTICE">NOTICE</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
           </select>
         </label>
         <p className="muted field-hint">{t('serverSettings.logLevelHint')}</p>
