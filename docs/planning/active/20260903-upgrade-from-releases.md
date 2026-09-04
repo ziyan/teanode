@@ -70,14 +70,27 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
-- **The in-place road had no second chance, and the comment said why in a
-  sentence that was false.** It claimed there was no older binary to fall back
-  to, while `swap` had been keeping one at `<executable>.previous` from the
-  beginning. So an automatic upgrade to a release that crashes before serving
-  left systemd restarting the broken binary for ever — no marker, no backoff,
-  nothing had failed, and mail down until somebody renamed a file. It marks
-  and falls back once now, the same shape the staging road has always had.
-  A comment that explains why something is absent is a claim like any other.
+- **Automatic rollback of an in-place upgrade was tried and taken out again,
+  and that is the most useful thing in this list.** The comment saying the
+  in-place road had nothing to fall back to was false — `swap` keeps
+  `<executable>.previous` — so a round of review asked for the missing guard
+  and got one: mark before exec, and at the next start exec the previous
+  binary once.
+
+  The round after that found three high-severity defects in it, all from the
+  same root. A process exec'd as `<exe>.previous` reports *that* as its own
+  executable, so it upgraded over the rollback copy from then on and left the
+  real path stale; the supervisor still pointed at the crashing binary with
+  nothing armed; and the rollback made the reinstall loop reachable again,
+  because now something was serving to notice the release was available.
+
+  So it is gone, and the limitation is written down instead: staging recovers
+  by itself, in place does not, and `mv teanode.previous teanode` is the
+  recovery. The note against doing it was in the working notes before it was
+  written — "a new automatic code path that runs at startup and can swap which
+  binary runs, in an area where this loop has produced a regression nearly
+  every round" — and it was written anyway. Reverting under review is cheaper
+  than the fourth patch.
 
 - **`make test` did not run what CI runs.** CI passes `-race` and the local
   target did not, so a test that mutated a package variable in parallel passed

@@ -105,6 +105,12 @@ type Upgrade struct {
 	// somebody who turns this on has said they would rather not think about
 	// it. Read the changelog before turning it on, not after.
 	//
+	// A release that crashes before it finishes starting is recovered from
+	// automatically only where the binary is staged: a container runs the one
+	// in its image again. Where it was replaced in place there is nothing to
+	// fall back to on its own, and recovery is renaming the .previous copy
+	// back by hand. See docs/configuration.md.
+	//
 	// It is refused, with the reason on the dashboard, where there is nowhere
 	// to put the new binary: a deployment whose executable it cannot write
 	// over and which has not been given a writable staging directory in

@@ -775,6 +775,19 @@ the new binary, keeping the same arguments and environment, once everything has
 been drained and closed — so a server started by hand upgrades itself as well
 as one under systemd.
 
+**One limitation, and it matters most to the deployment this is easiest to turn
+on for.** A release that crashes before it finishes starting is recovered from
+automatically only where the new binary is staged rather than written over the
+old one — a container runs the binary in its image again and says why. Where
+the binary was replaced in place, there is nothing left to fall back to on its
+own: a supervisor will restart the broken binary until somebody stops it. The
+binary it replaced is kept beside it, so the recovery is one command,
+
+    mv /usr/local/bin/teanode.previous /usr/local/bin/teanode
+
+and then a restart. Automatic upgrades are worth more on a deployment that
+stages, and worth thinking about twice on one that does not.
+
 **`checkInterval`** — CheckInterval is how often to look. Six hours by default:
 often enough that a security release is noticed the same day, rarely enough
 that it is not a request anybody would notice. Read once at startup, so
