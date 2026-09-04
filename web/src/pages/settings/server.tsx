@@ -19,7 +19,7 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes url checkedAt error checkError applicable reason automatic enabled window upgrading
+      current latest available notes url checkedAt attemptedAt error checkError applicable reason automatic enabled window upgrading
     }
   }`
 
@@ -37,6 +37,7 @@ type UpgradeStatus = {
   notes?: string
   url?: string
   checkedAt?: string
+  attemptedAt?: string
   error?: string
   checkError?: string
   applicable: boolean
@@ -173,14 +174,20 @@ export function ServerAboutPage() {
     setProblem(null)
     setChecking(true)
     try {
-      // A check that has just happened is the answer to this one. The server
-      // will not ask the release list again within a minute of the last time
-      // somebody asked by hand — sixty requests an hour is the whole
-      // allowance, and it is shared with everybody on this address — so
+      // A check that has just been tried is the answer to this one. The
+      // server will not ask the release list again within a minute of the
+      // last time somebody asked by hand — sixty requests an hour is the
+      // whole allowance, and it is shared with everybody on this address — so
       // waiting for a time that is not going to move meant the button read
       // "Checking…" for forty seconds and then showed the same thing with no
       // explanation.
-      if (before && Date.now() - Date.parse(before) < RECENT_CHECK_MS) {
+      //
+      // Tried, not succeeded. The allowance is spent on the attempt, so after
+      // a check that failed — blocked outbound HTTPS is the ordinary way —
+      // checkedAt has not moved and never will, and watching it was the same
+      // forty seconds of nothing this exists to avoid.
+      const attempted = upgrade.data?.GetUpgrade?.attemptedAt
+      if (attempted && Date.now() - Date.parse(attempted) < RECENT_CHECK_MS) {
         await upgrade.reload()
         return
       }

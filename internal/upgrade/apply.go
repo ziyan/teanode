@@ -168,23 +168,19 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 // within one filesystem, where it is atomic: there is no moment at which the
 // path names a half-written file.
 func (self *manager) swap(downloaded, release string) error {
-	target := self.target()
+	target, staging := self.target()
 	if target == "" {
 		return fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
 	}
 
-	// Which of the two this is depends on where the binary goes, and not on
-	// whether that happens to be the file this process was started from.
-	//
-	// It was written the other way round, and the second upgrade of any
-	// container broke on it: once a process has been exec'd out of the
-	// staging directory, the staged path is its executable, so "the target is
-	// not me" was false and it took the replace-in-place road — which writes
-	// no version and no checksum. The directory was then left describing the
-	// release before last, and the next container recreate refused the staged
-	// binary over the mismatch, ran the image's old one, and let it revert
-	// the schema the staged one had migrated.
-	if target == Staged(self.upgradeDirectory) {
+	// Which road this is was worked out by whoever chose the target, and is
+	// not re-derived here. Deriving it cost two bugs: comparing the target
+	// with this process's executable broke the second upgrade of every
+	// container, and comparing it with the staged path broke the same case
+	// again as soon as a symlink was anywhere in the data directory — one
+	// side resolved, the other not. Both ended with a staged binary the next
+	// start deleted as stale while the database carried its migrations.
+	if staging {
 		return self.stage(downloaded, target, release)
 	}
 
@@ -218,10 +214,16 @@ func (self *manager) swap(downloaded, release string) error {
 	// The binary being replaced is kept beside the new one, so that a
 	// rollback is a rename somebody can type from memory at three in the
 	// morning with no network.
+	//
+	// The new link is made before the old one is removed, because the old one
+	// is a real rollback and the link can fail — a filesystem that does not do
+	// hard links, a full disk. Removing first and failing second left nothing
+	// to roll back to, with only a warning, while the page was promising that
+	// the binary it replaces is kept.
 	previous := self.executable + previousSuffix
-	_ = os.Remove(previous)
-	if err := os.Link(self.executable, previous); err != nil {
-		log.Warningf("cannot keep the previous binary at %s: %s", previous, err)
+	if err := self.keepPrevious(previous); err != nil {
+		log.Warningf("cannot keep the previous binary at %s, so the one there is still the one before "+
+			"it: %s", previous, err)
 	}
 
 	if err := os.Rename(downloaded, target); err != nil {
@@ -231,6 +233,27 @@ func (self *manager) swap(downloaded, release string) error {
 	self.mutex.Lock()
 	self.execTarget = target
 	self.mutex.Unlock()
+	return nil
+}
+
+// keepPrevious hard-links the running binary to previous, replacing whatever
+// is there — and only once the new link exists.
+//
+// Link refuses an existing name, so it goes to a temporary one first and is
+// renamed over, which is atomic and leaves the previous rollback in place for
+// the whole of it.
+func (self *manager) keepPrevious(previous string) error {
+	pending := previous + beside
+	if err := os.Remove(pending); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Link(self.executable, pending); err != nil {
+		return err
+	}
+	if err := os.Rename(pending, previous); err != nil {
+		_ = os.Remove(pending)
+		return err
+	}
 	return nil
 }
 
@@ -313,7 +336,7 @@ func (self *manager) stage(downloaded, target, release string) error {
 // download writes the asset beside where it is going, so that the rename
 // afterwards is within one filesystem and therefore atomic.
 func (self *manager) download(ctx context.Context, url string) (string, error) {
-	target := self.target()
+	target, _ := self.target()
 	if target == "" {
 		return "", fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
 	}

@@ -56,6 +56,14 @@ type Status struct {
 	CheckedAt  *time.Time `json:"checkedAt,omitempty"`
 	CheckError string     `json:"checkError,omitempty"`
 
+	// AttemptedAt is when it last tried, which is not the same and is what a
+	// caller has to look at to know whether asking again would do anything.
+	// The allowance for checks asked for by hand is spent on the attempt, so
+	// after one that failed — blocked outbound HTTPS is the ordinary way —
+	// CheckedAt does not move and a page waiting for it to move waits for
+	// nothing.
+	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
+
 	// Error is why the last upgrade failed, which is a different sentence in
 	// a different place on the page. They were one field, so a checksum that
 	// did not match was shown as though the release list could not be read,
@@ -659,6 +667,7 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	defer self.mutex.Unlock()
 
 	self.lastAttempt = time.Now()
+	self.status.AttemptedAt = &self.lastAttempt
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 
@@ -715,7 +724,7 @@ func (self *manager) checkApplicable() (bool, string) {
 	// old refusal for a process nobody started is gone. A container's refusal
 	// is gone too, but only because it has somewhere else to write: see
 	// target.
-	if self.target() == "" {
+	if path, _ := self.target(); path == "" {
 		if self.containerized {
 			return false, fmt.Sprintf("this is a container and %s, so there is nowhere to put a new "+
 				"binary that the next start would still find. Mount a writable volume and name it in "+
@@ -747,22 +756,37 @@ func (self *manager) describeStagingDirectory() string {
 // any of the machinery below. Otherwise the data directory, which is the one
 // path a container has as a writable volume — the image's own layer is read
 // only, and a binary written there would be gone at the next start.
-func (self *manager) target() string {
-	// A container never replaces its own executable, even when it could. The
-	// overlay layer a container writes to is writable and is thrown away the
-	// moment the container is recreated, so a root container would have
-	// swapped the binary, reported success, and silently gone back to the old
-	// one at the next "docker compose up" — which is the failure the original
-	// container refusal existed to prevent. Staging is what survives, because
-	// it is on a volume.
-	if !self.containerized && writable(filepath.Dir(self.executable)) {
-		return self.executable
+// target is where a new binary can be written, and whether that place is the
+// staging directory. Empty when there is nowhere.
+//
+// Beside the running binary when that directory can be written, because
+// replacing it in place is what an operator expects and what survives without
+// any of the machinery below. Otherwise the staging directory, which is the
+// one path a container has that outlives it — the image's own layer is thrown
+// away by the next recreate, and a binary written there would be gone.
+//
+// It returns the second value rather than leaving callers to work it out by
+// comparing paths. They did, and it was wrong twice: once because a process
+// exec'd out of the staging directory has the staged path as its executable,
+// and once, after that was fixed, because one side of the comparison was
+// resolved through its symlinks and the other was not. The function that
+// chooses knows which it chose.
+func (self *manager) target() (string, bool) {
+	staged := Staged(self.upgradeDirectory)
+
+	// Not when the executable is the staged binary, whatever the two paths
+	// look like written down: a process that was exec'd out of the staging
+	// directory is upgrading the staged binary again, and writing it any
+	// other way leaves the directory describing the release before last.
+	if !self.containerized && !sameFile(self.executable, staged) &&
+		writable(filepath.Dir(self.executable)) {
+		return self.executable, false
 	}
 
 	if self.stagingProblem() != "" {
-		return ""
+		return "", false
 	}
-	return Staged(self.upgradeDirectory)
+	return staged, true
 }
 
 // stagingProblem says why the staging directory cannot be used, or nothing.

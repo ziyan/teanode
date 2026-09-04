@@ -46,7 +46,14 @@ type Upgrade struct {
 	// Both are shown: a check that has not succeeded since Tuesday is the
 	// thing worth saying, and an error only in a log is an error nobody sees.
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
-	Error     string     `json:"error,omitempty"`
+
+	// When it last tried, which is not the same. The server will not ask the
+	// release list again within a minute of the last time somebody asked by
+	// hand, and it declines by doing nothing — so a caller that wants to know
+	// whether asking again would achieve anything has to look at this rather
+	// than at CheckedAt, which only moves when a check succeeds.
+	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
+	Error       string     `json:"error,omitempty"`
 
 	// Whether this deployment can install an upgrade at all, and what stands
 	// in the way when it cannot: a container, whose image is the thing to
@@ -147,19 +154,20 @@ func (self *graph) ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArgum
 
 func describeUpgrade(status upgrade.Status) *Upgrade {
 	return &Upgrade{
-		Current:    status.Current,
-		Latest:     status.Latest,
-		Available:  status.Available,
-		Notes:      status.Notes,
-		URL:        status.URL,
-		CheckedAt:  status.CheckedAt,
-		Error:      status.Error,
-		Applicable: status.Applicable,
-		Reason:     status.Reason,
-		Automatic:  status.Automatic,
-		Upgrading:  status.Upgrading,
-		Enabled:    status.Enabled,
-		Window:     status.Window,
-		CheckError: status.CheckError,
+		Current:     status.Current,
+		Latest:      status.Latest,
+		Available:   status.Available,
+		Notes:       status.Notes,
+		URL:         status.URL,
+		CheckedAt:   status.CheckedAt,
+		AttemptedAt: status.AttemptedAt,
+		Error:       status.Error,
+		Applicable:  status.Applicable,
+		Reason:      status.Reason,
+		Automatic:   status.Automatic,
+		Upgrading:   status.Upgrading,
+		Enabled:     status.Enabled,
+		Window:      status.Window,
+		CheckError:  status.CheckError,
 	}
 }

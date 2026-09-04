@@ -208,3 +208,94 @@ func TestRunningLooksAtTheFileNotThePath(t *testing.T) {
 		t.Error("a path that is not this binary was taken for it")
 	}
 }
+
+// The version file being unreadable and the version being older are different
+// answers, and only one of them is a reason to delete somebody's download.
+//
+// Both took the deleting road, so a staging directory whose version file had a
+// typo in it — or a binary built with a version string this cannot parse —
+// threw away every upgrade installed on that deployment, quietly, at the next
+// start.
+func TestAnUnreadableVersionIsRefusedRatherThanDeleted(t *testing.T) {
+	t.Parallel()
+
+	directory := stage(t, "not a version")
+	if got := stagedToRun(directory, "0.1.0"); got != "" {
+		t.Errorf("stagedToRun = %q, want nothing", got)
+	}
+	if _, err := os.Stat(Staged(directory)); err != nil {
+		t.Errorf("the staged binary was deleted over a version it could not read: %v", err)
+	}
+}
+
+// And the claim that removing the marker would help is only made when it is
+// true. A staged binary is left in place for several reasons and the marker is
+// one of them; somebody who follows a remedy and watches it fail has no reason
+// to believe the message that offered it.
+func TestHeldBackByMarkerMeansOnlyTheMarker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("only the marker", func(t *testing.T) {
+		directory := stage(t, "0.2.0")
+		if err := record(directory, pending, "started"); err != nil {
+			t.Fatal(err)
+		}
+		if !HeldBackByMarker(directory, "0.1.0") {
+			t.Error("it is held back by the marker and said otherwise")
+		}
+	})
+
+	t.Run("the marker and a checksum that does not match", func(t *testing.T) {
+		directory := stage(t, "0.2.0")
+		if err := record(directory, stagedChecksum, "0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
+			t.Fatal(err)
+		}
+		if err := record(directory, pending, "started"); err != nil {
+			t.Fatal(err)
+		}
+		if HeldBackByMarker(directory, "0.1.0") {
+			t.Error("it offered a remedy that would change nothing")
+		}
+	})
+
+	t.Run("no marker at all", func(t *testing.T) {
+		if HeldBackByMarker(stage(t, "0.2.0"), "0.1.0") {
+			t.Error("there is no marker to remove")
+		}
+	})
+}
+
+// A symlink anywhere in the data directory must not change which road an
+// upgrade takes. It did: the executable's path is resolved through its
+// symlinks at startup and the staging path was not, so a process already
+// running out of the staging directory looked like one that was not, took the
+// replace-in-place road, and left the directory describing the release before
+// last — which the next start then deleted as stale while the database carried
+// its migrations.
+func TestStagingIsRecognisedThroughASymlink(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, stagedName), []byte("the staged binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	self := &manager{
+		// What os.Executable would have given: the resolved path.
+		executable:       filepath.Join(real, stagedName),
+		upgradeDirectory: link,
+	}
+
+	target, staging := self.target()
+	if !staging {
+		t.Errorf("target = %q on the replace-in-place road, want staging", target)
+	}
+}

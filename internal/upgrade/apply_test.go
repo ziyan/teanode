@@ -513,7 +513,7 @@ func TestTarget(t *testing.T) {
 		directory := t.TempDir()
 		executable := filepath.Join(directory, "teanode")
 		self := &manager{executable: executable, upgradeDirectory: t.TempDir()}
-		if got := self.target(); got != executable {
+		if got, staging := self.target(); got != executable || staging {
 			t.Errorf("target = %q, want %q", got, executable)
 		}
 	})
@@ -531,7 +531,7 @@ func TestTarget(t *testing.T) {
 			upgradeDirectory: staging,
 			containerized:    true,
 		}
-		if got := self.target(); got != Staged(staging) {
+		if got, onVolume := self.target(); got != Staged(staging) || !onVolume {
 			t.Errorf("target = %q, want %q", got, Staged(staging))
 		}
 	})
@@ -542,7 +542,7 @@ func TestTarget(t *testing.T) {
 			containerized: true,
 			restarter:     api.NewRestarter(func() {}),
 		}
-		if got := self.target(); got != "" {
+		if got, _ := self.target(); got != "" {
 			t.Errorf("target = %q, want nothing", got)
 		}
 		applicable, reason := self.checkApplicable()
@@ -654,7 +654,7 @@ func TestStagingRefusesADirectoryTheNextStartWouldNotTrust(t *testing.T) {
 		restarter:        api.NewRestarter(func() {}),
 	}
 
-	if got := self.target(); got != "" {
+	if got, _ := self.target(); got != "" {
 		t.Errorf("target = %q, want nothing", got)
 	}
 	applicable, reason := self.checkApplicable()
@@ -685,7 +685,7 @@ func TestStagingTightensItsOwnDirectory(t *testing.T) {
 		restarter:        api.NewRestarter(func() {}),
 	}
 
-	if got := self.target(); got != Staged(staging) {
+	if got, onVolume := self.target(); got != Staged(staging) || !onVolume {
 		t.Errorf("target = %q, want %q", got, Staged(staging))
 	}
 	info, err := os.Stat(staging)

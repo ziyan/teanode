@@ -70,6 +70,22 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The same bug came back through a symlink.** "The second upgrade of a
+  container took the wrong road" was fixed by comparing the target with the
+  staged path instead of with this process's executable — and one of those two
+  is resolved through its symlinks at startup and the other is not. A data
+  directory that is a symlink, or lives under one, put the identical failure
+  back: replace in place, no version written, and the next start deleting a
+  freshly installed binary as stale while the database carried its migrations.
+  Two fixes in a row derived the answer from comparing paths. The function
+  that chooses the road now says which road it chose.
+
+- **A remedy has to be checked the way the thing it remedies is checked.** The
+  claim "removing the marker will let it try again" was made on a weaker
+  question than the start asks — is there a binary, is there a marker — so it
+  was offered for a binary that also fails its checksum, where removing the
+  marker changes nothing. Both now ask one function.
+
 - **The refusal's own remedy was the data loss it existed to prevent.** The
   message said to set `TEANODE_ALLOW_MIGRATION_REVERT=true` to go back — and in
   the multi-instance case the guard was written for, following that reverts the

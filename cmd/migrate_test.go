@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,17 +24,36 @@ func (self *fakeMigrator) Migrate() error {
 	return nil
 }
 
-// stageBinary leaves the directory looking the way an upgrade that has been
-// installed and refused looks: a binary, and a marker saying it was tried.
+// stageBinary leaves the directory looking the way an upgrade that installed
+// cleanly and then failed to serve looks: a binary, everything beside it that
+// describes it, and the marker saying it was tried.
+//
+// Complete on purpose. The advice this is testing is only offered when the
+// marker is the only thing in the way, so a half-written directory would prove
+// nothing about the case that matters.
 func stageBinary(t *testing.T) string {
 	t.Helper()
 
 	directory := t.TempDir()
-	if err := os.WriteFile(filepath.Join(directory, "teanode"), []byte("binary"), 0o700); err != nil {
+	// t.TempDir leaves it group-writable under a umask of 002, and a staging
+	// directory anybody else can write is refused — which is the point of the
+	// check, and not what this test is about.
+	if err := os.Chmod(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "pending"), []byte("started\n"), 0o600); err != nil {
+	contents := []byte("binary")
+	if err := os.WriteFile(filepath.Join(directory, "teanode"), contents, 0o700); err != nil {
 		t.Fatal(err)
+	}
+	digest := sha256.Sum256(contents)
+	for name, value := range map[string]string{
+		"version":  "9.9.9",
+		"checksum": hex.EncodeToString(digest[:]),
+		"pending":  "started",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return directory
 }

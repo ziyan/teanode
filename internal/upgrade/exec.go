@@ -28,11 +28,6 @@ func resolveExecutable() string {
 	return path
 }
 
-// Executable is the resolved path this process was started from.
-func Executable() string {
-	return executablePath
-}
-
 // What a staging directory holds. The binary, what version it is, and a marker
 // saying it has been tried.
 const (
@@ -153,59 +148,118 @@ func execStaged(directory, current string, mark bool) {
 // before logging is configured and a server quietly running the wrong binary
 // is the thing to avoid.
 func stagedToRun(directory, current string) string {
-	staged := Staged(directory)
-	if staged == "" || running(staged) {
-		// Nowhere to look, or this is the staged binary already.
-		return ""
-	}
-	info, err := os.Stat(staged)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			// Nothing staged is the ordinary case and says nothing. A file
-			// that is there and cannot be read is not, and the guard that
-			// stops this older binary migrating tells the operator the reason
-			// is above — so there had better be one.
-			refuse(staged, err.Error())
-		}
-		return ""
-	}
-	if info.Mode()&0o100 == 0 {
-		refuse(staged, "it is not executable")
-		return ""
-	}
+	staged, state := inspectStaged(directory, current)
+	switch state {
+	case stagedRunnable:
+		return staged
 
-	waiting, err := readStagedFile(directory, stagedVersion)
-	if err != nil {
-		refuse(staged, fmt.Sprintf("it does not say which version it is (%s)", err))
-		return ""
-	}
-	if !movesForward(current, waiting) {
+	case stagedStale:
 		// The image was upgraded past it, or somebody put an older release
 		// there. Removed rather than left: a staged binary that is never run
 		// is a trap for whoever reads the directory next, and every start
 		// would say the same thing about it again.
+		version, _ := readStagedFile(directory, stagedVersion)
 		fmt.Fprintf(os.Stderr, "teanode: %s holds %s, which is not newer than this %s; removing it\n",
-			staged, waiting, current)
+			staged, version, current)
 		discard(directory)
 		return ""
-	}
 
-	if why := unsafeToRun(staged, directory); why != "" {
-		refuse(staged, why)
-		return ""
-	}
-
-	if _, err := os.Stat(filepath.Join(directory, pending)); err == nil {
+	case stagedHeldBack:
 		// It was tried and never got as far as serving. Left alone, and said
 		// out loud: a binary that crashes on startup must not be tried again
 		// on every container restart, and somebody has to be told why the
 		// upgrade they installed is not the one running.
 		fmt.Fprintf(os.Stderr, "teanode: %s was staged by an upgrade and did not start; running the built-in binary instead. Remove %s to try it again.\n",
-			staged, filepath.Join(directory, pending))
+			staged, PendingMarker(directory))
+		return ""
+
+	default:
 		return ""
 	}
+}
 
-	return staged
+// What a staging directory turns out to hold.
+type stagedState int
+
+const (
+	// stagedNothing: no binary, or the one this process already is.
+	stagedNothing stagedState = iota
+
+	// stagedRefused: a binary that will not be run, for a reason nobody can
+	// undo by removing a file.
+	stagedRefused
+
+	// stagedStale: a binary that is not newer than this one.
+	stagedStale
+
+	// stagedHeldBack: a binary that is fine in every respect except that it
+	// was tried once and did not get as far as serving.
+	stagedHeldBack
+
+	// stagedRunnable: run it.
+	stagedRunnable
+)
+
+// inspectStaged is the whole decision and takes none of it.
+//
+// Split from stagedToRun so that the same question can be asked twice: once by
+// the start that acts on the answer, and once by the message that tells an
+// operator removing the marker would help. That message is a claim about a
+// remedy, and it was made on a weaker question — "is there a binary and a
+// marker" — which is true for a binary that is also refused over its checksum,
+// where removing the marker changes nothing at all. Somebody who follows a
+// remedy and watches it fail has no reason to believe the paragraph after it.
+//
+// Refusals are said here, because the guard that stops an older binary
+// migrating tells the operator the reason is above.
+func inspectStaged(directory, current string) (string, stagedState) {
+	staged := Staged(directory)
+	if staged == "" || running(staged) {
+		return "", stagedNothing
+	}
+	info, err := os.Stat(staged)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			// Nothing staged is the ordinary case and says nothing. A file
+			// that is there and cannot be read is not.
+			refuse(staged, err.Error())
+			return staged, stagedRefused
+		}
+		return "", stagedNothing
+	}
+	if info.Mode()&0o100 == 0 {
+		refuse(staged, "it is not executable")
+		return staged, stagedRefused
+	}
+
+	waiting, err := readStagedFile(directory, stagedVersion)
+	if err != nil {
+		refuse(staged, fmt.Sprintf("it does not say which version it is (%s)", err))
+		return staged, stagedRefused
+	}
+	// A version that cannot be read is not the same as a version that is not
+	// newer, and only the second is a reason to delete somebody's download.
+	// Both went down the deleting road, so a staged binary whose version file
+	// had a typo in it — or a running binary built with a version string this
+	// cannot parse — threw away every upgrade installed on that deployment.
+	if _, err := parseVersion(waiting); err != nil {
+		refuse(staged, fmt.Sprintf("%q is not a version", waiting))
+		return staged, stagedRefused
+	}
+	if !movesForward(current, waiting) {
+		return staged, stagedStale
+	}
+
+	if why := unsafeToRun(staged, directory); why != "" {
+		refuse(staged, why)
+		return staged, stagedRefused
+	}
+
+	if _, err := os.Stat(PendingMarker(directory)); err == nil {
+		return staged, stagedHeldBack
+	}
+
+	return staged, stagedRunnable
 }
 
 // PendingMarker is the file that says a staged binary has been tried and has
@@ -368,23 +422,39 @@ func Waiting(directory string) bool {
 // Narrower than Waiting on purpose. Waiting answers "is there something here",
 // which is the right question for deciding whether an older binary should
 // touch the database. This answers "would removing the marker change
-// anything", which is a claim, and a claim about a remedy has to be true.
-func HeldBackByMarker(directory string) bool {
-	if !Waiting(directory) {
-		return false
-	}
-	_, err := os.Stat(PendingMarker(directory))
-	return err == nil
+// anything", which is a claim, and a claim about a remedy has to be true — so
+// it asks the same question the start asks and accepts only that one answer.
+// Asking a weaker one — "is there a binary and a marker" — said yes for a
+// binary that is also refused over its checksum, where removing the marker
+// changes nothing.
+func HeldBackByMarker(directory, current string) bool {
+	_, state := inspectStaged(directory, current)
+	return state == stagedHeldBack
 }
 
-// Started clears the marker, once this process has got far enough to be
-// serving. Called from the server, not from here: what counts as far enough is
-// the server's question.
-func Started(directory string) {
-	if staged := Staged(directory); staged == "" || !running(staged) {
-		return
+// sameFile reports whether two paths name the same file on disk.
+//
+// By inode, because comparing paths as text is wrong here in both directions:
+// a data directory that is a symlink, or lives under one, is ordinary, and the
+// executable's own path is resolved through its symlinks at startup. Answers
+// no when either path does not exist, which is the ordinary case the first
+// time anything is staged.
+func sameFile(first, second string) bool {
+	if first == "" || second == "" {
+		return false
 	}
-	_ = os.Remove(filepath.Join(directory, pending))
+	if first == second {
+		return true
+	}
+	left, err := os.Stat(first)
+	if err != nil {
+		return false
+	}
+	right, err := os.Stat(second)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(left, right)
 }
 
 // running reports whether a path names the binary this process is.
@@ -396,21 +466,17 @@ func Started(directory string) {
 // binary would run, never be recognised as itself, never clear the marker
 // saying it had been tried, and be refused at every start after the first.
 func running(path string) bool {
-	if path == "" || executablePath == "" {
-		return false
+	return sameFile(path, executablePath)
+}
+
+// Started clears the marker, once this process has got far enough to be
+// serving. Called from the server, not from here: what counts as far enough is
+// the server's question.
+func Started(directory string) {
+	if staged := Staged(directory); staged == "" || !running(staged) {
+		return
 	}
-	if path == executablePath {
-		return true
-	}
-	staged, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	self, err := os.Stat(executablePath)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(staged, self)
+	_ = os.Remove(PendingMarker(directory))
 }
 
 // Restart replaces this process with the binary at path, keeping the same

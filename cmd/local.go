@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/upgrade"
+	"github.com/ziyan/teanode/internal/version"
 )
 
 // openLocalStore opens the configuration where the server keeps it: the
@@ -143,7 +144,11 @@ func migrate(database migrator, upgradeDirectory string) error {
 		return nil
 	}
 
-	if allowed, _ := strconv.ParseBool(os.Getenv(AllowMigrationRevert)); allowed {
+	allowed, err := revertAllowed()
+	if err != nil {
+		return err
+	}
+	if allowed {
 		log.Warningf("reverting %d migration(s) this version does not have, because %s is set: %s",
 			len(unknown), AllowMigrationRevert, strings.Join(unknown, ", "))
 		if err := database.Migrate(); err != nil {
@@ -160,7 +165,25 @@ func migrate(database migrator, upgradeDirectory string) error {
 		"reverted and whatever is in the columns they added is gone. If another instance is sharing this "+
 		"database and is already running the newer version, do not do it at all — the columns would go "+
 		"out from under it while it is serving",
-		strings.Join(unknown, ", "), stagedAdvice(upgradeDirectory), AllowMigrationRevert)
+		strings.Join(unknown, ", "), stagedAdvice(upgradeDirectory, version.Version()), AllowMigrationRevert)
+}
+
+// revertAllowed reads the variable that permits going backwards.
+//
+// A value it cannot read is an error rather than a false. The refusal below is
+// the only guidance anybody has at that point, and it ends by naming this
+// variable — so somebody who sets it to "yes" and is handed the same three
+// paragraphs back has been told to do the thing they just did.
+func revertAllowed() (bool, error) {
+	value, ok := os.LookupEnv(AllowMigrationRevert)
+	if !ok || strings.TrimSpace(value) == "" {
+		return false, nil
+	}
+	allowed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return false, fmt.Errorf("%s is %q, which is not true or false", AllowMigrationRevert, value)
+	}
+	return allowed, nil
 }
 
 // stagedAdvice adds the way out that does not lose anything, when this start
@@ -175,8 +198,8 @@ func migrate(database migrator, upgradeDirectory string) error {
 // Telling somebody that is the way out, when it is not, is worse than saying
 // nothing: they do it, it fails again, and now they distrust the message that
 // was going to tell them the truth about reverting.
-func stagedAdvice(upgradeDirectory string) string {
-	if !upgrade.HeldBackByMarker(upgradeDirectory) {
+func stagedAdvice(upgradeDirectory, current string) string {
+	if !upgrade.HeldBackByMarker(upgradeDirectory, current) {
 		return ""
 	}
 	return fmt.Sprintf(" There is one at %s: it was tried and did not get as far as serving, so this "+
