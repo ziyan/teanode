@@ -33,6 +33,7 @@ type release struct {
 	Tag    string `json:"tag_name"`
 	Name   string `json:"name"`
 	Notes  string `json:"body"`
+	URL    string `json:"html_url"`
 	Draft  bool   `json:"draft"`
 	Assets []struct {
 		Name string `json:"name"`

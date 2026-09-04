@@ -105,9 +105,13 @@ type Upgrade struct {
 	// somebody who turns this on has said they would rather not think about
 	// it. Read the changelog before turning it on, not after.
 	//
-	// It is refused, with the reason on the dashboard, where an upgrade could
-	// not work: in a container, whose image is the thing to replace, and
-	// where nothing would start the process again after it exits.
+	// It is refused, with the reason on the dashboard, where there is nowhere
+	// to put the new binary: a deployment whose executable it cannot write
+	// over and which has not been given a writable staging directory in
+	// TEANODE_UPGRADE_DIRECTORY. A container is not refused — it stages onto
+	// its volume and runs that at the next start, so an upgrade survives a
+	// recreate — but a container that was never given such a volume is, and
+	// there "docker compose pull" is the answer.
 	Automatic bool `yaml:"automatic"`
 
 	// CheckInterval is how often to look. Six hours by default: often enough

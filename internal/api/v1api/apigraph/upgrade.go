@@ -38,8 +38,9 @@ type Upgrade struct {
 	// Whether Latest is newer than Current
 	Available bool `json:"available"`
 
-	// The release notes for Latest, as markdown
+	// The release notes for Latest, as markdown, and the release's own page
 	Notes string `json:"notes,omitempty"`
+	URL   string `json:"url,omitempty"`
 
 	// When the release list was last read, and why the last attempt failed.
 	// Both are shown: a check that has not succeeded since Tuesday is the
@@ -150,6 +151,7 @@ func describeUpgrade(status upgrade.Status) *Upgrade {
 		Latest:     status.Latest,
 		Available:  status.Available,
 		Notes:      status.Notes,
+		URL:        status.URL,
 		CheckedAt:  status.CheckedAt,
 		Error:      status.Error,
 		Applicable: status.Applicable,

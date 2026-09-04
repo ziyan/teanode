@@ -503,3 +503,68 @@ func TestApplyRefusesAVersionNobodyConfirmed(t *testing.T) {
 		t.Fatalf("the confirmed version was refused: %s", err)
 	}
 }
+
+// Where a new binary goes, which is the difference between an upgrade that
+// survives and one that is silently undone.
+func TestTarget(t *testing.T) {
+	t.Parallel()
+
+	t.Run("beside the running binary when it can be written", func(t *testing.T) {
+		directory := t.TempDir()
+		executable := filepath.Join(directory, "teanode")
+		self := &manager{executable: executable, upgradeDirectory: t.TempDir()}
+		if got := self.target(); got != executable {
+			t.Errorf("target = %q, want %q", got, executable)
+		}
+	})
+
+	// A container's own directories are writable — the overlay upper layer
+	// is — and everything written to them is thrown away when the container
+	// is recreated. Writing the binary there would report success and then
+	// quietly be the old version again after the next "docker compose up",
+	// which is exactly the failure the old blanket refusal existed to
+	// prevent.
+	t.Run("on the volume in a container, even when the image is writable", func(t *testing.T) {
+		staging := t.TempDir()
+		self := &manager{
+			executable:       filepath.Join(t.TempDir(), "teanode"),
+			upgradeDirectory: staging,
+			containerized:    true,
+		}
+		if got := self.target(); got != Staged(staging) {
+			t.Errorf("target = %q, want %q", got, Staged(staging))
+		}
+	})
+
+	t.Run("nowhere, when a container was given no volume to stage on", func(t *testing.T) {
+		self := &manager{
+			executable:    filepath.Join(t.TempDir(), "teanode"),
+			containerized: true,
+			restarter:     api.NewRestarter(func() {}),
+		}
+		if got := self.target(); got != "" {
+			t.Errorf("target = %q, want nothing", got)
+		}
+		applicable, reason := self.checkApplicable()
+		if applicable {
+			t.Error("it offered an upgrade it has nowhere to put")
+		}
+		if !strings.Contains(reason, "UPGRADE_DIRECTORY") {
+			t.Errorf("the reason does not say what to set: %q", reason)
+		}
+	})
+
+	// Nothing here ends the process. Without something to ask for a restart
+	// the swap would happen and the old binary would keep running, so the
+	// refusal comes before the download rather than after it.
+	t.Run("refused with no way to restart", func(t *testing.T) {
+		self := &manager{executable: filepath.Join(t.TempDir(), "teanode")}
+		applicable, reason := self.checkApplicable()
+		if applicable {
+			t.Error("a manager with no restarter offered an upgrade")
+		}
+		if !strings.Contains(reason, "restart") {
+			t.Errorf("the reason does not say why: %q", reason)
+		}
+	})
+}

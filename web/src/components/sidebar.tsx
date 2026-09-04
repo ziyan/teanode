@@ -5,6 +5,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import {
   ChevronRightIcon,
   DomainsIcon,
+  RefreshIcon,
   KeyIcon,
   LogoutIcon,
   MailIcon,
@@ -18,6 +19,7 @@ import {
 } from './icons'
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
+import { useStaleBundle, useUpgradeAvailable } from './freshness'
 
 type Item = { label: Key; to: string; icon: React.ReactNode }
 type Group = { label?: Key; items: Item[] }
@@ -132,6 +134,12 @@ export function Sidebar({
   const { t } = useTranslation()
   const location = useLocation()
 
+  // Two things the rail says about the server without being asked: that a
+  // release is waiting, and that this page is older than the server serving
+  // it.
+  const upgradeAvailable = useUpgradeAvailable()
+  const staleBundle = useStaleBundle()
+
   // Your own settings are a mode, not a page. They are four short pages about
   // one account, and swapping the rail for them is what makes them reachable
   // from each other. The server's settings are not a mode: they are rows in
@@ -151,10 +159,29 @@ export function Sidebar({
         {/* The product belongs at the top of its own navigation, not on the bar
             across the page: the bar says where you are, and the rail says what
             this is. Collapsed, the mark stays and the word goes. */}
-        <Link className="sidebar-brand" to="/" onClick={onClose}>
-          <Logo size={22} />
-          <span className="sidebar-label">{t('app.name')}</span>
-        </Link>
+        <div className="sidebar-top">
+          <Link className="sidebar-brand" to="/" onClick={onClose}>
+            <Logo size={22} />
+            <span className="sidebar-label">{t('app.name')}</span>
+          </Link>
+
+          {/* The server has been upgraded under this page, so what is loaded
+              in the browser is the old dashboard talking to the new server.
+              Usually harmless and occasionally a field that no longer exists,
+              which is why this asks rather than reloading underneath somebody
+              in the middle of writing a message. */}
+          {staleBundle && (
+            <button
+              type="button"
+              className="sidebar-refresh"
+              title={t('nav.refreshTooltip')}
+              aria-label={t('nav.refreshTooltip')}
+              onClick={() => window.location.reload()}
+            >
+              <RefreshIcon size={16} />
+            </button>
+          )}
+        </div>
 
         <nav onClick={onClose}>
           {/* The way back out. First, and on its own, because it is the one
@@ -178,6 +205,10 @@ export function Sidebar({
               {group.label && <div className="sidebar-group-label sidebar-label">{t(group.label)}</div>}
               {group.items.map((item) => {
                 const label = t(item.label)
+                // The one row that has something waiting on it. A dot rather
+                // than a number or a word: it says "look here" and nothing
+                // else, which is all a rail should say.
+                const marked = upgradeAvailable && item.to === '/server'
                 return (
                   <NavLink key={item.to} to={item.to} title={collapsed ? label : undefined}>
                     <span className="sidebar-icon">{item.icon}</span>
@@ -186,6 +217,11 @@ export function Sidebar({
                         label should not have to be re-read when the rail
                         reopens. */}
                     <span className="sidebar-label">{label}</span>
+                    {marked && (
+                      <span className="sidebar-dot" title={t('nav.upgradeAvailable')}>
+                        <span className="visually-hidden">{t('nav.upgradeAvailable')}</span>
+                      </span>
+                    )}
                   </NavLink>
                 )
               })}

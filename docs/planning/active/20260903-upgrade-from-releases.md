@@ -19,15 +19,17 @@ shape of it:
 that receives mail for every domain on the box. The check that the download is
 genuine is the feature; the rest is plumbing.
 
-**It cannot restart itself.** `internal/api.Restarter` already says this
-plainly: there is no restart in place, only exiting and letting a supervisor
-start a new one. An upgrade is therefore a swap followed by an exit, and an
-exit is only safe when something will start the process again.
+**It restarts itself.** `syscall.Exec` replaces this process's image with the
+new binary, keeping the same arguments, the same environment and the same
+process. No supervisor is involved, so a server started by hand upgrades itself
+as well as one under systemd. This was not the first answer here — see the
+Decision Log — and getting it wrong cost the feature most of its reach.
 
-**It cannot upgrade a container.** The binary inside an image is on a read-only
-layer, and replacing it would be undone by the next `docker compose up`. The
-honest answer there is to say what is available and stop, because what needs
-replacing is the image and this program is not the thing that replaces it.
+**It upgrades a container by writing outside the image.** The binary inside an
+image is on a layer that `docker compose up` throws away, so an upgrade there
+does not write to it: it writes to a directory on a mounted volume and execs
+that at the next start. What makes this work is one variable, read from the
+environment before the database is opened, naming where that directory is.
 
 ## Progress
 
@@ -37,9 +39,17 @@ replacing is the image and this program is not the thing that replaces it.
 - [x] (2026-09-03) Milestone four: the dashboard.
 - [x] (2026-09-03) Milestone five: on a schedule.
 - [x] (2026-09-03) Milestone six: proved against a real deployment — the
-      deployment test asserts the container refusal, and a development server
+      deployment test asserted the container refusal, and a development server
       pointed at the real release list showed the card, found 0.1.1, and
       refused to upgrade because nothing would start it again.
+- [x] (2026-09-03) Milestone seven: both refusals removed. Exec replaces the
+      process without a supervisor; a container stages onto its volume and runs
+      that at the next start. The deployment test now asserts the opposite of
+      what it used to.
+- [ ] Milestone eight: the dashboard as one place. The version card gained the
+      release link and the notes; the rail gained a refresh button for a stale
+      bundle and a dot on Server when there is a release; Setup, Integrations
+      and Server became tabs of one `/server`.
 
 ## Surprises & Discoveries
 
@@ -49,6 +59,24 @@ replacing is the image and this program is not the thing that replaces it.
   so. The deployment test found it, which is the second time this exact shape
   has bitten — the first was every partial domain update being refused. The
   schema test now pins it.
+
+- **The exec was in the wrong place twice, and both were quiet.** First
+  before the database was opened but after the config was read, which is after
+  `Migrate` — so the image's old binary would revert the new one's migrations
+  on every restart and the new one would re-apply them against the schema it
+  had just lost. Then at the end of `serve`, which looks like the last thing
+  that happens and is not: every closer in that function is a `defer` of its
+  callers, so exec skipped the mailer, the queue, the storage client and the
+  database pool. Both were found by review rather than by a test, and neither
+  would have failed anything visibly.
+
+- **`git describe` makes every development build look like a candidate.**
+  `VERSION ?= $(shell git describe --tags)` produces `0.1.2-9-g6a8860b`, whose
+  prerelease field sorts it below the tag it came after. Plain semantic
+  versioning therefore calls `0.1.2` an upgrade from it — so a build from a
+  checkout would have offered, and with automatic upgrades on installed, the
+  release it was already ahead of. The literal `0.0.0-dev` guard did not
+  cover it.
 
 - **The test for applying an upgrade was itself racy.** `Restarter.Request`
   runs its trigger in a goroutine, so checking a channel immediately
@@ -79,15 +107,52 @@ replacing is the image and this program is not the thing that replaces it.
   about it. Off by default because a release can break mail delivery, and
   nobody installs a mail server expecting it to change underneath them.
 
-- **A container is told, not upgraded.** Detected through the supervision
-  `Restarter` already reports. The dashboard says a new version exists and that
-  the image is what to replace.
+- **The two refusals were both wrong, and both were removed.** They are kept
+  here rather than deleted because the reasoning that produced them is the
+  interesting part.
 
-- **An unsupervised process is told too.** If nothing recognisable would start
-  the process again, exiting leaves the server down and the upgrade has taken
-  mail down to fix a bug in mail. It refuses, and says why. A development
-  server run from a shell looks exactly like this, which is the case that
-  proves the rule.
+  "It cannot restart itself" came from reading `internal/api.Restarter`, which
+  exits and waits for a supervisor, and treating that as the only way. `exec`
+  is the other way: same process, new image, no supervisor. So there is no
+  unsupervised deployment to refuse — the server run from a shell upgrades
+  itself like any other.
+
+  "It cannot upgrade a container" came from the image being read-only, which
+  is true and is not the question. The question is where the next start looks,
+  and a volume is somewhere both the running container and the next one can
+  see. So a container stages there and execs it at startup, and an upgrade
+  survives a recreate.
+
+  Both refusals had passed review, been documented, and been asserted by the
+  deployment test. What removed them was somebody saying "there is a way to do
+  this" — twice.
+
+- **A container never writes over its own executable, even when it can.** The
+  overlay layer a container writes to is writable, so the obvious rule —
+  replace in place when the directory allows it — silently produces the worst
+  outcome for any container running as root: the upgrade works, reports
+  success, and is gone at the next `docker compose up`. Being in a container
+  decides this, not the permissions.
+
+- **Where a staged binary lives comes from the environment, not the
+  configuration.** Every other path this server uses is a setting in the
+  database. This one cannot be: the staged binary has to be found and run
+  before anything opens the database, because this program reverts migrations
+  it does not recognise and an old binary that reached the database first
+  would revert the new one's schema — and the data in those columns — seconds
+  before handing over to it. So `TEANODE_UPGRADE_DIRECTORY`, read from the
+  environment, defaulting to `upgrade` under the data directory the
+  environment names, and absent means a deployment that cannot write over its
+  own binary is told it cannot upgrade itself.
+
+- **A staged binary is checked before it is run, and the check is not a
+  signature.** It must be newer than the running one, it must match the
+  checksum recorded when it was staged, and neither it nor its directory may
+  be writable by anybody else. That catches a truncated write, a backup
+  restoring last month's binary, and another container sharing the volume. It
+  does not catch a host root, and nothing here could: the staging directory is
+  a bind mount, and an operator who lets something else write into it has
+  given it the server. Said plainly in the code and in the reference.
 
 ## Interfaces and Dependencies
 
@@ -150,8 +215,8 @@ version, a prerelease tag, and a release older than what is running.
 
 In order, and stopping at the first refusal:
 
-1. Refuse in a container, or when nothing would restart the process.
-2. Refuse when the running executable's directory cannot be written.
+1. Refuse when there is nowhere to write: not beside the running binary, and
+   no staging directory either.
 3. Download the asset for this `GOOS/GOARCH` and `SHA256SUMS` from the release.
 4. Verify the hash. Refuse on any mismatch, and say which file.
 5. Write the new binary beside the current one, fsync it, and rename it over —
@@ -192,9 +257,33 @@ upgrade is refused inside a container, which is what that stack is. The live
 deployment is a container too, so the honest end of this is the dashboard
 showing the version and saying that the image is what to replace.
 
+### Milestone seven: the container and the supervisor, reconsidered
+
+Both refusals go. Exec replaces the process; a container stages onto its
+volume. `TEANODE_UPGRADE_DIRECTORY` names where, read before the database is
+opened. The deployment test asserts the opposite of what it asserted in
+milestone six: the container can upgrade itself, and the directory it would
+write into exists on the volume and is private to the user the server runs as.
+
+### Milestone eight: the dashboard as one place
+
+The version card gains the release link and the notes, so that "should I?" is
+answerable without leaving the page. The rail gains two marks: a refresh button
+when the loaded bundle is older than the server it is talking to, and a dot on
+Server when a release is waiting. And Setup, Integrations and Server — three
+rows for one subject — become tabs of one `/server`.
+
 ## Idempotence and Recovery
 
 An interrupted download leaves a temporary file and nothing else. A failed
 verification leaves the running binary untouched. A swap that succeeds and a
 restart that does not is the one bad case, and it is why the previous binary is
 kept next to the new one under a name somebody can guess.
+
+Staging has its own two. A staged binary that crashes on startup would be
+exec'd again at every start, for ever, so a marker is written before it is run
+and cleared only once the new process is serving: the second start finds the
+marker, says so, and runs the binary from the image instead. And a staged
+binary that the image has since overtaken — the operator pulled a newer
+image — is deleted rather than run, because the alternative is a deployment
+that silently goes backwards on every restart.

@@ -64,29 +64,70 @@ func NewRunCommand() *cli.Command {
 	}
 }
 
+// runServer runs the server and, when an upgrade has put a new binary in
+// place, becomes it.
+//
+// The exec is out here rather than at the end of serve because a process image
+// replaced by exec never returns: every deferred close inside — the mailer,
+// the queue, the database pool, the storage client — would be skipped, and
+// in-flight deliveries abandoned mid-flight. Out here, all of that has already
+// run.
 func runServer(ctx context.Context, command *cli.Command) error {
+	target, err := serveUntilStopped(ctx, command)
+	if err != nil {
+		return err
+	}
+	if target == "" {
+		return nil
+	}
+
+	log.Noticef("restarting into %s", target)
+	if err := upgrade.Restart(target); err != nil {
+		// Exec only replaces this image when it succeeds, so there is still
+		// somebody here to say so. Exiting cleanly is then the fallback: a
+		// supervisor starts a new one, and the staged binary is found at the
+		// next start anyway.
+		log.Errorf("could not run the upgraded binary, so this process is exiting for whatever supervises it: %s", err)
+	}
+	return nil
+}
+
+// serveUntilStopped is the run, and returns the binary this process should
+// become afterwards, if an upgrade staged one.
+func serveUntilStopped(ctx context.Context, command *cli.Command) (string, error) {
 	// The environment says how to reach the database. Everything else is in
 	// the database, so this is the only thing that has to be told to each
 	// instance separately.
 	bootstrapped, err := bootstrap.Load()
 	if err != nil {
-		return err
+		return "", err
 	}
+
+	// A binary an upgrade staged, if there is one, before anything at all is
+	// opened. This is what makes an upgrade survive a container recreate: the
+	// image still carries the old binary, and this reaches past it.
+	//
+	// It has to come before the database. Migrate reverts migrations it does
+	// not recognise, so the image's older binary opening the database first
+	// would drop the columns the newer one added — and the data in them —
+	// seconds before handing over to it. It does not return when it finds a
+	// binary to run.
+	upgrade.ExecStagedIfNewer(bootstrapped.UpgradeDirectory, version.Version())
 
 	database, closeDatabase, err := openDatabase(bootstrapped)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer closeDatabase()
 
 	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	store, err := configdb.Open(database, bootstrapped.Database)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		_ = store.Close()
@@ -102,7 +143,7 @@ func runServer(ctx context.Context, command *cli.Command) error {
 
 	configuration := store.Current()
 	if err := configuration.ValidateFiles(); err != nil {
-		return err
+		return "", err
 	}
 
 	// A level given on the command line has already been applied and wins;
@@ -113,32 +154,37 @@ func runServer(ctx context.Context, command *cli.Command) error {
 	log.Noticef("starting teanode %s as instance %q", version.String(), bootstrapped.InstanceID)
 
 	if err := configuration.EnsureDataDirectory(); err != nil {
-		return fmt.Errorf("cannot create %s: %w", configuration.Server.DataDirectory, err)
+		return "", fmt.Errorf("cannot create %s: %w", configuration.DataDirectory(), err)
 	}
 
 	// Generated secrets are stored with the rest of the configuration, so
 	// that an instance joining later derives the same SMTP passwords and
 	// accepts the same sessions as the ones already running.
 	if err := config.EnsureSecrets(store); err != nil {
-		return err
+		return "", err
 	}
 
 	// An installation upgraded from a release that stored the signing keys in
 	// the clear rewrites them once, here, rather than waiting for whatever
 	// unrelated edit would otherwise have done it.
 	if err := configdb.EnsureSealed(database, store); err != nil {
-		return err
+		return "", err
 	}
 	configuration = store.Current()
 	secret := configuration.Secret()
 
-	server, err := openServer(store, database, secret, bootstrapped.InstanceID)
+	server, err := openServer(store, database, secret, bootstrapped.InstanceID, bootstrapped.UpgradeDirectory)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer server.close()
 
-	return server.serve(ctx)
+	if err := server.serve(ctx); err != nil {
+		return "", err
+	}
+	// Read before the deferred closes run, and acted on by the caller after
+	// they have.
+	return server.execTarget(), nil
 }
 
 // openDatabase connects and migrates, before there is any configuration to
@@ -162,10 +208,20 @@ type server struct {
 	secret   []byte
 	instance string
 
+	// upgradeDirectory is where a staged binary goes and where the next start
+	// looks for one. From the environment, because that next start has to
+	// find it before it can read anything from the database.
+	upgradeDirectory string
+
 	// restarter ends this process when the dashboard asks. Its trigger closes
 	// restartRequested, which serve is waiting on.
 	restarter        *api.Restarter
 	restartRequested chan struct{}
+
+	// upgrader knows what has been released and, after an upgrade, what this
+	// process should become. Read at the end of serve, once everything is
+	// drained: that is the only safe moment to replace the process image.
+	upgrader upgrade.Manager
 
 	closers  []func()
 	database db.Database
@@ -195,13 +251,14 @@ func (self *server) close() {
 	}
 }
 
-func openServer(store config.Store, database db.Database, secret []byte, instance string) (*server, error) {
+func openServer(store config.Store, database db.Database, secret []byte, instance, upgradeDirectory string) (*server, error) {
 	configuration := store.Current()
 	self := &server{
 		store:            store,
 		secret:           secret,
 		database:         database,
 		instance:         instance,
+		upgradeDirectory: upgradeDirectory,
 		restartRequested: make(chan struct{}),
 	}
 	// The trigger only asks; serve does the shutting down, in the same place
@@ -633,10 +690,11 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// and this deployment can — installing it. Built after the restarter,
 	// because an upgrade ends in a restart and a manager with nothing to ask
 	// for one would swap a binary and leave the old one running.
-	upgrader, err := upgrade.New(self.store, self.restarter)
+	upgrader, err := upgrade.New(self.store, self.restarter, self.upgradeDirectory)
 	if err != nil {
 		return err
 	}
+	self.upgrader = upgrader
 	self.defer_(func() {
 		if err := upgrader.Close(); err != nil {
 			log.Errorf("failed to stop the upgrade checker: %s", err)
@@ -911,6 +969,11 @@ func (self *server) serve(ctx context.Context) error {
 	log.Noticef("teanode is running")
 
 	var reason string
+	// Far enough to serve. A staged binary is only trusted after this: the
+	// marker beside it is what stops a release that crashes on startup from
+	// being exec'd again on every restart, for ever.
+	upgrade.Started(self.upgradeDirectory)
+
 	for reason == "" {
 		select {
 		case <-ctx.Done():
@@ -954,7 +1017,22 @@ func (self *server) serve(ctx context.Context) error {
 	}
 
 	waitGroup.Wait()
+
+	// An upgrade is not applied here. runServer does it, after every deferred
+	// close has run: exec never returns, so doing it from inside this function
+	// would skip all of them and abandon whatever the mailer and the queue
+	// were part way through.
 	return nil
+}
+
+// execTarget is the binary this process should become, if an upgrade staged
+// one. Nothing when the web component was never built, which is every command
+// other than run.
+func (self *server) execTarget() string {
+	if self.upgrader == nil {
+		return ""
+	}
+	return self.upgrader.ExecTarget()
 }
 
 // openLocator returns a GeoIP locator, or one that locates nothing when the

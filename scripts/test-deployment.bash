@@ -183,6 +183,13 @@ TEANODE_SERVER_DOMAIN=${DOMAIN}
 TEANODE_SERVER_DATA_DIRECTORY=${data_directory}
 TEANODE_SERVER_LOG_LEVEL=DEBUG
 
+# Where an upgrade stages a binary the running one cannot replace. Named
+# outright rather than left to follow the data directory, because the data
+# directory above is the host path until the last step of the setup and this
+# one has to be the path inside the container from the start: it is read
+# before the database is opened, so nothing can correct it later.
+TEANODE_UPGRADE_DIRECTORY=/var/lib/teanode/upgrade
+
 TEANODE_LISTEN_SMTP_INCOMING=:25
 TEANODE_LISTEN_SMTP_OUTGOING=:587
 TEANODE_LISTEN_HTTP=:80
@@ -1038,23 +1045,27 @@ check_upgrades() {
   step "Upgrades"
 
   local status
-  status="$(teanode_cli api call GetUpgrade --select "{ current applicable reason automatic }" 2>&1 || true)"
+  status="$(teanode_cli api call GetUpgrade --select "{ current applicable reason automatic upgrading }" 2>&1 || true)"
 
-  if grep -q '"applicable": false' <<<"${status}"; then
-    pass "a container is not offered an upgrade it cannot apply"
+  # This stack is a container, and a container used to be told it could not
+  # upgrade itself at all. It can: the new binary goes on the volume, and the
+  # next start runs that instead of the one in the image. What the volume is
+  # for is the whole reason this assertion is here — an upgrade that wrote
+  # into the image would report success and be undone by the next recreate.
+  if grep -q '"applicable": true' <<<"${status}"; then
+    pass "a container can upgrade itself, because the new binary goes on the volume"
   else
-    fail "the container says it can upgrade itself: $(tr -d '\n' <<<"${status}")"
+    fail "the container says it cannot upgrade: $(tr -d '\n' <<<"${status}")"
   fi
-  if grep -qi 'container' <<<"${status}"; then
-    pass "and the reason says why, so an operator knows to replace the image"
+  if grep -qE '"reason": "[^"]+"' <<<"${status}"; then
+    fail "it gave a reason for refusing something it is not refusing: $(tr -d '\n' <<<"${status}")"
   else
-    fail "no reason was given: $(tr -d '\n' <<<"${status}")"
+    pass "and there is no refusal to explain"
   fi
-  # Knowing you are stuck is not the same as knowing what to do about it.
-  if grep -qi 'docker compose pull' <<<"${status}"; then
-    pass "and says how to upgrade by hand instead"
+  if grep -q '"upgrading": false' <<<"${status}"; then
+    pass "and nothing is being installed right now"
   else
-    fail "the reason does not say what to do: $(tr -d '\n' <<<"${status}")"
+    fail "it thinks an upgrade is in progress: $(tr -d '\n' <<<"${status}")"
   fi
   if grep -q '"automatic": false' <<<"${status}"; then
     pass "automatic upgrades are off unless somebody turns them on"
@@ -1062,9 +1073,24 @@ check_upgrades() {
     fail "automatic upgrades are on by default"
   fi
 
-  # And the refusal is a refusal, not a button that fails halfway through.
-  check_fails_with "applying one is refused rather than half done" "cannot upgrade itself" \
-    teanode_cli api call ApplyUpgrade --select "{ current }"
+  # Saying it can is cheap. The directory it would write into is the thing
+  # that has to exist, on the volume, before anybody presses the button.
+  local staging="${TEST_DIR}/data/upgrade"
+  if [ -d "${staging}" ]; then
+    pass "the staging directory is on the mounted volume, where a recreate cannot reach it"
+  else
+    fail "${staging} was never created, so an upgrade would have nowhere to go"
+  fi
+  # Private to the user the server runs as. The next start refuses to run a
+  # staged binary out of a directory anybody else can write, so a directory
+  # that is not private is a directory an upgrade cannot use.
+  local mode
+  mode="$(stat -c '%a' "${staging}" 2>/dev/null || echo unknown)"
+  if [ "${mode}" = "700" ]; then
+    pass "and it is private to the user the server runs as"
+  else
+    fail "${staging} is mode ${mode}, not 700"
+  fi
 }
 
 check_restart() {

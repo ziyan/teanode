@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,20 @@ type Bootstrap struct {
 	// name nothing writes to any more. A container's hostname is both.
 	InstanceID string
 
+	// UpgradeDirectory is where an upgrade stages a binary that cannot
+	// replace the running one, and where the next start looks for it.
+	//
+	// Here rather than in the configuration, which is where every other path
+	// this server uses lives, because of when it is needed. A staged binary
+	// has to be found and run before anything opens the database — this
+	// program reverts migrations it does not recognise, so an old binary that
+	// reached the database first would undo the new one's schema — and the
+	// configuration is in the database. So it comes from the environment, or
+	// from the data directory the environment names, or from nowhere, in
+	// which case a deployment that cannot write over its own binary is told
+	// it cannot upgrade itself.
+	UpgradeDirectory string
+
 	// Seed is applied to the defaults when the database holds no
 	// configuration yet, and ignored on every later start. See Seeded.
 	//
@@ -79,7 +94,40 @@ func Load() (*Bootstrap, error) {
 	if err := self.loadSeed(); err != nil {
 		return nil, err
 	}
+	if err := self.loadUpgradeDirectory(); err != nil {
+		return nil, err
+	}
 	return self, nil
+}
+
+// loadUpgradeDirectory works out where a staged binary goes.
+//
+// TEANODE_UPGRADE_DIRECTORY when it is set, and otherwise "upgrade" under the
+// data directory the environment names — which for a container is the volume
+// the spool and the keys already live on, so the ordinary deployment gets a
+// working answer without being told twice.
+//
+// Note which data directory that is: the one from the environment, not the
+// one in the database. They are usually the same, and when they are not, this
+// is the honest half — the database is not readable at the moment this
+// matters.
+func (self *Bootstrap) loadUpgradeDirectory() error {
+	directory, ok := lookup("UPGRADE_DIRECTORY")
+	if !ok || directory == "" {
+		if self.Seed == nil || self.Seed.Server.DataDirectory == "" {
+			return nil
+		}
+		directory = filepath.Join(self.Seed.Server.DataDirectory, "upgrade")
+	}
+
+	// Absolute, because it is read again at the next start and a process
+	// started from a different working directory has to find the same place.
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return fmt.Errorf("bootstrap: %sUPGRADE_DIRECTORY: %w", Prefix, err)
+	}
+	self.UpgradeDirectory = absolute
+	return nil
 }
 
 // loadDatabase reads the connection. TEANODE_DATABASE_URL is the whole thing

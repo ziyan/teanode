@@ -15,12 +15,10 @@ import { TemplatesPage } from './pages/templates'
 import { TemplateEditorPage } from './pages/templateEditor'
 import { LayoutEditorPage } from './pages/layoutEditor'
 import { ComposePage } from './pages/compose'
-import { SetupPage } from './pages/setup'
 import { SetupAccountPage } from './pages/setupAccount'
 import { ChangePasswordPage } from './pages/changePasswordPage'
 import { TokensPage } from './pages/settings/tokens'
-import { IntegrationsPage } from './pages/settings/integrations'
-import { ServerPage } from './pages/settings/server'
+import { ServerPage } from './pages/server'
 import { SessionsPage } from './pages/settings/sessions'
 import { ProfilePage } from './pages/settings/profile'
 import { PasskeysPage } from './pages/settings/passkeys'
@@ -169,17 +167,22 @@ export function App() {
               {/* /settings on its own is not a page: the rail and the account
                   menu are the menu, and a page of cards pointing at the same
                   seven places was a page whose only content was that menu. */}
+              {/* Everything about this server, under one row in the rail and
+                  one path: what it is, what it talks to, and which version it
+                  is running. Three rows made somebody choose between them
+                  before knowing which one held the thing they wanted. */}
+              <Route path="/server" element={<ServerPage />} />
+              <Route path="/server/:tab" element={<ServerPage />} />
+
+              {/* What configures the person signed in, which is a place you
+                  go into from your own name at the foot of the rail. */}
               <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
               <Route path="/settings/profile" element={<ProfilePage onSaved={refresh} />} />
-              <Route path="/settings/setup" element={<SetupPage />} />
               <Route
                 path="/settings/password"
                 element={<ChangePasswordPage username={session.username} />}
               />
               <Route path="/settings/passkeys" element={<PasskeysPage />} />
-              <Route path="/settings/integrations" element={<IntegrationsPage />} />
-              <Route path="/settings/integrations/:section" element={<IntegrationsPage />} />
-              <Route path="/settings/server" element={<ServerPage />} />
               <Route path="/settings/tokens" element={<TokensPage />} />
               <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
@@ -187,7 +190,13 @@ export function App() {
                   break because the navigation was reorganised. */}
               <Route path="/settings/domains" element={<Navigate to="/domains" replace />} />
               <Route path="/settings/domains/:domainId" element={<RedirectDomain />} />
-              <Route path="/setup" element={<Navigate to="/settings/setup" replace />} />
+              <Route path="/setup" element={<Navigate to="/server/setup" replace />} />
+              <Route path="/settings/setup" element={<Navigate to="/server/setup" replace />} />
+              <Route path="/settings/server" element={<Navigate to="/server/about" replace />} />
+              <Route path="/integrations" element={<Navigate to="/server/sending" replace />} />
+              <Route path="/settings/integrations" element={<Navigate to="/server/sending" replace />} />
+              <Route path="/integrations/:section" element={<RedirectIntegrations />} />
+              <Route path="/settings/integrations/:section" element={<RedirectIntegrations />} />
 
               <Route path="*" element={<p className="muted">{t('common.notFound')}</p>} />
             </Routes>
@@ -203,5 +212,12 @@ export function App() {
 function RedirectDomain() {
   const { pathname } = window.location
   return <Navigate to={pathname.replace(/^\/settings/, '')} replace />
+}
+
+// An old link to one integration carried the section it was opened at, and
+// that section is a tab of the server page now.
+function RedirectIntegrations() {
+  const section = window.location.pathname.split('/').filter(Boolean).pop()
+  return <Navigate to={`/server/${section ?? 'sending'}`} replace />
 }
 

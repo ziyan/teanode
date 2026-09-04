@@ -32,7 +32,7 @@ host: an instance whose variable is missing would otherwise reach an empty
 local database, decide it is a brand new server, and configure itself — which
 looks like it worked.
 
-One is optional, and matters once there is more than one instance:
+Two are optional. The first matters once there is more than one instance:
 
 **`TEANODE_INSTANCE_ID`** — distinguishes this process from the others sharing
 that database. It is part of the key under which usage counters are
@@ -40,6 +40,25 @@ accumulated, and those are added up by reading a row and writing it back, so
 two instances sharing a name lose each other's counts. Defaults to the host
 name, which is what a container is already given, and is truncated to the last
 32 characters if it is longer.
+
+**`TEANODE_UPGRADE_DIRECTORY`** — where an upgrade installed from the dashboard
+puts a binary it cannot write over the running one, and where the next start
+looks for it. Defaults to `upgrade` under `TEANODE_SERVER_DATA_DIRECTORY` when
+that is set, and to nothing when it is not — in which case a deployment that
+cannot replace its own executable is told it cannot upgrade itself.
+
+It is a variable rather than a setting for one reason: a staged binary has to
+be found and run before anything opens the database, because this program
+reverts migrations it does not recognise and an old binary that reached the
+database first would undo the new one's schema. The settings are in the
+database. This cannot be.
+
+For a container it should be a directory on a mounted volume — the shipped
+`docker-compose.yml` names `/var/lib/teanode/upgrade`. A directory inside the
+image would work until the container was recreated and then silently be the old
+binary again. The directory is created private to the user the server runs as,
+and a staged binary that anybody else could have written is refused at the next
+start rather than run.
 
 ### First run only
 
@@ -726,20 +745,25 @@ endpoint, carrying nothing about this deployment. On by default: knowing that a
 version exists is not the same as installing it, and an operator who is never
 told is an operator running last year's bugs.
 
-**`automatic`** — One case it cannot refuse before it is too late: a systemd
-unit with `Restart=no`. Whether a unit comes back cannot be read from inside
-the process, so an automatic upgrade there swaps the binary, exits and stays
-down — at whatever hour the window names, with nobody watching. Check the unit
-before turning this on. Otherwise: Automatic installs what it finds without
-being asked:
+**`automatic`** — Automatic installs what it finds without being asked:
 download, verify against the release's checksums, replace this binary, restart.
 Off by default, because a release can change how mail is handled and nobody
 installs a mail server expecting it to change underneath them. It takes any
 newer release, minor and major alike — a rule that stopped at a minor version
-would be a rule that quietly stopped upgrading. It is refused, with the reason
-shown in the dashboard, where an upgrade could not work: in a container, whose
-image is the thing to replace, and where nothing would start the process again
-after it exits.
+would be a rule that quietly stopped upgrading.
+
+It is refused, with the reason shown in the dashboard, where there is nowhere
+to put the new binary: a deployment whose executable it cannot write over and
+which has not been given a writable staging directory in
+`TEANODE_UPGRADE_DIRECTORY`. A container is not refused — it stages onto its
+volume and runs that at the next start, so an upgrade survives a recreate — but
+a container that was never given such a volume is, and there
+`docker compose pull` is the answer.
+
+The restart does not need a supervisor. The process replaces its own image with
+the new binary, keeping the same arguments and environment, once everything has
+been drained and closed — so a server started by hand upgrades itself as well
+as one under systemd.
 
 **`checkInterval`** — CheckInterval is how often to look. Six hours by default:
 often enough that a security release is noticed the same day, rarely enough

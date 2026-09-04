@@ -25,6 +25,11 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
   // Every /settings/* page gets its own crumb from SETTINGS_SURFACES below,
   // so there is one entry here rather than one per page.
+  //
+  // Only the account's pages are under it. What configures the server —
+  // /server, with its tabs — is at the top level and has no parent above it:
+  // it names itself from the same list, and a trail reading
+  // "Settings > Server" named a page that does not exist.
   { prefix: '/settings', trail: [{ label: 'nav.settings', to: '/settings' }] },
   { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
   { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },

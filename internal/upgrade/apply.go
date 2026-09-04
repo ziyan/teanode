@@ -142,11 +142,21 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 		return fmt.Errorf("upgrade: a restart began while this was downloading; nothing was replaced")
 	}
 
-	if err := self.swap(downloaded); err != nil {
+	if err := self.swap(downloaded, found.version()); err != nil {
 		return err
 	}
 
-	log.Noticef("upgraded to %s; restarting", found.version())
+	// Nothing below this line can undo the swap, which is why the restarter
+	// was required before any of it started: see checkApplicable. The check
+	// here is the belt to that braces — a manager built by hand in a test can
+	// still reach this, and a nil dereference after the binary has been
+	// replaced is the worst place in the program to have one.
+	if self.restarter == nil {
+		return fmt.Errorf("upgrade: %s is in place but this server has no way to restart into it; "+
+			"restart it yourself", found.version())
+	}
+
+	log.Noticef("upgraded to %s; restarting into it", found.version())
 	self.restarter.Request()
 	return nil
 }
@@ -157,7 +167,16 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 // The new file is written in the same directory precisely so this rename is
 // within one filesystem, where it is atomic: there is no moment at which the
 // path names a half-written file.
-func (self *manager) swap(downloaded string) error {
+func (self *manager) swap(downloaded, release string) error {
+	target := self.target()
+	if target == "" {
+		return fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
+	}
+
+	if target != self.executable {
+		return self.stage(downloaded, target, release)
+	}
+
 	// The mode the replaced binary had, not a mode invented here: a
 	// deployment that installs it 0750 should not find it world readable and
 	// executable after an upgrade, and CreateTemp makes 0600, which would not
@@ -185,30 +204,87 @@ func (self *manager) swap(downloaded string) error {
 		return fmt.Errorf("upgrade: cannot set the new binary's mode: %w", err)
 	}
 
+	// The binary being replaced is kept beside the new one, so that a
+	// rollback is a rename somebody can type from memory at three in the
+	// morning with no network.
 	previous := self.executable + previousSuffix
 	_ = os.Remove(previous)
-	// Link rather than copy: it is the same file until one of them is
-	// replaced, so keeping it costs nothing and the running process keeps its
-	// own image either way.
 	if err := os.Link(self.executable, previous); err != nil {
-		// Not fatal. Losing the ability to roll back by rename is worth
-		// saying out loud and is not worth refusing an upgrade over — the
-		// release it came from is still downloadable.
 		log.Warningf("cannot keep the previous binary at %s: %s", previous, err)
 	}
 
-	if err := os.Rename(downloaded, self.executable); err != nil {
-		return fmt.Errorf("upgrade: cannot replace %s: %w", self.executable, err)
+	if err := os.Rename(downloaded, target); err != nil {
+		return fmt.Errorf("upgrade: cannot put the new binary at %s: %w", target, err)
 	}
+
+	self.mutex.Lock()
+	self.execTarget = target
+	self.mutex.Unlock()
 	return nil
 }
 
-// download writes the asset beside the executable it will replace, so that the
-// rename afterwards is within one filesystem.
-func (self *manager) download(ctx context.Context, url string) (string, error) {
-	file, err := os.CreateTemp(filepath.Dir(self.executable), ".teanode-upgrade-*")
+// stage puts the new binary in the staging directory, for a deployment whose
+// own executable would not survive being replaced — every container.
+//
+// Three files rather than one. The next start has to decide, before it opens
+// anything, whether to run what it finds here, and it cannot ask the binary:
+// running it is the decision. So the version it is goes beside it, and the
+// hash of what was written goes beside that, and both are read at the next
+// start. See ExecStagedIfNewer for what they are and are not worth.
+//
+// The rollback is the binary in the image, which is why nothing is kept here:
+// deleting the staged file is the rollback, and a container recreate is the
+// other one.
+func (self *manager) stage(downloaded, target, release string) error {
+	// Executable by this user and by nobody else. The next start refuses a
+	// staged binary that others can write, and this directory is a volume the
+	// host also has its hands on.
+	if err := os.Chmod(downloaded, 0o700); err != nil {
+		return fmt.Errorf("upgrade: cannot set the new binary's mode: %w", err)
+	}
+
+	checksum, err := sha256File(downloaded)
 	if err != nil {
-		return "", fmt.Errorf("upgrade: cannot write beside %s: %w", self.executable, err)
+		return err
+	}
+
+	directory := filepath.Dir(target)
+
+	// The marker goes first and the binary last. Between the two, the
+	// directory holds a version and a checksum describing a binary that is
+	// not there yet, which reads as nothing at all; the other order would
+	// leave a moment where a start could exec a binary with the previous
+	// upgrade's checksum beside it.
+	if err := os.Remove(filepath.Join(directory, pending)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, pending), err)
+	}
+	if err := record(directory, stagedVersion, release); err != nil {
+		return fmt.Errorf("upgrade: cannot record which version was staged: %w", err)
+	}
+	if err := record(directory, stagedChecksum, checksum); err != nil {
+		return fmt.Errorf("upgrade: cannot record the staged binary's checksum: %w", err)
+	}
+
+	if err := os.Rename(downloaded, target); err != nil {
+		return fmt.Errorf("upgrade: cannot put the new binary at %s: %w", target, err)
+	}
+
+	self.mutex.Lock()
+	self.execTarget = target
+	self.mutex.Unlock()
+	return nil
+}
+
+// download writes the asset beside where it is going, so that the rename
+// afterwards is within one filesystem and therefore atomic.
+func (self *manager) download(ctx context.Context, url string) (string, error) {
+	target := self.target()
+	if target == "" {
+		return "", fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
+	}
+	file, err := os.CreateTemp(filepath.Dir(target), ".teanode-upgrade-*")
+	if err != nil {
+		return "", fmt.Errorf("upgrade: cannot write beside %s: %w", target, err)
 	}
 	name := file.Name()
 

@@ -205,6 +205,19 @@ services:
       - NET_BIND_SERVICE
     env_file:
       - .env
+    environment:
+      # Where an upgrade installed from the dashboard puts the new binary.
+      #
+      # It is on the volume rather than in the image because the image is
+      # thrown away by the next "docker compose up": a binary written inside
+      # the container would run until the container was recreated and then
+      # silently be the old one again. And it comes from the environment
+      # rather than from the settings because the next start has to find it
+      # before it opens the database, which is where the settings are.
+      #
+      # Removing this line does not break anything; it turns off upgrading
+      # from the dashboard, and "docker compose pull" remains the way.
+      TEANODE_UPGRADE_DIRECTORY: /var/lib/teanode/upgrade
     volumes:
       - ./data/teanode:/var/lib/teanode:rw
       - /etc/timezone:/etc/timezone:ro

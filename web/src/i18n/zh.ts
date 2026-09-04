@@ -537,7 +537,6 @@ export const zh: Catalog = {
 
   'common.save': '保存',
   'settings.integrations.description': '对象存储、DNS 验证方式，以及病毒和垃圾邮件扫描。',
-  'settings.server.description': '此实例正在运行的内容，以及重启以应用更改。',
   'integrations.certificatesTitle': '证书',
   'integrations.certificatesIntro':
     '服务器自身的证书涵盖 {hosts}。除非域名拥有自己的证书，否则一律使用该证书。',
@@ -601,7 +600,12 @@ export const zh: Catalog = {
   'integrations.antivirusDescription': '使用 ClamAV 扫描收到的邮件。',
   'integrations.antispam': '垃圾邮件评分',
   'integrations.antispamDescription': '使用 SpamAssassin 为收到的邮件评分。',
+  'nav.refreshTooltip': '本服务器已升级。请刷新页面以使用新版界面。',
+  'nav.upgradeAvailable': '有新版本可用',
+  'server.tabSetup': '初始设置',
+  'server.tabAbout': '关于',
   'server.title': '服务器',
+  'server.description': '此服务器的初始设置、它连接的服务，以及正在运行的版本。',
   'server.unavailable': '无法读取服务器状态。',
   'server.thisInstance': '此实例',
   'server.instance': '实例',
@@ -736,6 +740,8 @@ export const zh: Catalog = {
   'compose.failed': '邮件未能发送。',
   'compose.renderedIn': '以 {locale} 渲染。',
   'upgrade.title': '版本',
+  'upgrade.releasePage': '发布页面',
+  'upgrade.whatChanged': '{version} 的变更内容',
   'upgrade.running': '当前运行',
   'upgrade.available': '可用版本',
   'upgrade.checked': '上次检查',
@@ -751,7 +757,7 @@ export const zh: Catalog = {
   'upgrade.waiting': '正在下载、替换二进制并重启，大约需要一分钟。',
   'upgrade.confirmQuestion': '确定将本服务器升级到 {version}？',
   'upgrade.confirmExplained':
-    '会下载该版本，根据随它一起发布的校验和核对，然后覆盖当前二进制；旧的一份会保留在旁边。随后服务器重启，期间数秒不接收邮件，发件方会重试。',
+    '会下载该版本，根据随它一起发布的校验和核对，然后重启进入该版本。期间数秒不接收邮件，发件方会重试。被替换的二进制会保留，因此回退不需要联网。',
   'upgrade.confirmUpgrade': '下载并重启',
   'upgrade.cannot': '无法在此升级：{reason}。',
   'upgrade.automaticOnWindow': '已开启自动升级（本地时间 {window}）：新版本会在不询问的情况下安装。',

@@ -19,7 +19,7 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes checkedAt error checkError applicable reason automatic enabled window upgrading
+      current latest available notes url checkedAt error checkError applicable reason automatic enabled window upgrading
     }
   }`
 
@@ -35,6 +35,7 @@ type UpgradeStatus = {
   latest?: string
   available: boolean
   notes?: string
+  url?: string
   checkedAt?: string
   error?: string
   checkError?: string
@@ -71,14 +72,15 @@ const UPGRADE_TIMEOUT_MS = 15 * 60_000
 // thirty-second timeout of its own on the server.
 const CHECK_TIMEOUT_MS = 40_000
 
-// ServerPage is what this instance is, and the one control that acts on the
-// process rather than on the configuration.
+// ServerAboutPage is what this instance is, which version it is running, and
+// the two controls that act on the process rather than on the configuration:
+// upgrade, and restart.
 //
 // Separate from the other settings because its subject is not shared. Every
 // other setting is in the database and the same everywhere; this is the one
 // process you happen to be talking to, and restarting it is not something the
 // other instances feel.
-export function ServerPage() {
+export function ServerAboutPage() {
   const { t } = useTranslation()
   const { data, error, loading, reload } = useQuery(
     () => graphql<{ GetServerStatus: ServerStatus }>(STATUS),
@@ -426,7 +428,14 @@ function UpgradeCard({
         <dt>{t('upgrade.available')}</dt>
         <dd>
           {status.available ? (
-            <Tag value={status.latest ?? ''} tone="good" />
+            <>
+              <Tag value={status.latest ?? ''} tone="good" />{' '}
+              {status.url && (
+                <a href={status.url} target="_blank" rel="noopener noreferrer nofollow">
+                  {t('upgrade.releasePage')}
+                </a>
+              )}
+            </>
           ) : status.latest ? (
             <span className="muted">{t('upgrade.upToDate', { version: status.latest })}</span>
           ) : (
@@ -448,8 +457,13 @@ function UpgradeCard({
       {/* The notes as they were written, in a box that scrolls: a release
           somebody is deciding about is a release whose changelog they should
           be able to read here rather than in another tab. */}
+      {/* What changed, as the release said it, so that deciding whether to
+          upgrade is a thing somebody can do here rather than in another tab. */}
       {status.available && status.notes && (
-        <pre className="message-text upgrade-notes">{status.notes}</pre>
+        <>
+          <h4 className="upgrade-notes-heading">{t('upgrade.whatChanged', { version: status.latest ?? '' })}</h4>
+          <pre className="message-text upgrade-notes">{status.notes}</pre>
+        </>
       )}
 
       {status.error && <p className="error">{t('upgrade.failed', { reason: status.error })}</p>}

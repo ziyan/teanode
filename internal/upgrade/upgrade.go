@@ -43,8 +43,11 @@ type Status struct {
 	// server would install.
 	Available bool `json:"available"`
 
-	// Notes are the release notes for Latest, as written in the changelog.
+	// Notes are the release notes for Latest, as written in the changelog,
+	// and URL is the release's own page — for somebody who would rather read
+	// it there, or wants the diff and the assets beside it.
 	Notes string `json:"notes,omitempty"`
+	URL   string `json:"url,omitempty"`
 
 	// CheckedAt is when the release list was last read successfully, and
 	// CheckError why the last attempt did not. Both are shown: "it has not
@@ -106,6 +109,11 @@ type Manager interface {
 	// the version found or nothing is installed.
 	Apply(ctx context.Context, expected string) error
 
+	// ExecTarget is the binary this process should replace itself with once it
+	// has finished shutting down, or empty when no upgrade happened. Read by
+	// the server after everything is drained, which is the only safe moment.
+	ExecTarget() string
+
 	// Start begins an upgrade in the background and returns as soon as it has
 	// been accepted, with whatever is known now. When expected is not empty,
 	// it refuses anything else: the dashboard's confirmation names a version,
@@ -138,6 +146,21 @@ type manager struct {
 	// which is not how often the loop wakes.
 	checkInterval time.Duration
 
+	// upgradeDirectory is where a binary is staged when the running one
+	// cannot be replaced in place. It comes from the environment rather than
+	// from the configuration, because the next start has to find it before it
+	// opens the database. Empty when the environment did not name one.
+	upgradeDirectory string
+
+	// containerized says the executable belongs to an image layer, which a
+	// recreate throws away. Such a deployment always stages, whatever the
+	// permissions on the image's own directories happen to allow.
+	containerized bool
+
+	// execTarget is the binary this process should become once it has shut
+	// down, set by a successful upgrade and read by the server at the end.
+	execTarget string
+
 	// endpoint is where the release list is read from, and applicable decides
 	// whether this deployment may replace itself. Both are fields rather than
 	// constants so that a test can point them elsewhere: everything else in
@@ -148,6 +171,10 @@ type manager struct {
 
 	mutex  sync.RWMutex
 	status Status
+
+	// lastManualCheck is when somebody last asked for a check by hand, which
+	// is a different clock from lastAttempt: see mayCheckByHand.
+	lastManualCheck time.Time
 
 	// lastAttempt is when the release list was last asked, successfully or
 	// not, and failures and nextAttempt hold off an upgrade that keeps
@@ -202,7 +229,7 @@ func newClient() *http.Client {
 
 // New builds the manager. It does not reach the network; the first check
 // happens on the loop.
-func New(configuration config.Store, restarter *api.Restarter) (Manager, error) {
+func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory string) (Manager, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		// Not fatal. A server that cannot find its own binary can still say
@@ -215,12 +242,14 @@ func New(configuration config.Store, restarter *api.Restarter) (Manager, error) 
 	}
 
 	self := &manager{
-		config:     configuration,
-		restarter:  restarter,
-		repository: Repository,
-		endpoint:   fmt.Sprintf(releaseEndpoint, Repository),
-		client:     newClient(),
-		executable: executable,
+		config:           configuration,
+		restarter:        restarter,
+		repository:       Repository,
+		upgradeDirectory: upgradeDirectory,
+		containerized:    restarter != nil && restarter.Supervision() == api.SupervisionContainer,
+		endpoint:         fmt.Sprintf(releaseEndpoint, Repository),
+		client:           newClient(),
+		executable:       executable,
 		status: Status{
 			Current: version.Version(),
 		},
@@ -267,6 +296,13 @@ func (self *manager) Close() error {
 	self.cancel()
 	self.waitGroup.Wait()
 	return nil
+}
+
+// ExecTarget is what to become, once everything is closed.
+func (self *manager) ExecTarget() string {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+	return self.execTarget
 }
 
 // currentVersion is the running version, read without the configuration:
@@ -522,12 +558,18 @@ func (self *manager) sayOnce(message string) {
 // check fails too, for everybody on that address.
 const manualCheckInterval = time.Minute
 
+// bootstrapPrefix is on the front of every environment variable this program
+// reads. Repeated here rather than imported: internal/bootstrap reads the
+// configuration this package is configured by, and the dependency would go the
+// wrong way round.
+const bootstrapPrefix = "TEANODE_"
+
 // CheckSoon asks in the background, once at a time and not too often.
 func (self *manager) CheckSoon() {
 	if !self.config.Current().Upgrade.Enabled {
 		return
 	}
-	if !self.attemptedRecently() {
+	if !self.mayCheckByHand() {
 		return
 	}
 	if !self.checking.TryLock() {
@@ -543,13 +585,27 @@ func (self *manager) CheckSoon() {
 	}()
 }
 
-// attemptedRecently reports whether a check asked for by hand may run: not
-// within a minute of the last one, whoever asked for it.
-func (self *manager) attemptedRecently() bool {
-	self.mutex.RLock()
-	defer self.mutex.RUnlock()
+// mayCheckByHand reports whether a check somebody asked for may run: not
+// within a minute of the last one somebody asked for.
+//
+// Measured against the last manual check rather than the last check of any
+// kind. Sharing the clock with the scheduled loop meant that "Check now" did
+// nothing for the first minute after a start — the loop checks immediately —
+// and the dashboard, which waits for the recorded time to move, waited forty
+// seconds for something that was never going to happen and then gave up
+// without a word.
+//
+// It also records the attempt, so that two people pressing the button at once
+// produce one check rather than two that both passed the test.
+func (self *manager) mayCheckByHand() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 
-	return self.lastAttempt.IsZero() || time.Since(self.lastAttempt) >= manualCheckInterval
+	if !self.lastManualCheck.IsZero() && time.Since(self.lastManualCheck) < manualCheckInterval {
+		return false
+	}
+	self.lastManualCheck = time.Now()
+	return true
 }
 
 // checkDue reports whether enough time has passed to ask again.
@@ -599,6 +655,7 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.status.CheckedAt = &now
 	self.status.Latest = found.version()
 	self.status.Notes = found.Notes
+	self.status.URL = found.URL
 	self.status.Available = isUpgrade(self.status.Current, self.status.Latest)
 	return self.describe(), nil
 }
@@ -620,48 +677,110 @@ func (self *manager) applicableNow() (bool, string) {
 // Asked at startup and shown on the page, so that the button is absent with a
 // reason beside it rather than present and disappointing.
 func (self *manager) checkApplicable() (bool, string) {
-	// Nothing to ask for a restart means nothing that could finish an
-	// upgrade. api.Settings documents this as possible, so it is answered
-	// rather than assumed.
-	if self.restarter == nil {
-		return false, "this server was started without anything that can restart it, " +
-			"so it cannot finish an upgrade. Upgrade it by hand: download the release, " +
-			"replace the binary, and start it again"
-	}
-
-	// Every reason says what to do instead. A refusal that only explains
-	// itself leaves somebody knowing they are out of date and not knowing
-	// where to go next, which is the same place they started.
-	switch self.restarter.Supervision() {
-	case api.SupervisionContainer:
-		return false, "the binary is inside a container image, so replacing it here would be undone " +
-			"the next time the container starts. Upgrade the image instead: " +
-			"\"docker compose pull && docker compose up -d\" where this is run by compose, " +
-			"or pull ghcr.io/ziyan/teanode and recreate the container"
-	case api.SupervisionUnknown:
-		return false, "nothing recognisable would start this process again, so replacing the binary " +
-			"and exiting would leave the server down. Run it under systemd or a container with a " +
-			"restart policy and this button appears; until then, upgrade it by hand: download the " +
-			"release, replace the binary, and start it again"
-	}
 	if self.executable == "" {
 		return false, "this server cannot find its own executable, so there is nothing to replace. " +
 			"Upgrade it by hand: download the release and put it where this one is"
 	}
-	// Written beside the current binary and renamed over it, so the directory
-	// is what has to be writable, not the file. Asked by writing, because the
-	// permission bits do not answer it: this process's user, its groups, the
-	// mount's options and whatever the filesystem thinks all have a say.
-	directory := filepath.Dir(self.executable)
+
+	// Nothing here ends the process by itself. The upgrade puts the new binary
+	// in place and the serve loop, when it is asked to stop, execs it — so
+	// without the thing that asks, the swap would happen and nothing would
+	// come of it. A manager built without a restarter is a manager that can
+	// report and cannot apply, and it says so rather than finding out after
+	// the download.
+	if self.restarter == nil {
+		return false, "this server has no way to restart itself into a new binary, so an upgrade would " +
+			"replace the file and change nothing until the next restart"
+	}
+
+	// Somewhere to write it is the rest of the question. Replacing this
+	// process afterwards does not need a supervisor — exec does it — so the
+	// old refusal for a process nobody started is gone. A container's refusal
+	// is gone too, but only because it has somewhere else to write: see
+	// target.
+	if self.target() == "" {
+		if self.containerized {
+			return false, fmt.Sprintf("this is a container and %s, so there is nowhere to put a new "+
+				"binary that the next start would still find. Mount a writable volume and name it in "+
+				"%sUPGRADE_DIRECTORY, or upgrade the image: docker compose pull && docker compose up -d",
+				self.whyNoStagingDirectory(), bootstrapPrefix)
+		}
+		return false, fmt.Sprintf("neither %s nor %s can be written by this process, and the new binary "+
+			"has to go in one of them. Make one writable by the user this runs as, or upgrade by hand: "+
+			"download the release and put it in place yourself",
+			filepath.Dir(self.executable), self.describeStagingDirectory())
+	}
+	return true, ""
+}
+
+// whyNoStagingDirectory is the half of a container's refusal that says what is
+// actually wrong: no directory named at all, or one that cannot be written.
+func (self *manager) whyNoStagingDirectory() string {
+	if self.upgradeDirectory == "" {
+		return "no upgrade directory is configured"
+	}
+	return fmt.Sprintf("%s cannot be written by this process", self.upgradeDirectory)
+}
+
+// describeStagingDirectory names the staging directory for a message, without
+// pretending there is one when there is not.
+func (self *manager) describeStagingDirectory() string {
+	if self.upgradeDirectory == "" {
+		return fmt.Sprintf("the directory %sUPGRADE_DIRECTORY would name", bootstrapPrefix)
+	}
+	return self.upgradeDirectory
+}
+
+// target is where a new binary can be written, and therefore what this process
+// will exec afterwards. Empty when there is nowhere.
+//
+// Beside the running binary when that directory can be written, because
+// replacing it in place is what an operator expects and what survives without
+// any of the machinery below. Otherwise the data directory, which is the one
+// path a container has as a writable volume — the image's own layer is read
+// only, and a binary written there would be gone at the next start.
+func (self *manager) target() string {
+	// A container never replaces its own executable, even when it could. The
+	// overlay layer a container writes to is writable and is thrown away the
+	// moment the container is recreated, so a root container would have
+	// swapped the binary, reported success, and silently gone back to the old
+	// one at the next "docker compose up" — which is the failure the original
+	// container refusal existed to prevent. Staging is what survives, because
+	// it is on a volume.
+	if !self.containerized && writable(filepath.Dir(self.executable)) {
+		return self.executable
+	}
+
+	if self.upgradeDirectory == "" {
+		return ""
+	}
+	// Private to this user: the next start refuses to exec a staged binary
+	// that anybody else could have written, so a directory anybody else can
+	// write is a directory an upgrade cannot use.
+	if err := os.MkdirAll(self.upgradeDirectory, 0o700); err != nil {
+		return ""
+	}
+	if !writable(self.upgradeDirectory) {
+		return ""
+	}
+	return Staged(self.upgradeDirectory)
+}
+
+// writable reports whether this process can create a file in a directory.
+//
+// By writing one, because the permission bits do not answer it: the user, its
+// groups, the mount's options and whatever the filesystem thinks all have a
+// say. The running binary itself is never opened for writing — Linux answers
+// ETXTBSY for an executable that is in use — which is why the question is
+// about the directory and the swap is a rename.
+func writable(directory string) bool {
 	probe, err := os.CreateTemp(directory, ".teanode-upgrade-probe-*")
 	if err != nil {
-		return false, fmt.Sprintf("%s is not writable by this process, and the new binary has to be "+
-			"written there before it can replace the old one. Either make it writable by the user "+
-			"this runs as, or upgrade by hand: download the release and put it there yourself", directory)
+		return false
 	}
 	_ = probe.Close()
 	_ = os.Remove(probe.Name())
-	return true, ""
+	return true
 }
 
 // withinWindow reports whether now falls inside "HH:MM-HH:MM" in local time.

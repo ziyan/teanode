@@ -12,6 +12,18 @@ import type { Key } from '../../i18n/i18n'
 // configuration of the thing the rail is about. What configures the person
 // signed in hangs off their own name at the foot of the rail, which is where
 // people look for it.
+//
+// Which is why the server's is at the top level — /server — and not under
+// /settings. It is not a section of anything: it sits in the rail next to Mail
+// and Domains and is reached the same way, and a breadcrumb reading
+// "Settings > Server" named a page that does not exist. The account's surfaces
+// do live under /settings, because that is a place you go into from your own
+// name.
+//
+// It was three rows — Setup, Integrations, Server — and they are one subject:
+// what this server is, what it talks to, and which version it is running.
+// Three rows made somebody choose between them before knowing which one held
+// the thing they wanted. They are tabs of /server now.
 export type SettingsCategory = 'server' | 'account'
 
 export type SettingsSurface = {
@@ -29,24 +41,10 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
 
 export const SETTINGS_SURFACES: SettingsSurface[] = [
   {
-    segment: 'setup',
-    path: '/settings/setup',
-    label: 'nav.setup',
-    description: 'settings.setup.description',
-    category: 'server',
-  },
-  {
-    segment: 'integrations',
-    path: '/settings/integrations',
-    label: 'integrations.title',
-    description: 'settings.integrations.description',
-    category: 'server',
-  },
-  {
     segment: 'server',
-    path: '/settings/server',
+    path: '/server',
     label: 'server.title',
-    description: 'settings.server.description',
+    description: 'server.description',
     category: 'server',
   },
   // First among the account surfaces, and where /settings lands. A page of
@@ -97,7 +95,8 @@ export function surfacesByCategory(category: SettingsCategory): SettingsSurface[
 }
 
 // matchSettingsSurface finds the surface a path is on, so that
-// /settings/domains/example.com resolves to domains.
+// /server/storage resolves to the server surface and names itself in the
+// breadcrumb from the same list the rail renders.
 export function matchSettingsSurface(pathname: string): SettingsSurface | undefined {
   return SETTINGS_SURFACES.find(
     (surface) => pathname === surface.path || pathname.startsWith(`${surface.path}/`),

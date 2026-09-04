@@ -105,7 +105,7 @@ export function SetupPage() {
       <p className="muted">
         <Trans
           k="setup.intro"
-          nodes={{ integrations: <Link to="/settings/integrations">{t('integrations.title')}</Link> }}
+          nodes={{ integrations: <Link to="/server/sending">{t('integrations.title')}</Link> }}
         />
       </p>
 
