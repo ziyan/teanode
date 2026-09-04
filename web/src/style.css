@@ -872,6 +872,41 @@ h3 { font-size: 16px; margin-bottom: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-body); }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 
+/* Top is right for a cell that stacks several lines — the values found for a
+   DNS record, the evidence behind an authentication check — and wrong for a
+   row whose height is set by a control at the end of it. A 34px button in a
+   row of one-line text makes the row taller than the text, and the text then
+   sits at the top of that space rather than level with the button it is
+   beside. Wherever a row holds one, its cells line up through the middle. */
+tr:has(.icon-button) > td {
+  vertical-align: middle;
+}
+
+/* A value and the button that copies it, on one line. The value takes the
+   room and gives up its end to an ellipsis rather than wrapping to four
+   lines; the button keeps its size. */
+.value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.value-clamp {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Quieter than a trash icon, and smaller: it sits inside a line of text
+   rather than at the end of a row. */
+.icon-button.copy-button {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+
 /* --- the shared table -----------------------------------------------------
    An outlined surface holding the table, so the header, the rows and the
    empty state share one edge. Following the reference: small uppercase

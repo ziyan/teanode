@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
-import { Tag } from '../components/common'
+import { CopyIconButton, Tag } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
@@ -37,6 +37,13 @@ const REGENERATE_KEY = `
 //
 // Four subjects rather than four tabs. Each is a card of a few fields, and a
 // tab holding one field is a tab nobody would look in.
+// What to publish, as one string: an MX record's value is its preference and
+// its host together, and that is what belongs on the screen, in the tooltip
+// and on the clipboard alike.
+function expectedValue(record: { priority?: number | null; expected?: string | null }): string {
+  return record.priority ? `${record.priority} ${record.expected ?? ''}` : (record.expected ?? '')
+}
+
 export function DomainDnsTab({ domain, run }: DomainTabProps) {
   const { t } = useTranslation()
   const { domainId } = useParams()
@@ -71,10 +78,21 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
               <tr key={index}>
                 <td className="shrink">{record.type}</td>
                 <td className="mono wrap record-name">{record.name}</td>
-                <td className="mono wrap">
-                  {/* An MX value is the preference and the host together, so
-                      it can be copied into a zone as it stands. */}
-                  {record.priority ? `${record.priority} ${record.expected}` : record.expected}
+                <td className="mono">
+                  {/* Clamped to its line, with the whole of it a button away.
+                      A DKIM public key is four hundred characters that say
+                      nothing to a reader checking by eye, and printing them
+                      took four lines of the table to say it. What somebody
+                      does with this value is paste it into a zone, which is
+                      what the button is for; hovering says the rest. */}
+                  <div className="value-row">
+                    {/* An MX value is the preference and the host together,
+                        so it can be copied into a zone as it stands. */}
+                    <span className="value-clamp" title={expectedValue(record)}>
+                      {expectedValue(record)}
+                    </span>
+                    <CopyIconButton value={expectedValue(record)} />
+                  </div>
                   {!record.verified && <div className="muted cell-note">{record.purpose}</div>}
                 </td>
                 <td className="mono wrap">
