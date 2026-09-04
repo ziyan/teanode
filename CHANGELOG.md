@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-04
+
+### Fixed
+
+- A server running a build made from a checkout — `0.2.0-7-g8519250`, what
+  `make build` stamps in when the commit is not exactly on a tag — is offered a
+  release that has overtaken it. It was told about none: the version card said
+  the newest release was available, which reads as up to date, and there was no
+  button to press. The tag such a build was made past is still not offered, and
+  a server already on one has to install this release by hand before the
+  dashboard can do it for the next. (#17)
+
 ## [0.3.0] - 2026-09-04
 
 ### Added
