@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
+import { Markdown } from '../../components/markdown'
 import { RelativeTime } from '../../components/relativeTime'
 import { useTranslation } from '../../i18n/i18n'
 
@@ -520,7 +521,9 @@ function UpgradeCard({
       {status.notes && (
         <>
           <h4 className="upgrade-notes-heading">{t('upgrade.whatChanged', { version: status.latest ?? '' })}</h4>
-          <pre className="message-text upgrade-notes">{status.notes}</pre>
+          <div className="upgrade-notes">
+            <Markdown text={status.notes} />
+          </div>
         </>
       )}
 

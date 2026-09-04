@@ -3035,17 +3035,75 @@ a.button.primary:hover {
    somebody deciding whether to upgrade should be able to read it here, and
    should not have to scroll past a year of it to reach the button. */
 .upgrade-notes {
-  max-height: 220px;
+  max-height: 260px;
   overflow-y: auto;
-  margin: var(--space-3) 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-sunken, var(--field));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
 }
 
 /* The heading over the release notes on the version card. Small, because it
-   labels a box rather than opening a section. */
+   labels a box rather than opening a section.
+   
+   The space above it separates it from the three rows of the version above;
+   it had a quarter of that, so the label read as a fourth row of the list
+   rather than as the start of something else. */
 .upgrade-notes-heading {
-  margin: var(--space-4) 0 0;
+  margin: var(--space-5) 0 0;
   font-size: var(--text-label);
   color: var(--muted);
+}
+
+/* Rendered release notes: a changelog's headings and bullets, not a wall of
+   monospace with its hashes and hyphens still in it.
+   
+   The margins are collapsed at the ends so the box's own padding is the only
+   space at the top and bottom — a paragraph's margin inside a padded box is
+   the padding twice. */
+.markdown > *:first-child {
+  margin-top: 0;
+}
+
+.markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown h5 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.markdown p {
+  margin: 0 0 var(--space-2);
+}
+
+.markdown ul {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.markdown li {
+  margin-bottom: var(--space-2);
+  line-height: 1.55;
+}
+
+.markdown li:last-child {
+  margin-bottom: 0;
+}
+
+/* Inline code in a note is a file name or a version, and is read against the
+   prose around it rather than as a block to copy. */
+.markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: var(--radius-1);
+  background: var(--border);
+  overflow-wrap: anywhere;
 }
 
 /* The mark and, when the server has been upgraded under this page, the one
