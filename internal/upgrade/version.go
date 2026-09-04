@@ -112,7 +112,8 @@ var described = regexp.MustCompile(`^[0-9]+-g[0-9a-f]+(-dirty)?$`)
 //
 // Two shapes: the literal 0.0.0-dev of a build with no version passed in at
 // all, and git describe's tag-plus-commits. Both mean the same thing — this
-// binary is ahead of the last release, not behind it.
+// binary is ahead of the tag it names, not a candidate for it — which is why
+// callers drop the prerelease before comparing rather than reading it.
 func isDevelopment(text string) bool {
 	if strings.TrimSpace(text) == developmentVersion {
 		return true
@@ -147,12 +148,11 @@ func (self semver) newer(other semver) bool {
 // running current. Either being unreadable answers no, which is the direction
 // that leaves a working server alone.
 func isUpgrade(current, candidate string) bool {
-	// A development build is not behind the release it was built from, and
-	// saying so would put a notice on every page of every development server.
-	// Asked before the comparison, because the comparison moves a prerelease
-	// forward to its release and a build from a checkout is a prerelease by
-	// accident of how git describe names it.
-	if isDevelopment(current) {
+	// A binary with no version stamped into it at all has nothing to compare:
+	// its numbers are 0.0.0, which would make every release an upgrade from
+	// it, on every development server. Somebody running one built it and
+	// knows where it came from.
+	if strings.TrimSpace(current) == developmentVersion {
 		return false
 	}
 
@@ -164,6 +164,23 @@ func isUpgrade(current, candidate string) bool {
 	if err != nil {
 		return false
 	}
+
+	// A build from a checkout is compared on its numbers alone. git describe
+	// names such a build after the tag it came *after* — 0.2.0-7-g8519250 is
+	// ahead of 0.2.0, not a candidate for it — so its prerelease field has to
+	// go, or the tag it was built past is offered back to it as an upgrade.
+	//
+	// What is left is the honest question: has a release since then overtaken
+	// it? Refusing outright, which is what this did, answered a different one.
+	// A checkout build deployed to a server — which is how somebody installs
+	// a fix before it is tagged — then sat on 0.2.0-7-g8519250 while 0.3.0
+	// shipped, with no notice on the page and no button to press, and the
+	// version card said the newest release was available, which reads as up
+	// to date.
+	if isDevelopment(current) {
+		running.prerelease = ""
+	}
+
 	return running.newer(available)
 }
 

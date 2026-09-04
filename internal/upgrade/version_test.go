@@ -37,8 +37,6 @@ func TestIsUpgrade(t *testing.T) {
 		{"a later release than the candidate", "0.2.0-rc.1", "0.3.0", true},
 		{"an earlier release than the candidate", "0.2.0-rc.1", "0.1.0", false},
 
-		// Unreadable on either side answers no, which leaves a working server
-		// alone.
 		// What "make build" stamps into a binary built from a checkout that
 		// is not exactly on a tag. It sorts below the tag it came after, so
 		// plain semantic versioning calls the tag an upgrade — and an
@@ -46,8 +44,18 @@ func TestIsUpgrade(t *testing.T) {
 		// the release it was built past.
 		{"a build from a checkout after a tag", "0.1.2-9-g6a8860b", "0.1.2", false},
 		{"a build from a dirty checkout", "0.1.2-9-g6a8860b-dirty", "0.1.2", false},
-		{"a real release after such a build", "0.1.2-9-g6a8860b", "0.1.3", false},
 
+		// But a release that has overtaken such a build is an upgrade from
+		// it, and the reason this is here: a checkout build deployed to a
+		// server is how somebody installs a fix before it is tagged, and it
+		// sat on 0.2.0-7-g8519250 with no notice and no button while 0.3.0
+		// shipped.
+		{"a real release after such a build", "0.1.2-9-g6a8860b", "0.1.3", true},
+		{"a real release after a dirty build", "0.1.2-9-g6a8860b-dirty", "0.2.0", true},
+		{"a candidate after such a build", "0.1.2-9-g6a8860b", "0.1.3-rc.1", false},
+
+		// Unreadable on either side answers no, which leaves a working server
+		// alone.
 		{"nonsense for a release", "0.1.0", "latest", false},
 		{"nonsense for a version", "unknown", "0.1.1", false},
 		{"two parts only", "0.1.0", "0.2", false},
