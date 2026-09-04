@@ -39,8 +39,17 @@ func (self *database) UnknownMigrations() ([]string, error) {
 		return nil, nil
 	}
 
-	var existingModels []migrationModel
-	if err := self.db.Find(&existingModels).Error; err != nil {
+	// The identifiers and nothing else.
+	//
+	// Reading the whole model would select every column the current one has,
+	// and this runs before Migrate's AutoMigrate has had a chance to add a
+	// column an older binary's table is missing — so a table written before
+	// ReverseSQL existed would fail the select, and this function's caller
+	// turns that into a refusal to start. Asking for one column that has been
+	// the primary key since the beginning cannot fail that way, and asking
+	// for it does not change anything, which is what a question should do.
+	var identifiers []string
+	if err := self.db.Model(&migrationModel{}).Pluck("id", &identifiers).Error; err != nil {
 		return nil, err
 	}
 
@@ -50,9 +59,9 @@ func (self *database) UnknownMigrations() ([]string, error) {
 	}
 
 	var unknown []string
-	for _, model := range existingModels {
-		if _, ok := known[model.ID]; !ok {
-			unknown = append(unknown, model.ID)
+	for _, identifier := range identifiers {
+		if _, ok := known[identifier]; !ok {
+			unknown = append(unknown, identifier)
 		}
 	}
 	sort.Strings(unknown)

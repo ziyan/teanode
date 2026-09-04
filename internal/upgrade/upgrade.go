@@ -528,6 +528,19 @@ func (self *manager) Start(expected string) (Status, error) {
 	self.status.Error = ""
 	self.mutex.Unlock()
 
+	// Not after Close has begun: an Add that lands once Wait has been entered
+	// is the misuse that panics, and both of the ways in here are reachable
+	// from a request that a shutdown can race.
+	select {
+	case <-self.ctx.Done():
+		self.mutex.Lock()
+		self.status.Upgrading = false
+		self.mutex.Unlock()
+		self.applying.Unlock()
+		return self.Status(), fmt.Errorf("upgrade: this server is shutting down")
+	default:
+	}
+
 	// Counted, so that Close does not return while this is between chmod and
 	// rename. Cancelling the context stops the download; it does not stop a
 	// swap that has started.
@@ -633,6 +646,17 @@ func (self *manager) CheckSoon() bool {
 		return false
 	}
 	self.recordCheckByHand()
+
+	// Not after Close has begun. Close cancels and then waits, and an Add
+	// that lands after the counter has reached zero and Wait has been entered
+	// is the misuse that panics.
+	select {
+	case <-self.ctx.Done():
+		self.checking.Unlock()
+		return false
+	default:
+	}
+
 	self.waitGroup.Add(1)
 	go func() {
 		defer self.waitGroup.Done()

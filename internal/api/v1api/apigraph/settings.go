@@ -292,12 +292,19 @@ type CertificateParameters struct {
 //
 // checkInterval is not here: it is read once, when the checker is built, and a
 // setting that appears to save and does nothing is the thing the startup-only
-// warning exists to prevent. enabled is not here either, for a different
-// reason — it decides whether this server reaches out to somebody else's
-// endpoint at all, which is a deployment's decision rather than a dashboard
-// one, and it belongs with the settings that are written where the server is
-// installed.
+// warning exists to prevent.
+//
+// enabled was left out too, on the reasoning that reaching out to somebody
+// else's endpoint is a deployment's decision and belongs with the settings
+// written where the server is installed. On this program there is no such
+// place: the settings are the database, there is no "config set", and it is on
+// by default — so leaving it out meant an operator who wanted the checking off
+// had to export the configuration, edit the file, and import it back. A
+// default that can only be turned off by hand is not a default anybody chose.
 type UpgradeParameters struct {
+	// Whether to ask the release list what has been published
+	Enabled *bool `json:"enabled"`
+
 	// Whether a new release is installed without being asked
 	Automatic *bool `json:"automatic"`
 
@@ -363,6 +370,7 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 			applyPort(&configuration.Antispam.Port, parameters.Port)
 		}
 		if parameters := arguments.Upgrade; parameters != nil {
+			applyBool(&configuration.Upgrade.Enabled, parameters.Enabled)
 			applyBool(&configuration.Upgrade.Automatic, parameters.Automatic)
 			applyString(&configuration.Upgrade.Window, parameters.Window)
 		}

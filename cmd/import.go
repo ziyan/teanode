@@ -57,10 +57,7 @@ func newConfigImportCommand() *cli.Command {
 func runConfigImport(ctx context.Context, command *cli.Command) error {
 	filename := command.String("file")
 
-	bootstrapped, err := bootstrap.Load()
-	if err != nil {
-		return err
-	}
+	dryRun := command.Bool("dry-run")
 
 	// Before the file is even read, and long before anything is written.
 	//
@@ -71,7 +68,21 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	// the line that would have handed the work to the binary that understands
 	// it. And --dry-run returned earlier still, so it validated against one
 	// schema and the real import used another.
-	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
+	//
+	// A --dry-run with no database configured still works, though, because
+	// checking a file over on a laptop is what --dry-run is for and moving
+	// this up here took that away. Without a database there is nothing to
+	// import into and nothing to migrate, so there is nothing for the staged
+	// binary to protect either: the file is parsed by whoever was asked.
+	bootstrapped, err := bootstrap.Load()
+	if err != nil {
+		if !dryRun {
+			return err
+		}
+		log.Debugf("no database configured, so --dry-run is only reading the file: %s", err)
+	} else {
+		upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
+	}
 
 	// Loaded through the same path the server used, so that a file it would
 	// have accepted is accepted here, and one it would have refused is
@@ -91,9 +102,12 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	fmt.Printf("  %d domains, %d aliases, %d credentials\n", len(configuration.Domains), aliases, credentials)
 	fmt.Printf("  %d operators\n", len(configuration.Users))
 
-	if command.Bool("dry-run") {
+	if dryRun {
 		fmt.Printf("\n--dry-run: nothing was written\n")
 		return nil
+	}
+	if bootstrapped == nil {
+		return fmt.Errorf("cannot import without a database")
 	}
 
 	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)

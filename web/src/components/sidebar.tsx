@@ -19,7 +19,7 @@ import {
 } from './icons'
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
-import { useStaleBundle, useUpgradeAvailable } from './freshness'
+import { useFreshness } from './freshness'
 
 type Item = { label: Key; to: string; icon: React.ReactNode }
 type Group = { label?: Key; items: Item[] }
@@ -137,8 +137,7 @@ export function Sidebar({
   // Two things the rail says about the server without being asked: that a
   // release is waiting, and that this page is older than the server serving
   // it.
-  const upgradeAvailable = useUpgradeAvailable()
-  const staleBundle = useStaleBundle()
+  const { staleBundle, upgradeAvailable } = useFreshness()
 
   // Your own settings are a mode, not a page. They are four short pages about
   // one account, and swapping the rail for them is what makes them reachable

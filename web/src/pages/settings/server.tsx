@@ -164,12 +164,6 @@ export function ServerAboutPage() {
   // back, which is what it did, showed the answer from before the check and
   // made the button look broken.
   async function checkForUpgrade() {
-    // When it last tried, which is what finishing moves. Watching the last
-    // success and the last reason instead meant a check that failed the same
-    // way twice — outbound HTTPS blocked, an ordinary way to run a mail
-    // server — moved neither, and the button span for its whole deadline over
-    // a check that had already come back.
-    const before = upgrade.data?.GetUpgrade?.attemptedAt
     setProblem(null)
     setChecking(true)
     try {
@@ -189,6 +183,20 @@ export function ServerAboutPage() {
         await upgrade.reload()
         return
       }
+
+      // When it last tried, taken from this reply and not from what the page
+      // is showing. The resolver reads the status before it starts the check,
+      // so this is the moment before — whereas the page was loaded once on
+      // mount and never polled, so the server's own scheduled check could
+      // have moved it in between, and then the first poll below saw a
+      // difference that had nothing to do with the button and showed the
+      // answer from before it was pressed.
+      //
+      // The last attempt, not the last success and not the last reason: a
+      // check that fails the same way twice — outbound HTTPS blocked, an
+      // ordinary way to run a mail server — moves neither of those, and the
+      // button span for its whole deadline over a check that had come back.
+      const before = started.attemptedAt
 
       const deadline = Date.now() + CHECK_TIMEOUT_MS
       for (;;) {
