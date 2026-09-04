@@ -500,7 +500,13 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		// checking off and leaves this on believes upgrades still happen.
 		validator.add("upgrade.automatic", "requires upgrade.enabled: nothing can be installed without checking for it")
 	}
-	if self.Upgrade.Enabled && self.Upgrade.CheckInterval < MinimumUpgradeCheckInterval {
+	if self.Upgrade.CheckInterval < MinimumUpgradeCheckInterval {
+		// Whether or not checking is on. It was only checked when it was on,
+		// and the loop is built either way — so a configuration with checking
+		// off and an interval of zero validated cleanly and then woke as fast
+		// as the scheduler allowed, for the life of the process, doing
+		// nothing each time.
+		//
 		// Zero is not "as often as possible": the loop would ask the release
 		// list again the moment it finished. A minute is not much better —
 		// the endpoint allows sixty requests an hour to an address that is

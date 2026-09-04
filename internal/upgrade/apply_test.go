@@ -526,6 +526,12 @@ func TestTarget(t *testing.T) {
 	// prevent.
 	t.Run("on the volume in a container, even when the image is writable", func(t *testing.T) {
 		staging := t.TempDir()
+		// t.TempDir leaves it group-writable under a umask of 002, and a
+		// staging directory anybody else can write is refused — which is a
+		// different test, below.
+		if err := os.Chmod(staging, 0o700); err != nil {
+			t.Fatal(err)
+		}
 		self := &manager{
 			executable:       filepath.Join(t.TempDir(), "teanode"),
 			upgradeDirectory: staging,
@@ -666,10 +672,15 @@ func TestStagingRefusesADirectoryTheNextStartWouldNotTrust(t *testing.T) {
 	}
 }
 
-// A directory that is merely loose, and ours, is tightened rather than
-// refused: it belongs to the server, and a mode nobody chose deliberately is
-// not worth losing the feature over.
-func TestStagingTightensItsOwnDirectory(t *testing.T) {
+// A directory that anybody else can write is refused, and the reason says what
+// to do about it.
+//
+// It used to be tightened instead — chmod 0700 and carry on — which was wrong
+// in two ways. The question "can this server upgrade itself" was answered by
+// changing the filesystem, so a deployment with upgrades turned off grew a
+// directory it would never use and an operator who had set a mode on purpose
+// found it reset every time the loop woke.
+func TestStagingRefusesADirectoryAnybodyCanWrite(t *testing.T) {
 	staging := filepath.Join(t.TempDir(), "upgrade")
 	if err := os.MkdirAll(staging, 0o777); err != nil {
 		t.Fatal(err)
@@ -685,14 +696,127 @@ func TestStagingTightensItsOwnDirectory(t *testing.T) {
 		restarter:        api.NewRestarter(func() {}),
 	}
 
-	if got, onVolume := self.target(); got != Staged(staging) || !onVolume {
-		t.Errorf("target = %q, want %q", got, Staged(staging))
+	if got, _ := self.target(); got != "" {
+		t.Errorf("target = %q, want nothing", got)
 	}
+	applicable, reason := self.checkApplicable()
+	if applicable {
+		t.Error("it offered an upgrade it would refuse to run afterwards")
+	}
+	if !strings.Contains(reason, "chmod 700") {
+		t.Errorf("the reason does not say what to do: %q", reason)
+	}
+
+	// And it left the mode alone: answering a question is not the moment to
+	// change somebody's filesystem.
 	info, err := os.Stat(staging)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("the staging directory is %s, want 0700", info.Mode().Perm())
+	if info.Mode().Perm() != 0o777 {
+		t.Errorf("the staging directory is %s, want the 0777 it was", info.Mode().Perm())
+	}
+}
+
+// And asking whether an upgrade is possible does not create anything. A
+// deployment with upgrades turned off should not grow a directory for them.
+func TestAskingDoesNotCreateTheStagingDirectory(t *testing.T) {
+	staging := filepath.Join(t.TempDir(), "upgrade")
+	self := &manager{
+		executable:       filepath.Join(t.TempDir(), "teanode"),
+		upgradeDirectory: staging,
+		containerized:    true,
+		restarter:        api.NewRestarter(func() {}),
+	}
+
+	if applicable, reason := self.checkApplicable(); !applicable {
+		t.Errorf("it refused an upgrade it could stage: %q", reason)
+	}
+	if _, err := os.Stat(staging); !os.IsNotExist(err) {
+		t.Errorf("asking created %s: %v", staging, err)
+	}
+}
+
+// A read-only volume is a refusal, not a button that fails when pressed.
+//
+// The staging directory is made at the moment something is staged rather than
+// when somebody asks whether an upgrade is possible — which left "possible"
+// meaning "nothing is known to be wrong". It has to mean the volume was
+// actually asked.
+func TestStagingRefusesAVolumeItCannotWrite(t *testing.T) {
+	volume := t.TempDir()
+	if err := os.Chmod(volume, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(volume, 0o700) })
+
+	self := &manager{
+		executable:       filepath.Join(t.TempDir(), "teanode"),
+		upgradeDirectory: filepath.Join(volume, "upgrade"),
+		containerized:    true,
+		restarter:        api.NewRestarter(func() {}),
+	}
+
+	applicable, reason := self.checkApplicable()
+	if applicable {
+		t.Error("it offered an upgrade it has nowhere to put")
+	}
+	if !strings.Contains(reason, volume) {
+		t.Errorf("the reason does not name the volume: %q", reason)
+	}
+}
+
+// Installing a release that is already staged and already marked as tried is
+// refused, by version, before anything is downloaded.
+//
+// Marking the binary stopped it being run twice unbidden. It did not stop it
+// being installed twice — and installing clears the mark, because a newly
+// staged binary deserves its own attempt. So the loop went round the other
+// way: the mark holds it back, the image's binary serves, the scheduled check
+// wakes, sees the same release available, stages it over the mark, and runs it
+// again. Forty-five megabytes and a restart a lap, with no backoff, because
+// nothing had failed.
+func TestApplyRefusesTheReleaseThatAlreadyFailedToStart(t *testing.T) {
+	staging := t.TempDir()
+	if err := os.Chmod(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Staged(staging), []byte("the staged binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := record(staging, stagedVersion, "0.9.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := record(staging, pending, "started"); err != nil {
+		t.Fatal(err)
+	}
+
+	newBinary := []byte("the new binary")
+	server := releaseServer(t, "0.9.0", newBinary, sha256Of(newBinary))
+	defer server.Close()
+
+	manager := testManager(t, filepath.Join(t.TempDir(), "teanode"), server.URL, server.Client(), "0.1.0", func() {})
+	manager.upgradeDirectory = staging
+	manager.containerized = true
+
+	err := manager.Apply(context.Background(), "")
+	if err == nil {
+		t.Fatal("it installed a release that had already been tried and did not start")
+	}
+	// An error rather than a quiet return, so the backoff engages and the
+	// page says what happened — and the message has to name the way out.
+	if !strings.Contains(err.Error(), PendingMarker(staging)) {
+		t.Errorf("the refusal does not say how to try again: %s", err)
+	}
+	// And it did not download over the top of what is there.
+	if staged, readErr := os.ReadFile(Staged(staging)); readErr != nil {
+		t.Fatal(readErr)
+	} else if string(staged) != "the staged binary" {
+		t.Error("it replaced the staged binary anyway")
+	}
+
+	// A later release is a different binary and has not been tried.
+	if AlreadyTried(staging, "0.10.0") {
+		t.Error("a release nobody has run was called already tried")
 	}
 }

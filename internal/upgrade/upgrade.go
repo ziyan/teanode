@@ -56,14 +56,6 @@ type Status struct {
 	CheckedAt  *time.Time `json:"checkedAt,omitempty"`
 	CheckError string     `json:"checkError,omitempty"`
 
-	// AttemptedAt is when it last tried, which is not the same and is what a
-	// caller has to look at to know whether asking again would do anything.
-	// The allowance for checks asked for by hand is spent on the attempt, so
-	// after one that failed — blocked outbound HTTPS is the ordinary way —
-	// CheckedAt does not move and a page waiting for it to move waits for
-	// nothing.
-	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
-
 	// Error is why the last upgrade failed, which is a different sentence in
 	// a different place on the page. They were one field, so a checksum that
 	// did not match was shown as though the release list could not be read,
@@ -103,11 +95,15 @@ type Manager interface {
 	// Check asks the release list and returns what it found.
 	Check(ctx context.Context) (Status, error)
 
-	// CheckSoon asks in the background and returns at once, for a caller that
-	// must not wait — a GraphQL request, which runs inside a database
-	// transaction that a thirty-second call to somebody else's endpoint has
-	// no business holding open.
-	CheckSoon()
+	// CheckSoon asks in the background and returns whether it started one,
+	// for a caller that must not wait — a GraphQL request, which runs inside
+	// a database transaction that a thirty-second call to somebody else's
+	// endpoint has no business holding open.
+	//
+	// The answer is what a caller waiting for the result needs: no check
+	// started means nothing is going to change, and waiting is waiting for
+	// nothing.
+	CheckSoon() bool
 
 	// Apply downloads the newest release, verifies it, replaces this binary
 	// and restarts. It returns when the restart has been requested, not when
@@ -296,6 +292,15 @@ func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory 
 	// when checkInterval has passed — costs nothing and honours the window.
 	interval := self.checkInterval
 	if interval > tick {
+		interval = tick
+	}
+	// And never zero or less, because periodic waits on time.After and that
+	// returns immediately. A stored configuration with an interval of zero —
+	// which validation used to permit while checking was off — pinned a core
+	// for the life of the process, waking as fast as the scheduler allowed to
+	// do nothing. Validation refuses it now; this is here because a busy loop
+	// in a mail server is not a thing to leave one guard away from.
+	if interval <= 0 {
 		interval = tick
 	}
 	self.loop = periodic.New(self.ctx, &self.waitGroup, self.spinOnce, &periodic.Settings{
@@ -592,19 +597,27 @@ const manualCheckInterval = time.Minute
 // wrong way round.
 const bootstrapPrefix = "TEANODE_"
 
-// CheckSoon asks in the background, once at a time and not too often.
-func (self *manager) CheckSoon() {
+// CheckSoon asks in the background, once at a time and not too often, and
+// says whether it actually started one.
+//
+// The answer matters to the caller. A page that asks for a check and then
+// waits for the recorded time to move will wait for ever when no check ran —
+// checking is off, one is already in flight, or the last one somebody asked
+// for was less than a minute ago — and the page cannot work any of that out
+// for itself. It guessed twice, from two different timestamps, and both
+// guesses were wrong in a case the server knew about all along.
+func (self *manager) CheckSoon() bool {
 	if !self.settings().Enabled {
-		return
+		return false
 	}
 	if !self.mayCheckByHand() {
-		return
+		return false
 	}
 	if !self.checking.TryLock() {
 		// One is already running, and this caller will see its answer. The
 		// allowance is not spent on it: a request that started no check must
 		// not be the reason the next one is turned away.
-		return
+		return false
 	}
 	self.recordCheckByHand()
 	self.waitGroup.Add(1)
@@ -615,6 +628,7 @@ func (self *manager) CheckSoon() {
 			log.Warningf("could not check for a release: %s", err)
 		}
 	}()
+	return true
 }
 
 // mayCheckByHand reports whether a check somebody asked for may run: not
@@ -675,13 +689,7 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	// A fresh value, not the address of the field below. Status copies the
-	// struct and the caller reads it after the lock is gone, so a pointer into
-	// the manager is a pointer the next check writes through while somebody is
-	// encoding it.
-	attempted := time.Now()
-	self.lastAttempt = attempted
-	self.status.AttemptedAt = &attempted
+	self.lastAttempt = time.Now()
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 
@@ -810,31 +818,52 @@ func (self *manager) target() (string, bool) {
 // start will refuse is the worst kind of success: the binary is written, the
 // process execs it, the page says it worked, and then a recreate quietly puts
 // the old version back with no refusal recorded anywhere. A volume mounted
-// dir_mode=0777, or an operator who has run chmod -R 777 over the data
-// directory, is all it takes.
+// dir_mode=0777 is all it takes.
+//
+// It reads and does not write. Every caller here is answering a question —
+// what the page should say, whether the button belongs — and a question that
+// creates a directory on a deployment with upgrades turned off, or resets a
+// mode an operator chose on purpose every time the loop wakes, is doing
+// something nobody asked for. Creating it is stage's job, once.
 func (self *manager) stagingProblem() string {
 	if self.upgradeDirectory == "" {
 		return "no upgrade directory is configured"
 	}
 
-	// Private to this user, because that is the condition. Created that way,
-	// and tightened when it exists and is not: this directory belongs to the
-	// server, and a mode nobody chose deliberately is not worth refusing an
-	// upgrade over while it can simply be corrected.
-	if err := os.MkdirAll(self.upgradeDirectory, 0o700); err != nil {
+	// Not being there yet is not a problem: it is made, private to this user,
+	// at the moment something is staged.
+	//
+	// The directory above it is deliberately not judged. It is the data
+	// directory, which already holds the signing keys and the spool — its
+	// permissions are a question for the whole deployment and not for this
+	// feature, and refusing upgrades over them would be this feature
+	// answering somebody else's question badly.
+	info, err := os.Stat(self.upgradeDirectory)
+	if os.IsNotExist(err) {
+		// Whether it could be made, which is the question at this point.
+		// Answering "nothing is known to be wrong" without asking would let
+		// the page offer a button to a deployment whose volume is mounted
+		// read-only, and the operator would find out by pressing it.
+		//
+		// A probe file, created and removed: that is what writable does
+		// everywhere else here, and it is a different thing from leaving a
+		// directory behind on a deployment that will never stage anything.
+		if !writable(filepath.Dir(self.upgradeDirectory)) {
+			return fmt.Sprintf("%s cannot be created, because this process cannot write %s",
+				self.upgradeDirectory, filepath.Dir(self.upgradeDirectory))
+		}
+		return ""
+	}
+	if err != nil {
 		return err.Error()
 	}
-	if info, err := os.Stat(self.upgradeDirectory); err == nil && info.Mode().Perm()&0o022 != 0 {
-		if err := os.Chmod(self.upgradeDirectory, 0o700); err != nil {
-			log.Warningf("cannot make %s private to this user: %s", self.upgradeDirectory, err)
-		} else {
-			log.Noticef("made %s private to this user, so a staged upgrade can be trusted at the next start",
-				self.upgradeDirectory)
-		}
+	if !info.IsDir() {
+		return fmt.Sprintf("%s is not a directory", self.upgradeDirectory)
 	}
 
 	if why := UnsafeDirectory(self.upgradeDirectory); why != "" {
-		return why
+		return fmt.Sprintf("%s — a staged binary there would be refused at the next start; chmod 700 it",
+			why)
 	}
 	if !writable(self.upgradeDirectory) {
 		return fmt.Sprintf("%s cannot be written by this process", self.upgradeDirectory)

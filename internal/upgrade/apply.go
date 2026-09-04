@@ -114,6 +114,17 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 		return err
 	}
 
+	// Not this one again. It is staged, it was run, and it did not get as far
+	// as serving — so installing it a second time would run it a second time,
+	// and the loop that noticed it is available would notice again in five
+	// minutes. An error rather than a quiet return, so that the backoff
+	// engages and the page says what happened.
+	if _, staging := self.target(); staging && AlreadyTried(self.upgradeDirectory, found.version()) {
+		return fmt.Errorf("upgrade: %s is already installed and did not start; it will not be installed "+
+			"again. Look at the log for why, and remove %s to try it once more",
+			found.version(), PendingMarker(self.upgradeDirectory))
+	}
+
 	log.Noticef("downloading %s %s", name, found.version())
 	downloaded, err := self.download(ctx, binaryURL)
 	if err != nil {
@@ -270,6 +281,14 @@ func (self *manager) keepPrevious(previous string) error {
 // deleting the staged file is the rollback, and a container recreate is the
 // other one.
 func (self *manager) stage(downloaded, target, release string) error {
+	// Made here, and only here: private to this user, at the one moment
+	// something is actually going into it. Asking whether an upgrade is
+	// possible used to create it, so a deployment with upgrades turned off
+	// grew a directory it would never use.
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return fmt.Errorf("upgrade: cannot make %s: %w", filepath.Dir(target), err)
+	}
+
 	// Executable by this user and by nobody else. The next start refuses a
 	// staged binary that others can write, and this directory is a volume the
 	// host also has its hands on.

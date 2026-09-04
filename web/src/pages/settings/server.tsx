@@ -19,7 +19,7 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes url checkedAt attemptedAt error checkError applicable reason automatic enabled window upgrading
+      current latest available notes url checkedAt checking error checkError applicable reason automatic enabled window upgrading
     }
   }`
 
@@ -37,7 +37,7 @@ type UpgradeStatus = {
   notes?: string
   url?: string
   checkedAt?: string
-  attemptedAt?: string
+  checking?: boolean
   error?: string
   checkError?: string
   applicable: boolean
@@ -73,12 +73,6 @@ const UPGRADE_TIMEOUT_MS = 15 * 60_000
 // thirty-second timeout of its own on the server.
 const CHECK_TIMEOUT_MS = 40_000
 
-// RECENT_CHECK_MS is how recent a check has to be for it to be the answer to
-// pressing the button again. It matches the server's own limit on checks
-// asked for by hand, and exists because the server declines silently: it
-// simply does not check, so nothing on the status moves and a wait for it to
-// move is a wait for nothing.
-const RECENT_CHECK_MS = 60_000
 
 // ServerAboutPage is what this instance is, which version it is running, and
 // the two controls that act on the process rather than on the configuration:
@@ -174,25 +168,22 @@ export function ServerAboutPage() {
     setProblem(null)
     setChecking(true)
     try {
-      // A check that has just been tried is the answer to this one. The
-      // server will not ask the release list again within a minute of the
-      // last time somebody asked by hand — sixty requests an hour is the
-      // whole allowance, and it is shared with everybody on this address — so
-      // waiting for a time that is not going to move meant the button read
-      // "Checking…" for forty seconds and then showed the same thing with no
-      // explanation.
+      // The server says whether it started one, and this waits only if it
+      // did. It may not: checking is off, one is already running, or the last
+      // check somebody asked for was less than a minute ago — the allowance
+      // is sixty requests an hour to a public endpoint, shared with everybody
+      // else on this address.
       //
-      // Tried, not succeeded. The allowance is spent on the attempt, so after
-      // a check that failed — blocked outbound HTTPS is the ordinary way —
-      // checkedAt has not moved and never will, and watching it was the same
-      // forty seconds of nothing this exists to avoid.
-      const attempted = upgrade.data?.GetUpgrade?.attemptedAt
-      if (attempted && Date.now() - Date.parse(attempted) < RECENT_CHECK_MS) {
+      // Deciding that here was tried twice, from two different timestamps,
+      // and both were wrong somewhere: the time of the last success does not
+      // move when a check fails, and the time of the last attempt moves when
+      // the scheduled loop checks, which does not spend the allowance for
+      // asking by hand. The server knows. It says so now.
+      const started = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: true })).GetUpgrade
+      if (!started?.checking) {
         await upgrade.reload()
         return
       }
-
-      await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: true })
 
       const deadline = Date.now() + CHECK_TIMEOUT_MS
       for (;;) {

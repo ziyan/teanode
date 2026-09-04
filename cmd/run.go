@@ -93,6 +93,13 @@ func runServer(ctx context.Context, command *cli.Command) error {
 		// somebody here to say so. Exiting cleanly is then the fallback: a
 		// supervisor starts a new one, and the staged binary is found at the
 		// next start anyway.
+		//
+		// And the mark comes off, because it says "this was run and did not
+		// serve" and it was never run. Left on, it would have the next start
+		// refuse a binary that is installed and verified, and tell somebody
+		// to delete a file by hand over a failure that had nothing to do with
+		// the binary.
+		upgrade.Untried(upgradeDirectory, target)
 		log.Errorf("could not run the upgraded binary, so this process is exiting for whatever supervises it: %s", err)
 	}
 	return nil

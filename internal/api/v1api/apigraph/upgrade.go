@@ -47,13 +47,12 @@ type Upgrade struct {
 	// thing worth saying, and an error only in a log is an error nobody sees.
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 
-	// When it last tried, which is not the same. The server will not ask the
-	// release list again within a minute of the last time somebody asked by
-	// hand, and it declines by doing nothing — so a caller that wants to know
-	// whether asking again would achieve anything has to look at this rather
-	// than at CheckedAt, which only moves when a check succeeds.
-	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	// Whether asking for a check actually started one. Only ever true in the
+	// reply to a request that asked; false means the answer here is the one
+	// already known, and waiting for it to change would be waiting for
+	// nothing.
+	Checking bool   `json:"checking,omitempty"`
+	Error    string `json:"error,omitempty"`
 
 	// Whether this deployment can install an upgrade at all, and what stands
 	// in the way when it cannot: a container, whose image is the thing to
@@ -98,15 +97,24 @@ func (self *graph) GetUpgrade(ctx context.Context, arguments GetUpgradeArguments
 		return nil, fmt.Errorf("%w: this server was not started with upgrades", api.ErrNotFound)
 	}
 
+	answer := describeUpgrade(self.upgrade.Status())
 	if arguments.Check != nil && *arguments.Check {
 		// Started, not waited for. This request runs inside a database
 		// transaction, and a thirty-second call to somebody else's endpoint
 		// — which is what it is on a server whose outbound HTTPS is blocked,
 		// an ordinary way to run a mail server — has no business holding one
 		// open. The answer arrives on the next read; the dashboard polls.
-		self.upgrade.CheckSoon()
+		//
+		// Whether one started is part of the reply, because the caller cannot
+		// work it out. Checking may be off, one may already be running, or
+		// the last check somebody asked for may have been half a minute ago —
+		// and a page that polls for a recorded time to move, when nothing is
+		// going to move it, waits until its own deadline and then shows the
+		// same answer with no explanation. It guessed twice from two
+		// different timestamps and both guesses were wrong somewhere.
+		answer.Checking = self.upgrade.CheckSoon()
 	}
-	return describeUpgrade(self.upgrade.Status()), nil
+	return answer, nil
 }
 
 type ApplyUpgradeArguments struct {
@@ -154,20 +162,19 @@ func (self *graph) ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArgum
 
 func describeUpgrade(status upgrade.Status) *Upgrade {
 	return &Upgrade{
-		Current:     status.Current,
-		Latest:      status.Latest,
-		Available:   status.Available,
-		Notes:       status.Notes,
-		URL:         status.URL,
-		CheckedAt:   status.CheckedAt,
-		AttemptedAt: status.AttemptedAt,
-		Error:       status.Error,
-		Applicable:  status.Applicable,
-		Reason:      status.Reason,
-		Automatic:   status.Automatic,
-		Upgrading:   status.Upgrading,
-		Enabled:     status.Enabled,
-		Window:      status.Window,
-		CheckError:  status.CheckError,
+		Current:    status.Current,
+		Latest:     status.Latest,
+		Available:  status.Available,
+		Notes:      status.Notes,
+		URL:        status.URL,
+		CheckedAt:  status.CheckedAt,
+		Error:      status.Error,
+		Applicable: status.Applicable,
+		Reason:     status.Reason,
+		Automatic:  status.Automatic,
+		Upgrading:  status.Upgrading,
+		Enabled:    status.Enabled,
+		Window:     status.Window,
+		CheckError: status.CheckError,
 	}
 }

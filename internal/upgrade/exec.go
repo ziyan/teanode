@@ -449,6 +449,35 @@ func running(path string) bool {
 	return sameFile(path, executablePath)
 }
 
+// AlreadyTried reports whether this exact release is the one already staged
+// and already marked as having been tried.
+//
+// The marker stops a bad release being run twice. It does not, by itself, stop
+// it being installed twice — and installing clears the marker, because a newly
+// staged binary deserves its own attempt. So an automatic upgrade to a release
+// that crashes before it serves still went round: the marker held it back, the
+// image's binary served, the loop woke, saw the same release available, staged
+// it again over the marker, and ran it again. Forty-five megabytes and a mail
+// server restart a lap, for ever, with no backoff, because nothing ever
+// failed.
+//
+// Asked before anything is downloaded. Version by version, so a release after
+// the one that failed installs normally — it is a different binary and has not
+// been tried.
+func AlreadyTried(directory, release string) bool {
+	if directory == "" {
+		return false
+	}
+	if _, err := os.Stat(PendingMarker(directory)); err != nil {
+		return false
+	}
+	staged, err := readStagedFile(directory, stagedVersion)
+	if err != nil {
+		return false
+	}
+	return strings.TrimPrefix(staged, "v") == strings.TrimPrefix(strings.TrimSpace(release), "v")
+}
+
 // MarkTried records that a staged binary is about to be run for the first
 // time, so that a release which crashes on startup is not run again for ever.
 //
@@ -470,6 +499,16 @@ func MarkTried(directory, path string) {
 	if err := record(directory, pending, "started"); err != nil {
 		fmt.Fprintf(os.Stderr, "teanode: cannot mark %s as being tried: %s\n", path, err)
 	}
+}
+
+// Untried takes the mark off again, for a binary that in the end was not run.
+// The mark means "this was run and did not serve", and an exec that failed is
+// neither half of that.
+func Untried(directory, path string) {
+	if directory == "" || !sameFile(path, Staged(directory)) {
+		return
+	}
+	_ = os.Remove(PendingMarker(directory))
 }
 
 // Started clears the marker, once this process has got far enough to be

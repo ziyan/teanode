@@ -70,6 +70,17 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The crash-loop guard had a second door, and closing the first one did not
+  close it.** Marking the binary before both execs stopped it being *run*
+  twice without being told to. It did not stop it being *installed* twice —
+  and installing clears the mark, because a newly staged binary deserves its
+  own attempt. So the loop simply went round the other way: mark holds it
+  back, the image's binary serves, the scheduled check wakes, sees the same
+  release available, stages it over the mark, and runs it again. Installing a
+  release that is already staged and already marked is refused now, by
+  version, before anything is downloaded — and as an error, so the backoff
+  engages and the page says what happened.
+
 - **The crash-loop guard covered one of the two ways a staged binary gets
   run.** The container start writes the marker before exec'ing; the exec an
   upgrade does when it finishes went straight to `syscall.Exec` and did not.
@@ -78,6 +89,21 @@ environment before the database is opened, naming where that directory is.
   crash, restart, marker, exec, crash, restart, run the image's binary, check,
   install the same release again, forty-five megabytes a lap. Both paths mark
   it now.
+
+- **Asking a question was changing the filesystem.** "Can this server upgrade
+  itself" created the staging directory and reset its mode, on every check and
+  on every start — so a deployment with upgrades turned off grew a directory
+  it would never use, and an operator who had set a mode on purpose found it
+  put back every few minutes. The read path reads now; creating it is the job
+  of the one moment something is staged, and a directory anybody else can
+  write is refused with a reason rather than quietly corrected.
+
+- **The page kept guessing something the server knew.** Whether pressing
+  "Check now" would achieve anything was inferred twice, from two different
+  timestamps, and both were wrong somewhere: the time of the last success does
+  not move when a check fails, and the time of the last attempt moves when the
+  scheduled loop checks, which does not spend the allowance for asking by
+  hand. The reply says whether a check started.
 
 - **A pointer into a field the next check overwrites.** `AttemptedAt` was the
   address of the manager's own `lastAttempt`, and the status is copied and read

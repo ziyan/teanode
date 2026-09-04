@@ -1073,23 +1073,16 @@ check_upgrades() {
     fail "automatic upgrades are on by default"
   fi
 
-  # Saying it can is cheap. The directory it would write into is the thing
-  # that has to exist, on the volume, before anybody presses the button.
-  local staging="${TEST_DIR}/data/upgrade"
-  if [ -d "${staging}" ]; then
-    pass "the staging directory is on the mounted volume, where a recreate cannot reach it"
+  # Saying it can is not cheap talk: answering that question probes the
+  # volume, so a stack whose data directory were read-only would have said
+  # otherwise above. The directory itself is deliberately not there yet — it
+  # is made, private to this user, at the moment something is staged, because
+  # asking whether an upgrade is possible should not leave anything behind on
+  # a deployment that will never install one.
+  if [ -e "${TEST_DIR}/data/upgrade" ]; then
+    fail "asking about upgrades created ${TEST_DIR}/data/upgrade"
   else
-    fail "${staging} was never created, so an upgrade would have nowhere to go"
-  fi
-  # Private to the user the server runs as. The next start refuses to run a
-  # staged binary out of a directory anybody else can write, so a directory
-  # that is not private is a directory an upgrade cannot use.
-  local mode
-  mode="$(stat -c '%a' "${staging}" 2>/dev/null || echo unknown)"
-  if [ "${mode}" = "700" ]; then
-    pass "and it is private to the user the server runs as"
-  else
-    fail "${staging} is mode ${mode}, not 700"
+    pass "and asking left nothing behind on the volume"
   fi
 }
 
