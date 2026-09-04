@@ -1091,6 +1091,17 @@ td.shrink { width: 1%; white-space: nowrap; }
   max-width: var(--measure);
 }
 
+/* Except the ones that are paragraphs by tag and panels by drawing: an empty
+   state standing in for a row, a notice with a background behind it. The
+   measure that keeps a sentence readable makes those a narrow box beside
+   full-width rows, which reads as a mistake rather than as a margin. Same
+   specificity as the cap above and written after it, so it wins. */
+p.settings-empty,
+p.notice,
+p.table-empty {
+  max-width: none;
+}
+
 /* The name of a record is short, and it is the thing a reader scans down the
    column for. Without a floor it is squeezed to a few characters by the
    signing key in the cell beside it, which asks for as much width as it can
