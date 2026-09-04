@@ -5,6 +5,7 @@ import { Domain, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { Tabs } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { DomainOverviewTab } from './domainOverview'
 import { DomainDnsTab } from './domainDns'
@@ -98,31 +99,25 @@ export function DomainTabsPage() {
 
   return (
     <>
-      <div className="tabs">
-        {TABS.map((candidate) => (
-          <button
-            key={candidate.id}
-            type="button"
-            className={tab === candidate.id ? 'active' : ''}
-            onClick={() => navigate(`/domains/${domainId}/${candidate.id}`)}
-          >
-            {t(candidate.label)}
-          </button>
-        ))}
-
-        {/* Beside the tabs rather than among them. Both leave this page for a
-            different one with a filter applied, and a tab that takes you
-            somewhere else is a lie about where you are. They were two large
-            tiles for exactly the same two links. */}
-        <div className="tab-actions">
-          <Link className="tab-action" to={`/mail?domain=${encodeURIComponent(domain.domain)}`}>
-            {t('domain.viewMail')}
-          </Link>
-          <Link className="tab-action" to={`/queue?domain=${encodeURIComponent(domain.domain)}`}>
-            {t('domain.viewQueue')}
-          </Link>
-        </div>
-      </div>
+      <Tabs
+        items={TABS}
+        active={tab}
+        onSelect={(id) => navigate(`/domains/${domainId}/${id}`)}
+        actions={
+          /* Beside the tabs rather than among them. Both leave this page for a
+             different one with a filter applied, and a tab that takes you
+             somewhere else is a lie about where you are. They were two large
+             tiles for exactly the same two links. */
+          <div className="tab-actions">
+            <Link className="tab-action" to={`/mail?domain=${encodeURIComponent(domain.domain)}`}>
+              {t('domain.viewMail')}
+            </Link>
+            <Link className="tab-action" to={`/queue?domain=${encodeURIComponent(domain.domain)}`}>
+              {t('domain.viewQueue')}
+            </Link>
+          </div>
+        }
+      />
 
       {/* One error line for the whole page, above the tab that caused it. */}
       {problem && <p className="error">{problem}</p>}
