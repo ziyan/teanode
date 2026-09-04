@@ -56,10 +56,14 @@ the configured domains.
 - [x] (2026-09-03 22:10Z) Milestone 4: data commands. `mail` (list, get, content, download, opens,
       count, send), `delivery`, `report`, `session`, `passkey`.
 - [x] (2026-09-03 22:10Z) Milestone 5: content commands. `template`, `layout`.
-- [ ] Milestone 6: the deployment test drives the new commands; documentation
-      (`docs/reference/command-line.md`, project structure, local
-      development, README, getting started, changelog); a decision record for
-      the split; this plan moves to `docs/planning/done/`.
+- [x] (2026-09-03 22:40Z) Milestone 6: the deployment test drives the typed
+      commands and a profile round trip; documentation, changelog and the
+      decision record `docs/decisions/20260903-two-binaries.md` written.
+- [ ] Deployment test run green against the image built from this tree
+      (completed: started; remaining: read the result, fix anything it finds).
+- [ ] The scrubbed history (`main-scrubbed`, tags `scrubbed-v0.1.*`) pushed
+      over `origin/main`, which is the owner's call and not part of this
+      branch.
 
 ## Surprises & Discoveries
 
@@ -72,6 +76,30 @@ the configured domains.
   zero-setup console path deliberate, so the client keeps `internal/configdb`
   as a dependency and stays a "client" in what it does — never writing the
   database — rather than in what it links.
+
+- Observation: an input object's plain string fields are required in the
+  schema. `AliasParametersInput.kind` is `String!` because the Go field is a
+  `string` rather than a pointer, so an update that left it out was refused
+  before the resolver — which treats an empty kind as "keep what is stored" —
+  saw it.
+  Evidence: `Variable "$aliasParameters" got invalid value {"disabled":true,
+  "pattern":""}. In field "kind": Expected "String!", found null.` from the
+  first `alias update --disabled`. The client now always sends `kind`.
+
+- Observation: a token string carries its own identifier in the clear
+  (`tnt_` + 26 character identifier + key + signature), so a pasted token can
+  be revoked on logout just like one the browser handed over. The client
+  reads the identifier without verifying anything; the server does that.
+
+- Observation: the running development server has to be restarted after the
+  dashboard is rebuilt, because the dashboard is compiled into the server
+  binary. The first browser test of `/cli` hit "the dashboard was not built
+  into this binary" from a process started before `npm run build`.
+
+- Observation: Chrome posts from `http://127.0.0.1:20081` to
+  `http://127.0.0.1:<port>` without a private-network preflight, because
+  both are loopback. The preflight headers are still sent for the real case,
+  a public HTTPS dashboard, and are covered by `loopback_test.go`.
 
 ## Decision Log
 
@@ -156,7 +184,27 @@ the configured domains.
 
 ## Outcomes & Retrospective
 
-To be written as milestones land.
+Delivered in six commits on `worktree-cli-full-api`: two programs; profiles
+and a browser sign-in; and a command group for every resource the API
+exposes — sixteen groups, each checked against a running server. The browser
+flow was exercised in a real Chrome against the built dashboard: sign in,
+Authorize, token delivered to the waiting command, profile saved with the
+token's identifier. `make lint-ci` and the unit tests pass; the deployment
+test gained a profile round trip.
+
+What the purpose asked for is there: `teanode auth login --url …` from a
+laptop, then `teanode domain list`. The generic `settings set` and the raw
+`api` group mean the client does not have to be touched when the API grows;
+only a new resource earns a new group.
+
+Left open: the deployment test's result against the image from this tree
+was still running when this was written, and the scrubbed history is
+prepared but not pushed. Neither is code.
+
+Lessons: read the schema's nullability before writing an update command —
+a required field in an input object cannot be omitted, whatever the resolver
+would do with it. And verify a dashboard change against a server built after
+it, not the one already running.
 
 ## Context and Orientation
 

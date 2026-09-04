@@ -16,7 +16,7 @@ how to reach the database, and which instance this process is.
 
 Write a starting point with:
 
-    teanode config env --output .env \
+    teanode-server config env --output .env \
       --hostname mail.example.com --domain example.com
 
 One variable is required:
@@ -119,7 +119,7 @@ to open the dashboard chooses their own username and password.
 
 A deployment that ran on `teanode.yaml` loads it once:
 
-    teanode config import --file /opt/teanode/teanode.yaml
+    teanode-server config import --file /opt/teanode/teanode.yaml
 
 Everything is carried across unchanged — domain and alias identifiers, signing
 keys, the server secret, the session key — because changing any of them breaks
@@ -129,7 +129,7 @@ loaded and writes nothing.
 
 The reverse makes a backup, in the same format:
 
-    teanode config export --file backup.yaml
+    teanode-server config export --file backup.yaml
 
 ## Settings that need a restart
 
@@ -149,20 +149,21 @@ systemd, or nothing it can see. It is a guess: neither a container's restart
 policy nor a unit's `Restart=` can be read from inside the process, so it
 names the supervisor rather than promising a return, and errs towards warning.
 
-Restarting is also an API operation, so a deployment can do it without a
-browser:
+Restarting is also a command, so a deployment can do it without a browser:
 
-    teanode api call RestartServer --select "{ started supervision }"
+    teanode server restart
 
 ## Reading and checking it
 
-    teanode config show                 # with secrets redacted
-    teanode config show --show-secrets
-    teanode config validate
+    teanode-server config show                 # with secrets redacted
+    teanode-server config show --show-secrets
+    teanode-server config validate
 
-These read the same environment the server does, so run them where the server
-runs — in its container, or with its env file — or point them at a server over
-the network with `--url` and a token.
+These read the same environment the server does, so they run where the server
+runs — in its container, or with its env file. From anywhere else, the client
+reads and changes the same configuration through the API: `teanode settings
+show` for the integrations, `teanode domain list` for the domains, and so on.
+See `docs/reference/command-line.md`.
 
 ## Sessions and tokens
 
@@ -182,10 +183,11 @@ the dashboard can show it without a database write per request. A revoked one
 is kept for thirty days, marked revoked, so the list can say what happened to
 it; an hourly sweep removes those and anything long expired.
 
-Each account manages its own. The console is the exception — it authenticates
-with a token minted from the server secret and is not an account at all, so
-`teanode token create --user ziyan laptop` is how somebody gets their first
-one.
+Each account manages its own. `teanode auth login` issues one through the
+dashboard and keeps it as a profile on the machine that asked. The console is
+the exception — it authenticates with a token minted from the server secret
+and is not an account at all, so `teanode token create --user ziyan laptop`
+is how somebody gets their first one without a browser.
 
 ## Secrets
 

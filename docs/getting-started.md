@@ -34,13 +34,17 @@ outbound mail through a host that can reach port 25.
 
 ## 1. Install
 
+    curl -L -o /usr/local/bin/teanode-server \
+      https://github.com/ziyan/teanode/releases/latest/download/teanode-server-linux-amd64
     curl -L -o /usr/local/bin/teanode \
       https://github.com/ziyan/teanode/releases/latest/download/teanode-linux-amd64
-    chmod +x /usr/local/bin/teanode
+    chmod +x /usr/local/bin/teanode-server /usr/local/bin/teanode
 
-There is a container image too, and `deploy/` has a compose file and a systemd
-unit. The binary carries the dashboard inside it, so there is nothing else to
-install or serve.
+`teanode-server` is the server, with the dashboard inside it, so there is
+nothing else to install or serve. `teanode` is the client that administers it,
+and belongs on the server and on your own machine; there is a macOS build of
+it. There is a container image too, with both in it, and `deploy/` has a
+compose file.
 
 ## 2. Describe the server
 
@@ -49,7 +53,7 @@ Configuration lives in PostgreSQL. The environment says how to reach it, and
 to create.
 
     mkdir -p /opt/teanode && cd /opt/teanode
-    teanode config env --output .env \
+    teanode-server config env --output .env \
       --hostname mail.example.com \
       --domain example.com
 
@@ -65,7 +69,7 @@ Open `.env` and set `TEANODE_DATABASE_URL` to your PostgreSQL, and
 about expiry. Then set the database up:
 
     set -a; . ./.env; set +a
-    teanode config init
+    teanode-server config init
 
 That runs the migrations and stores the configuration. It generates a DKIM
 signing key for the domain and a server secret, both of which live in the
@@ -82,7 +86,7 @@ creating something new. Identifiers, signing keys, the server secret and the
 session key all come across unchanged, so stored mail still resolves, SMTP
 passwords still work, and nobody is signed out:
 
-    teanode config import --file /opt/teanode/teanode.yaml
+    teanode-server config import --file /opt/teanode/teanode.yaml
 
 ## 3. Publish DNS
 
@@ -126,8 +130,8 @@ the reports show your own mail passing.
 
 ## 4. Check and start
 
-    teanode config validate
-    teanode run
+    teanode-server config validate
+    teanode-server run
 
 On the first start the server obtains a certificate over HTTP-01, which needs
 port 80 reachable from the internet. If it is not, that is the first thing the

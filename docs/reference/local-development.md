@@ -13,7 +13,7 @@ the conventions your change has to follow, see `docs/coding/coding-standards.md`
 
 ## Build and test
 
-    make build          # build/teanode, the whole server in one binary
+    make build          # build/teanode-server and build/teanode, the client
     make web            # build the dashboard into internal/frontend/static
     make                # format, build, test
     make test           # tests; starts a PostgreSQL container automatically
@@ -78,13 +78,14 @@ After that the database holds the answer, and the server warns about any of
 them that disagree. To start over, `make dev-clean`.
 
     set -a; . ./dev/.env; set +a
-    ./build/teanode config init
-    ./build/teanode tls self-signed
-    ./build/teanode run --log-level DEBUG
+    ./build/teanode-server config init
+    ./build/teanode-server tls self-signed
+    ./build/teanode-server run --log-level DEBUG
 
-With that environment in your shell, the rest of the tool works against the
-same configuration: `teanode config show`, `teanode dkim show example.com`,
-`teanode user list`.
+With that environment in your shell, the client reaches that server over
+loopback with nothing else set up: `teanode domain list`, `teanode dkim show
+example.com`, `teanode user list`. From another shell, sign in instead with
+`teanode auth login --url http://127.0.0.1:10081`.
 
 Send it a message with `swaks`:
 
@@ -93,7 +94,7 @@ Send it a message with `swaks`:
 ## Optional services
 
 Both are off by default. Turn them on in the dashboard, or in an exported
-configuration loaded back with `teanode config import`, only when you are
+configuration loaded back with `teanode-server config import`, only when you are
 working on that code path.
 
 ### SpamAssassin

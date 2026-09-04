@@ -1,7 +1,7 @@
 # A complete TeaNode deployment: the server plus everything it can optionally
 # use.
 #
-#     teanode config env --output .env     # then edit it
+#     teanode-server config env --output .env     # then edit it
 #     docker compose up -d
 #
 # Configuration lives in PostgreSQL, not in a file. The .env beside this file

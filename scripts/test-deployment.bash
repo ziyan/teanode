@@ -533,14 +533,51 @@ check_cli() {
   check_contains "the specific alias matches the address it was written for" '"^hello$"' \
     teanode_cli api call MatchAliases domainId="$(domain_id)" address="hello@${DOMAIN}" --select "{ pattern }"
 
+  # The typed commands, which are what an operator actually types.
+  check_contains "domain list shows the domain and its records" "${DOMAIN}" \
+    teanode_cli domain list
+  check_contains "alias match names the alias by its pattern" '^hello$' \
+    teanode_cli alias match "${DOMAIN}" "hello@${DOMAIN}"
+  check_contains "server status names the instance" "test1" \
+    teanode_cli server status
+  check_contains "settings show reads the integrations" "antispam.enabled" \
+    teanode_cli settings show
+  check_contains "mail list answers, empty or not" "" \
+    teanode_cli mail list --first 1
+
   # A change made through the API has to reach the database, or a restart
   # loses it — and so does every other instance. Read back through a separate
   # connection rather than through the same server, so that what is checked is
   # what was stored and not what one process happens to be holding.
-  teanode_cli api call CreateDomain \
-    domainParameters:='{"domain":"second.test","subdomain":"mail"}' >/dev/null 2>&1 || true
+  teanode_cli domain create second.test >/dev/null 2>&1 || true
   check_contains "a change made through the API reaches the database" "second.test" \
     teanode_server config show
+
+  check_profiles
+}
+
+# check_profiles signs the client in the way a laptop would, with a pasted
+# token, and uses the saved profile with no environment at all. The profiles
+# file goes under a throwaway configuration directory, so the developer's own
+# is never touched.
+check_profiles() {
+  step "Command line client, signed in as a profile"
+
+  local configuration
+  configuration="$(mktemp -d)"
+  check_contains "auth login saves a profile from a pasted token" "saved profile" \
+    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" auth login --url "${API}" --token "${TOKEN}" --name harness
+  check_contains "the profile is active" "harness" \
+    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" auth status
+  check_contains "a command with no environment talks to the profile's server" "${DOMAIN}" \
+    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" domain list
+  check "the profiles file is readable by its owner only" \
+    test "$(stat -c %a "${configuration}/teanode/profiles.json")" = "600"
+  check_contains "auth logout forgets the profile" "forgot profile" \
+    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" auth logout --keep-token
+  check_fails_with "with no profile and no environment there is nothing to talk to" "no server to talk to" \
+    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" domain list
+  rm -rf "${configuration}"
 }
 
 domain_id() {

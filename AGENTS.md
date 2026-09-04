@@ -17,10 +17,12 @@ retried.
 
 ## Where things are
 
-    main.go                 CLI entry point (urfave/cli v3)
-    cmd/                    one file per subcommand: run, config, dkim,
-                            credential, password, version
+    cmd/teanode-server/     the server's entry point (urfave/cli v3)
+    cmd/teanode/            the client's entry point
     internal/
+      cmd/                  the client's subcommands, one file per group, and
+                            what both programs share; cmd/server/ holds the
+                            server's own: run, config, tls, user, password
       config/               the configuration: types, validation, the Store
                             interface. Everything an operator can set
       configdb/             config.Store backed by PostgreSQL, with a version
@@ -31,6 +33,7 @@ retried.
       db/                   PostgreSQL via GORM: mail, deliveries, DMARC
                             reports, usage counters, templates
       api/                  GraphQL over the config store and the database
+      client/               the other side of that API, for the client
       web/                  HTTP server and middlewares
       dns/                  advisory DNS record checking for configured domains
       mailer/               template rendering and transactional send

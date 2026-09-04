@@ -6,6 +6,41 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `teanode auth login --url https://mail.example.com` signs the client in from
+  a browser: the dashboard opens, the operator presses Authorize, and the
+  token comes back to the command over a loopback connection on the
+  operator's own machine, tied to a nonce the page has to echo. The result
+  is a profile in `~/.config/teanode/profiles.json`, one per server, with
+  `auth list`, `auth switch`, `auth status` and `auth logout`, which revokes
+  the token. `--profile` and `TEANODE_PROFILE` pick another for one command.
+- A command for every part of the API: `domain`, `alias`, `settings`,
+  `server`, `session`, `passkey`, `mail`, `delivery`, `report`, `template`
+  and `layout` join `user`, `token`, `credential` and `dkim`, each with
+  `list`, `get`, `create`, `update` and `delete` where the API has them and
+  the verbs particular to the resource — `alias match`, `domain check`,
+  `mail send`, `template render`, `delivery pending`, `server restart`.
+  Tables by default, `--json` everywhere. `teanode api` remains for whatever
+  is added later.
+- The dashboard's `/cli` page, which the client opens to sign in. It is the
+  one page allowed to connect to a loopback address.
+- A macOS build of the client in each release.
+
+### Changed
+
+- The server is `teanode-server`; `teanode` is the client. `teanode run`,
+  `teanode config …` and `teanode tls …` are `teanode-server run`, `config`
+  and `tls`, and `teanode user --offline` is `teanode-server user`. The
+  image ships both, so `docker compose exec teanode teanode user list` still
+  works. A systemd unit or a script that starts the server has to say
+  `teanode-server`.
+- The client no longer reads `~/.config/teanode/token`; a token kept there
+  is saved as a profile with `teanode auth login --url … --token -`.
+  `TEANODE_URL` and `TEANODE_TOKEN` still bypass profiles for scripts.
+- `teanode user add` and `credential add|remove` keep working as aliases of
+  `create` and `delete`; `credential delete` takes the identifier alone.
+
 ## [0.2.0] - 2026-09-04
 
 ### Added

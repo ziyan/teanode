@@ -49,31 +49,36 @@ the message itself with scripts stripped.
 
 ## Getting started
 
-Download the binary, describe the server, run it:
+Download the two programs, describe the server, run it:
 
+    curl -L -o /usr/local/bin/teanode-server \
+      https://github.com/ziyan/teanode/releases/latest/download/teanode-server-linux-amd64
     curl -L -o /usr/local/bin/teanode \
       https://github.com/ziyan/teanode/releases/latest/download/teanode-linux-amd64
-    chmod +x /usr/local/bin/teanode
+    chmod +x /usr/local/bin/teanode-server /usr/local/bin/teanode
 
     mkdir -p /opt/teanode && cd /opt/teanode
-    teanode config env --output .env \
+    teanode-server config env --output .env \
       --hostname mail.example.com --domain example.com
 
 Edit `.env` — it needs a PostgreSQL you can reach and an address for the
 certificate authority to write to — then set the server up and start it:
 
     set -a; . ./.env; set +a
-    teanode config init
+    teanode-server config init
     teanode dkim show example.com
 
 That last command prints the DNS record for your signing key, which was
 generated with the domain. Publish it, along with an MX record pointing at your
 server, then:
 
-    teanode run
+    teanode-server run
 
 The dashboard is on the same host. It lists exactly which DNS records are still
-missing, so you can see what is left rather than guessing.
+missing, so you can see what is left rather than guessing. `teanode` is the
+command line client for the same API: sign in from a laptop with
+`teanode auth login --url https://mail.example.com`, and `teanode domain
+list`, `teanode mail list` and the rest work from there.
 
 `docs/getting-started.md` has the full walk-through, including the DNS records
 and the reality that many providers block outbound port 25.
@@ -159,7 +164,7 @@ where that database is; everything else is stored.
             kind: email
             email: everything@example.net
 
-That is what `teanode config show` prints and what `teanode config import`
+That is what `teanode-server config show` prints and what `teanode-server config import`
 reads, so a whole server can be described in a file, put under version control
 and loaded — but the running server's answer is the database. Every field is
 documented in `docs/configuration.md`.
