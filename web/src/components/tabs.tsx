@@ -60,10 +60,16 @@ export function Tabs({
     // A margin, so the tab it scrolls to does not sit flush against the edge
     // looking like the row ends there.
     const margin = 12
+
+    // No behavior: 'smooth'. It is silently dropped on this element — the
+    // same call with the same delta moves the strip 229px as 'instant' and 0
+    // as 'smooth' — so asking for it politely produced a tab row that never
+    // scrolled at all. The default follows the CSS, which is what a reader
+    // who has asked for less motion has already said they want.
     if (tabRect.left < rowRect.left) {
-      row.scrollBy({ left: tabRect.left - rowRect.left - margin, behavior: 'smooth' })
+      row.scrollBy({ left: tabRect.left - rowRect.left - margin })
     } else if (tabRect.right > rowRect.right) {
-      row.scrollBy({ left: tabRect.right - rowRect.right + margin, behavior: 'smooth' })
+      row.scrollBy({ left: tabRect.right - rowRect.right + margin })
     }
   }, [active])
 
