@@ -48,7 +48,7 @@ jobs:
             echo "have=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.token.outputs.have == 'true'
         with:
           fetch-depth: 0 # the version comes from the tags
