@@ -24,32 +24,47 @@ export function Tabs({
 }) {
   const { t } = useTranslation()
   const strip = useRef<HTMLDivElement>(null)
-  const current = useRef<HTMLButtonElement>(null)
 
   // Bring the active tab into view when it is out of it.
   //
   // The row scrolls sideways on a narrow screen, and the tab you are on is
   // frequently not the part of it you can see: arriving on a domain's
   // Credentials tab from a link, or reloading the page there, left the strip
-  // at its start showing Overview underlined by nothing. Worse on a phone,
-  // where four of the five tabs are off the edge.
+  // at its start showing Overview underlined by nothing. On a phone four of
+  // the five tabs are off the edge, so the page gave no sign of which one it
+  // was showing.
   //
-  // scrollIntoView on the element rather than a computed offset, because the
-  // browser knows what is visible and this does not need to. "nearest" so a
-  // tab that is already in view does not move — centring every tab on every
-  // navigation would make the row twitch for no reason — and block "nearest"
-  // so the page itself never scrolls to do it.
+  // The active tab is found in the DOM rather than held in a ref. A ref
+  // attached conditionally — ref={id === active ? tab : undefined} — is
+  // attached and detached in child order, so moving to an earlier tab sets it
+  // to the new button and then nulls it again on the way past the old one. A
+  // query cannot get that wrong.
+  //
+  // And scrollBy on the strip rather than scrollIntoView on the tab, because
+  // scrollIntoView walks up to every scrollable ancestor: the content column
+  // scrolls too, and a tab row has no business moving the page. Deltas from
+  // getBoundingClientRect rather than offsetLeft, which is measured from the
+  // nearest positioned ancestor and is not this.
   useEffect(() => {
-    const element = current.current
-    if (!element || !strip.current) {
+    const row = strip.current
+    if (!row) {
       return
     }
-    const row = strip.current.getBoundingClientRect()
-    const tab = element.getBoundingClientRect()
-    if (tab.left >= row.left && tab.right <= row.right) {
+    const element = row.querySelector<HTMLElement>('button.active')
+    if (!element) {
       return
     }
-    element.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+    const rowRect = row.getBoundingClientRect()
+    const tabRect = element.getBoundingClientRect()
+
+    // A margin, so the tab it scrolls to does not sit flush against the edge
+    // looking like the row ends there.
+    const margin = 12
+    if (tabRect.left < rowRect.left) {
+      row.scrollBy({ left: tabRect.left - rowRect.left - margin, behavior: 'smooth' })
+    } else if (tabRect.right > rowRect.right) {
+      row.scrollBy({ left: tabRect.right - rowRect.right + margin, behavior: 'smooth' })
+    }
   }, [active])
 
   return (
@@ -57,7 +72,6 @@ export function Tabs({
       {items.map((item) => (
         <button
           key={item.id}
-          ref={item.id === active ? current : undefined}
           type="button"
           className={item.id === active ? 'active' : ''}
           aria-current={item.id === active ? 'page' : undefined}
