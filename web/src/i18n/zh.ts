@@ -751,7 +751,7 @@ export const zh: Catalog = {
   'upgrade.checking': '检查中…',
   'upgrade.upgradeTo': '升级到 {version}',
   'upgrade.upgrading': '升级中…',
-  'upgrade.tookTooLong': '升级耗时过长。请查看服务器日志；只要没有重启，正在运行的二进制就没有被替换。',
+  'upgrade.tookTooLong': '升级耗时过长。请查看服务器日志——新的二进制可能已经就位，正在等待重启完成。',
   'upgrade.failed': '上次升级未完成：{reason}',
   'upgrade.checkingOff': '已关闭版本检查（upgrade.enabled），以下是开启时获取的信息。',
   'upgrade.waiting': '正在下载、替换二进制并重启，大约需要一分钟。',

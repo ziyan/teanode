@@ -299,3 +299,43 @@ func TestStagingIsRecognisedThroughASymlink(t *testing.T) {
 		t.Errorf("target = %q on the replace-in-place road, want staging", target)
 	}
 }
+
+// An automatic upgrade to a release that crashes on startup must not become a
+// loop with no end.
+//
+// The marker was written in one of the two places a staged binary gets run and
+// not the other. The container start writes it; the exec an upgrade does when
+// it finishes went straight to syscall.Exec. So the cycle was: install, exec,
+// crash, restart, marker, exec, crash, restart, run the image's binary, check,
+// install the same release again — round for ever, forty-five megabytes a lap,
+// with no backoff, because nothing had failed.
+func TestMarkTriedArmsTheStagedBinary(t *testing.T) {
+	t.Parallel()
+
+	directory := stage(t, "0.2.0")
+	if _, err := os.Stat(PendingMarker(directory)); !os.IsNotExist(err) {
+		t.Fatalf("a freshly staged binary is already marked: %v", err)
+	}
+
+	MarkTried(directory, Staged(directory))
+	if _, err := os.Stat(PendingMarker(directory)); err != nil {
+		t.Errorf("the staged binary was not marked before being run: %v", err)
+	}
+	// Which is exactly what a start refuses to run twice.
+	if got := stagedToRun(directory, "0.1.0"); got != "" {
+		t.Errorf("a binary that was already tried would be run again: %q", got)
+	}
+}
+
+// And replacing a binary in place has no marker to write: there is no older
+// binary underneath it to fall back to, so recording an attempt would only
+// leave a file nothing ever reads.
+func TestMarkTriedIgnoresAnInPlaceUpgrade(t *testing.T) {
+	t.Parallel()
+
+	directory := stage(t, "0.2.0")
+	MarkTried(directory, filepath.Join(t.TempDir(), "teanode"))
+	if _, err := os.Stat(PendingMarker(directory)); !os.IsNotExist(err) {
+		t.Errorf("it marked the staging directory over an upgrade that did not touch it: %v", err)
+	}
+}

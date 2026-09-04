@@ -395,26 +395,6 @@ func readStagedFile(directory, name string) (string, error) {
 	return value, nil
 }
 
-// Waiting reports whether a staged binary is sitting in the directory and is
-// not the one this process is.
-//
-// Asked after ExecStagedIfNewer has already had its say, so the answer is
-// always "one is there and it was refused" — the marker was still down, the
-// checksum did not match, somebody else can write the directory. Which is the
-// one situation where letting this older binary open the database would undo
-// an upgrade rather than perform a downgrade somebody asked for.
-//
-// Deliberately about the file and not about its version: the reasons a staged
-// binary is refused include not being able to read what version it is.
-func Waiting(directory string) bool {
-	staged := Staged(directory)
-	if staged == "" || running(staged) {
-		return false
-	}
-	_, err := os.Stat(staged)
-	return err == nil
-}
-
 // HeldBackByMarker reports whether a staged binary is being left alone for the
 // one reason an operator can undo by hand: it was tried and did not get as far
 // as serving.
@@ -467,6 +447,29 @@ func sameFile(first, second string) bool {
 // saying it had been tried, and be refused at every start after the first.
 func running(path string) bool {
 	return sameFile(path, executablePath)
+}
+
+// MarkTried records that a staged binary is about to be run for the first
+// time, so that a release which crashes on startup is not run again for ever.
+//
+// The marker was written in one of the two places a staged binary gets run and
+// not the other. The container path writes it — that is execStaged, at the
+// next start. The path an upgrade takes when it finishes does not go through
+// there: it drains, closes and execs directly. So an automatic upgrade to a
+// release that crashes before it serves produced a loop with no end and no
+// backoff, because nothing had failed: install, exec, crash, restart, marker,
+// exec, crash, restart, run the image's binary, check, install the same
+// release again, and round for ever — forty-five megabytes a lap.
+//
+// Nothing for a binary that is not staged: replacing one in place has no
+// marker, because there is no older binary underneath it to fall back to.
+func MarkTried(directory, path string) {
+	if directory == "" || !sameFile(path, Staged(directory)) {
+		return
+	}
+	if err := record(directory, pending, "started"); err != nil {
+		fmt.Fprintf(os.Stderr, "teanode: cannot mark %s as being tried: %s\n", path, err)
+	}
 }
 
 // Started clears the marker, once this process has got far enough to be

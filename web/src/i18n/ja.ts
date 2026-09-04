@@ -766,7 +766,7 @@ export const ja: Catalog = {
   'upgrade.checking': '確認中…',
   'upgrade.upgradeTo': '{version} に更新',
   'upgrade.upgrading': '更新中…',
-  'upgrade.tookTooLong': '更新に時間がかかりすぎています。サーバーのログを確認してください。再起動しない限り、実行中のバイナリは置き換えられていません。',
+  'upgrade.tookTooLong': '更新に時間がかかりすぎています。サーバーのログを確認してください。新しいバイナリはすでに配置され、再起動の完了を待っている可能性があります。',
   'upgrade.failed': '前回の更新は完了しませんでした: {reason}',
   'upgrade.checkingOff': 'リリースの確認は無効です（upgrade.enabled）。ここに出ているのは有効だった頃の情報です。',
   'upgrade.waiting': 'ダウンロードし、バイナリを置き換えて再起動します。1 分ほどかかります。',

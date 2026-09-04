@@ -73,13 +73,19 @@ func NewRunCommand() *cli.Command {
 // in-flight deliveries abandoned mid-flight. Out here, all of that has already
 // run.
 func runServer(ctx context.Context, command *cli.Command) error {
-	target, err := serveUntilStopped(ctx, command)
+	target, upgradeDirectory, err := serveUntilStopped(ctx, command)
 	if err != nil {
 		return err
 	}
 	if target == "" {
 		return nil
 	}
+
+	// Recorded before it runs, and cleared by it once it is serving. This is
+	// the same guard the next container start relies on, and it belongs here
+	// too: an automatic upgrade to a release that crashes on startup would
+	// otherwise reinstall itself for ever, because nothing about it failed.
+	upgrade.MarkTried(upgradeDirectory, target)
 
 	log.Noticef("restarting into %s", target)
 	if err := upgrade.Restart(target); err != nil {
@@ -92,15 +98,16 @@ func runServer(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-// serveUntilStopped is the run, and returns the binary this process should
-// become afterwards, if an upgrade staged one.
-func serveUntilStopped(ctx context.Context, command *cli.Command) (string, error) {
+// serveUntilStopped is the run. It returns the binary this process should
+// become afterwards, if an upgrade put one in place, and where staged binaries
+// live — which the caller needs to mark one as tried before running it.
+func serveUntilStopped(ctx context.Context, command *cli.Command) (string, string, error) {
 	// The environment says how to reach the database. Everything else is in
 	// the database, so this is the only thing that has to be told to each
 	// instance separately.
 	bootstrapped, err := bootstrap.Load()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// A binary an upgrade staged, if there is one, before anything at all is
@@ -116,18 +123,18 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, error
 
 	database, closeDatabase, err := openDatabase(bootstrapped)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer closeDatabase()
 
 	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	store, err := configdb.Open(database, bootstrapped.Database)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() {
 		_ = store.Close()
@@ -143,7 +150,7 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, error
 
 	configuration := store.Current()
 	if err := configuration.ValidateFiles(); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// A level given on the command line has already been applied and wins;
@@ -154,37 +161,37 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, error
 	log.Noticef("starting teanode %s as instance %q", version.String(), bootstrapped.InstanceID)
 
 	if err := configuration.EnsureDataDirectory(); err != nil {
-		return "", fmt.Errorf("cannot create %s: %w", configuration.DataDirectory(), err)
+		return "", "", fmt.Errorf("cannot create %s: %w", configuration.DataDirectory(), err)
 	}
 
 	// Generated secrets are stored with the rest of the configuration, so
 	// that an instance joining later derives the same SMTP passwords and
 	// accepts the same sessions as the ones already running.
 	if err := config.EnsureSecrets(store); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// An installation upgraded from a release that stored the signing keys in
 	// the clear rewrites them once, here, rather than waiting for whatever
 	// unrelated edit would otherwise have done it.
 	if err := configdb.EnsureSealed(database, store); err != nil {
-		return "", err
+		return "", "", err
 	}
 	configuration = store.Current()
 	secret := configuration.Secret()
 
 	server, err := openServer(store, database, secret, bootstrapped.InstanceID, bootstrapped.UpgradeDirectory)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer server.close()
 
 	if err := server.serve(ctx); err != nil {
-		return "", err
+		return "", "", err
 	}
 	// Read before the deferred closes run, and acted on by the caller after
 	// they have.
-	return server.execTarget(), nil
+	return server.execTarget(), bootstrapped.UpgradeDirectory, nil
 }
 
 // openDatabase connects and migrates, before there is any configuration to
@@ -793,11 +800,11 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		"antivirus":            configuration.Antivirus,
 		"antispam":             configuration.Antispam,
 		"geoip":                configuration.GeoIP,
-		// Read once when the checker is built. Automatic and window are
-		// re-read every cycle and are deliberately not here: changing those
-		// takes effect without a restart, and listing them would ask for one
-		// that is not needed.
-		"upgrade.enabled":       configuration.Upgrade.Enabled,
+		// Read once when the checker is built. Enabled, automatic and window
+		// are re-read every time the loop wakes and are deliberately not
+		// here: changing those takes effect without a restart, and listing
+		// one would ask for a restart that is not needed — and never stop
+		// asking, because the pending list is only ever appended to.
 		"upgrade.checkInterval": configuration.Upgrade.CheckInterval,
 	}
 }

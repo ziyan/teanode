@@ -70,6 +70,21 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The crash-loop guard covered one of the two ways a staged binary gets
+  run.** The container start writes the marker before exec'ing; the exec an
+  upgrade does when it finishes went straight to `syscall.Exec` and did not.
+  So an automatic upgrade to a release that crashes before it serves looped
+  with no end and no backoff, because nothing had failed — install, exec,
+  crash, restart, marker, exec, crash, restart, run the image's binary, check,
+  install the same release again, forty-five megabytes a lap. Both paths mark
+  it now.
+
+- **A pointer into a field the next check overwrites.** `AttemptedAt` was the
+  address of the manager's own `lastAttempt`, and the status is copied and read
+  after the lock is released — so the dashboard's polling encoded a `time.Time`
+  while a check wrote through it. `CheckedAt` had always taken the address of a
+  fresh local, which is what made the new field look right beside it.
+
 - **The same bug came back through a symlink.** "The second upgrade of a
   container took the wrong road" was fixed by comparing the target with the
   staged path instead of with this process's executable — and one of those two

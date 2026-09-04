@@ -273,10 +273,19 @@ func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory 
 	settings := configuration.Current().Upgrade
 	if !settings.Enabled {
 		log.Noticef("not checking for releases: upgrade.enabled is off")
-		return self, nil
 	}
-
 	self.checkInterval = settings.CheckInterval.Duration()
+
+	// The loop is built whether or not checking is on, and asks whether it is
+	// on every time it wakes. Building it only when it was on at startup made
+	// upgrade.enabled a setting that took effect immediately in one direction
+	// and needed a restart in the other — and the dashboard, which cannot know
+	// that, asked for a restart after turning it off and then went on asking
+	// for ever, because the list of pending restarts is never cleared.
+	//
+	// A loop that wakes every few minutes and returns immediately costs
+	// nothing. checkInterval is still read once here, and is still the one
+	// part of this section that a restart is needed for.
 
 	// The loop wakes far more often than it asks anybody anything, and the
 	// two are separate on purpose. A check every six hours happens four times
@@ -666,8 +675,13 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	self.lastAttempt = time.Now()
-	self.status.AttemptedAt = &self.lastAttempt
+	// A fresh value, not the address of the field below. Status copies the
+	// struct and the caller reads it after the lock is gone, so a pointer into
+	// the manager is a pointer the next check writes through while somebody is
+	// encoding it.
+	attempted := time.Now()
+	self.lastAttempt = attempted
+	self.status.AttemptedAt = &attempted
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 
