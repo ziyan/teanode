@@ -6,6 +6,45 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-04
+
+### Added
+
+- Every setting in the configuration except the database connection can now be
+  read and changed from the dashboard and the command line: the message size
+  and recipient limits, greylisting, the sign-in rate limits and trusted
+  senders, the DNS resolver and check interval, the session lifetime, the
+  passkey relying party, the listen addresses, the server's own name, mail
+  server names and log level, the message directory and spool retention, the
+  GeoIP database, and the ACME contact address, challenge, directory and
+  certificate files. Secrets are never returned. Settings that only take effect
+  on a restart say so where they are edited, and the listen addresses ask for
+  confirmation before saving. (#18)
+
+### Changed
+
+- A domain is one page with tabs — Overview, Settings, Aliases, Credentials,
+  Templates — each with its own address, so any of them can be linked to,
+  reloaded and reached with the back button. Aliases and credentials are one
+  click from the domain instead of four screens down its settings page. Old
+  links to `/domains/<id>` and `/domains/<id>/settings` redirect. (#18)
+- The Server page's tabs are grouped around the question each answers, and the
+  tab that was called DNS is Certificates. `/server/dns` redirects. (#18)
+- `Remove` at the end of a row is a trash icon; a long DNS value is clamped to
+  its line with a button that copies the whole of it. (#18)
+
+### Fixed
+
+- The last row of every list sat flush against the bottom of its own card. (#18)
+- Explanatory text ran the full width of the window in some places and stopped
+  at a readable measure in others, and a card could be three times as wide as
+  the writing in it. (#18)
+- Navigating between two domains could show "Failed to fetch" over a page that
+  had loaded correctly. A dropped connection is also retried once now, which a
+  browser will not do for a POST. (#18)
+- Moving between a domain's pages briefly flashed "Domains" as the page
+  heading. (#18)
+
 ## [0.3.1] - 2026-09-04
 
 ### Fixed
