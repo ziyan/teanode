@@ -159,7 +159,18 @@ func stagedToRun(directory, current string) string {
 		return ""
 	}
 	info, err := os.Stat(staged)
-	if err != nil || info.Mode()&0o100 == 0 {
+	if err != nil {
+		if !os.IsNotExist(err) {
+			// Nothing staged is the ordinary case and says nothing. A file
+			// that is there and cannot be read is not, and the guard that
+			// stops this older binary migrating tells the operator the reason
+			// is above — so there had better be one.
+			refuse(staged, err.Error())
+		}
+		return ""
+	}
+	if info.Mode()&0o100 == 0 {
+		refuse(staged, "it is not executable")
 		return ""
 	}
 
@@ -197,6 +208,51 @@ func stagedToRun(directory, current string) string {
 	return staged
 }
 
+// PendingMarker is the file that says a staged binary has been tried and has
+// not yet proved it can serve. Exported because the message that tells an
+// operator to remove it is written elsewhere, and a path spelled out by hand
+// in two places is a path that drifts.
+func PendingMarker(directory string) string {
+	if directory == "" {
+		return ""
+	}
+	return filepath.Join(directory, pending)
+}
+
+// UnsafeDirectory says why a directory must not be used to stage a binary, or
+// nothing.
+//
+// Asked in two places, and it has to be the same question in both. The start
+// that would run the binary asks it, because that is the moment the file
+// becomes code. The upgrade that would write the binary asks it too, because
+// an upgrade that stages into a directory the next start will refuse reports
+// success, execs the new binary, and then silently goes back to the old one at
+// the next recreate — with no reason anywhere, since nothing refused anything
+// at the time. A CIFS mount with dir_mode=0777, or an operator who has run
+// chmod -R 777 over the volume, is all it takes.
+func UnsafeDirectory(directory string) string {
+	if directory == "" {
+		return "no upgrade directory is configured"
+	}
+	return unsafeToOwn(directory)
+}
+
+// unsafeToOwn is the permission and ownership half, for one path.
+func unsafeToOwn(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err.Error()
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Sprintf("%s can be written by users other than the one running this server", path)
+	}
+	if owner, ok := info.Sys().(*syscall.Stat_t); ok && int(owner.Uid) != os.Getuid() {
+		return fmt.Sprintf("%s belongs to uid %d rather than to uid %d, which is running this server",
+			path, owner.Uid, os.Getuid())
+	}
+	return ""
+}
+
 // unsafeToRun says why a staged binary must not be executed, or nothing.
 //
 // The question is not "is this a good binary" — nothing here can answer
@@ -207,16 +263,8 @@ func stagedToRun(directory, current string) string {
 // provenance about to become the mail server.
 func unsafeToRun(staged, directory string) string {
 	for _, path := range []string{directory, staged} {
-		info, err := os.Stat(path)
-		if err != nil {
-			return err.Error()
-		}
-		if info.Mode().Perm()&0o022 != 0 {
-			return fmt.Sprintf("%s can be written by users other than the one running this server", path)
-		}
-		if owner, ok := info.Sys().(*syscall.Stat_t); ok && int(owner.Uid) != os.Getuid() {
-			return fmt.Sprintf("%s belongs to uid %d rather than to uid %d, which is running this server",
-				path, owner.Uid, os.Getuid())
+		if why := unsafeToOwn(path); why != "" {
+			return why
 		}
 	}
 
@@ -243,28 +291,42 @@ func refuse(staged, why string) {
 
 // discard removes a staged binary and everything recorded about it.
 func discard(directory string) {
-	for _, name := range []string{stagedName, stagedVersion, stagedChecksum, pending} {
+	for _, name := range []string{
+		stagedName, stagedVersion, stagedChecksum, pending,
+		stagedVersion + beside, stagedChecksum + beside,
+	} {
 		if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "teanode: cannot remove %s: %s\n", filepath.Join(directory, name), err)
 		}
 	}
 }
 
-// discardMetadata removes everything the staging directory says about the
-// binary in it, leaving the binary. A binary with nothing beside it is refused
-// at the next start, which is what makes this the safe half-way state.
-func discardMetadata(directory string) error {
-	for _, name := range []string{stagedVersion, stagedChecksum, pending} {
-		if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, name), err)
-		}
+// record writes one of the small files beside a staged binary.
+func record(directory, name, content string) error {
+	return os.WriteFile(filepath.Join(directory, name), []byte(content+"\n"), 0o600)
+}
+
+// beside is the name a file is written under before it replaces the real one.
+const beside = ".next"
+
+// recordBeside writes one of those files under a temporary name, leaving
+// whatever is there now alone.
+func recordBeside(directory, name, content string) error {
+	if err := record(directory, name+beside, content); err != nil {
+		return fmt.Errorf("upgrade: cannot write %s: %w", filepath.Join(directory, name+beside), err)
 	}
 	return nil
 }
 
-// record writes one of the small files beside a staged binary.
-func record(directory, name, content string) error {
-	return os.WriteFile(filepath.Join(directory, name), []byte(content+"\n"), 0o600)
+// commitBeside moves it onto the real name, which is atomic within the
+// directory.
+func commitBeside(directory, name string) error {
+	from := filepath.Join(directory, name+beside)
+	to := filepath.Join(directory, name)
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("upgrade: cannot put %s in place: %w", to, err)
+	}
+	return nil
 }
 
 func readStagedFile(directory, name string) (string, error) {

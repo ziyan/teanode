@@ -709,7 +709,7 @@ func (self *manager) checkApplicable() (bool, string) {
 			return false, fmt.Sprintf("this is a container and %s, so there is nowhere to put a new "+
 				"binary that the next start would still find. Mount a writable volume and name it in "+
 				"%sUPGRADE_DIRECTORY, or upgrade the image: docker compose pull && docker compose up -d",
-				self.whyNoStagingDirectory(), bootstrapPrefix)
+				self.stagingProblem(), bootstrapPrefix)
 		}
 		return false, fmt.Sprintf("neither %s nor %s can be written by this process, and the new binary "+
 			"has to go in one of them. Make one writable by the user this runs as, or upgrade by hand: "+
@@ -717,15 +717,6 @@ func (self *manager) checkApplicable() (bool, string) {
 			filepath.Dir(self.executable), self.describeStagingDirectory())
 	}
 	return true, ""
-}
-
-// whyNoStagingDirectory is the half of a container's refusal that says what is
-// actually wrong: no directory named at all, or one that cannot be written.
-func (self *manager) whyNoStagingDirectory() string {
-	if self.upgradeDirectory == "" {
-		return "no upgrade directory is configured"
-	}
-	return fmt.Sprintf("%s cannot be written by this process", self.upgradeDirectory)
 }
 
 // describeStagingDirectory names the staging directory for a message, without
@@ -757,19 +748,49 @@ func (self *manager) target() string {
 		return self.executable
 	}
 
-	if self.upgradeDirectory == "" {
-		return ""
-	}
-	// Private to this user: the next start refuses to exec a staged binary
-	// that anybody else could have written, so a directory anybody else can
-	// write is a directory an upgrade cannot use.
-	if err := os.MkdirAll(self.upgradeDirectory, 0o700); err != nil {
-		return ""
-	}
-	if !writable(self.upgradeDirectory) {
+	if self.stagingProblem() != "" {
 		return ""
 	}
 	return Staged(self.upgradeDirectory)
+}
+
+// stagingProblem says why the staging directory cannot be used, or nothing.
+//
+// It asks the same question the next start asks before running what it finds
+// there, and it asks it now. An upgrade that stages into a directory the next
+// start will refuse is the worst kind of success: the binary is written, the
+// process execs it, the page says it worked, and then a recreate quietly puts
+// the old version back with no refusal recorded anywhere. A volume mounted
+// dir_mode=0777, or an operator who has run chmod -R 777 over the data
+// directory, is all it takes.
+func (self *manager) stagingProblem() string {
+	if self.upgradeDirectory == "" {
+		return "no upgrade directory is configured"
+	}
+
+	// Private to this user, because that is the condition. Created that way,
+	// and tightened when it exists and is not: this directory belongs to the
+	// server, and a mode nobody chose deliberately is not worth refusing an
+	// upgrade over while it can simply be corrected.
+	if err := os.MkdirAll(self.upgradeDirectory, 0o700); err != nil {
+		return err.Error()
+	}
+	if info, err := os.Stat(self.upgradeDirectory); err == nil && info.Mode().Perm()&0o022 != 0 {
+		if err := os.Chmod(self.upgradeDirectory, 0o700); err != nil {
+			log.Warningf("cannot make %s private to this user: %s", self.upgradeDirectory, err)
+		} else {
+			log.Noticef("made %s private to this user, so a staged upgrade can be trusted at the next start",
+				self.upgradeDirectory)
+		}
+	}
+
+	if why := UnsafeDirectory(self.upgradeDirectory); why != "" {
+		return why
+	}
+	if !writable(self.upgradeDirectory) {
+		return fmt.Sprintf("%s cannot be written by this process", self.upgradeDirectory)
+	}
+	return ""
 }
 
 // writable reports whether this process can create a file in a directory.

@@ -37,40 +37,49 @@ func stageBinary(t *testing.T) string {
 	return directory
 }
 
-// The one case where migrating is the wrong thing to do.
-//
-// Migrate reverts what it does not recognise, which is how a downgrade works
-// here. When a newer binary is staged beside this one and was refused — a
-// release that migrated the database and then crashed before serving, say —
-// carrying on would drop the columns it added and everything in them, and the
-// upgrade is sitting right there waiting to be run again.
-func TestMigrateRefusesToRevertAStagedUpgrade(t *testing.T) {
-	directory := stageBinary(t)
+// Reverting is what Migrate does with a migration it does not recognise, and
+// it cannot tell an accident from an intention. So it stops and asks.
+func TestMigrateRefusesToRevertUnasked(t *testing.T) {
 	database := &fakeMigrator{unknown: []string{"0042_something_new"}}
 
-	err := migrate(database, directory)
+	err := migrate(database, t.TempDir())
 	if err == nil {
-		t.Fatal("it reverted an upgrade that is installed and waiting")
+		t.Fatal("it reverted a newer version's migrations without being asked")
 	}
 	if database.migrated {
 		t.Error("it migrated anyway")
 	}
-	// The message has to be enough to act on: which migrations, where the
-	// binary is, and the two ways out.
-	for _, want := range []string{"0042_something_new", directory, "pending"} {
+	for _, want := range []string{"0042_something_new", AllowMigrationRevert} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not mention %q: %s", want, err)
 		}
 	}
 }
 
-// A downgrade somebody asked for still works. Nothing is staged, so there is
-// no upgrade to undo — only an older binary that was deliberately started.
-func TestMigrateStillRevertsADeliberateDowngrade(t *testing.T) {
+// And when there is an upgrade sitting staged that this start refused, the
+// message says so: running it again is the way out that loses nothing, and it
+// is not the one the operator would think of.
+func TestMigrateNamesTheStagedBinaryItCouldRunInstead(t *testing.T) {
+	directory := stageBinary(t)
+
+	err := migrate(&fakeMigrator{unknown: []string{"0042_something_new"}}, directory)
+	if err == nil {
+		t.Fatal("it reverted an upgrade that is installed and waiting")
+	}
+	for _, want := range []string{directory, "pending"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %s", want, err)
+		}
+	}
+}
+
+// A downgrade somebody asked for still works, which is the point of asking.
+func TestMigrateRevertsWhenTold(t *testing.T) {
+	t.Setenv(AllowMigrationRevert, "true")
 	database := &fakeMigrator{unknown: []string{"0042_something_new"}}
 
 	if err := migrate(database, t.TempDir()); err != nil {
-		t.Fatalf("a deliberate downgrade was refused: %s", err)
+		t.Fatalf("a downgrade somebody asked for was refused: %s", err)
 	}
 	if !database.migrated {
 		t.Error("it did not migrate")
@@ -85,12 +94,11 @@ func TestMigrateRunsWithAStagedBinaryAndNothingToRevert(t *testing.T) {
 	}
 }
 
-// Not reachable through the fake above, but the shape matters: a database that
-// cannot say what it holds must not be migrated on the assumption that it
-// holds nothing.
+// A database that cannot say what it holds must not be migrated on the
+// assumption that it holds nothing.
 func TestMigrateStopsWhenItCannotAsk(t *testing.T) {
 	database := &refusingMigrator{}
-	if err := migrate(database, stageBinary(t)); err == nil {
+	if err := migrate(database, t.TempDir()); err == nil {
 		t.Fatal("it migrated a database it could not read")
 	}
 	if database.migrated {

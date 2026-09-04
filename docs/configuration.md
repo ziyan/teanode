@@ -32,7 +32,7 @@ host: an instance whose variable is missing would otherwise reach an empty
 local database, decide it is a brand new server, and configure itself — which
 looks like it worked.
 
-Two are optional. The first matters once there is more than one instance:
+Three are optional. The first matters once there is more than one instance:
 
 **`TEANODE_INSTANCE_ID`** — distinguishes this process from the others sharing
 that database. It is part of the key under which usage counters are
@@ -59,6 +59,14 @@ image would work until the container was recreated and then silently be the old
 binary again. The directory is created private to the user the server runs as,
 and a staged binary that anybody else could have written is refused at the next
 start rather than run.
+
+**`TEANODE_ALLOW_MIGRATION_REVERT`** — permits an older binary to undo
+migrations a newer one applied. Off by default, and the default is the
+interesting half: a start that finds migrations it does not recognise refuses
+to run rather than reverting them, because reverting drops the columns they
+added and everything in those columns, and the three ordinary ways to arrive
+there are all accidents. See `docs/coding/database-migrations.md`. Set it to
+`true` to downgrade on purpose.
 
 ### First run only
 

@@ -635,3 +635,64 @@ func TestUpgradingAStagedBinaryStagesAgain(t *testing.T) {
 		t.Errorf("the next start would not run the staged binary: %q", got)
 	}
 }
+
+// An upgrade must not stage into a directory the next start will refuse.
+//
+// That combination is the worst kind of success: the binary is written, the
+// process execs it, the page says it worked — and then a container recreate
+// quietly puts the old version back, with no refusal recorded anywhere at the
+// time it could have been acted on. A volume mounted dir_mode=0777, or an
+// operator who has run chmod -R 777 over the data directory, is all it takes.
+func TestStagingRefusesADirectoryTheNextStartWouldNotTrust(t *testing.T) {
+	// Somewhere this process cannot correct: owned by somebody else is the
+	// case that cannot be chmod'ed out of, and /tmp itself is world writable
+	// and owned by root on every machine this runs on.
+	self := &manager{
+		executable:       filepath.Join(t.TempDir(), "teanode"),
+		upgradeDirectory: "/tmp",
+		containerized:    true,
+		restarter:        api.NewRestarter(func() {}),
+	}
+
+	if got := self.target(); got != "" {
+		t.Errorf("target = %q, want nothing", got)
+	}
+	applicable, reason := self.checkApplicable()
+	if applicable {
+		t.Error("it offered an upgrade it would refuse to run afterwards")
+	}
+	if !strings.Contains(reason, "/tmp") {
+		t.Errorf("the reason does not name the directory: %q", reason)
+	}
+}
+
+// A directory that is merely loose, and ours, is tightened rather than
+// refused: it belongs to the server, and a mode nobody chose deliberately is
+// not worth losing the feature over.
+func TestStagingTightensItsOwnDirectory(t *testing.T) {
+	staging := filepath.Join(t.TempDir(), "upgrade")
+	if err := os.MkdirAll(staging, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(staging, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	self := &manager{
+		executable:       filepath.Join(t.TempDir(), "teanode"),
+		upgradeDirectory: staging,
+		containerized:    true,
+		restarter:        api.NewRestarter(func() {}),
+	}
+
+	if got := self.target(); got != Staged(staging) {
+		t.Errorf("target = %q, want %q", got, Staged(staging))
+	}
+	info, err := os.Stat(staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the staging directory is %s, want 0700", info.Mode().Perm())
+	}
+}

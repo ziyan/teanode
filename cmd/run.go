@@ -223,6 +223,11 @@ type server struct {
 	// drained: that is the only safe moment to replace the process image.
 	upgrader upgrade.Manager
 
+	// stoppedForRestart says the serve loop ended because a restart was asked
+	// for, rather than because a signal arrived or a listener died. Only that
+	// ending becomes an exec: see execTarget.
+	stoppedForRestart bool
+
 	closers  []func()
 	database db.Database
 	acme     autoacme.Manager
@@ -980,6 +985,7 @@ func (self *server) serve(ctx context.Context) error {
 			reason = "interrupted"
 		case <-self.restartRequested:
 			reason = "restart requested through the API"
+			self.stoppedForRestart = true
 		case <-reload:
 			log.Noticef("reloading configuration")
 			if err := self.store.Reload(); err != nil {
@@ -1025,11 +1031,19 @@ func (self *server) serve(ctx context.Context) error {
 	return nil
 }
 
-// execTarget is the binary this process should become, if an upgrade staged
-// one. Nothing when the web component was never built, which is every command
-// other than run.
+// execTarget is the binary this process should become, if an upgrade put one
+// in place and the shutdown that just happened is the one it asked for.
+//
+// Both halves matter. Nothing when the web component was never built, which is
+// every command other than run. And nothing when the server stopped for any
+// other reason, because the new binary is in place from the moment the swap
+// succeeds — a moment before the restart is even requested. Without this, a
+// SIGTERM arriving in that window, or an ordinary "docker compose stop" some
+// hours after an upgrade that could not ask for a restart, would exec the new
+// binary instead of exiting: the operator asked the server to stop and it
+// would have come back.
 func (self *server) execTarget() string {
-	if self.upgrader == nil {
+	if self.upgrader == nil || !self.stoppedForRestart {
 		return ""
 	}
 	return self.upgrader.ExecTarget()

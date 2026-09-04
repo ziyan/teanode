@@ -70,6 +70,34 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **Reverting migrations had to stop being the default.** Three review rounds
+  kept finding the same accident under different names, and the third one
+  settled it. A start that meets a migration it does not recognise reverts it,
+  which is how a downgrade works here and cannot be told apart from an upgrade
+  that crashed, a second instance that never got the upgrade, or an operator
+  pulling last week's image to test something. Guarding the one case the
+  upgrade feature creates was not enough — the multi-instance case has no
+  staged binary to notice. So it is opt-in: the start refuses, names the
+  migrations, and says to set `TEANODE_ALLOW_MIGRATION_REVERT=true` to go back
+  on purpose. A start that does not happen costs minutes, because the queue is
+  on disk and senders retry. A dropped column costs what was in it.
+
+- **An upgrade could stage into a directory the next start would refuse.** The
+  two ends were asking different questions: staging asked whether it could
+  write there, and the start asked whether anybody else could. On a volume
+  mounted `dir_mode=0777` the upgrade succeeded, exec'd, and reported success —
+  and the next recreate quietly went back to the old binary, with no refusal
+  recorded at any point where somebody could have acted on it. Both ends ask
+  the same question now, and a directory that is merely loose and ours is
+  tightened rather than refused.
+
+- **The exec ran on any shutdown, not the one it asked for.** The new binary
+  is in place from the moment the swap succeeds, which is a moment before the
+  restart is even requested — so a `docker compose stop` landing in that
+  window, or hours later after an upgrade that could not ask for a restart,
+  would have exec'd the new binary instead of exiting. The operator asked the
+  server to stop and it would have come back.
+
 - **The second upgrade of a container took the wrong road.** `swap` chose
   between replacing in place and staging by asking whether the target differed
   from this process's executable — and once a process has been exec'd out of

@@ -2,7 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/bootstrap"
@@ -105,49 +106,73 @@ func updateLocalConfiguration(mutate func(*config.Configuration) error) error {
 	return store.Update(mutate)
 }
 
+// AllowMigrationRevert is the variable that says an older binary may undo what
+// a newer one did to the database.
+const AllowMigrationRevert = bootstrap.Prefix + "ALLOW_MIGRATION_REVERT"
+
+// migrate brings the database up to date, and refuses to bring it backwards
+// unless somebody has said to.
+//
+// Migrate reverts every migration it does not recognise. That is how a
+// deliberate downgrade works here — see docs/coding/database-migrations.md —
+// and the trouble is that it cannot tell a deliberate downgrade from an
+// accidental one, while the two are told apart by what happens next: one loses
+// nothing anybody wanted, and the other drops columns and everything in them.
+//
+// The accidental one has three roads into this program and they are all
+// ordinary. A release installed from the dashboard migrates the database and
+// then crashes before serving, so the next start refuses it by design and the
+// image's older binary carries on. A second instance sharing the database
+// never got the upgrade — its own was refused — and restarts for some
+// unrelated reason. An operator pulls last week's image to test something.
+//
+// So it is opt-in now. Unknown migrations stop the program, and the message
+// says which, what would be lost, and the variable to set. That turns a silent
+// loss into a start that does not happen, which is the trade a mail server
+// should make: the queue is on disk and senders retry, and a dropped column
+// does not come back.
+func migrate(database migrator, upgradeDirectory string) error {
+	unknown, err := database.UnknownMigrations()
+	if err != nil {
+		return fmt.Errorf("cannot read which migrations this database has: %w", err)
+	}
+	if len(unknown) == 0 {
+		if err := database.Migrate(); err != nil {
+			return fmt.Errorf("cannot migrate the database: %w", err)
+		}
+		return nil
+	}
+
+	if allowed, _ := strconv.ParseBool(os.Getenv(AllowMigrationRevert)); allowed {
+		log.Warningf("reverting %d migration(s) this version does not have, because %s is set: %s",
+			len(unknown), AllowMigrationRevert, strings.Join(unknown, ", "))
+		if err := database.Migrate(); err != nil {
+			return fmt.Errorf("cannot migrate the database: %w", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("this database was migrated by a newer version of teanode (%s), and going back "+
+		"means reverting those migrations and losing what is in the columns they added. Nothing has "+
+		"been changed and nothing has been opened.%s To go back to this version anyway, set %s=true",
+		strings.Join(unknown, ", "), stagedAdvice(upgradeDirectory), AllowMigrationRevert)
+}
+
+// stagedAdvice adds the way out that does not lose anything, when there is
+// one: a newer binary is sitting in the staging directory and this start
+// refused to run it, so running it again is what the operator actually wants.
+func stagedAdvice(upgradeDirectory string) string {
+	if !upgrade.Waiting(upgradeDirectory) {
+		return ""
+	}
+	return fmt.Sprintf(" %s holds an upgraded binary that this start refused to run — the reason is "+
+		"above; removing %s makes it try again, and that keeps everything.",
+		upgradeDirectory, upgrade.PendingMarker(upgradeDirectory))
+}
+
 // migrator is the two things migrate needs of a database. Narrow so that the
-// refusal below can be exercised without one.
+// refusal above can be exercised without one.
 type migrator interface {
 	UnknownMigrations() ([]string, error)
 	Migrate() error
-}
-
-// migrate brings the database up to date, having first made sure that doing so
-// would not undo an upgrade this deployment has installed.
-//
-// Migrate reverts every migration it does not recognise. That is how a
-// deliberate downgrade works here, and it is exactly wrong when the downgrade
-// is not deliberate — which is what this process is when a newer binary is
-// sitting staged beside it and was refused. That happens: a release that
-// crashes on startup is refused at the next start by design, and if it had
-// already migrated the database, letting this older binary carry on would drop
-// the columns it added and everything in them.
-//
-// So in that one case nothing is migrated and nothing is opened. Mail stops,
-// which is a real cost and is the smaller one: a schema and the rows in it
-// cannot be brought back, and the message says what to do to get either
-// outcome deliberately.
-func migrate(database migrator, upgradeDirectory string) error {
-	if upgrade.Waiting(upgradeDirectory) {
-		unknown, err := database.UnknownMigrations()
-		if err != nil {
-			return fmt.Errorf("cannot read which migrations this database has: %w", err)
-		}
-		if len(unknown) > 0 {
-			return fmt.Errorf("this database was migrated by a newer version of teanode (%s), and %s "+
-				"holds an upgraded binary that this start refused to run — the reason is above. "+
-				"Carrying on would revert those migrations and lose what is in the columns they "+
-				"added, so nothing has been changed and nothing has been opened. Two ways on, and "+
-				"they are not equivalent: remove %s to run the upgraded binary again, which keeps "+
-				"everything; or remove %s to go back to this version, which reverts those "+
-				"migrations and discards what they were holding",
-				strings.Join(unknown, ", "), upgradeDirectory,
-				filepath.Join(upgradeDirectory, "pending"), upgrade.Staged(upgradeDirectory))
-		}
-	}
-
-	if err := database.Migrate(); err != nil {
-		return fmt.Errorf("cannot migrate the database: %w", err)
-	}
-	return nil
 }

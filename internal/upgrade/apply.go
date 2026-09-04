@@ -261,17 +261,27 @@ func (self *manager) stage(downloaded, target, release string) error {
 
 	directory := filepath.Dir(target)
 
-	// Everything the directory said about the last staged binary goes first,
-	// the binary second, and what it is third.
+	// Written beside their real names first and moved into place afterwards,
+	// so that nothing this writes can strand what is already here.
 	//
-	// In that order because of what each intermediate state means to a start
-	// that happens in the middle of it. A binary with no version and no
-	// checksum beside it is refused, which is the safe answer. A binary with
-	// the previous upgrade's version and checksum beside it is a binary that
-	// would be measured against the wrong thing — and if the rename below
-	// failed after the metadata had been written, a perfectly good staged
-	// binary would have been described as something it is not.
-	if err := discardMetadata(directory); err != nil {
+	// The order is what matters, and it is worth spelling out, because two
+	// earlier orders were both wrong. Writing the metadata over the old
+	// metadata first meant a rename that failed — a full volume is the
+	// ordinary way — left a good staged binary described as a release it is
+	// not, refused at every start from then on. Clearing the metadata first
+	// meant the same binary was left described as nothing at all, which is
+	// refused just as permanently.
+	//
+	// So: nothing that is already here is touched until the new binary has
+	// landed. Up to that rename, a failure leaves the directory exactly as it
+	// was. After it, the two small renames are within one directory, and if
+	// one of them somehow does not happen the binary is measured against the
+	// wrong checksum and refused — which loses an upgrade and never runs the
+	// wrong thing.
+	if err := recordBeside(directory, stagedVersion, release); err != nil {
+		return err
+	}
+	if err := recordBeside(directory, stagedChecksum, checksum); err != nil {
 		return err
 	}
 
@@ -279,28 +289,25 @@ func (self *manager) stage(downloaded, target, release string) error {
 		return fmt.Errorf("upgrade: cannot put the new binary at %s: %w", target, err)
 	}
 
-	if err := record(directory, stagedVersion, release); err != nil {
-		return staged(directory, fmt.Errorf("upgrade: cannot record which version was staged: %w", err))
+	if err := commitBeside(directory, stagedVersion); err != nil {
+		return err
 	}
-	if err := record(directory, stagedChecksum, checksum); err != nil {
-		return staged(directory, fmt.Errorf("upgrade: cannot record the staged binary's checksum: %w", err))
+	if err := commitBeside(directory, stagedChecksum); err != nil {
+		return err
+	}
+
+	// Last, because it is what permits the new binary to be run at all. A
+	// start that happened before this point would find the marker from the
+	// previous attempt and leave the new binary alone, which is a missed
+	// upgrade rather than a wrong one.
+	if err := os.Remove(PendingMarker(directory)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("upgrade: cannot clear %s: %w", PendingMarker(directory), err)
 	}
 
 	self.mutex.Lock()
 	self.execTarget = target
 	self.mutex.Unlock()
 	return nil
-}
-
-// staged removes a binary that could not be described, and returns the reason
-// it could not be. A staged binary nothing knows the version of is refused at
-// the next start anyway; leaving it there only makes somebody read a file to
-// find that out.
-func staged(directory string, reason error) error {
-	if err := os.Remove(filepath.Join(directory, stagedName)); err != nil && !os.IsNotExist(err) {
-		log.Warningf("cannot remove the staged binary that could not be described: %s", err)
-	}
-	return reason
 }
 
 // download writes the asset beside where it is going, so that the rename
