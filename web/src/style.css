@@ -894,9 +894,19 @@ tr:has(.icon-button) > td {
 .value-clamp {
   flex: 1;
   min-width: 0;
+  /* Clamped by height, not by refusing to break. A DKIM key is one
+     unbreakable token, so "white-space: nowrap" gave the cell an intrinsic
+     width of four hundred characters and an auto-layout table did as it was
+     told: the column grew to fit and pushed the two columns after it off the
+     page. Letting it break anywhere — which .mono already asks for — and
+     showing one line of it keeps the column whatever width the table had in
+     mind. */
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Quieter than a trash icon, and smaller: it sits inside a line of text
