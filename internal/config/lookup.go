@@ -23,12 +23,12 @@ type index struct {
 	built bool
 
 	domainsByName map[string]*Domain
-	domainsByID   map[string]*Domain
-	aliasesByID   map[string]*Alias
+	domainsById   map[string]*Domain
+	aliasesById   map[string]*Alias
 
 	// credentials maps a credential identifier to the domain that owns it,
 	// because the mail path needs both.
-	credentialsByID map[string]*credentialOwner
+	credentialsById map[string]*credentialOwner
 
 	// patterns holds one compiled expression per alias, keyed by alias
 	// identifier. An alias whose pattern does not compile is absent, which
@@ -84,9 +84,9 @@ func (self *Configuration) buildIndex() {
 
 	func() {
 		self.index.domainsByName = make(map[string]*Domain, len(self.Domains))
-		self.index.domainsByID = make(map[string]*Domain, len(self.Domains))
-		self.index.aliasesByID = make(map[string]*Alias)
-		self.index.credentialsByID = make(map[string]*credentialOwner)
+		self.index.domainsById = make(map[string]*Domain, len(self.Domains))
+		self.index.aliasesById = make(map[string]*Alias)
+		self.index.credentialsById = make(map[string]*credentialOwner)
 		self.index.patterns = make(map[string]*regexp.Regexp)
 		self.index.signers = make(map[string]crypto.Signer)
 
@@ -98,14 +98,14 @@ func (self *Configuration) buildIndex() {
 				self.index.domainsByName[strings.ToLower(domain.Domain)] = domain
 			}
 			if domain.ID != "" {
-				self.index.domainsByID[domain.ID] = domain
+				self.index.domainsById[domain.ID] = domain
 			}
 			for _, alias := range domain.Aliases {
 				if alias == nil {
 					continue
 				}
 				if alias.ID != "" {
-					self.index.aliasesByID[alias.ID] = alias
+					self.index.aliasesById[alias.ID] = alias
 				}
 				if alias.IsCatchAll() {
 					continue
@@ -132,7 +132,7 @@ func (self *Configuration) buildIndex() {
 				if credential == nil || credential.ID == "" {
 					continue
 				}
-				self.index.credentialsByID[credential.ID] = &credentialOwner{domain: domain, credential: credential}
+				self.index.credentialsById[credential.ID] = &credentialOwner{domain: domain, credential: credential}
 			}
 		}
 	}()
@@ -151,7 +151,7 @@ func (self *Configuration) FindDomain(name string) *Domain {
 // been deleted, so callers must handle nil.
 func (self *Configuration) FindDomainByID(id string) *Domain {
 	self.buildIndex()
-	return self.index.domainsByID[id]
+	return self.index.domainsById[id]
 }
 
 // FindAliasByID returns the configured alias with this identifier, or nil.
@@ -159,14 +159,14 @@ func (self *Configuration) FindDomainByID(id string) *Domain {
 // have been deleted, so callers must handle nil.
 func (self *Configuration) FindAliasByID(id string) *Alias {
 	self.buildIndex()
-	return self.index.aliasesByID[id]
+	return self.index.aliasesById[id]
 }
 
 // FindCredential returns the credential with this identifier together with the
 // domain that owns it. Both are nil when the credential is unknown.
 func (self *Configuration) FindCredential(id string) (*Domain, *Credential) {
 	self.buildIndex()
-	owner, ok := self.index.credentialsByID[id]
+	owner, ok := self.index.credentialsById[id]
 	if !ok {
 		return nil, nil
 	}

@@ -36,8 +36,8 @@ func TestPublishesDKIMKey(t *testing.T) {
 		"":                false,
 	}
 	for record, want := range tests {
-		if got := publishesDKIMKey(record); got != want {
-			t.Errorf("publishesDKIMKey(%q) = %v, want %v", record, got, want)
+		if got := publishesDkimKey(record); got != want {
+			t.Errorf("publishesDkimKey(%q) = %v, want %v", record, got, want)
 		}
 	}
 }

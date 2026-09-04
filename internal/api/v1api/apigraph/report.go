@@ -41,7 +41,7 @@ func (self *graph) ListReports(ctx context.Context, arguments ListReportsArgumen
 
 	var reports []*models.Report
 	for _, domainId := range domainIds {
-		listed, err := api.ContextTx(ctx).ListReports(domainId, arguments.Options())
+		listed, err := api.ContextTransaction(ctx).ListReports(domainId, arguments.Options())
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +60,7 @@ func (self *graph) GetReport(ctx context.Context, arguments GetReportArguments) 
 		return nil, err
 	}
 
-	report, err := api.ContextTx(ctx).GetReport(arguments.ReportID, nil)
+	report, err := api.ContextTransaction(ctx).GetReport(arguments.ReportID, nil)
 	if err != nil {
 		return nil, err
 	}

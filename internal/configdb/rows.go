@@ -76,14 +76,14 @@ func boxFor(configuration *config.Configuration, label, what string) (*secretbox
 const (
 	settingServer    = "server"
 	settingListen    = "listen"
-	settingTLS       = "tls"
-	settingSMTP      = "smtp"
-	settingDKIM      = "dkim"
+	settingTls       = "tls"
+	settingSmtp      = "smtp"
+	settingDkim      = "dkim"
 	settingSession   = "session"
-	settingDNS       = "dns"
+	settingDns       = "dns"
 	settingAntivirus = "antivirus"
 	settingAntispam  = "antispam"
-	settingGeoIP     = "geoip"
+	settingGeoIp     = "geoip"
 	settingStorage   = "storage"
 	settingPasskey   = "passkey"
 	settingUpgrade   = "upgrade"
@@ -101,14 +101,14 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 	sections := map[string]any{
 		settingServer:    &configuration.Server,
 		settingListen:    &configuration.Listen,
-		settingTLS:       &configuration.TLS,
-		settingSMTP:      &configuration.SMTP,
-		settingDKIM:      &configuration.DKIM,
+		settingTls:       &configuration.TLS,
+		settingSmtp:      &configuration.SMTP,
+		settingDkim:      &configuration.DKIM,
 		settingSession:   &configuration.Session,
-		settingDNS:       &configuration.DNS,
+		settingDns:       &configuration.DNS,
 		settingAntivirus: &configuration.Antivirus,
 		settingAntispam:  &configuration.Antispam,
-		settingGeoIP:     &configuration.GeoIP,
+		settingGeoIp:     &configuration.GeoIP,
 		settingStorage:   &configuration.Storage,
 		settingPasskey:   &configuration.Passkey,
 		settingUpgrade:   &configuration.Upgrade,
@@ -242,14 +242,14 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 	sections := map[string]any{
 		settingServer:    self.Server,
 		settingListen:    self.Listen,
-		settingTLS:       self.TLS,
-		settingSMTP:      self.SMTP,
-		settingDKIM:      self.DKIM,
+		settingTls:       self.TLS,
+		settingSmtp:      self.SMTP,
+		settingDkim:      self.DKIM,
 		settingSession:   self.Session,
-		settingDNS:       self.DNS,
+		settingDns:       self.DNS,
 		settingAntivirus: self.Antivirus,
 		settingAntispam:  self.Antispam,
-		settingGeoIP:     self.GeoIP,
+		settingGeoIp:     self.GeoIP,
 		settingStorage:   self.Storage,
 		settingPasskey:   self.Passkey,
 		settingUpgrade:   self.Upgrade,

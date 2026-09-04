@@ -94,18 +94,18 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	}
 
 	name := assetName()
-	binaryURL := found.assetURL(name)
-	if binaryURL == "" {
+	binaryUrl := found.assetUrl(name)
+	if binaryUrl == "" {
 		return fmt.Errorf("upgrade: release %s has no %s", found.version(), name)
 	}
-	checksumsURL := found.assetURL(checksumsAsset)
-	if checksumsURL == "" {
+	checksumsUrl := found.assetUrl(checksumsAsset)
+	if checksumsUrl == "" {
 		return fmt.Errorf("upgrade: release %s has no %s, so nothing can be verified", found.version(), checksumsAsset)
 	}
 
 	// The checksums first. Downloading fifty megabytes before discovering
 	// there is nothing to check them against is the wrong order.
-	sums, err := self.fetch(ctx, checksumsURL, 1<<20)
+	sums, err := self.fetch(ctx, checksumsUrl, 1<<20)
 	if err != nil {
 		return fmt.Errorf("upgrade: cannot read %s: %w", checksumsAsset, err)
 	}
@@ -139,7 +139,7 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 
 	log.Noticef("downloading %s %s", name, found.version())
 
-	downloaded, err := self.download(ctx, binaryURL, target, staging)
+	downloaded, err := self.download(ctx, binaryUrl, target, staging)
 	if err != nil {
 		return err
 	}

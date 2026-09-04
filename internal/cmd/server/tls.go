@@ -50,13 +50,13 @@ func NewTLSCommand() *cli.Command {
 						Value: 365 * 24 * time.Hour,
 					},
 				},
-				Action: runTLSSelfSigned,
+				Action: runTlsSelfSigned,
 			},
 		},
 	}
 }
 
-func runTLSSelfSigned(ctx context.Context, command *cli.Command) error {
+func runTlsSelfSigned(ctx context.Context, command *cli.Command) error {
 	store, closeDatabase, err := cmd.OpenLocalStore()
 	if err != nil {
 		return err
@@ -118,10 +118,10 @@ func runTLSSelfSigned(ctx context.Context, command *cli.Command) error {
 	certificateFile := command.String("certificate-file")
 	privateKeyFile := command.String("private-key-file")
 
-	if err := writePEM(configuration.Path(certificateFile), "CERTIFICATE", encoded, 0o644); err != nil {
+	if err := writePem(configuration.Path(certificateFile), "CERTIFICATE", encoded, 0o644); err != nil {
 		return err
 	}
-	if err := writePEM(configuration.Path(privateKeyFile), "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(privateKey), 0o600); err != nil {
+	if err := writePem(configuration.Path(privateKeyFile), "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(privateKey), 0o600); err != nil {
 		return err
 	}
 
@@ -144,7 +144,7 @@ func runTLSSelfSigned(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-func writePEM(filename, blockType string, content []byte, mode os.FileMode) error {
+func writePem(filename, blockType string, content []byte, mode os.FileMode) error {
 	file, err := atomicfile.Create(filename)
 	if err != nil {
 		return fmt.Errorf("cannot write %s: %w", filename, err)

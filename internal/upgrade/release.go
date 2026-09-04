@@ -48,8 +48,8 @@ func assetName() string {
 	return fmt.Sprintf("teanode-%s-%s", runtime.GOOS, runtime.GOARCH)
 }
 
-// assetURL finds one asset by name.
-func (self *release) assetURL(name string) string {
+// assetUrl finds one asset by name.
+func (self *release) assetUrl(name string) string {
 	for _, asset := range self.Assets {
 		if asset.Name == name {
 			return asset.URL

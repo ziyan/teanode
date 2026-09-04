@@ -24,6 +24,13 @@ extra:
     - canonicalization
     # One word in universal use; nobody writes "webHook".
     - webhook
+    # An address on this machine, and the adjective for one. Two English
+    # words that fused long ago; "loopBack" is not a spelling anybody uses.
+    - loopback
+    # What this program does to a secret before it shows it, and the state a
+    # secret is in afterwards. One word, and its verb.
+    - redact
+    - redacted
 
   acronyms:
     # Mail protocol vocabulary. Each is a real acronym from the relevant RFC,
@@ -44,3 +51,9 @@ extra:
     - SPF      # Sender Policy Framework, RFC 7208
     - TLSALPN  # forced by acme.Client.TLSALPN01ChallengeCert
     - TXT      # the DNS TXT record type
+    # Vocabulary from outside mail. Each is a real acronym, written the way
+    # the specification that defines it writes it.
+    - AAGUID   # Authenticator Attestation GUID, WebAuthn
+    - CSS      # Cascading Style Sheets
+    - PEM      # Privacy-Enhanced Mail, the container format for keys, RFC 7468
+    - QL       # the tail of GraphQL, which is spelled that way by its authors

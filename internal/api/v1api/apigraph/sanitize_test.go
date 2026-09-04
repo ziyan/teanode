@@ -91,7 +91,7 @@ func TestSanitizeHTMLRemovesActiveContent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			output, _ := sanitizeHTML(test.input)
+			output, _ := sanitizeHtml(test.input)
 			lowered := strings.ToLower(output)
 			for _, fragment := range test.mustNotHave {
 				if strings.Contains(lowered, strings.ToLower(fragment)) {
@@ -112,7 +112,7 @@ func TestSanitizeHTMLKeepsTheMessage(t *testing.T) {
 	<ul><li>one</li><li>two</li></ul>
 	<table border="1"><tr><td bgcolor="#eeeeee">a cell</td></tr></table>`
 
-	output, _ := sanitizeHTML(input)
+	output, _ := sanitizeHtml(input)
 	for _, fragment := range []string{
 		"<strong>there</strong>", "https://example.net/page", "<li>one</li>",
 		"<table", "bgcolor", "a cell",
@@ -157,7 +157,7 @@ func TestSanitizeHTMLBlocksRemoteImages(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			output, hasRemote := sanitizeHTML(test.input)
+			output, hasRemote := sanitizeHtml(test.input)
 			if hasRemote != test.wantRemote {
 				t.Errorf("hasRemoteContent = %v, want %v", hasRemote, test.wantRemote)
 			}
@@ -182,7 +182,7 @@ func TestSanitizeHTMLBlocksRemoteImages(t *testing.T) {
 func TestSanitizeHTMLLinksLeaveTheDashboard(t *testing.T) {
 	t.Parallel()
 
-	output, _ := sanitizeHTML(`<a href="https://example.net/">click</a>`)
+	output, _ := sanitizeHtml(`<a href="https://example.net/">click</a>`)
 	for _, fragment := range []string{`target="_blank"`, "noopener", "noreferrer"} {
 		if !strings.Contains(output, fragment) {
 			t.Errorf("output is missing %q:\n%s", fragment, output)
@@ -195,7 +195,7 @@ func TestSanitizeHTMLLinksLeaveTheDashboard(t *testing.T) {
 	// phishing attempt. The frame's sandbox refuses it as well; this is the
 	// half that does not depend on the browser.
 	for _, hostile := range []string{"_top", "_parent", "_self"} {
-		output, _ := sanitizeHTML(`<a href="https://example.net/" target="` + hostile + `">click</a>`)
+		output, _ := sanitizeHtml(`<a href="https://example.net/" target="` + hostile + `">click</a>`)
 		if strings.Contains(output, hostile) {
 			t.Errorf("a link asking for target=%q kept it:\n%s", hostile, output)
 		}
@@ -210,7 +210,7 @@ func TestSanitizeHTMLHandlesRubbish(t *testing.T) {
 
 	// Malformed HTML must not panic or return something unchecked.
 	for _, input := range []string{"", "<<<>>>", "<p>unclosed", `<a href=">`, strings.Repeat("<div>", 500)} {
-		output, _ := sanitizeHTML(input)
+		output, _ := sanitizeHtml(input)
 		if strings.Contains(strings.ToLower(output), "<script") {
 			t.Errorf("rubbish input produced a script: %q", output)
 		}
@@ -231,7 +231,7 @@ func TestSanitizeKeepsStyling(t *testing.T) {
 	input := `<html><head><style>.header { background: #fff; padding: 10px }</style></head>
 	<body><table class="header"><tr><td style="color: #333; font-size: 14px">Hello</td></tr></table></body></html>`
 
-	sanitized, _ := sanitizeHTML(input)
+	sanitized, _ := sanitizeHtml(input)
 
 	for _, wanted := range []string{".header", "background", "color: #333", "class=\"header\""} {
 		if !strings.Contains(sanitized, wanted) {
@@ -257,7 +257,7 @@ func TestSanitizeRemovesCSSThreats(t *testing.T) {
 
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
-			sanitized, _ := sanitizeHTML(input)
+			sanitized, _ := sanitizeHtml(input)
 			lower := strings.ToLower(sanitized)
 			for _, threat := range []string{"@import", "expression(", "-moz-binding", "behavior:", "javascript:"} {
 				if strings.Contains(lower, threat) {
@@ -274,13 +274,13 @@ func TestSanitizeRemovesCSSThreats(t *testing.T) {
 func TestSanitizeCSSReportsRemoteContent(t *testing.T) {
 	t.Parallel()
 
-	if _, remote := sanitizeHTML(`<style>.a { background: url(https://tracker.test/pixel.png) }</style>`); !remote {
+	if _, remote := sanitizeHtml(`<style>.a { background: url(https://tracker.test/pixel.png) }</style>`); !remote {
 		t.Error("a remote background image should be reported as remote content")
 	}
-	if _, remote := sanitizeHTML(`<div style="background: url('https://tracker.test/p.png')">x</div>`); !remote {
+	if _, remote := sanitizeHtml(`<div style="background: url('https://tracker.test/p.png')">x</div>`); !remote {
 		t.Error("a remote background in a style attribute should be reported as remote content")
 	}
-	if _, remote := sanitizeHTML(`<style>.a { background: #fff }</style>`); remote {
+	if _, remote := sanitizeHtml(`<style>.a { background: #fff }</style>`); remote {
 		t.Error("a colour is not remote content")
 	}
 }
@@ -292,7 +292,7 @@ func TestSanitizeCSSPreservesTheSheet(t *testing.T) {
 	t.Parallel()
 
 	sheet := ".a { color: red }\n@media (max-width: 600px) { .b { display: none } }\n"
-	cleaned, _ := sanitizeCSS(sheet)
+	cleaned, _ := sanitizeCss(sheet)
 	if cleaned != sheet {
 		t.Errorf("an innocent sheet was changed:\n got: %q\nwant: %q", cleaned, sheet)
 	}
@@ -309,7 +309,7 @@ func TestSanitizeCSSPreservesTheSheet(t *testing.T) {
 func TestSanitizeCSSIsStillTracking(t *testing.T) {
 	t.Parallel()
 
-	sanitized, remote := sanitizeHTML(`<style>body{background:url("https://attacker.example/pixel")}</style><p>x</p>`)
+	sanitized, remote := sanitizeHtml(`<style>body{background:url("https://attacker.example/pixel")}</style><p>x</p>`)
 	if !remote {
 		t.Error("a background image from a stranger should be reported as remote content")
 	}

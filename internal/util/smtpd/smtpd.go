@@ -274,7 +274,7 @@ func (self *session) serve() error {
 		case "QUIT":
 			err = self.handleQuit()
 		case "STARTTLS":
-			err = self.handleStartTLS(args)
+			err = self.handleStartTls(args)
 		case "HELO":
 			err = self.handleHelo(args)
 		case "EHLO":
@@ -371,7 +371,7 @@ func (self *session) handleEhlo(args string) error {
 	// nowhere the operator will look. A server with no certificate yet — the
 	// first fifteen minutes of a new deployment, before ACME finishes — should
 	// simply say it cannot do TLS, and let the sender decide.
-	if self.tls == nil && self.canStartTLS() {
+	if self.tls == nil && self.canStartTls() {
 		lines = append(lines, "STARTTLS")
 	}
 	if self.tls != nil && self.outgoing {
@@ -380,10 +380,10 @@ func (self *session) handleEhlo(args string) error {
 	return self.writeLines(250, "", lines...)
 }
 
-// canStartTLS reports whether a handshake would have a certificate to offer.
+// canStartTls reports whether a handshake would have a certificate to offer.
 // The question is asked of the same source the handshake would use, so the
 // answer cannot drift from it.
-func (self *session) canStartTLS() bool {
+func (self *session) canStartTls() bool {
 	configuration := self.settings.TLSConfig
 	if configuration == nil {
 		return false
@@ -561,7 +561,7 @@ func (self *session) handleRset() error {
 	return self.writeLines(250, "2.0.0", "OK")
 }
 
-func (self *session) handleStartTLS(args string) error {
+func (self *session) handleStartTls(args string) error {
 	self.logout()
 
 	// Parameters are not allowed (RFC 3207 section 4).
@@ -577,7 +577,7 @@ func (self *session) handleStartTLS(args string) error {
 	// A client may try it even though the greeting did not offer it. Saying so
 	// is better than saying "Ready" and then failing the handshake, which
 	// leaves the sender to guess whether to retry in the clear.
-	if !self.canStartTLS() {
+	if !self.canStartTls() {
 		return self.writeLines(454, "4.7.0", "TLS not available at the moment")
 	}
 

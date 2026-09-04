@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/acme"
 )
 
-// tlsALPN01Solver answers the tls-alpn-01 challenge: the certificate authority
+// tlsAlpn01Solver answers the tls-alpn-01 challenge: the certificate authority
 // opens a TLS connection to port 443 of the name being authorized, offering
 // the "acme-tls/1" application protocol, and expects to be handed a
 // self-signed certificate carrying the challenge value in an extension. No
@@ -20,22 +20,22 @@ import (
 // The certificates live only in memory and only while the order is open. They
 // are handed out by the manager's GetCertificate, which is why this solver has
 // to be reachable from there.
-type tlsALPN01Solver struct {
+type tlsAlpn01Solver struct {
 	mutex        sync.RWMutex
 	certificates map[string]*tls.Certificate
 }
 
-func newTLSALPN01Solver() *tlsALPN01Solver {
-	return &tlsALPN01Solver{
+func newTlsalpn01Solver() *tlsAlpn01Solver {
+	return &tlsAlpn01Solver{
 		certificates: make(map[string]*tls.Certificate),
 	}
 }
 
-func (self *tlsALPN01Solver) Type() string {
+func (self *tlsAlpn01Solver) Type() string {
 	return "tls-alpn-01"
 }
 
-func (self *tlsALPN01Solver) Present(ctx context.Context, client acmeClient, challenges []Challenge) error {
+func (self *tlsAlpn01Solver) Present(ctx context.Context, client acmeClient, challenges []Challenge) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -50,7 +50,7 @@ func (self *tlsALPN01Solver) Present(ctx context.Context, client acmeClient, cha
 	return nil
 }
 
-func (self *tlsALPN01Solver) CleanUp(ctx context.Context, challenges []Challenge) error {
+func (self *tlsAlpn01Solver) CleanUp(ctx context.Context, challenges []Challenge) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -62,7 +62,7 @@ func (self *tlsALPN01Solver) CleanUp(ctx context.Context, challenges []Challenge
 
 // certificateFor returns the challenge certificate for a name, if an order is
 // currently waiting on it.
-func (self *tlsALPN01Solver) certificateFor(serverName string) (*tls.Certificate, bool) {
+func (self *tlsAlpn01Solver) certificateFor(serverName string) (*tls.Certificate, bool) {
 	self.mutex.RLock()
 	defer self.mutex.RUnlock()
 
@@ -70,9 +70,9 @@ func (self *tlsALPN01Solver) certificateFor(serverName string) (*tls.Certificate
 	return certificate, ok
 }
 
-// isALPNChallenge reports whether a TLS handshake is a certificate authority
+// isAlpnChallenge reports whether a TLS handshake is a certificate authority
 // performing a tls-alpn-01 challenge rather than an ordinary client.
-func isALPNChallenge(hello *tls.ClientHelloInfo) bool {
+func isAlpnChallenge(hello *tls.ClientHelloInfo) bool {
 	for _, protocol := range hello.SupportedProtos {
 		if protocol == acme.ALPNProto {
 			return true

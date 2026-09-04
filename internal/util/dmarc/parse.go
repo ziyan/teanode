@@ -29,16 +29,16 @@ func Parse(txt string) (*Record, error) {
 	}
 
 	record.DKIMAlignment = AlignmentRelaxed
-	if adkim, ok := parameters["adkim"]; ok {
-		record.DKIMAlignment, err = parseAlignmentMode(adkim, "adkim")
+	if aDkim, ok := parameters["aDkim"]; ok {
+		record.DKIMAlignment, err = parseAlignmentMode(aDkim, "aDkim")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	record.SPFAlignment = AlignmentRelaxed
-	if aspf, ok := parameters["aspf"]; ok {
-		record.SPFAlignment, err = parseAlignmentMode(aspf, "aspf")
+	if aSpf, ok := parameters["aSpf"]; ok {
+		record.SPFAlignment, err = parseAlignmentMode(aSpf, "aSpf")
 		if err != nil {
 			return nil, err
 		}

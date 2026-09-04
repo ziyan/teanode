@@ -34,8 +34,8 @@ const reportXML = `<?xml version="1.0" encoding="UTF-8" ?>
   </report_metadata>
   <policy_published>
     <domain>example.com</domain>
-    <adkim>r</adkim>
-    <aspf>r</aspf>
+    <aDkim>r</aDkim>
+    <aSpf>r</aSpf>
     <p>none</p>
     <sp>quarantine</sp>
     <pct>100</pct>

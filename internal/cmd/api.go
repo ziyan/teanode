@@ -38,7 +38,7 @@ func NewAPICommand() *cli.Command {
 						Usage: "print the listing as JSON",
 					},
 				},
-				Action: runAPIList,
+				Action: runApiList,
 			},
 			{
 				Name:      "describe",
@@ -50,7 +50,7 @@ func NewAPICommand() *cli.Command {
 						Usage: "print the description as JSON",
 					},
 				},
-				Action: runAPIDescribe,
+				Action: runApiDescribe,
 			},
 			{
 				Name:      "call",
@@ -75,7 +75,7 @@ func NewAPICommand() *cli.Command {
 						Usage: "GraphQL selection set to use instead of the generated one, for example \"{ id domain }\"",
 					},
 				},
-				Action: runAPICall,
+				Action: runApiCall,
 			},
 			{
 				Name:      "graphql",
@@ -94,13 +94,13 @@ func NewAPICommand() *cli.Command {
 						Usage: "variables as a JSON object",
 					},
 				},
-				Action: runAPIGraphQL,
+				Action: runApiGraphQl,
 			},
 		},
 	}
 }
 
-func runAPIList(ctx context.Context, command *cli.Command) error {
+func runApiList(ctx context.Context, command *cli.Command) error {
 	schema, err := introspect(ctx, command)
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func runAPIList(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-func runAPIDescribe(ctx context.Context, command *cli.Command) error {
+func runApiDescribe(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
 		return fmt.Errorf("which operation? usage: teanode api describe <operation>")
@@ -195,7 +195,7 @@ func runAPIDescribe(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-func runAPICall(ctx context.Context, command *cli.Command) error {
+func runApiCall(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
 		return fmt.Errorf("which operation? usage: teanode api call <operation> [name=value ...]")
@@ -237,7 +237,7 @@ func runAPICall(ctx context.Context, command *cli.Command) error {
 	return PrintJSON(result[operation.Name])
 }
 
-func runAPIGraphQL(ctx context.Context, command *cli.Command) error {
+func runApiGraphQl(ctx context.Context, command *cli.Command) error {
 	query, err := readQuery(command)
 	if err != nil {
 		return err

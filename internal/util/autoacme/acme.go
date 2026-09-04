@@ -224,12 +224,12 @@ func (self *manager) ensureAcmeClient(ctx context.Context) (*acme.Client, error)
 		return nil, err
 	}
 
-	directoryURL := self.settings.DirectoryURL
-	if directoryURL == "" {
-		directoryURL = LetsEncryptDirectoryURL
+	directoryUrl := self.settings.DirectoryURL
+	if directoryUrl == "" {
+		directoryUrl = LetsEncryptDirectoryURL
 	}
 	client := &acme.Client{
-		DirectoryURL: directoryURL,
+		DirectoryURL: directoryUrl,
 		Key:          key,
 		UserAgent:    "teanode",
 	}

@@ -168,7 +168,7 @@ type manager struct {
 	// alpnSolver is the same object as solver when the tls-alpn-01 challenge
 	// is in use, and nil otherwise. GetCertificate needs it directly, because
 	// that challenge is answered inside the TLS handshake.
-	alpnSolver *tlsALPN01Solver
+	alpnSolver *tlsAlpn01Solver
 
 	// httpSolver is the same object as solver when the http-01 challenge is in
 	// use, and nil otherwise. The caller mounts its handler.
@@ -252,10 +252,10 @@ func (self *manager) solverFor(challenge string) (Solver, error) {
 	var solver Solver
 	switch challenge {
 	case "http-01":
-		self.httpSolver = newHTTP01Solver()
+		self.httpSolver = newHttp01Solver()
 		solver = self.httpSolver
 	case "tls-alpn-01":
-		self.alpnSolver = newTLSALPN01Solver()
+		self.alpnSolver = newTlsalpn01Solver()
 		solver = self.alpnSolver
 	case "dns-01":
 		solver = newRoute53Solver(self.settings)
@@ -276,7 +276,7 @@ func (self *manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificat
 	// A handshake offering the "acme-tls/1" protocol is a certificate
 	// authority validating a tls-alpn-01 challenge, not a real client. It
 	// must be answered with the challenge certificate for that exact name.
-	if isALPNChallenge(hello) {
+	if isAlpnChallenge(hello) {
 		if self.alpnSolver == nil {
 			return nil, ErrInvalidClientHello
 		}

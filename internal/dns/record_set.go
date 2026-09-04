@@ -319,7 +319,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	sender := &Record{
 		Type:     "TXT",
 		Name:     spfName,
-		Expected: expectedSPF(external),
+		Expected: expectedSpf(external),
 		Purpose:  "says this server may send mail for this domain; without it, what you send is unauthenticated",
 	}
 	if configuration.SMTP.SOCKS5Proxy != "" || configuration.SMTP.Relay.Host != "" {
@@ -361,13 +361,13 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 		if records, err := self.resolveTxt(ctx, name); err == nil {
 			domainKey.Found = records
 			for _, record := range records {
-				if !publishesDKIMKey(record) {
+				if !publishesDkimKey(record) {
 					continue
 				}
 				// Any published key counts as a working record, but only the
 				// matching one actually verifies this server's signatures, so
 				// a stale key from a previous setup is worth pointing out.
-				if expected != "" && !sameDKIMKey(record, expected) {
+				if expected != "" && !sameDkimKey(record, expected) {
 					domainKey.Purpose = "a DKIM key is published here, but not this server's — signatures from here will fail until it is replaced"
 					continue
 				}
@@ -428,15 +428,15 @@ func sameAddress(first, second []string) bool {
 	return false
 }
 
-// publishesDKIMKey reports whether a TXT record actually carries a usable
+// publishesDkimKey reports whether a TXT record actually carries a usable
 // public key.
 //
 // An empty "p=" is not an absent tag: RFC 6376 section 3.6.1 says it means the
 // key has been revoked. Treating that as verified would tell an operator their
 // DKIM was fine while every signature they send fails.
-// sameDKIMKey compares the key material of two records, ignoring the other
+// sameDkimKey compares the key material of two records, ignoring the other
 // tags and any whitespace a DNS provider may have introduced.
-func sameDKIMKey(first, second string) bool {
+func sameDkimKey(first, second string) bool {
 	return dkimKeyMaterial(first) == dkimKeyMaterial(second)
 }
 
@@ -451,7 +451,7 @@ func dkimKeyMaterial(record string) string {
 	return ""
 }
 
-func publishesDKIMKey(record string) bool {
+func publishesDkimKey(record string) bool {
 	published := false
 	for _, tag := range strings.Split(record, ";") {
 		tag = strings.TrimSpace(tag)
@@ -611,9 +611,9 @@ func (self *verifier) mxReachesHere(ctx context.Context, published []string, hos
 	return false
 }
 
-// expectedSPF is the record to publish when this server sends its own mail
+// expectedSpf is the record to publish when this server sends its own mail
 // directly, which is the case it can answer for.
-func expectedSPF(external ExternalAddresses) string {
+func expectedSpf(external ExternalAddresses) string {
 	mechanisms := []string{"v=spf1"}
 	if external.IPv4 != "" {
 		mechanisms = append(mechanisms, "ip4:"+external.IPv4)

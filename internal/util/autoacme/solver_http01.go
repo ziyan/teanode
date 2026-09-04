@@ -29,7 +29,7 @@ type http01Solver struct {
 	responses map[string]string
 }
 
-func newHTTP01Solver() *http01Solver {
+func newHttp01Solver() *http01Solver {
 	return &http01Solver{
 		responses: make(map[string]string),
 	}

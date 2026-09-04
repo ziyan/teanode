@@ -37,8 +37,8 @@ const (
 
 // Record is a DMARC record, as defined in RFC 7489 section 6.3.
 type Record struct {
-	DKIMAlignment      AlignmentMode  // "adkim"
-	SPFAlignment       AlignmentMode  // "aspf"
+	DKIMAlignment      AlignmentMode  // "aDkim"
+	SPFAlignment       AlignmentMode  // "aSpf"
 	FailureOptions     FailureOptions // "fo"
 	Policy             Policy         // "p"
 	Percent            *uint64        // "pct"

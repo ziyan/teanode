@@ -51,8 +51,8 @@ type Feedback struct {
 
 	// observed published policy
 	Domain          string  `xml:"policy_published>domain" json:"domain,omitempty"`
-	DKIMAlignment   string  `xml:"policy_published>adkim" json:"dkimAlignment,omitempty"` // r, s
-	SPFAlignment    string  `xml:"policy_published>aspf" json:"spfAlignment,omitempty"`   // r, s
+	DKIMAlignment   string  `xml:"policy_published>aDkim" json:"dkimAlignment,omitempty"` // r, s
+	SPFAlignment    string  `xml:"policy_published>aSpf" json:"spfAlignment,omitempty"`   // r, s
 	Policy          string  `xml:"policy_published>p" json:"policy,omitempty"`            // none, quarantine, reject
 	SubdomainPolicy string  `xml:"policy_published>sp" json:"subdomainPolicy,omitempty"`  // none, quarantine, reject
 	Percent         *uint64 `xml:"policy_published>pct" json:"percent,omitempty"`

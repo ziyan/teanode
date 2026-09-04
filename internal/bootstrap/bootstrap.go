@@ -33,8 +33,8 @@ var log = logging.MustGetLogger("bootstrap")
 // Prefix is on the front of every variable this package reads.
 const Prefix = "TEANODE_"
 
-// instanceIDLength is what the usage tables allow for the column.
-const instanceIDLength = 32
+// instanceIdLength is what the usage tables allow for the column.
+const instanceIdLength = 32
 
 // Bootstrap is what the environment says.
 type Bootstrap struct {
@@ -88,7 +88,7 @@ func Load() (*Bootstrap, error) {
 	if err := self.loadDatabase(); err != nil {
 		return nil, err
 	}
-	if err := self.loadInstanceID(); err != nil {
+	if err := self.loadInstanceId(); err != nil {
 		return nil, err
 	}
 	if err := self.loadSeed(); err != nil {
@@ -174,7 +174,7 @@ func (self *Bootstrap) loadDatabase() error {
 	// An empty URL falls through to the check below, so that the error names
 	// the variable and shows its shape rather than complaining about a scheme.
 	if value, ok := lookup("DATABASE_URL"); ok && value != "" {
-		if err := self.parseDatabaseURL(value); err != nil {
+		if err := self.parseDatabaseUrl(value); err != nil {
 			return err
 		}
 	}
@@ -207,11 +207,11 @@ func (self *Bootstrap) loadDatabase() error {
 	return nil
 }
 
-// parseDatabaseURL reads a postgres:// URL. Only the parts TeaNode connects
+// parseDatabaseUrl reads a postgres:// URL. Only the parts TeaNode connects
 // with are taken; a query parameter other than sslmode is refused rather than
 // dropped, because a connection option that appears to be set and is not is
 // the kind of thing that is discovered in production.
-func (self *Bootstrap) parseDatabaseURL(value string) error {
+func (self *Bootstrap) parseDatabaseUrl(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return fmt.Errorf("bootstrap: %sDATABASE_URL is not a URL: %w", Prefix, err)
@@ -245,13 +245,13 @@ func (self *Bootstrap) parseDatabaseURL(value string) error {
 	return nil
 }
 
-// loadInstanceID names this process.
+// loadInstanceId names this process.
 //
 // The hostname is the default because it is what a container orchestrator
 // already assigns, and it is stable for the life of a pod or a compose
 // service. It is not stable across a rescheduled pod, which is the case for
 // setting the variable explicitly — to the StatefulSet ordinal, say.
-func (self *Bootstrap) loadInstanceID() error {
+func (self *Bootstrap) loadInstanceId() error {
 	value, ok := lookup("INSTANCE_ID")
 	if !ok {
 		hostname, err := os.Hostname()
@@ -261,15 +261,15 @@ func (self *Bootstrap) loadInstanceID() error {
 		value = hostname
 	}
 
-	if len(value) > instanceIDLength {
+	if len(value) > instanceIdLength {
 		// Truncating rather than refusing, because the names an orchestrator
 		// generates are long and an operator did not choose this one. Taking
 		// the tail keeps the part that differs: a pod name is a shared prefix
 		// and a random suffix.
-		value = value[len(value)-instanceIDLength:]
+		value = value[len(value)-instanceIdLength:]
 		log.Warningf("the instance name is longer than %d characters; using %q. "+
 			"Set %sINSTANCE_ID if two instances would end up with the same one",
-			instanceIDLength, value, Prefix)
+			instanceIdLength, value, Prefix)
 	}
 
 	self.InstanceID = value

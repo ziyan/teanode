@@ -511,7 +511,7 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 
 	if configuration.TLS.ACME.Route53.Enabled {
 		route53 := configuration.TLS.ACME.Route53
-		awsConfig, err := loadAWSConfig(route53.Region, route53.AccessKeyID, route53.SecretAccessKey, configuration.Path(route53.CredentialsFile))
+		awsConfig, err := loadAwsConfig(route53.Region, route53.AccessKeyID, route53.SecretAccessKey, configuration.Path(route53.CredentialsFile))
 		if err != nil {
 			return fmt.Errorf("cannot load AWS configuration for the Route53 challenge solver: %w", err)
 		}
@@ -1102,14 +1102,14 @@ func openAntivirus(configuration *config.Configuration) (clamav.Client, error) {
 	return client, nil
 }
 
-// loadAWSConfig builds an AWS configuration for the optional Route53 and S3
+// loadAwsConfig builds an AWS configuration for the optional Route53 and S3
 // integrations.
 //
 // Credentials come from teanode.yaml when they are set there, from a shared
 // credentials file when one is named, and otherwise from the default AWS
 // chain — which is how an instance role works, and the option with no
 // long-lived secret to leak.
-func loadAWSConfig(region, accessKeyId, secretAccessKey, credentialsFile string) (aws.Config, error) {
+func loadAwsConfig(region, accessKeyId, secretAccessKey, credentialsFile string) (aws.Config, error) {
 	options := []func(*awsconfig.LoadOptions) error{
 		awsconfig.WithRegion(region),
 	}

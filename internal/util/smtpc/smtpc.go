@@ -87,7 +87,7 @@ func Send(ctx context.Context, conn net.Conn, username, password, from string, r
 	// On an implicit-TLS port the handshake comes before the banner, so there
 	// is nothing to negotiate and nothing to read until it is done.
 	if settings.TLS == TLSImplicit {
-		if err := self.wrapTLS(); err != nil {
+		if err := self.wrapTls(); err != nil {
 			return err
 		}
 	}
@@ -104,7 +104,7 @@ func Send(ctx context.Context, conn net.Conn, username, password, from string, r
 
 	// start tls if supported
 	if _, ok := self.extensions["STARTTLS"]; ok && settings.TLS != TLSImplicit {
-		if err := self.startTLS(); err != nil {
+		if err := self.startTls(); err != nil {
 			return err
 		}
 		if err := self.hello(); err != nil {
@@ -160,20 +160,20 @@ func (self *client) wait() error {
 	return err
 }
 
-func (self *client) startTLS() error {
+func (self *client) startTls() error {
 	if _, _, err := self.sendCommand(220, "STARTTLS"); err != nil {
 		return err
 	}
-	return self.wrapTLS()
+	return self.wrapTls()
 }
 
-// wrapTLS puts the connection inside TLS, whether that was negotiated with
+// wrapTls puts the connection inside TLS, whether that was negotiated with
 // STARTTLS or expected from the first byte.
 //
 // The handshake is completed here rather than left to the first read, so that
 // a certificate this client will not accept is reported as what it is instead
 // of as a confusing failure to read a banner.
-func (self *client) wrapTLS() error {
+func (self *client) wrapTls() error {
 	tlsConn := tls.Client(self.conn, self.settings.tlsConfig())
 	if err := tlsConn.Handshake(); err != nil {
 		return fmt.Errorf("smtpc: tls handshake with %s failed: %w", self, err)

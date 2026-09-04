@@ -43,7 +43,7 @@ func Local(configuration *config.Configuration) (*Client, error) {
 		return nil, fmt.Errorf("client: the configuration has no listen.http or listen.https address, so there is no API to talk to")
 	}
 
-	tlsConfig, err := loopbackTLSConfig(configuration)
+	tlsConfig, err := loopbackTlsConfig(configuration)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func Local(configuration *config.Configuration) (*Client, error) {
 	})
 }
 
-// loopbackTLSConfig trusts exactly the certificate this server is configured
+// loopbackTlsConfig trusts exactly the certificate this server is configured
 // to present, and nothing else.
 //
 // The name in that certificate is the server's public one, which 127.0.0.1 is
@@ -62,7 +62,7 @@ func Local(configuration *config.Configuration) (*Client, error) {
 // certificate against the configured one is stricter than name verification
 // anyway: it accepts one certificate rather than any certificate a public
 // authority would issue.
-func loopbackTLSConfig(configuration *config.Configuration) (*tls.Config, error) {
+func loopbackTlsConfig(configuration *config.Configuration) (*tls.Config, error) {
 	expected := loadConfiguredCertificate(configuration)
 	if expected == nil {
 		// No certificate configured yet, which is the state a server is in

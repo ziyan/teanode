@@ -44,7 +44,7 @@ func (self *graph) ListLayouts(ctx context.Context, arguments ListLayoutsArgumen
 		return nil, err
 	}
 
-	layouts, err := api.ContextTx(ctx).ListLayouts(arguments.DomainID, nil)
+	layouts, err := api.ContextTransaction(ctx).ListLayouts(arguments.DomainID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (self *graph) GetLayout(ctx context.Context, arguments GetLayoutArguments) 
 		return nil, err
 	}
 
-	layout, err := api.ContextTx(ctx).GetLayout(arguments.LayoutID, nil)
+	layout, err := api.ContextTransaction(ctx).GetLayout(arguments.LayoutID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (self *graph) CreateLayout(ctx context.Context, arguments CreateLayoutArgum
 		return nil, err
 	}
 
-	layout, err := api.ContextTx(ctx).CreateLayout(&models.Layout{
+	layout, err := api.ContextTransaction(ctx).CreateLayout(&models.Layout{
 		DomainID:     domain.ID,
 		Comment:      arguments.LayoutParameters.Comment,
 		Locale:       arguments.LayoutParameters.Locale,
@@ -182,7 +182,7 @@ func (self *graph) ModifyLayout(ctx context.Context, arguments ModifyLayoutArgum
 		return nil, err
 	}
 
-	layout, err := api.ContextTx(ctx).GetLayout(arguments.LayoutID, nil)
+	layout, err := api.ContextTransaction(ctx).GetLayout(arguments.LayoutID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (self *graph) ModifyLayout(ctx context.Context, arguments ModifyLayoutArgum
 		return nil, err
 	}
 
-	layout, err = api.ContextTx(ctx).ModifyLayout(layout.ID, func(layout *models.Layout) error {
+	layout, err = api.ContextTransaction(ctx).ModifyLayout(layout.ID, func(layout *models.Layout) error {
 		if layout.CreatedAt.IsZero() {
 			return api.ErrNotFound
 		}
@@ -230,7 +230,7 @@ func (self *graph) DeleteLayout(ctx context.Context, arguments DeleteLayoutArgum
 		return err
 	}
 
-	layout, err := api.ContextTx(ctx).GetLayout(arguments.LayoutID, nil)
+	layout, err := api.ContextTransaction(ctx).GetLayout(arguments.LayoutID, nil)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func (self *graph) DeleteLayout(ctx context.Context, arguments DeleteLayoutArgum
 		return api.ErrNotFound
 	}
 
-	return api.ContextTx(ctx).DeleteLayout(layout.ID, nil)
+	return api.ContextTransaction(ctx).DeleteLayout(layout.ID, nil)
 }
 
 type RenderLayoutArguments struct {

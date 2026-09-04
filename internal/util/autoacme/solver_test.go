@@ -51,7 +51,7 @@ func challengesFor(domains ...string) []Challenge {
 }
 
 func TestHTTP01SolverServesAndForgets(t *testing.T) {
-	solver := newHTTP01Solver()
+	solver := newHttp01Solver()
 	client := &fakeACMEClient{}
 	challenges := challengesFor("mail.example.com")
 
@@ -102,7 +102,7 @@ func TestHTTP01SolverServesAndForgets(t *testing.T) {
 }
 
 func TestTLSALPN01SolverHoldsChallengeCertificates(t *testing.T) {
-	solver := newTLSALPN01Solver()
+	solver := newTlsalpn01Solver()
 	client := &fakeACMEClient{certificate: tls.Certificate{Certificate: [][]byte{{1, 2, 3}}}}
 	challenges := challengesFor("mail.example.com")
 
@@ -151,8 +151,8 @@ func TestIsALPNChallenge(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := isALPNChallenge(&tls.ClientHelloInfo{SupportedProtos: test.protocols}); got != test.want {
-				t.Errorf("isALPNChallenge = %v, want %v", got, test.want)
+			if got := isAlpnChallenge(&tls.ClientHelloInfo{SupportedProtos: test.protocols}); got != test.want {
+				t.Errorf("isAlpnChallenge = %v, want %v", got, test.want)
 			}
 		})
 	}

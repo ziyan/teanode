@@ -54,8 +54,8 @@ func TestStartTLSIsOnlyOfferedWhenItCanBeDone(t *testing.T) {
 
 	for _, test := range tests {
 		session := &session{settings: &Settings{TLSConfig: test.config}}
-		if got := session.canStartTLS(); got != test.offered {
-			t.Errorf("%s: canStartTLS() = %v, want %v", test.name, got, test.offered)
+		if got := session.canStartTls(); got != test.offered {
+			t.Errorf("%s: canStartTls() = %v, want %v", test.name, got, test.offered)
 		}
 	}
 }
@@ -72,7 +72,7 @@ func TestTheCertificateSourceIsAskedWithoutSNI(t *testing.T) {
 			return &tls.Certificate{}, nil
 		},
 	}}}
-	if !session.canStartTLS() {
+	if !session.canStartTls() {
 		t.Fatal("a source with a certificate was reported as having none")
 	}
 	if asked == nil {

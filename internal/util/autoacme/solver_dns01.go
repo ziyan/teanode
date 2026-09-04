@@ -17,9 +17,9 @@ const (
 	// under, fixed by RFC 8555 section 8.4.
 	challengeRecordPrefix = "_acme-challenge."
 
-	// challengeRecordTTL is deliberately short so that a stale value from a
+	// challengeRecordTtl is deliberately short so that a stale value from a
 	// previous order expires quickly.
-	challengeRecordTTL = 30
+	challengeRecordTtl = 30
 
 	// propagationPollInterval is how often the challenge record is re-checked
 	// against the zone's own nameservers.
@@ -39,7 +39,7 @@ const (
 // goes into one record set per name, and propagation is waited for once.
 type route53Solver struct {
 	client      *route53.Client
-	zoneID      string
+	zoneId      string
 	nameservers []string
 	hosts       []string
 }
@@ -58,7 +58,7 @@ func allHosts(settings *Settings) []string {
 func newRoute53Solver(settings *Settings) *route53Solver {
 	return &route53Solver{
 		client:      route53.NewFromConfig(settings.AWSConfig),
-		zoneID:      settings.Route53ZoneID,
+		zoneId:      settings.Route53ZoneID,
 		nameservers: settings.Route53Nameservers,
 		hosts:       allHosts(settings),
 	}
@@ -170,12 +170,12 @@ func (self *route53Solver) replaceRecordValues(ctx context.Context, name string,
 						Name:            aws.String(name),
 						Type:            types.RRTypeTxt,
 						ResourceRecords: resourceRecords,
-						TTL:             aws.Int64(challengeRecordTTL),
+						TTL:             aws.Int64(challengeRecordTtl),
 					},
 				},
 			},
 		},
-		HostedZoneId: aws.String(self.zoneID),
+		HostedZoneId: aws.String(self.zoneId),
 	}); err != nil {
 		return fmt.Errorf("autoacme: cannot publish the dns-01 record %q: %w", name, err)
 	}
