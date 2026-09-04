@@ -7,7 +7,6 @@ import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
-import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
 
 const LIST = `
@@ -55,7 +54,7 @@ type Response = {
 // argument without quoting, because that is where it is typed.
 const TEMPLATE_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/
 
-export function TemplatesPage() {
+export function TemplatesTab() {
   const { t, plural } = useTranslation()
   const { domainId = '' } = useParams()
   const navigate = useNavigate()
@@ -71,8 +70,6 @@ export function TemplatesPage() {
   const [removingLayout, setRemovingLayout] = useState<Layout | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-
-  useBreadcrumbDetail(data?.GetDomain?.domain)
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true)

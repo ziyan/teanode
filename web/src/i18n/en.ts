@@ -247,6 +247,14 @@ export const en = {
   'domains.missing': '{count} missing',
 
   'domain.failed': 'that did not work',
+
+  'domain.tabOverview': 'Overview',
+  'domain.tabDns': 'DNS',
+  'domain.tabAliases': 'Aliases',
+  'domain.tabCredentials': 'Credentials',
+  'domain.tabTemplates': 'Templates',
+  'domain.viewMail': 'Mail',
+  'domain.viewQueue': 'Queue',
   'domain.mailServersTitle': 'Mail server names',
   'domain.mailServersIntro':
     'The names this domain\u2019s MX records point at, and so the names a sender connects to. Leave this empty for the default, one name derived from the domain.',
@@ -528,17 +536,13 @@ export const en = {
   'domainOverview.dnsMissing': '{count} need changing',
   'domainOverview.dnsNever': 'Not checked yet',
   'domainOverview.checked': 'Checked {time}',
-  'domainOverview.mail': 'Mail',
   'domainOverview.lastReceived': 'Last received {time}',
   'domainOverview.nothingReceived': 'Nothing received yet',
-  'domainOverview.settings': 'Settings',
-  'domainOverview.settingsDetail': 'Aliases, credentials, the signing key, and the DNS records to publish.',
   'domainOverview.aliasesOne': '1 alias',
   'domainOverview.aliasesOther': '{count} aliases',
   'domainOverview.credentialsOne': '1 credential',
   'domainOverview.credentialsOther': '{count} credentials',
   'domainOverview.overview': 'Overview',
-  'domainOverview.resources': 'Resources',
   'domainOverview.messages': 'Messages',
   'domainOverview.accepted': 'Accepted',
   'domainOverview.rejected': 'Rejected',
@@ -547,13 +551,10 @@ export const en = {
   'domainOverview.refused': 'refused on arrival',
   'domainOverview.needChanging': 'need changing',
   'domainOverview.allPublished': 'all published',
-  'domainOverview.mailDetail': 'Everything received for this domain, and what happened to it.',
   'domainOverview.queued': 'In queue',
-  'domainOverview.queue': 'Queue',
   'domainOverview.queueEmpty': 'nothing waiting',
   'domainOverview.queueWaiting': 'waiting on a first attempt',
   'domainOverview.queueFailing': '{count} waiting on a retry',
-  'domainOverview.queueDetail': 'Mail for this domain that has not been delivered yet, and why.',
 
   'common.save': 'Save',
   'settings.integrations.description': 'The object store, the DNS solver, and the virus and spam scanners.',
@@ -653,7 +654,6 @@ export const en = {
   // --- templates, layouts, and writing a message ----------------------------
   'nav.compose': 'Compose',
   'compose.new': 'New message',
-  'domainOverview.templatesDetail': 'The messages this domain sends by template, and the layouts they sit in.',
 
   'templates.title': 'Templates',
   'templates.intro':

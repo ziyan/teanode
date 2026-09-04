@@ -24,6 +24,7 @@ const SAME_ON_PURPOSE = new Set([
   'app.name',
   'common.none',
   'domains.dns',
+  'domain.tabDns',
   'domain.kindWebhook',
   'integrations.route53',
   'integrations.endpointPlaceholder',

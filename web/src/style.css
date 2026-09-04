@@ -1459,7 +1459,8 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 /* A tab keeps its width in a row that scrolls; the default would squeeze them
    all until every label was unreadable. */
 .tabs button,
-.tabs .tab-action {
+.tabs .tab-action,
+.tabs .tab-actions {
   flex: 0 0 auto;
 }
 
@@ -1467,9 +1468,22 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 .tabs button:hover:not(:disabled) { background: none; color: var(--text); }
 
 /* An action sitting with the tabs rather than being one: it does not change
-   what is below, it takes a copy away with you. */
-.tabs .tab-action {
+   what is below, it takes a copy away with you — or, on a domain, it leaves
+   for a different page with a filter applied. Direct children only: two of
+   them inside .tab-actions would each take half the free space and sit at
+   opposite ends of the row. */
+.tabs > .tab-action {
   margin-left: auto;
+}
+
+.tabs .tab-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tabs .tab-action {
   align-self: center;
   padding: 8px 12px;
   font-size: var(--text-body);
@@ -2117,24 +2131,13 @@ body,
   }
 }
 
-/* A ruled list of things that each have a name, a line of detail and maybe an
-   action: sessions, tokens. A table would be too much furniture for two
-   columns of prose, and would wrap badly on a phone. */
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.settings-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
 /* The detail takes the space and the actions keep their size, so a long user
-   agent truncates instead of pushing the revoke button off the row. */
+   agent truncates instead of pushing the revoke button off the row.
+   .settings-row itself is the card below; a ruled-list version of it used to
+   be declared here too, and the half of it that outlived the design — a
+   :last-child that took the padding off the bottom — is more specific than
+   the card's own padding, so the last row of every list on every page sat
+   flush against its own border. */
 .settings-row-detail {
   flex: 1;
   min-width: 0;
@@ -2154,11 +2157,7 @@ body,
 
 @media (max-width: 600px) {
   /* On a phone the detail wraps onto its own line rather than being squeezed
-     to nothing beside the tag and the button. */
-  .settings-row {
-    flex-wrap: wrap;
-  }
-
+     to nothing beside the tag and the button. The row already wraps. */
   .settings-row-detail {
     flex-basis: 100%;
   }

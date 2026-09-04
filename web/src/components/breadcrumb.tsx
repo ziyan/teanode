@@ -36,18 +36,10 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
 ]
 
-// A page belonging to one domain — /domains/<id>/settings — sits two levels
-// down: the domain, then the page. Without this the trail ended at the domain
-// and read exactly like the domain's own overview, so the settings page looked
-// like the page it was reached from and offered no way back to it.
-//
-// The domain's name is not in the route, so it arrives the same way it always
-// does: the page supplies it as the detail. What changes here is that the
-// detail becomes a link rather than the end of the trail.
-const DOMAIN_PAGES: { suffix: string; label: Key }[] = [
-  { suffix: '/settings', label: 'domainOverview.settings' },
-  { suffix: '/templates', label: 'templates.title' },
-]
+// A domain's own pages — its DNS, its aliases, its templates — used to add a
+// crumb each, because each was a page of its own two levels down. They are
+// tabs of one page now, and the tab row says which one you are on: a crumb
+// saying it as well was the same word twice, and the trail ends at the domain.
 
 // A page belonging to one thing of a domain — a template, a layout — is
 // three levels down: the domain, the list it is in, then the thing itself.
@@ -121,10 +113,6 @@ function useTrail(): { label: string; to?: string }[] {
     if (detail) {
       const owner = /^\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
       const rest = owner?.[2] ?? ''
-      const page = owner && DOMAIN_PAGES.find((candidate) => candidate.suffix === rest)
-      if (owner && page) {
-        return [...crumbs, { label: detail, to: `/domains/${owner[1]}` }, { label: t(page.label) }]
-      }
       const itemPage = owner && DOMAIN_ITEM_PAGES.find((candidate) => rest.startsWith(candidate.prefix))
       if (owner && itemPage) {
         return [

@@ -245,6 +245,14 @@ export const ja: Catalog = {
   'domains.missing': '{count} 件不足',
 
   'domain.failed': 'うまくいきませんでした',
+
+  'domain.tabOverview': '概要',
+  'domain.tabDns': 'DNS',
+  'domain.tabAliases': 'エイリアス',
+  'domain.tabCredentials': '認証情報',
+  'domain.tabTemplates': 'テンプレート',
+  'domain.viewMail': 'メール',
+  'domain.viewQueue': 'キュー',
   'domain.mailServersTitle': 'メールサーバー名',
   'domain.mailServersIntro':
     'このドメインの MX レコードが指す名前、つまり送信側が接続する名前です。空にすると既定値（ドメインから導いた 1 つの名前）になります。',
@@ -522,17 +530,13 @@ export const ja: Catalog = {
   'domainOverview.dnsMissing': '{count} 件が要変更',
   'domainOverview.dnsNever': '未確認',
   'domainOverview.checked': '最終確認 {time}',
-  'domainOverview.mail': 'メール',
   'domainOverview.lastReceived': '最終受信 {time}',
   'domainOverview.nothingReceived': 'まだ受信していません',
-  'domainOverview.settings': '設定',
-  'domainOverview.settingsDetail': 'エイリアス、認証情報、署名鍵、そして公開すべき DNS レコード。',
   'domainOverview.aliasesOne': 'エイリアス 1 件',
   'domainOverview.aliasesOther': 'エイリアス {count} 件',
   'domainOverview.credentialsOne': '認証情報 1 件',
   'domainOverview.credentialsOther': '認証情報 {count} 件',
   'domainOverview.overview': '概要',
-  'domainOverview.resources': 'リソース',
   'domainOverview.messages': 'メール',
   'domainOverview.accepted': '受信',
   'domainOverview.rejected': '拒否',
@@ -541,13 +545,10 @@ export const ja: Catalog = {
   'domainOverview.refused': '受信時に拒否',
   'domainOverview.needChanging': '件が要変更',
   'domainOverview.allPublished': 'すべて公開済み',
-  'domainOverview.mailDetail': 'このドメインが受け取ったすべてのメールと、その行き先。',
   'domainOverview.queued': 'キュー内',
-  'domainOverview.queue': 'キュー',
   'domainOverview.queueEmpty': '待機中のメールはありません',
   'domainOverview.queueWaiting': '初回配信を待機中',
   'domainOverview.queueFailing': '{count} 件が再試行待ち',
-  'domainOverview.queueDetail': 'このドメイン宛でまだ配信されていないメールと、その理由。',
 
   'common.save': '保存',
   'settings.integrations.description': 'オブジェクトストア、DNS 認証、ウイルスとスパムのスキャン。',
@@ -645,7 +646,6 @@ export const ja: Catalog = {
   // --- テンプレート、レイアウト、メールの作成 ------------------------------------
   'nav.compose': '作成',
   'compose.new': '新しいメール',
-  'domainOverview.templatesDetail': 'このドメインがテンプレートで送るメールと、それらが収まるレイアウト。',
 
   'templates.title': 'テンプレート',
   'templates.intro':

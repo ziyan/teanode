@@ -244,6 +244,14 @@ export const zh: Catalog = {
   'domains.missing': '缺少 {count} 条',
 
   'domain.failed': '操作未成功',
+
+  'domain.tabOverview': '概览',
+  'domain.tabDns': 'DNS',
+  'domain.tabAliases': '别名',
+  'domain.tabCredentials': '凭据',
+  'domain.tabTemplates': '模板',
+  'domain.viewMail': '邮件',
+  'domain.viewQueue': '队列',
   'domain.mailServersTitle': '邮件服务器名称',
   'domain.mailServersIntro':
     '该域名的 MX 记录指向的名称，也就是发信方连接的名称。留空则使用默认值：由域名派生的单个名称。',
@@ -508,17 +516,13 @@ export const zh: Catalog = {
   'domainOverview.dnsMissing': '{count} 条需要修改',
   'domainOverview.dnsNever': '尚未检查',
   'domainOverview.checked': '上次检查：{time}',
-  'domainOverview.mail': '邮件',
   'domainOverview.lastReceived': '最近接收：{time}',
   'domainOverview.nothingReceived': '还没有收到邮件',
-  'domainOverview.settings': '设置',
-  'domainOverview.settingsDetail': '别名、凭据、签名密钥，以及需要发布的 DNS 记录。',
   'domainOverview.aliasesOne': '1 个别名',
   'domainOverview.aliasesOther': '{count} 个别名',
   'domainOverview.credentialsOne': '1 个凭据',
   'domainOverview.credentialsOther': '{count} 个凭据',
   'domainOverview.overview': '概览',
-  'domainOverview.resources': '资源',
   'domainOverview.messages': '邮件',
   'domainOverview.accepted': '已接收',
   'domainOverview.rejected': '已拒收',
@@ -527,13 +531,10 @@ export const zh: Catalog = {
   'domainOverview.refused': '在接收时被拒绝',
   'domainOverview.needChanging': '条需要修改',
   'domainOverview.allPublished': '全部已发布',
-  'domainOverview.mailDetail': '该域名收到的全部邮件，以及它们的去向。',
   'domainOverview.queued': '队列中',
-  'domainOverview.queue': '队列',
   'domainOverview.queueEmpty': '没有等待中的邮件',
   'domainOverview.queueWaiting': '等待首次投递',
   'domainOverview.queueFailing': '{count} 封等待重试',
-  'domainOverview.queueDetail': '此域名下尚未投递成功的邮件，以及原因。',
 
   'common.save': '保存',
   'settings.integrations.description': '对象存储、DNS 验证方式，以及病毒和垃圾邮件扫描。',
@@ -631,7 +632,6 @@ export const zh: Catalog = {
   // --- 模板、布局与撰写邮件 ----------------------------------------------------
   'nav.compose': '写邮件',
   'compose.new': '写新邮件',
-  'domainOverview.templatesDetail': '此域名按模板发送的邮件，以及它们所用的布局。',
 
   'templates.title': '模板',
   'templates.intro':
