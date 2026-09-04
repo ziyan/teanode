@@ -72,6 +72,13 @@ const UPGRADE_TIMEOUT_MS = 15 * 60_000
 // thirty-second timeout of its own on the server.
 const CHECK_TIMEOUT_MS = 40_000
 
+// RECENT_CHECK_MS is how recent a check has to be for it to be the answer to
+// pressing the button again. It matches the server's own limit on checks
+// asked for by hand, and exists because the server declines silently: it
+// simply does not check, so nothing on the status moves and a wait for it to
+// move is a wait for nothing.
+const RECENT_CHECK_MS = 60_000
+
 // ServerAboutPage is what this instance is, which version it is running, and
 // the two controls that act on the process rather than on the configuration:
 // upgrade, and restart.
@@ -166,6 +173,18 @@ export function ServerAboutPage() {
     setProblem(null)
     setChecking(true)
     try {
+      // A check that has just happened is the answer to this one. The server
+      // will not ask the release list again within a minute of the last time
+      // somebody asked by hand — sixty requests an hour is the whole
+      // allowance, and it is shared with everybody on this address — so
+      // waiting for a time that is not going to move meant the button read
+      // "Checking…" for forty seconds and then showed the same thing with no
+      // explanation.
+      if (before && Date.now() - Date.parse(before) < RECENT_CHECK_MS) {
+        await upgrade.reload()
+        return
+      }
+
       await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: true })
 
       const deadline = Date.now() + CHECK_TIMEOUT_MS
@@ -223,6 +242,11 @@ export function ServerAboutPage() {
     // which is the restart and is handled by the wait below, or it comes back
     // with an error to show.
     const deadline = Date.now() + UPGRADE_TIMEOUT_MS
+    // Which version was answering before any of this. It is how a restart
+    // that happened between two polls is told from an upgrade that failed
+    // before it got that far: both answer "not upgrading", and only one of
+    // them answers as a different version.
+    const was = upgrade.data?.GetUpgrade?.current
     let lost = 0
     // Whether the server has said, in so many words, that it is upgrading.
     // Until it has, a run of failed requests is much more likely to be
@@ -272,9 +296,20 @@ export function ServerAboutPage() {
         confirmed = true
       }
       if (status && !status.upgrading) {
-        // Back, and not upgrading: it failed before it got as far as
-        // restarting, and the reason is on the status.
+        // Not upgrading any more, and there are two ways to arrive here.
+        //
+        // A different version answering means it already restarted — a small
+        // server on a fast link can be back inside the two seconds between
+        // two polls, and reading that as a failure left the page showing the
+        // old version, no confirmation, and nothing to explain either.
         setUpgrading(false)
+        if (was && status.current && status.current !== was) {
+          setCameBack(true)
+          await Promise.all([upgrade.reload(), reload()])
+          return
+        }
+        // The other way: it failed before it got as far as restarting, and
+        // the reason is on the status.
         await upgrade.reload()
         if (status.error) {
           setProblem(status.error)

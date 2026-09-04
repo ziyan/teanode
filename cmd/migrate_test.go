@@ -118,3 +118,43 @@ func (self *refusingMigrator) Migrate() error {
 	self.migrated = true
 	return nil
 }
+
+// The advice about the staged binary is a claim about a remedy, so it has to
+// be true. Removing the marker only helps when the marker is the reason.
+//
+// A staged binary is also left in place when its version or checksum cannot be
+// read, when the checksum does not match, when it is not executable, and when
+// the permissions are wrong. Telling somebody to remove the marker in any of
+// those is worse than saying nothing: they do it, nothing changes, and now
+// they distrust the paragraph that was about to tell them the truth about
+// reverting.
+func TestMigrateOnlyOffersTheMarkerWhenTheMarkerIsTheReason(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "teanode"), []byte("binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	err := migrate(&fakeMigrator{unknown: []string{"0042_something_new"}}, directory)
+	if err == nil {
+		t.Fatal("it reverted without being asked")
+	}
+	if strings.Contains(err.Error(), "pending") {
+		t.Errorf("it offered a remedy that would not work: %s", err)
+	}
+}
+
+// And reverting is never offered without saying what it costs, nor without the
+// warning that matters most: another instance may be serving on the schema
+// this would take apart. Following the message must not be the way to lose the
+// data the message exists to protect.
+func TestMigrateWarnsAboutTheOtherInstances(t *testing.T) {
+	err := migrate(&fakeMigrator{unknown: []string{"0042_something_new"}}, t.TempDir())
+	if err == nil {
+		t.Fatal("it reverted without being asked")
+	}
+	for _, want := range []string{"another instance", "upgrade this instance"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the message does not mention %q: %s", want, err)
+		}
+	}
+}

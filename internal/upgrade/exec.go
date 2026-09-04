@@ -361,6 +361,22 @@ func Waiting(directory string) bool {
 	return err == nil
 }
 
+// HeldBackByMarker reports whether a staged binary is being left alone for the
+// one reason an operator can undo by hand: it was tried and did not get as far
+// as serving.
+//
+// Narrower than Waiting on purpose. Waiting answers "is there something here",
+// which is the right question for deciding whether an older binary should
+// touch the database. This answers "would removing the marker change
+// anything", which is a claim, and a claim about a remedy has to be true.
+func HeldBackByMarker(directory string) bool {
+	if !Waiting(directory) {
+		return false
+	}
+	_, err := os.Stat(PendingMarker(directory))
+	return err == nil
+}
+
 // Started clears the marker, once this process has got far enough to be
 // serving. Called from the server, not from here: what counts as far enough is
 // the server's question.

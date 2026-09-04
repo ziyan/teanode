@@ -446,6 +446,14 @@ func checksumFor(sums, name string) (string, error) {
 		}
 		return hash, nil
 	}
+	// A scanner that stopped early looks exactly like one that reached the
+	// end, and the two mean different things: one says the release does not
+	// list this asset, the other says the file did not arrive whole. Sending
+	// somebody to look at the release assets over a truncated download wastes
+	// the half hour they spend there.
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("upgrade: cannot read %s: %w", checksumsAsset, err)
+	}
 	return "", fmt.Errorf("upgrade: %s lists no checksum for %s", checksumsAsset, name)
 }
 

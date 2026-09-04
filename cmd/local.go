@@ -152,22 +152,36 @@ func migrate(database migrator, upgradeDirectory string) error {
 		return nil
 	}
 
-	return fmt.Errorf("this database was migrated by a newer version of teanode (%s), and going back "+
-		"means reverting those migrations and losing what is in the columns they added. Nothing has "+
-		"been changed and nothing has been opened.%s To go back to this version anyway, set %s=true",
+	return fmt.Errorf("this database was migrated by a newer version of teanode (%s), and this one does "+
+		"not have those migrations. Nothing has been changed and nothing has been opened.\n\n"+
+		"The way out that loses nothing is to run that newer version here — upgrade this instance, or "+
+		"pull the image the rest of the deployment is on.%s\n\n"+
+		"To go back to this version instead, set %s=true. Read that as what it is: those migrations are "+
+		"reverted and whatever is in the columns they added is gone. If another instance is sharing this "+
+		"database and is already running the newer version, do not do it at all — the columns would go "+
+		"out from under it while it is serving",
 		strings.Join(unknown, ", "), stagedAdvice(upgradeDirectory), AllowMigrationRevert)
 }
 
-// stagedAdvice adds the way out that does not lose anything, when there is
-// one: a newer binary is sitting in the staging directory and this start
-// refused to run it, so running it again is what the operator actually wants.
+// stagedAdvice adds the way out that does not lose anything, when this start
+// is one remedy away from it: a newer binary is sitting in the staging
+// directory and was held back only by the marker saying an earlier attempt did
+// not get as far as serving.
+//
+// Only for that one reason. A staged binary is left in place when its version
+// or checksum cannot be read, when the checksum does not match, when it is not
+// executable, and when the permissions are wrong — and in every one of those,
+// removing the marker changes nothing and the server still will not start.
+// Telling somebody that is the way out, when it is not, is worse than saying
+// nothing: they do it, it fails again, and now they distrust the message that
+// was going to tell them the truth about reverting.
 func stagedAdvice(upgradeDirectory string) string {
-	if !upgrade.Waiting(upgradeDirectory) {
+	if !upgrade.HeldBackByMarker(upgradeDirectory) {
 		return ""
 	}
-	return fmt.Sprintf(" %s holds an upgraded binary that this start refused to run — the reason is "+
-		"above; removing %s makes it try again, and that keeps everything.",
-		upgradeDirectory, upgrade.PendingMarker(upgradeDirectory))
+	return fmt.Sprintf(" There is one at %s: it was tried and did not get as far as serving, so this "+
+		"start left it alone. Remove %s to let it try again.",
+		upgrade.Staged(upgradeDirectory), upgrade.PendingMarker(upgradeDirectory))
 }
 
 // migrator is the two things migrate needs of a database. Narrow so that the

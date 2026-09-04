@@ -45,7 +45,9 @@ name, which is what a container is already given, and is truncated to the last
 puts a binary it cannot write over the running one, and where the next start
 looks for it. Defaults to `upgrade` under `TEANODE_SERVER_DATA_DIRECTORY` when
 that is set, and to nothing when it is not — in which case a deployment that
-cannot replace its own executable is told it cannot upgrade itself.
+cannot replace its own executable is told it cannot upgrade itself. It must be
+an absolute path, and a relative one is refused rather than resolved: a staged
+binary has to be found again by a start from any working directory.
 
 It is a variable rather than a setting for one reason: a staged binary has to
 be found and run before anything opens the database, because this program

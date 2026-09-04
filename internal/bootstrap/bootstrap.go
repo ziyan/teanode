@@ -127,13 +127,21 @@ func (self *Bootstrap) loadUpgradeDirectory() error {
 		directory = filepath.Join(data, "upgrade")
 	}
 
-	// Absolute, because it is read again at the next start and a process
-	// started from a different working directory has to find the same place.
-	absolute, err := filepath.Abs(directory)
-	if err != nil {
-		return fmt.Errorf("bootstrap: %sUPGRADE_DIRECTORY: %w", Prefix, err)
+	// Absolute, and refused rather than resolved when it is not.
+	//
+	// filepath.Abs was here and was worse than nothing: it resolves against
+	// the working directory, so a start from one place and a start from
+	// another would look for the staged binary in two places. The upgrade
+	// would stage, exec — the path it execs is absolute, so that part
+	// works — and report success, and then a restart from anywhere else would
+	// find nothing and quietly run the old binary, with no refusal recorded
+	// at any point. A relative path here is a misconfiguration and is said so.
+	if !filepath.IsAbs(directory) {
+		return fmt.Errorf("bootstrap: %sUPGRADE_DIRECTORY is %q, which is relative to whatever "+
+			"directory the process happens to start in — and a staged upgrade has to be found again "+
+			"by a start from anywhere. Give an absolute path", Prefix, directory)
 	}
-	self.UpgradeDirectory = absolute
+	self.UpgradeDirectory = filepath.Clean(directory)
 	return nil
 }
 

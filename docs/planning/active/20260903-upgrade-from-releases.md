@@ -70,6 +70,22 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The refusal's own remedy was the data loss it existed to prevent.** The
+  message said to set `TEANODE_ALLOW_MIGRATION_REVERT=true` to go back — and in
+  the multi-instance case the guard was written for, following that reverts the
+  migrations while the other instance is live on the new schema, taking its
+  columns out from under it. The remedy that loses nothing is to run the newer
+  version here; reverting is the second option, and the message now says what
+  it costs and when not to do it at all.
+
+- **A remedy that is only sometimes true is worse than none.** The same
+  message offered "remove the pending marker and it will try again" whenever a
+  staged binary was present, and a staged binary is left in place for six
+  different reasons — an unreadable version, a missing or wrong checksum, a
+  file that is not executable, permissions. In five of them removing the
+  marker changes nothing, and somebody who follows it and watches it fail has
+  no reason to believe the next paragraph, which is the one about losing data.
+
 - **Reverting migrations had to stop being the default.** Three review rounds
   kept finding the same accident under different names, and the third one
   settled it. A start that meets a migration it does not recognise reverts it,

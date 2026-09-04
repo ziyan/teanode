@@ -305,6 +305,19 @@ func (self *manager) ExecTarget() string {
 	return self.execTarget
 }
 
+// settings is the upgrade section, or its zero value when there is no store.
+//
+// A manager built by hand — which the tests do, and which is the shape that
+// has produced a nil dereference here twice — has no configuration. describe
+// already guarded for that and three other readers did not, which is the kind
+// of inconsistency that says the invariant is not really an invariant.
+func (self *manager) settings() config.Upgrade {
+	if self.config == nil {
+		return config.Upgrade{}
+	}
+	return self.config.Current().Upgrade
+}
+
 // currentVersion is the running version, read without the configuration:
 // Apply needs it, and the settings it would otherwise pull in have nothing to
 // do with which version this is.
@@ -329,12 +342,10 @@ func (self *manager) Status() Status {
 // a check; the command line did not.
 func (self *manager) describe() Status {
 	status := self.status
-	if self.config != nil {
-		settings := self.config.Current().Upgrade
-		status.Automatic = settings.Automatic
-		status.Enabled = settings.Enabled
-		status.Window = settings.Window
-	}
+	settings := self.settings()
+	status.Automatic = settings.Automatic
+	status.Enabled = settings.Enabled
+	status.Window = settings.Window
 	return status
 }
 
@@ -362,7 +373,7 @@ func (self *manager) spinOnce(_ context.Context) error {
 	// Turned off while running: the loop was built at startup and would
 	// otherwise keep asking until a restart, which is not what somebody who
 	// turned it off meant.
-	if !self.config.Current().Upgrade.Enabled {
+	if !self.settings().Enabled {
 		return nil
 	}
 
@@ -387,7 +398,7 @@ func (self *manager) spinOnce(_ context.Context) error {
 		return nil
 	}
 
-	settings := self.config.Current().Upgrade
+	settings := self.settings()
 	if !settings.Automatic {
 		return nil
 	}
@@ -446,7 +457,7 @@ func (self *manager) spinOnce(_ context.Context) error {
 
 // Start begins an upgrade and returns immediately.
 func (self *manager) Start(expected string) (Status, error) {
-	if !self.config.Current().Upgrade.Enabled {
+	if !self.settings().Enabled {
 		// Enforced, not hidden. The button disappears because nothing is
 		// known to be available, but the API is reachable from the command
 		// line and from any other client, and "checking is off" should mean
@@ -566,7 +577,7 @@ const bootstrapPrefix = "TEANODE_"
 
 // CheckSoon asks in the background, once at a time and not too often.
 func (self *manager) CheckSoon() {
-	if !self.config.Current().Upgrade.Enabled {
+	if !self.settings().Enabled {
 		return
 	}
 	if !self.mayCheckByHand() {
