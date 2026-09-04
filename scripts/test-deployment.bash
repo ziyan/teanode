@@ -575,8 +575,10 @@ check_profiles() {
     test "$(stat -c %a "${configuration}/teanode/profiles.json")" = "600"
   check_contains "auth logout forgets the profile" "forgot profile" \
     env XDG_CONFIG_HOME="${configuration}" "${BINARY}" auth logout --keep-token
+  # This shell still carries the server's environment from build_environment,
+  # which is exactly the console path; a laptop has none of it.
   check_fails_with "with no profile and no environment there is nothing to talk to" "no server to talk to" \
-    env XDG_CONFIG_HOME="${configuration}" "${BINARY}" domain list
+    env -u TEANODE_DATABASE_URL XDG_CONFIG_HOME="${configuration}" "${BINARY}" domain list
   rm -rf "${configuration}"
 }
 

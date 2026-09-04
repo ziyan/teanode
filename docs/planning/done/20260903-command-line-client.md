@@ -59,8 +59,10 @@ the configured domains.
 - [x] (2026-09-03 22:40Z) Milestone 6: the deployment test drives the typed
       commands and a profile round trip; documentation, changelog and the
       decision record `docs/decisions/20260903-two-binaries.md` written.
-- [ ] Deployment test run green against the image built from this tree
-      (completed: started; remaining: read the result, fix anything it finds).
+- [x] (2026-09-03 23:00Z) Deployment test run against the image built from this
+      tree: 94 of 95 checks passed on the first run; the one failure was the new
+      "nothing to talk to" check inheriting the server environment from the
+      script, fixed by unsetting it.
 - [ ] The scrubbed history (`main-scrubbed`, tags `scrubbed-v0.1.*`) pushed
       over `origin/main`, which is the owner's call and not part of this
       branch.
@@ -198,8 +200,8 @@ laptop, then `teanode domain list`. The generic `settings set` and the raw
 only a new resource earns a new group.
 
 Left open: the deployment test's result against the image from this tree
-was still running when this was written, and the scrubbed history is
-prepared but not pushed. Neither is code.
+passed apart from a mistake in the new check itself, since fixed; the
+scrubbed history is prepared but not pushed. Neither is code.
 
 Lessons: read the schema's nullability before writing an update command —
 a required field in an input object cannot be omitted, whatever the resolver
