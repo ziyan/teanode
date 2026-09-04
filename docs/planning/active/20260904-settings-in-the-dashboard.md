@@ -264,13 +264,37 @@ About tab.
 
 ## Progress
 
-- [ ] Milestone one: smtp limits, resolver, session and passkey — the settings
+- [x] Milestone one: smtp limits, resolver, session and passkey — the settings
       that take effect at once
-- [ ] Milestone two: the rest of the ACME block and the certificate files
-- [ ] Milestone three: listeners and server identity, with a confirmation
+- [x] Milestone two: the rest of the ACME block and the certificate files
+- [x] Milestone three: listeners and server identity, with a confirmation
       before a listener is changed
-- [ ] Milestone four: storage paths, spool retention and geoip
-- [ ] Milestone five: the tabs regrouped, and a hint on every field
+- [x] Milestone four: storage paths, spool retention and geoip
+- [x] Milestone five: the tabs regrouped, and a hint on every field
+
+All five are implemented and verified against the real deployment rather than
+only built:
+
+- `teanode settings get --json` returns all eight new groups with the values
+  that server is actually running, and no secret appears anywhere in the
+  reply. `settings get` needed the new sections added to its selection —
+  `settings set` needed nothing, because it asks the schema what type each
+  argument has.
+- Changing the greylist delay from 3s to 4s in the dashboard reported "Saved,
+  and in use now", read back as 4s from the database, and left
+  `teanode server status` saying "nothing; every setting in use is current" —
+  which is the point of the live group.
+- `teanode settings set smtp greylistDelay=banana` was refused with
+  `smtp.greylistDelay: config: "banana" is not a duration, expected something
+  like 30s, 5m, 12h or 30d` — validation's own words, with the setting named.
+- Every tab renders with live values and a hint under every field; the
+  Listeners tab keeps Save disabled until something changes and carries the
+  restart note.
+
+One bug the browser caught that building could not: the log level select
+listed the levels in lower case while the configuration stores INFO, so the
+field matched none of its own options and displayed the first. Saving anything
+else on that tab would have quietly set the log level to debug.
 
 ## Decisions
 
@@ -296,9 +320,10 @@ But the trap is already there — the configuration has them, the file can set
 them — and the pending-restart list exists precisely to make the delay visible.
 Hiding them does not make them safe; it makes them undiscoverable.
 
-## Still open
+## Resolved while implementing
 
-Whether `server.dataDirectory` should be editable at all. It is the one field
-here whose change silently strands data: the server starts against the new
-directory and the mail in the old one is simply not there. Milestone four
-should either refuse it, or say what has to be moved by hand before restarting.
+`server.dataDirectory` is shown and not editable. It was the one field whose
+change silently strands data — the server comes up against the new directory
+and the mail in the old one is simply not there — and a text field is the
+wrong shape for an operation that has to be done with the server stopped. It
+appears on the Identity tab as a value with that sentence under it.
