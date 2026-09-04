@@ -515,13 +515,18 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
           </select>
         </label>
         <p className="muted field-hint">{t('serverSettings.logLevelHint')}</p>
-      </div>
 
-      <dl className="properties">
-        <dt>{t('serverSettings.dataDirectory')}</dt>
-        <dd className="mono">{settings.dataDirectory}</dd>
-      </dl>
-      <p className="muted field-hint">{t('serverSettings.dataDirectoryHint')}</p>
+        {/* A disabled field rather than a definition list. It is the same
+            kind of thing as the fields above it — a path this server uses —
+            and drawn as a term and its value it sat hard against its own
+            explanation and lined up with nothing. Disabled says it is not
+            yours to change here more plainly than a paragraph does. */}
+        <label>
+          <span>{t('serverSettings.dataDirectory')}</span>
+          <input className="mono" value={settings.dataDirectory} readOnly disabled />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.dataDirectoryHint')}</p>
+      </div>
 
       {problem && <p className="error">{problem}</p>}
       <div className="page-actions">
