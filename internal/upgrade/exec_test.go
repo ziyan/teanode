@@ -36,6 +36,23 @@ func stage(t *testing.T, version string) string {
 	return directory
 }
 
+// pretendToBe makes this process look like the binary at path, for as long as
+// the test runs.
+//
+// The path this process was started from is resolved once, into a package
+// variable, because /proc/self/exe stops naming a file the moment an upgrade
+// renames one away. A test that wants to be the staged binary has to write to
+// it — and therefore must not run in parallel, because every other test that
+// asks "is this me" reads it. That is not hypothetical: it was written as a
+// parallel test, passed here, and the race detector caught it in CI.
+func pretendToBe(t *testing.T, path string) {
+	t.Helper()
+
+	was := executablePath
+	executablePath = path
+	t.Cleanup(func() { executablePath = was })
+}
+
 // What a start will and will not run out of the staging directory.
 //
 // This is the most dangerous function in the package: whatever it returns is
@@ -185,6 +202,7 @@ func TestStartedOnlyClearsItsOwn(t *testing.T) {
 // staging directory is not. Comparing them as text said no every time, so the
 // staged binary never cleared the marker saying it had been tried, and every
 // start after the first refused it and quietly ran the old one.
+// Not parallel, for the same reason as above.
 func TestRunningLooksAtTheFileNotThePath(t *testing.T) {
 	directory := t.TempDir()
 	real := filepath.Join(directory, "teanode")
@@ -197,9 +215,7 @@ func TestRunningLooksAtTheFileNotThePath(t *testing.T) {
 	}
 
 	// What resolveExecutable would have left: the resolved path.
-	restore := executablePath
-	executablePath = real
-	defer func() { executablePath = restore }()
+	pretendToBe(t, real)
 
 	if !running(link) {
 		t.Error("the running binary was not recognised through a symlink")
@@ -347,9 +363,9 @@ func TestMarkTriedIgnoresAnInPlaceUpgrade(t *testing.T) {
 // But some exec failures are permanent — a volume mounted noexec is the plain
 // case — and with the mark off, nothing stopped the next check installing the
 // same release again, for ever, with no failure anywhere to back off from.
+// Not parallel: it becomes the staged binary at the end, and that is a write
+// to a package variable every other test reads. See pretendToBe.
 func TestAnExecThatFailedIsNotInstalledAgain(t *testing.T) {
-	t.Parallel()
-
 	directory := stage(t, "0.2.0")
 	MarkTried(directory, Staged(directory))
 
@@ -374,12 +390,35 @@ func TestAnExecThatFailedIsNotInstalledAgain(t *testing.T) {
 
 	// And once it does run, the note goes: whatever was wrong is history, and
 	// leaving it would refuse the next upgrade of a working deployment.
-	restore := executablePath
-	executablePath = Staged(directory)
-	defer func() { executablePath = restore }()
+	pretendToBe(t, Staged(directory))
 
 	Started(directory)
 	if AlreadyTried(directory, "0.2.0") {
 		t.Error("a binary that is serving is still remembered as unrunnable")
+	}
+}
+
+// A running binary whose own version cannot be read must not delete the
+// upgrade waiting beside it.
+//
+// movesForward answers false when it cannot read either side, and false meant
+// stale meant delete. So a build stamped with something that is not a
+// semantic version — a repository whose newest tag is release-2024, or any
+// VERSION passed by hand — threw away a downloaded, checksum-verified upgrade
+// at every start, and said it was not newer, which is not what happened.
+func TestAnUnreadableRunningVersionDoesNotDeleteTheUpgrade(t *testing.T) {
+	t.Parallel()
+
+	directory := stage(t, "1.2.0")
+	if got := stagedToRun(directory, "release-2024"); got != "" {
+		t.Errorf("stagedToRun = %q, want nothing", got)
+	}
+	if _, err := os.Stat(Staged(directory)); err != nil {
+		t.Errorf("the staged binary was deleted over this binary's own version: %v", err)
+	}
+	for _, name := range []string{stagedVersion, stagedChecksum} {
+		if _, err := os.Stat(filepath.Join(directory, name)); err != nil {
+			t.Errorf("%s was deleted too: %v", name, err)
+		}
 	}
 }

@@ -266,7 +266,7 @@ func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory 
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 
-	settings := configuration.Current().Upgrade
+	settings := self.settings()
 	if !settings.Enabled {
 		log.Noticef("not checking for releases: upgrade.enabled is off")
 	}

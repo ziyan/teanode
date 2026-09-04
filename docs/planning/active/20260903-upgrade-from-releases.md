@@ -70,6 +70,19 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **`make test` did not run what CI runs.** CI passes `-race` and the local
+  target did not, so a test that mutated a package variable in parallel passed
+  here and failed there — the first red build of the branch, after fifteen
+  green ones. The target matches CI now. A suite that passes locally and fails
+  in CI is a suite nobody reads.
+
+- **Deleting an upgrade over this binary's own version.** The guard against
+  confusing "cannot read the version" with "not newer" was written for the
+  staged binary's version file and not for the running binary's. So a build
+  stamped with something that is not a semantic version deleted a downloaded,
+  verified upgrade at every start, and said it was not newer, which is not
+  what had happened.
+
 - **Making the directory lazily broke the first upgrade.** Asking whether an
   upgrade is possible stopped creating the staging directory, which was right,
   and nothing else created it before the download — which writes beside where

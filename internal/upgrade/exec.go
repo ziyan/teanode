@@ -252,10 +252,20 @@ func inspectStaged(directory, current string) (string, stagedState) {
 	// A version that cannot be read is not the same as a version that is not
 	// newer, and only the second is a reason to delete somebody's download.
 	// Both went down the deleting road, so a staged binary whose version file
-	// had a typo in it — or a running binary built with a version string this
-	// cannot parse — threw away every upgrade installed on that deployment.
+	// had a typo in it threw away every upgrade installed on that deployment.
 	if _, err := parseVersion(waiting); err != nil {
 		refuse(staged, fmt.Sprintf("%q is not a version", waiting))
+		return staged, stagedRefused
+	}
+	// And the same for this binary's own version, which is the half that was
+	// missed: movesForward answers false when it cannot read either side, and
+	// false meant stale meant delete. A build stamped with something that is
+	// not a semantic version — a repository whose newest tag is release-2024,
+	// or any VERSION passed by hand — deleted a downloaded, verified upgrade
+	// at every start, and said it was not newer, which was not what happened.
+	if _, err := parseVersion(current); err != nil {
+		refuse(staged, fmt.Sprintf("this binary reports %q, which is not a version, so there is "+
+			"nothing to compare %s against", current, waiting))
 		return staged, stagedRefused
 	}
 	if !movesForward(current, waiting) {
