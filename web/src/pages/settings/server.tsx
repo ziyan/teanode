@@ -19,7 +19,7 @@ const RESTART = `mutation { RestartServer { started instance supervision } }`
 const UPGRADE = `
   query ($check: Boolean) {
     GetUpgrade(check: $check) {
-      current latest available notes url checkedAt checking error checkError applicable reason automatic enabled window upgrading
+      current latest available notes url checkedAt attemptedAt checking error checkError applicable reason automatic enabled window upgrading
     }
   }`
 
@@ -37,6 +37,7 @@ type UpgradeStatus = {
   notes?: string
   url?: string
   checkedAt?: string
+  attemptedAt?: string
   checking?: boolean
   error?: string
   checkError?: string
@@ -163,8 +164,12 @@ export function ServerAboutPage() {
   // back, which is what it did, showed the answer from before the check and
   // made the button look broken.
   async function checkForUpgrade() {
-    const before = upgrade.data?.GetUpgrade?.checkedAt
-    const beforeError = upgrade.data?.GetUpgrade?.checkError
+    // When it last tried, which is what finishing moves. Watching the last
+    // success and the last reason instead meant a check that failed the same
+    // way twice — outbound HTTPS blocked, an ordinary way to run a mail
+    // server — moved neither, and the button span for its whole deadline over
+    // a check that had already come back.
+    const before = upgrade.data?.GetUpgrade?.attemptedAt
     setProblem(null)
     setChecking(true)
     try {
@@ -189,11 +194,7 @@ export function ServerAboutPage() {
       for (;;) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
         const status = (await graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false })).GetUpgrade
-        // checkError, not error: the second is the last upgrade's failure,
-        // which stays set until another upgrade starts — watching it meant
-        // breaking on the first poll and showing the answer from before the
-        // check, which is what this loop exists to avoid.
-        if (status.checkedAt !== before || status.checkError !== beforeError) {
+        if (status.attemptedAt !== before) {
           break
         }
         if (Date.now() > deadline) {

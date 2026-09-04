@@ -70,6 +70,15 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **The in-place road had no second chance, and the comment said why in a
+  sentence that was false.** It claimed there was no older binary to fall back
+  to, while `swap` had been keeping one at `<executable>.previous` from the
+  beginning. So an automatic upgrade to a release that crashes before serving
+  left systemd restarting the broken binary for ever — no marker, no backoff,
+  nothing had failed, and mail down until somebody renamed a file. It marks
+  and falls back once now, the same shape the staging road has always had.
+  A comment that explains why something is absent is a claim like any other.
+
 - **`make test` did not run what CI runs.** CI passes `-race` and the local
   target did not, so a test that mutated a package variable in parallel passed
   here and failed there — the first red build of the branch, after fifteen

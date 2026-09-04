@@ -126,7 +126,17 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	}
 
 	log.Noticef("downloading %s %s", name, found.version())
-	downloaded, err := self.download(ctx, binaryURL)
+	// Where the new binary is going, decided once. It was asked for again in
+	// swap, minutes later, and a directory that stopped being writable in
+	// between — a read-only remount — sent the download and the swap down
+	// different roads, so the failure reported was a rename across
+	// filesystems rather than the permission change that caused it.
+	target, staging := self.target()
+	if target == "" {
+		return fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
+	}
+
+	downloaded, err := self.download(ctx, binaryURL, target, staging)
 	if err != nil {
 		return err
 	}
@@ -153,7 +163,7 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 		return fmt.Errorf("upgrade: a restart began while this was downloading; nothing was replaced")
 	}
 
-	if err := self.swap(downloaded, found.version()); err != nil {
+	if err := self.swap(downloaded, target, staging, found.version()); err != nil {
 		return err
 	}
 
@@ -178,12 +188,7 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 // The new file is written in the same directory precisely so this rename is
 // within one filesystem, where it is atomic: there is no moment at which the
 // path names a half-written file.
-func (self *manager) swap(downloaded, release string) error {
-	target, staging := self.target()
-	if target == "" {
-		return fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
-	}
-
+func (self *manager) swap(downloaded, target string, staging bool, release string) error {
 	// Which road this is was worked out by whoever chose the target, and is
 	// not re-derived here. Deriving it cost two bugs: comparing the target
 	// with this process's executable broke the second upgrade of every
@@ -349,12 +354,7 @@ func (self *manager) stage(downloaded, target, release string) error {
 
 // download writes the asset beside where it is going, so that the rename
 // afterwards is within one filesystem and therefore atomic.
-func (self *manager) download(ctx context.Context, url string) (string, error) {
-	target, staging := self.target()
-	if target == "" {
-		return "", fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
-	}
-
+func (self *manager) download(ctx context.Context, url, target string, staging bool) (string, error) {
 	// The staging directory is made here, which is the first thing that writes
 	// into it — the download goes beside where the binary will end up, so that
 	// the rename afterwards is within one filesystem.

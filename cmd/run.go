@@ -128,6 +128,14 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	// binary to run.
 	upgrade.ExecStagedIfNewer(bootstrapped.UpgradeDirectory, version.Version())
 
+	// And the other direction: a binary an upgrade wrote over this one and
+	// which did not get as far as serving last time. The staged road falls
+	// back to the image; this is the same thing for a deployment whose binary
+	// was replaced where it stood, and without it an automatic upgrade to a
+	// release that crashes on startup left a supervisor restarting it for
+	// ever. It does not return when it goes back.
+	upgrade.ExecPreviousIfLastStartFailed(version.Version())
+
 	database, closeDatabase, err := openDatabase(bootstrapped)
 	if err != nil {
 		return "", "", err

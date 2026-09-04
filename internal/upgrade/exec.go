@@ -148,8 +148,12 @@ func execStaged(directory, current string, mark bool) {
 	if err := syscall.Exec(staged, os.Args, os.Environ()); err != nil {
 		// Exec only replaces the image when it succeeds, so this process is
 		// still here and can carry on with the binary it has.
+		//
+		// Recorded the same way runServer records it: the start will try the
+		// exec again, because this one may have been passing, and the upgrade
+		// will not download the same release again, because it may not.
 		if mark {
-			_ = os.Remove(marker)
+			Untried(directory, staged)
 		}
 		fmt.Fprintf(os.Stderr, "teanode: cannot run %s, carrying on with this one: %s\n", staged, err)
 	}
@@ -515,6 +519,68 @@ func sameRelease(first, second string) bool {
 		strings.TrimPrefix(strings.TrimSpace(second), "v")
 }
 
+// InPlaceMarker is the marker beside a binary that was written over the
+// running one and has not yet proved it can serve.
+//
+// Beside the executable rather than in the staging directory, because the
+// in-place road has no staging directory — the whole point of it is that the
+// binary could be replaced where it stands.
+func InPlaceMarker(executable string) string {
+	if executable == "" {
+		return ""
+	}
+	return executable + ".pending"
+}
+
+// ExecPreviousIfLastStartFailed goes back to the binary an in-place upgrade
+// replaced, once, when the one it installed did not get as far as serving.
+//
+// The staging road has always had this: a release that crashes on startup is
+// held back and the binary in the image serves instead. The in-place road had
+// nothing, and the comment saying why was simply wrong — it claimed there was
+// no older binary underneath to fall back to, while swap has been keeping one
+// at <executable>.previous all along. So an automatic upgrade to a release
+// that crashes before serving left systemd restarting the broken binary for
+// ever: no marker, no backoff, nothing failed, and mail down until somebody
+// renamed a file.
+//
+// Once, because the marker is removed before the fallback runs. If the older
+// binary cannot serve either — the database is down, which is a reason that
+// has nothing to do with either binary — the next start is an ordinary one
+// and nothing here happens again.
+func ExecPreviousIfLastStartFailed(current string) {
+	marker := InPlaceMarker(executablePath)
+	if marker == "" {
+		return
+	}
+	if _, err := os.Stat(marker); err != nil {
+		return
+	}
+	// Before anything else, so that a binary which crashes on startup cannot
+	// turn this into a loop of its own.
+	if err := os.Remove(marker); err != nil {
+		fmt.Fprintf(os.Stderr, "teanode: cannot clear %s, so the previous binary will not be tried: %s\n",
+			marker, err)
+		return
+	}
+
+	previous := executablePath + previousSuffix
+	if _, err := os.Stat(previous); err != nil {
+		fmt.Fprintf(os.Stderr, "teanode: %s was upgraded to %s and did not start last time, and there "+
+			"is no %s to go back to. Look at the log above this for why.\n",
+			executablePath, current, previous)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "teanode: %s did not start after being upgraded to %s; going back to the "+
+		"binary it replaced at %s. Look at the log for why, and do not turn automatic upgrades back "+
+		"on until you know.\n", executablePath, current, previous)
+	if err := syscall.Exec(previous, os.Args, os.Environ()); err != nil {
+		fmt.Fprintf(os.Stderr, "teanode: cannot run %s either, carrying on with this one: %s\n",
+			previous, err)
+	}
+}
+
 // MarkTried records that a staged binary is about to be run for the first
 // time, so that a release which crashes on startup is not run again for ever.
 //
@@ -527,13 +593,18 @@ func sameRelease(first, second string) bool {
 // exec, crash, restart, run the image's binary, check, install the same
 // release again, and round for ever — forty-five megabytes a lap.
 //
-// Nothing for a binary that is not staged: replacing one in place has no
-// marker, because there is no older binary underneath it to fall back to.
+// Both roads. The staged one falls back to the binary in the image; the
+// in-place one falls back to the copy swap kept beside it. See
+// ExecPreviousIfLastStartFailed.
 func MarkTried(directory, path string) {
-	if directory == "" || !sameFile(path, Staged(directory)) {
+	marker := InPlaceMarker(path)
+	if directory != "" && sameFile(path, Staged(directory)) {
+		marker = PendingMarker(directory)
+	}
+	if marker == "" {
 		return
 	}
-	if err := record(directory, pending, "started"); err != nil {
+	if err := os.WriteFile(marker, []byte("started\n"), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "teanode: cannot mark %s as being tried: %s\n", path, err)
 	}
 }
@@ -551,6 +622,9 @@ func MarkTried(directory, path string) {
 // upgrade will not download the same version again.
 func Untried(directory, path string) {
 	if directory == "" || !sameFile(path, Staged(directory)) {
+		// The in-place road has nothing to record: its marker only says the
+		// last start did not serve, and an exec that never ran is not that.
+		_ = os.Remove(InPlaceMarker(path))
 		return
 	}
 	_ = os.Remove(PendingMarker(directory))
@@ -565,6 +639,11 @@ func Untried(directory, path string) {
 // serving. Called from the server, not from here: what counts as far enough is
 // the server's question.
 func Started(directory string) {
+	// The in-place marker first, and whatever road this is: it sits beside
+	// this executable and says the last start of it did not serve, which this
+	// start has just disproved.
+	_ = os.Remove(InPlaceMarker(executablePath))
+
 	if staged := Staged(directory); staged == "" || !running(staged) {
 		return
 	}

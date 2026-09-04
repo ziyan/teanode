@@ -56,6 +56,19 @@ type Status struct {
 	CheckedAt  *time.Time `json:"checkedAt,omitempty"`
 	CheckError string     `json:"checkError,omitempty"`
 
+	// AttemptedAt is when the release list was last asked, successfully or
+	// not, and is what tells a caller waiting on a check that it has
+	// finished.
+	//
+	// It was here once, used to guess whether asking again would achieve
+	// anything, and that guess was wrong. This is the other job and the right
+	// one: CheckedAt only moves when a check succeeds and CheckError only
+	// changes when the reason changes, so a check that failed the same way
+	// twice — outbound HTTPS blocked, which is an ordinary way to run a mail
+	// server — moved nothing at all, and a page waiting on those two waited
+	// its full deadline for something that had already happened.
+	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
+
 	// Error is why the last upgrade failed, which is a different sentence in
 	// a different place on the page. They were one field, so a checksum that
 	// did not match was shown as though the release list could not be read,
@@ -689,7 +702,11 @@ func (self *manager) Check(ctx context.Context) (Status, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	self.lastAttempt = time.Now()
+	// A fresh value rather than the address of the field: Status copies the
+	// struct and the caller reads it after the lock is gone.
+	attempted := time.Now()
+	self.lastAttempt = attempted
+	self.status.AttemptedAt = &attempted
 	self.status.Applicable = applicable
 	self.status.Reason = reason
 

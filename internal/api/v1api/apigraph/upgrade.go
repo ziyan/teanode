@@ -47,6 +47,12 @@ type Upgrade struct {
 	// thing worth saying, and an error only in a log is an error nobody sees.
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 
+	// When the release list was last asked, successfully or not. A caller
+	// waiting for a check it started watches this: the time of the last
+	// success does not move when a check fails, and the reason does not
+	// change when it fails the same way twice.
+	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
+
 	// Whether asking for a check actually started one. Only ever true in the
 	// reply to a request that asked; false means the answer here is the one
 	// already known, and waiting for it to change would be waiting for
