@@ -9,9 +9,7 @@ import { QueuePage } from './pages/queue'
 import { ReportsPage } from './pages/reports'
 import { ReportDetailPage } from './pages/reportDetail'
 import { DomainsPage } from './pages/domains'
-import { DomainPage } from './pages/domain'
-import { DomainOverviewPage } from './pages/domainOverview'
-import { TemplatesPage } from './pages/templates'
+import { DomainTabsPage } from './pages/domainTabs'
 import { TemplateEditorPage } from './pages/templateEditor'
 import { LayoutEditorPage } from './pages/layoutEditor'
 import { ComposePage } from './pages/compose'
@@ -172,11 +170,14 @@ export function App() {
               <Route path="/reports/:reportId" element={<ReportDetailPage />} />
 
               <Route path="/domains" element={<DomainsPage />} />
-              <Route path="/domains/:domainId" element={<DomainOverviewPage />} />
-              <Route path="/domains/:domainId/settings" element={<DomainPage />} />
-              <Route path="/domains/:domainId/templates" element={<TemplatesPage />} />
+              <Route path="/domains/:domainId" element={<Navigate to="overview" replace />} />
+              {/* Everything a domain has is a tab of one page, and the two
+                  item pages below are not tabs. They are declared first so
+                  that "templates/<id>" reaches the editor rather than being
+                  read as the name of a tab. */}
               <Route path="/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
               <Route path="/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
+              <Route path="/domains/:domainId/:tab" element={<DomainTabsPage />} />
 
               {/* /settings on its own is not a page: the rail and the account
                   menu are the menu, and a page of cards pointing at the same

@@ -4,10 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Domain, Layout, Template, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
-import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
 
 const LIST = `
@@ -55,7 +55,7 @@ type Response = {
 // argument without quoting, because that is where it is typed.
 const TEMPLATE_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/
 
-export function TemplatesPage() {
+export function TemplatesTab() {
   const { t, plural } = useTranslation()
   const { domainId = '' } = useParams()
   const navigate = useNavigate()
@@ -71,8 +71,6 @@ export function TemplatesPage() {
   const [removingLayout, setRemovingLayout] = useState<Layout | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-
-  useBreadcrumbDetail(data?.GetDomain?.domain)
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true)
@@ -159,8 +157,14 @@ export function TemplatesPage() {
                 >
                   {t('templates.send')}
                 </Link>
-                <button className="link danger" type="button" onClick={() => setRemovingTemplate(template)}>
-                  {t('common.remove')}
+                <button
+                  className="icon-button danger"
+                  type="button"
+                  aria-label={t('common.remove')}
+                  title={t('common.remove')}
+                  onClick={() => setRemovingTemplate(template)}
+                >
+                  <TrashIcon />
                 </button>
               </>
             }
@@ -200,8 +204,14 @@ export function TemplatesPage() {
               </div>
             }
             actions={
-              <button className="link danger" type="button" onClick={() => setRemovingLayout(layout)}>
-                {t('common.remove')}
+              <button
+                className="icon-button danger"
+                type="button"
+                aria-label={t('common.remove')}
+                title={t('common.remove')}
+                onClick={() => setRemovingLayout(layout)}
+              >
+                <TrashIcon />
               </button>
             }
           />

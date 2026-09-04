@@ -1,11 +1,60 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { CheckIcon, CopyIcon } from './icons'
 import { Key, useTranslation } from '../i18n/i18n'
 
 
 export function Tag({ value, tone }: { value: string; tone?: 'good' | 'bad' | 'warn' }) {
   return <span className={tone ? `tag ${tone}` : 'tag'}>{value}</span>
+}
+
+// Copy, as an icon at the end of a value rather than a word beside it.
+//
+// A DKIM public key is four hundred characters, and printing all of them says
+// nothing a reader can check by eye while taking four lines of a table to say
+// it. The value is clamped to its line and this takes the whole of it,
+// unclamped, to wherever it is going.
+//
+// The tick lasts a moment and goes back. A button that stays changed is a
+// button that has forgotten what it does.
+export function CopyIconButton({ value, label }: { value: string; label?: string }) {
+  const { t } = useTranslation()
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  useEffect(() => {
+    if (state === 'idle') {
+      return
+    }
+    const timer = window.setTimeout(() => setState('idle'), 1500)
+    return () => window.clearTimeout(timer)
+  }, [state])
+
+  const name = label ?? t('common.copy')
+
+  return (
+    <button
+      type="button"
+      className="icon-button copy-button"
+      aria-label={state === 'copied' ? t('common.copied') : name}
+      title={state === 'failed' ? t('common.copyFailed') : state === 'copied' ? t('common.copied') : name}
+      onClick={() => {
+        // The clipboard API is absent on an insecure origin, which a
+        // deployment behind plain HTTP is. Say so rather than doing nothing:
+        // the value is on the screen either way.
+        if (!navigator.clipboard) {
+          setState('failed')
+          return
+        }
+        void navigator.clipboard.writeText(value).then(
+          () => setState('copied'),
+          () => setState('failed'),
+        )
+      }}
+    >
+      {state === 'copied' ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+    </button>
+  )
 }
 
 // toneFor maps a verdict onto a colour. Everything an authentication check can

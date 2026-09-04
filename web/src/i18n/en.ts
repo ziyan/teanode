@@ -247,6 +247,14 @@ export const en = {
   'domains.missing': '{count} missing',
 
   'domain.failed': 'that did not work',
+
+  'domain.tabOverview': 'Overview',
+  'domain.tabSettings': 'Settings',
+  'domain.tabAliases': 'Aliases',
+  'domain.tabCredentials': 'Credentials',
+  'domain.tabTemplates': 'Templates',
+  'domain.viewMail': 'Mail',
+  'domain.viewQueue': 'Queue',
   'domain.mailServersTitle': 'Mail server names',
   'domain.mailServersIntro':
     'The names this domain\u2019s MX records point at, and so the names a sender connects to. Leave this empty for the default, one name derived from the domain.',
@@ -528,17 +536,13 @@ export const en = {
   'domainOverview.dnsMissing': '{count} need changing',
   'domainOverview.dnsNever': 'Not checked yet',
   'domainOverview.checked': 'Checked {time}',
-  'domainOverview.mail': 'Mail',
   'domainOverview.lastReceived': 'Last received {time}',
   'domainOverview.nothingReceived': 'Nothing received yet',
-  'domainOverview.settings': 'Settings',
-  'domainOverview.settingsDetail': 'Aliases, credentials, the signing key, and the DNS records to publish.',
   'domainOverview.aliasesOne': '1 alias',
   'domainOverview.aliasesOther': '{count} aliases',
   'domainOverview.credentialsOne': '1 credential',
   'domainOverview.credentialsOther': '{count} credentials',
   'domainOverview.overview': 'Overview',
-  'domainOverview.resources': 'Resources',
   'domainOverview.messages': 'Messages',
   'domainOverview.accepted': 'Accepted',
   'domainOverview.rejected': 'Rejected',
@@ -547,13 +551,10 @@ export const en = {
   'domainOverview.refused': 'refused on arrival',
   'domainOverview.needChanging': 'need changing',
   'domainOverview.allPublished': 'all published',
-  'domainOverview.mailDetail': 'Everything received for this domain, and what happened to it.',
   'domainOverview.queued': 'In queue',
-  'domainOverview.queue': 'Queue',
   'domainOverview.queueEmpty': 'nothing waiting',
   'domainOverview.queueWaiting': 'waiting on a first attempt',
   'domainOverview.queueFailing': '{count} waiting on a retry',
-  'domainOverview.queueDetail': 'Mail for this domain that has not been delivered yet, and why.',
 
   'common.save': 'Save',
   'settings.integrations.description': 'The object store, the DNS solver, and the virus and spam scanners.',
@@ -564,7 +565,6 @@ export const en = {
   'integrations.certificatesPerDomainHint':
     'A sender connecting to a domain is then handed a certificate for the name it asked for, rather than one naming a different domain. Each name must reach this server on port 80 for the certificate to be obtained. Turning this off stops renewals; certificates already issued stay in place until they expire.',
   'integrations.title': 'Integrations',
-  'integrations.intro': 'Optional services this server talks to. Each is read when the server starts, so a change here takes effect on the next restart.',
   'integrations.unavailable': 'The integration settings could not be read.',
   'integrations.failed': 'The change could not be saved.',
   'integrations.saving': 'Saving…',
@@ -583,6 +583,156 @@ export const en = {
   'integrations.secretClearing': 'clearing on save',
   'integrations.secretKeep': 'Leave empty to keep it',
   'integrations.secretEnter': 'Not set',
+  'serverSettings.tabIdentity': 'Identity',
+  'serverSettings.tabMail': 'Mail',
+  'serverSettings.tabListeners': 'Listeners',
+  'serverSettings.tabCertificates': 'Certificates',
+  'serverSettings.tabResolver': 'Resolver',
+  'serverSettings.tabSessions': 'Sessions',
+
+  'serverSettings.needsRestart':
+    'These are read once, when the server starts. Saving stores the change; the server goes on using what it read until it is restarted.',
+  'serverSettings.restartHere': 'Restart it on the About tab',
+  'serverSettings.savedLive': 'Saved, and in use now',
+  'serverSettings.savedNeedsRestart': 'Saved; a restart picks it up',
+
+  'serverSettings.smtpTitle': 'Limits',
+  'serverSettings.smtpIntro':
+    'What this server accepts from whoever connects to it. Every one of these is read for each message or each connection, so a change applies to the next one.',
+  'serverSettings.maxMessageSize': 'Largest message',
+  'serverSettings.maxMessageSizeHint':
+    'With a unit, as in the file: 50MB, 25MiB, 10485760. A message over this is refused while it is still arriving, so the sender is told rather than left to wonder.',
+  'serverSettings.maxRecipientsIncoming': 'Recipients per incoming message',
+  'serverSettings.maxRecipientsIncomingHint':
+    'How many addresses one arriving message may name before the rest are refused. A message to more than a handful of your addresses at once is usually somebody guessing at them.',
+  'serverSettings.maxRecipientsOutgoing': 'Recipients per outgoing message',
+  'serverSettings.maxRecipientsOutgoingHint':
+    'The same for a message your own devices submit. It is the ceiling on how far one mistake can travel.',
+  'serverSettings.greylistDelay': 'Greylist delay',
+  'serverSettings.greylistDelayHint':
+    'How long a sender nobody here has seen before is asked to try again, as 5m or 0s. A real mail server retries; most of what does not is not worth receiving. 0s turns it off.',
+  'serverSettings.authRateLimit': 'Sign-in attempts a minute',
+  'serverSettings.authRateLimitHint':
+    'How fast one address may fail to sign in before it is slowed down. This is what stands between a weak password and somebody working through a list.',
+  'serverSettings.authRateBurst': 'Attempts allowed at once',
+  'serverSettings.authRateBurstHint':
+    'How many failures are allowed before that rate starts applying. Somebody mistyping their own password should not be caught by this.',
+  'serverSettings.trustedSenders': 'Trusted senders',
+  'serverSettings.trustedSendersHint':
+    'Comma separated addresses or ranges — 10.0.0.0/8, 192.168.1.5 — that skip the checks a stranger meets. Anything here can send as anyone, so put your own machines in it and nothing else.',
+
+  'serverSettings.resolverTitle': 'Resolver',
+  'serverSettings.resolverIntro':
+    'How this server asks DNS questions when it checks what a domain has published. Read for each check, so a change applies to the next one.',
+  'serverSettings.nameserver': 'Resolver',
+  'serverSettings.nameserverHint':
+    'As host:port, for example 1.1.1.1:53. Empty uses whatever this machine resolves with. A resolver that caches aggressively makes a record you have just published look missing for as long as it caches it.',
+  'serverSettings.checkInterval': 'Check each domain every',
+  'serverSettings.checkIntervalHint':
+    'As 6h or 30m. This is how quickly the DNS column on a domain notices that you have fixed a record; the Check again button does not wait for it.',
+  'serverSettings.externalAddressServices': 'Address services',
+  'serverSettings.externalAddressServicesHint':
+    'Comma separated URLs asked, in order, what this machine’s public address is — used to fill in the A record a domain should publish. Each is asked only if the one before it did not answer.',
+
+  'serverSettings.sessionTitle': 'Sessions',
+  'serverSettings.sessionIntro': 'How long a sign-in to this dashboard lasts.',
+  'serverSettings.sessionLifetime': 'A session lasts',
+  'serverSettings.sessionLifetimeHint':
+    'As 720h or 30d. Shortening it does not end the sessions already issued: they were stamped with the lifetime that applied when they were made. End those on the Sessions page of your account.',
+
+  'serverSettings.passkeyTitle': 'Passkeys',
+  'serverSettings.passkeyIntro':
+    'How this server introduces itself to an authenticator. A passkey is bound to the name below, so changing it makes every passkey already registered useless.',
+  'serverSettings.passkeyEnabled': 'Allow signing in with a passkey',
+  'serverSettings.relyingPartyId': 'Bound to',
+  'serverSettings.relyingPartyIdHint':
+    'The domain a passkey belongs to, without a scheme or a port: mail.example.com. Empty derives it from the address the dashboard is reached at. Every passkey registered under the old value stops working.',
+  'serverSettings.passkeyDisplayName': 'Shown as',
+  'serverSettings.passkeyDisplayNameHint':
+    'What the authenticator shows the person deciding whether to allow it. Your server’s name, in words rather than as a host.',
+  'serverSettings.passkeyOrigins': 'Origins',
+  'serverSettings.passkeyOriginsHint':
+    'Comma separated origins a ceremony may come from, as https://mail.example.com. Empty derives one from the name above, which is right unless the dashboard is reached at more than one address.',
+  'serverSettings.passkeyMaximum': 'Passkeys per account',
+  'serverSettings.passkeyMaximumHint':
+    'How many an operator may register. Zero means no limit. More than one is normal: a phone and a laptop are two.',
+
+  'serverSettings.listenTitle': 'Listeners',
+  'serverSettings.listenIntro':
+    'The addresses this server binds. Each is host:port, and an empty host means every address on the machine.',
+  'serverSettings.listenSmtpIncoming': 'Incoming mail',
+  'serverSettings.listenSmtpIncomingHint':
+    'Where mail from other servers arrives, normally :25. Changing this without changing what forwards to it stops mail arriving at all.',
+  'serverSettings.listenSmtpOutgoing': 'Submission',
+  'serverSettings.listenSmtpOutgoingHint':
+    'Where your own devices hand this server mail to send, normally :587. A mail client configured against the old port stops being able to send.',
+  'serverSettings.listenHttp': 'HTTP',
+  'serverSettings.listenHttpHint':
+    'Normally :80. It serves the ACME http-01 challenge and redirects everything else, so turning it off stops certificates renewing when the challenge is http-01.',
+  'serverSettings.listenHttps': 'HTTPS',
+  'serverSettings.listenHttpsHint':
+    'Where this dashboard is served, normally :443. This is the one you are reading this on.',
+  'serverSettings.listenDebug': 'Profiling',
+  'serverSettings.listenDebugHint':
+    'An address for Go’s profiling endpoints, off when empty. It has no authentication of its own, so bind it to 127.0.0.1 and nothing else.',
+  'serverSettings.listenConfirmQuestion': 'Save these addresses, with the dashboard on {https}?',
+  'serverSettings.listenConfirmExplained':
+    'Nothing changes until the server restarts. If the dashboard’s address is wrong you will not be able to reach this page after that, and the way back is a shell on the host and "teanode-server config".',
+  'serverSettings.listenConfirmSave': 'Save the addresses',
+
+  'serverSettings.identityTitle': 'This server',
+  'serverSettings.identityIntro': 'What this server calls itself, and how much it writes down.',
+  'serverSettings.serverName': 'Name',
+  'serverSettings.serverNameHint':
+    'The name this server gives in its SMTP banner and derives its own certificate from. A name that does not resolve to this machine makes other servers suspicious of your mail.',
+  'serverSettings.serverMailServers': 'Mail server names',
+  'serverSettings.serverMailServersHint':
+    'Comma separated. The hosts every domain’s MX records name, unless that domain names its own on its Settings tab. Changing this changes the records every domain has to publish.',
+  'serverSettings.logLevel': 'Log level',
+  'serverSettings.logLevelHint':
+    'How much is written to the log. Notice is the working default; debug is a great deal and is for finding something specific, not for leaving on.',
+  'serverSettings.dataDirectory': 'Data directory',
+  'serverSettings.dataDirectoryHint':
+    'Where mail and state are written. Shown and not editable here: a server restarted against a different directory does not find what is in the old one, and the mail simply is not there any more. Moving it is done with the server stopped.',
+
+  'serverSettings.storageTitle': 'On this machine',
+  'serverSettings.storageIntro': 'Where messages are written, and how long a delivery that keeps failing is kept.',
+  'serverSettings.storageDirectory': 'Message directory',
+  'serverSettings.storageDirectoryHint':
+    'Under the data directory. Changing it does not move what is already there, so the messages in the old one stop being readable from the dashboard.',
+  'serverSettings.spoolRetention': 'Keep retrying for',
+  'serverSettings.spoolRetentionHint':
+    'As 30d or 72h. How long a delivery that keeps failing stays in the queue before it is given up on and bounced.',
+
+  'serverSettings.geoipTitle': 'Where senders connect from',
+  'serverSettings.geoipIntro':
+    'An optional MaxMind database, read from disk, that turns the address a message arrived from into a country. Nothing is sent anywhere to do it.',
+  'serverSettings.geoipEnabled': 'Look up where a sender connected from',
+  'serverSettings.geoipDatabaseFile': 'Database file',
+  'serverSettings.geoipDatabaseFileHint':
+    'Path to a GeoLite2-Country.mmdb or GeoLite2-City.mmdb. Relative paths are resolved against the data directory.',
+
+  'serverSettings.certificateHosts': 'Names on this server’s certificate',
+  'serverSettings.certificateHostsHint':
+    'Comma separated. The names the server’s own certificate covers — the dashboard’s address and this server’s mail server names. A wildcard such as *.example.com needs the dns-01 challenge.',
+  'serverSettings.acmeEnabled': 'Obtain certificates automatically',
+  'serverSettings.acmeEnabledHint':
+    'Off means this server uses only the certificate and key named below, and renewing them is your job.',
+  'serverSettings.acmeEmail': 'Contact address',
+  'serverSettings.acmeEmailHint':
+    'Where the certificate authority writes if something is wrong or a certificate is about to expire without having renewed. Not published anywhere.',
+  'serverSettings.acmeChallenge': 'Challenge',
+  'serverSettings.acmeChallengeHint':
+    'How ownership is proved. http-01 needs the HTTP listener reachable from the internet on port 80; dns-01 needs the solver below, and is the only one that can obtain a wildcard.',
+  'serverSettings.acmeDirectoryUrl': 'Authority',
+  'serverSettings.acmeDirectoryUrlHint':
+    'The ACME directory URL. Empty is Let’s Encrypt. Point it at their staging directory while you are testing: its certificates are not trusted, and its rate limits are far more forgiving.',
+  'serverSettings.certificateFile': 'Certificate file',
+  'serverSettings.certificateFileHint':
+    'A certificate supplied by hand, in PEM, used when certificates are not obtained automatically. Relative paths are resolved against the configuration directory.',
+  'serverSettings.privateKeyFile': 'Private key file',
+  'serverSettings.privateKeyFileHint': 'The key belonging to that certificate, in PEM. Keep it readable only by the user this server runs as.',
+
   'integrations.tabSending': 'Sending',
   'integrations.tabStorage': 'Storage',
   'integrations.tabDns': 'DNS',
@@ -653,7 +803,6 @@ export const en = {
   // --- templates, layouts, and writing a message ----------------------------
   'nav.compose': 'Compose',
   'compose.new': 'New message',
-  'domainOverview.templatesDetail': 'The messages this domain sends by template, and the layouts they sit in.',
 
   'templates.title': 'Templates',
   'templates.intro':

@@ -23,7 +23,15 @@ const settingsSelection = `{
 	relay { enabled host port security username hasPassword }
 	submission { host port effectiveHost effectivePort }
 	proxy { socks5 }
-	certificates { perDomain hosts }
+	certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
+	smtp { maxMessageSize maxRecipientsIncoming maxRecipientsOutgoing greylistDelay authRateLimit authRateBurst trustedSenders }
+	resolver { nameserver checkInterval externalAddressServices }
+	session { lifetime }
+	passkey { enabled relyingPartyId displayName origins maximumPerUser }
+	listen { smtpIncoming smtpOutgoing http https debug }
+	identity { name mailServers logLevel dataDirectory }
+	storage { directory spoolRetention }
+	geoip { enabled databaseFile }
 }`
 
 // GetSettings returns the optional integrations. Secrets are never returned;
@@ -51,11 +59,17 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 		$s3: S3ParametersInput, $route53: Route53ParametersInput,
 		$antivirus: ServiceParametersInput, $antispam: ServiceParametersInput,
 		$relay: RelayParametersInput, $submission: SubmissionParametersInput,
-		$proxy: ProxyParametersInput, $certificates: CertificateParametersInput
+		$proxy: ProxyParametersInput, $certificates: CertificateParametersInput,
+		$smtp: SmtpParametersInput, $resolver: ResolverParametersInput,
+		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
+		$listen: ListenParametersInput, $identity: IdentityParametersInput,
+		$storage: StorageParametersInput, $geoip: GeoIPParametersInput
 	) {
 		UpdateSettings(
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
-			relay: $relay, submission: $submission, proxy: $proxy, certificates: $certificates
+			relay: $relay, submission: $submission, proxy: $proxy, certificates: $certificates,
+			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
+			listen: $listen, identity: $identity, storage: $storage, geoip: $geoip
 		) ` + settingsSelection + `
 	}`
 	if err := connection.Execute(ctx, query, sections, &result); err != nil {

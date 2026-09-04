@@ -244,6 +244,14 @@ export const zh: Catalog = {
   'domains.missing': '缺少 {count} 条',
 
   'domain.failed': '操作未成功',
+
+  'domain.tabOverview': '概览',
+  'domain.tabSettings': '设置',
+  'domain.tabAliases': '别名',
+  'domain.tabCredentials': '凭据',
+  'domain.tabTemplates': '模板',
+  'domain.viewMail': '邮件',
+  'domain.viewQueue': '队列',
   'domain.mailServersTitle': '邮件服务器名称',
   'domain.mailServersIntro':
     '该域名的 MX 记录指向的名称，也就是发信方连接的名称。留空则使用默认值：由域名派生的单个名称。',
@@ -508,17 +516,13 @@ export const zh: Catalog = {
   'domainOverview.dnsMissing': '{count} 条需要修改',
   'domainOverview.dnsNever': '尚未检查',
   'domainOverview.checked': '上次检查：{time}',
-  'domainOverview.mail': '邮件',
   'domainOverview.lastReceived': '最近接收：{time}',
   'domainOverview.nothingReceived': '还没有收到邮件',
-  'domainOverview.settings': '设置',
-  'domainOverview.settingsDetail': '别名、凭据、签名密钥，以及需要发布的 DNS 记录。',
   'domainOverview.aliasesOne': '1 个别名',
   'domainOverview.aliasesOther': '{count} 个别名',
   'domainOverview.credentialsOne': '1 个凭据',
   'domainOverview.credentialsOther': '{count} 个凭据',
   'domainOverview.overview': '概览',
-  'domainOverview.resources': '资源',
   'domainOverview.messages': '邮件',
   'domainOverview.accepted': '已接收',
   'domainOverview.rejected': '已拒收',
@@ -527,13 +531,10 @@ export const zh: Catalog = {
   'domainOverview.refused': '在接收时被拒绝',
   'domainOverview.needChanging': '条需要修改',
   'domainOverview.allPublished': '全部已发布',
-  'domainOverview.mailDetail': '该域名收到的全部邮件，以及它们的去向。',
   'domainOverview.queued': '队列中',
-  'domainOverview.queue': '队列',
   'domainOverview.queueEmpty': '没有等待中的邮件',
   'domainOverview.queueWaiting': '等待首次投递',
   'domainOverview.queueFailing': '{count} 封等待重试',
-  'domainOverview.queueDetail': '此域名下尚未投递成功的邮件，以及原因。',
 
   'common.save': '保存',
   'settings.integrations.description': '对象存储、DNS 验证方式，以及病毒和垃圾邮件扫描。',
@@ -544,7 +545,6 @@ export const zh: Catalog = {
   'integrations.certificatesPerDomainHint':
     '这样，连接某个域名的发信方拿到的证书就是它请求的名称，而不是另一个域名的名称。每个名称都必须能通过 80 端口访问本服务器才能签发证书。关闭后将停止续期，已签发的证书在到期前仍继续使用。',
   'integrations.title': '集成',
-  'integrations.intro': '此服务器可选连接的服务。每一项都在服务器启动时读取，因此这里的更改会在下次重启时生效。',
   'integrations.unavailable': '无法读取集成设置。',
   'integrations.failed': '更改未能保存。',
   'integrations.saving': '保存中…',
@@ -563,6 +563,156 @@ export const zh: Catalog = {
   'integrations.secretClearing': '保存时清除',
   'integrations.secretKeep': '留空则保持不变',
   'integrations.secretEnter': '未设置',
+  'serverSettings.tabIdentity': '本机',
+  'serverSettings.tabMail': '邮件',
+  'serverSettings.tabListeners': '监听地址',
+  'serverSettings.tabCertificates': '证书',
+  'serverSettings.tabResolver': '解析器',
+  'serverSettings.tabSessions': '会话',
+
+  'serverSettings.needsRestart':
+    '这些设置只在服务器启动时读取一次。保存会记录下修改，但服务器仍在使用启动时读到的值，直到重启为止。',
+  'serverSettings.restartHere': '在“关于”标签页重启',
+  'serverSettings.savedLive': '已保存，并已生效',
+  'serverSettings.savedNeedsRestart': '已保存；重启后生效',
+
+  'serverSettings.smtpTitle': '限制',
+  'serverSettings.smtpIntro':
+    '本服务器对连接进来的一方所接受的范围。以下每一项都会在每封邮件或每次连接时读取，因此修改会在下一次生效。',
+  'serverSettings.maxMessageSize': '单封邮件上限',
+  'serverSettings.maxMessageSizeHint':
+    '要带单位，和配置文件里一样：50MB、25MiB、10485760。超过此值的邮件在接收过程中就会被拒绝，因此发件方会收到明确的告知，而不是不明所以。',
+  'serverSettings.maxRecipientsIncoming': '每封来信的收件人上限',
+  'serverSettings.maxRecipientsIncomingHint':
+    '一封进来的邮件最多可以写多少个地址，超出的会被拒绝。一封信同时寄给你这里好几个地址，通常是有人在猜测地址。',
+  'serverSettings.maxRecipientsOutgoing': '每封发信的收件人上限',
+  'serverSettings.maxRecipientsOutgoingHint':
+    '你自己的设备提交的邮件同理。它决定了一次误操作最多能扩散到多远。',
+  'serverSettings.greylistDelay': '灰名单延迟',
+  'serverSettings.greylistDelayHint':
+    '第一次见到的发件方需要等待多久后重试，写作 5m 或 0s。正规邮件服务器会重试；不会重试的多半也不值得收。填 0s 即关闭。',
+  'serverSettings.authRateLimit': '每分钟登录尝试次数',
+  'serverSettings.authRateLimitHint':
+    '同一个地址登录失败到多快就开始被限速。这是弱密码和逐个试密码的人之间唯一的屏障。',
+  'serverSettings.authRateBurst': '允许的突发次数',
+  'serverSettings.authRateBurstHint':
+    '在开始限速之前允许失败多少次。自己打错密码的人不该被它拦住。',
+  'serverSettings.trustedSenders': '受信任的发件来源',
+  'serverSettings.trustedSendersHint':
+    '逗号分隔的地址或网段 —— 10.0.0.0/8、192.168.1.5 —— 可以跳过陌生来源要过的检查。列在这里的可以冒充任何人发信，所以只填你自己的机器。',
+
+  'serverSettings.resolverTitle': '解析器',
+  'serverSettings.resolverIntro':
+    '本服务器检查域名已发布的记录时，如何进行 DNS 查询。每次检查时读取，修改在下一次检查生效。',
+  'serverSettings.nameserver': '解析器',
+  'serverSettings.nameserverHint':
+    '写作 host:port，例如 1.1.1.1:53。留空则使用本机的解析设置。缓存过于激进的解析器，会让你刚刚发布的记录在缓存期内一直显示为缺失。',
+  'serverSettings.checkInterval': '每隔多久检查一次',
+  'serverSettings.checkIntervalHint':
+    '写作 6h 或 30m。它决定域名页上的 DNS 一列多快会注意到你已经改好了记录；“重新检查”按钮不必等它。',
+  'serverSettings.externalAddressServices': '公网地址查询服务',
+  'serverSettings.externalAddressServicesHint':
+    '逗号分隔的 URL，按顺序询问本机的公网地址，用来填出域名应当发布的 A 记录。只有前一个没有回应时才会问下一个。',
+
+  'serverSettings.sessionTitle': '会话',
+  'serverSettings.sessionIntro': '登录本控制台后能保持多久。',
+  'serverSettings.sessionLifetime': '会话有效期',
+  'serverSettings.sessionLifetimeHint':
+    '写作 720h 或 30d。缩短它不会结束已经签发的会话：它们在创建时就带上了当时的有效期。要结束那些，请到你账户的“会话”页面。',
+
+  'serverSettings.passkeyTitle': '通行密钥',
+  'serverSettings.passkeyIntro':
+    '本服务器如何向验证器介绍自己。通行密钥绑定在下面这个名字上，改动它会让已经注册的所有通行密钥失效。',
+  'serverSettings.passkeyEnabled': '允许使用通行密钥登录',
+  'serverSettings.relyingPartyId': '绑定到',
+  'serverSettings.relyingPartyIdHint':
+    '通行密钥所属的域名，不带协议和端口：mail.example.com。留空则从访问控制台的地址推导。按旧值注册的通行密钥都会失效。',
+  'serverSettings.passkeyDisplayName': '显示为',
+  'serverSettings.passkeyDisplayNameHint':
+    '验证器向正在决定是否允许的人展示的名称。用文字写出你的服务器名，而不是主机名。',
+  'serverSettings.passkeyOrigins': '来源',
+  'serverSettings.passkeyOriginsHint':
+    '逗号分隔的允许发起验证的来源，写作 https://mail.example.com。留空则从上面的名字推导；除非控制台有多个访问地址，否则留空即可。',
+  'serverSettings.passkeyMaximum': '每个账户的通行密钥数量',
+  'serverSettings.passkeyMaximumHint':
+    '一位管理员最多可注册多少个。填 0 表示不限。多于一个是正常的：手机和笔记本就是两个。',
+
+  'serverSettings.listenTitle': '监听地址',
+  'serverSettings.listenIntro':
+    '本服务器绑定的地址。每一项都写作 host:port，主机留空表示本机的所有地址。',
+  'serverSettings.listenSmtpIncoming': '接收邮件',
+  'serverSettings.listenSmtpIncomingHint':
+    '其他服务器投递来的邮件从哪里进来，通常是 :25。改了它却没有同时改转发到它的东西，邮件就完全收不到了。',
+  'serverSettings.listenSmtpOutgoing': '提交',
+  'serverSettings.listenSmtpOutgoingHint':
+    '你自己的设备把待发邮件交给本服务器的地方，通常是 :587。按旧端口配置的邮件客户端将无法再发信。',
+  'serverSettings.listenHttp': 'HTTP',
+  'serverSettings.listenHttpHint':
+    '通常是 :80。它负责 ACME 的 http-01 验证并把其余请求重定向，所以关掉它会让 http-01 方式的证书无法续期。',
+  'serverSettings.listenHttps': 'HTTPS',
+  'serverSettings.listenHttpsHint':
+    '本控制台的服务地址，通常是 :443。你正是通过它在看这段文字。',
+  'serverSettings.listenDebug': '性能分析',
+  'serverSettings.listenDebugHint':
+    'Go 性能分析端点的地址，留空即关闭。它自身没有任何鉴权，所以只绑定到 127.0.0.1。',
+  'serverSettings.listenConfirmQuestion': '保存这些地址，控制台使用 {https}？',
+  'serverSettings.listenConfirmExplained':
+    '重启之前不会有任何变化。如果控制台的地址填错了，重启后你将无法再打开这个页面，唯一的退路是登上主机执行 “teanode-server config”。',
+  'serverSettings.listenConfirmSave': '保存地址',
+
+  'serverSettings.identityTitle': '本服务器',
+  'serverSettings.identityIntro': '本服务器如何称呼自己，以及记录多少日志。',
+  'serverSettings.serverName': '名称',
+  'serverSettings.serverNameHint':
+    '本服务器在 SMTP 欢迎语中给出的名字，也是它自己证书的来源。如果这个名字解析不到本机，别的服务器会对你发出的邮件起疑。',
+  'serverSettings.serverMailServers': '邮件服务器名',
+  'serverSettings.serverMailServersHint':
+    '逗号分隔。除非某个域在自己的“设置”标签页里另行指定，否则所有域的 MX 记录都指向这些主机。改动它会改变每个域需要发布的记录。',
+  'serverSettings.logLevel': '日志级别',
+  'serverSettings.logLevelHint':
+    '写入日志的详细程度。notice 是日常默认值；debug 的量非常大，用来定位具体问题，不适合长期开着。',
+  'serverSettings.dataDirectory': '数据目录',
+  'serverSettings.dataDirectoryHint':
+    '邮件和状态写在哪里。这里只显示、不可修改：服务器改用另一个目录重启后，找不到原目录里的东西，那些邮件就等于不存在了。迁移要在服务器停止的状态下进行。',
+
+  'serverSettings.storageTitle': '本机存储',
+  'serverSettings.storageIntro': '邮件写在哪里，以及一直投递失败的邮件保留多久。',
+  'serverSettings.storageDirectory': '邮件目录',
+  'serverSettings.storageDirectoryHint':
+    '位于数据目录之下。改动它不会搬走已经存在的内容，因此旧目录里的邮件将无法再从控制台读取。',
+  'serverSettings.spoolRetention': '重试保留时长',
+  'serverSettings.spoolRetentionHint':
+    '写作 30d 或 72h。一封一直投递失败的邮件在队列中停留多久后放弃并退信。',
+
+  'serverSettings.geoipTitle': '发件方来自何处',
+  'serverSettings.geoipIntro':
+    '可选的 MaxMind 数据库，从磁盘读取，把邮件来源地址换算成国家。整个过程不向外发送任何内容。',
+  'serverSettings.geoipEnabled': '查询发件方的连接来源地',
+  'serverSettings.geoipDatabaseFile': '数据库文件',
+  'serverSettings.geoipDatabaseFileHint':
+    'GeoLite2-Country.mmdb 或 GeoLite2-City.mmdb 的路径。相对路径按数据目录解析。',
+
+  'serverSettings.certificateHosts': '本服务器证书覆盖的名字',
+  'serverSettings.certificateHostsHint':
+    '逗号分隔。服务器自身证书覆盖的名字 —— 控制台的地址，以及本服务器的邮件服务器名。像 *.example.com 这样的通配符需要 dns-01 验证方式。',
+  'serverSettings.acmeEnabled': '自动申请证书',
+  'serverSettings.acmeEnabledHint':
+    '关闭后，本服务器只使用下面指定的证书和私钥，续期由你自己负责。',
+  'serverSettings.acmeEmail': '联系邮箱',
+  'serverSettings.acmeEmailHint':
+    '出问题时，或证书即将过期却未能续期时，证书颁发机构会写信到这里。不会公开在任何地方。',
+  'serverSettings.acmeChallenge': '验证方式',
+  'serverSettings.acmeChallengeHint':
+    '如何证明域名归你所有。http-01 需要 HTTP 监听能从公网的 80 端口访问；dns-01 需要下面的求解器，也是唯一能申请通配符证书的方式。',
+  'serverSettings.acmeDirectoryUrl': '颁发机构',
+  'serverSettings.acmeDirectoryUrlHint':
+    'ACME 目录 URL。留空即 Let’s Encrypt。测试期间请指向它们的 staging 目录：那里签发的证书不被信任，但速率限制宽松得多。',
+  'serverSettings.certificateFile': '证书文件',
+  'serverSettings.certificateFileHint':
+    '手工提供的 PEM 格式证书，在不自动申请证书时使用。相对路径按配置目录解析。',
+  'serverSettings.privateKeyFile': '私钥文件',
+  'serverSettings.privateKeyFileHint': '与该证书配对的 PEM 格式私钥。请只让运行本服务器的用户可读。',
+
   'integrations.tabSending': '发送',
   'integrations.tabStorage': '存储',
   'integrations.tabDns': 'DNS',
@@ -631,7 +781,6 @@ export const zh: Catalog = {
   // --- 模板、布局与撰写邮件 ----------------------------------------------------
   'nav.compose': '写邮件',
   'compose.new': '写新邮件',
-  'domainOverview.templatesDetail': '此域名按模板发送的邮件，以及它们所用的布局。',
 
   'templates.title': '模板',
   'templates.intro':

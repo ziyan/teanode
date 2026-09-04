@@ -36,18 +36,10 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
 ]
 
-// A page belonging to one domain — /domains/<id>/settings — sits two levels
-// down: the domain, then the page. Without this the trail ended at the domain
-// and read exactly like the domain's own overview, so the settings page looked
-// like the page it was reached from and offered no way back to it.
-//
-// The domain's name is not in the route, so it arrives the same way it always
-// does: the page supplies it as the detail. What changes here is that the
-// detail becomes a link rather than the end of the trail.
-const DOMAIN_PAGES: { suffix: string; label: Key }[] = [
-  { suffix: '/settings', label: 'domainOverview.settings' },
-  { suffix: '/templates', label: 'templates.title' },
-]
+// A domain's own pages — its DNS, its aliases, its templates — used to add a
+// crumb each, because each was a page of its own two levels down. They are
+// tabs of one page now, and the tab row says which one you are on: a crumb
+// saying it as well was the same word twice, and the trail ends at the domain.
 
 // A page belonging to one thing of a domain — a template, a layout — is
 // three levels down: the domain, the list it is in, then the thing itself.
@@ -121,10 +113,6 @@ function useTrail(): { label: string; to?: string }[] {
     if (detail) {
       const owner = /^\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
       const rest = owner?.[2] ?? ''
-      const page = owner && DOMAIN_PAGES.find((candidate) => candidate.suffix === rest)
-      if (owner && page) {
-        return [...crumbs, { label: detail, to: `/domains/${owner[1]}` }, { label: t(page.label) }]
-      }
       const itemPage = owner && DOMAIN_ITEM_PAGES.find((candidate) => rest.startsWith(candidate.prefix))
       if (owner && itemPage) {
         return [
@@ -135,6 +123,17 @@ function useTrail(): { label: string; to?: string }[] {
         ]
       }
       return [...crumbs, { label: detail }]
+    }
+
+    // A page about one domain is named after that domain, and the name
+    // arrives with the data rather than with the route. Until it does the
+    // heading is blank, not the section's own name: falling back to the
+    // crumbs alone put "Domains" in the page heading for as long as the query
+    // took, and every navigation between two of a domain's pages — the
+    // template editor back to the list, say — cleared the detail and flashed
+    // it. A blank says "still coming"; the wrong word in 30px does not.
+    if (/^\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
+      return [...crumbs, { label: '' }]
     }
     return crumbs
   }, [location.pathname, detail, item, t])
@@ -151,7 +150,10 @@ function DocumentTitle() {
     // Reversed: a row of tabs is read left to right and truncated from the
     // right, so the part that tells them apart has to come before the part
     // they share.
-    const parts = trail.map((crumb) => crumb.label).reverse()
+    const parts = trail
+      .map((crumb) => crumb.label)
+      .filter((label) => label !== '')
+      .reverse()
     document.title = [...parts, t('app.name')].join(' · ')
   }, [trail, t])
 
@@ -172,7 +174,10 @@ export function PageHeading() {
     return null
   }
 
-  return <h1 className="page-heading">{last.label}</h1>
+  // A non-breaking space rather than nothing: an empty h1 collapses to no
+  // height, and the page below it would jump up and back down as the name
+  // arrives.
+  return <h1 className="page-heading">{last.label || '\u00a0'}</h1>
 }
 
 export function Breadcrumb() {

@@ -857,13 +857,28 @@ a.tile:hover strong {
   color: var(--accent);
 }
 
-/* The one thing on the page that scrolls. */
+/* The one thing on the page that scrolls.
+   
+   And the one thing that decides how wide anything is. Without a limit here a
+   card on a 2560px monitor is 2264px of box holding 617px of writing, with
+   most of a thousand pixels of nothing to the right of every sentence — which
+   is what capping the prose alone leaves behind. The measure was doing its
+   job; the box around it was not.
+   
+   The cap is padding rather than a max-width on the element, so the column
+   this scrolls stays the full width and the scrollbar stays at the window's
+   edge, where a scrollbar belongs. On a narrow window the max() falls back to
+   the 32px gutter and nothing changes.
+   
+   1400px because that is comfortably more than anything here needs: the mail
+   list is eight columns and 1019px at its natural width, and the DNS table is
+   a fixed layout in percentages that fits whatever it is given. */
 .content {
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--space-6) 32px;
+  padding: var(--space-6) max(32px, (100% - 1400px) / 2);
 }
 
 h2 { margin-top: 0; font-size: 20px; }
@@ -871,6 +886,59 @@ h3 { font-size: 16px; margin-bottom: 8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: var(--text-body); }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+/* Top is right for a cell that stacks several lines — the values found for a
+   DNS record, the evidence behind an authentication check — and wrong for a
+   row whose height is set by a control at the end of it. A 34px button in a
+   row of one-line text makes the row taller than the text, and the text then
+   sits at the top of that space rather than level with the button it is
+   beside. Wherever a row holds one, its cells line up through the middle. */
+tr:has(.icon-button) > td {
+  vertical-align: middle;
+}
+
+/* A value and the button that copies it, on one line. The value takes the
+   room and gives up its end to an ellipsis rather than wrapping to four
+   lines; the button keeps its size. */
+.value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.value-clamp {
+  flex: 1;
+  min-width: 0;
+  /* Clamped by height, not by refusing to break. A DKIM key is one
+     unbreakable token, so "white-space: nowrap" gave the cell an intrinsic
+     width of four hundred characters and an auto-layout table did as it was
+     told: the column grew to fit and pushed the two columns after it off the
+     page. Letting it break anywhere — which .mono already asks for — and
+     showing one line of it keeps the column whatever width the table had in
+     mind. */
+  /* break-all, not overflow-wrap: anywhere. "anywhere" permits a break
+     inside a word only where one is needed to stop it overflowing, and the
+     clamp then ends the line at the last ordinary break opportunity before
+     the giant token — which for a DKIM record is the space after "k=rsa;",
+     fifteen characters into a column nine hundred pixels wide. break-all
+     makes every character a break opportunity, so the line fills and the
+     ellipsis lands at the edge. Verified in the browser rather than
+     reasoned about: the first two attempts at this were both wrong. */
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+
+/* Quieter than a trash icon, and smaller: it sits inside a line of text
+   rather than at the end of a row. */
+.icon-button.copy-button {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
 
 /* --- the shared table -----------------------------------------------------
    An outlined surface holding the table, so the header, the rows and the
@@ -1040,19 +1108,73 @@ td.shrink { width: 1%; white-space: nowrap; }
    on a wide screen a paragraph that fills the panel runs past 200 characters
    a line — far enough that the eye loses which line comes next. Controls and
    tables are unaffected; only the text is capped. */
-.card > p,
-.content > p,
-.settings-section > p {
+/* Any explanatory paragraph, however deeply it sits. This was three child
+   combinators, which meant the cap held only for a paragraph that happened to
+   be a direct child: the steps under "Getting mail flowing" are a paragraph
+   inside a div inside a row inside the card, so they escaped it and ran the
+   full 2161px of a wide window while every passage around them stopped at 617.
+   A rule that depends on how deeply somebody nested a div is a rule that will
+   keep being wrong.
+   
+   :where() so the whole selector counts as nothing: the exceptions below are
+   the same weight and win by being written after, rather than by an escalation
+   nobody can follow later. */
+:where(.card, .content, .settings-section) p.muted {
   max-width: var(--measure);
 }
 
-/* The name of a record is short, and it is the thing a reader scans down the
-   column for. Without a floor it is squeezed to a few characters by the
-   signing key in the cell beside it, which asks for as much width as it can
-   get. Wide enough for <selector>._domainkey.<domain>, which is the longest
-   name this table shows. */
-.record-name {
-  min-width: 28ch;
+/* Except the ones that are paragraphs by tag and panels by drawing: an empty
+   state standing in for a row, a notice with a background behind it. The
+   measure that keeps a sentence readable makes those a narrow box beside
+   full-width rows, which reads as a mistake rather than as a margin. Same
+   specificity as the cap above and written after it, so it wins. */
+p.settings-empty,
+p.notice,
+p.table-empty {
+  max-width: none;
+}
+
+/* A paragraph that is the whole of a table cell is bounded by its column
+   already, and a measure inside one only makes the column look mis-set. */
+td p.muted {
+  max-width: none;
+}
+
+/* Five columns of very different appetite: a two-letter type, a name of about
+   thirty characters, a value that may be four hundred, and two short
+   verdicts. Left to size themselves the value asks for everything it can get
+   — a signing key is one unbreakable token — and the name is squeezed until
+   <selector>._domainkey.<domain> wraps mid-word, which is the one thing in
+   the row a reader scans down the column for.
+   
+   So the proportions are stated and the layout fixed, which also gives the
+   value a width to be clamped against rather than one worked out from its own
+   content. Percentages, so it still fits a narrow window; the value column is
+   whatever is left, which is about half. A min-width on the name used to do
+   half of this job and cannot do it here: a fixed layout takes the stated
+   width and ignores the rest. */
+.dns-table {
+  table-layout: fixed;
+}
+
+.dns-table th:nth-child(1),
+.dns-table td:nth-child(1) {
+  width: 7%;
+}
+
+.dns-table th:nth-child(2),
+.dns-table td:nth-child(2) {
+  width: 26%;
+}
+
+.dns-table th:nth-child(4),
+.dns-table td:nth-child(4) {
+  width: 13%;
+}
+
+.dns-table th:nth-child(5),
+.dns-table td:nth-child(5) {
+  width: 8%;
 }
 
 /* A sentence under a value in a table is prose, and the rule above misses it:
@@ -1459,7 +1581,8 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 /* A tab keeps its width in a row that scrolls; the default would squeeze them
    all until every label was unreadable. */
 .tabs button,
-.tabs .tab-action {
+.tabs .tab-action,
+.tabs .tab-actions {
   flex: 0 0 auto;
 }
 
@@ -1467,9 +1590,22 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 .tabs button:hover:not(:disabled) { background: none; color: var(--text); }
 
 /* An action sitting with the tabs rather than being one: it does not change
-   what is below, it takes a copy away with you. */
-.tabs .tab-action {
+   what is below, it takes a copy away with you — or, on a domain, it leaves
+   for a different page with a filter applied. Direct children only: two of
+   them inside .tab-actions would each take half the free space and sit at
+   opposite ends of the row. */
+.tabs > .tab-action {
   margin-left: auto;
+}
+
+.tabs .tab-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tabs .tab-action {
   align-self: center;
   padding: 8px 12px;
   font-size: var(--text-body);
@@ -2117,24 +2253,13 @@ body,
   }
 }
 
-/* A ruled list of things that each have a name, a line of detail and maybe an
-   action: sessions, tokens. A table would be too much furniture for two
-   columns of prose, and would wrap badly on a phone. */
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.settings-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
 /* The detail takes the space and the actions keep their size, so a long user
-   agent truncates instead of pushing the revoke button off the row. */
+   agent truncates instead of pushing the revoke button off the row.
+   .settings-row itself is the card below; a ruled-list version of it used to
+   be declared here too, and the half of it that outlived the design — a
+   :last-child that took the padding off the bottom — is more specific than
+   the card's own padding, so the last row of every list on every page sat
+   flush against its own border. */
 .settings-row-detail {
   flex: 1;
   min-width: 0;
@@ -2154,11 +2279,7 @@ body,
 
 @media (max-width: 600px) {
   /* On a phone the detail wraps onto its own line rather than being squeezed
-     to nothing beside the tag and the button. */
-  .settings-row {
-    flex-wrap: wrap;
-  }
-
+     to nothing beside the tag and the button. The row already wraps. */
   .settings-row-detail {
     flex-basis: 100%;
   }
@@ -2455,6 +2576,19 @@ body,
    the end of a row among ordinary information, and a red button on every row
    makes a list look like a warning. */
 button.link.danger {
+  color: var(--bad);
+}
+
+/* The same action as an icon. A word at the end of every row competes with
+   the row's own words for the reader's attention, and "Remove" is not what
+   the row is about; a small red icon says the same thing without being read.
+   It keeps its name for anybody not looking at it, in aria-label and title. */
+.icon-button.danger {
+  color: var(--bad);
+}
+
+.icon-button.danger:hover {
+  background: var(--bad-surface, var(--border));
   color: var(--bad);
 }
 

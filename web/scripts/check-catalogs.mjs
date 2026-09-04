@@ -24,6 +24,10 @@ const SAME_ON_PURPOSE = new Set([
   'app.name',
   'common.none',
   'domains.dns',
+  // Protocol names, which is what the two web listeners are called in every
+  // language and in the configuration file beside them.
+  'serverSettings.listenHttp',
+  'serverSettings.listenHttps',
   'domain.kindWebhook',
   'integrations.route53',
   'integrations.endpointPlaceholder',

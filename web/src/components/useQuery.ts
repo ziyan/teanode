@@ -21,16 +21,41 @@ export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [],
   // stale row.
   const loaded = useRef(false)
 
+  // Which request is the current one. Every call takes a number on the way in
+  // and checks it on the way out: without that, a request nobody is waiting
+  // for any more can still finish and have the last word.
+  //
+  // That is not hypothetical. Moving from one domain to another reuses the
+  // same component with a new identifier, so two requests are in flight at
+  // once; if the one being left behind fails — a connection closed while
+  // navigating, a server restarting — it painted "Failed to fetch" over a
+  // page whose own request had already succeeded.
+  const generation = useRef(0)
+
   const load = useCallback(
     async (quiet = false) => {
+      const mine = ++generation.current
       if (!quiet) {
         setLoading(true)
       }
       try {
-        setData(await run())
+        const answer = await run()
+        if (mine !== generation.current) {
+          return
+        }
+        setData(answer)
         setError(null)
         loaded.current = true
       } catch (caught) {
+        // Superseded, so it has nothing to say: whatever replaced it is the
+        // request whose answer belongs on screen.
+        if (mine !== generation.current) {
+          return
+        }
+        // A request dropped on purpose is not a failure to report.
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          return
+        }
         // A failed background refresh keeps whatever is on screen. The
         // connection dropping for one poll is not a reason to throw away a
         // list somebody is reading.
@@ -38,7 +63,7 @@ export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [],
           setError(caught)
         }
       } finally {
-        if (!quiet) {
+        if (!quiet && mine === generation.current) {
           setLoading(false)
         }
       }
@@ -51,6 +76,11 @@ export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [],
   useEffect(() => {
     loaded.current = false
     void load()
+    // Unmounting, or a change of dependencies, retires whatever is in flight:
+    // its number is no longer the current one, so its answer is dropped.
+    return () => {
+      generation.current++
+    }
   }, [load])
 
   useEffect(() => {

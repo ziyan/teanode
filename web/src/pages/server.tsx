@@ -1,6 +1,7 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { Key, useTranslation } from '../i18n/i18n'
+import { Tabs } from '../components/tabs'
+import { Key } from '../i18n/i18n'
 import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
 import { SetupPage } from './setup'
@@ -26,12 +27,18 @@ const TABS: Tab[] = [
 ]
 
 export function ServerPage() {
-  const { t } = useTranslation()
   // In the path rather than in state, so a tab can be linked to, survives a
   // reload and can be reached with the back button. A tab that only exists in
   // memory is a place you cannot send somebody.
   const { tab } = useParams()
   const navigate = useNavigate()
+
+  // The certificates tab was called "dns" while the only DNS on this page was
+  // the challenge solver. There is a resolver tab now, and two tabs whose
+  // names both mean DNS is a page nobody can navigate.
+  if (tab === 'dns') {
+    return <Navigate to="/server/certificates" replace />
+  }
 
   // A tab nobody has, or none named at all, is the first one. A path somebody
   // typed is not a tab.
@@ -41,18 +48,7 @@ export function ServerPage() {
 
   return (
     <>
-      <div className="tabs">
-        {TABS.map((candidate) => (
-          <button
-            key={candidate.id}
-            type="button"
-            className={tab === candidate.id ? 'active' : ''}
-            onClick={() => navigate(`/server/${candidate.id}`)}
-          >
-            {t(candidate.label)}
-          </button>
-        ))}
-      </div>
+      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/server/${id}`)} />
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}

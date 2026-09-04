@@ -10,7 +10,7 @@ import {
   LogoutIcon,
   MailIcon,
   QueueIcon,
-  RestartIcon,
+  ServerIcon,
   ServiceIcon,
   SetupIcon,
   ShieldIcon,
@@ -29,7 +29,7 @@ type Group = { label?: Key; items: Item[] }
 const SERVER_ICONS: Record<string, React.ReactNode> = {
   setup: <SetupIcon />,
   integrations: <ServiceIcon />,
-  server: <RestartIcon />,
+  server: <ServerIcon />,
 }
 
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {

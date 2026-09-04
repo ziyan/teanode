@@ -5,9 +5,8 @@ import { Delivery, Domain, Mail, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
-import { useBreadcrumbDetail } from '../components/breadcrumb'
-import { DomainsIcon, GridIcon, MailIcon, QueueIcon, TemplateIcon, WarningIcon } from '../components/icons'
-import { ResourceTile, Section, StatTile } from '../components/tiles'
+import { MailIcon, WarningIcon } from '../components/icons'
+import { Section, StatTile } from '../components/tiles'
 import { Trans, useTranslation } from '../i18n/i18n'
 
 // Everything the overview needs, in one round trip.
@@ -19,12 +18,6 @@ import { Trans, useTranslation } from '../i18n/i18n'
 // that loads and one that does not.
 const OVERVIEW = `
   query ($domainId: String!) {
-    GetDomain(domainId: $domainId) {
-      id domain subdomain comment dkimSelector hasDkimKey
-      aliases { id }
-      credentials { id }
-      records { checkedAt error records { type name verified } }
-    }
     CountMailsBy(domainId: $domainId, field: "status") {
       value
       count
@@ -45,21 +38,24 @@ const OVERVIEW = `
   }`
 
 type Response = {
-  GetDomain: Domain
   CountMailsBy: { value: string; count: number }[]
   ListMails: Mail[]
   ListPendingDeliveries: Delivery[]
 }
 
-// The domain at a glance: is its DNS right, is mail arriving, and where to go
-// to change anything. The detail lives one click away, because the questions
-// asked on arrival are these three and not "what is the TXT record".
-export function DomainOverviewPage() {
+// The domain at a glance: is its DNS right, and is mail arriving. DNS first,
+// because it is the question that decides whether the others mean anything —
+// a domain whose MX record is wrong has no mail to count, and a row of zeroes
+// explains itself only once you have looked at the record.
+//
+// The
+// questions asked on arrival are those two and not "what is the TXT record",
+// which is why every tile here is a number and none of them is a link to a
+// page dressed up as a tile — the tab row above is what those were.
+export function DomainOverviewTab({ domain }: { domain: Domain }) {
   const { t } = useTranslation()
   const { domainId } = useParams()
   const { data, error, loading } = useQuery(() => graphql<Response>(OVERVIEW, { domainId }), [domainId])
-
-  useBreadcrumbDetail(data?.GetDomain?.domain)
 
   const counts = useMemo(() => {
     const byStatus = new Map((data?.CountMailsBy ?? []).map((facet) => [facet.value, facet.count]))
@@ -74,11 +70,6 @@ export function DomainOverviewPage() {
     return <ErrorMessage error={error} />
   }
 
-  const domain = data?.GetDomain
-  if (!domain) {
-    return <p className="muted">{t('common.notFound')}</p>
-  }
-
   const records = domain.records?.records ?? []
   const missing = records.filter((record) => !record.verified).length
   const newest = data?.ListMails?.[0]
@@ -90,6 +81,33 @@ export function DomainOverviewPage() {
   return (
     <>
       <Section icon={<MailIcon size={15} />} label={t('domainOverview.overview')}>
+        <StatTile
+          label={t('domainOverview.dns')}
+          // Nothing to count until the first check has run, and a dash at
+          // this size reads as a rule rather than as an absence — so the
+          // detail line carries it instead.
+          value={records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing}
+          unit={
+            records.length === 0
+              ? undefined
+              : missing === 0
+                ? t('domainOverview.allPublished')
+                : t('domainOverview.needChanging')
+          }
+          icon={missing > 0 ? <WarningIcon size={18} /> : undefined}
+          detail={
+            domain.records?.checkedAt ? (
+              <Trans
+                k="domainOverview.checked"
+                nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }}
+              />
+            ) : (
+              t('domainOverview.dnsNever')
+            )
+          }
+          to={`/domains/${domainId}/settings`}
+        />
+
         <StatTile
           label={t('domainOverview.messages')}
           value={counts.total}
@@ -136,59 +154,6 @@ export function DomainOverviewPage() {
           to={`/queue?domain=${encodeURIComponent(domain.domain)}`}
         />
 
-        <StatTile
-          label={t('domainOverview.dns')}
-          // Nothing to count until the first check has run, and a dash at
-          // this size reads as a rule rather than as an absence — so the
-          // detail line carries it instead.
-          value={records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing}
-          unit={
-            records.length === 0
-              ? undefined
-              : missing === 0
-                ? t('domainOverview.allPublished')
-                : t('domainOverview.needChanging')
-          }
-          icon={missing > 0 ? <WarningIcon size={18} /> : undefined}
-          detail={
-            domain.records?.checkedAt ? (
-              <Trans
-                k="domainOverview.checked"
-                nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }}
-              />
-            ) : (
-              t('domainOverview.dnsNever')
-            )
-          }
-          to={`/domains/${domainId}/settings`}
-        />
-      </Section>
-
-      <Section icon={<GridIcon size={15} />} label={t('domainOverview.resources')}>
-        <ResourceTile
-          icon={<MailIcon size={18} />}
-          title={t('domainOverview.mail')}
-          detail={t('domainOverview.mailDetail')}
-          to={`/mail?domain=${encodeURIComponent(domain.domain)}`}
-        />
-        <ResourceTile
-          icon={<QueueIcon size={18} />}
-          title={t('domainOverview.queue')}
-          detail={t('domainOverview.queueDetail')}
-          to={`/queue?domain=${encodeURIComponent(domain.domain)}`}
-        />
-        <ResourceTile
-          icon={<TemplateIcon size={18} />}
-          title={t('templates.title')}
-          detail={t('domainOverview.templatesDetail')}
-          to={`/domains/${domainId}/templates`}
-        />
-        <ResourceTile
-          icon={<DomainsIcon size={18} />}
-          title={t('domainOverview.settings')}
-          detail={t('domainOverview.settingsDetail')}
-          to={`/domains/${domainId}/settings`}
-        />
       </Section>
     </>
   )

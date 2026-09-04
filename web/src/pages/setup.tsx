@@ -105,7 +105,12 @@ export function SetupPage() {
       <p className="muted">
         <Trans
           k="setup.intro"
-          nodes={{ integrations: <Link to="/server/sending">{t('integrations.title')}</Link> }}
+          // The page that lists what a restart is waiting on is the Server
+          // page's own, not the services tab beside it — and there is no
+          // "Integrations" surface to name any more: it became tabs of
+          // /server, which is why this link had outlived both its label and
+          // its destination.
+          nodes={{ integrations: <Link to="/server/about">{t('server.title')}</Link> }}
         />
       </p>
 

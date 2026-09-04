@@ -13,12 +13,56 @@ export class APIError extends Error {
   }
 }
 
-export async function graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const response = await fetch('/api/v1/graphql', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  })
+// send posts the query, once more if the connection failed before the server
+// had a chance to answer.
+//
+// Every request this dashboard makes is a POST, and a browser will not retry
+// one of those by itself — for good reason, since it cannot know whether the
+// request was acted on. A connection that failed before any reply arrived is
+// the case where it can: nothing was received, so nothing happened that
+// asking again would repeat, and a GraphQL query changes nothing anyway.
+//
+// The failure this is for: a keep-alive connection picked up at the moment
+// the other end had already closed it. It is invisible in the origin's log —
+// the request never arrives — and it lands as a bare "Failed to fetch" over a
+// page that was fine, most often on a burst of requests after an idle spell,
+// which is exactly what clicking into a domain is.
+//
+// Once, and only for that. A server that answered, however it answered, is a
+// server whose answer we keep; retrying a real failure twice as fast is not
+// help.
+async function send(
+  query: string,
+  variables: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
+  const request = () =>
+    fetch('/api/v1/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      // Given by useQuery, so a request nobody is waiting for any more is
+      // dropped rather than left to finish and report.
+      signal,
+    })
+
+  try {
+    return await request()
+  } catch (caught) {
+    // A request dropped on purpose is not a connection that failed.
+    if (signal?.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) {
+      throw caught
+    }
+    return await request()
+  }
+}
+
+export async function graphql<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await send(query, variables, signal)
 
   if (response.status === 401) {
     throw new APIError('not logged in', true)
