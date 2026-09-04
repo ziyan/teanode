@@ -2457,6 +2457,19 @@ button.link.danger {
   color: var(--bad);
 }
 
+/* The same action as an icon. A word at the end of every row competes with
+   the row's own words for the reader's attention, and "Remove" is not what
+   the row is about; a small red icon says the same thing without being read.
+   It keeps its name for anybody not looking at it, in aria-label and title. */
+.icon-button.danger {
+  color: var(--bad);
+}
+
+.icon-button.danger:hover {
+  background: var(--bad-surface, var(--border));
+  color: var(--bad);
+}
+
 /* A checkbox and its label on one line, which is how a checkbox reads. The
    form styles put labels in a column, which is right for a field and wrong
    for this. */

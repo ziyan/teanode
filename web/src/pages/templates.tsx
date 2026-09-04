@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Domain, Layout, Template, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
@@ -156,8 +157,14 @@ export function TemplatesTab() {
                 >
                   {t('templates.send')}
                 </Link>
-                <button className="link danger" type="button" onClick={() => setRemovingTemplate(template)}>
-                  {t('common.remove')}
+                <button
+                  className="icon-button danger"
+                  type="button"
+                  aria-label={t('common.remove')}
+                  title={t('common.remove')}
+                  onClick={() => setRemovingTemplate(template)}
+                >
+                  <TrashIcon />
                 </button>
               </>
             }
@@ -197,8 +204,14 @@ export function TemplatesTab() {
               </div>
             }
             actions={
-              <button className="link danger" type="button" onClick={() => setRemovingLayout(layout)}>
-                {t('common.remove')}
+              <button
+                className="icon-button danger"
+                type="button"
+                aria-label={t('common.remove')}
+                title={t('common.remove')}
+                onClick={() => setRemovingLayout(layout)}
+              >
+                <TrashIcon />
               </button>
             }
           />

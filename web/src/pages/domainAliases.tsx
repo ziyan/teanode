@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Tag } from '../components/common'
+import { TrashIcon } from '../components/icons'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
 
@@ -58,8 +59,13 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
                 {alias.kind === 'null' && <span className="muted">{t('domain.discarded')}</span>}
               </td>
               <td className="shrink">
-                <button onClick={() => void run(() => graphql(DELETE_ALIAS, { aliasId: alias.id }))}>
-                  {t('common.remove')}
+                <button
+                  className="icon-button danger"
+                  aria-label={t('common.remove')}
+                  title={t('common.remove')}
+                  onClick={() => void run(() => graphql(DELETE_ALIAS, { aliasId: alias.id }))}
+                >
+                  <TrashIcon />
                 </button>
               </td>
             </tr>

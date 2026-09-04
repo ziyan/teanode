@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { TrashIcon } from '../components/icons'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
 
@@ -63,8 +64,13 @@ export function DomainCredentialsTab({ domain, run }: DomainTabProps) {
               <td>{credential.comment || <span className="muted">{t('domain.credentialNoNote')}</span>}</td>
               <td className="mono muted">{credential.id}</td>
               <td className="shrink">
-                <button onClick={() => void run(() => graphql(DELETE_CREDENTIAL, { credentialId: credential.id }))}>
-                  {t('common.remove')}
+                <button
+                  className="icon-button danger"
+                  aria-label={t('common.remove')}
+                  title={t('common.remove')}
+                  onClick={() => void run(() => graphql(DELETE_CREDENTIAL, { credentialId: credential.id }))}
+                >
+                  <TrashIcon />
                 </button>
               </td>
             </tr>
