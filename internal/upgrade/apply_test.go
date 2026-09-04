@@ -865,3 +865,77 @@ func TestTheFirstUpgradeMakesTheStagingDirectory(t *testing.T) {
 		t.Errorf("the next start would not run what was just staged: %q", got)
 	}
 }
+
+// The rollback copy is kept by copying when the filesystem will not link, and
+// the upgrade stops if it cannot be kept at all.
+//
+// On the in-place road that copy is the only way back from a release that
+// crashes on startup, and both the reference and the words on the button
+// promise it is kept. It used to be a hard link or a warning in the log, so a
+// filesystem that refuses links left no rollback while the page said there
+// was one.
+func TestTheReplacedBinaryIsAlwaysKept(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	newBinary := []byte("the new binary")
+	server := releaseServer(t, "0.9.0", newBinary, sha256Of(newBinary))
+	defer server.Close()
+
+	manager := testManager(t, executable, server.URL, server.Client(), "0.1.0", func() {})
+	if err := manager.Apply(context.Background(), ""); err != nil {
+		t.Fatalf("Apply: %s", err)
+	}
+
+	previous, err := os.ReadFile(executable + previousSuffix)
+	if err != nil {
+		t.Fatalf("the previous binary was not kept: %s", err)
+	}
+	if string(previous) != "the old binary" {
+		t.Errorf("the kept binary is %q", previous)
+	}
+	// Runnable, or it is not a rollback.
+	info, err := os.Stat(executable + previousSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("the kept binary is %s, which cannot be run", info.Mode().Perm())
+	}
+}
+
+// And the copy path itself, which only runs on a filesystem that refuses hard
+// links — reachable here by asking for it directly.
+func TestTheReplacedBinaryCanBeKeptByCopying(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "teanode")
+	if err := os.WriteFile(executable, []byte("the old binary"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	self := &manager{executable: executable}
+	pending := filepath.Join(directory, "copy")
+	if err := self.copyPrevious(pending); err != nil {
+		t.Fatalf("copyPrevious: %s", err)
+	}
+
+	copied, err := os.ReadFile(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copied) != "the old binary" {
+		t.Errorf("the copy is %q", copied)
+	}
+	info, err := os.Stat(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o750 {
+		t.Errorf("the copy is %s, want the 0750 the original had", info.Mode().Perm())
+	}
+}

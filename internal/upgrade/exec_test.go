@@ -422,3 +422,45 @@ func TestAnUnreadableRunningVersionDoesNotDeleteTheUpgrade(t *testing.T) {
 		}
 	}
 }
+
+// The refusal has to name the file that is actually in the way.
+//
+// A release can be blocked by two different files, and the message always
+// named the marker. When the blocker was a failed exec, Untried had already
+// removed that marker — so the operator was told to delete a file that was not
+// there, doing it changed nothing, and the file that really blocked the
+// install was never mentioned anywhere.
+func TestTheRefusalNamesTheFileInTheWay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a release that ran and did not serve", func(t *testing.T) {
+		directory := stage(t, "0.2.0")
+		if err := record(directory, pending, "started"); err != nil {
+			t.Fatal(err)
+		}
+		if got := WhyAlreadyTried(directory, "0.2.0"); got != PendingMarker(directory) {
+			t.Errorf("WhyAlreadyTried = %q, want %q", got, PendingMarker(directory))
+		}
+	})
+
+	t.Run("a release that could not be run at all", func(t *testing.T) {
+		directory := stage(t, "0.2.0")
+		MarkTried(directory, Staged(directory))
+		Untried(directory, Staged(directory))
+
+		want := filepath.Join(directory, stagedRefusedExec)
+		if got := WhyAlreadyTried(directory, "0.2.0"); got != want {
+			t.Errorf("WhyAlreadyTried = %q, want %q", got, want)
+		}
+		// And the file it names is one that exists, which is the whole point.
+		if _, err := os.Stat(want); err != nil {
+			t.Errorf("the refusal names a file that is not there: %v", err)
+		}
+	})
+
+	t.Run("a release nothing has tried", func(t *testing.T) {
+		if got := WhyAlreadyTried(stage(t, "0.2.0"), "0.3.0"); got != "" {
+			t.Errorf("WhyAlreadyTried = %q, want nothing", got)
+		}
+	})
+}

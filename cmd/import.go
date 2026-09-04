@@ -57,6 +57,22 @@ func newConfigImportCommand() *cli.Command {
 func runConfigImport(ctx context.Context, command *cli.Command) error {
 	filename := command.String("file")
 
+	bootstrapped, err := bootstrap.Load()
+	if err != nil {
+		return err
+	}
+
+	// Before the file is even read, and long before anything is written.
+	//
+	// It was further down, past the parse and past --dry-run, and both were
+	// wrong. Parsing refuses fields it does not know, and this branch adds an
+	// upgrade section — so an image at release N with N+1 staged failed on a
+	// file that N+1 had written, with an unknown-field error, before reaching
+	// the line that would have handed the work to the binary that understands
+	// it. And --dry-run returned earlier still, so it validated against one
+	// schema and the real import used another.
+	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
+
 	// Loaded through the same path the server used, so that a file it would
 	// have accepted is accepted here, and one it would have refused is
 	// refused before anything is written.
@@ -79,15 +95,6 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 		fmt.Printf("\n--dry-run: nothing was written\n")
 		return nil
 	}
-
-	bootstrapped, err := bootstrap.Load()
-	if err != nil {
-		return err
-	}
-	// Reaching past the image's binary first, for the same reason a start
-	// does: this command migrates, and an older binary migrating undoes what a
-	// newer one did rather than adding to it.
-	upgrade.ExecStagedBeforeMigrating(bootstrapped.UpgradeDirectory, version.Version())
 
 	database, closeDatabase, err := openBootstrapDatabase(bootstrapped)
 	if err != nil {

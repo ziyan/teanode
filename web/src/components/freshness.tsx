@@ -52,15 +52,43 @@ export function useStaleBundle(): boolean {
       }
     }
 
-    void look()
-    const timer = window.setInterval(look, INTERVAL)
-    return () => {
+    return poll(look, () => {
       cancelled = true
-      window.clearInterval(timer)
-    }
+    })
   }, [])
 
   return stale
+}
+
+// poll runs look now, then on the interval, and only while somebody is looking
+// at the page.
+//
+// The same rule useQuery follows, and for the same reason: a dashboard left
+// open in a forgotten tab should not keep asking the server questions nobody
+// is listening to, and each of these is a database transaction. Coming back to
+// the tab asks immediately, because that is when the answer is most likely to
+// have changed.
+function poll(look: () => void, cancel: () => void): () => void {
+  void look()
+
+  const timer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      look()
+    }
+  }, INTERVAL)
+
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+      look()
+    }
+  }
+  document.addEventListener('visibilitychange', onVisible)
+
+  return () => {
+    cancel()
+    window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', onVisible)
+  }
 }
 
 // useUpgradeAvailable reports whether the server knows of a release newer than
@@ -88,12 +116,9 @@ export function useUpgradeAvailable(): boolean {
       }
     }
 
-    void look()
-    const timer = window.setInterval(look, INTERVAL)
-    return () => {
+    return poll(look, () => {
       cancelled = true
-      window.clearInterval(timer)
-    }
+    })
   }, [])
 
   return available

@@ -114,18 +114,6 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 		return err
 	}
 
-	// Not this one again. It is staged, it was run, and it did not get as far
-	// as serving — so installing it a second time would run it a second time,
-	// and the loop that noticed it is available would notice again in five
-	// minutes. An error rather than a quiet return, so that the backoff
-	// engages and the page says what happened.
-	if _, staging := self.target(); staging && AlreadyTried(self.upgradeDirectory, found.version()) {
-		return fmt.Errorf("upgrade: %s is already installed and did not start; it will not be installed "+
-			"again. Look at the log for why, and remove %s to try it once more",
-			found.version(), PendingMarker(self.upgradeDirectory))
-	}
-
-	log.Noticef("downloading %s %s", name, found.version())
 	// Where the new binary is going, decided once. It was asked for again in
 	// swap, minutes later, and a directory that stopped being writable in
 	// between — a read-only remount — sent the download and the swap down
@@ -135,6 +123,21 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	if target == "" {
 		return fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
 	}
+
+	// Not this one again. It is staged, it was run, and it did not get as far
+	// as serving — so installing it a second time would run it a second time,
+	// and the loop that noticed it is available would notice again in five
+	// minutes. An error rather than a quiet return, so that the backoff
+	// engages and the page says what happened.
+	if staging {
+		if blocker := WhyAlreadyTried(self.upgradeDirectory, found.version()); blocker != "" {
+			return fmt.Errorf("upgrade: %s is already installed and did not start; it will not be "+
+				"installed again. Look at the log for why, and remove %s to try it once more",
+				found.version(), blocker)
+		}
+	}
+
+	log.Noticef("downloading %s %s", name, found.version())
 
 	downloaded, err := self.download(ctx, binaryURL, target, staging)
 	if err != nil {
@@ -236,10 +239,16 @@ func (self *manager) swap(downloaded, target string, staging bool, release strin
 	// hard links, a full disk. Removing first and failing second left nothing
 	// to roll back to, with only a warning, while the page was promising that
 	// the binary it replaces is kept.
+	// A failure here stops the upgrade rather than warning about it. On this
+	// road that copy is the only way back from a release that crashes on
+	// startup — the staged road runs the binary in its image again, this one
+	// has nothing else — and both the reference and the words on the button
+	// promise it is kept. An upgrade that quietly did not keep it would be
+	// riskier than the one the operator agreed to.
 	previous := self.executable + previousSuffix
 	if err := self.keepPrevious(previous); err != nil {
-		log.Warningf("cannot keep the previous binary at %s, so the one there is still the one before "+
-			"it: %s", previous, err)
+		return fmt.Errorf("upgrade: cannot keep the binary being replaced at %s, and it is the only "+
+			"way back from a release that does not start, so nothing was replaced: %w", previous, err)
 	}
 
 	if err := os.Rename(downloaded, target); err != nil {
@@ -263,14 +272,59 @@ func (self *manager) keepPrevious(previous string) error {
 	if err := os.Remove(pending); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+
+	// A hard link when the filesystem does one, which costs nothing and is
+	// the same bytes; a copy when it does not. Only a link was tried, and a
+	// filesystem that refuses them — some bind mounts, some network
+	// filesystems — left no rollback at all with a warning nobody reads.
 	if err := os.Link(self.executable, pending); err != nil {
-		return err
+		if err := self.copyPrevious(pending); err != nil {
+			return err
+		}
 	}
+
 	if err := os.Rename(pending, previous); err != nil {
 		_ = os.Remove(pending)
 		return err
 	}
 	return nil
+}
+
+// copyPrevious writes the running binary out byte for byte, for a filesystem
+// that will not hard-link.
+func (self *manager) copyPrevious(pending string) error {
+	source, err := os.Open(self.executable)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = source.Close()
+	}()
+
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+
+	// Runnable, whatever the original was: a rollback that cannot be executed
+	// is not one.
+	destination, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm()|0o100)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destination, source); err != nil {
+		_ = destination.Close()
+		_ = os.Remove(pending)
+		return err
+	}
+	// On disk before it is renamed into place: a rollback copy that only
+	// reached the page cache is not one either.
+	if err := destination.Sync(); err != nil {
+		_ = destination.Close()
+		_ = os.Remove(pending)
+		return err
+	}
+	return destination.Close()
 }
 
 // stage puts the new binary in the staging directory, for a deployment whose

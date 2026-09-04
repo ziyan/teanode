@@ -491,25 +491,46 @@ func running(path string) bool {
 // the one that failed installs normally — it is a different binary and has not
 // been tried.
 func AlreadyTried(directory, release string) bool {
+	return WhyAlreadyTried(directory, release) != ""
+}
+
+// WhyAlreadyTried names the file standing in the way, or nothing.
+//
+// The path and not just the answer, because the answer goes into a refusal
+// that tells an operator what to remove — and there are two files it can be.
+// Naming the marker whatever the reason meant that a release blocked by a
+// failed exec was refused with an instruction to delete a file that Untried
+// had already deleted: doing it changed nothing, and the file that really
+// blocked it was never mentioned anywhere.
+func WhyAlreadyTried(directory, release string) string {
 	if directory == "" {
-		return false
+		return ""
 	}
-	// Ran and did not serve, or could not be run at all. Either way,
-	// installing it again would produce the same result and another download.
-	_, marked := os.Stat(PendingMarker(directory))
-	if refused, err := readStagedFile(directory, stagedRefusedExec); err == nil {
-		if sameRelease(refused, release) {
-			return true
+
+	// Could not be run at all. Recorded separately from the marker below,
+	// because the start should try the exec again and the upgrade should not
+	// download the same release again.
+	if refused, err := readStagedFile(directory, stagedRefusedExec); err == nil && sameRelease(refused, release) {
+		return filepath.Join(directory, stagedRefusedExec)
+	}
+
+	// Ran and did not serve.
+	if _, err := os.Stat(PendingMarker(directory)); err != nil {
+		if !os.IsNotExist(err) {
+			// Something other than absence — an unreadable directory. Saying
+			// so, because treating it as "no marker" installs the release
+			// again, which is the thing the marker exists to prevent.
+			fmt.Fprintf(os.Stderr, "teanode: cannot tell whether %s was already tried: %s\n",
+				Staged(directory), err)
+			return PendingMarker(directory)
 		}
-	}
-	if marked != nil {
-		return false
+		return ""
 	}
 	staged, err := readStagedFile(directory, stagedVersion)
-	if err != nil {
-		return false
+	if err != nil || !sameRelease(staged, release) {
+		return ""
 	}
-	return sameRelease(staged, release)
+	return PendingMarker(directory)
 }
 
 // sameRelease compares two version strings, either of which may carry the v
