@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,20 @@ type Bootstrap struct {
 	// name nothing writes to any more. A container's hostname is both.
 	InstanceID string
 
+	// UpgradeDirectory is where an upgrade stages a binary that cannot
+	// replace the running one, and where the next start looks for it.
+	//
+	// Here rather than in the configuration, which is where every other path
+	// this server uses lives, because of when it is needed. A staged binary
+	// has to be found and run before anything opens the database — this
+	// program reverts migrations it does not recognise, so an old binary that
+	// reached the database first would undo the new one's schema — and the
+	// configuration is in the database. So it comes from the environment, or
+	// from the data directory the environment names, or from nowhere, in
+	// which case a deployment that cannot write over its own binary is told
+	// it cannot upgrade itself.
+	UpgradeDirectory string
+
 	// Seed is applied to the defaults when the database holds no
 	// configuration yet, and ignored on every later start. See Seeded.
 	//
@@ -79,7 +94,66 @@ func Load() (*Bootstrap, error) {
 	if err := self.loadSeed(); err != nil {
 		return nil, err
 	}
+	if err := self.loadUpgradeDirectory(); err != nil {
+		return nil, err
+	}
 	return self, nil
+}
+
+// loadUpgradeDirectory works out where a staged binary goes.
+//
+// TEANODE_UPGRADE_DIRECTORY when it is set, and otherwise "upgrade" under
+// TEANODE_SERVER_DATA_DIRECTORY when that is — which for a container is the
+// volume the spool and the keys already live on, so the ordinary deployment
+// gets a working answer without being told twice.
+//
+// Nothing when neither is set, and the deployment is then told it cannot
+// upgrade itself. Deliberately not falling back to the compiled-in default
+// data directory: that path is a guess, and a wrong guess here is not a
+// harmless one — on a container running as root it would put the new binary
+// inside the image, where it works until the container is recreated and then
+// silently is not there. The variables above are read straight from the
+// environment rather than from the seed for the same reason. The seed is
+// applied on a first run only, so a deployment that set its data directory in
+// the dashboard has the default sitting in the seed and nothing in its
+// environment, and following the seed would name a directory nobody chose.
+func (self *Bootstrap) loadUpgradeDirectory() error {
+	named := Prefix + "UPGRADE_DIRECTORY"
+	directory, ok := lookup("UPGRADE_DIRECTORY")
+	if !ok || directory == "" {
+		data, ok := lookup("SERVER_DATA_DIRECTORY")
+		if !ok || data == "" {
+			return nil
+		}
+		named = Prefix + "SERVER_DATA_DIRECTORY"
+		directory = filepath.Join(data, "upgrade")
+	}
+
+	// Absolute, and the feature is turned off rather than resolved when it is
+	// not.
+	//
+	// filepath.Abs was here and was worse than nothing: it resolves against
+	// the working directory, so a start from one place and a start from
+	// another would look for the staged binary in two. The upgrade would
+	// stage, exec — the path it execs is absolute, so that part works — and
+	// report success, and then a restart from anywhere else would find
+	// nothing and quietly run the old binary.
+	//
+	// Refusing the whole start was the next thing tried, and that was worse
+	// again: a relative server.dataDirectory is legal and resolves against
+	// the configuration file, so an ordinary deployment that had worked for a
+	// year stopped booting over a setting for a feature it was not using —
+	// and the message named a variable nobody had set. Upgrades are refused
+	// and mail keeps moving.
+	if !filepath.IsAbs(directory) {
+		log.Warningf("not staging upgrades anywhere: %s gives %q, which is relative to whatever "+
+			"directory the process starts in, and a staged binary has to be found again by a start "+
+			"from any of them. Set %sUPGRADE_DIRECTORY to an absolute path to turn upgrades on",
+			named, directory, Prefix)
+		return nil
+	}
+	self.UpgradeDirectory = filepath.Clean(directory)
+	return nil
 }
 
 // loadDatabase reads the connection. TEANODE_DATABASE_URL is the whole thing

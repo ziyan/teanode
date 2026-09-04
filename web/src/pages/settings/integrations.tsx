@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
@@ -98,29 +97,32 @@ type Settings = {
 // for, and the two about outgoing mail sat far apart from each other. Grouped
 // by the question each answers: how mail leaves, where messages are kept, how
 // certificates are obtained, and what inspects a message on the way in.
-type Section = 'sending' | 'storage' | 'dns' | 'scanning'
+export type Section = 'sending' | 'storage' | 'dns' | 'scanning'
 
-const SECTIONS: { id: Section; label: Key }[] = [
+// The tabs these four are, for the Server page to render along with the rest
+// of its own. Here rather than there because this file is what knows which
+// forms exist.
+export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   { id: 'sending', label: 'integrations.tabSending' },
   { id: 'storage', label: 'integrations.tabStorage' },
   { id: 'dns', label: 'integrations.tabDns' },
   { id: 'scanning', label: 'integrations.tabScanning' },
 ]
 
-// IntegrationsPage edits the optional services: how outgoing mail leaves, the
-// object store, the DNS solver, and the two scanners.
+// IntegrationsSection edits one group of the optional services: how outgoing
+// mail leaves, the object store, the DNS solver, or the two scanners.
 //
 // All of them are read once when the process starts, so saving here changes
 // what is stored and nothing else until a restart. The page says so rather
-// than leaving the operator to discover it, and points at the one page that
+// than leaving the operator to discover it, and points at the one place that
 // can do something about it.
-export function IntegrationsPage() {
+//
+// One section at a time, chosen by whoever renders this: these are four tabs
+// of the Server page now rather than a page of their own, because what a
+// server sends mail through and where it keeps messages are the same subject
+// as which version it is running.
+export function IntegrationsSection({ section }: { section: Section }) {
   const { t } = useTranslation()
-  // In the path rather than in state, so a tab can be linked to, comes back
-  // after a reload, and can be reached with the back button. A tab that only
-  // exists in memory is a place you cannot send somebody.
-  const { section } = useParams()
-  const navigate = useNavigate()
   const { data, error, loading, reload } = useQuery(
     () => graphql<{ GetSettings: Settings }>(SETTINGS),
     [],
@@ -137,28 +139,9 @@ export function IntegrationsPage() {
     return <ErrorMessage error={new Error(t('integrations.unavailable'))} />
   }
 
-  // A section nobody has, or none named at all, is the first one. A path
-  // somebody typed is not a tab.
-  if (!SECTIONS.some((candidate) => candidate.id === section)) {
-    return <Navigate to={`/settings/integrations/${SECTIONS[0].id}`} replace />
-  }
-
   return (
     <>
       <p className="muted">{t('integrations.intro')}</p>
-
-      <div className="tabs">
-        {SECTIONS.map((candidate) => (
-          <button
-            key={candidate.id}
-            type="button"
-            className={section === candidate.id ? 'active' : ''}
-            onClick={() => navigate(`/settings/integrations/${candidate.id}`)}
-          >
-            {t(candidate.label)}
-          </button>
-        ))}
-      </div>
 
       {section === 'sending' && (
         <>

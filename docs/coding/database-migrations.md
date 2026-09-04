@@ -28,6 +28,33 @@ about the newer schema. It also means the reverse SQL has to be correct at the
 time the migration is written, because by the time it runs, the code that
 described it is gone.
 
+## Reverting is opt-in
+
+Reverting is right for a downgrade somebody chose and wrong for one nobody
+did, and the runner cannot tell them apart. What it can do is stop and ask.
+
+A start that finds migrations it does not recognise refuses: nothing is
+migrated and nothing is opened, and the message names them and says what
+reverting would lose. To go back on purpose, set
+
+    TEANODE_ALLOW_MIGRATION_REVERT=true
+
+and start again. It reverts as described above and logs that it did.
+
+The accidental downgrade has three ordinary roads into this program, which is
+why the default is the refusal. A release installed from the dashboard can
+migrate the database and then crash before serving, in which case the next
+start refuses it by design and the image's older binary would otherwise carry
+on. A second instance sharing the database may never have got the upgrade —
+its own was refused — and then restart for some unrelated reason. And an
+operator may pull last week's image to test something. In all three the queue
+is on disk and senders retry, so a start that does not happen costs minutes; a
+dropped column costs what was in it.
+
+When a newer binary is sitting staged and this start refused to run it, the
+message says so too, because removing the `pending` marker and letting it try
+again is the way out that loses nothing.
+
 ## Writing one
 
 1. Add both files with the next number and a short descriptive slug.

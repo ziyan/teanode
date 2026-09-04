@@ -216,6 +216,19 @@ export function LogoutIcon(props: IconProps) {
 }
 
 // A circular arrow: the restart, and the page about the running process.
+// Two arrows chasing each other: reload the page, rather than restart the
+// server, which is what RestartIcon means two rows down.
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.5-4" />
+      <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.5 4" />
+      <path d="M17 7h4V3" />
+      <path d="M7 17H3v4" />
+    </Icon>
+  )
+}
+
 export function RestartIcon(props: IconProps) {
   return (
     <Icon {...props}>

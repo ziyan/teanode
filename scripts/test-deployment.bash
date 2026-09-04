@@ -183,6 +183,13 @@ TEANODE_SERVER_DOMAIN=${DOMAIN}
 TEANODE_SERVER_DATA_DIRECTORY=${data_directory}
 TEANODE_SERVER_LOG_LEVEL=DEBUG
 
+# Where an upgrade stages a binary the running one cannot replace. Named
+# outright rather than left to follow the data directory, because the data
+# directory above is the host path until the last step of the setup and this
+# one has to be the path inside the container from the start: it is read
+# before the database is opened, so nothing can correct it later.
+TEANODE_UPGRADE_DIRECTORY=/var/lib/teanode/upgrade
+
 TEANODE_LISTEN_SMTP_INCOMING=:25
 TEANODE_LISTEN_SMTP_OUTGOING=:587
 TEANODE_LISTEN_HTTP=:80
@@ -1028,6 +1035,57 @@ PYTHON
   fi
 }
 
+# --- upgrades -----------------------------------------------------------------
+
+# This stack is a container, which is the deployment that cannot upgrade itself
+# — the binary is on a read-only layer and the image is what needs replacing.
+# What it must do is say so, with the reason, rather than offering a button
+# that would swap a file and lose it at the next start.
+check_upgrades() {
+  step "Upgrades"
+
+  local status
+  status="$(teanode_cli api call GetUpgrade --select "{ current applicable reason automatic upgrading }" 2>&1 || true)"
+
+  # This stack is a container, and a container used to be told it could not
+  # upgrade itself at all. It can: the new binary goes on the volume, and the
+  # next start runs that instead of the one in the image. What the volume is
+  # for is the whole reason this assertion is here — an upgrade that wrote
+  # into the image would report success and be undone by the next recreate.
+  if grep -q '"applicable": true' <<<"${status}"; then
+    pass "a container can upgrade itself, because the new binary goes on the volume"
+  else
+    fail "the container says it cannot upgrade: $(tr -d '\n' <<<"${status}")"
+  fi
+  if grep -qE '"reason": "[^"]+"' <<<"${status}"; then
+    fail "it gave a reason for refusing something it is not refusing: $(tr -d '\n' <<<"${status}")"
+  else
+    pass "and there is no refusal to explain"
+  fi
+  if grep -q '"upgrading": false' <<<"${status}"; then
+    pass "and nothing is being installed right now"
+  else
+    fail "it thinks an upgrade is in progress: $(tr -d '\n' <<<"${status}")"
+  fi
+  if grep -q '"automatic": false' <<<"${status}"; then
+    pass "automatic upgrades are off unless somebody turns them on"
+  else
+    fail "automatic upgrades are on by default"
+  fi
+
+  # Saying it can is not cheap talk: answering that question probes the
+  # volume, so a stack whose data directory were read-only would have said
+  # otherwise above. The directory itself is deliberately not there yet — it
+  # is made, private to this user, at the moment something is staged, because
+  # asking whether an upgrade is possible should not leave anything behind on
+  # a deployment that will never install one.
+  if [ -e "${TEST_DIR}/data/upgrade" ]; then
+    fail "asking about upgrades created ${TEST_DIR}/data/upgrade"
+  else
+    pass "and asking left nothing behind on the volume"
+  fi
+}
+
 check_restart() {
   step "Restarting"
 
@@ -1310,6 +1368,7 @@ main() {
   check_rejections
   check_submission
   check_media
+  check_upgrades
   check_restart
   check_upgrade_seals_keys
   check_relay

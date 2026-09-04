@@ -189,7 +189,11 @@ today="$(date -u +%Y-%m-%d)"
   # the next change, then this release.
   awk '/^## \[Unreleased\]/ { exit } { print }' "${CHANGELOG}"
   printf '## [Unreleased]\n\n## [%s] - %s\n' "${version}" "${today}"
-  printf '%s\n' "${section}"
+  # A blank line after the entries, or the heading of the release before this
+  # one sits directly under the last bullet of this one. Command substitution
+  # has already eaten any trailing newline the section had, so this is exactly
+  # one blank line and never two.
+  printf '%s\n\n' "${section}"
   # Everything from the release before this one onwards, untouched.
   awk '
     /^## \[Unreleased\]/ { seen = 1; next }

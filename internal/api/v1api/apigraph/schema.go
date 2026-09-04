@@ -18,6 +18,7 @@ type Query interface {
 	PasskeyQuery
 	SettingsQuery
 	ServerQuery
+	UpgradeQuery
 	CredentialQuery
 	MailQuery
 	ContentQuery
@@ -39,6 +40,7 @@ type Mutation interface {
 	PasskeyMutation
 	SettingsMutation
 	ServerMutation
+	UpgradeMutation
 	CredentialMutation
 	MailMutation
 	DeliveryMutation

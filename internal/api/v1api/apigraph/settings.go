@@ -287,6 +287,32 @@ type CertificateParameters struct {
 	PerDomain *bool `json:"perDomain"`
 }
 
+// UpgradeParameters are the release settings an operator can change from the
+// dashboard.
+//
+// checkInterval is not here: it is read once, when the checker is built, and a
+// setting that appears to save and does nothing is the thing the startup-only
+// warning exists to prevent.
+//
+// enabled was left out too, on the reasoning that reaching out to somebody
+// else's endpoint is a deployment's decision and belongs with the settings
+// written where the server is installed. On this program there is no such
+// place: the settings are the database, there is no "config set", and it is on
+// by default — so leaving it out meant an operator who wanted the checking off
+// had to export the configuration, edit the file, and import it back. A
+// default that can only be turned off by hand is not a default anybody chose.
+type UpgradeParameters struct {
+	// Whether to ask the release list what has been published
+	Enabled *bool `json:"enabled"`
+
+	// Whether a new release is installed without being asked
+	Automatic *bool `json:"automatic"`
+
+	// The hours an automatic upgrade may run in, local time, as
+	// "02:00-04:00". Empty means any time.
+	Window *string `json:"window"`
+}
+
 // ProxyParameters are the outbound proxy settings an operator can change.
 type ProxyParameters struct {
 	// Address of the SOCKS5 proxy, as host:port. Empty clears it.
@@ -301,6 +327,7 @@ type UpdateSettingsArguments struct {
 	Relay      *RelayParameters      `json:"relay"`
 	Submission *SubmissionParameters `json:"submission"`
 	Proxy      *ProxyParameters      `json:"proxy"`
+	Upgrade    *UpgradeParameters    `json:"upgrade"`
 
 	// Certificates changes what this server obtains certificates for.
 	Certificates *CertificateParameters `json:"certificates"`
@@ -341,6 +368,11 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 			applyBool(&configuration.Antispam.Enabled, parameters.Enabled)
 			applyString(&configuration.Antispam.Host, parameters.Host)
 			applyPort(&configuration.Antispam.Port, parameters.Port)
+		}
+		if parameters := arguments.Upgrade; parameters != nil {
+			applyBool(&configuration.Upgrade.Enabled, parameters.Enabled)
+			applyBool(&configuration.Upgrade.Automatic, parameters.Automatic)
+			applyString(&configuration.Upgrade.Window, parameters.Window)
 		}
 		if parameters := arguments.Submission; parameters != nil {
 			applyString(&configuration.SMTP.Submission.Host, parameters.Host)

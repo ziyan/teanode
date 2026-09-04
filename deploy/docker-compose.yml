@@ -174,6 +174,11 @@ services:
     # Pin the version rather than following latest on a mail server somebody
     # depends on: an upgrade should be a thing you did, on a day you chose.
     image: ghcr.io/ziyan/teanode:latest
+    # Pull it. A service with a build section resolves a missing image by
+    # building, and for anybody who copied this one file out of the repository
+    # the context below is not there — so "docker compose up -d" failed
+    # instead of pulling the image this line names.
+    pull_policy: missing
     # Kept, so that "docker compose build" still builds this checkout — which
     # is what you want when the change you are running is the one you just
     # made.
@@ -200,6 +205,19 @@ services:
       - NET_BIND_SERVICE
     env_file:
       - .env
+    environment:
+      # Where an upgrade installed from the dashboard puts the new binary.
+      #
+      # It is on the volume rather than in the image because the image is
+      # thrown away by the next "docker compose up": a binary written inside
+      # the container would run until the container was recreated and then
+      # silently be the old one again. And it comes from the environment
+      # rather than from the settings because the next start has to find it
+      # before it opens the database, which is where the settings are.
+      #
+      # Removing this line does not break anything; it turns off upgrading
+      # from the dashboard, and "docker compose pull" remains the way.
+      TEANODE_UPGRADE_DIRECTORY: /var/lib/teanode/upgrade
     volumes:
       - ./data/teanode:/var/lib/teanode:rw
       - /etc/timezone:/etc/timezone:ro

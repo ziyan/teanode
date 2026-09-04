@@ -32,7 +32,7 @@ host: an instance whose variable is missing would otherwise reach an empty
 local database, decide it is a brand new server, and configure itself — which
 looks like it worked.
 
-One is optional, and matters once there is more than one instance:
+Three are optional. The first matters once there is more than one instance:
 
 **`TEANODE_INSTANCE_ID`** — distinguishes this process from the others sharing
 that database. It is part of the key under which usage counters are
@@ -40,6 +40,35 @@ accumulated, and those are added up by reading a row and writing it back, so
 two instances sharing a name lose each other's counts. Defaults to the host
 name, which is what a container is already given, and is truncated to the last
 32 characters if it is longer.
+
+**`TEANODE_UPGRADE_DIRECTORY`** — where an upgrade installed from the dashboard
+puts a binary it cannot write over the running one, and where the next start
+looks for it. Defaults to `upgrade` under `TEANODE_SERVER_DATA_DIRECTORY` when
+that is set, and to nothing when it is not — in which case a deployment that
+cannot replace its own executable is told it cannot upgrade itself. It must be
+an absolute path, and a relative one is refused rather than resolved: a staged
+binary has to be found again by a start from any working directory.
+
+It is a variable rather than a setting for one reason: a staged binary has to
+be found and run before anything opens the database, because this program
+reverts migrations it does not recognise and an old binary that reached the
+database first would undo the new one's schema. The settings are in the
+database. This cannot be.
+
+For a container it should be a directory on a mounted volume — the shipped
+`docker-compose.yml` names `/var/lib/teanode/upgrade`. A directory inside the
+image would work until the container was recreated and then silently be the old
+binary again. The directory is created private to the user the server runs as,
+and a staged binary that anybody else could have written is refused at the next
+start rather than run.
+
+**`TEANODE_ALLOW_MIGRATION_REVERT`** — permits an older binary to undo
+migrations a newer one applied. Off by default, and the default is the
+interesting half: a start that finds migrations it does not recognise refuses
+to run rather than reverting them, because reverting drops the columns they
+added and everything in those columns, and the three ordinary ways to arrive
+there are all accidents. See `docs/coding/database-migrations.md`. Set it to
+`true` to downgrade on purpose.
 
 ### First run only
 
@@ -717,6 +746,73 @@ it.
 **`password`** — Password, when the server requires one.
 
 **`database`** — Database number, zero unless something else shares the server.
+
+### `upgrade`
+
+**`enabled`** — Enabled asks the release list what the newest version is, on
+CheckInterval, and shows it in the dashboard. One HTTPS request to a public
+endpoint, carrying nothing about this deployment. On by default: knowing that a
+version exists is not the same as installing it, and an operator who is never
+told is an operator running last year's bugs.
+
+**`automatic`** — Automatic installs what it finds without being asked:
+download, verify against the release's checksums, replace this binary, restart.
+Off by default, because a release can change how mail is handled and nobody
+installs a mail server expecting it to change underneath them. It takes any
+newer release, minor and major alike — a rule that stopped at a minor version
+would be a rule that quietly stopped upgrading.
+
+It is refused, with the reason shown in the dashboard, where there is nowhere
+to put the new binary: a deployment whose executable it cannot write over and
+which has not been given a writable staging directory in
+`TEANODE_UPGRADE_DIRECTORY`. A container is not refused — it stages onto its
+volume and runs that at the next start, so an upgrade survives a recreate — but
+a container that was never given such a volume is, and there
+`docker compose pull` is the answer.
+
+The restart does not need a supervisor. The process replaces its own image with
+the new binary, keeping the same arguments and environment, once everything has
+been drained and closed — so a server started by hand upgrades itself as well
+as one under systemd.
+
+**One limitation, and it matters most to the deployment this is easiest to turn
+on for.** A release that crashes before it finishes starting is recovered from
+automatically only where the new binary is staged rather than written over the
+old one — a container runs the binary in its image again and says why. Where
+the binary was replaced in place, there is nothing left to fall back to on its
+own: a supervisor will restart the broken binary until somebody stops it. The
+binary it replaced is kept beside it, so the recovery is one command,
+
+    mv /usr/local/bin/teanode.previous /usr/local/bin/teanode
+
+and then a restart. Automatic upgrades are worth more on a deployment that
+stages, and worth thinking about twice on one that does not.
+
+**`checkInterval`** — CheckInterval is how often to look. Six hours by default:
+often enough that a security release is noticed the same day, rarely enough
+that it is not a request anybody would notice. Read once at startup, so
+changing it takes a restart — the dashboard says so. `enabled`, `automatic` and
+`window` are re-read every time the loop wakes and take effect without one.
+
+The loop itself wakes more often than this and asks nothing most of the time.
+That is what makes `window` work: a check every six hours happens at four fixed
+times a day, and a two-hour window would be hit or missed depending on when the
+process started.
+
+**`window`** — Window restricts automatic upgrades to a time of day, in local
+time, as `02:00-04:00`. It may cross midnight. Empty means any time. An upgrade
+restarts the server, which takes a few seconds during which mail is not
+accepted — senders retry, but a busy hour is still a worse time than a quiet
+one.
+
+What verification means here, said plainly: the binary and the release's
+`SHA256SUMS` are fetched over HTTPS from the repository this server was built
+from, and the hash must match. That proves the bytes are the ones GitHub is
+serving for that release and that the download was not corrupted. It does not
+prove a human meant to publish them: anybody who can publish a release to that
+repository can publish a binary, and this will install it. The repository is
+compiled in rather than configured, so a stolen dashboard session cannot point
+a server at somebody else's builds.
 
 ### `users[].tokens[]`
 

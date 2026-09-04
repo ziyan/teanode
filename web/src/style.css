@@ -2886,3 +2886,104 @@ a.button.primary:hover {
   align-items: center;
   gap: var(--space-3);
 }
+
+/* The release notes on the version card. A changelog entry is prose with
+   bullets in it, so it keeps its line breaks and is given a bounded height:
+   somebody deciding whether to upgrade should be able to read it here, and
+   should not have to scroll past a year of it to reach the button. */
+.upgrade-notes {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: var(--space-3) 0;
+}
+
+/* The heading over the release notes on the version card. Small, because it
+   labels a box rather than opening a section. */
+.upgrade-notes-heading {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+/* The mark and, when the server has been upgraded under this page, the one
+   control that fixes it. A row, so the button sits at the rail's top right
+   rather than pushing the mark along. */
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+/* The gap below the mark belongs to the row now, or the button beside it would
+   be centred against the mark's margin box and sit a few pixels high. */
+.sidebar-top .sidebar-brand {
+  margin-bottom: 0;
+}
+
+/* Yellow, because it is a notice rather than a problem: nothing is broken,
+   the page is simply older than the server it is talking to. */
+.sidebar-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-right: var(--space-2);
+  padding: 0;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--warn);
+}
+
+.sidebar-refresh:hover {
+  background: var(--sidebar-hover);
+}
+
+/* Collapsed to icons there is no room beside the mark, and the mark is what
+   has to stay. */
+.sidebar.collapsed .sidebar-refresh {
+  display: none;
+}
+
+/* A dot on the one row that has something waiting on it. It says "look here"
+   and nothing else, which is all a rail should say. */
+.sidebar-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+/* Collapsed, the dot moves onto the icon rather than disappearing: the reason
+   to look is the same whether or not the rail is showing words. */
+.sidebar.collapsed .sidebar-dot {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  margin-left: 0;
+}
+
+.sidebar.collapsed nav a {
+  position: relative;
+}
+
+/* Read aloud, never drawn. The dot above says "look here" to somebody who can
+   see it and nothing at all to somebody who cannot, and a title attribute is
+   not reliably announced. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}

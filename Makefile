@@ -87,7 +87,10 @@ mulint: ## Run the local naming and error-prefix checks
 		echo "mulint is not installed; skipping the naming and error-prefix checks."; \
 	fi
 
-test: generate ## Run tests (starts a PostgreSQL container when docker is available)
+# -race, because CI runs -race and a test suite that passes here and fails
+# there is a test suite nobody trusts. It found a race in a test that mutated
+# a package variable in parallel, which this target had reported as passing.
+test: generate ## Run tests under the race detector (starts a PostgreSQL container when docker is available)
 	@set -e; \
 	mkdir -p $(BUILD_DIR); \
 	if ! hash gotestsum >/dev/null 2>&1; then \
@@ -104,7 +107,7 @@ test: generate ## Run tests (starts a PostgreSQL container when docker is availa
 		until docker exec $${POSTGRES_CONTAINER} pg_isready >/dev/null 2>&1; do sleep 1; done; \
 		export TEANODE_TEST_DATABASE_HOST="$$(docker inspect --format '{{ range .NetworkSettings.Networks }}{{ .IPAddress }}{{ end }}' $${POSTGRES_CONTAINER})"; \
 	fi; \
-	gotestsum --format testname -- -mod=vendor -cover -coverprofile=$(BUILD_DIR)/coverage.out $(GOPACKAGES); \
+	gotestsum --format testname -- -mod=vendor -race -cover -coverprofile=$(BUILD_DIR)/coverage.out $(GOPACKAGES); \
 	$(GO) tool cover -func=$(BUILD_DIR)/coverage.out | tail -1
 
 # --- development ------------------------------------------------------------

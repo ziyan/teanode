@@ -1,6 +1,10 @@
-# TeaNode
+<p align="center">
+  <img src="docs/images/logo.svg" alt="TeaNode" width="120" height="120">
+</p>
 
-A mail server for your own domains, in one binary.
+<h1 align="center">TeaNode</h1>
+
+<p align="center">A mail server for your own domains, in one binary.</p>
 
 It receives mail over SMTP, checks that it is genuine (SPF, DKIM, DMARC, ARC),
 optionally scans it for viruses and spam, and forwards it wherever you say — to

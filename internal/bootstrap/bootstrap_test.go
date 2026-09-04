@@ -288,3 +288,63 @@ func TestEveryVariableIsDocumented(t *testing.T) {
 		}
 	}
 }
+
+// Where a staged binary goes has to be the same place at every start, whatever
+// directory the process happens to be started in.
+//
+// filepath.Abs was here, and it resolves against the working directory — so a
+// start from one place and a start from another would look in two. The upgrade
+// stages, execs (that path is absolute, so it works), says it worked, and then
+// a restart from anywhere else finds nothing and runs the old binary with no
+// refusal recorded at any point.
+func TestARelativeUpgradeDirectoryTurnsUpgradesOff(t *testing.T) {
+	for _, variable := range []string{"UPGRADE_DIRECTORY", "SERVER_DATA_DIRECTORY"} {
+		t.Run(variable, func(t *testing.T) {
+			t.Setenv(bootstrap.Prefix+"DATABASE_URL", "postgres://teanode:x@postgres:5432/teanode")
+			t.Setenv(bootstrap.Prefix+variable, "data")
+
+			// Not a refusal to start. A relative server.dataDirectory is
+			// legal and resolves against the configuration file, so failing
+			// here stopped an ordinary deployment booting over a setting for
+			// a feature it was not using.
+			loaded, err := bootstrap.Load()
+			if err != nil {
+				t.Fatalf("a relative path stopped the server starting: %s", err)
+			}
+			if loaded.UpgradeDirectory != "" {
+				t.Errorf("it kept %q, which a start from elsewhere would not find",
+					loaded.UpgradeDirectory)
+			}
+		})
+	}
+}
+
+// And an absolute one is kept as it is.
+func TestTheUpgradeDirectoryFollowsTheDataDirectory(t *testing.T) {
+	t.Setenv(bootstrap.Prefix+"DATABASE_URL", "postgres://teanode:x@postgres:5432/teanode")
+	t.Setenv(bootstrap.Prefix+"SERVER_DATA_DIRECTORY", "/var/lib/teanode")
+
+	loaded, err := bootstrap.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.UpgradeDirectory != "/var/lib/teanode/upgrade" {
+		t.Errorf("the upgrade directory is %q", loaded.UpgradeDirectory)
+	}
+}
+
+// Neither set means no staging, and a deployment that cannot write over its
+// own binary is told it cannot upgrade itself. Not a guess at where the data
+// might be: on a container running as root a wrong guess stages into the layer
+// a recreate throws away.
+func TestNoUpgradeDirectoryWithoutOne(t *testing.T) {
+	t.Setenv(bootstrap.Prefix+"DATABASE_URL", "postgres://teanode:x@postgres:5432/teanode")
+
+	loaded, err := bootstrap.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.UpgradeDirectory != "" {
+		t.Errorf("it guessed %q", loaded.UpgradeDirectory)
+	}
+}

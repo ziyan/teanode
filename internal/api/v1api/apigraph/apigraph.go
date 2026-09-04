@@ -23,6 +23,7 @@ import (
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/util/graphapi"
@@ -39,7 +40,13 @@ type graph struct {
 	verifier dns.Verifier
 	mailer   mailer.Mailer
 	settings *api.Settings
-	schema   graphql.Schema
+
+	// upgrade knows what has been released and can replace this binary with
+	// it. Nil when the server was started without it, in which case the
+	// dashboard is told there is nothing to say rather than shown an empty
+	// card.
+	upgrade upgrade.Manager
+	schema  graphql.Schema
 
 	// started is when this process built the API, which is close enough to
 	// when it started to be what the dashboard shows as uptime.
@@ -57,7 +64,7 @@ type graph struct {
 
 // New builds the GraphQL component, generating the schema by reflection over
 // the Query, Mutation and Subscription interfaces.
-func New(database db.Database, configuration config.Store, messages storage.Storage, locator geoip.Locator, verifier dns.Verifier, sender mailer.Mailer, authenticator web.Authenticator, ceremonies ceremony.Store, settings *api.Settings) (web.Component, error) {
+func New(database db.Database, configuration config.Store, messages storage.Storage, locator geoip.Locator, verifier dns.Verifier, sender mailer.Mailer, upgrader upgrade.Manager, authenticator web.Authenticator, ceremonies ceremony.Store, settings *api.Settings) (web.Component, error) {
 	self := &graph{
 		database:      database,
 		config:        configuration,
@@ -65,6 +72,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 		locator:       locator,
 		verifier:      verifier,
 		mailer:        sender,
+		upgrade:       upgrader,
 		authenticator: authenticator,
 		ceremonies:    ceremonies,
 		settings:      settings,

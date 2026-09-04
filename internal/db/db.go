@@ -78,6 +78,7 @@ type Database interface {
 
 	// migrate database schema
 	Migrate() error
+	UnknownMigrations() ([]string, error)
 
 	// close opened database
 	Close() error

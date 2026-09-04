@@ -13,6 +13,7 @@ package config
 
 import (
 	"github.com/op/go-logging"
+	"time"
 )
 
 var log = logging.MustGetLogger("config")
@@ -66,6 +67,9 @@ type Configuration struct {
 	// Signing in with a passkey, and where the half-finished ceremonies wait
 	Passkey Passkey `yaml:"passkey"`
 
+	// Checking for new releases, and installing them
+	Upgrade Upgrade `yaml:"upgrade"`
+
 	// Directory holding the configuration file. Relative paths in the file
 	// resolve against it rather than against the process working directory,
 	// so that "teanode credential list" run from a different directory reads
@@ -78,6 +82,66 @@ type Configuration struct {
 	// replaces the whole Configuration rather than editing one in place.
 	index index
 }
+
+// Upgrade is how this server learns about new releases, and what it may do
+// about them.
+//
+// Checking is on by default and installing is not. Knowing that a version
+// exists is not the same as installing it, and an operator who is never told
+// is an operator running last year's bugs — but a release can change how mail
+// is handled, and nobody installs a mail server expecting it to change
+// underneath them.
+type Upgrade struct {
+	// Enabled asks the release list what the newest version is, on
+	// CheckInterval, and shows it in the dashboard. One HTTPS request to a
+	// public endpoint, carrying nothing about this deployment.
+	Enabled bool `yaml:"enabled"`
+
+	// Automatic installs what it finds without being asked: download, verify
+	// against the release's checksums, replace this binary, restart.
+	//
+	// It takes any newer release, minor and major alike. A rule that stopped
+	// at a minor version would be a rule that quietly stopped upgrading, and
+	// somebody who turns this on has said they would rather not think about
+	// it. Read the changelog before turning it on, not after.
+	//
+	// A release that crashes before it finishes starting is recovered from
+	// automatically only where the binary is staged: a container runs the one
+	// in its image again. Where it was replaced in place there is nothing to
+	// fall back to on its own, and recovery is renaming the .previous copy
+	// back by hand. See docs/configuration.md.
+	//
+	// It is refused, with the reason on the dashboard, where there is nowhere
+	// to put the new binary: a deployment whose executable it cannot write
+	// over and which has not been given a writable staging directory in
+	// TEANODE_UPGRADE_DIRECTORY. A container is not refused — it stages onto
+	// its volume and runs that at the next start, so an upgrade survives a
+	// recreate — but a container that was never given such a volume is, and
+	// there "docker compose pull" is the answer.
+	Automatic bool `yaml:"automatic"`
+
+	// CheckInterval is how often to look. Six hours by default: often enough
+	// that a security release is noticed the same day, rarely enough that it
+	// is not a request anybody would notice. The one part of this section
+	// that a restart is needed for: the others are re-read every time the
+	// loop wakes. At least
+	// MinimumUpgradeCheckInterval, because the endpoint allows sixty requests
+	// an hour to an address that is not signed in and this is not the only
+	// thing behind that address.
+	CheckInterval Duration `yaml:"checkInterval"`
+
+	// Window restricts automatic upgrades to a time of day, in local time,
+	// as "02:00-04:00". It may cross midnight. Empty means any time.
+	//
+	// An upgrade restarts the server, which takes a few seconds during which
+	// mail is not accepted — senders retry, but a busy hour is still a worse
+	// time than a quiet one.
+	Window string `yaml:"window"`
+}
+
+// MinimumUpgradeCheckInterval is the shortest upgrade.checkInterval that is
+// accepted.
+const MinimumUpgradeCheckInterval = Duration(15 * time.Minute)
 
 // Server describes this instance's identity and its state directory.
 type Server struct {

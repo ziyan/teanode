@@ -15,6 +15,7 @@ Notable changes to TeaNode. The format follows
   never built this. `docker compose build` still builds the checkout. The tag
   is `latest` and the comment beside it says to pin a version: an upgrade to a
   mail server should be a thing you did, on a day you chose. (#2)
+
 ## [0.1.1] - 2026-09-03
 
 ### Fixed
@@ -31,6 +32,7 @@ Notable changes to TeaNode. The format follows
   paragraph and leaving each of them a column four words wide. (#1)
 - Every chevron in the breadcrumb has the same air on both sides. The gap fell
   on one side only, so the trail read as `Domains> example.com> Templates`. (#1)
+
 ## [0.1.0] - 2026-09-03
 
 First open-source release. TeaNode began as the private backend of a hosted
