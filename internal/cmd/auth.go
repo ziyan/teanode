@@ -150,6 +150,7 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("no token was given")
 		}
 		profile.Token = token
+		profile.TokenID = tokenIdOf(token)
 	} else {
 		result, err := browserLogin(ctx, serverUrl, name, command.String("lifetime"), !command.Bool("no-browser"))
 		if err != nil {
@@ -207,6 +208,22 @@ func browserLogin(ctx context.Context, serverUrl, name, lifetime string, open bo
 	}
 	fmt.Printf("Waiting for the browser...\n")
 	return listener.Wait(ctx, loginTimeout)
+}
+
+// tokenIdOf reads the identifier out of a token string, so that a pasted
+// token can be revoked on logout like one the browser handed over.
+//
+// A token is its prefix, a 26 character identifier, a 16 character key and a
+// 16 character signature. The identifier is not secret — it is what the
+// server's own list shows — and reading it here verifies nothing; the server
+// does that when the token is used. Anything not shaped like a token yields
+// nothing, and logout then leaves revocation to the dashboard.
+func tokenIdOf(token string) string {
+	rest, found := strings.CutPrefix(token, "tnt_")
+	if !found || len(rest) != 26+16+16 {
+		return ""
+	}
+	return strings.ToLower(rest[:26])
 }
 
 func runAuthLogout(ctx context.Context, command *cli.Command) error {

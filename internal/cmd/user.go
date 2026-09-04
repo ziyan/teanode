@@ -45,6 +45,27 @@ func NewUserCommand() *cli.Command {
 				Action: runUserCreate,
 			},
 			{
+				Name:      "update",
+				Usage:     "change an account's name, address, or the username it signs in with",
+				ArgsUsage: "<username>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "what to call this person; empty clears it",
+					},
+					&cli.StringFlag{
+						Name:  "email",
+						Usage: "address that receives notifications; empty clears it",
+					},
+					&cli.StringFlag{
+						Name:  "rename",
+						Usage: "the username to sign in with from now on; sessions and tokens move with the account",
+					},
+					JSONFlag(),
+				},
+				Action: runUserUpdate,
+			},
+			{
 				Name:      "password",
 				Usage:     "set an account's password",
 				ArgsUsage: "<username>",
@@ -197,5 +218,42 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 	fmt.Printf("removed %d account(s)\n\n", len(users))
 	fmt.Println("Open the dashboard to create a new one. A running server picks this up")
 	fmt.Println("without a restart.")
+	return nil
+}
+
+func runUserUpdate(ctx context.Context, command *cli.Command) error {
+	username := command.Args().First()
+	if username == "" {
+		return fmt.Errorf("which username? usage: teanode user update <username> [--name ...] [--email ...] [--rename ...]")
+	}
+	parameters := &client.UserParameters{}
+	if command.IsSet("name") {
+		value := command.String("name")
+		parameters.Name = &value
+	}
+	if command.IsSet("email") {
+		value := command.String("email")
+		parameters.Email = &value
+	}
+	if command.IsSet("rename") {
+		value := command.String("rename")
+		parameters.NewUsername = &value
+	}
+	if *parameters == (client.UserParameters{}) {
+		return fmt.Errorf("nothing to change; pass --name, --email or --rename")
+	}
+
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	user, err := client.UpdateUser(ctx, connection, username, parameters)
+	if err != nil {
+		return describeConnectionError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(user)
+	}
+	fmt.Printf("changed %s\n", user.Username)
 	return nil
 }

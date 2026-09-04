@@ -3,9 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -118,17 +116,8 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "ID\tNAME\tACTS AS\tCREATED\tEXPIRES\tLAST USED\tSTATE")
+	rows := make([][]string, 0, len(tokens))
 	for _, token := range tokens {
-		expires := "never"
-		if token.Expires != nil {
-			expires = token.Expires.Local().Format(time.RFC3339)
-		}
-		lastUsed := "never"
-		if token.LastUsed != nil {
-			lastUsed = token.LastUsed.Local().Format(time.RFC3339)
-		}
 		state := "enabled"
 		switch {
 		case token.Revoked != nil:
@@ -136,11 +125,12 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 		case token.Expires != nil && token.Expires.Before(time.Now()):
 			state = "expired"
 		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			token.ID, token.Name, token.Username,
-			token.Created.Local().Format(time.RFC3339), expires, lastUsed, state)
+		rows = append(rows, []string{
+			token.ID, token.Name, token.Username, formatTime(&token.Created),
+			formatTime(token.Expires), formatTime(token.LastUsed), token.LastUsedIP, state,
+		})
 	}
-	return writer.Flush()
+	return printTable([]string{"ID", "NAME", "ACTS AS", "CREATED", "EXPIRES", "LAST USED", "FROM", "STATE"}, rows)
 }
 
 func runTokenRevoke(ctx context.Context, command *cli.Command) error {

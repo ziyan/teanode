@@ -51,7 +51,7 @@ the configured domains.
       `auth login` with the browser loopback flow and `--token`, `logout`,
       `status`, `list`, `switch`, `remove`; the dashboard's `/cli` page; the
       content security policy widened for that page only; tests.
-- [ ] Milestone 3: configuration commands. `domain`, `alias`, `credential`
+- [x] (2026-09-03 21:35Z) Milestone 3: configuration commands. `domain`, `alias`, `credential`
       (with `update`), `user` (with `update`), `server`, `settings`.
 - [ ] Milestone 4: data commands. `mail` (list, get, content, download, opens,
       count, send), `delivery`, `report`, `session`, `passkey`.
