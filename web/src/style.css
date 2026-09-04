@@ -857,13 +857,28 @@ a.tile:hover strong {
   color: var(--accent);
 }
 
-/* The one thing on the page that scrolls. */
+/* The one thing on the page that scrolls.
+   
+   And the one thing that decides how wide anything is. Without a limit here a
+   card on a 2560px monitor is 2264px of box holding 617px of writing, with
+   most of a thousand pixels of nothing to the right of every sentence — which
+   is what capping the prose alone leaves behind. The measure was doing its
+   job; the box around it was not.
+   
+   The cap is padding rather than a max-width on the element, so the column
+   this scrolls stays the full width and the scrollbar stays at the window's
+   edge, where a scrollbar belongs. On a narrow window the max() falls back to
+   the 32px gutter and nothing changes.
+   
+   1400px because that is comfortably more than anything here needs: the mail
+   list is eight columns and 1019px at its natural width, and the DNS table is
+   a fixed layout in percentages that fits whatever it is given. */
 .content {
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--space-6) 32px;
+  padding: var(--space-6) max(32px, (100% - 1400px) / 2);
 }
 
 h2 { margin-top: 0; font-size: 20px; }
