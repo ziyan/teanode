@@ -59,6 +59,7 @@ func main() {
 			return ctx, nil
 		},
 		Commands: []*cli.Command{
+			cmd.NewAuthCommand(),
 			cmd.NewCredentialCommand(),
 			cmd.NewDKIMCommand(),
 			cmd.NewUserCommand(),

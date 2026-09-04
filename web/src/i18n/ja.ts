@@ -777,4 +777,17 @@ export const ja: Catalog = {
   'upgrade.cannot': 'ここからは更新できません: {reason}。',
   'upgrade.automaticOnWindow': '自動更新が有効です（現地時間で {window}）。新しいリリースは確認なしに導入されます。',
   'upgrade.automaticOn': '自動更新が有効です。新しいリリースは確認なしに導入されます。',
+
+  'cli.title': 'コマンドラインを承認',
+  'cli.notOpenedByCommand': 'このページはコマンドラインクライアントがサインインするときに開くものです。ターミナルで次を実行すると、ここに戻ってきます:',
+  'cli.intro': 'お使いのコンピュータのコマンドラインクライアントが、{username} としてこのサーバーを管理するためのトークンを求めています。',
+  'cli.tokenName': 'トークンの名前:',
+  'cli.expires': '{lifetime} 後に期限切れになります。',
+  'cli.neverExpires': '期限はありません。不要になったら「APIトークン」で失効させてください。',
+  'cli.authorize': '承認',
+  'cli.working': 'トークンを発行しています…',
+  'cli.noToken': 'サーバーはトークンを発行しませんでした。',
+  'cli.delivered': '完了しました。トークンはコマンドラインに渡されました。このタブは閉じて構いません。',
+  'cli.manualTitle': 'トークンを渡せませんでした',
+  'cli.manualBody': 'ブラウザはこのページを開いたターミナルに接続できませんでした。代わりに次のコマンドをターミナルに貼り付けてください。トークンはここにしか表示されません。',
 }

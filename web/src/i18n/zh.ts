@@ -762,4 +762,17 @@ export const zh: Catalog = {
   'upgrade.cannot': '无法在此升级：{reason}。',
   'upgrade.automaticOnWindow': '已开启自动升级（本地时间 {window}）：新版本会在不询问的情况下安装。',
   'upgrade.automaticOn': '已开启自动升级：新版本会在不询问的情况下安装。',
+
+  'cli.title': '授权命令行',
+  'cli.notOpenedByCommand': '此页面由命令行客户端在登录时打开。在终端中运行以下命令，它会把你带回这里：',
+  'cli.intro': '你电脑上的命令行客户端正在请求一个令牌，以便以 {username} 的身份管理此服务器。',
+  'cli.tokenName': '令牌名称：',
+  'cli.expires': '它将在 {lifetime} 后过期。',
+  'cli.neverExpires': '它不会过期；不再需要时，请在“API 令牌”中吊销。',
+  'cli.authorize': '授权',
+  'cli.working': '正在签发令牌…',
+  'cli.noToken': '服务器没有签发令牌。',
+  'cli.delivered': '完成。令牌已交给命令行，可以关闭此标签页了。',
+  'cli.manualTitle': '令牌无法自动交付',
+  'cli.manualBody': '浏览器无法连接到打开此页面的终端。请把下面的命令粘贴到终端中。令牌只在这里显示。',
 }

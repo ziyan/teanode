@@ -95,10 +95,9 @@ func runTokenCreate(ctx context.Context, command *cli.Command) error {
 	fmt.Printf("Issued %s for %s. Only its hash is stored, so this is the only time\n", token.ID, token.Username)
 	fmt.Printf("it is shown.\n\n")
 	fmt.Printf("  %s\n\n", secret)
-	fmt.Printf("Use it from another machine with:\n\n")
-	fmt.Printf("  export TEANODE_URL=https://%s\n", "your-server")
-	fmt.Printf("  export TEANODE_TOKEN=%s\n\n", secret)
-	fmt.Printf("Or keep it in %s, which is read when TEANODE_TOKEN is not set.\n", tokenFilePath())
+	fmt.Printf("Use it from another machine by saving it as a profile:\n\n")
+	fmt.Printf("  teanode auth login --url https://%s --token %s\n\n", "your-server", secret)
+	fmt.Printf("Or, in a script, set TEANODE_URL and TEANODE_TOKEN.\n")
 	return nil
 }
 

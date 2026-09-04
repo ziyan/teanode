@@ -34,6 +34,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
   { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },
   { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
+  // The page the command line client opens to sign in. Under nothing: it is
+  // not a place in the dashboard so much as a door into it.
+  { prefix: '/cli', trail: [{ label: 'cli.title' }] },
 ]
 
 // A page belonging to one domain — /domains/<id>/settings — sits two levels

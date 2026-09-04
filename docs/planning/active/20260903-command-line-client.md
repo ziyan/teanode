@@ -47,7 +47,7 @@ the configured domains.
       (client) and `internal/cmd/server` (server); Makefile, Dockerfile,
       release script, CI, dev scripts and docs updated; `make build` produces
       `build/teanode` and `build/teanode-server`.
-- [ ] Milestone 2: profiles and `teanode auth`. `~/.config/teanode/profiles.json`,
+- [x] (2026-09-03 21:00Z) Milestone 2: profiles and `teanode auth`. `~/.config/teanode/profiles.json`,
       `auth login` with the browser loopback flow and `--token`, `logout`,
       `status`, `list`, `switch`, `remove`; the dashboard's `/cli` page; the
       content security policy widened for that page only; tests.

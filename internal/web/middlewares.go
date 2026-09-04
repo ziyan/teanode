@@ -182,30 +182,23 @@ func MakeForwarderMiddleware(forwarderKey string) Middleware {
 //	base-uri 'none'         no injected <base> can send every relative URL on
 //	                        the page somewhere else.
 //	object-src 'none'       no plugins.
+//
+// One page is the exception to connect-src: the one the command line client
+// opens to sign in, which hands the token it obtained to the client's listener
+// on the reader's own machine. That page, and only that page, may reach a
+// loopback address. The page is a document of its own — the client opens it
+// directly — so the policy is chosen by the path the document was served at.
 func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
-	script := "script-src 'self'"
-	if len(inlineScriptHashes) > 0 {
-		script += " " + strings.Join(inlineScriptHashes, " ")
-	}
-
-	policy := strings.Join([]string{
-		"default-src 'self'",
-		script,
-		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' data:",
-		"font-src 'self' data:",
-		"connect-src 'self'",
-		"frame-src 'self'",
-		"media-src 'self'",
-		"object-src 'none'",
-		"base-uri 'none'",
-		"form-action 'self'",
-		"frame-ancestors 'none'",
-	}, "; ")
+	policy := securityPolicy(inlineScriptHashes, "connect-src 'self'")
+	commandLinePolicy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+CommandLineConnectSources)
 
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			response.Header().Set("Content-Security-Policy", policy)
+			if request.URL.Path == CommandLinePagePath {
+				response.Header().Set("Content-Security-Policy", commandLinePolicy)
+			} else {
+				response.Header().Set("Content-Security-Policy", policy)
+			}
 			// Nothing is sniffed into a type the sender chose.
 			response.Header().Set("X-Content-Type-Options", "nosniff")
 			// A dashboard URL carries a message identifier, so it is not sent
@@ -217,4 +210,36 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
 			handler.ServeHTTP(response, request)
 		})
 	}
+}
+
+// CommandLinePagePath is the dashboard page the command line client opens to
+// sign in. The client names the same path.
+const CommandLinePagePath = "/cli"
+
+// CommandLineConnectSources is what that page may connect to besides this
+// server: the client's listener, which is on the reader's own machine and so
+// is plain HTTP on a loopback address, on whichever port was free.
+const CommandLineConnectSources = "http://127.0.0.1:* http://localhost:*"
+
+// securityPolicy assembles the content security policy with one connect-src
+// or another.
+func securityPolicy(inlineScriptHashes []string, connect string) string {
+	script := "script-src 'self'"
+	if len(inlineScriptHashes) > 0 {
+		script += " " + strings.Join(inlineScriptHashes, " ")
+	}
+	return strings.Join([]string{
+		"default-src 'self'",
+		script,
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data:",
+		"font-src 'self' data:",
+		connect,
+		"frame-src 'self'",
+		"media-src 'self'",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+	}, "; ")
 }

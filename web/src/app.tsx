@@ -17,6 +17,7 @@ import { LayoutEditorPage } from './pages/layoutEditor'
 import { ComposePage } from './pages/compose'
 import { SetupAccountPage } from './pages/setupAccount'
 import { ChangePasswordPage } from './pages/changePasswordPage'
+import { CommandLinePage } from './pages/cli'
 import { TokensPage } from './pages/settings/tokens'
 import { ServerPage } from './pages/server'
 import { SessionsPage } from './pages/settings/sessions'
@@ -185,6 +186,10 @@ export function App() {
               <Route path="/settings/passkeys" element={<PasskeysPage />} />
               <Route path="/settings/tokens" element={<TokensPage />} />
               <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
+
+              {/* Opened by "teanode auth login", which is waiting on a
+                  loopback port for the token this page hands it. */}
+              <Route path="/cli" element={<CommandLinePage username={session.username} />} />
 
               {/* Where these used to live. Somebody's bookmark should not
                   break because the navigation was reorganised. */}
