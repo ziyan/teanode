@@ -29,16 +29,16 @@ func Parse(txt string) (*Record, error) {
 	}
 
 	record.DKIMAlignment = AlignmentRelaxed
-	if aDkim, ok := parameters["aDkim"]; ok {
-		record.DKIMAlignment, err = parseAlignmentMode(aDkim, "aDkim")
+	if aDkim, ok := parameters["adkim"]; ok {
+		record.DKIMAlignment, err = parseAlignmentMode(aDkim, "adkim")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	record.SPFAlignment = AlignmentRelaxed
-	if aSpf, ok := parameters["aSpf"]; ok {
-		record.SPFAlignment, err = parseAlignmentMode(aSpf, "aSpf")
+	if aSpf, ok := parameters["aspf"]; ok {
+		record.SPFAlignment, err = parseAlignmentMode(aSpf, "aspf")
 		if err != nil {
 			return nil, err
 		}
@@ -105,21 +105,21 @@ func Parse(txt string) (*Record, error) {
 	return record, nil
 }
 
-func parsePolicy(s, param string) (Policy, error) {
+func parsePolicy(s, parameter string) (Policy, error) {
 	switch s {
 	case "none", "quarantine", "reject":
 		return Policy(s), nil
 	default:
-		return "", fmt.Errorf("dmarc: invalid policy for parameter '%v'", param)
+		return "", fmt.Errorf("dmarc: invalid policy for parameter '%v'", parameter)
 	}
 }
 
-func parseAlignmentMode(s, param string) (AlignmentMode, error) {
+func parseAlignmentMode(s, parameter string) (AlignmentMode, error) {
 	switch s {
 	case "r", "s":
 		return AlignmentMode(s), nil
 	default:
-		return "", fmt.Errorf("dmarc: invalid alignment mode for parameter '%v'", param)
+		return "", fmt.Errorf("dmarc: invalid alignment mode for parameter '%v'", parameter)
 	}
 }
 
