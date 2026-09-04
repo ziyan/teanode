@@ -6,6 +6,39 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-04
+
+### Added
+
+- **The server says when a new version is out, and installs it.** The Server
+  page shows what is running, what has been released, the notes that came with
+  it and a link to the release, and a button that installs it: downloaded,
+  checked against the checksums published with it, put in place, and the server
+  restarts into it — no supervisor needed, because the process replaces its own
+  image once everything has been drained and closed. `upgrade.automatic` does
+  the same on a schedule, off until you turn it on, optionally confined to an
+  hour of the day by `upgrade.window`. (#3)
+- **The dashboard notices when it has gone stale.** A yellow refresh button
+  appears at the top of the rail when the server has been upgraded under the
+  page you are looking at, and a dot appears on Server when a release is
+  waiting. (#3)
+
+### Changed
+
+- **An older binary no longer reverts a newer one's migrations without being
+  asked.** This program undoes migrations it does not recognise, which is how a
+  deliberate downgrade works — and it cannot tell one from an upgrade that
+  crashed on startup, a second instance that never got the upgrade, or somebody
+  pulling last week's image to test something. A start that meets a migration
+  it does not have now refuses: nothing is migrated and nothing is opened, and
+  the message names the migrations, says what reverting would cost, and gives
+  `TEANODE_ALLOW_MIGRATION_REVERT=true` for a downgrade you actually want. (#3)
+- **Setup, Integrations and Server are one page.** They were three rows in the
+  rail for one subject — what this server is, what it talks to, and which
+  version it is running — which made you choose between them before knowing
+  which one held the thing you wanted. They are tabs of `/server` now, Setup
+  first and About last, and the old addresses redirect. (#3)
+
 ## [0.1.2] - 2026-09-03
 
 ### Changed
