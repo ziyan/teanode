@@ -10,6 +10,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,23 +41,40 @@ type Options struct {
 	// pins the server's own certificate.
 	HTTPClient *http.Client
 
+	// Insecure skips verifying the server's certificate, for a development
+	// server with a self-signed one. Ignored when HTTPClient is given.
+	Insecure bool
+
 	// Timeout for a single request. Zero means one minute.
 	Timeout time.Duration
 }
 
-// New builds a Client.
-func New(options Options) (*Client, error) {
-	url := strings.TrimRight(strings.TrimSpace(options.URL), "/")
+// NormalizeURL is how a server is named everywhere the client remembers one:
+// trimmed, without a trailing slash, and https unless a scheme was given.
+func NormalizeURL(url string) string {
+	url = strings.TrimRight(strings.TrimSpace(url), "/")
 	if url == "" {
-		return nil, fmt.Errorf("client: no server URL")
+		return ""
 	}
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
+	}
+	return url
+}
+
+// New builds a Client.
+func New(options Options) (*Client, error) {
+	url := NormalizeURL(options.URL)
+	if url == "" {
+		return nil, fmt.Errorf("client: no server URL")
 	}
 
 	httpClient := options.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{}
+		if options.Insecure {
+			httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		}
 	}
 	if httpClient.Timeout == 0 {
 		httpClient.Timeout = options.Timeout
@@ -124,7 +142,7 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 	}()
 
 	if response.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("client: %s refused the token; create one with 'teanode token create', or run this on the server itself", self.url)
+		return fmt.Errorf("client: %s refused the token; sign in again with 'teanode auth login', or run this on the server itself", self.url)
 	}
 
 	var envelope struct {
@@ -147,4 +165,31 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 		return fmt.Errorf("client: cannot decode the reply: %w", err)
 	}
 	return nil
+}
+
+// Download fetches something that is a file rather than a GraphQL reply — the
+// raw source of a stored message — with the same credentials. The caller
+// closes the body. A reply that is not a success is returned as an error, so
+// that a "not found" page is never saved as though it were the file.
+func (self *Client) Download(ctx context.Context, path string) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, self.url+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	response, err := self.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("client: cannot reach %s: %w", self.url, err)
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("client: %s refused the token; sign in again with 'teanode auth login', or run this on the server itself", self.url)
+	}
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("client: %s answered HTTP %d for %s", self.url, response.StatusCode, path)
+	}
+	return response, nil
 }

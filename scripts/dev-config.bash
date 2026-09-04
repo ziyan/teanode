@@ -11,7 +11,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-readonly BINARY="build/teanode"
+readonly BINARY="build/teanode-server"
 readonly ENVIRONMENT="dev/.env"
 
 if [[ ! -x "${BINARY}" ]]; then

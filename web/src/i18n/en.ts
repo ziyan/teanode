@@ -785,4 +785,16 @@ export const en = {
   'upgrade.cannot': 'No upgrade from here: {reason}.',
   'upgrade.automaticOnWindow': 'Automatic upgrades are on, between {window} local time: a new release is installed without being asked.',
   'upgrade.automaticOn': 'Automatic upgrades are on: a new release is installed without being asked.',
+
+  'cli.title': 'Authorize the command line',
+  'cli.notOpenedByCommand': 'This page is opened by the command line client when it signs in. Run this in a terminal and it will bring you back here:',
+  'cli.intro': 'The command line client on your computer is asking for a token, so that it can administer this server.',
+  'cli.signedInAs': 'Signed in as',
+  'cli.tokenLabel': 'The token will be called',
+  'cli.authorize': 'Authorize',
+  'cli.working': 'Issuing the token…',
+  'cli.noToken': 'The server issued no token.',
+  'cli.delivered': 'Done. The token has been handed to the command line, and you can close this tab.',
+  'cli.manualTitle': 'The token could not be handed over',
+  'cli.manualBody': 'The browser could not reach the terminal that opened this page. Paste this command into it instead. The token is shown only here.',
 }

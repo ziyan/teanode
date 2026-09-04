@@ -47,7 +47,7 @@ jobs:
         run: make check
 
       - name: Vet
-        run: go vet -mod=vendor . ./cmd/... ./internal/...
+        run: go vet -mod=vendor ./cmd/... ./internal/...
 
       - name: Build
         run: make build
@@ -63,7 +63,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@latest
           gotestsum --format testname -- -mod=vendor -race -cover \
-            -coverprofile=coverage.out . ./cmd/... ./internal/...
+            -coverprofile=coverage.out ./cmd/... ./internal/...
           go tool cover -func=coverage.out | tail -1
 
   dashboard:
@@ -104,5 +104,7 @@ jobs:
       - name: Build
         run: docker build -f deploy/Dockerfile -t teanode:ci .
 
-      - name: Check it runs
-        run: docker run --rm teanode:ci version
+      - name: Check both programs run
+        run: |
+          docker run --rm teanode:ci version
+          docker run --rm --entrypoint teanode teanode:ci version

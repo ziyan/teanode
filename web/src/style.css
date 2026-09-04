@@ -1344,9 +1344,18 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   color: var(--text);
 }
 
-.auth-field input {
+.auth-field input,
+.auth-field select {
   width: 100%;
   min-height: 40px;
+}
+
+/* A row of secondary actions under the card's content, for the page that
+   hands over a command to copy rather than asking for anything. */
+.auth-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-3);
 }
 
 /* Under the field it belongs to, in the gap the field already leaves. */

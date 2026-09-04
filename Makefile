@@ -9,6 +9,7 @@ NPM ?= npm
 WEB_DIR ?= web
 BUILD_DIR ?= build
 BINARY ?= $(BUILD_DIR)/teanode
+SERVER_BINARY ?= $(BUILD_DIR)/teanode-server
 DOCKER_TAG ?= teanode:latest
 DEV_COMPOSE ?= docker compose -f deploy/docker-compose.dev.yml
 DEV_ENVIRONMENT ?= dev/.env
@@ -22,7 +23,7 @@ GOLANGCI_LINT_VERSION ?= v2.13.1
 
 # Explicit package list: ./... would also pick up stray Go files vendored
 # inside web/node_modules by npm packages.
-GOPACKAGES ?= . ./cmd/... ./internal/...
+GOPACKAGES ?= ./cmd/... ./internal/...
 
 VERSION ?= $(shell git describe --tags 2>/dev/null || echo 0.1.0)
 COMMIT ?= $(shell git describe --match=NeVeRmAtCh --always --abbrev=40 --dirty)
@@ -48,9 +49,10 @@ $(WEB_DIR)/node_modules: $(WEB_DIR)/package.json $(WEB_DIR)/package-lock.json
 	cd $(WEB_DIR) && $(NPM) ci
 	@touch $@
 
-build: generate ## Build the teanode binary
+build: generate ## Build teanode (the client) and teanode-server
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GO) build -mod=vendor -ldflags '$(LDFLAGS)' -o $(BINARY) .
+	CGO_ENABLED=0 $(GO) build -mod=vendor -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/teanode
+	CGO_ENABLED=0 $(GO) build -mod=vendor -ldflags '$(LDFLAGS)' -o $(SERVER_BINARY) ./cmd/teanode-server
 
 format: ## Format Go code
 	@gofmt -l -w $(GOFMTARGS)
@@ -135,7 +137,7 @@ dev-clean: ## Stop the dev services and delete all development state
 
 dev-backend: build ## Run the server against the dev database, setting it up if needed
 	@scripts/dev-config.bash
-	@set -a; . ./$(DEV_ENVIRONMENT); set +a; ./$(BINARY) run
+	@set -a; . ./$(DEV_ENVIRONMENT); set +a; ./$(SERVER_BINARY) run
 
 dev-frontend: $(WEB_DIR)/node_modules ## Run the dashboard dev server, proxying to the dev backend
 	cd $(WEB_DIR) && $(NPM) run dev

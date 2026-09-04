@@ -5,9 +5,9 @@ message moves through the system, see `AGENTS.md`.
 
 ## Layout
 
-    main.go                 CLI entry point
-    cmd/                    subcommand implementations
-    internal/               all real code
+    cmd/teanode-server/     the server's entry point
+    cmd/teanode/            the client's entry point
+    internal/               all real code, including both programs' subcommands
     web/                    dashboard source, built into internal/frontend/static
     deploy/                 systemd unit, docker compose, example configuration
     docs/                   see docs/decisions/20260818-documentation-layout.md
@@ -70,11 +70,18 @@ three parts:
                 are files rather than JSON and so are not GraphQL.
 
 **`internal/client`** — the other side of that API, used by the command line
-tool. `introspect.go` reads the schema from the server and builds a query for
-any operation, which is how `teanode api` reaches all of them without a hand
-written command each. See `docs/reference/command-line.md`, and
-`docs/decisions/20260818-the-cli-goes-through-the-api.md` for why the tool does
-not edit the configuration file itself.
+client: one file per resource with the queries written out, and
+`introspect.go`, which reads the schema from the server and builds a query
+for any operation — how `teanode api` reaches all of them without a hand
+written command each.
+
+**`internal/cmd`** — the client's subcommands, one file per group, and the
+helpers both programs share: reaching a server (`client.go`), the saved
+profiles (`profile.go`), the browser sign-in (`loopback.go`), tables and
+prompts. `internal/cmd/server` is the server's own subcommands: `run`, and
+the few operations that write the database directly. See
+`docs/reference/command-line.md`, and `docs/decisions/20260903-two-binaries.md`
+for why they are two programs.
 
 **`internal/web`** — HTTP server, routing and middlewares. Knows nothing about
 mail.
@@ -117,9 +124,10 @@ free of project-specific assumptions:
 
 ## Dependency direction
 
-`cmd` depends on everything. `configdb` depends on `config` and `db`; nothing
-depends on `configdb` except `cmd`, which is what keeps the choice of where
-configuration is stored out of everything that reads it. `api`, `mx`, `dns`
+`internal/cmd/server` depends on everything. `configdb` depends on `config`
+and `db`; nothing depends on `configdb` except `internal/cmd`, which is what
+keeps the choice of where configuration is stored out of everything that
+reads it. `api`, `mx`, `dns`
 and `mailer` depend on `config`, `db`, `models` and `util`. `util` packages depend only on each other and the
 standard library. Nothing in `util` may import `config`, `db` or `models`: they
 are meant to be liftable into a separate library, and several of them are the

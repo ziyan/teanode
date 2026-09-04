@@ -1,6 +1,7 @@
 # The command line tool goes through the API, not the file
 
-- Status: accepted
+- Status: accepted; the tool is now the `teanode` client of
+  `20260903-two-binaries.md`, which keeps every decision here
 - Date: 2026-08-18
 - Deciders: Ziyan Zhou
 

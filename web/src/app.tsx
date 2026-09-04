@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { Session, getSession, logout } from './api'
 import { LoginPage } from './pages/login'
@@ -17,6 +17,7 @@ import { LayoutEditorPage } from './pages/layoutEditor'
 import { ComposePage } from './pages/compose'
 import { SetupAccountPage } from './pages/setupAccount'
 import { ChangePasswordPage } from './pages/changePasswordPage'
+import { CommandLinePage } from './pages/cli'
 import { TokensPage } from './pages/settings/tokens'
 import { ServerPage } from './pages/server'
 import { SessionsPage } from './pages/settings/sessions'
@@ -36,6 +37,7 @@ export function App() {
   const desktop = useIsDesktop()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
+  const location = useLocation()
 
   const refresh = useCallback(async () => {
     try {
@@ -85,6 +87,18 @@ export function App() {
       <div className="auth-page">
         {corner}
         <LoginPage onLoggedIn={refresh} />
+      </div>
+    )
+  }
+
+  // The page "teanode auth login" opens is drawn like the login form — one
+  // card and nothing else — because the reader was brought here to answer
+  // one question, and the rail would be a list of other places to go.
+  if (location.pathname === '/cli') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <CommandLinePage username={session.username} />
       </div>
     )
   }

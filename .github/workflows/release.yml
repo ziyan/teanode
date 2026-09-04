@@ -66,8 +66,12 @@ jobs:
           name: v${{ steps.version.outputs.version }}
           body_path: release-notes.md
           files: |
+            dist/teanode-server-linux-amd64
+            dist/teanode-server-linux-arm64
             dist/teanode-linux-amd64
             dist/teanode-linux-arm64
+            dist/teanode-darwin-amd64
+            dist/teanode-darwin-arm64
             dist/SHA256SUMS
 
       - uses: docker/setup-qemu-action@v3
