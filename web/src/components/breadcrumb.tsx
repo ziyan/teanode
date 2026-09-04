@@ -124,6 +124,17 @@ function useTrail(): { label: string; to?: string }[] {
       }
       return [...crumbs, { label: detail }]
     }
+
+    // A page about one domain is named after that domain, and the name
+    // arrives with the data rather than with the route. Until it does the
+    // heading is blank, not the section's own name: falling back to the
+    // crumbs alone put "Domains" in the page heading for as long as the query
+    // took, and every navigation between two of a domain's pages — the
+    // template editor back to the list, say — cleared the detail and flashed
+    // it. A blank says "still coming"; the wrong word in 30px does not.
+    if (/^\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
+      return [...crumbs, { label: '' }]
+    }
     return crumbs
   }, [location.pathname, detail, item, t])
 }
@@ -139,7 +150,10 @@ function DocumentTitle() {
     // Reversed: a row of tabs is read left to right and truncated from the
     // right, so the part that tells them apart has to come before the part
     // they share.
-    const parts = trail.map((crumb) => crumb.label).reverse()
+    const parts = trail
+      .map((crumb) => crumb.label)
+      .filter((label) => label !== '')
+      .reverse()
     document.title = [...parts, t('app.name')].join(' · ')
   }, [trail, t])
 
@@ -160,7 +174,10 @@ export function PageHeading() {
     return null
   }
 
-  return <h1 className="page-heading">{last.label}</h1>
+  // A non-breaking space rather than nothing: an empty h1 collapses to no
+  // height, and the page below it would jump up and back down as the name
+  // arrives.
+  return <h1 className="page-heading">{last.label || '\u00a0'}</h1>
 }
 
 export function Breadcrumb() {
