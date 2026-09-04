@@ -43,7 +43,12 @@ type Response = {
   ListPendingDeliveries: Delivery[]
 }
 
-// The domain at a glance: is its DNS right, and is mail arriving. The
+// The domain at a glance: is its DNS right, and is mail arriving. DNS first,
+// because it is the question that decides whether the others mean anything —
+// a domain whose MX record is wrong has no mail to count, and a row of zeroes
+// explains itself only once you have looked at the record.
+//
+// The
 // questions asked on arrival are those two and not "what is the TXT record",
 // which is why every tile here is a number and none of them is a link to a
 // page dressed up as a tile — the tab row above is what those were.
@@ -76,6 +81,33 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
   return (
     <>
       <Section icon={<MailIcon size={15} />} label={t('domainOverview.overview')}>
+        <StatTile
+          label={t('domainOverview.dns')}
+          // Nothing to count until the first check has run, and a dash at
+          // this size reads as a rule rather than as an absence — so the
+          // detail line carries it instead.
+          value={records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing}
+          unit={
+            records.length === 0
+              ? undefined
+              : missing === 0
+                ? t('domainOverview.allPublished')
+                : t('domainOverview.needChanging')
+          }
+          icon={missing > 0 ? <WarningIcon size={18} /> : undefined}
+          detail={
+            domain.records?.checkedAt ? (
+              <Trans
+                k="domainOverview.checked"
+                nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }}
+              />
+            ) : (
+              t('domainOverview.dnsNever')
+            )
+          }
+          to={`/domains/${domainId}/settings`}
+        />
+
         <StatTile
           label={t('domainOverview.messages')}
           value={counts.total}
@@ -122,32 +154,6 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
           to={`/queue?domain=${encodeURIComponent(domain.domain)}`}
         />
 
-        <StatTile
-          label={t('domainOverview.dns')}
-          // Nothing to count until the first check has run, and a dash at
-          // this size reads as a rule rather than as an absence — so the
-          // detail line carries it instead.
-          value={records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing}
-          unit={
-            records.length === 0
-              ? undefined
-              : missing === 0
-                ? t('domainOverview.allPublished')
-                : t('domainOverview.needChanging')
-          }
-          icon={missing > 0 ? <WarningIcon size={18} /> : undefined}
-          detail={
-            domain.records?.checkedAt ? (
-              <Trans
-                k="domainOverview.checked"
-                nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }}
-              />
-            ) : (
-              t('domainOverview.dnsNever')
-            )
-          }
-          to={`/domains/${domainId}/dns`}
-        />
       </Section>
     </>
   )

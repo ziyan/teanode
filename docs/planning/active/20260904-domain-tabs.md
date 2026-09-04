@@ -20,7 +20,7 @@ send it. Aliases are the single most-used thing on that page for a forwarding
 mail server, and they are four screens down.
 
 After this change, a domain is one page with a row of tabs across the top —
-Overview, DNS, Aliases, Credentials, Templates — and every tab has its own URL,
+Overview, Settings, Aliases, Credentials, Templates — and every tab has its own URL,
 so any of them can be linked to, bookmarked, reloaded, and reached with the
 browser's back button. Aliases go from "two clicks and a long scroll" to one
 click from the domain. The two tiles that only left the page become two
@@ -128,7 +128,7 @@ Create `web/src/pages/domainTabs.tsx`. It exports one component,
   `/queue?domain=<domain>` — then `<div className="tabs">` with one button per
   tab, then the active tab's component.
 
-The tab ids, in this order, are `overview`, `dns`, `aliases`, `credentials`,
+The tab ids, in this order, are `overview`, `settings`, `aliases`, `credentials`,
 `templates`. Order is the order somebody meets them: what is happening, then
 whether the domain is set up right, then who receives mail, then who may send
 it, then what the messages look like.
@@ -313,6 +313,12 @@ mutation — are still to be performed by a human at
 http://127.0.0.1:10000/domains.
 
 ## Decisions
+
+**The settings tab is called Settings, not DNS.** It holds four subjects —
+the records, the mail server names, the pictures host and the signing key —
+and naming it after one of them promised less than it carries. The route is
+`/domains/<id>/settings`, which is also what the old page was called, so the
+redirect that pointed the old path at `/dns` is gone: the path is the tab.
 
 **Five tabs rather than three.** The alternative was Overview, Settings and
 Templates, keeping the settings page whole. It was rejected because it moves

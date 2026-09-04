@@ -27,7 +27,7 @@ type Tab = { id: string; label: Key }
 
 const TABS: Tab[] = [
   { id: 'overview', label: 'domain.tabOverview' },
-  { id: 'dns', label: 'domain.tabDns' },
+  { id: 'settings', label: 'domain.tabSettings' },
   { id: 'aliases', label: 'domain.tabAliases' },
   { id: 'credentials', label: 'domain.tabCredentials' },
   { id: 'templates', label: 'domain.tabTemplates' },
@@ -128,7 +128,7 @@ export function DomainTabsPage() {
       {problem && <p className="error">{problem}</p>}
 
       {tab === 'overview' && <DomainOverviewTab domain={domain} />}
-      {tab === 'dns' && <DomainDnsTab domain={domain} run={run} />}
+      {tab === 'settings' && <DomainDnsTab domain={domain} run={run} />}
       {tab === 'aliases' && <DomainAliasesTab domain={domain} run={run} />}
       {tab === 'credentials' && <DomainCredentialsTab domain={domain} run={run} />}
       {tab === 'templates' && <TemplatesTab />}

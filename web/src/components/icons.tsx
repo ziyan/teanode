@@ -246,6 +246,24 @@ export function RefreshIcon(props: IconProps) {
   )
 }
 
+// A rack: two units stacked, each with its indicator light. Nothing about the
+// machine itself is drawn — a box with a light on it is what a server looks
+// like to anybody who has seen one, and drawing the ports would be detail at
+// a size where detail is noise.
+//
+// It replaces a circular arrow, which is the sign for restarting a thing, not
+// for the thing: the page it names says what this server is and which version
+// it runs, and restarting is one button on it.
+export function ServerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 7.5h.01M7 16.5h.01" />
+    </Icon>
+  )
+}
+
 export function RestartIcon(props: IconProps) {
   return (
     <Icon {...props}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { Session, getSession, logout } from './api'
 import { LoginPage } from './pages/login'
@@ -175,7 +175,6 @@ export function App() {
                   item pages below are not tabs. They are declared first so
                   that "templates/<id>" reaches the editor rather than being
                   read as the name of a tab. */}
-              <Route path="/domains/:domainId/settings" element={<RedirectDomainSettings />} />
               <Route path="/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
               <Route path="/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
               <Route path="/domains/:domainId/:tab" element={<DomainTabsPage />} />
@@ -228,14 +227,6 @@ export function App() {
 function RedirectDomain() {
   const { pathname } = window.location
   return <Navigate to={pathname.replace(/^\/settings/, '')} replace />
-}
-
-// The domain's settings were one page holding six subjects and are three tabs
-// now. An old link to it means the first of them: the records to publish,
-// which is what somebody following such a link came to read.
-function RedirectDomainSettings() {
-  const { domainId } = useParams()
-  return <Navigate to={`/domains/${domainId}/dns`} replace />
 }
 
 // An old link to one integration carried the section it was opened at, and

@@ -249,7 +249,7 @@ export const en = {
   'domain.failed': 'that did not work',
 
   'domain.tabOverview': 'Overview',
-  'domain.tabDns': 'DNS',
+  'domain.tabSettings': 'Settings',
   'domain.tabAliases': 'Aliases',
   'domain.tabCredentials': 'Credentials',
   'domain.tabTemplates': 'Templates',

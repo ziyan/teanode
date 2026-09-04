@@ -247,7 +247,7 @@ export const ja: Catalog = {
   'domain.failed': 'うまくいきませんでした',
 
   'domain.tabOverview': '概要',
-  'domain.tabDns': 'DNS',
+  'domain.tabSettings': '設定',
   'domain.tabAliases': 'エイリアス',
   'domain.tabCredentials': '認証情報',
   'domain.tabTemplates': 'テンプレート',

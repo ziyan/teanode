@@ -63,7 +63,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         <p className="muted" style={{ marginTop: 0 }}>
           {t('domain.dnsIntro')}
         </p>
-        <table>
+        <table className="dns-table">
           <thead>
             <tr>
               <th>{t('domain.type')}</th>
@@ -77,7 +77,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
             {(domain.records?.records ?? []).map((record, index) => (
               <tr key={index}>
                 <td className="shrink">{record.type}</td>
-                <td className="mono wrap record-name">{record.name}</td>
+                <td className="mono wrap">{record.name}</td>
                 <td className="mono">
                   {/* Clamped to its line, with the whole of it a button away.
                       A DKIM public key is four hundred characters that say

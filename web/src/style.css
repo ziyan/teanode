@@ -1102,13 +1102,41 @@ p.table-empty {
   max-width: none;
 }
 
-/* The name of a record is short, and it is the thing a reader scans down the
-   column for. Without a floor it is squeezed to a few characters by the
-   signing key in the cell beside it, which asks for as much width as it can
-   get. Wide enough for <selector>._domainkey.<domain>, which is the longest
-   name this table shows. */
-.record-name {
-  min-width: 28ch;
+/* Five columns of very different appetite: a two-letter type, a name of about
+   thirty characters, a value that may be four hundred, and two short
+   verdicts. Left to size themselves the value asks for everything it can get
+   — a signing key is one unbreakable token — and the name is squeezed until
+   <selector>._domainkey.<domain> wraps mid-word, which is the one thing in
+   the row a reader scans down the column for.
+   
+   So the proportions are stated and the layout fixed, which also gives the
+   value a width to be clamped against rather than one worked out from its own
+   content. Percentages, so it still fits a narrow window; the value column is
+   whatever is left, which is about half. A min-width on the name used to do
+   half of this job and cannot do it here: a fixed layout takes the stated
+   width and ignores the rest. */
+.dns-table {
+  table-layout: fixed;
+}
+
+.dns-table th:nth-child(1),
+.dns-table td:nth-child(1) {
+  width: 7%;
+}
+
+.dns-table th:nth-child(2),
+.dns-table td:nth-child(2) {
+  width: 26%;
+}
+
+.dns-table th:nth-child(4),
+.dns-table td:nth-child(4) {
+  width: 13%;
+}
+
+.dns-table th:nth-child(5),
+.dns-table td:nth-child(5) {
+  width: 8%;
 }
 
 /* A sentence under a value in a table is prose, and the rule above misses it:

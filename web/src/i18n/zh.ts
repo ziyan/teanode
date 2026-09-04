@@ -246,7 +246,7 @@ export const zh: Catalog = {
   'domain.failed': '操作未成功',
 
   'domain.tabOverview': '概览',
-  'domain.tabDns': 'DNS',
+  'domain.tabSettings': '设置',
   'domain.tabAliases': '别名',
   'domain.tabCredentials': '凭据',
   'domain.tabTemplates': '模板',
