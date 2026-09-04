@@ -33,6 +33,13 @@ export function ServerPage() {
   const { tab } = useParams()
   const navigate = useNavigate()
 
+  // The certificates tab was called "dns" while the only DNS on this page was
+  // the challenge solver. There is a resolver tab now, and two tabs whose
+  // names both mean DNS is a page nobody can navigate.
+  if (tab === 'dns') {
+    return <Navigate to="/server/certificates" replace />
+  }
+
   // A tab nobody has, or none named at all, is the first one. A path somebody
   // typed is not a tab.
   if (!TABS.some((candidate) => candidate.id === tab)) {

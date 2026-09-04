@@ -51,9 +51,24 @@ type Settings struct {
 
 	// How certificates are obtained
 	Certificates *CertificateSettings `json:"certificates"`
+
+	// The server itself, rather than the services it talks to. These live in
+	// settings_server.go, which says why they are a separate group.
+	Smtp     *SmtpSettings     `json:"smtp"`
+	Resolver *ResolverSettings `json:"resolver"`
+	Session  *SessionSettings  `json:"session"`
+	Passkey  *PasskeySettings  `json:"passkey"`
+	Listen   *ListenSettings   `json:"listen"`
+	Identity *IdentitySettings `json:"identity"`
+	Storage  *StorageSettings  `json:"storage"`
+	GeoIP    *GeoIPSettings    `json:"geoip"`
 }
 
-// CertificateSettings is what this server obtains certificates for.
+// CertificateSettings is what this server obtains certificates for, and how.
+//
+// The ACME account key is not here and never will be: it is the credential
+// that proves this server is the one that asked for the certificates, and a
+// management API that can read it back is one leak away from being the leak.
 type CertificateSettings struct {
 	// Whether each domain gets a certificate in its own name, rather than
 	// every domain being served the server's own.
@@ -61,6 +76,24 @@ type CertificateSettings struct {
 
 	// The names the server's own certificate covers
 	Hosts []string `json:"hosts,omitempty"`
+
+	// Whether certificates are obtained automatically at all. Off means the
+	// two files below are the only ones this server has.
+	ACMEEnabled bool `json:"acmeEnabled"`
+
+	// The address the certificate authority writes to about expiry.
+	ACMEEmail string `json:"acmeEmail,omitempty"`
+
+	// Which authority to ask. Empty is Let's Encrypt.
+	ACMEDirectoryURL string `json:"acmeDirectoryUrl,omitempty"`
+
+	// How ownership is proved: http-01 or dns-01. A wildcard name needs
+	// dns-01, which needs the Route53 solver beside this.
+	ACMEChallenge string `json:"acmeChallenge,omitempty"`
+
+	// A certificate and key supplied by hand, used when ACME is off.
+	CertificateFile string `json:"certificateFile,omitempty"`
+	PrivateKeyFile  string `json:"privateKeyFile,omitempty"`
 }
 
 // SubmissionSettings is the address a mail client should use.
@@ -164,7 +197,7 @@ func describeSettings(configuration *config.Configuration) *Settings {
 	route53 := configuration.TLS.ACME.Route53
 	s3 := configuration.Storage.S3
 	relay := configuration.SMTP.Relay
-	return &Settings{
+	settings := &Settings{
 		S3: &S3Settings{
 			Enabled:            s3.Enabled,
 			Bucket:             s3.Bucket,
@@ -190,8 +223,14 @@ func describeSettings(configuration *config.Configuration) *Settings {
 		},
 		Proxy: &ProxySettings{SOCKS5: configuration.SMTP.SOCKS5Proxy},
 		Certificates: &CertificateSettings{
-			PerDomain: configuration.TLS.ACME.PerDomain,
-			Hosts:     configuration.TLS.Hosts,
+			PerDomain:        configuration.TLS.ACME.PerDomain,
+			Hosts:            configuration.TLS.Hosts,
+			ACMEEnabled:      configuration.TLS.ACME.Enabled,
+			ACMEEmail:        configuration.TLS.ACME.Email,
+			ACMEDirectoryURL: configuration.TLS.ACME.DirectoryURL,
+			ACMEChallenge:    configuration.TLS.ACME.Challenge,
+			CertificateFile:  configuration.TLS.CertificateFile,
+			PrivateKeyFile:   configuration.TLS.PrivateKeyFile,
 		},
 		Antispam: &ServiceSettings{
 			Enabled: configuration.Antispam.Enabled,
@@ -213,6 +252,8 @@ func describeSettings(configuration *config.Configuration) *Settings {
 			HasPassword: relay.Password != "",
 		},
 	}
+	describeServerSettings(configuration, settings)
+	return settings
 }
 
 // S3Parameters are the S3 settings an operator can change.
@@ -280,11 +321,26 @@ type SubmissionParameters struct {
 }
 
 // CertificateParameters are the certificate settings an operator can change.
+//
+// Hosts was readable and not writable, which made the one field somebody
+// actually comes here to change — the names on this server's own certificate
+// — a thing you could see and not edit.
 type CertificateParameters struct {
 	// PerDomain obtains a certificate for each domain's own mail server name.
 	// Turning it off stops renewing them; the ones already issued stay in
 	// place and keep being served until they expire.
 	PerDomain *bool `json:"perDomain"`
+
+	// Hosts replaces the names the server's own certificate covers.
+	Hosts *[]string `json:"hosts"`
+
+	ACMEEnabled      *bool   `json:"acmeEnabled"`
+	ACMEEmail        *string `json:"acmeEmail"`
+	ACMEDirectoryURL *string `json:"acmeDirectoryUrl"`
+	ACMEChallenge    *string `json:"acmeChallenge"`
+
+	CertificateFile *string `json:"certificateFile"`
+	PrivateKeyFile  *string `json:"privateKeyFile"`
 }
 
 // UpgradeParameters are the release settings an operator can change from the
@@ -331,6 +387,16 @@ type UpdateSettingsArguments struct {
 
 	// Certificates changes what this server obtains certificates for.
 	Certificates *CertificateParameters `json:"certificates"`
+
+	// The server itself: see settings_server.go.
+	Smtp     *SmtpParameters     `json:"smtp"`
+	Resolver *ResolverParameters `json:"resolver"`
+	Session  *SessionParameters  `json:"session"`
+	Passkey  *PasskeyParameters  `json:"passkey"`
+	Listen   *ListenParameters   `json:"listen"`
+	Identity *IdentityParameters `json:"identity"`
+	Storage  *StorageParameters  `json:"storage"`
+	GeoIP    *GeoIPParameters    `json:"geoip"`
 }
 
 func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsArguments) (*Settings, error) {
@@ -395,17 +461,27 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 		}
 		if parameters := arguments.Certificates; parameters != nil {
 			applyBool(&configuration.TLS.ACME.PerDomain, parameters.PerDomain)
+			applyStrings(&configuration.TLS.Hosts, parameters.Hosts)
+			applyBool(&configuration.TLS.ACME.Enabled, parameters.ACMEEnabled)
+			applyString(&configuration.TLS.ACME.Email, parameters.ACMEEmail)
+			applyString(&configuration.TLS.ACME.DirectoryURL, parameters.ACMEDirectoryURL)
+			applyString(&configuration.TLS.ACME.Challenge, parameters.ACMEChallenge)
+			applyString(&configuration.TLS.CertificateFile, parameters.CertificateFile)
+			applyString(&configuration.TLS.PrivateKeyFile, parameters.PrivateKeyFile)
 		}
 		if parameters := arguments.Proxy; parameters != nil {
 			applyString(&configuration.SMTP.SOCKS5Proxy, parameters.SOCKS5)
 		}
-		return nil
+		return applyServerSettings(configuration, arguments)
 	}); err != nil {
 		return nil, err
 	}
 
-	log.Noticef("%s changed the integration settings; a restart is needed for them to take effect",
-		api.ContextAuthenticatedUsername(ctx))
+	// Not every setting here needs one any more — the limits, the resolver and
+	// the session take effect on the next message — so this no longer claims
+	// they all do. What does need a restart is reported by the pending list,
+	// which watches the configuration rather than guessing from this call.
+	log.Noticef("%s changed the settings", api.ContextAuthenticatedUsername(ctx))
 	return describeSettings(self.config.Current()), nil
 }
 

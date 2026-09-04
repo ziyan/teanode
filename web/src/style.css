@@ -901,7 +901,15 @@ tr:has(.icon-button) > td {
      page. Letting it break anywhere — which .mono already asks for — and
      showing one line of it keeps the column whatever width the table had in
      mind. */
-  overflow-wrap: anywhere;
+  /* break-all, not overflow-wrap: anywhere. "anywhere" permits a break
+     inside a word only where one is needed to stop it overflowing, and the
+     clamp then ends the line at the last ordinary break opportunity before
+     the giant token — which for a DKIM record is the space after "k=rsa;",
+     fifteen characters into a column nine hundred pixels wide. break-all
+     makes every character a break opportunity, so the line fills and the
+     ellipsis lands at the edge. Verified in the browser rather than
+     reasoned about: the first two attempts at this were both wrong. */
+  word-break: break-all;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;

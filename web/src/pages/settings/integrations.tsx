@@ -4,6 +4,16 @@ import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
+import {
+  GeoIPForm,
+  IdentityForm,
+  ListenForm,
+  PasskeyForm,
+  ResolverForm,
+  SessionForm,
+  SmtpForm,
+  StorageForm,
+} from './serverSettings'
 
 const SETTINGS = `
   {
@@ -14,11 +24,19 @@ const SETTINGS = `
       antispam { enabled host port }
       relay { enabled host port security username hasPassword }
       proxy { socks5 }
-      certificates { perDomain hosts }
+      certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
+      smtp { maxMessageSize maxRecipientsIncoming maxRecipientsOutgoing greylistDelay authRateLimit authRateBurst trustedSenders }
+      resolver { nameserver checkInterval externalAddressServices }
+      session { lifetime }
+      passkey { enabled relyingPartyId displayName origins maximumPerUser }
+      listen { smtpIncoming smtpOutgoing http https debug }
+      identity { name mailServers logLevel dataDirectory }
+      storage { directory spoolRetention }
+      geoip { enabled databaseFile }
     }
   }`
 
-const UPDATE = `
+export const UPDATE = `
   mutation (
     $s3: S3ParametersInput
     $route53: Route53ParametersInput
@@ -27,6 +45,14 @@ const UPDATE = `
     $relay: RelayParametersInput
     $proxy: ProxyParametersInput
     $certificates: CertificateParametersInput
+    $smtp: SmtpParametersInput
+    $resolver: ResolverParametersInput
+    $session: SessionParametersInput
+    $passkey: PasskeyParametersInput
+    $listen: ListenParametersInput
+    $identity: IdentityParametersInput
+    $storage: StorageParametersInput
+    $geoip: GeoIPParametersInput
   ) {
     UpdateSettings(
       s3: $s3
@@ -36,13 +62,29 @@ const UPDATE = `
       relay: $relay
       proxy: $proxy
       certificates: $certificates
+      smtp: $smtp
+      resolver: $resolver
+      session: $session
+      passkey: $passkey
+      listen: $listen
+      identity: $identity
+      storage: $storage
+      geoip: $geoip
     ) {
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
       route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
       antivirus { enabled host port }
       antispam { enabled host port }
       relay { enabled host port security username hasPassword }
-      certificates { perDomain hosts }
+      certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
+      smtp { maxMessageSize maxRecipientsIncoming maxRecipientsOutgoing greylistDelay authRateLimit authRateBurst trustedSenders }
+      resolver { nameserver checkInterval externalAddressServices }
+      session { lifetime }
+      passkey { enabled relyingPartyId displayName origins maximumPerUser }
+      listen { smtpIncoming smtpOutgoing http https debug }
+      identity { name mailServers logLevel dataDirectory }
+      storage { directory spoolRetention }
+      geoip { enabled databaseFile }
     }
   }`
 
@@ -79,7 +121,40 @@ type Relay = {
 
 type Proxy = { socks5?: string }
 
-type Certificates = { perDomain: boolean; hosts?: string[] }
+type Certificates = {
+  perDomain: boolean
+  hosts?: string[]
+  acmeEnabled: boolean
+  acmeEmail?: string
+  acmeDirectoryUrl?: string
+  acmeChallenge?: string
+  certificateFile?: string
+  privateKeyFile?: string
+}
+
+export type Smtp = {
+  maxMessageSize: string
+  maxRecipientsIncoming: number
+  maxRecipientsOutgoing: number
+  greylistDelay: string
+  authRateLimit: number
+  authRateBurst: number
+  trustedSenders?: string[]
+}
+
+export type Resolver = { nameserver: string; checkInterval: string; externalAddressServices?: string[] }
+export type SessionSettings = { lifetime: string }
+export type Passkey = {
+  enabled: boolean
+  relyingPartyId?: string
+  displayName?: string
+  origins?: string[]
+  maximumPerUser: number
+}
+export type Listen = { smtpIncoming: string; smtpOutgoing: string; http: string; https: string; debug?: string }
+export type Identity = { name: string; mailServers?: string[]; logLevel: string; dataDirectory: string }
+export type StorageSettings = { directory: string; spoolRetention: string }
+export type GeoIP = { enabled: boolean; databaseFile?: string }
 
 type Settings = {
   s3: S3
@@ -89,6 +164,14 @@ type Settings = {
   relay: Relay
   proxy: Proxy
   certificates: Certificates
+  smtp: Smtp
+  resolver: Resolver
+  session: SessionSettings
+  passkey: Passkey
+  listen: Listen
+  identity: Identity
+  storage: StorageSettings
+  geoip: GeoIP
 }
 
 // The six forms, in four groups.
@@ -97,16 +180,30 @@ type Settings = {
 // for, and the two about outgoing mail sat far apart from each other. Grouped
 // by the question each answers: how mail leaves, where messages are kept, how
 // certificates are obtained, and what inspects a message on the way in.
-export type Section = 'sending' | 'storage' | 'dns' | 'scanning'
+export type Section =
+  | 'identity'
+  | 'mail'
+  | 'sending'
+  | 'listeners'
+  | 'certificates'
+  | 'storage'
+  | 'resolver'
+  | 'scanning'
+  | 'sessions'
 
 // The tabs these four are, for the Server page to render along with the rest
 // of its own. Here rather than there because this file is what knows which
 // forms exist.
 export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
+  { id: 'identity', label: 'serverSettings.tabIdentity' },
+  { id: 'mail', label: 'serverSettings.tabMail' },
   { id: 'sending', label: 'integrations.tabSending' },
+  { id: 'listeners', label: 'serverSettings.tabListeners' },
+  { id: 'certificates', label: 'serverSettings.tabCertificates' },
   { id: 'storage', label: 'integrations.tabStorage' },
-  { id: 'dns', label: 'integrations.tabDns' },
+  { id: 'resolver', label: 'serverSettings.tabResolver' },
   { id: 'scanning', label: 'integrations.tabScanning' },
+  { id: 'sessions', label: 'serverSettings.tabSessions' },
 ]
 
 // IntegrationsSection edits one group of the optional services: how outgoing
@@ -141,7 +238,6 @@ export function IntegrationsSection({ section }: { section: Section }) {
 
   return (
     <>
-      <p className="muted">{t('integrations.intro')}</p>
 
       {section === 'sending' && (
         <>
@@ -149,11 +245,27 @@ export function IntegrationsSection({ section }: { section: Section }) {
           <ProxyForm settings={settings.proxy} onSaved={reload} />
         </>
       )}
-      {section === 'storage' && <ObjectStoreForm settings={settings.s3} onSaved={reload} />}
-      {section === 'dns' && (
+      {section === 'storage' && (
+        <>
+          <StorageForm settings={settings.storage} onSaved={reload} />
+          <ObjectStoreForm settings={settings.s3} onSaved={reload} />
+          <GeoIPForm settings={settings.geoip} onSaved={reload} />
+        </>
+      )}
+      {section === 'certificates' && (
         <>
           <CertificateForm settings={settings.certificates} onSaved={reload} />
           <Route53Form settings={settings.route53} onSaved={reload} />
+        </>
+      )}
+      {section === 'identity' && <IdentityForm settings={settings.identity} onSaved={reload} />}
+      {section === 'mail' && <SmtpForm settings={settings.smtp} onSaved={reload} />}
+      {section === 'listeners' && <ListenForm settings={settings.listen} onSaved={reload} />}
+      {section === 'resolver' && <ResolverForm settings={settings.resolver} onSaved={reload} />}
+      {section === 'sessions' && (
+        <>
+          <SessionForm settings={settings.session} onSaved={reload} />
+          <PasskeyForm settings={settings.passkey} onSaved={reload} />
         </>
       )}
       {section === 'scanning' && (
@@ -180,7 +292,7 @@ export function IntegrationsSection({ section }: { section: Section }) {
 
 // useSaver holds the busy, error and saved state every form here needs, so
 // that four forms do not each grow their own copy of it.
-function useSaver(onSaved: () => Promise<unknown> | unknown) {
+export function useSaver(onSaved: () => Promise<unknown> | unknown) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -550,9 +662,23 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [perDomain, setPerDomain] = useState(settings.perDomain)
+  const [hosts, setHosts] = useState((settings.hosts ?? []).join(', '))
+  const [acmeEnabled, setAcmeEnabled] = useState(settings.acmeEnabled)
+  const [acmeEmail, setAcmeEmail] = useState(settings.acmeEmail ?? '')
+  const [acmeDirectoryUrl, setAcmeDirectoryUrl] = useState(settings.acmeDirectoryUrl ?? '')
+  const [acmeChallenge, setAcmeChallenge] = useState(settings.acmeChallenge ?? 'http-01')
+  const [certificateFile, setCertificateFile] = useState(settings.certificateFile ?? '')
+  const [privateKeyFile, setPrivateKeyFile] = useState(settings.privateKeyFile ?? '')
 
   useEffect(() => {
     setPerDomain(settings.perDomain)
+    setHosts((settings.hosts ?? []).join(', '))
+    setAcmeEnabled(settings.acmeEnabled)
+    setAcmeEmail(settings.acmeEmail ?? '')
+    setAcmeDirectoryUrl(settings.acmeDirectoryUrl ?? '')
+    setAcmeChallenge(settings.acmeChallenge ?? 'http-01')
+    setCertificateFile(settings.certificateFile ?? '')
+    setPrivateKeyFile(settings.privateKeyFile ?? '')
   }, [settings])
 
   return (
@@ -560,22 +686,94 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ certificates: { perDomain } })
+        void save({
+          certificates: {
+            perDomain,
+            hosts: hosts
+              .split(',')
+              .map((entry) => entry.trim())
+              .filter((entry) => entry !== ''),
+            acmeEnabled,
+            acmeEmail,
+            acmeDirectoryUrl,
+            acmeChallenge,
+            certificateFile,
+            privateKeyFile,
+          },
+        })
       }}
     >
       <h3>{t('integrations.certificatesTitle')}</h3>
       <p className="muted" style={{ marginTop: 0 }}>
         {t('integrations.certificatesIntro', { hosts: (settings.hosts ?? []).join(', ') })}
       </p>
+
+      <div className="form-narrow">
+        <label>
+          <span>{t('serverSettings.certificateHosts')}</span>
+          <input className="mono" value={hosts} onChange={(event) => setHosts(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.certificateHostsHint')}</p>
+      </div>
+
       <label>
         <input type="checkbox" checked={perDomain} onChange={(event) => setPerDomain(event.target.checked)} />{' '}
         {t('integrations.certificatesPerDomain')}
       </label>
       <p className="muted field-hint">{t('integrations.certificatesPerDomainHint')}</p>
 
+      <label>
+        <input type="checkbox" checked={acmeEnabled} onChange={(event) => setAcmeEnabled(event.target.checked)} />{' '}
+        {t('serverSettings.acmeEnabled')}
+      </label>
+      <p className="muted field-hint">{t('serverSettings.acmeEnabledHint')}</p>
+
+      <div className="form-narrow">
+        <label>
+          <span>{t('serverSettings.acmeEmail')}</span>
+          <input value={acmeEmail} onChange={(event) => setAcmeEmail(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.acmeEmailHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.acmeChallenge')}</span>
+          <select value={acmeChallenge} onChange={(event) => setAcmeChallenge(event.target.value)}>
+            <option value="http-01">http-01</option>
+            <option value="dns-01">dns-01</option>
+          </select>
+        </label>
+        <p className="muted field-hint">{t('serverSettings.acmeChallengeHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.acmeDirectoryUrl')}</span>
+          <input
+            className="mono"
+            value={acmeDirectoryUrl}
+            onChange={(event) => setAcmeDirectoryUrl(event.target.value)}
+          />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.acmeDirectoryUrlHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.certificateFile')}</span>
+          <input
+            className="mono"
+            value={certificateFile}
+            onChange={(event) => setCertificateFile(event.target.value)}
+          />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.certificateFileHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.privateKeyFile')}</span>
+          <input className="mono" value={privateKeyFile} onChange={(event) => setPrivateKeyFile(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.privateKeyFileHint')}</p>
+      </div>
+
       {problem && <p className="error">{problem}</p>}
       <div className="page-actions">
-        <button className="primary" type="submit" disabled={busy || perDomain === settings.perDomain}>
+        <button className="primary" type="submit" disabled={busy}>
           {t('common.save')}
         </button>
         {saved && <span className="muted">{t('integrations.savedNeedsRestart')}</span>}

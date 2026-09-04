@@ -559,7 +559,6 @@ export const ja: Catalog = {
   'integrations.certificatesPerDomainHint':
     '接続してきた送信側には、要求した名前の証明書が渡されるようになります（別のドメイン名ではなく）。取得には各名前がポート 80 でこのサーバーに到達できる必要があります。オフにすると更新は止まりますが、取得済みの証明書は有効期限まで使われます。',
   'integrations.title': '連携',
-  'integrations.intro': 'このサーバーが任意で利用するサービスです。いずれも起動時に読み込まれるため、ここでの変更は次の再起動で反映されます。',
   'integrations.unavailable': '連携の設定を読み込めませんでした。',
   'integrations.failed': '変更を保存できませんでした。',
   'integrations.saving': '保存中…',
@@ -578,6 +577,156 @@ export const ja: Catalog = {
   'integrations.secretClearing': '保存時に消去',
   'integrations.secretKeep': '空のままにすると維持されます',
   'integrations.secretEnter': '未設定',
+  'serverSettings.tabIdentity': 'このサーバー',
+  'serverSettings.tabMail': 'メール',
+  'serverSettings.tabListeners': '待ち受け',
+  'serverSettings.tabCertificates': '証明書',
+  'serverSettings.tabResolver': 'リゾルバ',
+  'serverSettings.tabSessions': 'セッション',
+
+  'serverSettings.needsRestart':
+    'これらはサーバーの起動時に一度だけ読み込まれます。保存すれば変更は記録されますが、再起動するまでサーバーは起動時に読んだ値を使い続けます。',
+  'serverSettings.restartHere': '「概要」タブで再起動できます',
+  'serverSettings.savedLive': '保存しました。すでに有効です',
+  'serverSettings.savedNeedsRestart': '保存しました。再起動すると反映されます',
+
+  'serverSettings.smtpTitle': '制限',
+  'serverSettings.smtpIntro':
+    'このサーバーが接続してきた相手から受け入れる範囲です。以下はいずれもメールごと、接続ごとに読まれるため、変更は次の一通から効きます。',
+  'serverSettings.maxMessageSize': 'メール一通の上限',
+  'serverSettings.maxMessageSizeHint':
+    '設定ファイルと同じく単位を付けます：50MB、25MiB、10485760。これを超えるメールは受信の途中で拒否されるので、送信側は理由を知らされます。',
+  'serverSettings.maxRecipientsIncoming': '受信一通あたりの宛先数',
+  'serverSettings.maxRecipientsIncomingHint':
+    '届いた一通が指定できる宛先の数で、超えた分は拒否されます。こちらの複数のアドレスに一度に届く一通は、たいてい誰かがアドレスを推測しています。',
+  'serverSettings.maxRecipientsOutgoing': '送信一通あたりの宛先数',
+  'serverSettings.maxRecipientsOutgoingHint':
+    '自分の端末が投稿するメールについても同じです。一度の間違いがどこまで広がりうるかの上限になります。',
+  'serverSettings.greylistDelay': 'グレイリストの待機',
+  'serverSettings.greylistDelayHint':
+    '初めて見る送信元にどれだけ待ってから再試行してもらうか。5m や 0s のように書きます。まともなメールサーバーは再試行します。しないものは受け取る価値がないことがほとんどです。0s で無効になります。',
+  'serverSettings.authRateLimit': '毎分のサインイン試行',
+  'serverSettings.authRateLimitHint':
+    '一つのアドレスがどれだけ速く失敗すると速度制限がかかるか。弱いパスワードと、順に試している相手との間に立つのはこれだけです。',
+  'serverSettings.authRateBurst': '一度に許す試行',
+  'serverSettings.authRateBurstHint':
+    '速度制限が効き始めるまでに許される失敗の回数です。自分のパスワードを打ち間違えた人が引っかかるべきではありません。',
+  'serverSettings.trustedSenders': '信頼する送信元',
+  'serverSettings.trustedSendersHint':
+    'カンマ区切りのアドレスまたは範囲（10.0.0.0/8、192.168.1.5）。見知らぬ相手が受ける検査を省きます。ここに書いたものは誰にでもなりすませるので、自分の機器だけにしてください。',
+
+  'serverSettings.resolverTitle': 'リゾルバ',
+  'serverSettings.resolverIntro':
+    'ドメインが公開しているレコードを確認するときの DNS の引き方です。確認のたびに読まれるので、変更は次回から効きます。',
+  'serverSettings.nameserver': 'リゾルバ',
+  'serverSettings.nameserverHint':
+    'host:port の形式で、たとえば 1.1.1.1:53。空ならこの機械の設定に従います。キャッシュの強いリゾルバでは、公開したばかりのレコードがその間ずっと未公開に見えます。',
+  'serverSettings.checkInterval': '各ドメインを確認する間隔',
+  'serverSettings.checkIntervalHint':
+    '6h や 30m のように書きます。ドメインの DNS 列がレコードの修正に気づく速さで、「もう一度確認」ボタンはこれを待ちません。',
+  'serverSettings.externalAddressServices': 'アドレス照会先',
+  'serverSettings.externalAddressServicesHint':
+    'この機械の公開アドレスを順に尋ねる URL をカンマ区切りで。ドメインが公開すべき A レコードを埋めるのに使います。前のものが答えなかったときだけ次に尋ねます。',
+
+  'serverSettings.sessionTitle': 'セッション',
+  'serverSettings.sessionIntro': 'このダッシュボードへのサインインが続く長さです。',
+  'serverSettings.sessionLifetime': 'セッションの有効期間',
+  'serverSettings.sessionLifetimeHint':
+    '720h や 30d のように書きます。短くしても、すでに発行済みのセッションは終わりません。作られた時点の期間が刻まれているためです。それらはアカウントの「セッション」ページで終了できます。',
+
+  'serverSettings.passkeyTitle': 'パスキー',
+  'serverSettings.passkeyIntro':
+    'このサーバーが認証器に自分をどう名乗るかです。パスキーは下の名前に結び付くので、変えると登録済みのパスキーはすべて使えなくなります。',
+  'serverSettings.passkeyEnabled': 'パスキーでのサインインを許可する',
+  'serverSettings.relyingPartyId': '結び付ける名前',
+  'serverSettings.relyingPartyIdHint':
+    'パスキーが属するドメイン。スキームやポートは付けません：mail.example.com。空ならダッシュボードのアドレスから導かれます。古い値で登録したパスキーは動かなくなります。',
+  'serverSettings.passkeyDisplayName': '表示名',
+  'serverSettings.passkeyDisplayNameHint':
+    '許可するかを判断する人に認証器が見せる名前です。ホスト名ではなく、言葉としてのサーバー名を。',
+  'serverSettings.passkeyOrigins': 'オリジン',
+  'serverSettings.passkeyOriginsHint':
+    '手続きの発信元として許すオリジンをカンマ区切りで、https://mail.example.com のように。空なら上の名前から導かれ、ダッシュボードのアドレスが一つならそれで十分です。',
+  'serverSettings.passkeyMaximum': 'アカウントあたりのパスキー数',
+  'serverSettings.passkeyMaximumHint':
+    '一人が登録できる数です。0 は無制限。複数が普通です。携帯とノートで二つになります。',
+
+  'serverSettings.listenTitle': '待ち受けアドレス',
+  'serverSettings.listenIntro':
+    'このサーバーが結び付けるアドレスです。いずれも host:port で、ホストが空ならこの機械のすべてのアドレスを意味します。',
+  'serverSettings.listenSmtpIncoming': '受信',
+  'serverSettings.listenSmtpIncomingHint':
+    '他のサーバーからのメールが届く場所で、通常は :25。転送元を直さずにここだけ変えると、メールがまったく届かなくなります。',
+  'serverSettings.listenSmtpOutgoing': '投稿',
+  'serverSettings.listenSmtpOutgoingHint':
+    '自分の端末が送信するメールをこのサーバーに渡す場所で、通常は :587。古いポートで設定されたメールソフトは送信できなくなります。',
+  'serverSettings.listenHttp': 'HTTP',
+  'serverSettings.listenHttpHint':
+    '通常は :80。ACME の http-01 チャレンジに応え、他はすべてリダイレクトします。止めると http-01 方式の証明書が更新できなくなります。',
+  'serverSettings.listenHttps': 'HTTPS',
+  'serverSettings.listenHttpsHint':
+    'このダッシュボードを配る場所で、通常は :443。いま読んでいるのがそれです。',
+  'serverSettings.listenDebug': 'プロファイリング',
+  'serverSettings.listenDebugHint':
+    'Go のプロファイリング用アドレスで、空なら無効です。独自の認証を持たないので、127.0.0.1 だけに結び付けてください。',
+  'serverSettings.listenConfirmQuestion': 'ダッシュボードを {https} として、これらのアドレスを保存しますか？',
+  'serverSettings.listenConfirmExplained':
+    '再起動するまで何も変わりません。ダッシュボードのアドレスが誤っていれば、再起動後このページには来られなくなり、戻る道はホスト上のシェルと「teanode-server config」だけです。',
+  'serverSettings.listenConfirmSave': 'アドレスを保存',
+
+  'serverSettings.identityTitle': 'このサーバー',
+  'serverSettings.identityIntro': 'このサーバーが自分をどう名乗り、どれだけ記録するかです。',
+  'serverSettings.serverName': '名前',
+  'serverSettings.serverNameHint':
+    'SMTP の挨拶で名乗る名前で、自分の証明書もここから導かれます。この機械に解決しない名前は、送ったメールを他のサーバーに疑わせます。',
+  'serverSettings.serverMailServers': 'メールサーバー名',
+  'serverSettings.serverMailServersHint':
+    'カンマ区切り。ドメインが自分の「設定」タブで指定しない限り、すべてのドメインの MX レコードが指すホストです。変えると各ドメインが公開すべきレコードも変わります。',
+  'serverSettings.logLevel': 'ログレベル',
+  'serverSettings.logLevelHint':
+    'ログに書く量です。notice が普段の既定値。debug は量が非常に多く、特定の問題を追うためのもので、付けっぱなしにするものではありません。',
+  'serverSettings.dataDirectory': 'データディレクトリ',
+  'serverSettings.dataDirectoryHint':
+    'メールと状態を書く場所です。ここでは表示のみで変更できません。別のディレクトリで再起動したサーバーは元の中身を見つけられず、メールは無いのと同じになります。移動はサーバーを止めて行います。',
+
+  'serverSettings.storageTitle': 'この機械の保存先',
+  'serverSettings.storageIntro': 'メールをどこに書くか、そして失敗し続ける配送をどれだけ保つかです。',
+  'serverSettings.storageDirectory': 'メールのディレクトリ',
+  'serverSettings.storageDirectoryHint':
+    'データディレクトリの下です。変えても既にあるものは移らないので、古い方のメールはダッシュボードから読めなくなります。',
+  'serverSettings.spoolRetention': '再試行を続ける期間',
+  'serverSettings.spoolRetentionHint':
+    '30d や 72h のように書きます。失敗し続ける配送を、諦めて差し戻すまでキューに置く期間です。',
+
+  'serverSettings.geoipTitle': '送信元の所在',
+  'serverSettings.geoipIntro':
+    'ディスクから読む任意の MaxMind データベースで、メールが届いたアドレスを国に変えます。そのために外へ何かを送ることはありません。',
+  'serverSettings.geoipEnabled': '送信元の接続地を調べる',
+  'serverSettings.geoipDatabaseFile': 'データベースファイル',
+  'serverSettings.geoipDatabaseFileHint':
+    'GeoLite2-Country.mmdb または GeoLite2-City.mmdb のパス。相対パスはデータディレクトリから解決されます。',
+
+  'serverSettings.certificateHosts': 'このサーバーの証明書が覆う名前',
+  'serverSettings.certificateHostsHint':
+    'カンマ区切り。サーバー自身の証明書が覆う名前で、ダッシュボードのアドレスとこのサーバーのメールサーバー名です。*.example.com のようなワイルドカードには dns-01 が要ります。',
+  'serverSettings.acmeEnabled': '証明書を自動で取得する',
+  'serverSettings.acmeEnabledHint':
+    '切ると、このサーバーは下に指定した証明書と鍵だけを使い、更新はあなたの仕事になります。',
+  'serverSettings.acmeEmail': '連絡先アドレス',
+  'serverSettings.acmeEmailHint':
+    '不具合があったとき、あるいは更新されないまま証明書が切れそうなときに認証局が書き送る先です。どこにも公開されません。',
+  'serverSettings.acmeChallenge': 'チャレンジ',
+  'serverSettings.acmeChallengeHint':
+    '所有をどう証明するか。http-01 は HTTP の待ち受けがインターネットからポート 80 で届く必要があり、dns-01 は下のソルバーが要ります。ワイルドカードを取れるのは後者だけです。',
+  'serverSettings.acmeDirectoryUrl': '認証局',
+  'serverSettings.acmeDirectoryUrlHint':
+    'ACME のディレクトリ URL。空なら Let’s Encrypt です。試している間は staging のディレクトリに向けてください。証明書は信頼されませんが、回数の制限がずっと緩やかです。',
+  'serverSettings.certificateFile': '証明書ファイル',
+  'serverSettings.certificateFileHint':
+    '自分で用意した PEM 形式の証明書で、自動取得を使わないときに用います。相対パスは設定ディレクトリから解決されます。',
+  'serverSettings.privateKeyFile': '秘密鍵ファイル',
+  'serverSettings.privateKeyFileHint': 'その証明書に対応する PEM 形式の鍵です。このサーバーを動かすユーザーだけが読めるようにしてください。',
+
   'integrations.tabSending': '送信',
   'integrations.tabStorage': '保存先',
   'integrations.tabDns': 'DNS',
