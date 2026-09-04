@@ -339,3 +339,47 @@ func TestMarkTriedIgnoresAnInPlaceUpgrade(t *testing.T) {
 		t.Errorf("it marked the staging directory over an upgrade that did not touch it: %v", err)
 	}
 }
+
+// An exec that cannot succeed must not become a download every six hours.
+//
+// The mark that says "ran and did not serve" has to come off when the exec
+// never happened, or a passing ETXTBSY orphans an installed, verified binary.
+// But some exec failures are permanent — a volume mounted noexec is the plain
+// case — and with the mark off, nothing stopped the next check installing the
+// same release again, for ever, with no failure anywhere to back off from.
+func TestAnExecThatFailedIsNotInstalledAgain(t *testing.T) {
+	t.Parallel()
+
+	directory := stage(t, "0.2.0")
+	MarkTried(directory, Staged(directory))
+
+	// What runServer does when syscall.Exec comes back.
+	Untried(directory, Staged(directory))
+
+	// The start tries again, because this one might have been passing.
+	if _, err := os.Stat(PendingMarker(directory)); !os.IsNotExist(err) {
+		t.Errorf("a binary that was never run is still marked as tried: %v", err)
+	}
+	if got := stagedToRun(directory, "0.1.0"); got != Staged(directory) {
+		t.Errorf("the next start would not try it again: %q", got)
+	}
+
+	// The upgrade does not, because this one might not have been.
+	if !AlreadyTried(directory, "0.2.0") {
+		t.Error("it would download and stage the same release again")
+	}
+	if AlreadyTried(directory, "0.3.0") {
+		t.Error("it refused a release nothing has tried")
+	}
+
+	// And once it does run, the note goes: whatever was wrong is history, and
+	// leaving it would refuse the next upgrade of a working deployment.
+	restore := executablePath
+	executablePath = Staged(directory)
+	defer func() { executablePath = restore }()
+
+	Started(directory)
+	if AlreadyTried(directory, "0.2.0") {
+		t.Error("a binary that is serving is still remembered as unrunnable")
+	}
+}

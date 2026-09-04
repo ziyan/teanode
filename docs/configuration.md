@@ -777,8 +777,9 @@ as one under systemd.
 
 **`checkInterval`** — CheckInterval is how often to look. Six hours by default:
 often enough that a security release is noticed the same day, rarely enough
-that it is not a request anybody would notice. Read once at startup, along with
-`enabled`, so changing either takes a restart — the dashboard says so.
+that it is not a request anybody would notice. Read once at startup, so
+changing it takes a restart — the dashboard says so. `enabled`, `automatic` and
+`window` are re-read every time the loop wakes and take effect without one.
 
 The loop itself wakes more often than this and asks nothing most of the time.
 That is what makes `window` work: a check every six hours happens at four fixed

@@ -281,14 +281,6 @@ func (self *manager) keepPrevious(previous string) error {
 // deleting the staged file is the rollback, and a container recreate is the
 // other one.
 func (self *manager) stage(downloaded, target, release string) error {
-	// Made here, and only here: private to this user, at the one moment
-	// something is actually going into it. Asking whether an upgrade is
-	// possible used to create it, so a deployment with upgrades turned off
-	// grew a directory it would never use.
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return fmt.Errorf("upgrade: cannot make %s: %w", filepath.Dir(target), err)
-	}
-
 	// Executable by this user and by nobody else. The next start refuses a
 	// staged binary that others can write, and this directory is a volume the
 	// host also has its hands on.
@@ -345,6 +337,9 @@ func (self *manager) stage(downloaded, target, release string) error {
 	if err := os.Remove(PendingMarker(directory)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("upgrade: cannot clear %s: %w", PendingMarker(directory), err)
 	}
+	if err := os.Remove(filepath.Join(directory, stagedRefusedExec)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, stagedRefusedExec), err)
+	}
 
 	self.mutex.Lock()
 	self.execTarget = target
@@ -355,10 +350,26 @@ func (self *manager) stage(downloaded, target, release string) error {
 // download writes the asset beside where it is going, so that the rename
 // afterwards is within one filesystem and therefore atomic.
 func (self *manager) download(ctx context.Context, url string) (string, error) {
-	target, _ := self.target()
+	target, staging := self.target()
 	if target == "" {
 		return "", fmt.Errorf("upgrade: there is nowhere this process may write the new binary")
 	}
+
+	// The staging directory is made here, which is the first thing that writes
+	// into it — the download goes beside where the binary will end up, so that
+	// the rename afterwards is within one filesystem.
+	//
+	// Here and nowhere else. It was in stage, which runs after this, so the
+	// first upgrade on any deployment that stages failed on a directory that
+	// did not exist yet: asking whether an upgrade is possible deliberately
+	// does not create one, and nothing between that question and this line
+	// did either.
+	if staging {
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return "", fmt.Errorf("upgrade: cannot make %s: %w", filepath.Dir(target), err)
+		}
+	}
+
 	file, err := os.CreateTemp(filepath.Dir(target), ".teanode-upgrade-*")
 	if err != nil {
 		return "", fmt.Errorf("upgrade: cannot write beside %s: %w", target, err)

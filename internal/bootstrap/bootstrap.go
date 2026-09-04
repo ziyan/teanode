@@ -118,28 +118,39 @@ func Load() (*Bootstrap, error) {
 // the dashboard has the default sitting in the seed and nothing in its
 // environment, and following the seed would name a directory nobody chose.
 func (self *Bootstrap) loadUpgradeDirectory() error {
+	named := Prefix + "UPGRADE_DIRECTORY"
 	directory, ok := lookup("UPGRADE_DIRECTORY")
 	if !ok || directory == "" {
 		data, ok := lookup("SERVER_DATA_DIRECTORY")
 		if !ok || data == "" {
 			return nil
 		}
+		named = Prefix + "SERVER_DATA_DIRECTORY"
 		directory = filepath.Join(data, "upgrade")
 	}
 
-	// Absolute, and refused rather than resolved when it is not.
+	// Absolute, and the feature is turned off rather than resolved when it is
+	// not.
 	//
 	// filepath.Abs was here and was worse than nothing: it resolves against
 	// the working directory, so a start from one place and a start from
-	// another would look for the staged binary in two places. The upgrade
-	// would stage, exec — the path it execs is absolute, so that part
-	// works — and report success, and then a restart from anywhere else would
-	// find nothing and quietly run the old binary, with no refusal recorded
-	// at any point. A relative path here is a misconfiguration and is said so.
+	// another would look for the staged binary in two. The upgrade would
+	// stage, exec — the path it execs is absolute, so that part works — and
+	// report success, and then a restart from anywhere else would find
+	// nothing and quietly run the old binary.
+	//
+	// Refusing the whole start was the next thing tried, and that was worse
+	// again: a relative server.dataDirectory is legal and resolves against
+	// the configuration file, so an ordinary deployment that had worked for a
+	// year stopped booting over a setting for a feature it was not using —
+	// and the message named a variable nobody had set. Upgrades are refused
+	// and mail keeps moving.
 	if !filepath.IsAbs(directory) {
-		return fmt.Errorf("bootstrap: %sUPGRADE_DIRECTORY is %q, which is relative to whatever "+
-			"directory the process happens to start in — and a staged upgrade has to be found again "+
-			"by a start from anywhere. Give an absolute path", Prefix, directory)
+		log.Warningf("not staging upgrades anywhere: %s gives %q, which is relative to whatever "+
+			"directory the process starts in, and a staged binary has to be found again by a start "+
+			"from any of them. Set %sUPGRADE_DIRECTORY to an absolute path to turn upgrades on",
+			named, directory, Prefix)
+		return nil
 	}
 	self.UpgradeDirectory = filepath.Clean(directory)
 	return nil

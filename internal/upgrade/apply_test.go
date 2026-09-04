@@ -820,3 +820,48 @@ func TestApplyRefusesTheReleaseThatAlreadyFailedToStart(t *testing.T) {
 		t.Error("a release nobody has run was called already tried")
 	}
 }
+
+// The first upgrade a staging deployment ever does.
+//
+// The staging directory does not exist until something is staged — asking
+// whether an upgrade is possible deliberately leaves nothing behind — so the
+// first thing that writes into it has to make it. That was stage, which runs
+// after the download, and the download writes beside where the binary will
+// end up: so every first upgrade on the shipped compose file failed on a
+// directory that was not there.
+func TestTheFirstUpgradeMakesTheStagingDirectory(t *testing.T) {
+	volume := t.TempDir()
+	if err := os.Chmod(volume, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(volume, "upgrade")
+
+	newBinary := []byte("the new binary")
+	server := releaseServer(t, "0.9.0", newBinary, sha256Of(newBinary))
+	defer server.Close()
+
+	manager := testManager(t, filepath.Join(t.TempDir(), "teanode"), server.URL, server.Client(), "0.1.0", func() {})
+	manager.upgradeDirectory = staging
+	manager.containerized = true
+
+	if err := manager.Apply(context.Background(), ""); err != nil {
+		t.Fatalf("the first upgrade failed: %s", err)
+	}
+
+	if staged, err := os.ReadFile(Staged(staging)); err != nil {
+		t.Fatalf("nothing was staged: %s", err)
+	} else if string(staged) != string(newBinary) {
+		t.Errorf("the staged binary is %q", staged)
+	}
+	// Private to this user, or the next start would refuse to run it.
+	info, err := os.Stat(staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the staging directory is %s, want 0700", info.Mode().Perm())
+	}
+	if got := stagedToRun(staging, "0.1.0"); got != Staged(staging) {
+		t.Errorf("the next start would not run what was just staged: %q", got)
+	}
+}

@@ -43,6 +43,18 @@ const (
 	// It is a seal, not a signature: see ExecStagedIfNewer.
 	stagedChecksum = "checksum"
 
+	// stagedRefusedExec names a version this machine could not exec at all.
+	//
+	// Different from pending, and both are needed. Pending means it ran and
+	// did not serve, and it must come off when the exec never happened, or a
+	// good binary is orphaned by a passing ETXTBSY. But some exec failures do
+	// not pass — a volume mounted noexec is the plain case — and with pending
+	// off, nothing stopped the next check installing the same release again,
+	// forever, without a single failure to back off from. This one is not
+	// read by the start, which should try the exec again, and is read by the
+	// upgrade, which should not download it again.
+	stagedRefusedExec = "execfailed"
+
 	// pending is written before the staged binary is run for the first time
 	// and removed by that binary once it is serving.
 	//
@@ -346,7 +358,7 @@ func refuse(staged, why string) {
 // discard removes a staged binary and everything recorded about it.
 func discard(directory string) {
 	for _, name := range []string{
-		stagedName, stagedVersion, stagedChecksum, pending,
+		stagedName, stagedVersion, stagedChecksum, pending, stagedRefusedExec,
 		stagedVersion + beside, stagedChecksum + beside,
 	} {
 		if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
@@ -468,14 +480,29 @@ func AlreadyTried(directory, release string) bool {
 	if directory == "" {
 		return false
 	}
-	if _, err := os.Stat(PendingMarker(directory)); err != nil {
+	// Ran and did not serve, or could not be run at all. Either way,
+	// installing it again would produce the same result and another download.
+	_, marked := os.Stat(PendingMarker(directory))
+	if refused, err := readStagedFile(directory, stagedRefusedExec); err == nil {
+		if sameRelease(refused, release) {
+			return true
+		}
+	}
+	if marked != nil {
 		return false
 	}
 	staged, err := readStagedFile(directory, stagedVersion)
 	if err != nil {
 		return false
 	}
-	return strings.TrimPrefix(staged, "v") == strings.TrimPrefix(strings.TrimSpace(release), "v")
+	return sameRelease(staged, release)
+}
+
+// sameRelease compares two version strings, either of which may carry the v
+// that tags do and versions do not.
+func sameRelease(first, second string) bool {
+	return strings.TrimPrefix(strings.TrimSpace(first), "v") ==
+		strings.TrimPrefix(strings.TrimSpace(second), "v")
 }
 
 // MarkTried records that a staged binary is about to be run for the first
@@ -501,14 +528,27 @@ func MarkTried(directory, path string) {
 	}
 }
 
-// Untried takes the mark off again, for a binary that in the end was not run.
-// The mark means "this was run and did not serve", and an exec that failed is
-// neither half of that.
+// Untried takes the mark off again, for a binary that in the end was not run,
+// and records that the exec is what failed.
+//
+// Two things, because they answer two different questions. The mark means
+// "this was run and did not serve", and an exec that failed is neither half
+// of that — left on, it would orphan an installed, verified binary over a
+// passing ETXTBSY. But an exec failure can also be permanent, a volume
+// mounted noexec being the plain case, and then nothing stopped the next
+// check installing the same release again for ever, with no failure anywhere
+// for the backoff to notice. So the start will try the exec again, and the
+// upgrade will not download the same version again.
 func Untried(directory, path string) {
 	if directory == "" || !sameFile(path, Staged(directory)) {
 		return
 	}
 	_ = os.Remove(PendingMarker(directory))
+	if version, err := readStagedFile(directory, stagedVersion); err == nil {
+		if err := record(directory, stagedRefusedExec, version); err != nil {
+			fmt.Fprintf(os.Stderr, "teanode: cannot record that %s could not be run: %s\n", path, err)
+		}
+	}
 }
 
 // Started clears the marker, once this process has got far enough to be
@@ -519,6 +559,10 @@ func Started(directory string) {
 		return
 	}
 	_ = os.Remove(PendingMarker(directory))
+	// It ran. Whatever went wrong the last time something tried to exec it
+	// is history, and leaving the note would refuse the next upgrade of a
+	// deployment that is now working.
+	_ = os.Remove(filepath.Join(directory, stagedRefusedExec))
 }
 
 // Restart replaces this process with the binary at path, keeping the same

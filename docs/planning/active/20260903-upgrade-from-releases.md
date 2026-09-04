@@ -70,6 +70,29 @@ environment before the database is opened, naming where that directory is.
   database pool. Both were found by review rather than by a test, and neither
   would have failed anything visibly.
 
+- **Making the directory lazily broke the first upgrade.** Asking whether an
+  upgrade is possible stopped creating the staging directory, which was right,
+  and nothing else created it before the download — which writes beside where
+  the binary will end up, so that the rename afterwards is atomic. So the
+  first upgrade on every deployment that stages, the shipped compose file
+  included, failed on a directory that was not there. It is made by the one
+  thing that writes into it first.
+
+- **Refusing to start over a relative path was worse than what it replaced.**
+  A relative `server.dataDirectory` is legal and resolves against the
+  configuration file, so deriving the staging directory from it and then
+  rejecting it as relative stopped an ordinary deployment booting over a
+  feature it was not using — and named a variable nobody had set. Upgrades
+  are turned off with a warning instead, and mail keeps moving.
+
+- **A permanent exec failure was a download every six hours.** The mark
+  saying "ran and did not serve" has to come off when the exec never happened,
+  or a passing ETXTBSY orphans a good binary — but a volume mounted noexec
+  fails the same way every time, and with the mark off nothing stopped the
+  next check installing the same release again, for ever, with no failure for
+  the backoff to notice. An exec that failed is recorded separately: the start
+  tries again, the upgrade does not.
+
 - **The crash-loop guard had a second door, and closing the first one did not
   close it.** Marking the binary before both execs stopped it being *run*
   twice without being told to. It did not stop it being *installed* twice —

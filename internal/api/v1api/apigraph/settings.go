@@ -287,12 +287,16 @@ type CertificateParameters struct {
 	PerDomain *bool `json:"perDomain"`
 }
 
-// UpgradeParameters are the release settings an operator can change.
+// UpgradeParameters are the release settings an operator can change from the
+// dashboard.
 //
-// The two that take effect immediately. enabled and checkInterval are read
-// when the checker is built, so they are not here: a setting that appears to
-// save and does nothing is the thing the startup-only warning exists to
-// prevent, and offering it in a form would be inviting exactly that.
+// checkInterval is not here: it is read once, when the checker is built, and a
+// setting that appears to save and does nothing is the thing the startup-only
+// warning exists to prevent. enabled is not here either, for a different
+// reason — it decides whether this server reaches out to somebody else's
+// endpoint at all, which is a deployment's decision rather than a dashboard
+// one, and it belongs with the settings that are written where the server is
+// installed.
 type UpgradeParameters struct {
 	// Whether a new release is installed without being asked
 	Automatic *bool `json:"automatic"`

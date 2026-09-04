@@ -116,7 +116,9 @@ type Upgrade struct {
 
 	// CheckInterval is how often to look. Six hours by default: often enough
 	// that a security release is noticed the same day, rarely enough that it
-	// is not a request anybody would notice. At least
+	// is not a request anybody would notice. The one part of this section
+	// that a restart is needed for: the others are re-read every time the
+	// loop wakes. At least
 	// MinimumUpgradeCheckInterval, because the endpoint allows sixty requests
 	// an hour to an address that is not signed in and this is not the only
 	// thing behind that address.
