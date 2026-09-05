@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-05
+
+### Fixed
+
+- The version card shows the release notes for the newest release, formatted
+  as a changelog rather than as raw text, and shows them whether or not that
+  release is newer than the one running. They were only ever displayed when an
+  upgrade was available, which meant never on a server that was up to date or
+  ahead. (#19)
+
 ## [0.4.0] - 2026-09-04
 
 ### Added
