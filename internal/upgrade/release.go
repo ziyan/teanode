@@ -45,7 +45,7 @@ type release struct {
 // assetName is what the binary for this machine is called in a release, and
 // matches the names .github/scripts/release.sh writes.
 func assetName() string {
-	return fmt.Sprintf("teanode-%s-%s", runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("%s-%s-%s", serverBinary, runtime.GOOS, runtime.GOARCH)
 }
 
 // assetUrl finds one asset by name.

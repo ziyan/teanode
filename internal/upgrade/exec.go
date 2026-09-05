@@ -28,11 +28,21 @@ func resolveExecutable() string {
 	return path
 }
 
+// serverBinary is the name of the program that upgrades itself, and so of the
+// release asset to fetch and the file to stage.
+const serverBinary = "teanode-server"
+
 // What a staging directory holds. The binary, what version it is, and a marker
 // saying it has been tried.
 const (
 	// stagedName is the binary itself.
-	stagedName = "teanode"
+	//
+	// The server, not the client. This program ships two binaries — teanode
+	// administers a server and teanode-server is one — and only the server
+	// upgrades itself: nothing else constructs the manager. Naming the client
+	// here downloaded the wrong asset, staged it, and exec'd a program with no
+	// run command, which the guard below then refused on every start.
+	stagedName = serverBinary
 
 	// stagedVersion records which release the binary is, because the file
 	// cannot be asked. Running it to find out is the thing being decided.
