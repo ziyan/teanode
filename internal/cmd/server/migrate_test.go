@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ziyan/teanode/internal/upgrade"
 )
 
 type fakeMigrator struct {
@@ -42,7 +44,10 @@ func stageBinary(t *testing.T) string {
 		t.Fatal(err)
 	}
 	contents := []byte("binary")
-	if err := os.WriteFile(filepath.Join(directory, "teanode"), contents, 0o700); err != nil {
+	// upgrade.Staged rather than the name spelled out again. The name was
+	// written here as a copy, and a copy is what let the real one change to
+	// teanode-server without this noticing.
+	if err := os.WriteFile(upgrade.Staged(directory), contents, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(contents)
