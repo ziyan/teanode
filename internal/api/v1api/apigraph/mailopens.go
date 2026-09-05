@@ -118,6 +118,32 @@ type ListMailOpensArguments struct {
 // A message with nothing to fetch is still in the answer, with trackable
 // false, because "no picture in it" and "not fetched" are different things and
 // the list has to be able to tell them apart.
+//
+// A message the page asked about that no longer exists is left out of the
+// answer entirely, which the dashboard reads as "nothing known".
+
+// existingMails drops the ones that are not there any more.
+//
+// GetMails answers positionally: one entry per identifier asked for, nil in
+// the place of any that names no mail. The identifiers come from a page
+// somebody is looking at and retention deletes underneath it, so a nil here
+// is the ordinary case rather than an impossible one.
+//
+// Filtered once, here, rather than checked at each use. Checking at each use
+// is how the first repair of this missed the second loop and moved the panic
+// four lines down instead of removing it: a message that no longer exists has
+// no open count, so it should leave the answer at the top rather than be
+// stepped around all the way through.
+func existingMails(mails []*models.Mail) []*models.Mail {
+	existing := make([]*models.Mail, 0, len(mails))
+	for _, mail := range mails {
+		if mail != nil {
+			existing = append(existing, mail)
+		}
+	}
+	return existing
+}
+
 func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArguments) ([]*MailOpens, error) {
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
@@ -130,6 +156,8 @@ func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArg
 	if err != nil {
 		return nil, err
 	}
+
+	mails = existingMails(mails)
 
 	envelopeIds := make([]string, 0, len(mails))
 	for _, mail := range mails {
