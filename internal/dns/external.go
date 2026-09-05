@@ -80,9 +80,14 @@ func discoverExternalAddresses(ctx context.Context, resolvers []string) External
 					log.Debugf("could not determine the %s address from %s: %s", network, service, err)
 					continue
 				}
-				mutex.Lock()
-				assign(value)
-				mutex.Unlock()
+				// In a function, so the unlock is deferred: assign is
+				// passed in, and a caller's function that panicked would
+				// otherwise leave this held and hang the wait below.
+				func() {
+					mutex.Lock()
+					defer mutex.Unlock()
+					assign(value)
+				}()
 				return
 			}
 		}(family.network, family.assign)

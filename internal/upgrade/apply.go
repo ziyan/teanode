@@ -58,19 +58,13 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	// restarting" for the life of the process, with the button disabled and
 	// no error beside it. A success is the exception: it is followed by the
 	// restart, and this process does not come back to unset anything.
-	self.mutex.Lock()
-	self.status.Upgrading = true
-	self.status.Error = ""
-	self.mutex.Unlock()
+	self.markUpgrading()
 
 	defer func() {
 		if err == nil {
 			return
 		}
-		self.mutex.Lock()
-		self.status.Upgrading = false
-		self.status.Error = err.Error()
-		self.mutex.Unlock()
+		self.markFailed(err)
 	}()
 
 	if applicable, reason := self.applicableNow(); !applicable {
@@ -255,9 +249,7 @@ func (self *manager) swap(downloaded, target string, staging bool, release strin
 		return fmt.Errorf("upgrade: cannot put the new binary at %s: %w", target, err)
 	}
 
-	self.mutex.Lock()
-	self.execTarget = target
-	self.mutex.Unlock()
+	self.setExecTarget(target)
 	return nil
 }
 
@@ -400,9 +392,7 @@ func (self *manager) stage(downloaded, target, release string) error {
 		return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, stagedRefusedExec), err)
 	}
 
-	self.mutex.Lock()
-	self.execTarget = target
-	self.mutex.Unlock()
+	self.setExecTarget(target)
 	return nil
 }
 
@@ -579,4 +569,34 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+// The three writes to status that Apply makes, each holding the lock for the
+// assignment and no longer.
+//
+// Functions rather than lock-assign-unlock in place, so the unlock is a defer:
+// nothing between these lines can panic today, but a lock released only by the
+// line after it is a lock that stays held the first time something can. The
+// download that follows deliberately runs outside them — holding this across
+// forty-five megabytes would block every request that reads the status.
+func (self *manager) markUpgrading() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.status.Upgrading = true
+	self.status.Error = ""
+}
+
+func (self *manager) markFailed(err error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.status.Upgrading = false
+	self.status.Error = err.Error()
+}
+
+// setExecTarget records the binary this process should become once it has
+// finished shutting down.
+func (self *manager) setExecTarget(target string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.execTarget = target
 }

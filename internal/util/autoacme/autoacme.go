@@ -381,10 +381,7 @@ const ChallengePath = challengePath
 func (self *manager) spinOnce(ctx context.Context) error {
 	// A copy of the list, so the lock is not held across the network. The
 	// states themselves are only written under the lock, below.
-	self.certificateMutex.Lock()
-	states := make([]*certificateState, len(self.certificates))
-	copy(states, self.certificates)
-	self.certificateMutex.Unlock()
+	states := self.certificateStates()
 
 	var failed error
 	for _, state := range states {
@@ -594,4 +591,18 @@ func validateCertificate(certificate *tls.Certificate, hosts []string) (time.Tim
 		return time.Time{}, ErrInvalidCertificate
 	}
 	return leaf.NotAfter, nil
+}
+
+// certificateStates is a copy of the list, taken under the lock.
+//
+// The copy is the whole point: what follows it talks to an ACME server, and a
+// lock held across that is a lock held for as long as somebody else's endpoint
+// takes to answer. Taking the copy in a function lets the unlock be deferred,
+// so the list cannot be left locked by a panic in the loop that reads it.
+func (self *manager) certificateStates() []*certificateState {
+	self.certificateMutex.Lock()
+	defer self.certificateMutex.Unlock()
+	states := make([]*certificateState, len(self.certificates))
+	copy(states, self.certificates)
+	return states
 }

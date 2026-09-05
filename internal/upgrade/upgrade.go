@@ -523,19 +523,14 @@ func (self *manager) Start(expected string) (Status, error) {
 
 	// Marked here as well as in apply, so that the status says so before this
 	// request is answered rather than whenever the goroutine gets to run.
-	self.mutex.Lock()
-	self.status.Upgrading = true
-	self.status.Error = ""
-	self.mutex.Unlock()
+	self.markUpgrading()
 
 	// Not after Close has begun: an Add that lands once Wait has been entered
 	// is the misuse that panics, and both of the ways in here are reachable
 	// from a request that a shutdown can race.
 	select {
 	case <-self.ctx.Done():
-		self.mutex.Lock()
-		self.status.Upgrading = false
-		self.mutex.Unlock()
+		self.clearUpgrading()
 		self.applying.Unlock()
 		return self.Status(), fmt.Errorf("upgrade: this server is shutting down")
 	default:
@@ -978,4 +973,14 @@ func parseClock(text string) (int, error) {
 		return 0, fmt.Errorf("upgrade: %q is not a time of day", strings.TrimSpace(text))
 	}
 	return parsed.Hour()*60 + parsed.Minute(), nil
+}
+
+// clearUpgrading takes the mark off again, for the one path that puts it on
+// and then finds the server is shutting down. Its own function so the unlock
+// is a defer; the applying mutex released after it is a different lock with a
+// different lifetime, which is why the two are not one deferred pair.
+func (self *manager) clearUpgrading() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.status.Upgrading = false
 }
