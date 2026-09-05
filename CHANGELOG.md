@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-05
+
+### Fixed
+
+- The dashboard's mail list could fail to load the "opened" column when one of
+  the messages it was showing had just been deleted by the retention sweep.
+  Nothing was lost and the server was never at risk — the request failed and
+  reloading fixed it — but it recurred for as long as the list was open. (#20)
+- Log lines from the outbound SMTP client — everything about delivering a
+  message to another server — were labelled `smtpd`, the name of the listener
+  that receives mail, because the package declared its logger under the wrong
+  name. They are labelled `smtpc` now. If you grep your logs for delivery
+  problems, that is the word that changed. (#20)
+
 ## [0.4.1] - 2026-09-05
 
 ### Fixed
