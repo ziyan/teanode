@@ -52,8 +52,8 @@ jobs:
       - name: Build
         run: make build
 
-      # gogolint is deliberately absent: it is a local-only check, so a
-      # contributor without it installed is never blocked. See .gogolint.yaml.
+      # The naming checks are deliberately absent: they are a local-only
+      # check, so a contributor without them installed is never blocked.
       - name: Lint
         run: make lint-ci
 

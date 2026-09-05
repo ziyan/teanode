@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := all
 
-.PHONY: all help generate build web test benchmark coverage format check lint lint-ci gogolint check-secrets clean watch docker \
+.PHONY: all help generate build web test benchmark coverage format check lint lint-ci check-naming check-secrets clean watch docker \
 	dev dev-backend dev-frontend dev-up dev-down dev-logs dev-shell dev-clean test-deployment check-catalogs check-queries \
 	check-config-docs
 
@@ -64,7 +64,7 @@ check: ## Fail if code is not formatted
 		exit 1; \
 	fi
 
-lint: lint-ci gogolint ## Run every linter (what to run before committing)
+lint: lint-ci check-naming ## Run every linter (what to run before committing)
 
 check-secrets: ## Fail if a secret or private reference is in a tracked file
 	@scripts/check-secrets.bash
@@ -79,17 +79,17 @@ lint-ci: check check-secrets check-catalogs check-config-docs ## Run the linters
 	fi; \
 	$(GOLANGCI_LINT) run $(GOPACKAGES)
 
-# gogolint enforces this project's naming, receiver and error-prefix
-# conventions, configured by .gogolint.yaml. It is a local-only check: CI does
-# not run it, so a contributor without it installed is never blocked.
+# The naming, receiver and error-prefix conventions this project writes down,
+# checked mechanically. Configured by .gogolint.yaml.
 #
-#   go install github.com/ziyan/gogolint@latest
-gogolint: ## Run the local naming and error-prefix checks
+# A local-only check: CI does not run it, so a contributor who does not have
+# the checker installed is never blocked by it, and this target says so and
+# carries on rather than failing.
+check-naming: ## Run the local naming and error-prefix checks
 	@if hash gogolint >/dev/null 2>&1; then \
 		gogolint $(GOPACKAGES); \
 	else \
-		echo "gogolint is not installed; skipping the naming and error-prefix checks."; \
-		echo "  go install github.com/ziyan/gogolint@latest"; \
+		echo "the naming checker is not installed; skipping the naming and error-prefix checks."; \
 	fi
 
 # -race, because CI runs -race and a test suite that passes here and fails
