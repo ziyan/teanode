@@ -80,11 +80,11 @@ type simpleBodyCanonicalizer struct {
 	crlfFixer  crlfFixer
 }
 
-func (c *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
+func (self *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
 	written := len(b)
-	b = append(c.crlfBuffer, b...)
+	b = append(self.crlfBuffer, b...)
 
-	b = c.crlfFixer.Fix(b)
+	b = self.crlfFixer.Fix(b)
 
 	end := len(b)
 	// If it ends with \r, maybe the next write will begin with \n
@@ -101,25 +101,25 @@ func (c *simpleBodyCanonicalizer) Write(b []byte) (int, error) {
 		end -= 2
 	}
 
-	c.crlfBuffer = b[end:]
+	self.crlfBuffer = b[end:]
 
 	var err error
 	if end > 0 {
-		_, err = c.w.Write(b[:end])
+		_, err = self.w.Write(b[:end])
 	}
 	return written, err
 }
 
-func (c *simpleBodyCanonicalizer) Close() error {
+func (self *simpleBodyCanonicalizer) Close() error {
 	// Flush crlfBuffer if it ends with a single \r (without a matching \n)
-	if len(c.crlfBuffer) > 0 && c.crlfBuffer[len(c.crlfBuffer)-1] == '\r' {
-		if _, err := c.w.Write(c.crlfBuffer); err != nil {
+	if len(self.crlfBuffer) > 0 && self.crlfBuffer[len(self.crlfBuffer)-1] == '\r' {
+		if _, err := self.w.Write(self.crlfBuffer); err != nil {
 			return err
 		}
 	}
-	c.crlfBuffer = nil
+	self.crlfBuffer = nil
 
-	if _, err := c.w.Write([]byte(crlf)); err != nil {
+	if _, err := self.w.Write([]byte(crlf)); err != nil {
 		return err
 	}
 	return nil
@@ -149,44 +149,44 @@ type relaxedBodyCanonicalizer struct {
 	crlfFixer  crlfFixer
 }
 
-func (c *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
+func (self *relaxedBodyCanonicalizer) Write(b []byte) (int, error) {
 	written := len(b)
 
-	b = c.crlfFixer.Fix(b)
+	b = self.crlfFixer.Fix(b)
 
 	canonical := make([]byte, 0, len(b))
 	for _, channel := range b {
 		switch channel {
 		case ' ', '\t':
-			c.wsp = true
+			self.wsp = true
 		case '\r', '\n':
-			c.wsp = false
-			c.crlfBuffer = append(c.crlfBuffer, channel)
+			self.wsp = false
+			self.crlfBuffer = append(self.crlfBuffer, channel)
 		default:
-			if len(c.crlfBuffer) > 0 {
-				canonical = append(canonical, c.crlfBuffer...)
-				c.crlfBuffer = c.crlfBuffer[:0]
+			if len(self.crlfBuffer) > 0 {
+				canonical = append(canonical, self.crlfBuffer...)
+				self.crlfBuffer = self.crlfBuffer[:0]
 			}
-			if c.wsp {
+			if self.wsp {
 				canonical = append(canonical, ' ')
-				c.wsp = false
+				self.wsp = false
 			}
 
 			canonical = append(canonical, channel)
 		}
 	}
 
-	if !c.written && len(canonical) > 0 {
-		c.written = true
+	if !self.written && len(canonical) > 0 {
+		self.written = true
 	}
 
-	_, err := c.w.Write(canonical)
+	_, err := self.w.Write(canonical)
 	return written, err
 }
 
-func (c *relaxedBodyCanonicalizer) Close() error {
-	if c.written {
-		if _, err := c.w.Write([]byte(crlf)); err != nil {
+func (self *relaxedBodyCanonicalizer) Close() error {
+	if self.written {
+		if _, err := self.w.Write([]byte(crlf)); err != nil {
 			return err
 		}
 	}

@@ -34,14 +34,14 @@ type AuthResult struct {
 	Auth   string
 }
 
-func (r *AuthResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.Auth = parameters["smtp.auth"]
+func (self *AuthResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Auth = parameters["smtp.auth"]
 }
 
-func (r *AuthResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{"smtp.auth": r.Auth}
+func (self *AuthResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{"smtp.auth": self.Auth}
 }
 
 type DKIMResult struct {
@@ -51,18 +51,18 @@ type DKIMResult struct {
 	Identifier string
 }
 
-func (r *DKIMResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.Domain = parameters["header.d"]
-	r.Identifier = parameters["header.i"]
+func (self *DKIMResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Domain = parameters["header.d"]
+	self.Identifier = parameters["header.i"]
 }
 
-func (r *DKIMResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":   r.Reason,
-		"header.d": r.Domain,
-		"header.i": r.Identifier,
+func (self *DKIMResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":   self.Reason,
+		"header.d": self.Domain,
+		"header.i": self.Identifier,
 	}
 }
 
@@ -74,20 +74,20 @@ type DomainKeysResult struct {
 	Sender string
 }
 
-func (r *DomainKeysResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.Domain = parameters["header.d"]
-	r.From = parameters["header.from"]
-	r.Sender = parameters["header.sender"]
+func (self *DomainKeysResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Domain = parameters["header.d"]
+	self.From = parameters["header.from"]
+	self.Sender = parameters["header.sender"]
 }
 
-func (r *DomainKeysResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":        r.Reason,
-		"header.d":      r.Domain,
-		"header.from":   r.From,
-		"header.sender": r.Sender,
+func (self *DomainKeysResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":        self.Reason,
+		"header.d":      self.Domain,
+		"header.from":   self.From,
+		"header.sender": self.Sender,
 	}
 }
 
@@ -97,16 +97,16 @@ type IPRevResult struct {
 	IP     string
 }
 
-func (r *IPRevResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.IP = parameters["policy.iprev"]
+func (self *IPRevResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.IP = parameters["policy.iprev"]
 }
 
-func (r *IPRevResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":       r.Reason,
-		"policy.iprev": r.IP,
+func (self *IPRevResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":       self.Reason,
+		"policy.iprev": self.IP,
 	}
 }
 
@@ -117,23 +117,23 @@ type SenderIDResult struct {
 	HeaderValue string
 }
 
-func (r *SenderIDResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
+func (self *SenderIDResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
 
 	for k, v := range parameters {
 		if strings.HasPrefix(k, "header.") {
-			r.HeaderKey = strings.TrimPrefix(k, "header.")
-			r.HeaderValue = v
+			self.HeaderKey = strings.TrimPrefix(k, "header.")
+			self.HeaderValue = v
 			break
 		}
 	}
 }
 
-func (r *SenderIDResult) format() (value ResultValue, parameters map[string]string) {
-	return r.Value, map[string]string{
-		"reason":                                 r.Reason,
-		"header." + strings.ToLower(r.HeaderKey): r.HeaderValue,
+func (self *SenderIDResult) format() (value ResultValue, parameters map[string]string) {
+	return self.Value, map[string]string{
+		"reason": self.Reason,
+		"header." + strings.ToLower(self.HeaderKey): self.HeaderValue,
 	}
 }
 
@@ -144,18 +144,18 @@ type SPFResult struct {
 	Helo   string
 }
 
-func (r *SPFResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.From = parameters["smtp.mailfrom"]
-	r.Helo = parameters["smtp.helo"]
+func (self *SPFResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.From = parameters["smtp.mailfrom"]
+	self.Helo = parameters["smtp.helo"]
 }
 
-func (r *SPFResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":        r.Reason,
-		"smtp.mailfrom": r.From,
-		"smtp.helo":     r.Helo,
+func (self *SPFResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":        self.Reason,
+		"smtp.mailfrom": self.From,
+		"smtp.helo":     self.Helo,
 	}
 }
 
@@ -165,16 +165,16 @@ type DMARCResult struct {
 	From   string
 }
 
-func (r *DMARCResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
-	r.From = parameters["header.from"]
+func (self *DMARCResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.From = parameters["header.from"]
 }
 
-func (r *DMARCResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":      r.Reason,
-		"header.from": r.From,
+func (self *DMARCResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":      self.Reason,
+		"header.from": self.From,
 	}
 }
 
@@ -183,14 +183,14 @@ type ARCResult struct {
 	Reason string
 }
 
-func (r *ARCResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Reason = parameters["reason"]
+func (self *ARCResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
 }
 
-func (r *ARCResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason": r.Reason,
+func (self *ARCResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason": self.Reason,
 	}
 }
 
@@ -200,13 +200,13 @@ type GenericResult struct {
 	Parameters map[string]string
 }
 
-func (r *GenericResult) parse(value ResultValue, parameters map[string]string) {
-	r.Value = value
-	r.Parameters = parameters
+func (self *GenericResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Parameters = parameters
 }
 
-func (r *GenericResult) format() (ResultValue, map[string]string) {
-	return r.Value, r.Parameters
+func (self *GenericResult) format() (ResultValue, map[string]string) {
+	return self.Value, self.Parameters
 }
 
 type newResultFunc func() Result
