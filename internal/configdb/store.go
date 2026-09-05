@@ -11,6 +11,8 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 var log = logging.MustGetLogger("configdb")
@@ -242,6 +244,7 @@ func (self *store) Close() error {
 // staleness — is not worth that. One indexed read every five seconds is
 // cheaper than the reconnection logic.
 func (self *store) watch() {
+	defer deferutil.Recover()
 	defer close(self.done)
 
 	ticker := time.NewTicker(pollInterval)

@@ -119,6 +119,43 @@ deferUnlock:
   # same block, neither deferred, is reported.
   allowTransfer: true
 
+recover:
+  enabled: true
+  # A panic in a goroutine is not recovered by whatever started it: it takes
+  # the whole process down, which in a mail server means every connection
+  # drops because one sweep hit a nil. This project's guard is deferutil.
+  guard: "deferutil.Recover()"
+  exclude:
+    paths:
+      # A panic in a goroutine started by a test fails that test, loudly and
+      # in the right place. The guard exists to keep a server alive, and a
+      # test that survives its own panic is a test that reports a pass.
+      - "*_test.go"
+
+structTag:
+  enabled: true
+  # Every key anything here reads. A key not on this list is either a typo —
+  # `jsno:"password"` is well formed, unique, and silently ignored — or a new
+  # convention that belongs on the list with the others.
+  keys:
+    - json
+    - yaml
+    - gorm
+    - graphapi   # the GraphQL schema builder in internal/util/graphapi
+    - secret     # marks a configuration field the API must never return
+    - datastruct
+    - msgpack
+    - xml
+    - maxminddb  # read by the MaxMind reader in internal/util/geoip
+
+camelCase:
+  enabled: true
+  # Empty on purpose. A dictionary cannot do this job in technical English:
+  # "redacted" splits into "red" and "acted" and "loopback" into "loop" and
+  # "back", both pairs of real words and neither a finding anybody wants.
+  # Add a word here when this project decides how it is written.
+  separate: {}
+
 docComment:
   # Off, and deliberately. The other rules are about mechanics, where a
   # machine can be right. This one is about writing, and on a codebase whose

@@ -17,6 +17,8 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/periodic"
 	"github.com/ziyan/teanode/internal/version"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 var log = logging.MustGetLogger("upgrade")
@@ -543,6 +545,7 @@ func (self *manager) Start(expected string) (Status, error) {
 	go func() {
 		defer self.waitGroup.Done()
 		defer self.applying.Unlock()
+		defer deferutil.Recover()
 
 		// The manager's context, not the request's: the request is answered
 		// before this finishes, and its context is cancelled the moment it
@@ -656,6 +659,7 @@ func (self *manager) CheckSoon() bool {
 	go func() {
 		defer self.waitGroup.Done()
 		defer self.checking.Unlock()
+		defer deferutil.Recover()
 		if _, err := self.Check(self.ctx); err != nil {
 			log.Warningf("could not check for a release: %s", err)
 		}

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // externalAddressTimeout bounds each attempt. A server that cannot work out
@@ -73,6 +75,7 @@ func discoverExternalAddresses(ctx context.Context, resolvers []string) External
 		waitGroup.Add(1)
 		go func(network string, assign func(string)) {
 			defer waitGroup.Done()
+			defer deferutil.Recover()
 
 			for _, service := range resolvers {
 				value, err := askForAddress(ctx, network, service)
