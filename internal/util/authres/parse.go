@@ -121,10 +121,10 @@ func (self *SenderIDResult) parse(value ResultValue, parameters map[string]strin
 	self.Value = value
 	self.Reason = parameters["reason"]
 
-	for k, v := range parameters {
-		if strings.HasPrefix(k, "header.") {
-			self.HeaderKey = strings.TrimPrefix(k, "header.")
-			self.HeaderValue = v
+	for key, value := range parameters {
+		if strings.HasPrefix(key, "header.") {
+			self.HeaderKey = strings.TrimPrefix(key, "header.")
+			self.HeaderValue = value
 			break
 		}
 	}
@@ -240,27 +240,27 @@ var results = map[string]newResultFunc{
 
 // Parse parses the provided Authentication-Results header field. It returns the
 // authentication service identifier and authentication results.
-func Parse(v string) (identifier string, results []Result, err error) {
-	parts := strings.Split(v, ";")
+func Parse(field string) (identifier string, results []Result, err error) {
+	parts := strings.Split(field, ";")
 
 	identifier = strings.TrimSpace(parts[0])
-	i := strings.IndexFunc(identifier, unicode.IsSpace)
-	if i > 0 {
-		version := strings.TrimSpace(identifier[i:])
+	position := strings.IndexFunc(identifier, unicode.IsSpace)
+	if position > 0 {
+		version := strings.TrimSpace(identifier[position:])
 		if version != "1" {
 			return "", nil, errors.New("authres: msgauth: unsupported version")
 		}
 
-		identifier = identifier[:i]
+		identifier = identifier[:position]
 	}
 
-	for i := 1; i < len(parts); i++ {
-		s := strings.TrimSpace(parts[i])
-		if s == "" {
+	for position := 1; position < len(parts); position++ {
+		segment := strings.TrimSpace(parts[position])
+		if segment == "" {
 			continue
 		}
 
-		result, err := parseResult(s)
+		result, err := parseResult(segment)
 		if err != nil {
 			return identifier, results, err
 		}
@@ -271,49 +271,49 @@ func Parse(v string) (identifier string, results []Result, err error) {
 	return
 }
 
-func parseResult(s string) (Result, error) {
+func parseResult(text string) (Result, error) {
 	// TODO: ignore header comments in parenthesis
 
-	parts := strings.Fields(s)
+	parts := strings.Fields(text)
 	if len(parts) == 0 || parts[0] == "none" {
 		return nil, nil
 	}
 
-	k, v, err := parseParameter(parts[0])
+	methodName, methodValue, err := parseParameter(parts[0])
 	if err != nil {
 		return nil, err
 	}
-	method, value := k, ResultValue(strings.ToLower(v))
+	method, value := methodName, ResultValue(strings.ToLower(methodValue))
 
 	parameters := make(map[string]string)
-	for i := 1; i < len(parts); i++ {
-		k, v, err := parseParameter(parts[i])
+	for index := 1; index < len(parts); index++ {
+		key, parameterValue, err := parseParameter(parts[index])
 		if err != nil {
 			continue
 		}
 
-		parameters[k] = v
+		parameters[key] = parameterValue
 	}
 
 	newResult, ok := results[method]
 
-	var r Result
+	var result Result
 	if ok {
-		r = newResult()
+		result = newResult()
 	} else {
-		r = &GenericResult{
+		result = &GenericResult{
 			Method:     method,
 			Value:      value,
 			Parameters: parameters,
 		}
 	}
 
-	r.parse(value, parameters)
-	return r, nil
+	result.parse(value, parameters)
+	return result, nil
 }
 
-func parseParameter(s string) (k string, v string, err error) {
-	kv := strings.SplitN(s, "=", 2)
+func parseParameter(text string) (key string, value string, err error) {
+	kv := strings.SplitN(text, "=", 2)
 	if len(kv) != 2 {
 		return "", "", errors.New("authres: msgauth: malformed authentication method and value")
 	}
