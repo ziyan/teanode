@@ -9,23 +9,23 @@ Start with `docs/reference/local-development.md` to get a build and a database.
 ## Before you send a change
 
     make format        # gofmt
-    make lint          # golangci-lint, then mulint if you have it
+    make lint          # golangci-lint, then gogolint if you have it
     make test          # starts a PostgreSQL container automatically
     make build
 
-CI runs `make lint-ci`, which is golangci-lint only. `mulint` enforces this
+CI runs `make lint-ci`, which is golangci-lint only. `gogolint` enforces this
 project's naming conventions and is local-only, so a contributor without it is
 never blocked; run it anyway if you have it.
 
 ## Naming
 
-These are not negotiable, and `mulint` checks most of them.
+These are not negotiable, and `gogolint` checks most of them.
 
 - **Acronyms follow the first letter.** If the identifier starts with a
   capital, acronyms are fully capitalised: `ReferenceURI`, `SessionID`,
   `GetFTPID`, `DKIMResult`. If it starts lowercase, only the first letter of
   the acronym is capitalised: `referenceUri`, `sessionId`, `getFtpId`. Register
-  a new acronym in `mulint.yaml` with a comment saying what it stands for.
+  a new acronym in `.gogolint.yaml` with a comment saying what it stands for.
 - **Do not abbreviate.** `command`, not `cmd`. `response`, not `resp`.
   `request`, not `req`. Go package names are the exception and should be short.
 - **No single-letter variables.** `err` is the one blessed short name, and Go

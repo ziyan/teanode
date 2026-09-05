@@ -37,5 +37,5 @@ block as it came.
      the one thing you looked at to be sure. -->
 
 - [ ] `make` passes: formatted, builds, tests
-- [ ] `make lint` passes, including mulint if installed
+- [ ] `make lint` passes, including gogolint if installed
 - [ ] A decision record in `docs/decisions/` if this makes a choice worth explaining later

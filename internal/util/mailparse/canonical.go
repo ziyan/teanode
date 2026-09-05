@@ -50,14 +50,14 @@ type crlfFixer struct {
 	cr bool
 }
 
-func (cf *crlfFixer) Fix(data []byte) []byte {
+func (self *crlfFixer) Fix(data []byte) []byte {
 	result := make([]byte, 0, len(data))
 	for _, character := range data {
-		previousCarriageReturn := cf.cr
-		cf.cr = false
+		previousCarriageReturn := self.cr
+		self.cr = false
 		switch character {
 		case '\r':
-			cf.cr = true
+			self.cr = true
 		case '\n':
 			if !previousCarriageReturn {
 				result = append(result, '\r')

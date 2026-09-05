@@ -17,7 +17,7 @@ Then, depending on what you are doing:
 ## Notes specific to Claude Code
 
 - `make test` starts a PostgreSQL container. It needs Docker running.
-- `make lint` runs `mulint`, which is not installed everywhere and is not in
+- `make lint` runs `gogolint`, which is not installed everywhere and is not in
   CI. `make lint-ci` is what CI runs.
 - Do not run `git add -A` without looking at what it staged. A previous session
   nearly committed a directory of private keys that way.

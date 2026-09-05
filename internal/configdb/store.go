@@ -132,6 +132,14 @@ func (self *store) Reload() error {
 	return nil
 }
 
+// snapshot is the configuration this instance is serving, and the version it
+// was saved at, read together under the lock so the two cannot disagree.
+func (self *store) snapshot() (*config.Configuration, int64) {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+	return self.current, self.version
+}
+
 // store replaces the snapshot this instance is serving.
 //
 // A function of its own so the unlock can be deferred: the assignment cannot
@@ -156,9 +164,7 @@ func (self *store) store(configuration *config.Configuration, version int64) {
 // would be a guess.
 func (self *store) Update(mutate func(*config.Configuration) error) error {
 	for attempt := 0; ; attempt++ {
-		self.mutex.RLock()
-		base, version := self.current, self.version
-		self.mutex.RUnlock()
+		base, version := self.snapshot()
 
 		changed, err := config.Clone(base)
 		if err != nil {
