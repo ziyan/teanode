@@ -272,15 +272,15 @@ func (self *graph) FinishPasskeyAssertion(ctx context.Context, arguments FinishP
 	// The library hands back the credential's identifier and asks who that
 	// is; everything else — the challenge, the origin, the signature — it
 	// verifies itself.
-	credential, err := engine.ValidateDiscoverableLogin(func(rawID, userHandle []byte) (webauthn.User, error) {
-		passkey, err := self.database.GetPasskeyByCredentialID(rawID)
+	credential, err := engine.ValidateDiscoverableLogin(func(rawId, userHandle []byte) (webauthn.User, error) {
+		passkey, err := self.database.GetPasskeyByCredentialID(rawId)
 		if err != nil {
 			return nil, err
 		}
 		if passkey == nil {
 			return nil, api.ErrNotLoggedIn
 		}
-		user := self.findAccountByID(passkey.UserID)
+		user := self.findAccountById(passkey.UserID)
 		if user == nil {
 			return nil, api.ErrNotLoggedIn
 		}

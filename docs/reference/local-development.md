@@ -9,7 +9,8 @@ the conventions your change has to follow, see `docs/coding/coding-standards.md`
 - Go 1.25 or newer
 - Node 20 or newer, for the dashboard
 - Docker, for the PostgreSQL the tests use
-- Optional: `mulint`, for the local naming checks that `make lint` runs
+- Optional: the local naming checks that `make lint` runs; `make lint` skips
+  them, with a note, when they are not installed
 
 ## Build and test
 
@@ -17,7 +18,7 @@ the conventions your change has to follow, see `docs/coding/coding-standards.md`
     make web            # build the dashboard into internal/frontend/static
     make                # format, build, test
     make test           # tests; starts a PostgreSQL container automatically
-    make lint           # golangci-lint plus mulint
+    make lint           # golangci-lint plus the local naming checks
     make lint-ci        # only what CI runs
 
 To run one package's tests:

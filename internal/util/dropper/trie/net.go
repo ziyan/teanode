@@ -42,8 +42,8 @@ func newNetworkNumber(ip net.IP) networkNumber {
 	}
 	nn := make(networkNumber, parts)
 	for i := 0; i < parts; i++ {
-		idx := i * net.IPv4len
-		nn[i] = binary.BigEndian.Uint32(coercedIp[idx : idx+net.IPv4len])
+		index := i * net.IPv4len
+		nn[i] = binary.BigEndian.Uint32(coercedIp[index : index+net.IPv4len])
 	}
 	return nn
 }
@@ -68,8 +68,8 @@ func (self networkNumber) ToV6() networkNumber {
 func (self networkNumber) ToIP() net.IP {
 	ip := make(net.IP, len(self)*bytePerUint32)
 	for i := 0; i < len(self); i++ {
-		idx := i * net.IPv4len
-		binary.BigEndian.PutUint32(ip[idx:idx+net.IPv4len], self[i])
+		index := i * net.IPv4len
+		binary.BigEndian.PutUint32(ip[index:index+net.IPv4len], self[i])
 	}
 	if len(ip) == net.IPv4len {
 		ip = net.IPv4(ip[0], ip[1], ip[2], ip[3])

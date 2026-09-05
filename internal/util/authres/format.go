@@ -8,25 +8,25 @@ import (
 
 // Format formats an Authentication-Results header.
 func Format(identity string, results []Result) string {
-	s := identity
+	header := identity
 
 	if len(results) == 0 {
-		s += "; none"
-		return s
+		header += "; none"
+		return header
 	}
 
-	for _, r := range results {
-		method := resultMethod(r)
-		value, params := r.format()
+	for _, result := range results {
+		method := resultMethod(result)
+		value, parameters := result.format()
 
-		s += ";\r\n " + method + "=" + string(value) + " " + formatParams(params)
+		header += ";\r\n " + method + "=" + string(value) + " " + formatParameters(parameters)
 	}
 
-	return s
+	return header
 }
 
-func resultMethod(r Result) string {
-	switch r := r.(type) {
+func resultMethod(result Result) string {
+	switch result := result.(type) {
 	case *AuthResult:
 		return "auth"
 	case *DKIMResult:
@@ -44,47 +44,47 @@ func resultMethod(r Result) string {
 	case *ARCResult:
 		return "arc"
 	case *GenericResult:
-		return r.Method
+		return result.Method
 	default:
 		return ""
 	}
 }
 
-func formatParams(params map[string]string) string {
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		if k == "reason" {
+func formatParameters(parameters map[string]string) string {
+	keys := make([]string, 0, len(parameters))
+	for key := range parameters {
+		if key == "reason" {
 			continue
 		}
-		keys = append(keys, k)
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	if params["reason"] != "" {
+	if parameters["reason"] != "" {
 		keys = append([]string{"reason"}, keys...)
 	}
 
-	s := ""
-	i := 0
-	for _, k := range keys {
-		if params[k] == "" {
+	formatted := ""
+	written := 0
+	for _, key := range keys {
+		if parameters[key] == "" {
 			continue
 		}
 
-		if i > 0 {
-			s += " "
+		if written > 0 {
+			formatted += " "
 		}
 
 		var value string
-		if k == "reason" {
-			value = formatValue(params[k])
+		if key == "reason" {
+			value = formatValue(parameters[key])
 		} else {
-			value = formatPvalue(params[k])
+			value = formatPvalue(parameters[key])
 		}
-		s += k + "=" + value
-		i++
+		formatted += key + "=" + value
+		written++
 	}
 
-	return s
+	return formatted
 }
 
 var tspecials = map[rune]struct{}{
@@ -93,7 +93,7 @@ var tspecials = map[rune]struct{}{
 	'/': {}, '[': {}, ']': {}, '?': {}, '=': {},
 }
 
-func formatValue(s string) string {
+func formatValue(value string) string {
 	// value := token / quoted-string
 	// token := 1*<any (US-ASCII) CHAR except SPACE, CTLs,
 	//            or tspecials>
@@ -104,16 +104,16 @@ func formatValue(s string) string {
 	//               ; to use within parameter values
 
 	shouldQuote := false
-	for _, ch := range s {
-		if _, special := tspecials[ch]; ch <= ' ' /* SPACE or CTL */ || special {
+	for _, channel := range value {
+		if _, special := tspecials[channel]; channel <= ' ' /* SPACE or CTL */ || special {
 			shouldQuote = true
 		}
 	}
 
 	if shouldQuote {
-		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+		return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
 	}
-	return s
+	return value
 }
 
 var addressOk = map[rune]struct{}{
@@ -131,7 +131,7 @@ var addressOk = map[rune]struct{}{
 	'}': {}, '~': {},
 }
 
-func formatPvalue(s string) string {
+func formatPvalue(value string) string {
 	// pvalue = [CFWS] ( value / [ [ local-part ] "@" ] domain-name )
 	//          [CFWS]
 
@@ -143,14 +143,14 @@ func formatPvalue(s string) string {
 	// will catch most of the cases and we can fallback to quoting
 	// for others.
 	addressLike := true
-	for _, ch := range s {
-		if _, ok := addressOk[ch]; !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && !ok {
+	for _, channel := range value {
+		if _, ok := addressOk[channel]; !unicode.IsLetter(channel) && !unicode.IsDigit(channel) && !ok {
 			addressLike = false
 		}
 	}
 
 	if addressLike {
-		return s
+		return value
 	}
-	return formatValue(s)
+	return formatValue(value)
 }

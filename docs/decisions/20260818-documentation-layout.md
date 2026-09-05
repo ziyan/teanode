@@ -28,7 +28,7 @@ Documentation lives under `docs/` with lowercase kebab filenames:
 Conventional root files keep their canonical names: `README.md`,
 `CONTRIBUTING.md`, `CHANGELOG.md`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`.
 
-Separately: `mulint`, which enforces the naming and error-prefix conventions,
+Separately: the local naming checks, which enforce the naming and error-prefix conventions,
 runs locally through `make lint` but never in CI. `make lint-ci` is what CI
 runs.
 
@@ -36,7 +36,7 @@ runs.
 
 - A decision has somewhere to go, so the reasoning behind a change survives the
   conversation it happened in.
-- `mulint` not being in CI means a contributor without it installed is never
+- The naming checks not being in CI means a contributor without them installed is never
   blocked, at the cost of naming drift being caught at review rather than
-  automatically. `mulint.yaml` registers this project's mail vocabulary so the
+  automatically. Their configuration registers this project's mail vocabulary so the
   check is quiet enough to be worth running.

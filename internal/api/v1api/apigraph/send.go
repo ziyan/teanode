@@ -93,7 +93,7 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 	if err != nil {
 		return nil, err
 	}
-	tx := api.ContextTx(ctx)
+	tx := api.ContextTransaction(ctx)
 	parameters := &arguments.MessageParameters
 
 	// The sender is an address at this domain. Anything else would be

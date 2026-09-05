@@ -285,18 +285,18 @@ func (self *comments) generateCode() string {
 // Walk through all top level type declarations in a package
 func walkTypes(parsedPackage *packages.Package, callback func(string, string, *ast.TypeSpec)) {
 	for _, parsedSyntax := range parsedPackage.Syntax {
-		for _, decl := range parsedSyntax.Decls {
-			genDecl, ok := decl.(*ast.GenDecl)
-			if !ok || genDecl.Tok != token.TYPE {
+		for _, declaration := range parsedSyntax.Decls {
+			genDeclaration, ok := declaration.(*ast.GenDecl)
+			if !ok || genDeclaration.Tok != token.TYPE {
 				continue
 			}
-			for _, spec := range genDecl.Specs {
+			for _, spec := range genDeclaration.Specs {
 				typeSpec, ok := spec.(*ast.TypeSpec)
 				if !ok {
 					continue
 				}
 				typeName := typeSpec.Name.String()
-				callback(typeName, trimComment(genDecl.Doc), typeSpec)
+				callback(typeName, trimComment(genDeclaration.Doc), typeSpec)
 			}
 		}
 	}
@@ -305,12 +305,12 @@ func walkTypes(parsedPackage *packages.Package, callback func(string, string, *a
 // Walk through all top level const declarations in a package
 func walkConstants(parsedPackage *packages.Package, callback func(string, string, string, ast.Expr)) {
 	for _, parsedSyntax := range parsedPackage.Syntax {
-		for _, decl := range parsedSyntax.Decls {
-			genDecl, ok := decl.(*ast.GenDecl)
-			if !ok || genDecl.Tok != token.CONST {
+		for _, declaration := range parsedSyntax.Decls {
+			genDeclaration, ok := declaration.(*ast.GenDecl)
+			if !ok || genDeclaration.Tok != token.CONST {
 				continue
 			}
-			for _, spec := range genDecl.Specs {
+			for _, spec := range genDeclaration.Specs {
 				valueSpec, ok := spec.(*ast.ValueSpec)
 				if !ok {
 					continue
@@ -332,7 +332,7 @@ func walkConstants(parsedPackage *packages.Package, callback func(string, string
 					typeComment := trimComment(valueSpec.Doc)
 					if typeComment == "" {
 						// otherwise use the comment on the declaration group
-						typeComment = trimComment(genDecl.Doc)
+						typeComment = trimComment(genDeclaration.Doc)
 					}
 					callback(typeName, constantName, typeComment, valueSpec.Values[index])
 				}
@@ -344,18 +344,18 @@ func walkConstants(parsedPackage *packages.Package, callback func(string, string
 // Walk through member function declarations in a package
 func walkMethods(parsedPackage *packages.Package, callback func(string, string, string)) {
 	for _, parsedSyntax := range parsedPackage.Syntax {
-		for _, decl := range parsedSyntax.Decls {
-			funcDecl, ok := decl.(*ast.FuncDecl)
+		for _, declaration := range parsedSyntax.Decls {
+			funcDeclaration, ok := declaration.(*ast.FuncDecl)
 			if !ok {
 				continue
 			}
-			methodName := funcDecl.Name.String()
+			methodName := funcDeclaration.Name.String()
 			if !token.IsExported(methodName) {
 				continue
 			}
 			var typeName string
-			if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
-				switch typeValue := funcDecl.Recv.List[0].Type.(type) {
+			if funcDeclaration.Recv != nil && len(funcDeclaration.Recv.List) > 0 {
+				switch typeValue := funcDeclaration.Recv.List[0].Type.(type) {
 				case *ast.Ident:
 					typeName = typeValue.String()
 				case *ast.StarExpr:
@@ -364,7 +364,7 @@ func walkMethods(parsedPackage *packages.Package, callback func(string, string, 
 					}
 				}
 			}
-			callback(typeName, methodName, trimComment(funcDecl.Doc))
+			callback(typeName, methodName, trimComment(funcDeclaration.Doc))
 		}
 	}
 }

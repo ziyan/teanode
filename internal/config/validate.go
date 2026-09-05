@@ -58,10 +58,10 @@ func (self *Configuration) Validate() error {
 
 	self.validateServer(validator)
 	self.validateListen(validator)
-	self.validateTLS(validator)
+	self.validateTls(validator)
 	self.validateDatabase(validator)
-	self.validateSMTP(validator)
-	self.validateDKIM(validator)
+	self.validateSmtp(validator)
+	self.validateDkim(validator)
 	self.validateDomains(validator)
 	self.validateUsers(validator)
 	self.validateIntegrations(validator)
@@ -128,7 +128,7 @@ func (self *Configuration) validateListen(validator *validator) {
 	}
 }
 
-func (self *Configuration) validateTLS(validator *validator) {
+func (self *Configuration) validateTls(validator *validator) {
 	hasFiles := self.TLS.CertificateFile != "" || self.TLS.PrivateKeyFile != ""
 	if hasFiles {
 		if self.TLS.CertificateFile == "" {
@@ -170,9 +170,9 @@ func (self *Configuration) validateTLS(validator *validator) {
 		validator.add("tls.acme.email", "%q is not an email address", self.TLS.ACME.Email)
 	}
 	if self.TLS.ACME.DirectoryURL == "" {
-		validator.add("tls.acme.directoryURL", "required when ACME is enabled")
+		validator.add("tls.acme.directoryUrl", "required when ACME is enabled")
 	} else if parsed, err := url.Parse(self.TLS.ACME.DirectoryURL); err != nil || parsed.Scheme != "https" {
-		validator.add("tls.acme.directoryURL", "%q is not an https URL", self.TLS.ACME.DirectoryURL)
+		validator.add("tls.acme.directoryUrl", "%q is not an https URL", self.TLS.ACME.DirectoryURL)
 	}
 
 	switch self.TLS.ACME.Challenge {
@@ -188,7 +188,7 @@ func (self *Configuration) validateTLS(validator *validator) {
 		if !self.TLS.ACME.Route53.Enabled {
 			validator.add("tls.acme.route53.enabled", "required for tls.acme.challenge dns-01: no other DNS provider is implemented")
 		} else if self.TLS.ACME.Route53.ZoneID == "" {
-			validator.add("tls.acme.route53.zoneID", "required when the Route53 solver is enabled")
+			validator.add("tls.acme.route53.zoneId", "required when the Route53 solver is enabled")
 		}
 	case "":
 		validator.add("tls.acme.challenge", "required when ACME is enabled, one of http-01, tls-alpn-01 or dns-01")
@@ -219,7 +219,7 @@ func (self *Configuration) validateDatabase(validator *validator) {
 	}
 }
 
-func (self *Configuration) validateSMTP(validator *validator) {
+func (self *Configuration) validateSmtp(validator *validator) {
 	if self.SMTP.MaxMessageSize == 0 {
 		validator.add("smtp.maxMessageSize", "required: the largest message to accept, for example 70MB")
 	}
@@ -288,7 +288,7 @@ func (self *Configuration) validateRelay(validator *validator) {
 	}
 }
 
-func (self *Configuration) validateDKIM(validator *validator) {
+func (self *Configuration) validateDkim(validator *validator) {
 	if self.DKIM.Selector == "" {
 		validator.add("dkim.selector", "required: the selector to give a new domain's signing key, for example teanode1")
 	} else if !isHostLabel(self.DKIM.Selector) {
@@ -666,18 +666,18 @@ func (self *Configuration) ValidateFiles() error {
 func parseUpgradeWindow(window string) (int, int, error) {
 	halves := strings.SplitN(window, "-", 2)
 	if len(halves) != 2 {
-		return 0, 0, fmt.Errorf("a window looks like 02:00-04:00")
+		return 0, 0, fmt.Errorf("config: a window looks like 02:00-04:00")
 	}
 	var minutes [2]int
 	for index, half := range halves {
 		parsed, err := time.Parse("15:04", strings.TrimSpace(half))
 		if err != nil {
-			return 0, 0, fmt.Errorf("%q is not a time of day", strings.TrimSpace(half))
+			return 0, 0, fmt.Errorf("config: %q is not a time of day", strings.TrimSpace(half))
 		}
 		minutes[index] = parsed.Hour()*60 + parsed.Minute()
 	}
 	if minutes[0] == minutes[1] {
-		return 0, 0, fmt.Errorf("a window that starts and ends at the same minute is not a window")
+		return 0, 0, fmt.Errorf("config: a window that starts and ends at the same minute is not a window")
 	}
 	return minutes[0], minutes[1], nil
 }

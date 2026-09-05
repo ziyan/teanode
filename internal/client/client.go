@@ -18,7 +18,11 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("client") //nolint:unused
 
 // Client is a connection to one server's API.
 type Client struct {

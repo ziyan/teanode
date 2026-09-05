@@ -27,14 +27,14 @@ type Operation struct {
 	Kind        string // "query" or "mutation"
 	Description string
 	Arguments   []*Argument
-	Type        *TypeRef
+	Type        *TypeReference
 }
 
 // Argument is one argument of an operation or input object field.
 type Argument struct {
 	Name        string
 	Description string
-	Type        *TypeRef
+	Type        *TypeReference
 }
 
 // Type is a named type in the schema.
@@ -52,19 +52,19 @@ type Field struct {
 	Name        string
 	Description string
 	Arguments   []*Argument
-	Type        *TypeRef
+	Type        *TypeReference
 }
 
-// TypeRef is a type as used, which may wrap a named type in non-null and list
+// TypeReference is a type as used, which may wrap a named type in non-null and list
 // markers.
-type TypeRef struct {
+type TypeReference struct {
 	Kind   string
 	Name   string
-	OfType *TypeRef
+	OfType *TypeReference
 }
 
 // Named returns the underlying named type, unwrapping non-null and list.
-func (self *TypeRef) Named() string {
+func (self *TypeReference) Named() string {
 	for reference := self; reference != nil; reference = reference.OfType {
 		if reference.Name != "" {
 			return reference.Name
@@ -75,7 +75,7 @@ func (self *TypeRef) Named() string {
 
 // String renders the type the way it is written in a query, for example
 // "[Domain!]!".
-func (self *TypeRef) String() string {
+func (self *TypeReference) String() string {
 	if self == nil {
 		return ""
 	}
@@ -90,7 +90,7 @@ func (self *TypeRef) String() string {
 }
 
 // Required reports whether a value has to be given.
-func (self *TypeRef) Required() bool {
+func (self *TypeReference) Required() bool {
 	return self != nil && self.Kind == "NON_NULL"
 }
 
@@ -131,10 +131,10 @@ func Introspect(ctx context.Context, connection *Client) (*Schema, error) {
 				Kind        string `json:"kind"`
 				Description string `json:"description"`
 				Fields      []struct {
-					Name        string      `json:"name"`
-					Description string      `json:"description"`
-					Args        []*Argument `json:"args"`
-					Type        *TypeRef    `json:"type"`
+					Name        string         `json:"name"`
+					Description string         `json:"description"`
+					Args        []*Argument    `json:"args"`
+					Type        *TypeReference `json:"type"`
 				} `json:"fields"`
 				InputFields []*Argument `json:"inputFields"`
 				EnumValues  []struct {
@@ -238,7 +238,7 @@ func (self *Operation) FindArgument(name string) *Argument {
 // Delivery has a Mail that has a Domain — so an unbounded walk does not
 // terminate. Three levels is enough for everything the API returns to be
 // legible without asking for the whole graph.
-func (self *Schema) Selection(reference *TypeRef, depth int) string {
+func (self *Schema) Selection(reference *TypeReference, depth int) string {
 	named := self.Types[reference.Named()]
 	if named == nil {
 		return ""
@@ -300,7 +300,7 @@ func (self *Schema) BuildQuery(operation *Operation, arguments map[string]any, d
 	for _, name := range names {
 		argument := operation.FindArgument(name)
 		if argument == nil {
-			return "", fmt.Errorf("%s has no argument %q; it takes %s",
+			return "", fmt.Errorf("client: %s has no argument %q; it takes %s",
 				operation.Name, name, describeArguments(operation))
 		}
 		declarations = append(declarations, "$"+argument.Name+": "+argument.Type.String())
@@ -309,7 +309,7 @@ func (self *Schema) BuildQuery(operation *Operation, arguments map[string]any, d
 
 	for _, argument := range operation.Arguments {
 		if argument.Type.Required() && arguments[argument.Name] == nil {
-			return "", fmt.Errorf("%s needs %s, which is %s",
+			return "", fmt.Errorf("client: %s needs %s, which is %s",
 				operation.Name, argument.Name, argument.Type.String())
 		}
 	}

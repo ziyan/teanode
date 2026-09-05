@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/client"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // Signing in from a browser.
@@ -93,6 +95,7 @@ func newLoopback(ctx context.Context, serverUrl string) (*loopback, error) {
 	mux.HandleFunc("/callback", self.callback)
 	self.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
+		defer deferutil.Recover()
 		_ = self.server.Serve(listener)
 	}()
 	return self, nil

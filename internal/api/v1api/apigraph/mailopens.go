@@ -62,7 +62,7 @@ func (self *graph) GetMailOpens(ctx context.Context, arguments GetMailOpensArgum
 		return nil, err
 	}
 
-	mail, err := api.ContextTx(ctx).GetMail(arguments.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArg
 		return nil, nil
 	}
 
-	mails, err := api.ContextTx(ctx).GetMails(arguments.MailIDs, nil)
+	mails, err := api.ContextTransaction(ctx).GetMails(arguments.MailIDs, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -9,7 +9,11 @@ import (
 	"encoding/hex"
 	"io"
 	"strings"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("security") //nolint:unused
 
 const (
 	UpperAlpha        = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"

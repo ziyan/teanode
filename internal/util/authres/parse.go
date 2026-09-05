@@ -24,8 +24,8 @@ const (
 
 // Result is an authentication result.
 type Result interface {
-	parse(value ResultValue, params map[string]string)
-	format() (value ResultValue, params map[string]string)
+	parse(value ResultValue, parameters map[string]string)
+	format() (value ResultValue, parameters map[string]string)
 }
 
 type AuthResult struct {
@@ -34,14 +34,14 @@ type AuthResult struct {
 	Auth   string
 }
 
-func (r *AuthResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.Auth = params["smtp.auth"]
+func (self *AuthResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Auth = parameters["smtp.auth"]
 }
 
-func (r *AuthResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{"smtp.auth": r.Auth}
+func (self *AuthResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{"smtp.auth": self.Auth}
 }
 
 type DKIMResult struct {
@@ -51,18 +51,18 @@ type DKIMResult struct {
 	Identifier string
 }
 
-func (r *DKIMResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.Domain = params["header.d"]
-	r.Identifier = params["header.i"]
+func (self *DKIMResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Domain = parameters["header.d"]
+	self.Identifier = parameters["header.i"]
 }
 
-func (r *DKIMResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":   r.Reason,
-		"header.d": r.Domain,
-		"header.i": r.Identifier,
+func (self *DKIMResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":   self.Reason,
+		"header.d": self.Domain,
+		"header.i": self.Identifier,
 	}
 }
 
@@ -74,20 +74,20 @@ type DomainKeysResult struct {
 	Sender string
 }
 
-func (r *DomainKeysResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.Domain = params["header.d"]
-	r.From = params["header.from"]
-	r.Sender = params["header.sender"]
+func (self *DomainKeysResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.Domain = parameters["header.d"]
+	self.From = parameters["header.from"]
+	self.Sender = parameters["header.sender"]
 }
 
-func (r *DomainKeysResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":        r.Reason,
-		"header.d":      r.Domain,
-		"header.from":   r.From,
-		"header.sender": r.Sender,
+func (self *DomainKeysResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":        self.Reason,
+		"header.d":      self.Domain,
+		"header.from":   self.From,
+		"header.sender": self.Sender,
 	}
 }
 
@@ -97,16 +97,16 @@ type IPRevResult struct {
 	IP     string
 }
 
-func (r *IPRevResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.IP = params["policy.iprev"]
+func (self *IPRevResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.IP = parameters["policy.iprev"]
 }
 
-func (r *IPRevResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":       r.Reason,
-		"policy.iprev": r.IP,
+func (self *IPRevResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":       self.Reason,
+		"policy.iprev": self.IP,
 	}
 }
 
@@ -117,23 +117,23 @@ type SenderIDResult struct {
 	HeaderValue string
 }
 
-func (r *SenderIDResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
+func (self *SenderIDResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
 
-	for k, v := range params {
-		if strings.HasPrefix(k, "header.") {
-			r.HeaderKey = strings.TrimPrefix(k, "header.")
-			r.HeaderValue = v
+	for key, value := range parameters {
+		if strings.HasPrefix(key, "header.") {
+			self.HeaderKey = strings.TrimPrefix(key, "header.")
+			self.HeaderValue = value
 			break
 		}
 	}
 }
 
-func (r *SenderIDResult) format() (value ResultValue, params map[string]string) {
-	return r.Value, map[string]string{
-		"reason":                                 r.Reason,
-		"header." + strings.ToLower(r.HeaderKey): r.HeaderValue,
+func (self *SenderIDResult) format() (value ResultValue, parameters map[string]string) {
+	return self.Value, map[string]string{
+		"reason": self.Reason,
+		"header." + strings.ToLower(self.HeaderKey): self.HeaderValue,
 	}
 }
 
@@ -144,18 +144,18 @@ type SPFResult struct {
 	Helo   string
 }
 
-func (r *SPFResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.From = params["smtp.mailfrom"]
-	r.Helo = params["smtp.helo"]
+func (self *SPFResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.From = parameters["smtp.mailfrom"]
+	self.Helo = parameters["smtp.helo"]
 }
 
-func (r *SPFResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":        r.Reason,
-		"smtp.mailfrom": r.From,
-		"smtp.helo":     r.Helo,
+func (self *SPFResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":        self.Reason,
+		"smtp.mailfrom": self.From,
+		"smtp.helo":     self.Helo,
 	}
 }
 
@@ -165,16 +165,16 @@ type DMARCResult struct {
 	From   string
 }
 
-func (r *DMARCResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
-	r.From = params["header.from"]
+func (self *DMARCResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
+	self.From = parameters["header.from"]
 }
 
-func (r *DMARCResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason":      r.Reason,
-		"header.from": r.From,
+func (self *DMARCResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason":      self.Reason,
+		"header.from": self.From,
 	}
 }
 
@@ -183,30 +183,30 @@ type ARCResult struct {
 	Reason string
 }
 
-func (r *ARCResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Reason = params["reason"]
+func (self *ARCResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Reason = parameters["reason"]
 }
 
-func (r *ARCResult) format() (ResultValue, map[string]string) {
-	return r.Value, map[string]string{
-		"reason": r.Reason,
+func (self *ARCResult) format() (ResultValue, map[string]string) {
+	return self.Value, map[string]string{
+		"reason": self.Reason,
 	}
 }
 
 type GenericResult struct {
-	Method string
-	Value  ResultValue
-	Params map[string]string
+	Method     string
+	Value      ResultValue
+	Parameters map[string]string
 }
 
-func (r *GenericResult) parse(value ResultValue, params map[string]string) {
-	r.Value = value
-	r.Params = params
+func (self *GenericResult) parse(value ResultValue, parameters map[string]string) {
+	self.Value = value
+	self.Parameters = parameters
 }
 
-func (r *GenericResult) format() (ResultValue, map[string]string) {
-	return r.Value, r.Params
+func (self *GenericResult) format() (ResultValue, map[string]string) {
+	return self.Value, self.Parameters
 }
 
 type newResultFunc func() Result
@@ -240,27 +240,27 @@ var results = map[string]newResultFunc{
 
 // Parse parses the provided Authentication-Results header field. It returns the
 // authentication service identifier and authentication results.
-func Parse(v string) (identifier string, results []Result, err error) {
-	parts := strings.Split(v, ";")
+func Parse(field string) (identifier string, results []Result, err error) {
+	parts := strings.Split(field, ";")
 
 	identifier = strings.TrimSpace(parts[0])
-	i := strings.IndexFunc(identifier, unicode.IsSpace)
-	if i > 0 {
-		version := strings.TrimSpace(identifier[i:])
+	position := strings.IndexFunc(identifier, unicode.IsSpace)
+	if position > 0 {
+		version := strings.TrimSpace(identifier[position:])
 		if version != "1" {
-			return "", nil, errors.New("msgauth: unsupported version")
+			return "", nil, errors.New("authres: msgauth: unsupported version")
 		}
 
-		identifier = identifier[:i]
+		identifier = identifier[:position]
 	}
 
-	for i := 1; i < len(parts); i++ {
-		s := strings.TrimSpace(parts[i])
-		if s == "" {
+	for position := 1; position < len(parts); position++ {
+		segment := strings.TrimSpace(parts[position])
+		if segment == "" {
 			continue
 		}
 
-		result, err := parseResult(s)
+		result, err := parseResult(segment)
 		if err != nil {
 			return identifier, results, err
 		}
@@ -271,51 +271,51 @@ func Parse(v string) (identifier string, results []Result, err error) {
 	return
 }
 
-func parseResult(s string) (Result, error) {
+func parseResult(text string) (Result, error) {
 	// TODO: ignore header comments in parenthesis
 
-	parts := strings.Fields(s)
+	parts := strings.Fields(text)
 	if len(parts) == 0 || parts[0] == "none" {
 		return nil, nil
 	}
 
-	k, v, err := parseParam(parts[0])
+	methodName, methodValue, err := parseParameter(parts[0])
 	if err != nil {
 		return nil, err
 	}
-	method, value := k, ResultValue(strings.ToLower(v))
+	method, value := methodName, ResultValue(strings.ToLower(methodValue))
 
-	params := make(map[string]string)
-	for i := 1; i < len(parts); i++ {
-		k, v, err := parseParam(parts[i])
+	parameters := make(map[string]string)
+	for index := 1; index < len(parts); index++ {
+		key, parameterValue, err := parseParameter(parts[index])
 		if err != nil {
 			continue
 		}
 
-		params[k] = v
+		parameters[key] = parameterValue
 	}
 
 	newResult, ok := results[method]
 
-	var r Result
+	var result Result
 	if ok {
-		r = newResult()
+		result = newResult()
 	} else {
-		r = &GenericResult{
-			Method: method,
-			Value:  value,
-			Params: params,
+		result = &GenericResult{
+			Method:     method,
+			Value:      value,
+			Parameters: parameters,
 		}
 	}
 
-	r.parse(value, params)
-	return r, nil
+	result.parse(value, parameters)
+	return result, nil
 }
 
-func parseParam(s string) (k string, v string, err error) {
-	kv := strings.SplitN(s, "=", 2)
+func parseParameter(text string) (key string, value string, err error) {
+	kv := strings.SplitN(text, "=", 2)
 	if len(kv) != 2 {
-		return "", "", errors.New("msgauth: malformed authentication method and value")
+		return "", "", errors.New("authres: msgauth: malformed authentication method and value")
 	}
 	return strings.ToLower(strings.TrimSpace(kv[0])), strings.TrimSpace(kv[1]), nil
 }

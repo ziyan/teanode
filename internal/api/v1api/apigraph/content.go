@@ -150,7 +150,7 @@ func (self *graph) GetMailContent(ctx context.Context, arguments GetMailContentA
 		return nil, err
 	}
 
-	mail, err := api.ContextTx(ctx).GetMail(arguments.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -242,14 +242,14 @@ func renderContent(mailId string, headers []string, body []byte) (*MailContent, 
 			}
 		case "text/html":
 			if content.HTML == "" {
-				sanitized, hasRemote := sanitizeHTML(string(decoded))
+				sanitized, hasRemote := sanitizeHtml(string(decoded))
 				content.HTML = sanitized
 				content.HasRemoteContent = hasRemote
 			}
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("cannot read the message: %w", err)
+		return nil, fmt.Errorf("apigraph: cannot read the message: %w", err)
 	}
 
 	// An image the message brought with it is part of the message, so it is

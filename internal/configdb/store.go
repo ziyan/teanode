@@ -11,6 +11,8 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 var log = logging.MustGetLogger("configdb")
@@ -127,13 +129,32 @@ func (self *store) Reload() error {
 	}
 	configuration.Database = self.connection
 
-	self.mutex.Lock()
-	self.current = configuration
-	self.version = rows.Version
-	self.mutex.Unlock()
-
+	self.store(configuration, rows.Version)
 	self.notify(configuration)
 	return nil
+}
+
+// snapshot is the configuration this instance is serving, and the version it
+// was saved at, read together under the lock so the two cannot disagree.
+func (self *store) snapshot() (*config.Configuration, int64) {
+	self.mutex.RLock()
+	defer self.mutex.RUnlock()
+	return self.current, self.version
+}
+
+// store replaces the snapshot this instance is serving.
+//
+// A function of its own so the unlock can be deferred: the assignment cannot
+// panic today, but a lock released only by the line after it is a lock that
+// stays held the first time something between them can. The notify that
+// follows every call to this deliberately happens outside it — it calls
+// subscribers, and a subscriber that reads the configuration under a lock
+// this still held would deadlock.
+func (self *store) store(configuration *config.Configuration, version int64) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.current = configuration
+	self.version = version
 }
 
 // Update applies a change, and retries it against a fresh copy when another
@@ -145,9 +166,7 @@ func (self *store) Reload() error {
 // would be a guess.
 func (self *store) Update(mutate func(*config.Configuration) error) error {
 	for attempt := 0; ; attempt++ {
-		self.mutex.RLock()
-		base, version := self.current, self.version
-		self.mutex.RUnlock()
+		base, version := self.snapshot()
 
 		changed, err := config.Clone(base)
 		if err != nil {
@@ -178,10 +197,7 @@ func (self *store) Update(mutate func(*config.Configuration) error) error {
 
 		saved, err := self.database.SaveConfiguration(rows)
 		if err == nil {
-			self.mutex.Lock()
-			self.current = changed
-			self.version = saved
-			self.mutex.Unlock()
+			self.store(changed, saved)
 			self.notify(changed)
 			return nil
 		}
@@ -228,6 +244,7 @@ func (self *store) Close() error {
 // staleness — is not worth that. One indexed read every five seconds is
 // cheaper than the reconnection logic.
 func (self *store) watch() {
+	defer deferutil.Recover()
 	defer close(self.done)
 
 	ticker := time.NewTicker(pollInterval)
@@ -260,16 +277,26 @@ func (self *store) watch() {
 }
 
 func (self *store) notify(configuration *config.Configuration) {
+	for _, subscriber := range self.subscriberList() {
+		subscriber(configuration)
+	}
+}
+
+// subscriberList is a copy of the subscribers, taken under the lock.
+//
+// The copy is the point: a subscriber is somebody else's function and may do
+// anything, including reading the configuration, so calling one while holding
+// this lock is a deadlock waiting for the right subscriber. Taking the copy in
+// a function of its own lets the unlock be deferred, so a panic in the loop
+// below cannot leave the list locked for the life of the process.
+func (self *store) subscriberList() []func(*config.Configuration) {
 	self.subscribersMutex.Lock()
+	defer self.subscribersMutex.Unlock()
 	subscribers := make([]func(*config.Configuration), 0, len(self.subscribers))
 	for _, subscriber := range self.subscribers {
 		subscribers = append(subscribers, subscriber)
 	}
-	self.subscribersMutex.Unlock()
-
-	for _, subscriber := range subscribers {
-		subscriber(configuration)
-	}
+	return subscribers
 }
 
 // Load reads the stored configuration without judging it.

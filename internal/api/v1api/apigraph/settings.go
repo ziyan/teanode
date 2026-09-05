@@ -54,7 +54,7 @@ type Settings struct {
 
 	// The server itself, rather than the services it talks to. These live in
 	// settings_server.go, which says why they are a separate group.
-	Smtp     *SmtpSettings     `json:"smtp"`
+	SMTP     *SMTPSettings     `json:"smtp"`
 	Resolver *ResolverSettings `json:"resolver"`
 	Session  *SessionSettings  `json:"session"`
 	Passkey  *PasskeySettings  `json:"passkey"`
@@ -389,7 +389,7 @@ type UpdateSettingsArguments struct {
 	Certificates *CertificateParameters `json:"certificates"`
 
 	// The server itself: see settings_server.go.
-	Smtp     *SmtpParameters     `json:"smtp"`
+	SMTP     *SMTPParameters     `json:"smtp"`
 	Resolver *ResolverParameters `json:"resolver"`
 	Session  *SessionParameters  `json:"session"`
 	Passkey  *PasskeyParameters  `json:"passkey"`

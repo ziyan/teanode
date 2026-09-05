@@ -223,7 +223,7 @@ type TLS struct {
 
 // ACME configures automatic certificate issuance.
 type ACME struct {
-	deprecatedACME `yaml:",inline"`
+	deprecatedAcme `yaml:",inline"`
 
 	Enabled bool `yaml:"enabled"`
 
@@ -454,7 +454,7 @@ const (
 // DKIM holds the defaults applied to a domain's signing key when one is
 // created. The keys themselves are per domain, in domains[].dkim.
 type DKIM struct {
-	deprecatedDKIM `yaml:",inline"`
+	deprecatedDkim `yaml:",inline"`
 
 	// Selector to give a newly created domain's key. It appears in DNS as
 	// <selector>._domainkey.<domain>, so it only has to be unique within the

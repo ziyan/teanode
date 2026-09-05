@@ -67,7 +67,7 @@ type memoryStore struct {
 
 	subscribersMutex sync.Mutex
 	subscribers      map[uint64]func(*Configuration)
-	nextSubscriberID uint64
+	nextSubscriberId uint64
 }
 
 // NewMemoryStore returns a store that keeps the configuration in memory and
@@ -156,8 +156,8 @@ func (self *memoryStore) Subscribe(subscriber func(*Configuration)) func() {
 	self.subscribersMutex.Lock()
 	defer self.subscribersMutex.Unlock()
 
-	self.nextSubscriberID++
-	id := self.nextSubscriberID
+	self.nextSubscriberId++
+	id := self.nextSubscriberId
 	self.subscribers[id] = subscriber
 
 	return func() {

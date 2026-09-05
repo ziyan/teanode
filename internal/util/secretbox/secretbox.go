@@ -38,7 +38,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("secretbox") //nolint:unused
 
 // keySize is 32 bytes, which makes it AES-256. The nonce is whatever GCM asks
 // for, which is 12.

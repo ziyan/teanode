@@ -36,11 +36,11 @@ var (
 	// ErrInvalidAccount is returned when a proposed account would not work.
 	// Its message reaches the browser, so it is written for a person rather
 	// than carrying the usual package prefix.
-	ErrInvalidAccount = errors.New("that account will not work")
+	ErrInvalidAccount = errors.New("web: that account will not work")
 
 	// ErrAccountExists is returned when the first-run setup is attempted on a
 	// server that already has an account.
-	ErrAccountExists = errors.New("this server already has an account; sign in instead")
+	ErrAccountExists = errors.New("web: this server already has an account; sign in instead")
 
 	ErrSessionExpired = errors.New("web: session expired")
 	ErrSessionInvalid = errors.New("web: session is not valid")
@@ -215,7 +215,7 @@ func (self *authenticator) authenticate(request *http.Request) (string, string, 
 
 	// A session for an account that has since been removed stops working
 	// immediately, without waiting for the row to expire.
-	user := self.findUserByID(session.UserID)
+	user := self.findUserById(session.UserID)
 	if user == nil {
 		return "", "", false
 	}
@@ -303,7 +303,7 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 	}
 	// A token acts as the account it belongs to, so removing the account
 	// takes its tokens with it.
-	user := self.findUserByID(token.UserID)
+	user := self.findUserById(token.UserID)
 	if user == nil {
 		return "", false
 	}
@@ -533,10 +533,10 @@ func (self *authenticator) findUser(username string) *config.User {
 	return nil
 }
 
-// findUserByID is how a stored session or token names its account. The
+// findUserById is how a stored session or token names its account. The
 // identifier is what is stored, because a username can be changed and a
 // session must not be ended by its owner renaming themselves.
-func (self *authenticator) findUserByID(userId string) *config.User {
+func (self *authenticator) findUserById(userId string) *config.User {
 	if userId == "" {
 		return nil
 	}

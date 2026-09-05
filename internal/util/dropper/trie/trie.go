@@ -31,7 +31,11 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/util/deferutil"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("trie") //nolint:unused
 
 type Entry interface {
 	Network() net.IPNet
@@ -186,7 +190,7 @@ func (self *trie) contains(number networkNumber) (bool, error) {
 	if self.targetBitPosition() < 0 {
 		return false, nil
 	}
-	bit, err := self.targetBitFromIP(number)
+	bit, err := self.targetBitFromIp(number)
 	if err != nil {
 		return false, err
 	}
@@ -208,7 +212,7 @@ func (self *trie) containingNetworks(number networkNumber) ([]Entry, error) {
 	if self.targetBitPosition() < 0 {
 		return results, nil
 	}
-	bit, err := self.targetBitFromIP(number)
+	bit, err := self.targetBitFromIp(number)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +240,7 @@ func (self *trie) coveredNetworks(network network) ([]Entry, error) {
 			results = append(results, entry)
 		}
 	} else if self.targetBitPosition() >= 0 {
-		bit, err := self.targetBitFromIP(network.number)
+		bit, err := self.targetBitFromIp(network.number)
 		if err != nil {
 			return results, err
 		}
@@ -255,7 +259,7 @@ func (self *trie) insert(network network, entry Entry) (bool, error) {
 		return sizeIncreased, nil
 	}
 
-	bit, err := self.targetBitFromIP(network.number)
+	bit, err := self.targetBitFromIp(network.number)
 	if err != nil {
 		return false, err
 	}
@@ -297,7 +301,7 @@ func (self *trie) insertPrefix(bit uint32, pathPrefix, child *trie) error {
 	pathPrefix.parent = self
 
 	// Set parent/child relationship between inserted pathPrefix and original child
-	pathPrefixBit, err := pathPrefix.targetBitFromIP(child.network.number)
+	pathPrefixBit, err := pathPrefix.targetBitFromIp(child.network.number)
 	if err != nil {
 		return err
 	}
@@ -320,7 +324,7 @@ func (self *trie) remove(network network) (Entry, error) {
 	if self.targetBitPosition() < 0 {
 		return nil, nil
 	}
-	bit, err := self.targetBitFromIP(network.number)
+	bit, err := self.targetBitFromIp(network.number)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +362,7 @@ func (self *trie) compressPathIfPossible() error {
 	parent := self.parent
 	for ; parent.qualifiesForPathCompression(); parent = parent.parent {
 	}
-	parentBit, err := parent.targetBitFromIP(self.network.number)
+	parentBit, err := parent.targetBitFromIp(self.network.number)
 	if err != nil {
 		return err
 	}
@@ -387,7 +391,7 @@ func (self *trie) targetBitPosition() int {
 	return int(self.totalNumberOfBits()-self.bitsSkipped) - 1
 }
 
-func (self *trie) targetBitFromIP(n networkNumber) (uint32, error) {
+func (self *trie) targetBitFromIp(n networkNumber) (uint32, error) {
 	// This is a safe uint boxing of int since we should never attempt to get
 	// target bit at a negative position.
 	return n.Bit(uint(self.targetBitPosition()))

@@ -30,7 +30,7 @@ type Challenge struct {
 // Solver proves to a certificate authority that this server controls a name.
 //
 // The three implementations differ in what the operator must have available:
-// http01Solver needs port 80 reachable from the internet, tlsALPN01Solver
+// http01Solver needs port 80 reachable from the internet, tlsAlpn01Solver
 // needs port 443, and route53Solver needs AWS credentials for the hosted zone
 // but is the only one that can obtain a wildcard certificate.
 //

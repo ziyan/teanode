@@ -416,7 +416,7 @@ func readStagedFile(directory, name string) (string, error) {
 	}
 	value := strings.TrimSpace(string(content))
 	if value == "" {
-		return "", fmt.Errorf("%s is empty", filepath.Join(directory, name))
+		return "", fmt.Errorf("upgrade: %s is empty", filepath.Join(directory, name))
 	}
 	return value, nil
 }

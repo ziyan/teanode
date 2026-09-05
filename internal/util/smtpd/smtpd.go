@@ -31,7 +31,7 @@ type HandleFunc func(ctx context.Context, envelope *mailparse.Envelope) error
 
 type Resolver interface {
 	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
-	LookupAddr(ctx context.Context, addr string) ([]string, error)
+	LookupAddr(ctx context.Context, address string) ([]string, error)
 }
 
 type Settings struct {
@@ -263,7 +263,7 @@ func (self *session) serve() error {
 		// Attempt to read a line from the socket.
 		// On timeout, send a timeout message and return from serve().
 		// On error, assume the client has gone away i.e. return from serve().
-		verb, args, err := self.readCommand()
+		verb, arguments, err := self.readCommand()
 		if err != nil {
 			if err != io.EOF {
 				_ = self.writeLines(421, "4.3.0", "Error")
@@ -274,21 +274,21 @@ func (self *session) serve() error {
 		case "QUIT":
 			err = self.handleQuit()
 		case "STARTTLS":
-			err = self.handleStartTLS(args)
+			err = self.handleStartTls(arguments)
 		case "HELO":
-			err = self.handleHelo(args)
+			err = self.handleHelo(arguments)
 		case "EHLO":
-			err = self.handleEhlo(args)
+			err = self.handleEhlo(arguments)
 		case "AUTH":
 			if self.outgoing {
-				err = self.handleAuth(args)
+				err = self.handleAuth(arguments)
 			} else {
 				err = self.writeLines(502, "5.5.1", "Command not implemented")
 			}
 		case "MAIL":
-			err = self.handleMail(args)
+			err = self.handleMail(arguments)
 		case "RCPT":
-			err = self.handleRcpt(args)
+			err = self.handleRcpt(arguments)
 		case "DATA":
 			err = self.handleData()
 		case "RSET":
@@ -321,9 +321,9 @@ func (self *session) handleQuit() error {
 	return io.EOF // close the connection
 }
 
-func (self *session) checkHello(args string) error {
+func (self *session) checkHello(arguments string) error {
 	var hello string
-	if parts := strings.Fields(args); len(parts) > 0 {
+	if parts := strings.Fields(arguments); len(parts) > 0 {
 		hello = parts[0]
 	}
 	if hello == "" {
@@ -337,21 +337,21 @@ func (self *session) checkHello(args string) error {
 	return nil
 }
 
-func (self *session) handleHelo(args string) error {
+func (self *session) handleHelo(arguments string) error {
 	// RFC 2821 section 4.1.4 specifies that EHLO has the same effect as RSET, so reset for HELO too.
 	self.logout()
 
-	if err := self.checkHello(args); err != nil {
+	if err := self.checkHello(arguments); err != nil {
 		return err
 	}
 	return self.writeLines(250, "2.0.0", self.settings.Greeting)
 }
 
-func (self *session) handleEhlo(args string) error {
+func (self *session) handleEhlo(arguments string) error {
 	// RFC 2821 section 4.1.4 specifies that EHLO has the same effect as RSET.
 	self.logout()
 
-	if err := self.checkHello(args); err != nil {
+	if err := self.checkHello(arguments); err != nil {
 		return err
 	}
 	lines := []string{
@@ -371,7 +371,7 @@ func (self *session) handleEhlo(args string) error {
 	// nowhere the operator will look. A server with no certificate yet — the
 	// first fifteen minutes of a new deployment, before ACME finishes — should
 	// simply say it cannot do TLS, and let the sender decide.
-	if self.tls == nil && self.canStartTLS() {
+	if self.tls == nil && self.canStartTls() {
 		lines = append(lines, "STARTTLS")
 	}
 	if self.tls != nil && self.outgoing {
@@ -380,10 +380,10 @@ func (self *session) handleEhlo(args string) error {
 	return self.writeLines(250, "", lines...)
 }
 
-// canStartTLS reports whether a handshake would have a certificate to offer.
+// canStartTls reports whether a handshake would have a certificate to offer.
 // The question is asked of the same source the handshake would use, so the
 // answer cannot drift from it.
-func (self *session) canStartTLS() bool {
+func (self *session) canStartTls() bool {
 	configuration := self.settings.TLSConfig
 	if configuration == nil {
 		return false
@@ -402,7 +402,7 @@ func (self *session) canStartTLS() bool {
 	return err == nil && certificate != nil
 }
 
-func (self *session) handleMail(args string) error {
+func (self *session) handleMail(arguments string) error {
 	self.reset()
 
 	if self.hello == "" {
@@ -413,10 +413,10 @@ func (self *session) handleMail(args string) error {
 		return self.writeLines(503, "5.5.1", "Bad sequence of commands")
 	}
 
-	if !strings.HasPrefix(strings.ToUpper(args), "FROM:") {
+	if !strings.HasPrefix(strings.ToUpper(arguments), "FROM:") {
 		return self.writeLines(501, "5.5.2", "Syntax error")
 	}
-	fields := strings.Fields(args[len("FROM:"):])
+	fields := strings.Fields(arguments[len("FROM:"):])
 	if len(fields) == 0 || !strings.HasPrefix(fields[0], "<") || !strings.HasSuffix(fields[0], ">") {
 		return self.writeLines(501, "5.5.2", "Syntax error")
 	}
@@ -432,14 +432,14 @@ func (self *session) handleMail(args string) error {
 	return self.writeLines(250, "2.0.0", "OK")
 }
 
-func (self *session) handleRcpt(args string) error {
+func (self *session) handleRcpt(arguments string) error {
 	if self.hello == "" || self.sender == nil {
 		return self.writeLines(503, "5.5.1", "Bad sequence of commands")
 	}
-	if !strings.HasPrefix(strings.ToUpper(args), "TO:") {
+	if !strings.HasPrefix(strings.ToUpper(arguments), "TO:") {
 		return self.writeLines(501, "5.5.2", "Syntax error")
 	}
-	fields := strings.Fields(args[len("TO:"):])
+	fields := strings.Fields(arguments[len("TO:"):])
 	if len(fields) == 0 || !strings.HasPrefix(fields[0], "<") || !strings.HasSuffix(fields[0], ">") {
 		return self.writeLines(501, "5.5.2", "Syntax error")
 	}
@@ -561,11 +561,11 @@ func (self *session) handleRset() error {
 	return self.writeLines(250, "2.0.0", "OK")
 }
 
-func (self *session) handleStartTLS(args string) error {
+func (self *session) handleStartTls(arguments string) error {
 	self.logout()
 
 	// Parameters are not allowed (RFC 3207 section 4).
-	if args != "" {
+	if arguments != "" {
 		return self.writeLines(501, "5.5.2", "Syntax error")
 	}
 
@@ -577,7 +577,7 @@ func (self *session) handleStartTLS(args string) error {
 	// A client may try it even though the greeting did not offer it. Saying so
 	// is better than saying "Ready" and then failing the handshake, which
 	// leaves the sender to guess whether to retry in the clear.
-	if !self.canStartTLS() {
+	if !self.canStartTls() {
 		return self.writeLines(454, "4.7.0", "TLS not available at the moment")
 	}
 
@@ -610,7 +610,7 @@ func (self *session) handleStartTLS(args string) error {
 	return nil
 }
 
-func (self *session) handleAuth(args string) error {
+func (self *session) handleAuth(arguments string) error {
 	self.reset()
 
 	if !self.outgoing || self.tls == nil || self.hello == "" {
@@ -624,7 +624,7 @@ func (self *session) handleAuth(args string) error {
 		return self.writeLines(454, "4.7.0", "Too many authentication attempts, try again later")
 	}
 
-	parts := strings.Fields(args)
+	parts := strings.Fields(arguments)
 	if len(parts) == 0 {
 		return self.writeLines(502, "5.5.4", "Missing parameters")
 	}
@@ -713,16 +713,16 @@ func (self *session) readCommand() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	var verb, args string
+	var verb, arguments string
 	if index := strings.Index(line, " "); index >= 0 {
 		verb = strings.ToUpper(line[:index])
-		args = strings.TrimSpace(line[index+len(" "):])
+		arguments = strings.TrimSpace(line[index+len(" "):])
 	} else {
 		verb = strings.ToUpper(line)
-		args = ""
+		arguments = ""
 	}
-	log.Debugf("%s: received: %s %s", self, verb, args)
-	return verb, args, nil
+	log.Debugf("%s: received: %s %s", self, verb, arguments)
+	return verb, arguments, nil
 }
 
 // Read the message data following a DATA command.

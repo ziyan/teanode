@@ -59,7 +59,7 @@ var allowedAttributes = map[string]bool{
 // should not be shipped to the browser to be refused.
 var cssThreats = []string{"expression(", "javascript:", "behavior:", "-moz-binding", "@import"}
 
-// sanitizeHTML makes a message body safe to render, and reports whether it
+// sanitizeHtml makes a message body safe to render, and reports whether it
 // referred to remote content.
 //
 // Three things are being prevented. Script execution, by removing the elements
@@ -70,7 +70,7 @@ var cssThreats = []string{"expression(", "javascript:", "behavior:", "-moz-bindi
 //
 // The result is still rendered inside a sandboxed frame by the dashboard. This
 // is the inner of two layers, not the only one.
-func sanitizeHTML(input string) (string, bool) {
+func sanitizeHtml(input string) (string, bool) {
 	var hasRemoteContent bool
 	var hasRemoteStyle bool
 
@@ -90,7 +90,7 @@ func sanitizeHTML(input string) (string, bool) {
 	// that composes HTML for a living puts its layout here and refers to it
 	// by class; dropping it leaves the classes pointing at nothing.
 	document.Find("style").Each(func(_ int, selection *goquery.Selection) {
-		cleaned, remote := sanitizeCSS(selection.Text())
+		cleaned, remote := sanitizeCss(selection.Text())
 		if remote {
 			hasRemoteStyle = true
 		}
@@ -121,22 +121,22 @@ func sanitizeHTML(input string) (string, bool) {
 			case "src":
 				// Remote images are the tracking pixel problem. Embedded ones
 				// referenced by cid: are part of the message itself.
-				if isRemoteURL(value) {
+				if isRemoteUrl(value) {
 					hasRemoteContent = true
 					kept = append(kept,
 						attribute{Key: "data-blocked-src", Val: value},
 						attribute{Key: "src", Val: blockedPlaceholder})
 					continue
 				}
-				if !isSafeURL(value) {
+				if !isSafeUrl(value) {
 					continue
 				}
 			case "href":
-				if !isSafeURL(value) {
+				if !isSafeUrl(value) {
 					continue
 				}
 			case "style":
-				cleaned, remote := sanitizeCSS(value)
+				cleaned, remote := sanitizeCss(value)
 				if remote {
 					hasRemoteContent = true
 				}
@@ -178,9 +178,9 @@ func sanitizeHTML(input string) (string, bool) {
 	return rendered, hasRemoteContent || hasRemoteStyle
 }
 
-// isSafeURL rejects anything that is not an ordinary link. javascript: and
+// isSafeUrl rejects anything that is not an ordinary link. javascript: and
 // data: are the two that execute or impersonate.
-func isSafeURL(value string) bool {
+func isSafeUrl(value string) bool {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	// Control characters are stripped by parsers in inconsistent ways and are
 	// a classic way to smuggle a scheme past a check.
@@ -199,14 +199,14 @@ func isSafeURL(value string) bool {
 	return true
 }
 
-func isRemoteURL(value string) bool {
+func isRemoteUrl(value string) bool {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	return strings.HasPrefix(trimmed, "http://") ||
 		strings.HasPrefix(trimmed, "https://") ||
 		strings.HasPrefix(trimmed, "//")
 }
 
-// sanitizeCSS removes the constructs in cssThreats, and reports whether what
+// sanitizeCss removes the constructs in cssThreats, and reports whether what
 // is left refers to something remote.
 //
 // Declaration by declaration rather than by parsing the sheet: a CSS parser is
@@ -214,7 +214,7 @@ func isRemoteURL(value string) bool {
 // enough to answer by looking. Anything unrecognised is kept — CSS a browser
 // does not understand is ignored by the browser, so the failure mode of being
 // too permissive about properties is a rule that does nothing.
-func sanitizeCSS(input string) (string, bool) {
+func sanitizeCss(input string) (string, bool) {
 	if input == "" {
 		return "", false
 	}

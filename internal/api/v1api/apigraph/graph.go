@@ -31,7 +31,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		ctx = api.ContextWithRequest(ctx, request)
 		// Logging in and out set a cookie, which is a response header.
 		ctx = api.ContextWithResponse(ctx, response)
-		ctx = api.ContextWithTx(ctx, tx)
+		ctx = api.ContextWithTransaction(ctx, tx)
 
 		// TODO: rate limit
 

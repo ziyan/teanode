@@ -31,7 +31,11 @@ import (
 	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/web"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("v1api") //nolint:unused
 
 type v1 struct {
 	components []web.Component

@@ -92,7 +92,7 @@ func (self *graph) CountMailsBy(ctx context.Context, arguments CountMailsByArgum
 		return []*Facet{}, nil
 	}
 
-	counted, err := api.ContextTx(ctx).CountMailsBy(domainIds, arguments.Field,
+	counted, err := api.ContextTransaction(ctx).CountMailsBy(domainIds, arguments.Field,
 		&db.Options{Aggregations: arguments.Aggregations, Columns: mailColumns})
 	if err != nil {
 		return nil, err
@@ -126,7 +126,7 @@ func (self *graph) ListMails(ctx context.Context, arguments ListMailsArguments) 
 
 	var mails []*models.Mail
 	for _, domainId := range domainIds {
-		listed, err := api.ContextTx(ctx).ListMails(domainId, arguments.OptionsWith(arguments.Aggregations, mailColumns))
+		listed, err := api.ContextTransaction(ctx).ListMails(domainId, arguments.OptionsWith(arguments.Aggregations, mailColumns))
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func (self *graph) ListMails(ctx context.Context, arguments ListMailsArguments) 
 	for _, mail := range mails {
 		mailIds = append(mailIds, mail.ID)
 	}
-	deliveries, err := api.ContextTx(ctx).ListDeliveries(mailIds, nil)
+	deliveries, err := api.ContextTransaction(ctx).ListDeliveries(mailIds, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (self *graph) GetMail(ctx context.Context, arguments GetMailArguments) (*mo
 		return nil, err
 	}
 
-	mail, err := api.ContextTx(ctx).GetMail(arguments.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
