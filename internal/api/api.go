@@ -15,7 +15,11 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/aggregate"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("api") //nolint:unused
 
 var (
 	ErrNotLoggedIn       = errors.New("not logged in")

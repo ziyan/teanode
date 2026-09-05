@@ -11,7 +11,11 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/security"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("dbtest") //nolint:unused
 
 func closeDatabase(d *gorm.DB) error {
 	sqlDb, err := d.DB()

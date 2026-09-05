@@ -14,7 +14,11 @@ package aggregate
 import (
 	"fmt"
 	"strings"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("aggregate") //nolint:unused
 
 // Operation is the operator of a filter node.
 type Operation string

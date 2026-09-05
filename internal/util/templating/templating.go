@@ -8,7 +8,11 @@ import (
 	"github.com/flosch/pongo2/v4"
 
 	"github.com/ziyan/teanode/internal/util/bufferpool"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("templating") //nolint:unused
 
 type templateMap map[string]io.Reader
 

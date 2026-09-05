@@ -20,7 +20,7 @@ import (
 	"github.com/ziyan/teanode/internal/util/connctx"
 )
 
-var log = logging.MustGetLogger("smtpd")
+var log = logging.MustGetLogger("smtpc")
 
 // TLSMode says how much this client insists on encryption, and whether it
 // checks who it is talking to.

@@ -4,7 +4,11 @@ package resolver
 import (
 	"context"
 	"net"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("resolver") //nolint:unused
 
 type Resolver interface {
 	LookupTXT(ctx context.Context, name string) ([]string, error)

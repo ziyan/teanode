@@ -7,7 +7,11 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("migrations") //nolint:unused
 
 //go:embed *.sql
 var migrationFiles embed.FS

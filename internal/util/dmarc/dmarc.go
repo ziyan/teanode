@@ -3,7 +3,11 @@ package dmarc
 
 import (
 	"time"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("dmarc") //nolint:unused
 
 type AlignmentMode string
 

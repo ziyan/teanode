@@ -18,7 +18,11 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("testmail") //nolint:unused
 
 // Key returns an RSA key for signing. Each call generates a fresh one: tests
 // that need the same key twice should hold on to it.

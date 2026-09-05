@@ -4,7 +4,11 @@ package bufferpool
 import (
 	"bytes"
 	"sync"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("bufferpool") //nolint:unused
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {

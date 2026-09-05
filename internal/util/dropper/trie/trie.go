@@ -31,7 +31,11 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/util/deferutil"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("trie") //nolint:unused
 
 type Entry interface {
 	Network() net.IPNet
