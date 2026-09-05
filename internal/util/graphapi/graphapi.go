@@ -174,8 +174,8 @@ func (self *graphApi) register(root *graphql.Object, queryMutationSubscription i
 	}
 	interfaceValue := reflect.ValueOf(queryMutationSubscription).Elem()
 	interfaceType := reflect.TypeOf(queryMutationSubscription).Elem()
-	for i := 0; i < interfaceType.NumMethod(); i++ {
-		method := interfaceType.Method(i)
+	for index := 0; index < interfaceType.NumMethod(); index++ {
+		method := interfaceType.Method(index)
 		methodValue := interfaceValue.MethodByName(method.Name)
 		field, err := self.buildMethodField(interfaceType, method, methodValue, isSubscription)
 		if err != nil {
@@ -223,8 +223,8 @@ func (self *graphApi) buildMethodArguments(method reflect.Method) (graphql.Field
 	}
 	argumentType := methodType.In(1)
 	arguments := make(graphql.FieldConfigArgument)
-	for i := 0; i < argumentType.NumField(); i++ {
-		field := argumentType.Field(i)
+	for index := 0; index < argumentType.NumField(); index++ {
+		field := argumentType.Field(index)
 		fieldName := strings.SplitN(field.Tag.Get("graphql"), ",", 2)[0]
 		if fieldName == "" {
 			fieldName = strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
@@ -287,13 +287,13 @@ func (self *graphApi) callMethod(methodValue reflect.Value, argumentType reflect
 	argumentValues = append(argumentValues, reflect.ValueOf(ctx))
 	if argumentType != nil {
 		argumentValue := reflect.New(argumentType).Elem()
-		for i := 0; i < argumentType.NumField(); i++ {
-			field := argumentType.Field(i)
+		for index := 0; index < argumentType.NumField(); index++ {
+			field := argumentType.Field(index)
 			fieldName := strings.SplitN(field.Tag.Get("graphql"), ",", 2)[0]
 			if fieldName == "" {
 				fieldName = strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
 			}
-			fieldValue := argumentValue.Field(i)
+			fieldValue := argumentValue.Field(index)
 			fieldValue.Set(self.coerceInputValue(resolveParameters.Args[fieldName], field.Type))
 		}
 		argumentValues = append(argumentValues, argumentValue)
@@ -390,8 +390,8 @@ func (self *graphApi) translateOutputType(modelType reflect.Type) graphql.Type {
 			Description: commentparse.GetStructComment(modelType.PkgPath(), modelType.Name()),
 		})
 		self.outputTypes[modelType] = outputType
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
 			if field.Anonymous {
 				continue
 			}
@@ -453,8 +453,8 @@ func (self *graphApi) translateInputType(modelType reflect.Type, defaultNullable
 			Description: commentparse.GetStructComment(modelType.PkgPath(), modelType.Name()),
 		})
 		self.inputTypes[modelType] = inputType
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
 			if field.Anonymous {
 				continue
 			}
@@ -507,16 +507,16 @@ func (self *graphApi) coerceInputValue(raw interface{}, modelType reflect.Type) 
 	if modelType.Kind() == reflect.Slice {
 		rawValue := reflect.ValueOf(raw)
 		value := reflect.MakeSlice(modelType, 0, rawValue.Len())
-		for i := 0; i < rawValue.Len(); i++ {
-			value = reflect.Append(value, self.coerceInputValue(rawValue.Index(i).Interface(), modelType.Elem()))
+		for index := 0; index < rawValue.Len(); index++ {
+			value = reflect.Append(value, self.coerceInputValue(rawValue.Index(index).Interface(), modelType.Elem()))
 		}
 		return value
 	}
 	if modelType.Kind() == reflect.Array {
 		rawValue := reflect.ValueOf(raw)
 		value := reflect.New(modelType).Elem()
-		for i := 0; i < rawValue.Len(); i++ {
-			value.Index(i).Set(self.coerceInputValue(rawValue.Index(i).Interface(), modelType.Elem()))
+		for index := 0; index < rawValue.Len(); index++ {
+			value.Index(index).Set(self.coerceInputValue(rawValue.Index(index).Interface(), modelType.Elem()))
 		}
 		return value
 	}
@@ -527,9 +527,9 @@ func (self *graphApi) coerceInputValue(raw interface{}, modelType reflect.Type) 
 	if _, ok := self.inputTypes[modelType]; ok {
 		rawMap := raw.(map[string]interface{})
 		valuePointer := reflect.New(modelType)
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
-			value := valuePointer.Elem().Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
+			value := valuePointer.Elem().Field(index)
 			if field.Anonymous {
 				continue
 			}

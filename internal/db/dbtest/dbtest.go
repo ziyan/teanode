@@ -17,8 +17,8 @@ import (
 
 var log = logging.MustGetLogger("dbtest") //nolint:unused
 
-func closeDatabase(d *gorm.DB) error {
-	sqlDb, err := d.DB()
+func closeDatabase(database *gorm.DB) error {
+	sqlDb, err := database.DB()
 	if err != nil {
 		return err
 	}
@@ -27,14 +27,14 @@ func closeDatabase(d *gorm.DB) error {
 
 func createDatabase(settings *db.Settings) error {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable", settings.Host, settings.Port, settings.User, settings.Password)
-	d, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
 	}
-	if err := d.Exec(fmt.Sprintf("CREATE DATABASE %q", settings.DBName)).Error; err != nil {
+	if err := database.Exec(fmt.Sprintf("CREATE DATABASE %q", settings.DBName)).Error; err != nil {
 		return err
 	}
-	if err := closeDatabase(d); err != nil {
+	if err := closeDatabase(database); err != nil {
 		return err
 	}
 	return nil
@@ -42,26 +42,26 @@ func createDatabase(settings *db.Settings) error {
 
 func dropDatabase(settings *db.Settings) error {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable", settings.Host, settings.Port, settings.User, settings.Password)
-	d, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
 	}
-	if err := d.Exec(fmt.Sprintf("DROP DATABASE %q", settings.DBName)).Error; err != nil {
+	if err := database.Exec(fmt.Sprintf("DROP DATABASE %q", settings.DBName)).Error; err != nil {
 		return err
 	}
-	if err := closeDatabase(d); err != nil {
+	if err := closeDatabase(database); err != nil {
 		return err
 	}
 	return nil
 }
 
 // AcquireDatabase acquires a db.Database for testing.
-func AcquireDatabase(t *testing.T) (db.Database, func()) {
-	t.Helper()
+func AcquireDatabase(test *testing.T) (db.Database, func()) {
+	test.Helper()
 
 	host := os.Getenv("TEANODE_TEST_DATABASE_HOST")
 	if host == "" {
-		t.Skipf("environment variable TEANODE_TEST_DATABASE_HOST is not set, skipping tests that require database")
+		test.Skipf("environment variable TEANODE_TEST_DATABASE_HOST is not set, skipping tests that require database")
 	}
 	settings := &db.Settings{
 		Host:      host,
@@ -72,37 +72,37 @@ func AcquireDatabase(t *testing.T) (db.Database, func()) {
 		BackendID: "test1",
 	}
 	if err := createDatabase(settings); err != nil {
-		t.Fatalf("failed to create database: %s", err)
+		test.Fatalf("failed to create database: %s", err)
 	}
 	database, err := db.Open(settings)
 	if err != nil {
-		t.Fatalf("failed to open test database: %s", err)
+		test.Fatalf("failed to open test database: %s", err)
 	}
 	if err := database.Migrate(); err != nil {
-		t.Fatalf("failed to migrate database: %s", err)
+		test.Fatalf("failed to migrate database: %s", err)
 	}
 	return database, func() {
 		if err := database.Close(); err != nil {
-			t.Fatalf("failed to close database: %s", err)
+			test.Fatalf("failed to close database: %s", err)
 		}
 		if err := dropDatabase(settings); err != nil {
-			t.Fatalf("failed to drop database: %s", err)
+			test.Fatalf("failed to drop database: %s", err)
 		}
 	}
 }
 
 // RunTransaction runs a db.Transaction for testing.
-func RunTransaction(t *testing.T, f func(db.Transaction)) {
-	t.Helper()
+func RunTransaction(test *testing.T, run func(db.Transaction)) {
+	test.Helper()
 
-	database, releaseDatabase := AcquireDatabase(t)
+	database, releaseDatabase := AcquireDatabase(test)
 	defer releaseDatabase()
 
 	if err := database.Transaction(func(tx db.Transaction) error {
-		f(tx)
+		run(tx)
 		return nil
 	}); err != nil {
-		t.Fatalf("failed to run transaction: %s", err)
+		test.Fatalf("failed to run transaction: %s", err)
 	}
 }
 
@@ -113,12 +113,12 @@ func RunTransaction(t *testing.T, f func(db.Transaction)) {
 // Through SaveConfiguration because that is the only writer of the table: the
 // accounts are part of the configuration, and a test inserting behind its back
 // would be testing a schema nothing else writes.
-func CreateUser(t *testing.T, database db.Database, username string) string {
-	t.Helper()
+func CreateUser(test *testing.T, database db.Database, username string) string {
+	test.Helper()
 
 	rows, err := database.LoadConfiguration()
 	if err != nil {
-		t.Fatalf("failed to load the configuration: %s", err)
+		test.Fatalf("failed to load the configuration: %s", err)
 	}
 	id := security.NewULID()
 	rows.Users = append(rows.Users, &db.UserRow{
@@ -127,7 +127,7 @@ func CreateUser(t *testing.T, database db.Database, username string) string {
 		PasswordHash: "$2a$12$notarealhashbutthecolumnisnotnull.....................",
 	})
 	if _, err := database.SaveConfiguration(rows); err != nil {
-		t.Fatalf("failed to store the account %q: %s", username, err)
+		test.Fatalf("failed to store the account %q: %s", username, err)
 	}
 	return id
 }
