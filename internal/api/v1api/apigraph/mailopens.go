@@ -118,6 +118,25 @@ type ListMailOpensArguments struct {
 // A message with nothing to fetch is still in the answer, with trackable
 // false, because "no picture in it" and "not fetched" are different things and
 // the list has to be able to tell them apart.
+// envelopeIdentifiers is the envelope of each mail that exists.
+//
+// The nil check is the point. GetMails answers positionally — one entry per
+// identifier asked for, nil in the place of any that names no mail — and the
+// identifiers come from a page somebody is looking at, so retention deleting
+// a message underneath it is the ordinary case rather than an impossible one.
+// Dereferencing that nil panicked the resolver every time a listed message
+// was pruned while the list was open.
+func envelopeIdentifiers(mails []*models.Mail) []string {
+	identifiers := make([]string, 0, len(mails))
+	for _, mail := range mails {
+		if mail == nil || mail.EnvelopeID == "" {
+			continue
+		}
+		identifiers = append(identifiers, mail.EnvelopeID)
+	}
+	return identifiers
+}
+
 func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArguments) ([]*MailOpens, error) {
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
@@ -131,12 +150,7 @@ func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArg
 		return nil, err
 	}
 
-	envelopeIds := make([]string, 0, len(mails))
-	for _, mail := range mails {
-		if mail.EnvelopeID != "" {
-			envelopeIds = append(envelopeIds, mail.EnvelopeID)
-		}
-	}
+	envelopeIds := envelopeIdentifiers(mails)
 	links, err := self.database.ListMediaLinksForEnvelopes(envelopeIds)
 	if err != nil {
 		return nil, err

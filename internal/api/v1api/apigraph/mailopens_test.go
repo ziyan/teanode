@@ -101,3 +101,33 @@ func TestOneFetchedPictureIsEnough(t *testing.T) {
 		t.Errorf("got %+v, want one fetch", opens)
 	}
 }
+
+// A message on the page that has since been deleted.
+//
+// GetMails answers positionally, so an identifier that names nothing comes
+// back as a nil in the slice rather than as a shorter slice. The dashboard
+// asks about the messages it last drew, and retention deletes underneath it,
+// so this arrives in the ordinary course of a server running — it panicked
+// the resolver, and the panic was recovered into a failed request that came
+// back every time the list was open as the retention sweep ran.
+func TestAMailDeletedWhileTheListWasOpen(t *testing.T) {
+	t.Parallel()
+
+	identifiers := envelopeIdentifiers([]*models.Mail{
+		{EnvelopeID: "one"},
+		nil,
+		{EnvelopeID: "two"},
+	})
+	if len(identifiers) != 2 || identifiers[0] != "one" || identifiers[1] != "two" {
+		t.Errorf("got %v, want the two that still exist", identifiers)
+	}
+}
+
+// A message that exists but carries no envelope has nothing to look up.
+func TestAMailWithNoEnvelopeIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	if identifiers := envelopeIdentifiers([]*models.Mail{{EnvelopeID: ""}}); len(identifiers) != 0 {
+		t.Errorf("got %v, want none", identifiers)
+	}
+}

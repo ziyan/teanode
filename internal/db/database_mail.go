@@ -25,7 +25,11 @@ type MailOperation interface {
 	// get mail by id
 	GetMail(mailId string, options *Options) (*models.Mail, error)
 
-	// get multiple mails
+	// GetMails answers positionally: one entry per identifier given, in the
+	// same order, and nil in the place of any identifier that names no mail.
+	// A caller has to check for that — the identifiers usually come from a
+	// page somebody is looking at, and retention deletes messages underneath
+	// it.
 	GetMails(mailIds []string, options *Options) ([]*models.Mail, error)
 
 	// create mail
