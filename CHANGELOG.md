@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-05
+
+### Fixed
+
+- The Upgrade button installed the command-line client over the server. It
+  refused to start, the running server carried on unaffected, and the
+  dashboard reported that the upgrade did not finish — so nothing was lost,
+  but self-upgrade has not worked since v0.3.0, when the client and the server
+  became two programs. Because the code doing the upgrading is the code that
+  was wrong, this version has to be installed by hand once; after that, and
+  after removing `/var/lib/teanode/upgrade/pending` on an instance that
+  already tried, the button works again. (#22)
+
 ## [0.4.2] - 2026-09-05
 
 ### Fixed
