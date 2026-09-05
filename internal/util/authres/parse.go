@@ -248,7 +248,7 @@ func Parse(v string) (identifier string, results []Result, err error) {
 	if i > 0 {
 		version := strings.TrimSpace(identifier[i:])
 		if version != "1" {
-			return "", nil, errors.New("msgauth: unsupported version")
+			return "", nil, errors.New("authres: msgauth: unsupported version")
 		}
 
 		identifier = identifier[:i]
@@ -315,7 +315,7 @@ func parseResult(s string) (Result, error) {
 func parseParameter(s string) (k string, v string, err error) {
 	kv := strings.SplitN(s, "=", 2)
 	if len(kv) != 2 {
-		return "", "", errors.New("msgauth: malformed authentication method and value")
+		return "", "", errors.New("authres: msgauth: malformed authentication method and value")
 	}
 	return strings.ToLower(strings.TrimSpace(kv[0])), strings.TrimSpace(kv[1]), nil
 }

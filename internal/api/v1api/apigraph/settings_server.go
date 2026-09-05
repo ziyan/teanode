@@ -362,7 +362,7 @@ func applyDuration(target *config.Duration, value *string, name string) error {
 	}
 	parsed, err := config.ParseDuration(strings.TrimSpace(*value))
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return fmt.Errorf("apigraph: %s: %w", name, err)
 	}
 	*target = parsed
 	return nil
@@ -375,7 +375,7 @@ func applyByteSize(target *config.ByteSize, value *string, name string) error {
 	}
 	parsed, err := config.ParseByteSize(strings.TrimSpace(*value))
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return fmt.Errorf("apigraph: %s: %w", name, err)
 	}
 	*target = parsed
 	return nil

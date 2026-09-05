@@ -102,7 +102,7 @@ func (self *manager) verifyAcme(ctx context.Context, client *acme.Client, hosts 
 			backoff *= 2
 		}
 		if attempt > orderAttempts {
-			return nil, fmt.Errorf("%w after %d attempts", ErrOrderFailed, orderAttempts)
+			return nil, fmt.Errorf("autoacme: %w after %d attempts", ErrOrderFailed, orderAttempts)
 		}
 
 		order, err := client.AuthorizeOrder(ctx, acme.DomainIDs(hosts...))

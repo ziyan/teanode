@@ -139,22 +139,22 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 // section, a missing host — is refused before anything is dialled.
 func parseRemoteTarget(raw string) (*url.URL, error) {
 	if raw == "" || len(raw) > 2048 {
-		return nil, errors.New("no address")
+		return nil, errors.New("apimail: no address")
 	}
 	target, err := url.Parse(raw)
 	if err != nil {
 		return nil, err
 	}
 	if target.Scheme != "http" && target.Scheme != "https" {
-		return nil, errors.New("not an http address")
+		return nil, errors.New("apimail: not an http address")
 	}
 	if target.Host == "" {
-		return nil, errors.New("no host")
+		return nil, errors.New("apimail: no host")
 	}
 	// Credentials in the URL would be sent to the host, and a URL carrying
 	// them is not an image reference; it is somebody trying something.
 	if target.User != nil {
-		return nil, errors.New("credentials in the address")
+		return nil, errors.New("apimail: credentials in the address")
 	}
 	return target, nil
 }
@@ -185,10 +185,10 @@ func remoteClient() *http.Client {
 			// anyway; this stops a chain being used to spend time, and keeps
 			// the scheme check applying at every hop.
 			if len(via) >= 5 {
-				return errors.New("too many redirects")
+				return errors.New("apimail: too many redirects")
 			}
 			if request.URL.Scheme != "http" && request.URL.Scheme != "https" {
-				return errors.New("redirected to a scheme this will not follow")
+				return errors.New("apimail: redirected to a scheme this will not follow")
 			}
 			return nil
 		},
@@ -208,7 +208,7 @@ func allowRemoteAddress(address string) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return errors.New("not an address")
+		return errors.New("apimail: not an address")
 	}
 	if !ip.IsGlobalUnicast() ||
 		ip.IsLoopback() ||
@@ -218,7 +218,7 @@ func allowRemoteAddress(address string) error {
 		ip.IsInterfaceLocalMulticast() ||
 		ip.IsUnspecified() ||
 		isSharedAddressSpace(ip) {
-		return errors.New("not a public address")
+		return errors.New("apimail: not a public address")
 	}
 	return nil
 }

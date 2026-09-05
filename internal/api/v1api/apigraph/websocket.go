@@ -136,7 +136,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 		case "connection_init":
 			if self.isAuthenticated {
 				log.Errorf("already previously received \"connection_init\" from websocket at %q", self.conn.RemoteAddr())
-				return fmt.Errorf("protocol error")
+				return fmt.Errorf("apigraph: protocol error")
 			}
 			var headers map[string]string
 			if err := json.Unmarshal(message.Payload, &headers); err != nil {
@@ -154,7 +154,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			csrfToken := httpHeader.Get("X-CSRFToken")
 			if csrfToken != csrfCookie {
 				log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
-				return fmt.Errorf("csrf token mismatch")
+				return fmt.Errorf("apigraph: csrf token mismatch")
 			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err
@@ -178,7 +178,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 		case "stop":
 			if !self.isAuthenticated {
 				log.Errorf("expecting \"connection_init\" first, but got \"stop\" from websocket at %q", self.conn.RemoteAddr())
-				return fmt.Errorf("protocol error")
+				return fmt.Errorf("apigraph: protocol error")
 			}
 			if cancel, ok := mapCancels[message.ID]; ok {
 				cancel()
@@ -187,7 +187,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 		case "start":
 			if !self.isAuthenticated {
 				log.Errorf("expecting \"connection_init\" first, but got \"start\" from websocket at %q", self.conn.RemoteAddr())
-				return fmt.Errorf("protocol error")
+				return fmt.Errorf("apigraph: protocol error")
 			}
 
 			var data graphRequest

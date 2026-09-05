@@ -249,7 +249,7 @@ func renderContent(mailId string, headers []string, body []byte) (*MailContent, 
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("cannot read the message: %w", err)
+		return nil, fmt.Errorf("apigraph: cannot read the message: %w", err)
 	}
 
 	// An image the message brought with it is part of the message, so it is

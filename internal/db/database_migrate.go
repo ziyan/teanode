@@ -99,7 +99,7 @@ func (self *database) Migrate() error {
 	for _, migrationId := range unknownMigrationIds {
 		model := existingModelsMap[migrationId]
 		if strings.TrimSpace(model.ReverseSQL) == "" {
-			panic(fmt.Sprintf("missing reverse sql for migration %s", migrationId))
+			panic(fmt.Sprintf("db: missing reverse sql for migration %s", migrationId))
 		}
 		log.Debugf("reverting database migration: %s", migrationId)
 		if err := self.db.Transaction(func(tx *gorm.DB) error {

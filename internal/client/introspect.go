@@ -300,7 +300,7 @@ func (self *Schema) BuildQuery(operation *Operation, arguments map[string]any, d
 	for _, name := range names {
 		argument := operation.FindArgument(name)
 		if argument == nil {
-			return "", fmt.Errorf("%s has no argument %q; it takes %s",
+			return "", fmt.Errorf("client: %s has no argument %q; it takes %s",
 				operation.Name, name, describeArguments(operation))
 		}
 		declarations = append(declarations, "$"+argument.Name+": "+argument.Type.String())
@@ -309,7 +309,7 @@ func (self *Schema) BuildQuery(operation *Operation, arguments map[string]any, d
 
 	for _, argument := range operation.Arguments {
 		if argument.Type.Required() && arguments[argument.Name] == nil {
-			return "", fmt.Errorf("%s needs %s, which is %s",
+			return "", fmt.Errorf("client: %s needs %s, which is %s",
 				operation.Name, argument.Name, argument.Type.String())
 		}
 	}

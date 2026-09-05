@@ -36,11 +36,11 @@ var (
 	// ErrInvalidAccount is returned when a proposed account would not work.
 	// Its message reaches the browser, so it is written for a person rather
 	// than carrying the usual package prefix.
-	ErrInvalidAccount = errors.New("that account will not work")
+	ErrInvalidAccount = errors.New("web: that account will not work")
 
 	// ErrAccountExists is returned when the first-run setup is attempted on a
 	// server that already has an account.
-	ErrAccountExists = errors.New("this server already has an account; sign in instead")
+	ErrAccountExists = errors.New("web: this server already has an account; sign in instead")
 
 	ErrSessionExpired = errors.New("web: session expired")
 	ErrSessionInvalid = errors.New("web: session is not valid")

@@ -560,7 +560,7 @@ func (self *Bootstrap) WouldChange(current *config.Configuration) ([]string, err
 	for _, variable := range self.seeded {
 		differs, err := variable.wouldChange(current)
 		if err != nil {
-			return nil, fmt.Errorf("%s%s: %w", Prefix, variable.name, err)
+			return nil, fmt.Errorf("bootstrap: %s%s: %w", Prefix, variable.name, err)
 		}
 		if differs {
 			names = append(names, Prefix+variable.name)
@@ -650,7 +650,7 @@ func splitList(value string) []string {
 func parseBool(value string, target *bool) error {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
-		return fmt.Errorf("%q is not true or false", value)
+		return fmt.Errorf("bootstrap: %q is not true or false", value)
 	}
 	*target = parsed
 	return nil
@@ -659,7 +659,7 @@ func parseBool(value string, target *bool) error {
 func parsePort(value string, target *uint16) error {
 	parsed, err := strconv.ParseUint(value, 10, 16)
 	if err != nil {
-		return fmt.Errorf("%q is not a port number", value)
+		return fmt.Errorf("bootstrap: %q is not a port number", value)
 	}
 	*target = uint16(parsed)
 	return nil

@@ -145,7 +145,7 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 	}
 	name := strings.TrimSpace(arguments.Name)
 	if name == "" {
-		return nil, fmt.Errorf("a name is required, so that a token can be recognised later")
+		return nil, fmt.Errorf("apigraph: a name is required, so that a token can be recognised later")
 	}
 
 	var lifetime time.Duration
@@ -153,10 +153,10 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 		parsed, parseError := time.ParseDuration(strings.TrimSpace(*arguments.Lifetime))
 		err = parseError
 		if err != nil {
-			return nil, fmt.Errorf("%q is not a length of time, for example 720h", *arguments.Lifetime)
+			return nil, fmt.Errorf("apigraph: %q is not a length of time, for example 720h", *arguments.Lifetime)
 		}
 		if parsed <= 0 {
-			return nil, fmt.Errorf("a lifetime has to be in the future")
+			return nil, fmt.Errorf("apigraph: a lifetime has to be in the future")
 		}
 		lifetime = parsed
 	}
@@ -205,17 +205,17 @@ func (self *graph) owner(ctx context.Context, requested *string) (string, error)
 
 	if authenticated == config.LocalUsername {
 		if requested == nil || strings.TrimSpace(*requested) == "" {
-			return "", fmt.Errorf("the console is not an account, so say whose this is with --user")
+			return "", fmt.Errorf("apigraph: the console is not an account, so say whose this is with --user")
 		}
 		named := strings.TrimSpace(*requested)
 		if self.config.Current().FindUser(named) == nil {
-			return "", fmt.Errorf("there is no account called %q", named)
+			return "", fmt.Errorf("apigraph: there is no account called %q", named)
 		}
 		return named, nil
 	}
 
 	if requested != nil && strings.TrimSpace(*requested) != "" && strings.TrimSpace(*requested) != authenticated {
-		return "", fmt.Errorf("an account can only manage its own credentials")
+		return "", fmt.Errorf("apigraph: an account can only manage its own credentials")
 	}
 	return authenticated, nil
 }

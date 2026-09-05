@@ -278,7 +278,7 @@ func (self *graphApi) callMethod(methodValue reflect.Value, argumentType reflect
 	defer func() {
 		if message := recover(); message != nil {
 			log.Errorf("panic: %s\n", message, string(debug.Stack()))
-			err = fmt.Errorf("panic: %s", message)
+			err = fmt.Errorf("graphapi: panic: %s", message)
 		}
 	}()
 	ctx := contextWithResolveParameters(resolveParameters.Context, resolveParameters)

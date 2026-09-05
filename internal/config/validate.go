@@ -666,18 +666,18 @@ func (self *Configuration) ValidateFiles() error {
 func parseUpgradeWindow(window string) (int, int, error) {
 	halves := strings.SplitN(window, "-", 2)
 	if len(halves) != 2 {
-		return 0, 0, fmt.Errorf("a window looks like 02:00-04:00")
+		return 0, 0, fmt.Errorf("config: a window looks like 02:00-04:00")
 	}
 	var minutes [2]int
 	for index, half := range halves {
 		parsed, err := time.Parse("15:04", strings.TrimSpace(half))
 		if err != nil {
-			return 0, 0, fmt.Errorf("%q is not a time of day", strings.TrimSpace(half))
+			return 0, 0, fmt.Errorf("config: %q is not a time of day", strings.TrimSpace(half))
 		}
 		minutes[index] = parsed.Hour()*60 + parsed.Minute()
 	}
 	if minutes[0] == minutes[1] {
-		return 0, 0, fmt.Errorf("a window that starts and ends at the same minute is not a window")
+		return 0, 0, fmt.Errorf("config: a window that starts and ends at the same minute is not a window")
 	}
 	return minutes[0], minutes[1], nil
 }

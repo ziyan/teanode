@@ -22,19 +22,19 @@ import (
 var log = logging.MustGetLogger("api") //nolint:unused
 
 var (
-	ErrNotLoggedIn       = errors.New("not logged in")
-	ErrAlreadyLoggedIn   = errors.New("already logged in")
-	ErrNotFound          = errors.New("not found")
-	ErrAlreadyExists     = errors.New("already exists")
-	ErrPermissionDenied  = errors.New("permission denied")
-	ErrInvalidArguments  = errors.New("invalid arguments")
-	ErrInvalidDomain     = errors.New("invalid domain")
-	ErrInvalidEmail      = errors.New("invalid email")
-	ErrInvalidToken      = errors.New("invalid token")
-	ErrInvalidCode       = errors.New("invalid code")
-	ErrInvalidCredential = errors.New("invalid credential")
-	ErrNotRetryable      = errors.New("not retryable")
-	ErrTooManyRequests   = errors.New("too many attempts, try again later")
+	ErrNotLoggedIn       = errors.New("api: not logged in")
+	ErrAlreadyLoggedIn   = errors.New("api: already logged in")
+	ErrNotFound          = errors.New("api: not found")
+	ErrAlreadyExists     = errors.New("api: already exists")
+	ErrPermissionDenied  = errors.New("api: permission denied")
+	ErrInvalidArguments  = errors.New("api: invalid arguments")
+	ErrInvalidDomain     = errors.New("api: invalid domain")
+	ErrInvalidEmail      = errors.New("api: invalid email")
+	ErrInvalidToken      = errors.New("api: invalid token")
+	ErrInvalidCode       = errors.New("api: invalid code")
+	ErrInvalidCredential = errors.New("api: invalid credential")
+	ErrNotRetryable      = errors.New("api: not retryable")
+	ErrTooManyRequests   = errors.New("api: too many attempts, try again later")
 )
 
 // Settings are the server-wide values the API needs.
