@@ -19,11 +19,11 @@ func Parse(txt string) (*Record, error) {
 	}
 
 	record := &Record{}
-	p, ok := parameters["p"]
+	policy, ok := parameters["p"]
 	if !ok {
 		return nil, fmt.Errorf("dmarc: record is missing a 'p' parameter")
 	}
-	record.Policy, err = parsePolicy(p, "p")
+	record.Policy, err = parsePolicy(policy, "p")
 	if err != nil {
 		return nil, err
 	}
@@ -52,24 +52,24 @@ func Parse(txt string) (*Record, error) {
 	}
 
 	if pct, ok := parameters["pct"]; ok {
-		i, err := strconv.Atoi(pct)
+		parsed, err := strconv.Atoi(pct)
 		if err != nil {
 			return nil, fmt.Errorf("dmarc: invalid parameter 'pct': %w", err)
 		}
-		if i < 0 || i > 100 {
-			return nil, fmt.Errorf("dmarc: invalid parameter 'pct': value %v out of bounds", i)
+		if parsed < 0 || parsed > 100 {
+			return nil, fmt.Errorf("dmarc: invalid parameter 'pct': value %v out of bounds", parsed)
 		}
-		percent := uint64(i)
+		percent := uint64(parsed)
 		record.Percent = &percent
 	}
 
 	if rf, ok := parameters["rf"]; ok {
-		l := strings.Split(rf, ":")
-		record.ReportFormat = make([]ReportFormat, len(l))
-		for i, f := range l {
-			switch f {
+		formats := strings.Split(rf, ":")
+		record.ReportFormat = make([]ReportFormat, len(formats))
+		for index, format := range formats {
+			switch format {
 			case "afrf":
-				record.ReportFormat[i] = ReportFormat(f)
+				record.ReportFormat[index] = ReportFormat(format)
 			default:
 				return nil, fmt.Errorf("dmarc: invalid parameter 'rf'")
 			}
@@ -77,14 +77,14 @@ func Parse(txt string) (*Record, error) {
 	}
 
 	if ri, ok := parameters["ri"]; ok {
-		i, err := strconv.Atoi(ri)
+		seconds, err := strconv.Atoi(ri)
 		if err != nil {
 			return nil, fmt.Errorf("dmarc: invalid parameter 'ri': %w", err)
 		}
-		if i <= 0 {
+		if seconds <= 0 {
 			return nil, fmt.Errorf("dmarc: invalid parameter 'ri': negative or zero duration")
 		}
-		record.ReportInterval = time.Duration(i) * time.Second
+		record.ReportInterval = time.Duration(seconds) * time.Second
 	}
 
 	if rua, ok := parameters["rua"]; ok {
@@ -105,29 +105,29 @@ func Parse(txt string) (*Record, error) {
 	return record, nil
 }
 
-func parsePolicy(s, parameter string) (Policy, error) {
-	switch s {
+func parsePolicy(value, parameter string) (Policy, error) {
+	switch value {
 	case "none", "quarantine", "reject":
-		return Policy(s), nil
+		return Policy(value), nil
 	default:
 		return "", fmt.Errorf("dmarc: invalid policy for parameter '%v'", parameter)
 	}
 }
 
-func parseAlignmentMode(s, parameter string) (AlignmentMode, error) {
-	switch s {
+func parseAlignmentMode(value, parameter string) (AlignmentMode, error) {
+	switch value {
 	case "r", "s":
-		return AlignmentMode(s), nil
+		return AlignmentMode(value), nil
 	default:
 		return "", fmt.Errorf("dmarc: invalid alignment mode for parameter '%v'", parameter)
 	}
 }
 
-func parseFailureOptions(s string) (FailureOptions, error) {
-	l := strings.Split(s, ":")
+func parseFailureOptions(value string) (FailureOptions, error) {
+	options := strings.Split(value, ":")
 	var opts FailureOptions
-	for _, o := range l {
-		switch strings.TrimSpace(o) {
+	for _, option := range options {
+		switch strings.TrimSpace(option) {
 		case "0":
 			opts |= FailureAll
 		case "1":
@@ -143,10 +143,10 @@ func parseFailureOptions(s string) (FailureOptions, error) {
 	return opts, nil
 }
 
-func parseUriList(s string) []string {
-	l := strings.Split(s, ",")
-	for i, u := range l {
-		l[i] = strings.TrimSpace(u)
+func parseUriList(value string) []string {
+	uris := strings.Split(value, ",")
+	for index, uri := range uris {
+		uris[index] = strings.TrimSpace(uri)
 	}
-	return l
+	return uris
 }
