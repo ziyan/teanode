@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
+import { Markdown } from '../../components/markdown'
 import { RelativeTime } from '../../components/relativeTime'
 import { useTranslation } from '../../i18n/i18n'
 
@@ -508,15 +509,21 @@ function UpgradeCard({
         </dd>
       </dl>
 
-      {/* The notes as they were written, in a box that scrolls: a release
-          somebody is deciding about is a release whose changelog they should
-          be able to read here rather than in another tab. */}
-      {/* What changed, as the release said it, so that deciding whether to
-          upgrade is a thing somebody can do here rather than in another tab. */}
-      {status.available && status.notes && (
+      {/* What changed, as the release said it, in a box that scrolls: the
+          changelog is a thing to read here rather than in another tab.
+          
+          Shown whenever there are notes, not only when the release is an
+          upgrade from what is running. Gated on available it was invisible on
+          every server that was not behind — including every development build,
+          which is ahead of the newest release and so never has one available —
+          and "what changed in the version I am on" is a question worth
+          answering too. */}
+      {status.notes && (
         <>
           <h4 className="upgrade-notes-heading">{t('upgrade.whatChanged', { version: status.latest ?? '' })}</h4>
-          <pre className="message-text upgrade-notes">{status.notes}</pre>
+          <div className="upgrade-notes">
+            <Markdown text={status.notes} />
+          </div>
         </>
       )}
 
