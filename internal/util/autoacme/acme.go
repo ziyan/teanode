@@ -102,7 +102,7 @@ func (self *manager) verifyAcme(ctx context.Context, client *acme.Client, hosts 
 			backoff *= 2
 		}
 		if attempt > orderAttempts {
-			return nil, fmt.Errorf("%w after %d attempts", ErrOrderFailed, orderAttempts)
+			return nil, fmt.Errorf("autoacme: %w after %d attempts", ErrOrderFailed, orderAttempts)
 		}
 
 		order, err := client.AuthorizeOrder(ctx, acme.DomainIDs(hosts...))
@@ -224,12 +224,12 @@ func (self *manager) ensureAcmeClient(ctx context.Context) (*acme.Client, error)
 		return nil, err
 	}
 
-	directoryURL := self.settings.DirectoryURL
-	if directoryURL == "" {
-		directoryURL = LetsEncryptDirectoryURL
+	directoryUrl := self.settings.DirectoryURL
+	if directoryUrl == "" {
+		directoryUrl = LetsEncryptDirectoryURL
 	}
 	client := &acme.Client{
-		DirectoryURL: directoryURL,
+		DirectoryURL: directoryUrl,
 		Key:          key,
 		UserAgent:    "teanode",
 	}

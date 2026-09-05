@@ -50,11 +50,11 @@ func ContextResponse(ctx context.Context) http.ResponseWriter {
 	return nil
 }
 
-func ContextWithTx(ctx context.Context, tx db.Transaction) context.Context {
+func ContextWithTransaction(ctx context.Context, tx db.Transaction) context.Context {
 	return context.WithValue(ctx, txKey, tx)
 }
 
-func ContextTx(ctx context.Context) db.Transaction {
+func ContextTransaction(ctx context.Context) db.Transaction {
 	value := ctx.Value(txKey)
 	if value != nil {
 		return value.(db.Transaction)

@@ -6,7 +6,11 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("ratelimit") //nolint:unused
 
 const (
 	KiloBytes = 1 << 10

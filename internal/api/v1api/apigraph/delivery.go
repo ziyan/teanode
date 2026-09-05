@@ -42,7 +42,7 @@ func (self *graph) ListDeliveries(ctx context.Context, arguments ListDeliveriesA
 	}
 
 	// list all deliveries for this domain
-	deliveries, err := api.ContextTx(ctx).ListDeliveriesByDomainID(domain.ID, arguments.Options())
+	deliveries, err := api.ContextTransaction(ctx).ListDeliveriesByDomainID(domain.ID, arguments.Options())
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (self *graph) GetDelivery(ctx context.Context, arguments GetDeliveryArgumen
 		return nil, err
 	}
 
-	delivery, err := api.ContextTx(ctx).GetDelivery(arguments.DeliveryID, nil)
+	delivery, err := api.ContextTransaction(ctx).GetDelivery(arguments.DeliveryID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (self *graph) GetDelivery(ctx context.Context, arguments GetDeliveryArgumen
 	}
 
 	// look up mail to find domain
-	mail, err := api.ContextTx(ctx).GetMail(delivery.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(delivery.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArg
 		return nil, err
 	}
 
-	delivery, err := api.ContextTx(ctx).GetDelivery(arguments.DeliveryID, nil)
+	delivery, err := api.ContextTransaction(ctx).GetDelivery(arguments.DeliveryID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArg
 	}
 
 	// look up mail to find domain
-	mail, err := api.ContextTx(ctx).GetMail(delivery.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(delivery.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArg
 	}
 
 	// set retry_at to now so the periodic retry loop picks it up
-	delivery, err = api.ContextTx(ctx).ModifyDelivery(arguments.DeliveryID, func(d *models.Delivery) error {
+	delivery, err = api.ContextTransaction(ctx).ModifyDelivery(arguments.DeliveryID, func(d *models.Delivery) error {
 		now := time.Now().In(time.Local)
 		d.RetryAt = &now
 		return nil
@@ -148,14 +148,14 @@ func (self *graph) ListDeliveriesByMail(ctx context.Context, arguments ListDeliv
 		return nil, err
 	}
 
-	mail, err := api.ContextTx(ctx).GetMail(arguments.MailID, nil)
+	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
 	if err != nil {
 		return nil, err
 	}
 	if mail == nil {
 		return nil, api.ErrNotFound
 	}
-	return api.ContextTx(ctx).ListDeliveries([]string{mail.ID}, nil)
+	return api.ContextTransaction(ctx).ListDeliveries([]string{mail.ID}, nil)
 }
 
 type ListPendingDeliveriesArguments struct {
@@ -175,7 +175,7 @@ func (self *graph) ListPendingDeliveries(ctx context.Context, arguments ListPend
 
 	var pending []*models.Delivery
 	for _, domainId := range domainIds {
-		deliveries, err := api.ContextTx(ctx).ListDeliveriesByDomainID(domainId, arguments.Options())
+		deliveries, err := api.ContextTransaction(ctx).ListDeliveriesByDomainID(domainId, arguments.Options())
 		if err != nil {
 			return nil, err
 		}

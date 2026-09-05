@@ -56,7 +56,7 @@ func boxFor(configuration *config.Configuration, label, what string) (*secretbox
 	}
 	box, err := secretbox.New(secret, label)
 	if err != nil {
-		return nil, fmt.Errorf("config: cannot derive the key that protects the %s: %w", what, err)
+		return nil, fmt.Errorf("configdb: config: cannot derive the key that protects the %s: %w", what, err)
 	}
 	return box, nil
 }
@@ -76,14 +76,14 @@ func boxFor(configuration *config.Configuration, label, what string) (*secretbox
 const (
 	settingServer    = "server"
 	settingListen    = "listen"
-	settingTLS       = "tls"
-	settingSMTP      = "smtp"
-	settingDKIM      = "dkim"
+	settingTls       = "tls"
+	settingSmtp      = "smtp"
+	settingDkim      = "dkim"
 	settingSession   = "session"
-	settingDNS       = "dns"
+	settingDns       = "dns"
 	settingAntivirus = "antivirus"
 	settingAntispam  = "antispam"
-	settingGeoIP     = "geoip"
+	settingGeoIp     = "geoip"
 	settingStorage   = "storage"
 	settingPasskey   = "passkey"
 	settingUpgrade   = "upgrade"
@@ -101,14 +101,14 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 	sections := map[string]any{
 		settingServer:    &configuration.Server,
 		settingListen:    &configuration.Listen,
-		settingTLS:       &configuration.TLS,
-		settingSMTP:      &configuration.SMTP,
-		settingDKIM:      &configuration.DKIM,
+		settingTls:       &configuration.TLS,
+		settingSmtp:      &configuration.SMTP,
+		settingDkim:      &configuration.DKIM,
 		settingSession:   &configuration.Session,
-		settingDNS:       &configuration.DNS,
+		settingDns:       &configuration.DNS,
 		settingAntivirus: &configuration.Antivirus,
 		settingAntispam:  &configuration.Antispam,
-		settingGeoIP:     &configuration.GeoIP,
+		settingGeoIp:     &configuration.GeoIP,
 		settingStorage:   &configuration.Storage,
 		settingPasskey:   &configuration.Passkey,
 		settingUpgrade:   &configuration.Upgrade,
@@ -119,7 +119,7 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 			continue
 		}
 		if err := yaml.Unmarshal([]byte(stored), target); err != nil {
-			return nil, fmt.Errorf("config: cannot read the %q settings: %w", key, err)
+			return nil, fmt.Errorf("configdb: config: cannot read the %q settings: %w", key, err)
 		}
 	}
 
@@ -149,7 +149,7 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 		if len(row.MailServer) > 0 {
 			alias.MailServer = &config.MailServer{}
 			if err := yaml.Unmarshal([]byte(row.MailServer), alias.MailServer); err != nil {
-				return nil, fmt.Errorf("config: cannot read the mail server of alias %q: %w", row.ID, err)
+				return nil, fmt.Errorf("configdb: config: cannot read the mail server of alias %q: %w", row.ID, err)
 			}
 		}
 		aliasesByDomain[row.DomainID] = append(aliasesByDomain[row.DomainID], alias)
@@ -176,11 +176,11 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 		privateKey := row.DKIMPrivateKey
 		if secretbox.Sealed(privateKey) {
 			if box == nil {
-				return nil, fmt.Errorf("config: the signing key of domain %q is encrypted and there is no server secret to open it with", row.Domain)
+				return nil, fmt.Errorf("configdb: config: the signing key of domain %q is encrypted and there is no server secret to open it with", row.Domain)
 			}
 			opened, err := box.Open(privateKey)
 			if err != nil {
-				return nil, fmt.Errorf("config: cannot open the signing key of domain %q: %w", row.Domain, err)
+				return nil, fmt.Errorf("configdb: config: cannot open the signing key of domain %q: %w", row.Domain, err)
 			}
 			privateKey = string(opened)
 		}
@@ -188,11 +188,11 @@ func FromRows(rows *db.ConfigurationRows) (*config.Configuration, error) {
 		certificateKey := row.CertificatePrivateKey
 		if secretbox.Sealed(certificateKey) {
 			if certificateBox == nil {
-				return nil, fmt.Errorf("config: the certificate key of domain %q is encrypted and there is no server secret to open it with", row.Domain)
+				return nil, fmt.Errorf("configdb: config: the certificate key of domain %q is encrypted and there is no server secret to open it with", row.Domain)
 			}
 			opened, err := certificateBox.Open(certificateKey)
 			if err != nil {
-				return nil, fmt.Errorf("config: cannot open the certificate key of domain %q: %w", row.Domain, err)
+				return nil, fmt.Errorf("configdb: config: cannot open the certificate key of domain %q: %w", row.Domain, err)
 			}
 			certificateKey = string(opened)
 		}
@@ -242,14 +242,14 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 	sections := map[string]any{
 		settingServer:    self.Server,
 		settingListen:    self.Listen,
-		settingTLS:       self.TLS,
-		settingSMTP:      self.SMTP,
-		settingDKIM:      self.DKIM,
+		settingTls:       self.TLS,
+		settingSmtp:      self.SMTP,
+		settingDkim:      self.DKIM,
 		settingSession:   self.Session,
-		settingDNS:       self.DNS,
+		settingDns:       self.DNS,
 		settingAntivirus: self.Antivirus,
 		settingAntispam:  self.Antispam,
-		settingGeoIP:     self.GeoIP,
+		settingGeoIp:     self.GeoIP,
 		settingStorage:   self.Storage,
 		settingPasskey:   self.Passkey,
 		settingUpgrade:   self.Upgrade,
@@ -257,7 +257,7 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 	for key, value := range sections {
 		encoded, err := yaml.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("config: cannot write the %q settings: %w", key, err)
+			return nil, fmt.Errorf("configdb: config: cannot write the %q settings: %w", key, err)
 		}
 		rows.Settings[key] = string(encoded)
 	}
@@ -271,7 +271,7 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 		if box != nil && privateKey != "" {
 			sealed, err := box.Seal([]byte(privateKey))
 			if err != nil {
-				return nil, fmt.Errorf("config: cannot encrypt the signing key of domain %q: %w", domain.Domain, err)
+				return nil, fmt.Errorf("configdb: config: cannot encrypt the signing key of domain %q: %w", domain.Domain, err)
 			}
 			privateKey = sealed
 		}
@@ -280,7 +280,7 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 		if certificateBox != nil && certificateKey != "" {
 			sealed, err := certificateBox.Seal([]byte(certificateKey))
 			if err != nil {
-				return nil, fmt.Errorf("config: cannot encrypt the certificate key of domain %q: %w", domain.Domain, err)
+				return nil, fmt.Errorf("configdb: config: cannot encrypt the certificate key of domain %q: %w", domain.Domain, err)
 			}
 			certificateKey = sealed
 		}
@@ -317,7 +317,7 @@ func ToRows(self *config.Configuration, version int64) (*db.ConfigurationRows, e
 			if alias.MailServer != nil {
 				encoded, err := yaml.Marshal(alias.MailServer)
 				if err != nil {
-					return nil, fmt.Errorf("config: cannot write the mail server of alias %q: %w", alias.ID, err)
+					return nil, fmt.Errorf("configdb: config: cannot write the mail server of alias %q: %w", alias.ID, err)
 				}
 				row.MailServer = string(encoded)
 			}

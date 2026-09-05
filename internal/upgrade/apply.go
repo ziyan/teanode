@@ -58,19 +58,13 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	// restarting" for the life of the process, with the button disabled and
 	// no error beside it. A success is the exception: it is followed by the
 	// restart, and this process does not come back to unset anything.
-	self.mutex.Lock()
-	self.status.Upgrading = true
-	self.status.Error = ""
-	self.mutex.Unlock()
+	self.markUpgrading()
 
 	defer func() {
 		if err == nil {
 			return
 		}
-		self.mutex.Lock()
-		self.status.Upgrading = false
-		self.status.Error = err.Error()
-		self.mutex.Unlock()
+		self.markFailed(err)
 	}()
 
 	if applicable, reason := self.applicableNow(); !applicable {
@@ -94,18 +88,18 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	}
 
 	name := assetName()
-	binaryURL := found.assetURL(name)
-	if binaryURL == "" {
+	binaryUrl := found.assetUrl(name)
+	if binaryUrl == "" {
 		return fmt.Errorf("upgrade: release %s has no %s", found.version(), name)
 	}
-	checksumsURL := found.assetURL(checksumsAsset)
-	if checksumsURL == "" {
+	checksumsUrl := found.assetUrl(checksumsAsset)
+	if checksumsUrl == "" {
 		return fmt.Errorf("upgrade: release %s has no %s, so nothing can be verified", found.version(), checksumsAsset)
 	}
 
 	// The checksums first. Downloading fifty megabytes before discovering
 	// there is nothing to check them against is the wrong order.
-	sums, err := self.fetch(ctx, checksumsURL, 1<<20)
+	sums, err := self.fetch(ctx, checksumsUrl, 1<<20)
 	if err != nil {
 		return fmt.Errorf("upgrade: cannot read %s: %w", checksumsAsset, err)
 	}
@@ -139,7 +133,7 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 
 	log.Noticef("downloading %s %s", name, found.version())
 
-	downloaded, err := self.download(ctx, binaryURL, target, staging)
+	downloaded, err := self.download(ctx, binaryUrl, target, staging)
 	if err != nil {
 		return err
 	}
@@ -255,9 +249,7 @@ func (self *manager) swap(downloaded, target string, staging bool, release strin
 		return fmt.Errorf("upgrade: cannot put the new binary at %s: %w", target, err)
 	}
 
-	self.mutex.Lock()
-	self.execTarget = target
-	self.mutex.Unlock()
+	self.setExecTarget(target)
 	return nil
 }
 
@@ -400,9 +392,7 @@ func (self *manager) stage(downloaded, target, release string) error {
 		return fmt.Errorf("upgrade: cannot clear %s: %w", filepath.Join(directory, stagedRefusedExec), err)
 	}
 
-	self.mutex.Lock()
-	self.execTarget = target
-	self.mutex.Unlock()
+	self.setExecTarget(target)
 	return nil
 }
 
@@ -579,4 +569,34 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+// The three writes to status that Apply makes, each holding the lock for the
+// assignment and no longer.
+//
+// Functions rather than lock-assign-unlock in place, so the unlock is a defer:
+// nothing between these lines can panic today, but a lock released only by the
+// line after it is a lock that stays held the first time something can. The
+// download that follows deliberately runs outside them — holding this across
+// forty-five megabytes would block every request that reads the status.
+func (self *manager) markUpgrading() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.status.Upgrading = true
+	self.status.Error = ""
+}
+
+func (self *manager) markFailed(err error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.status.Upgrading = false
+	self.status.Error = err.Error()
+}
+
+// setExecTarget records the binary this process should become once it has
+// finished shutting down.
+func (self *manager) setExecTarget(target string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.execTarget = target
 }

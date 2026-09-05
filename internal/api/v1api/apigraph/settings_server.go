@@ -27,10 +27,10 @@ import (
 // configuration's own parsers. A number of seconds would be a second spelling
 // of the same setting, and two spellings drift.
 
-// SmtpSettings are the limits the mail path applies to every message and
+// SMTPSettings are the limits the mail path applies to every message and
 // every connection. All of them are read per message, so a change takes
 // effect on the next one with no restart.
-type SmtpSettings struct {
+type SMTPSettings struct {
 	// The largest message this server accepts, as text: "50MB".
 	MaxMessageSize string `json:"maxMessageSize"`
 
@@ -146,8 +146,8 @@ type GeoIPSettings struct {
 	DatabaseFile string `json:"databaseFile,omitempty"`
 }
 
-// SmtpParameters are the limits an operator can change.
-type SmtpParameters struct {
+// SMTPParameters are the limits an operator can change.
+type SMTPParameters struct {
 	MaxMessageSize        *string   `json:"maxMessageSize"`
 	MaxRecipientsIncoming *int      `json:"maxRecipientsIncoming"`
 	MaxRecipientsOutgoing *int      `json:"maxRecipientsOutgoing"`
@@ -212,7 +212,7 @@ type GeoIPParameters struct {
 // which owns the struct being filled.
 func describeServerSettings(configuration *config.Configuration, settings *Settings) {
 	smtp := configuration.SMTP
-	settings.Smtp = &SmtpSettings{
+	settings.SMTP = &SMTPSettings{
 		MaxMessageSize:        smtp.MaxMessageSize.String(),
 		MaxRecipientsIncoming: smtp.MaxRecipientsIncoming,
 		MaxRecipientsOutgoing: smtp.MaxRecipientsOutgoing,
@@ -263,7 +263,7 @@ func describeServerSettings(configuration *config.Configuration, settings *Setti
 // inside config.Update, so returning an error abandons the whole change rather
 // than committing half of it.
 func applyServerSettings(configuration *config.Configuration, arguments UpdateSettingsArguments) error {
-	if parameters := arguments.Smtp; parameters != nil {
+	if parameters := arguments.SMTP; parameters != nil {
 		smtp := &configuration.SMTP
 		if err := applyByteSize(&smtp.MaxMessageSize, parameters.MaxMessageSize, "smtp.maxMessageSize"); err != nil {
 			return err
@@ -362,7 +362,7 @@ func applyDuration(target *config.Duration, value *string, name string) error {
 	}
 	parsed, err := config.ParseDuration(strings.TrimSpace(*value))
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return fmt.Errorf("apigraph: %s: %w", name, err)
 	}
 	*target = parsed
 	return nil
@@ -375,7 +375,7 @@ func applyByteSize(target *config.ByteSize, value *string, name string) error {
 	}
 	parsed, err := config.ParseByteSize(strings.TrimSpace(*value))
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return fmt.Errorf("apigraph: %s: %w", name, err)
 	}
 	*target = parsed
 	return nil

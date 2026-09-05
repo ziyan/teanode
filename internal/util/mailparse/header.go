@@ -17,14 +17,14 @@ import (
 
 func MergeHeaders(headers ...[]string) []string {
 	length := 0
-	for _, h := range headers {
-		length += len(h)
+	for _, group := range headers {
+		length += len(group)
 	}
-	hh := make([]string, 0, length)
-	for _, h := range headers {
-		hh = append(hh, h...)
+	merged := make([]string, 0, length)
+	for _, group := range headers {
+		merged = append(merged, group...)
 	}
-	return hh
+	return merged
 }
 
 func SplitHeader(header string) (string, string) {
@@ -86,8 +86,8 @@ func UnparseParameters(parameters map[string]string, prefixes, suffixes []string
 
 func ParseTagList(value string) []string {
 	tags := strings.Split(value, ":")
-	for i, tag := range tags {
-		tags[i] = StripWhitespace(tag)
+	for index, tag := range tags {
+		tags[index] = StripWhitespace(tag)
 	}
 	return tags
 }
@@ -115,10 +115,10 @@ type headerPicker struct {
 
 func (self *headerPicker) pick(key string) string {
 	at := self.picked[key]
-	for i := len(self.headers) - 1; i >= 0; i-- {
-		header := self.headers[i]
-		k, _ := SplitHeader(header)
-		if !strings.EqualFold(k, key) {
+	for index := len(self.headers) - 1; index >= 0; index-- {
+		header := self.headers[index]
+		name, _ := SplitHeader(header)
+		if !strings.EqualFold(name, key) {
 			continue
 		}
 		if at == 0 {
@@ -169,8 +169,8 @@ func EncodeBase64String(value []byte) string {
 }
 
 func inStringSlice(needle string, haystack []string) bool {
-	for _, n := range haystack {
-		if n == needle {
+	for _, candidate := range haystack {
+		if candidate == needle {
 			return true
 		}
 	}
@@ -178,10 +178,10 @@ func inStringSlice(needle string, haystack []string) bool {
 }
 
 func FindHeaderValue(headers []string, key string) string {
-	for i := len(headers) - 1; i >= 0; i-- {
-		k, v := SplitHeader(headers[i])
-		if strings.EqualFold(k, key) {
-			return v
+	for index := len(headers) - 1; index >= 0; index-- {
+		name, value := SplitHeader(headers[index])
+		if strings.EqualFold(name, key) {
+			return value
 		}
 	}
 	return ""

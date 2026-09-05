@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // externalAddressTimeout bounds each attempt. A server that cannot work out
@@ -73,6 +75,7 @@ func discoverExternalAddresses(ctx context.Context, resolvers []string) External
 		waitGroup.Add(1)
 		go func(network string, assign func(string)) {
 			defer waitGroup.Done()
+			defer deferutil.Recover()
 
 			for _, service := range resolvers {
 				value, err := askForAddress(ctx, network, service)
@@ -80,9 +83,14 @@ func discoverExternalAddresses(ctx context.Context, resolvers []string) External
 					log.Debugf("could not determine the %s address from %s: %s", network, service, err)
 					continue
 				}
-				mutex.Lock()
-				assign(value)
-				mutex.Unlock()
+				// In a function, so the unlock is deferred: assign is
+				// passed in, and a caller's function that panicked would
+				// otherwise leave this held and hang the wait below.
+				func() {
+					mutex.Lock()
+					defer mutex.Unlock()
+					assign(value)
+				}()
 				return
 			}
 		}(family.network, family.assign)

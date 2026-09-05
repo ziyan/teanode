@@ -87,8 +87,8 @@ func (self *graph) requireAccount(ctx context.Context) (*config.User, error) {
 	return user, nil
 }
 
-// findAccountByID is how a stored credential names its account.
-func (self *graph) findAccountByID(userId string) *config.User {
+// findAccountById is how a stored credential names its account.
+func (self *graph) findAccountById(userId string) *config.User {
 	if userId == "" {
 		return nil
 	}

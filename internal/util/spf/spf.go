@@ -92,7 +92,7 @@ type Resolver interface {
 	LookupTXT(ctx context.Context, name string) ([]string, error)
 	LookupMX(ctx context.Context, name string) ([]*net.MX, error)
 	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
-	LookupAddr(ctx context.Context, addr string) (names []string, err error)
+	LookupAddr(ctx context.Context, address string) (names []string, err error)
 }
 
 type CheckOptions struct {
@@ -147,9 +147,9 @@ type spf struct {
 }
 
 var (
-	aFieldPattern   = regexp.MustCompile(`^(a$|a:|a/)`)
-	mxFieldPattern  = regexp.MustCompile(`^(mx$|mx:|mx/)`)
-	ptrFieldPattern = regexp.MustCompile(`^(ptr$|ptr:)`)
+	aFieldPattern       = regexp.MustCompile(`^(a$|a:|a/)`)
+	mxFieldPattern      = regexp.MustCompile(`^(mx$|mx:|mx/)`)
+	pointerFieldPattern = regexp.MustCompile(`^(ptr$|ptr:)`)
 )
 
 func (self *spf) check(domain string) (Result, error) {
@@ -235,8 +235,8 @@ func (self *spf) check(domain string) (Result, error) {
 			if ok, result, err := self.handleIpField(result, field); ok {
 				return result, err
 			}
-		} else if ptrFieldPattern.MatchString(lowerField) {
-			if ok, result, err := self.handlePtrField(result, field, domain); ok {
+		} else if pointerFieldPattern.MatchString(lowerField) {
+			if ok, result, err := self.handlePointerField(result, field, domain); ok {
 				return result, err
 			}
 		} else if strings.HasPrefix(lowerField, "exists:") {
@@ -362,18 +362,18 @@ func (self *spf) handleIpField(result Result, field string) (bool, Result, error
 	return false, "", nil
 }
 
-// handlePtrField processes a "ptr" field.
-func (self *spf) handlePtrField(result Result, field, domain string) (bool, Result, error) {
+// handlePointerField processes a "ptr" field.
+func (self *spf) handlePointerField(result Result, field, domain string) (bool, Result, error) {
 	// Extract the domain if the field is in the form "ptr:domain".
-	ptrDomain := domain
+	pointerDomain := domain
 	if len(field) >= len("ptr:") {
-		ptrDomain = field[len("ptr:"):]
+		pointerDomain = field[len("ptr:"):]
 	}
-	ptrDomain, err := self.expandMacros(ptrDomain, domain)
+	pointerDomain, err := self.expandMacros(pointerDomain, domain)
 	if err != nil {
 		return true, ResultPermError, fmt.Errorf("spf: invalid macro: %w", err)
 	}
-	if ptrDomain == "" {
+	if pointerDomain == "" {
 		return true, ResultPermError, fmt.Errorf("spf: invalid ptr field")
 	}
 	rdns, err := self.resolveRdns()
@@ -384,9 +384,9 @@ func (self *spf) handlePtrField(result Result, field, domain string) (bool, Resu
 		}
 		return false, "", err
 	}
-	ptrDomain = strings.ToLower(ptrDomain)
+	pointerDomain = strings.ToLower(pointerDomain)
 	for _, name := range rdns {
-		if strings.HasSuffix(name, ptrDomain+".") {
+		if strings.HasSuffix(name, pointerDomain+".") {
 			return true, result, nil
 		}
 	}

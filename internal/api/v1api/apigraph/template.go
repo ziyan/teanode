@@ -45,13 +45,13 @@ func (self *graph) ListTemplates(ctx context.Context, arguments ListTemplatesArg
 		return nil, err
 	}
 
-	templates, err := api.ContextTx(ctx).ListTemplates(arguments.DomainID, nil)
+	templates, err := api.ContextTransaction(ctx).ListTemplates(arguments.DomainID, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// The layouts once for the whole list, rather than once per template.
-	layouts, err := api.ContextTx(ctx).ListLayouts(arguments.DomainID, nil)
+	layouts, err := api.ContextTransaction(ctx).ListLayouts(arguments.DomainID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,9 +84,9 @@ func (self *graph) GetTemplate(ctx context.Context, arguments GetTemplateArgumen
 	var template *models.Template
 	var err error
 	if arguments.TemplateID != nil {
-		template, err = api.ContextTx(ctx).GetTemplate(*arguments.TemplateID, nil)
+		template, err = api.ContextTransaction(ctx).GetTemplate(*arguments.TemplateID, nil)
 	} else if arguments.DomainID != nil && arguments.Name != nil {
-		template, err = api.ContextTx(ctx).GetTemplateByName(*arguments.DomainID, *arguments.Name, nil)
+		template, err = api.ContextTransaction(ctx).GetTemplateByName(*arguments.DomainID, *arguments.Name, nil)
 	}
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (self *graph) GetTemplate(ctx context.Context, arguments GetTemplateArgumen
 		return nil, api.ErrNotFound
 	}
 
-	layout, err := self.layoutOfTemplate(api.ContextTx(ctx), template)
+	layout, err := self.layoutOfTemplate(api.ContextTransaction(ctx), template)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (self *graph) CreateTemplate(ctx context.Context, arguments CreateTemplateA
 	if err != nil {
 		return nil, err
 	}
-	tx := api.ContextTx(ctx)
+	tx := api.ContextTransaction(ctx)
 
 	translations, err := arguments.TemplateParameters.validate()
 	if err != nil {
@@ -320,7 +320,7 @@ func (self *graph) ModifyTemplate(ctx context.Context, arguments ModifyTemplateA
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
 	}
-	tx := api.ContextTx(ctx)
+	tx := api.ContextTransaction(ctx)
 
 	template, err := tx.GetTemplate(arguments.TemplateID, nil)
 	if err != nil {
@@ -387,7 +387,7 @@ func (self *graph) DeleteTemplate(ctx context.Context, arguments DeleteTemplateA
 		return err
 	}
 
-	template, err := api.ContextTx(ctx).GetTemplate(arguments.TemplateID, nil)
+	template, err := api.ContextTransaction(ctx).GetTemplate(arguments.TemplateID, nil)
 	if err != nil {
 		return err
 	}
@@ -400,7 +400,7 @@ func (self *graph) DeleteTemplate(ctx context.Context, arguments DeleteTemplateA
 		return api.ErrNotFound
 	}
 
-	return api.ContextTx(ctx).DeleteTemplate(template.ID, nil)
+	return api.ContextTransaction(ctx).DeleteTemplate(template.ID, nil)
 }
 
 type RenderTemplateArguments struct {
@@ -427,7 +427,7 @@ func (self *graph) RenderTemplate(ctx context.Context, arguments RenderTemplateA
 	if err != nil {
 		return nil, err
 	}
-	tx := api.ContextTx(ctx)
+	tx := api.ContextTransaction(ctx)
 
 	var template *models.Template
 	switch {

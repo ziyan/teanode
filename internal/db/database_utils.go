@@ -5,12 +5,12 @@ import (
 )
 
 // test if two string slices are equal
-func stringSlicesAreEqual(a, b []string) bool {
-	if len(a) != len(b) {
+func stringSlicesAreEqual(first, second []string) bool {
+	if len(first) != len(second) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	for index := range first {
+		if first[index] != second[index] {
 			return false
 		}
 	}
@@ -18,20 +18,20 @@ func stringSlicesAreEqual(a, b []string) bool {
 }
 
 // test if time is equal
-func optionalTimesAreEqual(a, b *time.Time) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
+func optionalTimesAreEqual(first, second *time.Time) bool {
+	if first == nil || second == nil {
+		return first == nil && second == nil
 	}
-	return a.Equal(*b)
+	return first.Equal(*second)
 }
 
 // test if optional reference is equal
-func optionalReferencesAreEqual(a *string, b string) bool {
+func optionalReferencesAreEqual(first *string, second string) bool {
 	var aa string
-	if a != nil {
-		aa = *a
+	if first != nil {
+		aa = *first
 	}
-	return aa == b
+	return aa == second
 }
 
 func convertFromUint64Array(values []uint64) []int64 {

@@ -101,3 +101,41 @@ func TestOneFetchedPictureIsEnough(t *testing.T) {
 		t.Errorf("got %+v, want one fetch", opens)
 	}
 }
+
+// A message on the page that has since been deleted.
+//
+// GetMails answers positionally, so an identifier that names nothing comes
+// back as a nil in the slice rather than as a shorter slice. The dashboard
+// asks about the messages it last drew, and retention deletes underneath it,
+// so this arrives in the ordinary course of a server running — it panicked
+// the resolver, and the panic was recovered into a failed request that came
+// back every time the list was open as the retention sweep ran.
+func TestAMailDeletedWhileTheListWasOpen(t *testing.T) {
+	t.Parallel()
+
+	existing := existingMails([]*models.Mail{
+		{ID: "one"},
+		nil,
+		{ID: "two"},
+	})
+	if len(existing) != 2 || existing[0].ID != "one" || existing[1].ID != "two" {
+		t.Errorf("got %v, want the two that still exist", existing)
+	}
+	// Both loops below the filter dereference these, so the check that
+	// matters is that no nil survives it.
+	for _, mail := range existing {
+		if mail == nil {
+			t.Error("a nil got past the filter")
+		}
+	}
+}
+
+// Everything gone: the answer is empty rather than a panic or a nil slice
+// element.
+func TestEveryListedMailDeleted(t *testing.T) {
+	t.Parallel()
+
+	if existing := existingMails([]*models.Mail{nil, nil}); len(existing) != 0 {
+		t.Errorf("got %v, want none", existing)
+	}
+}

@@ -40,25 +40,25 @@ func (self *deprecatedSession) empty() bool {
 		self.SessionLifetime == 0 && len(self.Users) == 0
 }
 
-// deprecatedDKIM covers the single signing key that every domain shared.
-type deprecatedDKIM struct {
+// deprecatedDkim covers the single signing key that every domain shared.
+type deprecatedDkim struct {
 	PrivateKeyFile string   `yaml:"privateKeyFile,omitempty"`
 	Domain         string   `yaml:"domain,omitempty"`
 	Selectors      []string `yaml:"selectors,omitempty"`
 }
 
-func (self *deprecatedDKIM) empty() bool {
+func (self *deprecatedDkim) empty() bool {
 	return self.PrivateKeyFile == "" && self.Domain == "" && len(self.Selectors) == 0
 }
 
-// deprecatedACME covers the account key and certificate that were files.
-type deprecatedACME struct {
+// deprecatedAcme covers the account key and certificate that were files.
+type deprecatedAcme struct {
 	AccountKeyFile  string `yaml:"accountKeyFile,omitempty"`
 	CertificateFile string `yaml:"certificateFile,omitempty"`
 	PrivateKeyFile  string `yaml:"privateKeyFile,omitempty"`
 }
 
-func (self *deprecatedACME) empty() bool {
+func (self *deprecatedAcme) empty() bool {
 	return self.AccountKeyFile == "" && self.CertificateFile == "" && self.PrivateKeyFile == ""
 }
 
@@ -67,7 +67,7 @@ func (self *deprecatedACME) empty() bool {
 func (self *Configuration) migrateDeprecated() {
 	self.migrateSession()
 	self.migrateDomainKey()
-	self.migrateACME()
+	self.migrateAcme()
 }
 
 func (self *Configuration) migrateSession() {
@@ -105,7 +105,7 @@ func (self *Configuration) migrateSession() {
 }
 
 func (self *Configuration) migrateDomainKey() {
-	outdated := &self.DKIM.deprecatedDKIM
+	outdated := &self.DKIM.deprecatedDkim
 	if outdated.empty() {
 		return
 	}
@@ -136,11 +136,11 @@ func (self *Configuration) migrateDomainKey() {
 		log.Warningf("dkim.domain is no longer used; the server signs each domain's mail with that domain's own key")
 	}
 
-	self.DKIM.deprecatedDKIM = deprecatedDKIM{}
+	self.DKIM.deprecatedDkim = deprecatedDkim{}
 }
 
-func (self *Configuration) migrateACME() {
-	outdated := &self.TLS.ACME.deprecatedACME
+func (self *Configuration) migrateAcme() {
+	outdated := &self.TLS.ACME.deprecatedAcme
 	if outdated.empty() {
 		return
 	}
@@ -168,7 +168,7 @@ func (self *Configuration) migrateACME() {
 		}
 	}
 
-	self.TLS.ACME.deprecatedACME = deprecatedACME{}
+	self.TLS.ACME.deprecatedAcme = deprecatedAcme{}
 }
 
 func readFile(filename string) string {

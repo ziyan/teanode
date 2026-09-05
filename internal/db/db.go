@@ -11,11 +11,11 @@ import (
 var log = logging.MustGetLogger("db")
 
 var (
-	ErrInvalidOptions   = errors.New("invalid options")
-	ErrAlreadyExists    = errors.New("already exists")
-	ErrInvalidEmail     = errors.New("invalid email")
-	ErrInvalidArguments = errors.New("invalid arguments")
-	ErrNotFound         = errors.New("not found")
+	ErrInvalidOptions   = errors.New("db: invalid options")
+	ErrAlreadyExists    = errors.New("db: already exists")
+	ErrInvalidEmail     = errors.New("db: invalid email")
+	ErrInvalidArguments = errors.New("db: invalid arguments")
+	ErrNotFound         = errors.New("db: not found")
 )
 
 type Options struct {

@@ -115,14 +115,21 @@ func (self *verifier) spinOnce(ctx context.Context) error {
 // OutgoingIdentity returns the cached answer, establishing it on the first
 // call so that a dashboard opened before the first sweep is not empty.
 func (self *verifier) OutgoingIdentity(ctx context.Context) *OutgoingIdentity {
-	self.outgoingMutex.RLock()
-	identity := self.outgoing
-	self.outgoingMutex.RUnlock()
-
+	identity := self.cachedOutgoingIdentity()
 	if identity != nil {
 		return identity
 	}
 	return self.refreshOutgoingIdentity(ctx)
+}
+
+// cachedOutgoingIdentity is what the last sweep found, or nil before there has
+// been one. A function of its own so the read is under a deferred unlock: the
+// lookup that follows talks to a resolver, and holding the lock across that
+// would block every dashboard request for as long as DNS took.
+func (self *verifier) cachedOutgoingIdentity() *OutgoingIdentity {
+	self.outgoingMutex.RLock()
+	defer self.outgoingMutex.RUnlock()
+	return self.outgoing
 }
 
 func (self *verifier) refreshOutgoingIdentity(ctx context.Context) *OutgoingIdentity {
@@ -134,14 +141,19 @@ func (self *verifier) refreshOutgoingIdentity(ctx context.Context) *OutgoingIden
 	return identity
 }
 
+// cachedExternalAddresses is what the last sweep found, and whether there has
+// been one — two fields that have to be read together or the caller cannot
+// tell "none" from "not looked yet".
+func (self *verifier) cachedExternalAddresses() (ExternalAddresses, bool) {
+	self.addressMutex.RLock()
+	defer self.addressMutex.RUnlock()
+	return self.addresses, self.addressesFetched
+}
+
 // ExternalAddresses returns the cached addresses, looking them up on the first
 // call so that a dashboard opened before the first sweep is not empty.
 func (self *verifier) ExternalAddresses(ctx context.Context) ExternalAddresses {
-	self.addressMutex.RLock()
-	fetched := self.addressesFetched
-	addresses := self.addresses
-	self.addressMutex.RUnlock()
-
+	addresses, fetched := self.cachedExternalAddresses()
 	if fetched {
 		return addresses
 	}

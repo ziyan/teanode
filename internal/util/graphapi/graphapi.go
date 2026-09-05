@@ -23,23 +23,23 @@ var log = logging.MustGetLogger("graphapi")
 type contextKey int
 
 const (
-	resolveParamsKey contextKey = iota
+	resolveParametersKey contextKey = iota
 )
 
-func contextWithResolveParams(ctx context.Context, resolveParams graphql.ResolveParams) context.Context {
-	return context.WithValue(ctx, resolveParamsKey, resolveParams)
+func contextWithResolveParameters(ctx context.Context, resolveParameters graphql.ResolveParams) context.Context {
+	return context.WithValue(ctx, resolveParametersKey, resolveParameters)
 }
 
-func contextResolveParams(ctx context.Context) graphql.ResolveParams {
-	return ctx.Value(resolveParamsKey).(graphql.ResolveParams)
+func contextResolveParameters(ctx context.Context) graphql.ResolveParams {
+	return ctx.Value(resolveParametersKey).(graphql.ResolveParams)
 }
 
 // Selected checks if a field is selected to be returned.
 func Selected(ctx context.Context, selectionPath ...string) bool {
-	resolveParams := contextResolveParams(ctx)
+	resolveParameters := contextResolveParameters(ctx)
 	var selectedFields []*ast.Field
-	for _, selectedField := range resolveParams.Info.FieldASTs {
-		if selectedField.Name == nil || selectedField.Name.Value != resolveParams.Info.FieldName {
+	for _, selectedField := range resolveParameters.Info.FieldASTs {
+		if selectedField.Name == nil || selectedField.Name.Value != resolveParameters.Info.FieldName {
 			continue
 		}
 		// gather fields selected for the next level
@@ -174,8 +174,8 @@ func (self *graphApi) register(root *graphql.Object, queryMutationSubscription i
 	}
 	interfaceValue := reflect.ValueOf(queryMutationSubscription).Elem()
 	interfaceType := reflect.TypeOf(queryMutationSubscription).Elem()
-	for i := 0; i < interfaceType.NumMethod(); i++ {
-		method := interfaceType.Method(i)
+	for index := 0; index < interfaceType.NumMethod(); index++ {
+		method := interfaceType.Method(index)
 		methodValue := interfaceValue.MethodByName(method.Name)
 		field, err := self.buildMethodField(interfaceType, method, methodValue, isSubscription)
 		if err != nil {
@@ -223,8 +223,8 @@ func (self *graphApi) buildMethodArguments(method reflect.Method) (graphql.Field
 	}
 	argumentType := methodType.In(1)
 	arguments := make(graphql.FieldConfigArgument)
-	for i := 0; i < argumentType.NumField(); i++ {
-		field := argumentType.Field(i)
+	for index := 0; index < argumentType.NumField(); index++ {
+		field := argumentType.Field(index)
 		fieldName := strings.SplitN(field.Tag.Get("graphql"), ",", 2)[0]
 		if fieldName == "" {
 			fieldName = strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
@@ -274,27 +274,27 @@ func (self *graphApi) buildMethodReturn(method reflect.Method, isSubscription bo
 	return returnType, nil
 }
 
-func (self *graphApi) callMethod(methodValue reflect.Value, argumentType reflect.Type, resolveParams graphql.ResolveParams) (resultValue reflect.Value, err error) {
+func (self *graphApi) callMethod(methodValue reflect.Value, argumentType reflect.Type, resolveParameters graphql.ResolveParams) (resultValue reflect.Value, err error) {
 	defer func() {
 		if message := recover(); message != nil {
 			log.Errorf("panic: %s\n", message, string(debug.Stack()))
-			err = fmt.Errorf("panic: %s", message)
+			err = fmt.Errorf("graphapi: panic: %s", message)
 		}
 	}()
-	ctx := contextWithResolveParams(resolveParams.Context, resolveParams)
+	ctx := contextWithResolveParameters(resolveParameters.Context, resolveParameters)
 	// build arguments to call the method
 	argumentValues := make([]reflect.Value, 0, 2)
 	argumentValues = append(argumentValues, reflect.ValueOf(ctx))
 	if argumentType != nil {
 		argumentValue := reflect.New(argumentType).Elem()
-		for i := 0; i < argumentType.NumField(); i++ {
-			field := argumentType.Field(i)
+		for index := 0; index < argumentType.NumField(); index++ {
+			field := argumentType.Field(index)
 			fieldName := strings.SplitN(field.Tag.Get("graphql"), ",", 2)[0]
 			if fieldName == "" {
 				fieldName = strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
 			}
-			fieldValue := argumentValue.Field(i)
-			fieldValue.Set(self.coerceInputValue(resolveParams.Args[fieldName], field.Type))
+			fieldValue := argumentValue.Field(index)
+			fieldValue.Set(self.coerceInputValue(resolveParameters.Args[fieldName], field.Type))
 		}
 		argumentValues = append(argumentValues, argumentValue)
 	}
@@ -327,19 +327,19 @@ func (self *graphApi) buildMethodField(interfaceType reflect.Type, method reflec
 		Args:        arguments,
 	}
 	if !isSubscription {
-		field.Resolve = func(resolveParams graphql.ResolveParams) (interface{}, error) {
-			resultValue, err := self.callMethod(methodValue, argumentType, resolveParams)
+		field.Resolve = func(resolveParameters graphql.ResolveParams) (interface{}, error) {
+			resultValue, err := self.callMethod(methodValue, argumentType, resolveParameters)
 			if !resultValue.IsValid() || !resultValue.CanInterface() {
 				return nil, err
 			}
 			return resultValue.Interface(), err
 		}
 	} else {
-		field.Resolve = func(resolveParams graphql.ResolveParams) (interface{}, error) {
-			return resolveParams.Source, nil
+		field.Resolve = func(resolveParameters graphql.ResolveParams) (interface{}, error) {
+			return resolveParameters.Source, nil
 		}
-		field.Subscribe = func(resolveParams graphql.ResolveParams) (interface{}, error) {
-			channelValue, err := self.callMethod(methodValue, argumentType, resolveParams)
+		field.Subscribe = func(resolveParameters graphql.ResolveParams) (interface{}, error) {
+			channelValue, err := self.callMethod(methodValue, argumentType, resolveParameters)
 			if err != nil {
 				return nil, err
 			}
@@ -390,8 +390,8 @@ func (self *graphApi) translateOutputType(modelType reflect.Type) graphql.Type {
 			Description: commentparse.GetStructComment(modelType.PkgPath(), modelType.Name()),
 		})
 		self.outputTypes[modelType] = outputType
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
 			if field.Anonymous {
 				continue
 			}
@@ -453,8 +453,8 @@ func (self *graphApi) translateInputType(modelType reflect.Type, defaultNullable
 			Description: commentparse.GetStructComment(modelType.PkgPath(), modelType.Name()),
 		})
 		self.inputTypes[modelType] = inputType
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
 			if field.Anonymous {
 				continue
 			}
@@ -507,16 +507,16 @@ func (self *graphApi) coerceInputValue(raw interface{}, modelType reflect.Type) 
 	if modelType.Kind() == reflect.Slice {
 		rawValue := reflect.ValueOf(raw)
 		value := reflect.MakeSlice(modelType, 0, rawValue.Len())
-		for i := 0; i < rawValue.Len(); i++ {
-			value = reflect.Append(value, self.coerceInputValue(rawValue.Index(i).Interface(), modelType.Elem()))
+		for index := 0; index < rawValue.Len(); index++ {
+			value = reflect.Append(value, self.coerceInputValue(rawValue.Index(index).Interface(), modelType.Elem()))
 		}
 		return value
 	}
 	if modelType.Kind() == reflect.Array {
 		rawValue := reflect.ValueOf(raw)
 		value := reflect.New(modelType).Elem()
-		for i := 0; i < rawValue.Len(); i++ {
-			value.Index(i).Set(self.coerceInputValue(rawValue.Index(i).Interface(), modelType.Elem()))
+		for index := 0; index < rawValue.Len(); index++ {
+			value.Index(index).Set(self.coerceInputValue(rawValue.Index(index).Interface(), modelType.Elem()))
 		}
 		return value
 	}
@@ -527,9 +527,9 @@ func (self *graphApi) coerceInputValue(raw interface{}, modelType reflect.Type) 
 	if _, ok := self.inputTypes[modelType]; ok {
 		rawMap := raw.(map[string]interface{})
 		valuePointer := reflect.New(modelType)
-		for i := 0; i < modelType.NumField(); i++ {
-			field := modelType.Field(i)
-			value := valuePointer.Elem().Field(i)
+		for index := 0; index < modelType.NumField(); index++ {
+			field := modelType.Field(index)
+			value := valuePointer.Elem().Field(index)
 			if field.Anonymous {
 				continue
 			}

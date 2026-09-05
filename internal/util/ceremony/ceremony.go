@@ -22,7 +22,11 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("ceremony") //nolint:unused
 
 // ErrNoCeremonyInProgress means finish was called without a begin, twice, or
 // too late. One error for all three on purpose: a caller holding an identifier

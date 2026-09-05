@@ -31,20 +31,20 @@ func NewDKIMCommand() *cli.Command {
 						Usage: "replace an existing key, which stops mail signed with the old one from verifying",
 					},
 				},
-				Action: runDKIMGenerate,
+				Action: runDkimGenerate,
 			},
 			{
 				Name:      "show",
 				Usage:     "print the DNS record for a domain's key",
 				ArgsUsage: "[domain]",
 				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runDKIMShow,
+				Action:    runDkimShow,
 			},
 		},
 	}
 }
 
-func runDKIMGenerate(ctx context.Context, command *cli.Command) error {
+func runDkimGenerate(ctx context.Context, command *cli.Command) error {
 	domainName := command.Args().First()
 	if domainName == "" {
 		return fmt.Errorf("which domain? usage: teanode dkim generate <domain>")
@@ -71,13 +71,13 @@ func runDKIMGenerate(ctx context.Context, command *cli.Command) error {
 	return printDomainKey(regenerated)
 }
 
-func runDKIMShow(ctx context.Context, command *cli.Command) error {
+func runDkimShow(ctx context.Context, command *cli.Command) error {
 	connection, configuration, err := openClientForRead(ctx, command)
 	if err != nil {
 		return err
 	}
 	if configuration != nil {
-		return showDKIMOffline(command, configuration, command.Args().First())
+		return showDkimOffline(command, configuration, command.Args().First())
 	}
 
 	if domainName := command.Args().First(); domainName != "" {
@@ -86,7 +86,7 @@ func runDKIMShow(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 		if command.Bool("json") {
-			return PrintJSON(describeDKIM(domain))
+			return PrintJSON(describeDkim(domain))
 		}
 		return printDomainKey(domain)
 	}
@@ -99,7 +99,7 @@ func runDKIMShow(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		listing := make([]any, 0, len(domains))
 		for _, domain := range domains {
-			listing = append(listing, describeDKIM(domain))
+			listing = append(listing, describeDkim(domain))
 		}
 		return PrintJSON(listing)
 	}
@@ -163,17 +163,17 @@ func dkimRecord(domain *client.Domain) *client.Record {
 	return domain.Records.FindRecord("TXT", name)
 }
 
-// showDKIMOffline prints the record straight from the configuration file, for
+// showDkimOffline prints the record straight from the configuration file, for
 // a server that is not running yet. It cannot say whether the record is
 // published, because that needs the DNS check the server performs.
-func showDKIMOffline(command *cli.Command, configuration *config.Configuration, domainName string) error {
+func showDkimOffline(command *cli.Command, configuration *config.Configuration, domainName string) error {
 	if domainName != "" {
 		domain := configuration.FindDomain(domainName)
 		if domain == nil {
 			return fmt.Errorf("%q is not a configured domain", domainName)
 		}
 		if command.Bool("json") {
-			described, err := describeDKIMOffline(domain)
+			described, err := describeDkimOffline(domain)
 			if err != nil {
 				return err
 			}
@@ -185,7 +185,7 @@ func showDKIMOffline(command *cli.Command, configuration *config.Configuration, 
 	if command.Bool("json") {
 		listing := make([]any, 0, len(configuration.Domains))
 		for _, domain := range configuration.Domains {
-			described, err := describeDKIMOffline(domain)
+			described, err := describeDkimOffline(domain)
 			if err != nil {
 				return err
 			}
@@ -230,8 +230,8 @@ func printDomainKeyOffline(domain *config.Domain) error {
 	return nil
 }
 
-// describeDKIM is the machine-readable form of what printDomainKey prints.
-func describeDKIM(domain *client.Domain) map[string]any {
+// describeDkim is the machine-readable form of what printDomainKey prints.
+func describeDkim(domain *client.Domain) map[string]any {
 	described := map[string]any{
 		"domain":    domain.Domain,
 		"domainId":  domain.ID,
@@ -246,10 +246,10 @@ func describeDKIM(domain *client.Domain) map[string]any {
 	return described
 }
 
-// describeDKIMOffline is describeDKIM built from the configuration file, for
+// describeDkimOffline is describeDkim built from the configuration file, for
 // when there is no server to ask. It reports the same shape, minus whether the
 // record is published — that needs the DNS check the server performs.
-func describeDKIMOffline(domain *config.Domain) (map[string]any, error) {
+func describeDkimOffline(domain *config.Domain) (map[string]any, error) {
 	described := map[string]any{
 		"domain":   domain.Domain,
 		"domainId": domain.ID,

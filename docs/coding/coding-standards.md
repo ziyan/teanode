@@ -6,8 +6,8 @@ The rules that `CONTRIBUTING.md` states, with the reasoning behind them.
 
 Acronym casing follows the first letter of the identifier. `SessionID` and
 `sessionId`; `DKIMResult` and `dkimResult`; `GetFTPID` and `getFtpId`. The rule
-is mechanical so that it never needs discussing, and `mulint` checks it. A new
-acronym goes in `mulint.yaml` with a comment saying what it stands for — if it
+is mechanical so that it never needs discussing, and `make lint` checks it. A new
+acronym goes in the lint configuration with a comment saying what it stands for — if it
 cannot be expanded in a short comment, it is probably an abbreviation, not an
 acronym, and should be spelled out instead.
 

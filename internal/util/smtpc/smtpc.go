@@ -20,7 +20,7 @@ import (
 	"github.com/ziyan/teanode/internal/util/connctx"
 )
 
-var log = logging.MustGetLogger("smtpd")
+var log = logging.MustGetLogger("smtpc")
 
 // TLSMode says how much this client insists on encryption, and whether it
 // checks who it is talking to.
@@ -87,7 +87,7 @@ func Send(ctx context.Context, conn net.Conn, username, password, from string, r
 	// On an implicit-TLS port the handshake comes before the banner, so there
 	// is nothing to negotiate and nothing to read until it is done.
 	if settings.TLS == TLSImplicit {
-		if err := self.wrapTLS(); err != nil {
+		if err := self.wrapTls(); err != nil {
 			return err
 		}
 	}
@@ -104,7 +104,7 @@ func Send(ctx context.Context, conn net.Conn, username, password, from string, r
 
 	// start tls if supported
 	if _, ok := self.extensions["STARTTLS"]; ok && settings.TLS != TLSImplicit {
-		if err := self.startTLS(); err != nil {
+		if err := self.startTls(); err != nil {
 			return err
 		}
 		if err := self.hello(); err != nil {
@@ -160,20 +160,20 @@ func (self *client) wait() error {
 	return err
 }
 
-func (self *client) startTLS() error {
+func (self *client) startTls() error {
 	if _, _, err := self.sendCommand(220, "STARTTLS"); err != nil {
 		return err
 	}
-	return self.wrapTLS()
+	return self.wrapTls()
 }
 
-// wrapTLS puts the connection inside TLS, whether that was negotiated with
+// wrapTls puts the connection inside TLS, whether that was negotiated with
 // STARTTLS or expected from the first byte.
 //
 // The handshake is completed here rather than left to the first read, so that
 // a certificate this client will not accept is reported as what it is instead
 // of as a confusing failure to read a banner.
-func (self *client) wrapTLS() error {
+func (self *client) wrapTls() error {
 	tlsConn := tls.Client(self.conn, self.settings.tlsConfig())
 	if err := tlsConn.Handshake(); err != nil {
 		return fmt.Errorf("smtpc: tls handshake with %s failed: %w", self, err)
@@ -263,13 +263,13 @@ func (self *client) data(data []byte) error {
 	return nil
 }
 
-func (self *client) sendCommand(expectedStatusCode int, format string, args ...interface{}) (int, string, error) {
+func (self *client) sendCommand(expectedStatusCode int, format string, arguments ...interface{}) (int, string, error) {
 	if err := self.conn.SetWriteDeadline(time.Now().Add(time.Minute)); err != nil {
 		return 0, "", err
 	}
 
-	log.Debugf("%s: sending: %s", self, fmt.Sprintf(format, args...))
-	id, err := self.text.Cmd(format, args...)
+	log.Debugf("%s: sending: %s", self, fmt.Sprintf(format, arguments...))
+	id, err := self.text.Cmd(format, arguments...)
 	if err != nil {
 		return 0, "", err
 	}

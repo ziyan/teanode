@@ -170,7 +170,7 @@ func (self *verifier) resolveReverse(ctx context.Context, address string) string
 func (self *verifier) askThroughProxy(ctx context.Context, proxyAddress string) (string, error) {
 	services := self.config.Current().DNS.ExternalAddressServices
 	if len(services) == 0 {
-		return "", fmt.Errorf("no address discovery services are configured")
+		return "", fmt.Errorf("dns: no address discovery services are configured")
 	}
 
 	dialer, err := proxy.SOCKS5("tcp", proxyAddress, nil, proxy.Direct)
@@ -179,7 +179,7 @@ func (self *verifier) askThroughProxy(ctx context.Context, proxyAddress string) 
 	}
 	contextDialer, ok := dialer.(proxy.ContextDialer)
 	if !ok {
-		return "", fmt.Errorf("the proxy dialer does not take a context")
+		return "", fmt.Errorf("dns: the proxy dialer does not take a context")
 	}
 
 	client := &http.Client{

@@ -8,8 +8,8 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 )
 
-// writeJSON sends a JSON body with a status code.
-func writeJSON(response http.ResponseWriter, statusCode int, body any) {
+// writeJson sends a JSON body with a status code.
+func writeJson(response http.ResponseWriter, statusCode int, body any) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(statusCode)
 	if err := json.NewEncoder(response).Encode(body); err != nil {
@@ -72,7 +72,7 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 				// dashboard itself, which has to load in order to show a
 				// login form.
 				if strings.HasPrefix(path, "/api/") {
-					writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
+					writeJson(response, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
 					return
 				}
 			}
