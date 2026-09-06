@@ -61,6 +61,11 @@ type rule struct {
 	// existence is a header rule that asks only whether the header is there.
 	existence bool
 
+	// part is which part of the header the pattern runs over: "" for the
+	// whole value, "addr" for the address inside it, "name" for the display
+	// name. Written in the rule as From:addr and From:name.
+	part string
+
 	description string
 }
 
@@ -184,9 +189,55 @@ func parseRules(text string) *ruleSet {
 	// earned. That happened on a live server before this line existed.
 	set.rules = filterRules(lastDefinitionWins(set.rules), skipRule, descriptions)
 	set.metas = filterMetas(lastMetaWins(set.metas), skipRule, descriptions)
+
+	// A meta rule that refers to a name this server cannot evaluate is
+	// skipped too. A skipped rule reads as "did not fire", and most metas
+	// negate their sub-rules — !__DKIM_EXISTS, !__NOT_SPOOFED — so with the
+	// sub-rule missing the negation is true and the meta fires on exactly
+	// the messages it was written to exempt. That put three points of
+	// "malformed From address" on mail from Apple's relay, on a live server.
+	// Not pretending a skipped rule passed also means not pretending it
+	// failed. Repeated to a fixed point, because a meta can lean on a meta.
+	set.metas, set.skipped = dropUnevaluableMetas(set.rules, set.metas, skippedNames)
 	set.loaded = len(set.rules) + len(set.metas)
-	set.skipped = len(skippedNames)
 	return set
+}
+
+// dropUnevaluableMetas removes every meta rule whose expression names
+// something that is not a loaded rule or a surviving meta, and reports how
+// many names were skipped in all.
+func dropUnevaluableMetas(rules []rule, metas []metaRule, skipped map[string]bool) ([]metaRule, int) {
+	known := make(map[string]bool, len(rules)+len(metas))
+	for _, one := range rules {
+		known[one.name] = true
+	}
+	for _, one := range metas {
+		known[one.name] = true
+	}
+	for {
+		kept := metas[:0]
+		dropped := false
+		for _, one := range metas {
+			usable := true
+			for _, name := range one.expression.names() {
+				if !known[name] {
+					usable = false
+					break
+				}
+			}
+			if usable {
+				kept = append(kept, one)
+				continue
+			}
+			delete(known, one.name)
+			skipped[one.name] = true
+			dropped = true
+		}
+		metas = kept
+		if !dropped {
+			return metas, len(skipped)
+		}
+	}
 }
 
 // lastDefinitionWins keeps one rule per name — the last one — in the order
@@ -297,11 +348,18 @@ func parseRule(keyword, rest string) (rule, bool) {
 			return rule{}, false
 		}
 		parsed.header = strings.ToLower(field)
-		// A header name can carry a modifier after a colon — :raw, :addr —
-		// which changes what part is matched. Matching the whole value is
-		// close enough for scoring and is what dropping the modifier means.
-		if base, _, ok := strings.Cut(parsed.header, ":"); ok {
+		// A header name can carry a modifier after a colon saying which part
+		// the pattern runs over. :addr is the address and :name the display
+		// name; :raw is the value before decoding, which is near enough the
+		// value. Ninety-two of the published header rules use :addr, and
+		// matching the whole header for those fired "malformed address" on
+		// every message whose display name had a space in it.
+		if base, modifier, ok := strings.Cut(parsed.header, ":"); ok {
 			parsed.header = base
+			switch modifier {
+			case "addr", "name":
+				parsed.part = modifier
+			}
 		}
 		test = strings.TrimSpace(test)
 		switch {
@@ -501,6 +559,12 @@ func (self *rule) matches(subjects *ruleSubjects) bool {
 		if self.pattern == nil {
 			return false
 		}
+		switch self.part {
+		case "addr":
+			value = addressPart(value)
+		case "name":
+			value = namePart(value)
+		}
 		matched := present && self.pattern.MatchString(value)
 		if self.negated {
 			return !matched
@@ -521,6 +585,32 @@ func (self *rule) matches(subjects *ruleSubjects) bool {
 		return false
 	}
 	return false
+}
+
+// addressPart is the address inside a header value: what is in angle
+// brackets when there are any, otherwise the first token with an @ in it.
+func addressPart(value string) string {
+	if start := strings.LastIndex(value, "<"); start >= 0 {
+		if end := strings.Index(value[start:], ">"); end > 0 {
+			return strings.TrimSpace(value[start+1 : start+end])
+		}
+	}
+	for _, token := range strings.Fields(value) {
+		if strings.Contains(token, "@") {
+			return strings.Trim(token, "<>,;\"")
+		}
+	}
+	return strings.TrimSpace(value)
+}
+
+// namePart is the display name: what precedes the angle brackets, unquoted,
+// or nothing when there are none.
+func namePart(value string) string {
+	start := strings.LastIndex(value, "<")
+	if start < 0 {
+		return ""
+	}
+	return strings.Trim(strings.TrimSpace(value[:start]), "\"")
 }
 
 // headerValue resolves the pseudo-headers the rules use alongside real ones.

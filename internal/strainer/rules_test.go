@@ -176,3 +176,61 @@ meta   META_TWICE  TWICE && TWICE
 		t.Errorf("the replaced definition still fires: %v", hits)
 	}
 }
+
+// A meta rule that leans on something this server cannot evaluate must not
+// fire — in either direction. Most metas negate their sub-rules, so a
+// skipped sub-rule reading as "did not fire" made the negation true and the
+// meta fire on exactly the messages it was written to exempt.
+func TestAMetaLeaningOnASkippedRuleIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	filter := New(&config.AntispamBuiltin{Rules: config.AntispamRules{Enabled: true}}, nil, nil)
+	loaded, skipped := filter.SetRules(`
+body   __HAS_LINK      /https?:/
+header __DKIM_EXISTS   eval:check_dkim_signed()
+meta   LINK_NO_DKIM    __HAS_LINK && !__DKIM_EXISTS
+score  LINK_NO_DKIM    3.0
+meta   DERIVED         LINK_NO_DKIM && __HAS_LINK
+score  DERIVED         1.0
+meta   FINE            __HAS_LINK
+score  FINE            0.5
+`)
+	if loaded != 2 {
+		t.Errorf("loaded %d, want 2: the link rule and the meta that only uses it", loaded)
+	}
+	if skipped != 3 {
+		t.Errorf("skipped %d, want 3: the plugin rule, the meta leaning on it, and the meta leaning on that", skipped)
+	}
+	fired := firedRules(t, filter, &spamfilter.Message{Body: []byte("see https://example.com")})
+	if _, ok := fired["LINK_NO_DKIM"]; ok {
+		t.Errorf("LINK_NO_DKIM fired though its sub-rule cannot be evaluated: %v", fired)
+	}
+	if _, ok := fired["FINE"]; !ok {
+		t.Errorf("FINE should fire, its only sub-rule is evaluable: %v", fired)
+	}
+}
+
+// From:addr runs over the address, not the display name around it.
+func TestHeaderModifiersSelectThePart(t *testing.T) {
+	t.Parallel()
+
+	filter := New(&config.AntispamBuiltin{Rules: config.AntispamRules{Enabled: true}}, nil, nil)
+	filter.SetRules(`
+header ADDR_HAS_SPACE  From:addr =~ /\s/
+score  ADDR_HAS_SPACE  3.0
+header NAME_SHOUTS     From:name =~ /^[A-Z ]+$/
+score  NAME_SHOUTS     1.0
+`)
+	fired := firedRules(t, filter, &spamfilter.Message{
+		Headers: []string{"From: Some Body <somebody@example.com>"},
+	})
+	if _, ok := fired["ADDR_HAS_SPACE"]; ok {
+		t.Errorf("the address has no space; the display name does, and was matched instead: %v", fired)
+	}
+	fired = firedRules(t, filter, &spamfilter.Message{
+		Headers: []string{"From: LOUD SENDER <loud@example.com>"},
+	})
+	if _, ok := fired["NAME_SHOUTS"]; !ok {
+		t.Errorf("NAME_SHOUTS should match the display name: %v", fired)
+	}
+}

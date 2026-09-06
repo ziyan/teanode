@@ -17,11 +17,15 @@ import (
 type metaNode interface {
 	// evaluate returns a number; anything other than zero counts as fired.
 	evaluate(hits map[string]bool) float64
+
+	// names lists the rules the expression refers to.
+	names() []string
 }
 
 type metaNumber float64
 
 func (self metaNumber) evaluate(map[string]bool) float64 { return float64(self) }
+func (self metaNumber) names() []string                  { return nil }
 
 // metaName stands for another rule.
 type metaName string
@@ -32,6 +36,8 @@ func (self metaName) evaluate(hits map[string]bool) float64 {
 	}
 	return 0
 }
+
+func (self metaName) names() []string { return []string{string(self)} }
 
 type metaUnary struct {
 	operator byte
@@ -49,10 +55,14 @@ func (self *metaUnary) evaluate(hits map[string]bool) float64 {
 	return -value
 }
 
+func (self *metaUnary) names() []string { return self.operand.names() }
+
 type metaBinary struct {
 	operator    string
 	left, right metaNode
 }
+
+func (self *metaBinary) names() []string { return append(self.left.names(), self.right.names()...) }
 
 func (self *metaBinary) evaluate(hits map[string]bool) float64 {
 	left := self.left.evaluate(hits)
