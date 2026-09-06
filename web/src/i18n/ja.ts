@@ -417,6 +417,12 @@ export const ja: Catalog = {
   'passkeys.removeBody': '{name} ではサインインできなくなります。パスワードは引き続き使えるので締め出されることはありません。',
   'passkeys.failed': '失敗しました。',
 
+  'passkeyNudge.title': 'パスワードなしでサインイン',
+  'passkeyNudge.body':
+    'このサーバーはパスキーに対応しています。追加すると、スマートフォン、ノート PC、セキュリティキーでサインインでき、入力するものもフィッシングされるものもありません。',
+  'passkeyNudge.add': 'パスキーを追加',
+  'passkeyNudge.dismiss': '今はしない',
+
   'settings.password.description': 'このアカウントのパスワードを変更します。',
   'settings.profile.description': '呼び名、サインインに使う名前、通知の宛先。',
 

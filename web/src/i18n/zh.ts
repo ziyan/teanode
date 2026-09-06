@@ -407,6 +407,12 @@ export const zh: Catalog = {
   'passkeys.removeBody': '{name} 将无法再用于登录。你的密码仍然有效，因此不会被锁在外面。',
   'passkeys.failed': '操作失败。',
 
+  'passkeyNudge.title': '不用密码登录',
+  'passkeyNudge.body':
+    '这台服务器支持通行密钥。添加一个之后，你的手机、电脑或安全密钥就能替你登录；不用输入，也无从被钓鱼。',
+  'passkeyNudge.add': '添加通行密钥',
+  'passkeyNudge.dismiss': '暂不',
+
   'settings.password.description': '修改当前账号的密码。',
   'settings.profile.description': '如何称呼你、用什么登录，以及通知发往何处。',
 

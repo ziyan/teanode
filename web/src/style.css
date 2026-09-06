@@ -1556,6 +1556,57 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   font-size: 14px;
 }
 
+/* --- a suggestion above the page ------------------------------------------
+   One row: an icon, a sentence, and the two answers to it. A card rather than
+   a coloured band, and the icon in the accent rather than a warning colour,
+   because nothing is wrong: it is an offer, and it should look like one. On
+   a phone the answers drop under the sentence rather than squeezing it. */
+.nudge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+
+.nudge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-1);
+  background: var(--rail);
+  color: var(--accent);
+}
+
+/* The sentence takes the room; the answers do not. */
+.nudge-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 280px;
+  min-width: 0;
+  gap: 2px;
+  font-size: var(--text-body);
+}
+
+.nudge-text .muted {
+  font-size: var(--text-label);
+  line-height: 1.45;
+}
+
+.nudge-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-3);
+}
+
 /* Scrolls sideways rather than wrapping, because tabs are a row: wrapped onto
    a second line they stop reading as one set of alternatives, and the line
    they wrap onto moves as the labels change with the language. Five tabs are

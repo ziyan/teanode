@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-06
+
+### Added
+
+- The dashboard suggests adding a passkey, once, to an account that has none on a server that offers them. **Not now** hides the suggestion in that browser. (#23)
+
 ## [0.4.3] - 2026-09-05
 
 ### Fixed
