@@ -182,8 +182,20 @@ func (self *Strainer) listed(ctx context.Context, zone, subject string) (bool, e
 		return answer, nil
 	}
 
-	_, err := self.resolver.LookupIPAddr(ctx, name)
+	addresses, err := self.resolver.LookupIPAddr(ctx, name)
 	if err == nil {
+		// An answer is not automatically a listing. The lists answer in
+		// 127.0.0.0/8, and reserve the top of it to say why they will not
+		// answer the question: that the query came through a public resolver,
+		// or that this client has asked too often. Those arrive as ordinary
+		// successful lookups, and counting them as listings would score every
+		// sender on the internet at once — which is the failure a server
+		// using 8.8.8.8 would hit immediately and never notice.
+		if refusal, code := refusedAnswer(addresses); refusal {
+			self.cache.put(name, false)
+			return false, fmt.Errorf("%s refused the query with %s; a block list will not answer "+
+				"through a public resolver, and wants its own subscription above a low volume", zone, code)
+		}
 		self.cache.put(name, true)
 		return true, nil
 	}
@@ -266,4 +278,31 @@ func messageDomains(message *spamfilter.Message, maximum int) []string {
 		}
 	}
 	return domains
+}
+
+// refusedAnswer reports whether a block list answered "I will not tell you"
+// rather than "listed".
+//
+// The convention is 127.255.255.0/24: Spamhaus documents .252 for a query
+// through a public resolver, .254 for one from an unregistered client and
+// .255 for too many. Other lists use the same corner of the space for the
+// same purpose. Anything else in 127.0.0.0/8 is a real listing, and its exact
+// value says why — which this does not yet distinguish between, because the
+// codes differ per list and the weight here is per list rather than per code.
+func refusedAnswer(addresses []net.IPAddr) (bool, string) {
+	for _, address := range addresses {
+		parsed, ok := netip.AddrFromSlice(address.IP)
+		if !ok {
+			continue
+		}
+		parsed = parsed.Unmap()
+		if !parsed.Is4() {
+			continue
+		}
+		octets := parsed.As4()
+		if octets[0] == 127 && octets[1] == 255 && octets[2] == 255 {
+			return true, parsed.String()
+		}
+	}
+	return false, ""
 }

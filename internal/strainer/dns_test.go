@@ -18,6 +18,7 @@ import (
 // existing, unless it was told to fail, which is the case that matters most.
 type fakeResolver struct {
 	listed  map[string]bool
+	refused bool
 	broken  bool
 	queries atomic.Int64
 }
@@ -29,6 +30,11 @@ func (self *fakeResolver) LookupIPAddr(ctx context.Context, host string) ([]net.
 		// name". Scoring this as "not listed" would make every sender on the
 		// internet look reputable exactly when the filter cannot tell.
 		return nil, &net.DNSError{Err: "server misbehaving", Name: host, IsTemporary: true}
+	}
+	if self.refused {
+		// What a block list answers when it will not take the question:
+		// a successful lookup carrying a code that means "not an answer".
+		return []net.IPAddr{{IP: net.IPv4(127, 255, 255, 252)}}, nil
 	}
 	if self.listed[host] {
 		return []net.IPAddr{{IP: net.IPv4(127, 0, 0, 2)}}, nil
@@ -158,5 +164,25 @@ func TestAnswersAreCached(t *testing.T) {
 	}
 	if queries := resolver.queries.Load(); queries != 1 {
 		t.Errorf("asked the block list %d times for the same address, want 1", queries)
+	}
+}
+
+// A block list that refuses the question answers successfully, with a code in
+// 127.255.255.0/24 meaning "not through a public resolver" or "you have asked
+// too often". Scoring that as a listing would put three points on every
+// sender on the internet, which is what a server using a public resolver
+// would get from its first message onwards.
+func TestARefusedQueryIsNotAListing(t *testing.T) {
+	t.Parallel()
+
+	resolver := &fakeResolver{refused: true}
+	result, err := strainer.New(dnsSettings(), resolver, nil).Check(context.Background(), &spamfilter.Message{
+		RemoteAddress: netip.MustParseAddr("198.51.100.4"),
+	})
+	if err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	if result.Score != 0 {
+		t.Errorf("score = %v when the block list refused the query, want 0; got %v", result.Score, result.Checks)
 	}
 }
