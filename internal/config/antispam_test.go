@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ziyan/teanode/internal/config"
 )
 
@@ -111,5 +113,51 @@ func TestValidation(t *testing.T) {
 	})
 	if !strings.Contains(unknown, "antispam.engine") {
 		t.Errorf("expected a complaint about antispam.engine, got: %s", unknown)
+	}
+}
+
+// The defaults must not fill in the engine, or the resolution rule above can
+// never fire.
+//
+// This is not hypothetical tidiness. A default of "builtin" means the field
+// is never empty, so a deployment whose stored configuration names a daemon
+// resolves to the built-in filter and quietly stops using the daemon it was
+// configured with. It happened on a live server: it restarted, logged "spam
+// filter: the built-in filter", and nobody asked it to.
+//
+// The mirror image is just as bad: a default host would make a brand new
+// installation resolve to spamd and look for a daemon that is not there.
+func TestTheDefaultsDoNotDecideTheEngine(t *testing.T) {
+	t.Parallel()
+
+	defaults := config.Default()
+	if engine := defaults.Antispam.Engine; engine != "" {
+		t.Errorf("the default engine is %q; it has to be empty so that ResolvedEngine() can read it from whether a host is configured", engine)
+	}
+	if host := defaults.Antispam.SpamdHost(); host != "" {
+		t.Errorf("the defaults name a spamd host (%q), so a new installation would look for a daemon that is not there", host)
+	}
+	if engine := defaults.Antispam.ResolvedEngine(); engine != config.AntispamEngineBuiltin {
+		t.Errorf("a default configuration resolves to %q, want builtin", engine)
+	}
+}
+
+// A configuration stored before any of this existed has an antispam section
+// with a host and no engine. Loading it over the defaults must still resolve
+// to the daemon it names.
+func TestAStoredConfigurationFromBeforeTheEngineExisted(t *testing.T) {
+	t.Parallel()
+
+	// The defaults are the base the stored section is unmarshalled over,
+	// which is what made the live failure possible.
+	configuration := config.Default()
+	if err := yaml.Unmarshal([]byte("enabled: true\nhost: spamassassin\nport: 783\n"), &configuration.Antispam); err != nil {
+		t.Fatalf("could not load the stored section: %v", err)
+	}
+	if engine := configuration.Antispam.ResolvedEngine(); engine != config.AntispamEngineSpamd {
+		t.Errorf("ResolvedEngine() = %q for a configuration naming a daemon, want spamd", engine)
+	}
+	if host := configuration.Antispam.SpamdHost(); host != "spamassassin" {
+		t.Errorf("SpamdHost() = %q, want the stored host", host)
 	}
 }

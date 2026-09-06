@@ -91,9 +91,24 @@ func Default() *Configuration {
 			// This changes nothing for an existing deployment: the stored
 			// configuration wins, and a server that had it off keeps it off.
 			Enabled: true,
-			Engine:  AntispamEngineBuiltin,
+
+			// Engine is deliberately left empty here, and Spamd.Host with
+			// it. Antispam.ResolvedEngine() reads an empty engine as "spamd
+			// when a host is configured, builtin when none is", which is what
+			// keeps a deployment already talking to a daemon talking to it
+			// across an upgrade.
+			//
+			// Defaulting either field defeats that rule, silently. A default
+			// of "builtin" means the field is never empty, so an existing
+			// deployment resolves to the built-in filter and stops using the
+			// daemon it was configured with; a default host means the
+			// opposite, and a new installation would look for a daemon that
+			// is not there. Found on a live server, which switched engines on
+			// restart without being asked.
+			//
+			// The port stands alone: it is what spamd listens on, and is only
+			// consulted once a host has been set.
 			Spamd: AntispamSpamd{
-				Host: "127.0.0.1",
 				Port: 783,
 			},
 			Builtin: AntispamBuiltin{
