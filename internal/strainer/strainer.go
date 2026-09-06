@@ -71,7 +71,7 @@ type Strainer struct {
 	// half of this lock is for.
 	rulesMutex sync.RWMutex
 	rules      *ruleSet
-	loaded     loadedVersion
+	loaded     loadedVersions
 }
 
 // New returns a strainer reading the given settings.

@@ -2,6 +2,7 @@ package strainer
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
@@ -22,10 +23,27 @@ import (
 // within a reasonable time rather than about being current to the second.
 const ruleRefreshInterval = time.Minute
 
-// loadedVersions is what this instance has parsed, per channel.
-type loadedVersion struct {
-	channel string
-	version string
+// loadedVersions is what this instance has parsed: the stored version of
+// every configured channel, as of the last time the rules were built.
+//
+// Per channel, and all of them together, because SetRules replaces the whole
+// corpus rather than adding to it. Tracking one channel's version while
+// several were configured made each tick notice a mismatch, rebuild from that
+// channel alone, and record its version — so the next tick noticed the next
+// channel and did it again, reparsing megabytes every minute for ever.
+type loadedVersions map[string]string
+
+// matches reports whether what is stored is what this instance has parsed.
+func (self loadedVersions) matches(stored map[string]string) bool {
+	if len(self) != len(stored) {
+		return false
+	}
+	for channel, version := range stored {
+		if self[channel] != version {
+			return false
+		}
+	}
+	return true
 }
 
 // StartRuleRefresh keeps this instance's parsed rules in step with the
@@ -57,63 +75,78 @@ func (self *Strainer) StartRuleRefresh(ctx context.Context) {
 	}()
 }
 
-// refreshRules reparses when the stored version has moved.
+// refreshRules rebuilds the corpus when any configured channel has moved.
 func (self *Strainer) refreshRules(ctx context.Context) {
 	if !self.settings.Rules.Enabled {
 		return
 	}
+
+	// Versions first, for every channel: a short column each, against the
+	// megabytes the rules themselves are.
+	stored := make(map[string]string, len(self.settings.Rules.Channels))
 	for _, channel := range self.settings.Rules.Channels {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := self.refreshChannel(channel); err != nil {
-			log.Warningf("could not refresh the rules from %s: %s", channel, err)
+		version, err := self.database.SpamRuleSetVersion(channel)
+		if err != nil {
+			log.Warningf("could not check the rules from %s: %s", channel, err)
+			return
 		}
-	}
-}
-
-func (self *Strainer) refreshChannel(channel string) error {
-	version, err := self.database.SpamRuleSetVersion(channel)
-	if err != nil {
-		return err
-	}
-	if version == "" {
-		return nil
+		if version != "" {
+			stored[channel] = version
+		}
 	}
 
 	self.rulesMutex.RLock()
-	current := self.loaded
+	unchanged := self.loaded.matches(stored)
 	self.rulesMutex.RUnlock()
-	if current.channel == channel && current.version == version {
-		return nil
+	if unchanged {
+		return
 	}
 
-	stored, err := self.database.LoadSpamRuleSet(channel)
-	if err != nil {
-		return err
-	}
-	if stored == nil {
-		return nil
+	// Every channel's rules, concatenated and parsed as one corpus, because
+	// that is what a rule set is: meta rules in one file refer to rules
+	// defined in another.
+	var corpus strings.Builder
+	sets := make([]*models.SpamRuleSet, 0, len(stored))
+	for _, channel := range self.settings.Rules.Channels {
+		if _, ok := stored[channel]; !ok {
+			continue
+		}
+		set, err := self.database.LoadSpamRuleSet(channel)
+		if err != nil {
+			log.Warningf("could not read the rules from %s: %s", channel, err)
+			return
+		}
+		if set == nil {
+			continue
+		}
+		corpus.Write(set.Content)
+		corpus.WriteString("\n")
+		sets = append(sets, set)
 	}
 
-	loaded, skipped := self.SetRules(string(stored.Content))
+	loaded, skipped := self.SetRules(corpus.String())
+
 	self.rulesMutex.Lock()
-	self.loaded = loadedVersion{channel: channel, version: stored.Version}
+	self.loaded = stored
 	self.rulesMutex.Unlock()
 
-	log.Noticef("spam rules from %s version %s: %d loaded, %d skipped",
-		channel, stored.Version, loaded, skipped)
+	log.Noticef("spam rules from %d channel(s): %d loaded, %d skipped",
+		len(sets), loaded, skipped)
 
-	// Written back so the dashboard can say how much of the published set
-	// this server can actually run, which is not something the publisher
-	// knows.
-	if stored.RulesLoaded != loaded || stored.RulesSkipped != skipped {
-		stored.RulesLoaded, stored.RulesSkipped = loaded, skipped
-		if err := self.database.SaveSpamRuleSet(stored); err != nil {
-			log.Warningf("could not record how much of %s loaded: %s", channel, err)
+	// Recorded against the single channel when there is one, so the
+	// dashboard can say how much of a published set this server can actually
+	// run — which is not something the publisher knows. With several, the
+	// counts are of the corpus as a whole and cannot be attributed, so they
+	// are left alone.
+	if len(sets) == 1 && (sets[0].RulesLoaded != loaded || sets[0].RulesSkipped != skipped) {
+		sets[0].RulesLoaded, sets[0].RulesSkipped = loaded, skipped
+		if err := self.database.SaveSpamRuleSet(sets[0]); err != nil {
+			log.Warningf("could not record how much of %s loaded: %s", sets[0].Channel, err)
 		}
 	}
-	return nil
 }
 
 // ImportRules stores a rule set, for the command line and the dashboard.
