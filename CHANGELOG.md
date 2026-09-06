@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-06
+
 ### Added
 
 - Mail is scored for spam by a filter inside the server, so a deployment needs
