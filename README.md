@@ -89,7 +89,7 @@ and the reality that many providers block outbound port 25.
 - A host with a stable address, reachable on ports 25, 80, 443 and 587
 - PostgreSQL, for the configuration and the mail it has handled
 
-Nothing else. No AWS account, no Redis. Certificates are obtained
+Nothing else. No AWS account. Certificates are obtained
 automatically over HTTP-01, so there is no DNS API to configure. An
 S3-compatible object store is optional, and only worth having if you run more
 than one instance: it is what lets them share the stored messages.
