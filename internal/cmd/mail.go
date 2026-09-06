@@ -317,8 +317,14 @@ func authenticationSummary(raw json.RawMessage) [][2]string {
 			Instances int
 		} `json:"arc"`
 		SpamFilter *struct {
-			Score  float64
-			Result string
+			Score   float64
+			Result  string
+			Symbols []string
+			Checks  []struct {
+				Symbol      string
+				Score       float64
+				Description string
+			}
 		} `json:"spamFilter"`
 		Antivirus *struct{ Viruses []string } `json:"antivirus"`
 		Errors    []string                    `json:"errors"`
@@ -341,6 +347,17 @@ func authenticationSummary(raw json.RawMessage) [][2]string {
 	}
 	if results.SpamFilter != nil && results.SpamFilter.Result != "" {
 		fields = append(fields, [2]string{"spam", fmt.Sprintf("%s, score %g", results.SpamFilter.Result, results.SpamFilter.Score)})
+
+		// What the score was made of. The built-in filter reports the points
+		// each check contributed, and without this the command line could
+		// show a number and nothing about where it came from; an external
+		// daemon reports names only, so fall back to those.
+		for _, check := range results.SpamFilter.Checks {
+			fields = append(fields, [2]string{"", fmt.Sprintf("%+g  %s  %s", check.Score, check.Symbol, check.Description)})
+		}
+		if len(results.SpamFilter.Checks) == 0 && len(results.SpamFilter.Symbols) > 0 {
+			fields = append(fields, [2]string{"", strings.Join(results.SpamFilter.Symbols, " ")})
+		}
 	}
 	if results.Antivirus != nil && len(results.Antivirus.Viruses) > 0 {
 		fields = append(fields, [2]string{"viruses", strings.Join(results.Antivirus.Viruses, ", ")})

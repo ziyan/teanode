@@ -38,7 +38,7 @@ const mailFields = `{
 		dkims { result domain selector }
 		dmarc { domain policy }
 		arc { result instances }
-		spamFilter { score result }
+		spamFilter { score result symbols checks { symbol score description } }
 		antivirus { viruses }
 		errors
 	}
