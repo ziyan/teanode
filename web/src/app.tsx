@@ -28,6 +28,7 @@ import { AccountMenu } from './components/accountMenu'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
 import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
+import { PasskeyNudge } from './components/passkeyNudge'
 
 export function App() {
   const { t } = useTranslation()
@@ -152,6 +153,11 @@ export function App() {
           )}
 
           <main className="content">
+            {/* Above everything, and on every page, until it is acted on or
+                dismissed: a suggestion is only a suggestion if it can be
+                declined. The console has no username and no passkeys, so it
+                is never asked. */}
+            {session.username && <PasskeyNudge username={session.username} />}
             {/* The way back up, then the name of where you are. Together
                 rather than one on the bar and one in the page: they answer
                 the same question, and split apart neither of them read as an

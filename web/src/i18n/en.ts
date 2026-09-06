@@ -421,6 +421,14 @@ export const en = {
     '{name} stops being able to sign in. Your password still works, so this does not lock you out.',
   'passkeys.failed': 'That did not work.',
 
+  // The one-line suggestion above the page for an account with no passkey,
+  // on a server that offers them.
+  'passkeyNudge.title': 'Sign in without a password',
+  'passkeyNudge.body':
+    'This server supports passkeys. Add one and your phone, laptop or security key signs you in; nothing to type and nothing to phish.',
+  'passkeyNudge.add': 'Add a passkey',
+  'passkeyNudge.dismiss': 'Not now',
+
   'settings.password.description': 'Change the password for this account.',
   'settings.profile.description': 'What to call you, what you sign in with, and where notifications go.',
 
