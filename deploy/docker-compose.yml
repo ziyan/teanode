@@ -192,19 +192,28 @@ services:
         max-size: 50M
         max-file: "10"
 
-  # Optional. Remove this service and set antispam.enabled to false to skip
-  # spam scoring.
+  # Not started by default, and not needed by default.
   #
-  # The server talks spamd on 783. There is no official SpamAssassin image, and
-  # the one this file used to name was deleted from Docker Hub — which broke
-  # "docker compose up -d" entirely rather than just the spam scoring, because
-  # compose pulls every service before it starts any of them. Hence a pinned
-  # tag, and a note to look at it when you upgrade.
+  # Mail is scored by the filter inside the server, so there is nothing here
+  # to run. This service exists for a deployment that would rather use an
+  # external SpamAssassin daemon, which is what antispam.engine = "spamd"
+  # selects:
   #
-  # The volume holds the rules sa-update fetches; the image refreshes them
-  # daily on its own.
+  #     docker compose --profile spamd up -d
+  #
+  # It is behind a profile for a reason worth knowing. The image this file
+  # used to name was deleted from Docker Hub by its author, and because
+  # compose pulls every service before it starts any of them, a missing image
+  # for the optional spam scanner stopped the whole mail server from coming
+  # up. Nothing in the default path now depends on somebody else's image
+  # continuing to exist.
+  #
+  # There is no official SpamAssassin image, so the tag here is pinned and
+  # worth checking when you upgrade. The volume holds the rules sa-update
+  # fetches; the image refreshes them daily on its own.
   spamassassin:
     image: instantlinux/spamassassin:4.0.2-3
+    profiles: [spamd]
     restart: always
     ports:
       - "127.0.0.1:783:783"

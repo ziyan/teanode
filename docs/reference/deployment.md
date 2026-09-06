@@ -11,12 +11,15 @@ send on port 25 cannot deliver mail however it is deployed.
     postgres        the configuration, the keys, and every message handled
     postgres-certs  a certificate for it, generated once, so that connection
                     is encrypted and verified rather than in the clear
+    teanode-data    creates the data directory and gives it to the server's uid
     teanode         the server, with the dashboard inside it
     clamav          virus scanning, optional
-    spamassassin    spam scoring, optional
 
-and, behind the `cluster` profile, MinIO and Redis, which only matter when you
-run more than one instance.
+Spam is scored by the filter inside the server, so there is no spam service
+here. Two other profiles exist for deployments that need them: `cluster`
+starts MinIO and Redis, which only matter when you run more than one instance,
+and `spamd` starts a SpamAssassin daemon for a deployment that would rather
+use one — see "Choosing a spam filter" below.
 
 ## 1. Take the compose file
 
@@ -108,6 +111,29 @@ database, and they are, but the compose file also interpolates them into a
 different service.
 
 Settings change in the dashboard from here on, or with `config import`.
+
+## Choosing a spam filter
+
+Mail is scored by the built-in filter, which needs no second program. It reads
+what the server already established about a message — the SPF, DKIM, DMARC and
+ARC results, whether the sending host has a confirmed reverse DNS name, what
+it called itself — consults public block lists over ordinary DNS, and applies
+a classifier trained on the mail you mark in the dashboard. A message's score
+comes with a breakdown of which check contributed what.
+
+An external SpamAssassin daemon is still fully supported:
+
+    docker compose --profile spamd up -d
+
+and in the dashboard, or in the stored configuration, set
+`antispam.engine` to `spamd`. Leaving `engine` empty is resolved rather than
+defaulted, so a deployment that was already talking to a daemon keeps talking
+to it across an upgrade that never mentioned the setting.
+
+The classifier is the part that improves with use, and it starts knowing
+nothing. Mark messages in the dashboard — it needs examples of ordinary mail
+as much as of spam — and it begins contributing once it has seen enough of
+both. The settings page shows how many it has learned.
 
 ## Upgrading
 

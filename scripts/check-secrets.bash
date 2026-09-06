@@ -109,6 +109,9 @@ readonly ALLOWED_HOSTS=(
   # names are configuration rather than a private reference.
   .spamcop.net
   .spamassassin.org
+  # Named in NOTICE as the source of the optional rule data, which the
+  # licence requires attributing.
+  .apache.org
   .semver.org
   .keepachangelog.com
   .unicode.org
