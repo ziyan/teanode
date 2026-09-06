@@ -80,6 +80,9 @@ command line client for the same API: sign in from a laptop with
 `teanode auth login --url https://mail.example.com`, and `teanode domain
 list`, `teanode mail list` and the rest work from there.
 
+Or skip the binaries and run the compose file, which is how this is meant to
+run in production: `docs/reference/deployment.md`.
+
 `docs/getting-started.md` has the full walk-through, including the DNS records
 and the reality that many providers block outbound port 25.
 
@@ -89,7 +92,7 @@ and the reality that many providers block outbound port 25.
 - A host with a stable address, reachable on ports 25, 80, 443 and 587
 - PostgreSQL, for the configuration and the mail it has handled
 
-Nothing else. No AWS account, no Redis. Certificates are obtained
+Nothing else. No AWS account. Certificates are obtained
 automatically over HTTP-01, so there is no DNS API to configure. An
 S3-compatible object store is optional, and only worth having if you run more
 than one instance: it is what lets them share the stored messages.
@@ -171,14 +174,18 @@ documented in `docs/configuration.md`.
 
 ## Running it
 
-`deploy/` has a systemd unit and a docker compose file that pulls the
-published image:
+`deploy/docker-compose.yml` is a complete deployment: the server, PostgreSQL,
+and behind profiles the things only a cluster needs. It pulls the published
+image, so there is nothing to build:
 
-    docker pull ghcr.io/ziyan/teanode:latest
+    docker compose up -d
 
 The image carries the dashboard and nothing else — no shell, no package
 manager. `docker compose build` still builds the checkout, which is what you
 want when the change you are running is one you just made.
+
+`docs/reference/deployment.md` walks the whole thing through, including
+upgrades, what to back up, and running more than one instance.
 
 ## Contributing
 

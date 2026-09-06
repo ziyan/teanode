@@ -9,6 +9,7 @@ Then, depending on what you are doing:
 - `docs/reference/local-development.md` — build, test, run a dev server
 - `docs/reference/project-structure.md` — what each package is for
 - `docs/reference/command-line.md` — the CLI, and how it reaches the whole API
+- `docs/reference/deployment.md` — running it with docker compose, and backups
 - `docs/coding/database-migrations.md` — how to add a migration safely
 - `docs/security/security-review.md` — what was audited, and what is open
 - `docs/decisions/` — why the architecture is the way it is

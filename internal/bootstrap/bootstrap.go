@@ -208,9 +208,10 @@ func (self *Bootstrap) loadDatabase() error {
 }
 
 // parseDatabaseUrl reads a postgres:// URL. Only the parts TeaNode connects
-// with are taken; a query parameter other than sslmode is refused rather than
+// with are taken; an unrecognised query parameter is refused rather than
 // dropped, because a connection option that appears to be set and is not is
-// the kind of thing that is discovered in production.
+// the kind of thing that is discovered in production — which is the whole
+// reason sslrootcert had to be added here rather than merely passed through.
 func (self *Bootstrap) parseDatabaseUrl(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
@@ -238,6 +239,8 @@ func (self *Bootstrap) parseDatabaseUrl(value string) error {
 		switch name {
 		case "sslmode":
 			self.Database.SSLMode = values[0]
+		case "sslrootcert":
+			self.Database.SSLRootCertificate = values[0]
 		default:
 			return fmt.Errorf("bootstrap: %sDATABASE_URL: unsupported parameter %q", Prefix, name)
 		}

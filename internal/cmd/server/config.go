@@ -62,14 +62,17 @@ func newConfigEnvCommand() *cli.Command {
 				Usage: "the domain this server speaks as, for example example.com",
 			},
 			&cli.StringFlag{
-				Name:  "database-url",
-				Usage: "how to reach PostgreSQL",
-				Value: "postgres://teanode:teanode@postgres:5432/teanode?sslmode=disable",
+				Name: "database-url",
+				Usage: "how to reach PostgreSQL; the default verifies the certificate the " +
+					"compose file generates",
+				Value: "postgres://teanode:teanode@postgres:5432/teanode" +
+					"?sslmode=verify-full&sslrootcert=/certs/server.crt",
 			},
 			&cli.StringFlag{
-				Name:  "data-directory",
-				Usage: "where keys, certificates and the message spool are kept",
-				Value: "/opt/teanode/data",
+				Name: "data-directory",
+				Usage: "where keys, certificates and the message spool are kept; the default is " +
+					"what the compose file mounts",
+				Value: "/var/lib/teanode",
 			},
 			&cli.BoolFlag{
 				Name:  "force",
@@ -108,7 +111,16 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 # Documentation: https://github.com/ziyan/teanode/blob/main/docs/configuration.md
 
 # Required. Where the configuration, the mail and the counters are kept.
-%sDATABASE_URL=%s
+#
+# Quoted because the URL contains an "&", which the shell would otherwise read
+# as "run the rest in the background" if you source this file. Docker compose
+# strips the quotes when it reads it.
+#
+# sslmode=verify-full encrypts the connection and checks that the server really
+# is the one the certificate names. Pointing somewhere other than the compose
+# file's PostgreSQL means pointing sslrootcert at that server's authority, or
+# dropping to sslmode=require to encrypt without checking who answered.
+%sDATABASE_URL="%s"
 
 # Optional. Distinguishes this process from others sharing that database, and
 # has to differ between them. Defaults to the host name, which is what a
@@ -151,6 +163,12 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 # A variable that is set but empty means empty. Leave a key commented out
 # rather than blank unless you mean to clear the setting — TEANODE_LISTEN_HTTPS
 # with no value turns the HTTPS listener off, which is a real thing to want.
+#
+# Once the server has started once, every "first run only" line above can be
+# deleted: it is ignored from then on, and leaving it invites the confusion of
+# a file that says one thing while the server does another. What has to stay
+# is TEANODE_DATABASE_URL, TEANODE_INSTANCE_ID if you set one, and anything
+# the compose file reads for a service other than the server.
 `,
 		bootstrap.Prefix, command.String("database-url"),
 		bootstrap.Prefix,
@@ -183,7 +201,8 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 	fmt.Printf("  1. edit %s: set the host name, the domain, and an ACME contact address\n", filename)
 	fmt.Printf("  2. docker compose up -d\n")
 	fmt.Printf("  3. open the dashboard, create your account, and add your domain\n")
-	fmt.Printf("  4. publish the DNS records it lists\n\n")
+	fmt.Printf("  4. publish the DNS records it lists\n")
+	fmt.Printf("  5. once it is up, delete the \"first run only\" lines from %s\n\n", filename)
 	fmt.Printf("Each domain is given a signing key when it is added, so DKIM is set up\n")
 	fmt.Printf("for you; the dashboard shows the record to publish.\n")
 	return nil

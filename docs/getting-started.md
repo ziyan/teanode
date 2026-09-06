@@ -11,8 +11,8 @@ You need three things:
 - **A domain**, and access to edit its DNS records.
 - **A host with a stable address**, reachable from the internet on ports 25,
   80, 443 and 587.
-- **PostgreSQL**, which stores the mail the server has handled. The
-  configuration and the keys are in a file; the database holds the history.
+- **PostgreSQL**. It holds everything: the configuration, the signing keys,
+  and the mail the server has handled. It is the one thing to back up.
 
 ### The port 25 problem
 
@@ -43,8 +43,13 @@ outbound mail through a host that can reach port 25.
 `teanode-server` is the server, with the dashboard inside it, so there is
 nothing else to install or serve. `teanode` is the client that administers it,
 and belongs on the server and on your own machine; there is a macOS build of
-it. There is a container image too, with both in it, and `deploy/` has a
-compose file.
+it.
+
+There is a container image too, with both binaries in it, and that is the
+better way to run this: see
+**[reference/deployment.md](reference/deployment.md)**, which replaces steps 1
+and 2 here. The rest of this page — DNS, claiming the dashboard — applies
+either way.
 
 ## 2. Describe the server
 
@@ -213,3 +218,6 @@ how often they are the answer:
 - **[configuration.md](configuration.md)** documents every field.
 - **[reference/command-line.md](reference/command-line.md)** covers the CLI,
   which reaches the whole API and is the better tool for anything repetitive.
+- **[reference/deployment.md](reference/deployment.md)** is this same server
+  run from the compose file, with upgrades, backups and what to do when it
+  will not start.
