@@ -18,11 +18,16 @@ import (
 	"context"
 	"strings"
 
+	"github.com/op/go-logging"
+
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/authres"
+	"github.com/ziyan/teanode/internal/util/resolver"
 )
+
+var log = logging.MustGetLogger("strainer")
 
 // check is one thing the strainer noticed, and what it cost.
 //
@@ -54,11 +59,21 @@ const (
 // Strainer scores messages. Safe for concurrent use.
 type Strainer struct {
 	settings *config.AntispamBuiltin
+	resolver resolver.Resolver
+	cache    *listCache
 }
 
 // New returns a strainer reading the given settings.
-func New(settings *config.AntispamBuiltin) *Strainer {
-	return &Strainer{settings: settings}
+//
+// The resolver is the server's own, so block list lookups go the same way
+// every other lookup does. It may be nil, and then the lookups are skipped
+// rather than the strainer refusing to start.
+func New(settings *config.AntispamBuiltin, nameResolver resolver.Resolver) *Strainer {
+	return &Strainer{
+		settings: settings,
+		resolver: nameResolver,
+		cache:    newListCache(),
+	}
 }
 
 // Close releases nothing today, and exists so that the strainer satisfies
@@ -80,6 +95,9 @@ func (self *Strainer) Check(ctx context.Context, message *spamfilter.Message) (*
 	checks := make([]check, 0, 8)
 	if self.settings.Signals.Enabled {
 		checks = append(checks, self.signalChecks(message)...)
+	}
+	if self.settings.DNS.Enabled {
+		checks = append(checks, self.dnsChecks(ctx, message)...)
 	}
 
 	return buildResult(checks), nil

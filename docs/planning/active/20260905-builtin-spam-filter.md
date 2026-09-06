@@ -815,7 +815,7 @@ service stays.
 
 ## Concrete Steps
 
-Work from the repository root, `/home/ziyan/projects/ziyan/teanode`.
+Work from the root of this repository.
 
 Before starting, get a working build and a database:
 
