@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import { ChevronRightIcon, FilterIcon, SortIcon } from './icons'
@@ -11,6 +11,47 @@ import { MultiSelectFilter, Option, TextFilter, matchesSelection, matchesText } 
 //
 // Follows the reference's table: small uppercase headers, a filter row under
 // them, alternating rows, and a pagination bar underneath.
+//
+// A list remembers where you were. Opening a row and coming back used to
+// land on page one, at fifty rows, scrolled to the top — the three things
+// you had just set — because all three lived in this component's state and
+// the component was gone. They are kept per list path in sessionStorage now:
+// per tab, for this visit, and forgotten with it, which is exactly how long
+// "where I was" should last.
+
+type Remembered = {
+  pageSize?: number
+  page?: number
+  order?: Sort | null
+  scroll?: number
+}
+
+function rememberedKey(path: string): string {
+  return 'teanode.table:' + path
+}
+
+function readRemembered(path: string): Remembered {
+  try {
+    const raw = window.sessionStorage.getItem(rememberedKey(path))
+    return raw ? (JSON.parse(raw) as Remembered) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeRemembered(path: string, patch: Remembered): void {
+  try {
+    window.sessionStorage.setItem(rememberedKey(path), JSON.stringify({ ...readRemembered(path), ...patch }))
+  } catch {
+    // A browser that refuses storage still gets a working list.
+  }
+}
+
+// The page scrolls inside .content, not the window, so that is what has to
+// be measured and restored.
+function scroller(): HTMLElement | null {
+  return document.querySelector('.content')
+}
 
 export type Column<Row> = {
   // Identifies the column, and keys its filter state.
@@ -88,8 +129,10 @@ export function DataTable<Row>({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const remembered = useRef(readRemembered(pathname))
   const [filters, setFilters] = useState<Record<string, string | string[]>>(initialFilters ?? {})
-  const [order, setOrder] = useState<Sort | null>(null)
+  const [order, setOrder] = useState<Sort | null>(remembered.current.order ?? null)
   // Open when the page was reached from a link that already narrowed the
   // list, so nobody wonders why they are looking at a subset. Otherwise the
   // fields stay out of the way: a row of empty inputs under every header is
@@ -97,8 +140,14 @@ export function DataTable<Row>({
   const [filtersOpen, setFiltersOpen] = useState(
     () => Object.values(initialFilters ?? {}).some((filter) => filter.length > 0),
   )
-  const [pageSize, setPageSize] = useState(50)
-  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(
+    PAGE_SIZES.includes(remembered.current.pageSize ?? 0) ? (remembered.current.pageSize as number) : 50,
+  )
+  const [page, setPage] = useState(remembered.current.page ?? 0)
+
+  useEffect(() => {
+    writeRemembered(pathname, { pageSize, page, order })
+  }, [pathname, pageSize, page, order])
 
   const filtered = useMemo(
     () =>
@@ -131,14 +180,50 @@ export function DataTable<Row>({
   }, [filtered, order, columns])
 
   // A filter that shortens the list must not leave you on a page past its
-  // end, staring at nothing.
+  // end, staring at nothing. Not on mount, though: the first run would throw
+  // away the page that was just remembered.
+  const mounted = useRef(false)
   useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      return
+    }
     setPage(0)
   }, [filters, pageSize, order])
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
   const current = Math.min(page, pageCount - 1)
   const visible = sorted.slice(current * pageSize, current * pageSize + pageSize)
+
+  // Scroll position: saved as it changes, restored once the rows exist —
+  // there is nothing to scroll to before then.
+  const scrollRestored = useRef(false)
+  useEffect(() => {
+    const element = scroller()
+    if (!element) {
+      return
+    }
+    let frame = 0
+    const onScroll = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => writeRemembered(pathname, { scroll: element.scrollTop }))
+    }
+    element.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      element.removeEventListener('scroll', onScroll)
+    }
+  }, [pathname])
+  useEffect(() => {
+    if (scrollRestored.current || visible.length === 0) {
+      return
+    }
+    scrollRestored.current = true
+    const target = remembered.current.scroll
+    if (target) {
+      scroller()?.scrollTo({ top: target })
+    }
+  }, [visible.length])
   const filtering = Object.values(filters).some((filter) => filter.length > 0)
   const filterable = columns.some((column) => column.filter)
 
