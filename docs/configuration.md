@@ -505,7 +505,7 @@ for a relay that authorises by address.
 ### `dkim`
 
 **`selector`** — Selector to give a newly created domain's key. It appears in
-DNS as <selector>._domainkey.<domain>, so it only has to be unique within the
+DNS as `<selector>._domainkey.<domain>`, so it only has to be unique within the
 domain, and changing it here does not affect domains already created.
 
 ### `domains[]`
