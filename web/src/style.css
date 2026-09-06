@@ -3326,6 +3326,9 @@ a.button.primary:hover {
    their colours. */
 .message-frame.darkened {
   filter: invert(1) hue-rotate(180deg);
+  /* The filter inverts the element's own border with everything else; a
+     border in the text colour inverts back to roughly the border colour. */
+  border-color: var(--text);
 }
 
 /* Choosing how a message renders in the dark, just above the frame. */

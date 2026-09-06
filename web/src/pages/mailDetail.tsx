@@ -848,6 +848,11 @@ const DARKENED_KEY = 'teanode.mail.darkened'
 // inverts to dark rather than to nothing. Imperfect on gradients, which is
 // why it is a choice.
 function buildDocument(html: string, mailId?: string, dark = false, darkened = false): string {
+  // Under inversion the document is built light, not dark. The frame element
+  // is what gets inverted, and it inverts everything in it — a dark ground
+  // built in here came out as a thick white border around the inverted
+  // message. Light in, dark out.
+  const darkGround = dark && !darkened
   // 'self' covers every image that can appear in here: the ones the message
   // carried with it, which the server rewrote from cid: to its own attachment
   // endpoint, and the remote ones, which go through the server too once the
@@ -865,12 +870,12 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
 <style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
-    dark ? '#f4f4f5' : '#16161a'
-  };background:${dark ? '#1a1a1d' : '#fff'};word-wrap:break-word${
-    dark ? ';color-scheme:dark' : ''
+    darkGround ? '#f4f4f5' : '#16161a'
+  };background:${darkGround ? '#1a1a1d' : '#fff'};word-wrap:break-word${
+    darkGround ? ';color-scheme:dark' : ''
   }}img{max-width:100%;height:auto}table{max-width:100%}${
     darkened
-      ? '.darkened{background:#fff;color:#16161a}.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
+      ? '.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
       : ''
   }</style>
 </head><body><div id="teanode-content"${darkened ? ' class="darkened"' : ''}>${body}</div></body></html>`
