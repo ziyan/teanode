@@ -203,14 +203,17 @@ export function DataTable<Row>({
     if (!element) {
       return
     }
-    let frame = 0
+    // Throttled with a timer rather than an animation frame: the browser
+    // stops animation frames for a tab that is not in front, and a write that
+    // waits for one can wait for ever.
+    let timer = 0
     const onScroll = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => writeRemembered(pathname, { scroll: element.scrollTop }))
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => writeRemembered(pathname, { scroll: element.scrollTop }), 100)
     }
     element.addEventListener('scroll', onScroll, { passive: true })
     return () => {
-      cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
       element.removeEventListener('scroll', onScroll)
     }
   }, [pathname])
