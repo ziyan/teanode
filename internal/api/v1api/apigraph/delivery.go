@@ -155,7 +155,17 @@ func (self *graph) ListDeliveriesByMail(ctx context.Context, arguments ListDeliv
 	if mail == nil {
 		return nil, api.ErrNotFound
 	}
-	return api.ContextTransaction(ctx).ListDeliveries([]string{mail.ID}, nil)
+	deliveries, err := api.ContextTransaction(ctx).ListDeliveries([]string{mail.ID}, nil)
+	if err != nil {
+		return nil, err
+	}
+	// The method and the destination are configuration, not columns: they
+	// come from the alias the delivery was made for.
+	configuration := self.config.Current()
+	for _, delivery := range deliveries {
+		delivery.Describe(configuration.FindAliasByID(delivery.AliasID))
+	}
+	return deliveries, nil
 }
 
 type ListPendingDeliveriesArguments struct {

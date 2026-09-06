@@ -30,6 +30,12 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A delivery refused with a permanent 5xx reply is dropped rather than retried
+  on the backoff schedule. A message Gmail had refused as unsolicited was being
+  offered to Gmail again every few hours, each attempt costing reputation.
+- A message's deliveries say how each one is handed on and where — forwarded
+  to an address by looking up its mail servers, relayed to a configured host,
+  or posted to a URL.
 - The compose file no longer starts a spam daemon. It is behind a `spamd`
   profile for deployments that want one, so nothing in the default path
   depends on a third-party image continuing to exist.

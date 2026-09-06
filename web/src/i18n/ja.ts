@@ -154,6 +154,10 @@ export const ja: Catalog = {
   'mailDetail.noDeliveries':
     '配送はありません。このメールは拒否されたか、どのエイリアスにも一致しませんでした。',
   'mailDetail.recipient': '宛先',
+  'mailDetail.methodEmail': '{destination} へメールサーバーを検索して転送',
+  'mailDetail.methodMailServer': 'メールサーバー {destination} へ中継',
+  'mailDetail.methodWebhook': '{destination} へ POST',
+  'mailDetail.methodSmtp': '{destination} へメールサーバーを検索して送信',
   'mailDetail.attempts': '試行回数',
   'mailDetail.detail': '詳細',
   'mailDetail.retryAt': '{time} に再試行',

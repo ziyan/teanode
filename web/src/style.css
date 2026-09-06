@@ -3347,3 +3347,9 @@ a.button.primary:hover {
   color: var(--text);
   background: var(--sidebar-hover);
 }
+
+/* How a delivery is handed on, under its head line. */
+.delivery-method {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+}

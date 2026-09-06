@@ -62,7 +62,7 @@ const MAIL = `
       trackable opened openedAt lastOpenedAt openCount ip
     }
     ListDeliveriesByMail(mailId: $mailId) {
-      id recipient kind status size attempts error
+      id recipient kind status size attempts error method destination
       attemptedAt deliveredAt droppedAt notifiedAt retryAt
       deliveryStatuses {
         reportingMta
@@ -712,6 +712,19 @@ function Authentication({ results }: { results: AuthenticationResults }) {
 // remote MTA, an enhanced status code and a diagnostic string from the far
 // end, and those are the three things somebody debugging a bounce wants. None
 // of them fitted in a five-column table, so none of them were shown.
+function deliveryMethodKey(method: NonNullable<Delivery['method']>): Key {
+  switch (method) {
+    case 'email':
+      return 'mailDetail.methodEmail'
+    case 'mailServer':
+      return 'mailDetail.methodMailServer'
+    case 'webhook':
+      return 'mailDetail.methodWebhook'
+    default:
+      return 'mailDetail.methodSmtp'
+  }
+}
+
 function DeliveryDetail({ delivery }: { delivery: Delivery }) {
   const { t } = useTranslation()
   const label = useEnumLabel()
@@ -726,6 +739,16 @@ function DeliveryDetail({ delivery }: { delivery: Delivery }) {
         <span className="delivery-recipient">{delivery.recipient}</span>
         <KindTag value={delivery.kind} />
       </div>
+      {/* How it is handed on, and where. The recipient above is who the
+          message was for; this is what was done about it — a forward to an
+          address by looking up its mail servers, a relay to a configured
+          host, a POST to a URL — which is the thing to check when a
+          delivery is stuck. */}
+      {delivery.method && delivery.destination ? (
+        <p className="muted delivery-method">
+          {t(deliveryMethodKey(delivery.method), { destination: delivery.destination })}
+        </p>
+      ) : null}
 
       <table className="detail">
         <tbody>

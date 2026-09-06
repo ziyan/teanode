@@ -327,6 +327,9 @@ export interface DeliveryStatus {
 }
 
 export interface Delivery {
+  // How the message is handed on, and where — derived from the alias.
+  method?: 'email' | 'mailServer' | 'webhook' | 'smtp'
+  destination?: string
   id: string
   mailId?: string
   domainId?: string
