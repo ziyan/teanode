@@ -19,7 +19,7 @@ const settingsSelection = `{
 	s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
 	route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
 	antivirus { enabled host port }
-	antispam { enabled host port }
+	antispam { enabled engine effectiveEngine host port signalsEnabled dnsEnabled bayesEnabled rulesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam }
 	relay { enabled host port security username hasPassword }
 	submission { host port effectiveHost effectivePort }
 	proxy { socks5 }
