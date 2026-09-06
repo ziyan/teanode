@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-06
+
+### Changed
+
+- The sign-in form shows "Sign in with a passkey" only on a server that has passkeys turned on. (#24)
+- The sign-in form no longer shows a command for adding an account; the getting-started guide's new "If you are locked out" section has the right ones. (#24)
+
 ## [0.5.0] - 2026-09-06
 
 ### Added
