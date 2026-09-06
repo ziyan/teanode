@@ -211,7 +211,6 @@ export const ja: Catalog = {
   'mailDetail.frameMode': 'メッセージの表示',
   'mailDetail.asSent': '送信されたまま',
   'mailDetail.darkened': 'ダーク',
-  'mailDetail.markUndo': '取り消す',
   'mailDetail.virus': 'ウイルス',
   'mailDetail.clean': '検出なし',
   'mailDetail.infected': '検出',

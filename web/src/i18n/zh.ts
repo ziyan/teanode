@@ -210,7 +210,6 @@ export const zh: Catalog = {
   'mailDetail.frameMode': '邮件显示方式',
   'mailDetail.asSent': '原样',
   'mailDetail.darkened': '深色',
-  'mailDetail.markUndo': '撤销',
   'mailDetail.virus': '病毒',
   'mailDetail.clean': '未发现',
   'mailDetail.infected': '发现',

@@ -213,7 +213,6 @@ export const en = {
   'mailDetail.frameMode': 'How the message is shown',
   'mailDetail.asSent': 'As sent',
   'mailDetail.darkened': 'Dark',
-  'mailDetail.markUndo': 'undo',
   'mailDetail.virus': 'Virus',
   'mailDetail.clean': 'clean',
   'mailDetail.infected': 'infected',
