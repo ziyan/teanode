@@ -101,10 +101,11 @@ type Check = {
 type Tab = 'rendered' | 'text' | 'html' | 'source' | 'raw'
 
 // A score is a sum of floating-point weights, and a sum of floats is
-// 11.606000000000002. Three decimals is what the published rule weights are
-// written with, so nothing real is lost, and the noise never reaches prose.
+// 11.606000000000002. One decimal: the threshold is a whole number and the
+// question a reader has is "how far past it", which 11.6 answers and 11.606
+// only obscures. Through Number so that 3.0 reads as 3 and -1.0 as -1.
 function formatScore(score: number): string {
-  return String(Math.round(score * 1000) / 1000)
+  return String(Number(score.toFixed(1)))
 }
 
 // What the two training mutations return.
