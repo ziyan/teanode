@@ -40,3 +40,32 @@ type SpamTokenCount struct {
 	SpamCount int64
 	HamCount  int64
 }
+
+// SpamRuleSet is one channel's stored pattern rules.
+//
+// Stored in the database rather than on an instance's disk so that every
+// instance evaluates the same rules; see the migration that creates the table
+// for why that matters.
+type SpamRuleSet struct {
+	// Channel is where the rules came from.
+	Channel string `json:"channel"`
+
+	// Version is what the source called this set, and is what an instance
+	// compares against the copy it has parsed.
+	Version string `json:"version"`
+
+	// Content is the rule text as stored. Absent from listings, which do not
+	// display it.
+	Content []byte `json:"-"`
+
+	// RulesLoaded and RulesSkipped are how much of it this server could use.
+	// A published set contains rules that need plugins this server does not
+	// have, and patterns its regular expression engine will not compile.
+	RulesLoaded  int `json:"rulesLoaded"`
+	RulesSkipped int `json:"rulesSkipped"`
+
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+
+	// Error is why the last attempt to update this channel failed, or empty.
+	Error string `json:"error,omitempty"`
+}

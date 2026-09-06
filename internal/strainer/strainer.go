@@ -17,6 +17,7 @@ package strainer
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/op/go-logging"
 
@@ -64,6 +65,13 @@ type Strainer struct {
 	database db.SpamOperation
 	cache    *listCache
 	totals   corpusTotals
+
+	// The parsed rule corpus, replaced wholesale when a new one is loaded.
+	// Read on every delivery and written rarely, which is what the read
+	// half of this lock is for.
+	rulesMutex sync.RWMutex
+	rules      *ruleSet
+	loaded     loadedVersion
 }
 
 // New returns a strainer reading the given settings.
@@ -106,6 +114,9 @@ func (self *Strainer) Check(ctx context.Context, message *spamfilter.Message) (*
 	}
 	if self.settings.Bayes.Enabled {
 		checks = append(checks, self.bayesChecks(ctx, message)...)
+	}
+	if self.settings.Rules.Enabled {
+		checks = append(checks, self.rulesChecks(message)...)
 	}
 
 	return buildResult(checks), nil

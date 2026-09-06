@@ -728,10 +728,28 @@ running rule files nobody asked for.
 of patterns run over text an attacker chose, so this is a limit rather than a
 target.
 
+Rules are loaded deliberately rather than downloaded unattended:
+
+    teanode-server config rules import --file ruleset.cf --channel updates.spamassassin.org
+    teanode-server config rules show
+
+They are stored in the database, not in a directory, because a server can run
+as several instances and they have to evaluate the same rules; each one
+notices a new version within a minute. `show` reports how many rules loaded
+and how many were skipped — a published set contains rules implemented by
+plugins this server does not have, and patterns its regular expression engine
+will not compile, and both are left out rather than guessed at.
+
+There is no automatic download. Rules are patterns this server runs against
+every message it receives, so fetching them unattended means verifying the
+publisher's signature, and the OpenPGP package that would do that is
+deprecated upstream. Adding a frozen cryptography dependency to a mail server
+is a decision worth taking deliberately.
+
 The rule data published on `updates.spamassassin.org` is produced by the
 Apache SpamAssassin project and licensed under the Apache License 2.0. The
 built-in filter is a different program and is not SpamAssassin; it only reads
-that published rule data when you enable it.
+that published rule data when you enable it and load it.
 
 ### `geoip`
 

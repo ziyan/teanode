@@ -41,6 +41,22 @@ type SpamOperation interface {
 	// CountSpamTraining says how many messages carry each label, which is
 	// what the classifier's minimum is compared against.
 	CountSpamTraining() (spam int64, ham int64, err error)
+
+	// SpamRuleSetVersion is what the stored rule set is at, for an instance
+	// checking whether the copy it parsed is stale. Empty when there is
+	// none. Cheap enough to ask on a timer, which is the point of it being
+	// separate from LoadSpamRuleSet.
+	SpamRuleSetVersion(channel string) (string, error)
+
+	// LoadSpamRuleSet reads one channel's stored rules, or nil.
+	LoadSpamRuleSet(channel string) (*models.SpamRuleSet, error)
+
+	// SaveSpamRuleSet replaces one channel's stored rules.
+	SaveSpamRuleSet(ruleSet *models.SpamRuleSet) error
+
+	// ListSpamRuleSets is what the dashboard shows: every channel, with how
+	// much of it this server could use.
+	ListSpamRuleSets() ([]*models.SpamRuleSet, error)
 }
 
 type spamTokenModel struct {
@@ -189,4 +205,94 @@ func (self *database) CountSpamTraining() (int64, int64, error) {
 		}
 	}
 	return spam, ham, nil
+}
+
+type spamRuleSetModel struct {
+	Channel      string    `gorm:"column:channel;primaryKey;size:256"`
+	Version      string    `gorm:"column:version;size:64"`
+	Content      []byte    `gorm:"column:content"`
+	RulesLoaded  int       `gorm:"column:rules_loaded"`
+	RulesSkipped int       `gorm:"column:rules_skipped"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	Error        string    `gorm:"column:error"`
+}
+
+func (spamRuleSetModel) TableName() string {
+	return "spam_rule_set"
+}
+
+func spamRuleSetFromModel(model *spamRuleSetModel) *models.SpamRuleSet {
+	return &models.SpamRuleSet{
+		Channel:      model.Channel,
+		Version:      model.Version,
+		Content:      model.Content,
+		RulesLoaded:  model.RulesLoaded,
+		RulesSkipped: model.RulesSkipped,
+		UpdatedAt:    model.UpdatedAt,
+		Error:        model.Error,
+	}
+}
+
+// SpamRuleSetVersion asks only for the version, because every instance asks
+// on a timer and the rules themselves are megabytes.
+func (self *database) SpamRuleSetVersion(channel string) (string, error) {
+	var version string
+	err := self.db.Model(&spamRuleSetModel{}).
+		Where("channel = ?", channel).
+		Pluck("version", &version).Error
+	if err != nil {
+		return "", err
+	}
+	return version, nil
+}
+
+func (self *database) LoadSpamRuleSet(channel string) (*models.SpamRuleSet, error) {
+	var model spamRuleSetModel
+	if err := self.db.Where("channel = ?", channel).First(&model).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return spamRuleSetFromModel(&model), nil
+}
+
+func (self *database) SaveSpamRuleSet(ruleSet *models.SpamRuleSet) error {
+	now := time.Now().UTC()
+	model := &spamRuleSetModel{
+		Channel:      ruleSet.Channel,
+		Version:      ruleSet.Version,
+		Content:      ruleSet.Content,
+		RulesLoaded:  ruleSet.RulesLoaded,
+		RulesSkipped: ruleSet.RulesSkipped,
+		UpdatedAt:    now,
+		Error:        ruleSet.Error,
+	}
+	return self.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "channel"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"version":       model.Version,
+			"content":       model.Content,
+			"rules_loaded":  model.RulesLoaded,
+			"rules_skipped": model.RulesSkipped,
+			"updated_at":    now,
+			"error":         model.Error,
+		}),
+	}).Create(model).Error
+}
+
+func (self *database) ListSpamRuleSets() ([]*models.SpamRuleSet, error) {
+	var found []spamRuleSetModel
+	// Without the content: this is a listing for a page, and the rule text
+	// is megabytes that nothing on it displays.
+	if err := self.db.Model(&spamRuleSetModel{}).
+		Select("channel, version, rules_loaded, rules_skipped, updated_at, error").
+		Order("channel").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	sets := make([]*models.SpamRuleSet, 0, len(found))
+	for index := range found {
+		sets = append(sets, spamRuleSetFromModel(&found[index]))
+	}
+	return sets, nil
 }

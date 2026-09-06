@@ -33,6 +33,7 @@ func NewConfigCommand() *cli.Command {
 			newConfigShowCommand(),
 			newConfigImportCommand(),
 			newConfigExportCommand(),
+			newConfigRulesCommand(),
 		},
 	}
 }

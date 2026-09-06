@@ -234,6 +234,11 @@ type server struct {
 	restarter        *api.Restarter
 	restartRequested chan struct{}
 
+	// spamFilter scores incoming mail. Kept so that serve can start the
+	// built-in filter's rule refresher, which needs a context that openServer
+	// does not have.
+	spamFilter spamfilter.Filter
+
 	// upgrader knows what has been released and, after an upgrade, what this
 	// process should become. Read at the end of serve, once everything is
 	// drained: that is the only safe moment to replace the process image.
@@ -337,6 +342,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	if err != nil {
 		return nil, err
 	}
+	self.spamFilter = spamFilter
 	if spamFilter != nil {
 		self.onClose(func() {
 			if err := spamFilter.Close(); err != nil {
@@ -875,6 +881,15 @@ func (self *server) serve(ctx context.Context) error {
 
 	unsubscribe := self.warnOnStartupOnlyChanges()
 	defer unsubscribe()
+
+	// The built-in filter's rules live in the database, because instances
+	// share them. This watches for a set this instance has not parsed —
+	// placed there by another instance, or by "config rules import".
+	if refresher, ok := self.spamFilter.(interface {
+		StartRuleRefresh(ctx context.Context)
+	}); ok {
+		refresher.StartRuleRefresh(ctx)
+	}
 
 	tlsConfig, err := self.tlsConfig(configuration)
 	if err != nil {
