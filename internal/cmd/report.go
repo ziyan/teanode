@@ -53,11 +53,13 @@ func runReportList(ctx context.Context, command *cli.Command) error {
 		}
 		domainId = domain.ID
 	}
-	reports, err := client.ListReports(ctx, connection, domainId, int(command.Int("first")))
+	first := int(command.Int("first"))
+	reports, err := client.ListReports(ctx, connection, domainId, pageSize(first))
 	if err != nil {
 		return describeError(command, err)
 	}
-	defer noteCapped(len(reports), int(command.Int("first")), "teanode report list")
+	reports, more := capPage(reports, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(reports)
 	}

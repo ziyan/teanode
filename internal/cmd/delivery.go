@@ -62,24 +62,26 @@ func runDeliveryList(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	var deliveries []*client.Delivery
+	first := int(command.Int("first"))
 	switch {
 	case command.String("mail") != "":
+		// One message's deliveries are few, and all of them are the answer.
+		first = 0
 		deliveries, err = client.ListDeliveriesByMail(ctx, connection, command.String("mail"))
 	case command.String("domain") != "":
 		domain, domainError := requireDomain(ctx, command, connection, command.String("domain"))
 		if domainError != nil {
 			return domainError
 		}
-		deliveries, err = client.ListDeliveries(ctx, connection, domain.ID, int(command.Int("first")))
+		deliveries, err = client.ListDeliveries(ctx, connection, domain.ID, pageSize(first))
 	default:
 		return usage("whose deliveries? pass --domain <domain> or --mail <mail-id>; 'teanode delivery pending' lists the queue")
 	}
 	if err != nil {
 		return describeError(command, err)
 	}
-	if command.String("mail") == "" {
-		defer noteCapped(len(deliveries), int(command.Int("first")), "teanode delivery list")
-	}
+	deliveries, more := capPage(deliveries, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(deliveries)
 	}
@@ -103,11 +105,13 @@ func runDeliveryPending(ctx context.Context, command *cli.Command) error {
 		}
 		domainId = domain.ID
 	}
-	deliveries, err := client.ListPendingDeliveries(ctx, connection, domainId, int(command.Int("first")))
+	first := int(command.Int("first"))
+	deliveries, err := client.ListPendingDeliveries(ctx, connection, domainId, pageSize(first))
 	if err != nil {
 		return describeError(command, err)
 	}
-	defer noteCapped(len(deliveries), int(command.Int("first")), "teanode delivery pending")
+	deliveries, more := capPage(deliveries, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(deliveries)
 	}

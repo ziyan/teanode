@@ -48,6 +48,13 @@ func TestExecuteClassifiesErrors(t *testing.T) {
 		t.Errorf("a not-logged-in message should be ErrUnauthorized, got %v", err)
 	}
 
+	// The server adds detail after the value; the detail is kept.
+	answer = `{"errors":[{"message":"api: not found: no such layout"}]}`
+	err = connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil)
+	if !errors.Is(err, ErrNotFound) || err.Error() != "client: not found: api: not found: no such layout" {
+		t.Errorf("a not-found message with detail should be ErrNotFound and keep the detail, got %v", err)
+	}
+
 	answer, status = `unauthorized`, http.StatusUnauthorized
 	err = connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil)
 	if !errors.Is(err, ErrUnauthorized) {

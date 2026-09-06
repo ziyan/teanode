@@ -65,8 +65,9 @@ func NewAPICommand() *cli.Command {
 						Usage: "GraphQL selection set to use instead of the generated one, for example \"{ id domain }\"",
 					},
 				},
-				Before: alwaysJSON,
-				Action: runApiCall,
+				Metadata: map[string]any{alwaysJsonMetadata: true},
+				Before:   alwaysJson,
+				Action:   runApiCall,
 			},
 			{
 				Name:      "graphql",
@@ -85,8 +86,9 @@ func NewAPICommand() *cli.Command {
 						Usage: "variables as a JSON object",
 					},
 				},
-				Before: alwaysJSON,
-				Action: runApiGraphQl,
+				Metadata: map[string]any{alwaysJsonMetadata: true},
+				Before:   alwaysJson,
+				Action:   runApiGraphQl,
 			},
 		},
 	}

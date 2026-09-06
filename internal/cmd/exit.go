@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 
@@ -40,6 +41,13 @@ func usage(message string) error {
 func ExitCode(err error) int {
 	var exitCoder cli.ExitCoder
 	if errors.As(err, &exitCoder) {
+		// The library's own "No help topic for 'x'" carries 3, the code a
+		// read-only refusal exits with. Every command has a handler that
+		// pre-empts it; this is for the commands the library adds after
+		// those handlers are set, such as its completion command.
+		if exitCoder.ExitCode() == ExitReadOnly && strings.HasPrefix(err.Error(), "No help topic") {
+			return ExitUsage
+		}
 		return exitCoder.ExitCode()
 	}
 	var usageErr *usageError

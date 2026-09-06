@@ -584,8 +584,10 @@ func (self *authenticator) RevokeSession(username, sessionId string) error {
 	if err != nil {
 		return err
 	}
+	// Somebody else's session is reported the same way as no session, so
+	// that revoking is not a way of finding out which identifiers exist.
 	if session == nil || session.UserID != user.ID {
-		return ErrSessionInvalid
+		return api.ErrNotFound
 	}
 	return self.database.RevokeSession(sessionId, time.Now())
 }

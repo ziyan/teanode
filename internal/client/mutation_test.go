@@ -13,6 +13,11 @@ func TestIsMutationDocument(t *testing.T) {
 		"# nothing here\nmutation { DeleteDomain(domainId: \"x\") }",
 		// Nor can a string before it.
 		`query ($name: String = "}") { ListDomains { id } } mutation { DeleteDomain(domainId: "x") }`,
+		// A comment ends at a carriage return as well as a line feed, and a
+		// byte order mark is not part of the keyword: both are what the
+		// server's parser does, and a read-only client has to agree with it.
+		"# comment\rmutation { DeleteDomain(domainId: \"x\") }",
+		"\ufeffmutation { DeleteDomain(domainId: \"x\") }",
 	}
 	for _, document := range mutations {
 		if !IsMutationDocument(document) {
@@ -35,6 +40,10 @@ func TestIsMutationDocument(t *testing.T) {
 		""") { ListDomains { id } }`,
 		// Introspection, which every "teanode api" command starts with.
 		`query { __schema { mutationType { name } } }`,
+		// A variable called mutation is a variable.
+		`query ($mutation: Boolean) { ListDomains { id } }`,
+		// What does not parse is sent, for the server to reject as syntax.
+		`mutation { DeleteDomain(`,
 		``,
 	}
 	for _, document := range queries {

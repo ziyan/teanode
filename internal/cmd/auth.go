@@ -134,7 +134,7 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	}
 	name := command.String("name")
 	insecure := command.Bool("insecure") || command.Root().Bool("insecure")
-	readOnly := command.Bool("read-only")
+	readOnly := command.Bool("read-only") || command.Root().Bool("read-only")
 
 	// Signing in again to a saved profile need not repeat its address, and
 	// keeps its certificate posture and its read-only bit unless told
@@ -151,7 +151,7 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		if !command.IsSet("insecure") {
 			insecure = insecure || existing.Insecure
 		}
-		if !command.IsSet("read-only") {
+		if !command.IsSet("read-only") && !command.Root().IsSet("read-only") {
 			readOnly = existing.ReadOnly
 		}
 	}
@@ -204,6 +204,12 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		profile.Username = current.Username
 	}
 
+	// Re-signing in replaces the profile's token. The old one is revoked so
+	// that it does not live on, unseen from here, in the server's list.
+	if existing := profiles.Find(name); existing != nil {
+		revokeReplacedToken(ctx, existing, profile)
+	}
+
 	profiles.Set(profile)
 	if err := profiles.Save(); err != nil {
 		return err
@@ -221,6 +227,23 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		fmt.Printf("This profile is read-only: commands through it can look but not change anything.\n")
 	}
 	return nil
+}
+
+// revokeReplacedToken revokes the token a profile held before a new sign-in
+// replaced it. Best effort: the old token may already be gone, which is why
+// somebody signed in again, and the new one works either way.
+func revokeReplacedToken(ctx context.Context, existing, replacement *Profile) {
+	if existing.TokenID == "" || existing.TokenID == replacement.TokenID || existing.URL != replacement.URL {
+		return
+	}
+	connection, err := client.New(client.Options{URL: existing.URL, Token: existing.Token, Insecure: existing.Insecure})
+	if err != nil {
+		return
+	}
+	if err := client.DeleteToken(ctx, connection, existing.TokenID); err != nil {
+		fmt.Printf("The previous token %s could not be revoked (%s); revoke it with 'teanode token revoke %s' if it is still listed.\n",
+			existing.TokenID, err, existing.TokenID)
+	}
 }
 
 // browserLogin runs the loopback handshake described in loopback.go.

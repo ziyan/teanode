@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // The errors a caller can act on, as opposed to the ones it can only print.
@@ -54,12 +55,14 @@ func (self *ReadOnlyError) Error() string {
 
 // classify turns the errors a query returned into a typed one where the
 // message is one the caller can act on, and leaves the rest as they are.
+// Matched by prefix, because the server adds detail after the value ("api:
+// not found: no such layout") and the detail is worth keeping.
 func classify(errs Errors) error {
 	for _, err := range errs {
-		switch err.Message {
-		case serverNotLoggedIn:
+		switch {
+		case strings.HasPrefix(err.Message, serverNotLoggedIn):
 			return fmt.Errorf("%w: %s", ErrUnauthorized, err.Message)
-		case serverNotFound:
+		case strings.HasPrefix(err.Message, serverNotFound):
 			return fmt.Errorf("%w: %s", ErrNotFound, err.Message)
 		}
 	}

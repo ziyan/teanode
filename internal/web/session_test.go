@@ -297,7 +297,10 @@ func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
 		t.Fatalf("expected one session, got %v (%v)", sessions, err)
 	}
 
-	if err := authenticator.RevokeSession("other", sessions[0].ID); err == nil {
+	if err := authenticator.RevokeSession("other", "01nope"); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("revoking an unknown session: got %v, want ErrNotFound", err)
+	}
+	if err := authenticator.RevokeSession("other", sessions[0].ID); !errors.Is(err, api.ErrNotFound) {
 		t.Error("one account ended another's session")
 	}
 

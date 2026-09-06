@@ -63,13 +63,6 @@ func main() {
 			cmd.SetupLogging(command.String("log-level"))
 			return ctx, nil
 		},
-		// The library's own answer to a command it does not know is "No help
-		// topic for 'x'" and exit code 3, which reads as a help system with a
-		// page missing, and 3 is the code a read-only refusal exits with.
-		CommandNotFound: func(ctx context.Context, command *cli.Command, name string) {
-			fmt.Fprintf(os.Stderr, "unknown command %q; 'teanode --help' lists them\n", name)
-			os.Exit(cmd.ExitUsage)
-		},
 		// The library would otherwise print and exit on its own for an error
 		// carrying an exit code, before main below could print it as JSON.
 		ExitErrHandler: func(ctx context.Context, command *cli.Command, err error) {},
@@ -96,7 +89,7 @@ func main() {
 		},
 	}
 
-	setUsageErrorHandler(command)
+	setUsageErrorHandlers(command)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -105,20 +98,33 @@ func main() {
 	// command asked for JSON fails in JSON, and the exit code says what kind
 	// of failure it was.
 	if err := command.Run(ctx, os.Args); err != nil {
+		err = cmd.Describe(command, err)
 		cmd.PrintError(err)
 		os.Exit(cmd.ExitCode(err))
 	}
 }
 
-// setUsageErrorHandler makes a flag that does not exist, or a value that is
-// not a number, exit with the usage code and say where the flags are listed.
-// The library consults the handler of the command that was parsing, not the
-// root's, so every command in the tree gets one.
-func setUsageErrorHandler(command *cli.Command) {
+// setUsageErrorHandlers makes a flag that does not exist, a value that is
+// not a number, or a command that does not exist, exit with the usage code
+// and say where the rest are listed. The library consults the handlers of
+// the command that was parsing, not the root's, so every command in the
+// tree gets them.
+//
+// The library's own answer to an unknown command is "No help topic for
+// 'x'" and exit code 3, which reads as a help system with a page missing,
+// and 3 is the code a read-only refusal exits with.
+func setUsageErrorHandlers(command *cli.Command) {
 	command.OnUsageError = func(ctx context.Context, failed *cli.Command, err error, isSubcommand bool) error {
+		cmd.NoteUsageError(failed, os.Args)
 		return cli.Exit(fmt.Sprintf("%s; '%s --help' shows the flags", err, failed.FullName()), cmd.ExitUsage)
 	}
+	command.CommandNotFound = func(ctx context.Context, parent *cli.Command, name string) {
+		cmd.NoteUsageError(parent, os.Args)
+		err := cli.Exit(fmt.Sprintf("unknown command %q; '%s --help' lists them", name, parent.FullName()), cmd.ExitUsage)
+		cmd.PrintError(err)
+		os.Exit(cmd.ExitUsage)
+	}
 	for _, subcommand := range command.Commands {
-		setUsageErrorHandler(subcommand)
+		setUsageErrorHandlers(subcommand)
 	}
 }

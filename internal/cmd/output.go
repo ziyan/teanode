@@ -46,11 +46,31 @@ func JSONFlag() cli.Flag {
 	}
 }
 
-// alwaysJSON is the Before of a command that prints JSON whether or not it
-// was asked to, so that its errors are JSON as well.
-func alwaysJSON(ctx context.Context, command *cli.Command) (context.Context, error) {
+// alwaysJsonMetadata marks a command that prints JSON whether or not it was
+// asked to, so that its errors are JSON as well: the ones the library
+// reports before the command runs, through NoteUsageError, and the ones the
+// command returns, through alwaysJson.
+const alwaysJsonMetadata = "alwaysJson"
+
+// alwaysJson is the Before of a command marked with alwaysJsonMetadata.
+func alwaysJson(ctx context.Context, command *cli.Command) (context.Context, error) {
 	jsonRequested = true
 	return ctx, nil
+}
+
+// NoteUsageError records whether JSON was asked for when the library refused
+// the arguments before any flag action or Before could run: --json is looked
+// for in the arguments as they were typed, and a command that always prints
+// JSON is known by its metadata.
+func NoteUsageError(failed *cli.Command, arguments []string) {
+	if failed != nil && failed.Metadata[alwaysJsonMetadata] == true {
+		jsonRequested = true
+	}
+	for _, argument := range arguments {
+		if argument == "--json" || argument == "--json=true" {
+			jsonRequested = true
+		}
+	}
 }
 
 // PrintError writes a failed command's error the way its output would have
@@ -125,14 +145,35 @@ func confirm(command *cli.Command, warning string) error {
 	return nil
 }
 
-// noteCapped says on standard error when a list stopped at --first, so that
-// a page is never mistaken for the whole. Nothing is said when the list is
-// shorter, and nothing when --first was 0, which asked for everything.
-func noteCapped(shown, first int, command string) {
-	if first <= 0 || shown < first {
+// pageSize is how many to ask the server for when --first is wanted: one
+// more, so that a list which comes back longer than asked is known to have
+// been cut short, rather than guessed at from a page that is exactly full.
+// Zero asks for everything, and stays zero.
+func pageSize(first int) int {
+	if first <= 0 {
+		return 0
+	}
+	return first + 1
+}
+
+// capPage trims a list fetched with pageSize back to --first, and says
+// whether there was more.
+func capPage[Item any](items []Item, first int) ([]Item, bool) {
+	if first <= 0 || len(items) <= first {
+		return items, false
+	}
+	return items[:first], true
+}
+
+// noteCapped says on standard error when a list was cut short at --first,
+// so that a page is never mistaken for the whole. The same command with
+// --first 0 is the one to run: the filters that produced the page are its
+// own, and are not repeated here.
+func noteCapped(more bool, first int) {
+	if !more {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "note: showing the first %d; '%s --first 0' shows every one\n", shown, command)
+	fmt.Fprintf(os.Stderr, "note: showing the first %d of more; add --first 0 to the same command for every one\n", first)
 }
 
 // oneOf checks a flag against the values it accepts, so that a typo in a

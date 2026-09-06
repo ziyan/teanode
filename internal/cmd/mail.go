@@ -146,11 +146,12 @@ func mailFilterFlags() []cli.Flag {
 
 // The values the enumerated filters accept. Checked here, because the server
 // answers a value it does not know with an empty list, which reads as a quiet
-// server rather than as a typo.
+// server rather than as a typo. The field "count --by" takes is not listed:
+// the server refuses one it does not know, and knows more than the help
+// names.
 var (
-	mailStatuses    = []string{"received", "accepted", "rejected"}
-	mailKinds       = []string{"incoming", "outgoing", "exchange", "dsn", "rua", "ruf"}
-	mailCountFields = []string{"status", "kind", "domainId", "sender", "from", "ip", "rdns"}
+	mailStatuses = []string{"received", "accepted", "rejected"}
+	mailKinds    = []string{"incoming", "outgoing", "exchange", "dsn", "rua", "ruf"}
 )
 
 // mailFilters reads the filter flags into the tests the list query applies.
@@ -190,11 +191,13 @@ func runMailList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	mails, err := client.ListMails(ctx, connection, domainId, filters, int(command.Int("first")))
+	first := int(command.Int("first"))
+	mails, err := client.ListMails(ctx, connection, domainId, filters, pageSize(first))
 	if err != nil {
 		return describeError(command, err)
 	}
-	defer noteCapped(len(mails), int(command.Int("first")), "teanode mail list")
+	mails, more := capPage(mails, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(mails)
 	}
@@ -458,9 +461,6 @@ func runMailOpens(ctx context.Context, command *cli.Command) error {
 }
 
 func runMailCount(ctx context.Context, command *cli.Command) error {
-	if err := oneOf("by", command.String("by"), mailCountFields...); err != nil {
-		return err
-	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err

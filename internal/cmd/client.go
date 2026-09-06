@@ -147,6 +147,28 @@ func describeNoServer(err error) error {
 		"or run this on the server itself with its environment in the shell", err)
 }
 
+// describedError is an error that has had its advice added, so that adding
+// it again — a command describes what it returns, and main describes what
+// it gets — appends nothing the second time.
+type describedError struct {
+	err error
+}
+
+func (self *describedError) Error() string {
+	return self.err.Error()
+}
+
+func (self *describedError) Unwrap() error {
+	return self.err
+}
+
+// Describe is describeError for the root command, which is what main has
+// when a command's error reaches it. Every path that resolves the target
+// reads the root's flags, so the root is enough.
+func Describe(command *cli.Command, err error) error {
+	return describeError(command, err)
+}
+
 // describeError turns the errors a caller can act on into the thing to do
 // about them, because "connection refused" on its own reads as a bug in the
 // tool rather than as a server that is not running, and "not logged in" as a
@@ -156,25 +178,29 @@ func describeError(command *cli.Command, err error) error {
 	if err == nil {
 		return nil
 	}
+	var described *describedError
+	if errors.As(err, &described) {
+		return err
+	}
 	var readOnly *client.ReadOnlyError
 	switch {
 	case errors.As(err, &readOnly):
-		return fmt.Errorf("%w; %s", err, howToWrite(command))
+		return &describedError{fmt.Errorf("%w; %s", err, howToWrite(command))}
 	case errors.Is(err, client.ErrUnauthorized):
 		resolved, resolveError := resolveCommandTarget(command)
 		if resolveError == nil && resolved.Local {
-			return fmt.Errorf("%w; the server refused a token minted from the stored secret, so the secret in the database is not the one the running server has", err)
+			return &describedError{fmt.Errorf("%w; the server refused a token minted from the stored secret, so the secret in the database is not the one the running server has", err)}
 		}
 		if resolveError == nil && resolved.Profile != "" {
-			return fmt.Errorf("%w; the token has been revoked or has expired. Sign in again with 'teanode auth login --name %s'", err, resolved.Profile)
+			return &describedError{fmt.Errorf("%w; the token has been revoked or has expired. Sign in again with 'teanode auth login --name %s'", err, resolved.Profile)}
 		}
-		return fmt.Errorf("%w; sign in with 'teanode auth login', or pass a token that is still valid", err)
+		return &describedError{fmt.Errorf("%w; sign in with 'teanode auth login', or pass a token that is still valid", err)}
 	case isConnectionRefused(err):
 		resolved, resolveError := resolveCommandTarget(command)
 		if resolveError != nil || !resolved.Local {
-			return fmt.Errorf("%w; is the server running, and is that the right address", err)
+			return &describedError{fmt.Errorf("%w; is the server running, and is that the right address", err)}
 		}
-		return fmt.Errorf("%w; the server does not appear to be running, so start it with 'teanode-server run'", err)
+		return &describedError{fmt.Errorf("%w; the server does not appear to be running, so start it with 'teanode-server run'", err)}
 	}
 	return err
 }
@@ -196,8 +222,9 @@ func howToWrite(command *cli.Command) string {
 // no such thing, so that the error says what was looked for rather than the
 // name of the server's error value. Other errors pass through describeError.
 func describeNotFound(command *cli.Command, err error, what string) error {
-	if errors.Is(err, client.ErrNotFound) {
-		return fmt.Errorf("%w: there is no %s", client.ErrNotFound, what)
+	var described *describedError
+	if errors.Is(err, client.ErrNotFound) && !errors.As(err, &described) {
+		return &describedError{fmt.Errorf("%w: there is no %s", client.ErrNotFound, what)}
 	}
 	return describeError(command, err)
 }
