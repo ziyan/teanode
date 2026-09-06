@@ -100,6 +100,13 @@ type Check = {
 
 type Tab = 'rendered' | 'text' | 'html' | 'source' | 'raw'
 
+// A score is a sum of floating-point weights, and a sum of floats is
+// 11.606000000000002. Three decimals is what the published rule weights are
+// written with, so nothing real is lost, and the noise never reaches prose.
+function formatScore(score: number): string {
+  return String(Math.round(score * 1000) / 1000)
+}
+
 // What the two training mutations return.
 type Training = { mailId: string; label: string; learnedSpam: number; learnedHam: number }
 
@@ -539,7 +546,7 @@ function Authentication({ results }: { results: AuthenticationResults }) {
   if (results.spamFilter) {
     checks.push({
       label: t('mailDetail.spam'),
-      verdict: String(results.spamFilter.score),
+      verdict: formatScore(results.spamFilter.score),
       tone: results.spamFilter.result === 'fail' ? 'bad' : 'good',
       // The breakdown is the whole explanation of the score: which check
       // fired and what it cost. An external daemon reports only names, so
@@ -550,7 +557,7 @@ function Authentication({ results }: { results: AuthenticationResults }) {
             <span key={check.symbol} className="spam-check" title={check.description ?? ''}>
               <span className="mono">{check.symbol}</span>
               <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
-                {check.score > 0 ? `+${check.score}` : String(check.score)}
+                {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
               </span>
             </span>
           ))}
@@ -729,7 +736,7 @@ function verdictLine(
       return t('mailDetail.whyVirus', { viruses: results.antivirus.viruses.join(', ') })
     }
     if (results?.spamFilter?.result === 'fail') {
-      return t('mailDetail.whySpam', { score: results.spamFilter.score })
+      return t('mailDetail.whySpam', { score: formatScore(results.spamFilter.score) })
     }
     if (results?.dmarc?.result && toneFor(results.dmarc.result) === 'bad') {
       return t('mailDetail.whyDmarc', { policy: results.dmarc.policy ?? 'none' })
