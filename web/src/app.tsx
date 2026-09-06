@@ -43,8 +43,9 @@ export function App() {
       setSession(await getSession())
     } catch {
       // The server is unreachable. Show the login form rather than a blank
-      // page; trying again is the only useful thing a reader can do.
-      setSession({ authenticated: false, authenticationRequired: true, username: '' })
+      // page; trying again is the only useful thing a reader can do. Without
+      // a server there is nobody to answer a passkey, so none is offered.
+      setSession({ authenticated: false, authenticationRequired: true, username: '', passkeysEnabled: false })
     }
   }, [])
 
@@ -85,7 +86,7 @@ export function App() {
     return (
       <div className="auth-page">
         {corner}
-        <LoginPage onLoggedIn={refresh} />
+        <LoginPage onLoggedIn={refresh} passkeysEnabled={session.passkeysEnabled} />
       </div>
     )
   }

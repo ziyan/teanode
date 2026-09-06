@@ -87,8 +87,6 @@ export const zh: Catalog = {
   'login.passkeyFailed': '无法使用该通行密钥登录。',
   'login.signingIn': '正在登录…',
   'login.failed': '无法登录',
-  'login.hint': '无法登录？可以在服务器上直接添加账号：',
-
   'setupAccount.intro': '此服务器还没有账号。请设置用户名和密码。',
   'setupAccount.passwordAgain': '再次输入密码',
   'setupAccount.create': '创建账号',

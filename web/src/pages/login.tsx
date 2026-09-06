@@ -6,16 +6,18 @@ import { KeyIcon } from '../components/icons'
 import { cancelled, getAssertion, isPasskeySupported } from '../passkeys'
 import { useTranslation } from '../i18n/i18n'
 
-export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
+export function LoginPage({ onLoggedIn, passkeysEnabled }: { onLoggedIn: () => void; passkeysEnabled: boolean }) {
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Offered only where it can work. A passkey button on a browser without
-  // WebAuthn is a button that fails after somebody has committed to it.
+  // Offered only where it can work: a browser with WebAuthn, on a server
+  // that has passkeys turned on. A button that fails after somebody has
+  // committed to it is worse than no button.
   const [supported] = useState(isPasskeySupported)
+  const offerPasskey = supported && passkeysEnabled
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -54,18 +56,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
   }
 
   return (
-    <AuthCard
-      // The command on a line of its own. Running it through the middle of a
-      // centred sentence gave a line nobody can read and nobody can select,
-      // and it wrapped in the middle of the command itself.
-      footnote={
-        <>
-          {t('login.hint')}
-          <code className="auth-command">teanode user add &lt;username&gt;</code>
-        </>
-      }
-      onSubmit={submit}
-    >
+    <AuthCard onSubmit={submit}>
       <AuthField
         label={t('login.username')}
         value={username}
@@ -92,11 +83,12 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
           what everybody has — so the one that always works stays the one the
           form is built around, and this is offered beside it.
 
-          Always shown where the browser supports it, rather than only when
-          the server has passkeys turned on: asking whether it does would mean
-          telling an anonymous caller something about this server's
-          configuration, and pressing it when it is off says so plainly. */}
-      {supported && (
+          Only when the server has passkeys turned on, which the session
+          answer says. It used to be shown wherever the browser could, so as
+          not to tell an anonymous caller anything about the configuration;
+          but pressing it told them the same thing, after they had chosen it
+          and been refused. */}
+      {offerPasskey && (
         <>
           <div className="auth-or">
             <span>{t('login.or')}</span>

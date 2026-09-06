@@ -86,6 +86,10 @@ export interface Session {
   // What to call this person, when they have said. Empty otherwise, and the
   // username stands in.
   name?: string
+
+  // Whether this server offers passkeys. The sign-in form shows the passkey
+  // button only when it does.
+  passkeysEnabled: boolean
 }
 
 // Logging in goes through the same GraphQL endpoint as everything else. It
@@ -94,7 +98,7 @@ export interface Session {
 // credential is a cookie, so the reply has to set a header. The server does
 // that from the resolver.
 
-const SESSION_FIELDS = '{ authenticated authenticationRequired username name }'
+const SESSION_FIELDS = '{ authenticated authenticationRequired username name passkeysEnabled }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

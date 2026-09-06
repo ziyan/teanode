@@ -87,8 +87,6 @@ export const ja: Catalog = {
   'login.passkeyFailed': 'このパスキーではサインインできませんでした。',
   'login.signingIn': 'サインインしています…',
   'login.failed': 'サインインできませんでした',
-  'login.hint': 'ログインできませんか？ サーバー上でアカウントを追加できます:',
-
   'setupAccount.intro': 'このサーバーにはまだアカウントがありません。ユーザー名とパスワードを決めてください。',
   'setupAccount.passwordAgain': 'パスワード（確認）',
   'setupAccount.create': 'アカウントを作成',
