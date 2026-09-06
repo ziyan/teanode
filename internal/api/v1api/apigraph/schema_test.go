@@ -2,6 +2,9 @@ package apigraph
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -212,5 +215,31 @@ func TestSettingsMutationNamesRealTypes(t *testing.T) {
 		if _, ok := written[section]; !ok {
 			t.Errorf("the schema accepts a section %q the client cannot set", section)
 		}
+	}
+
+	// The dashboard writes the same declarations by hand in its own mutation,
+	// and drifted the same way at the same time: after SMTPParameters was
+	// renamed, the page declared $smtp as SmtpParametersInput and nothing on
+	// it could be saved. Read what it declares and hold it to the schema.
+	page, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "web", "src", "pages", "settings", "integrations.tsx"))
+	if err != nil {
+		t.Fatalf("cannot read the dashboard's settings page: %v", err)
+	}
+	pattern := regexp.MustCompile(`\$([a-zA-Z0-9]+): ([A-Za-z0-9]+ParametersInput)`)
+	found := 0
+	for _, match := range pattern.FindAllStringSubmatch(string(page), -1) {
+		section, name := match[1], match[2]
+		found++
+		actual, ok := declared[section]
+		if !ok {
+			t.Errorf("the dashboard sets a section %q that the schema does not accept", section)
+			continue
+		}
+		if actual != name {
+			t.Errorf("the dashboard declares %s as %q; the schema calls it %q", section, name, actual)
+		}
+	}
+	if found == 0 {
+		t.Errorf("found no variable declarations in the dashboard's settings mutation; the pattern or the file has moved")
 	}
 }
