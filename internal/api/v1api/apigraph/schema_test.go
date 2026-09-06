@@ -138,3 +138,79 @@ func TestParseAddresses(t *testing.T) {
 		t.Errorf("expected an invalid arguments error, got %v", err)
 	}
 }
+
+// The command line's UpdateSettings mutation spells its variable types out by
+// hand, and the schema derives them from Go type names. Nothing connected the
+// two, so renaming a Go type broke the client silently — and worse than it
+// looks: one bad variable declaration fails validation for the whole
+// mutation, so every section stops being settable, not just the one that
+// moved.
+//
+// Two had drifted before this test existed. SMTPParameters was written as
+// SmtpParametersInput, a name the schema has never had, so "teanode settings
+// set" was broken for every section. And antispam, which shared
+// ServiceParametersInput with the antivirus, grew a type of its own when the
+// built-in spam filter arrived.
+func TestSettingsMutationNamesRealTypes(t *testing.T) {
+	t.Parallel()
+
+	component, err := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, &api.Settings{})
+	if err != nil {
+		t.Fatalf("the schema does not build: %s", err)
+	}
+	schema := component.(*graph).schema
+
+	mutation := schema.MutationType()
+	if mutation == nil {
+		t.Fatal("the schema has no mutation type")
+	}
+	field, ok := mutation.Fields()["UpdateSettings"]
+	if !ok {
+		t.Fatal("the schema has no UpdateSettings mutation")
+	}
+
+	// What the schema actually declares, by argument name.
+	declared := make(map[string]string, len(field.Args))
+	for _, argument := range field.Args {
+		declared[argument.PrivateName] = strings.TrimSuffix(argument.Type.String(), "!")
+	}
+
+	// What internal/client/settings.go writes into its query. Kept here
+	// rather than parsed out of it, so that adding a section to one and not
+	// the other is a failure rather than a silence.
+	written := map[string]string{
+		"s3":           "S3ParametersInput",
+		"route53":      "Route53ParametersInput",
+		"antivirus":    "ServiceParametersInput",
+		"antispam":     "AntispamParametersInput",
+		"relay":        "RelayParametersInput",
+		"submission":   "SubmissionParametersInput",
+		"proxy":        "ProxyParametersInput",
+		"certificates": "CertificateParametersInput",
+		"smtp":         "SMTPParametersInput",
+		"resolver":     "ResolverParametersInput",
+		"session":      "SessionParametersInput",
+		"passkey":      "PasskeyParametersInput",
+		"listen":       "ListenParametersInput",
+		"identity":     "IdentityParametersInput",
+		"storage":      "StorageParametersInput",
+		"geoip":        "GeoIPParametersInput",
+		"upgrade":      "UpgradeParametersInput",
+	}
+
+	for section, name := range written {
+		actual, ok := declared[section]
+		if !ok {
+			t.Errorf("the client sets a section %q that the schema does not accept", section)
+			continue
+		}
+		if actual != name {
+			t.Errorf("the client declares %s as %q; the schema calls it %q", section, name, actual)
+		}
+	}
+	for section := range declared {
+		if _, ok := written[section]; !ok {
+			t.Errorf("the schema accepts a section %q the client cannot set", section)
+		}
+	}
+}
