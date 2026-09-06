@@ -939,6 +939,15 @@ and `Port` retained and marked deprecated.
 - [x] (2026-09-05) Proved end to end: `make test-deployment` passes 104 checks
       against a stack with no spam daemon in it, including that a message is
       scored and carries a per-check breakdown.
+- [x] (2026-09-06) Review rounds two and three, run against the live server
+      with the rules on. Round two: every rule hit was counted once per
+      definition — the corpus defines names in more than one file — and two
+      real messages were refused on scores they had not earned. Round three:
+      a meta rule leaning on a skipped sub-rule fired on exactly the messages
+      it was written to exempt, and `:addr` rules matched the whole header.
+      The usable corpus went 2287 → 1214 → 722 as each was fixed.
+- [x] (2026-09-06) The classifier taught from the operator's own mail: 181
+      marked not-spam and 32 spam, past the minimum, so it now contributes.
 - [ ] The signed update channel for rule files, when the OpenPGP dependency
       question is settled.
 
@@ -979,6 +988,18 @@ and `Port` retained and marked deprecated.
   Evidence: an ordinary test message was refused with
   `550 5.7.26 Spam check failed`, first because SPF and DMARC were both
   scored for one fact, and then because a seeded domain's threshold was zero.
+
+- Observation: a skipped rule is not "false". Most meta rules negate their
+  sub-rules, so a sub-rule this server cannot evaluate made the negation true
+  and the meta fire on the messages it exempted.
+  Evidence: `FROM_ADDR_WS` is `__FROM_ADDR_WS && !__RCD_RDNS_MAIL && …`, and
+  `BODY_URI_ONLY` is `__BODY_URI_ONLY && !__DKIM_EXISTS && …`; both fired,
+  for three and 1.4 points, on DKIM-signed mail from Apple's relay.
+
+- Observation: the published corpus defines a rule name in more than one
+  file, and a redefinition means "replace".
+  Evidence: every hit was counted twice; a message that had earned 4.8 scored
+  11.6 and was refused. Deduplicating halved the loaded count exactly.
 
 - Observation: the score breakdown the dashboard needs costs no migration.
   Evidence: `AuthenticationResults` is stored as one `jsonb` column

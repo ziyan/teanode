@@ -17,6 +17,7 @@ import { MessageFrame } from '../components/messageFrame'
 import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
+import { useResolvedTheme } from '../components/theme'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -118,6 +119,29 @@ export function MailDetailPage() {
   const { data, error, loading } = useQuery(() => graphql<Response>(MAIL, { mailId }), [mailId])
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
+
+  // Reading in the dark. The frame's document is built as a string, so the
+  // dashboard's theme has to be resolved here and written in as literals.
+  // "darkened" is the reader's choice to invert a message that paints its
+  // own light ground, remembered per reader rather than per message: whoever
+  // wants dark mail wants it for the next message too.
+  const resolvedTheme = useResolvedTheme()
+  const dark = resolvedTheme === 'dark'
+  const [darkened, setDarkened] = useState(() => {
+    try {
+      return window.localStorage.getItem(DARKENED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const chooseDarkened = (next: boolean) => {
+    setDarkened(next)
+    try {
+      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
+    } catch {
+      // A browser that refuses storage still gets the choice for this visit.
+    }
+  }
   const [marked, setMarked] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | null>(null)
@@ -157,8 +181,9 @@ export function MailDetailPage() {
 
   const content = data?.GetMailContent
   const document = useMemo(
-    () => (content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined) : ''),
-    [content?.html, loadRemote, mailId],
+    () =>
+      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
+    [content?.html, loadRemote, mailId, dark, darkened],
   )
 
   if (loading) {
@@ -201,7 +226,7 @@ export function MailDetailPage() {
           the message's current label, and pressing it again clears it. */}
       {data.GetSettings?.antispam?.effectiveEngine === 'builtin' && data.GetSettings.antispam.bayesEnabled ? (
         <div className="mark-spam">
-          <div className="mark-spam-toggle" role="group" aria-label={t('mailDetail.markPrompt')}>
+          <div className="segmented" role="group" aria-label={t('mailDetail.markPrompt')}>
             <button
               type="button"
               className={marked === 'spam' ? 'active bad' : ''}
@@ -340,6 +365,33 @@ export function MailDetailPage() {
                   <button className="link" onClick={() => setLoadRemote(true)}>
                     {t('mailDetail.loadRemote')}
                   </button>
+                </div>
+              )}
+              {/* Only in the dark theme: in the light one there is nothing
+                  to fix, and the control would be a question nobody asked.
+                  A plain message is already dark from the frame's ground;
+                  this is for one that paints its own, which the inversion
+                  darkens while keeping its pictures the right way round. */}
+              {dark && (
+                <div className="frame-mode">
+                  <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
+                    <button
+                      type="button"
+                      className={darkened ? '' : 'active'}
+                      aria-pressed={!darkened}
+                      onClick={() => chooseDarkened(false)}
+                    >
+                      {t('mailDetail.asSent')}
+                    </button>
+                    <button
+                      type="button"
+                      className={darkened ? 'active' : ''}
+                      aria-pressed={darkened}
+                      onClick={() => chooseDarkened(true)}
+                    >
+                      {t('mailDetail.darkened')}
+                    </button>
+                  </div>
                 </div>
               )}
               {/* Rendered in a sandbox that permits no scripts, on top of
@@ -778,7 +830,21 @@ function alignmentMode(t: (key: Key) => string, mode: string): string {
 // the server-side sanitiser, it cannot execute or call home from here. When
 // remote images are not being loaded, img-src is restricted to data URLs so a
 // tracking pixel cannot fire.
-function buildDocument(html: string, mailId?: string): string {
+const DARKENED_KEY = 'teanode.mail.darkened'
+
+// buildDocument writes the whole document the frame shows, colours included.
+//
+// The frame cannot read the dashboard's tokens — it is a separate document
+// built from a string — so the two colours are written here as literals,
+// taken from the dark palette at the top of style.css so they match rather
+// than approximate. In the dark theme the ground is dark and the text light,
+// which a plain message inherits; a message that sets its own colours keeps
+// them, since a default is exactly what it overrides.
+//
+// "darkened" inverts the whole document and inverts pictures back, which is
+// the only transform that darkens a document nobody understands while keeping
+// its hues recognisable. Imperfect on gradients, which is why it is a choice.
+function buildDocument(html: string, mailId?: string, dark = false, darkened = false): string {
   // 'self' covers every image that can appear in here: the ones the message
   // carried with it, which the server rewrote from cid: to its own attachment
   // endpoint, and the remote ones, which go through the server too once the
@@ -795,8 +861,16 @@ function buildDocument(html: string, mailId?: string): string {
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
-<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#16161a;background:#fff;word-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style>
-</head><body><div id="teanode-content">${body}</div></body></html>`
+<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
+    dark ? '#f4f4f5' : '#16161a'
+  };background:${dark ? '#1a1a1d' : '#fff'};word-wrap:break-word${
+    dark ? ';color-scheme:dark' : ''
+  }}img{max-width:100%;height:auto}table{max-width:100%}${
+    darkened
+      ? '.darkened{filter:invert(1) hue-rotate(180deg);background:#fff}.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
+      : ''
+  }</style>
+</head><body><div id="teanode-content"${darkened ? ' class="darkened"' : ''}>${body}</div></body></html>`
 }
 
 // restoreRemoteImages points the blocked images at this server, once the

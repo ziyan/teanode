@@ -3264,9 +3264,11 @@ a.button.primary:hover {
   color: var(--good);
 }
 
-/* Teaching the spam filter, directly under the verdict on a message.
+/* A segmented pair, drawn in the Tag palette. First used for teaching the
+   spam filter under a message's verdict; also for choosing how a message is
+   rendered in the dark.
 
-   A segmented pair drawn in the Tag palette — the same tint, text colour and
+   Drawn in the Tag palette — the same tint, text colour and
    35% border the verdict tags above it use — so the pressed segment reads as
    "this message is tagged not-spam" rather than as a filled button, and so it
    follows both themes through the same tokens the tags do. A solid red or
@@ -3279,14 +3281,14 @@ a.button.primary:hover {
   margin-bottom: var(--space-4);
 }
 
-.mark-spam-toggle {
+.segmented {
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
   overflow: hidden;
 }
 
-.mark-spam-toggle button {
+.segmented button {
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3297,23 +3299,35 @@ a.button.primary:hover {
   line-height: 1.5;
 }
 
-.mark-spam-toggle button + button {
+.segmented button + button {
   border-left: 1px solid var(--border);
 }
 
-.mark-spam-toggle button:hover:not(:disabled):not(.active) {
+.segmented button:hover:not(:disabled):not(.active) {
   color: var(--text);
   background: var(--sidebar-hover);
 }
 
-.mark-spam-toggle button.active.bad {
+.segmented button.active.bad {
   color: var(--bad);
   background: color-mix(in srgb, var(--bad) 10%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 35%, transparent);
 }
 
-.mark-spam-toggle button.active.good {
+.segmented button.active.good {
   color: var(--good);
   background: color-mix(in srgb, var(--good) 10%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 35%, transparent);
+}
+
+/* Choosing how a message renders in the dark, just above the frame. */
+.frame-mode {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.segmented button.active {
+  color: var(--text);
+  background: var(--sidebar-hover);
 }
