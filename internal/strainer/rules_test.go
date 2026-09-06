@@ -133,3 +133,46 @@ func firedRules(t *testing.T, filter *Strainer, message *spamfilter.Message) map
 	}
 	return fired
 }
+
+// A rule defined twice fires once, with its last definition.
+//
+// The published sets redefine rules across files, and a redefinition means
+// "replace". Keeping both copies scored every hit twice: a message on a live
+// server matched three rules, scored six hits, crossed the threshold, and was
+// refused — on 11.6 points where it had earned 4.8.
+func TestARedefinedRuleFiresOnce(t *testing.T) {
+	t.Parallel()
+
+	filter := New(&config.AntispamBuiltin{Rules: config.AntispamRules{Enabled: true}}, nil, nil)
+	filter.SetRules(`
+body   TWICE   /first pattern/
+score  TWICE   1.0
+body   TWICE   /second pattern/
+score  TWICE   2.0
+meta   META_TWICE  TWICE
+score  META_TWICE  0.5
+meta   META_TWICE  TWICE && TWICE
+`)
+
+	checks := filter.rulesChecks(&spamfilter.Message{Body: []byte("the second pattern is here")})
+	seen := map[string]int{}
+	var total float64
+	for _, check := range checks {
+		seen[check.symbol]++
+		total += check.score
+	}
+	if seen["TWICE"] != 1 {
+		t.Errorf("TWICE fired %d times, want once: %v", seen["TWICE"], checks)
+	}
+	if seen["META_TWICE"] != 1 {
+		t.Errorf("META_TWICE fired %d times, want once: %v", seen["META_TWICE"], checks)
+	}
+	if total != 2.5 {
+		t.Errorf("total = %v, want 2.5 (the last definitions, each once)", total)
+	}
+
+	// The first definition is gone, not merely deprioritised.
+	if hits := filter.rulesChecks(&spamfilter.Message{Body: []byte("the first pattern is here")}); len(hits) != 0 {
+		t.Errorf("the replaced definition still fires: %v", hits)
+	}
+}

@@ -168,10 +168,51 @@ func parseRules(text string) *ruleSet {
 	// Rules the flags disqualified, and rules with no score, are dropped
 	// here rather than while parsing, because a score line can come after
 	// the rule it scores.
-	set.rules = filterRules(set.rules, skipRule, descriptions)
-	set.metas = filterMetas(set.metas, skipRule, descriptions)
+	//
+	// And a name defined more than once keeps only its last definition. The
+	// published sets do this — a rule in one file is redefined in a later
+	// one — and it means "replace", not "and also". Keeping every definition
+	// fired the same rule once per copy, so a message matching three rules
+	// scored six hits and was refused at the door on a score it had not
+	// earned. That happened on a live server before this line existed.
+	set.rules = filterRules(lastDefinitionWins(set.rules), skipRule, descriptions)
+	set.metas = filterMetas(lastMetaWins(set.metas), skipRule, descriptions)
 	set.loaded = len(set.rules) + len(set.metas)
 	return set
+}
+
+// lastDefinitionWins keeps one rule per name — the last one — in the order
+// the names were first seen, so the evaluation order stays stable.
+func lastDefinitionWins(rules []rule) []rule {
+	latest := make(map[string]rule, len(rules))
+	order := make([]string, 0, len(rules))
+	for _, one := range rules {
+		if _, seen := latest[one.name]; !seen {
+			order = append(order, one.name)
+		}
+		latest[one.name] = one
+	}
+	kept := make([]rule, 0, len(order))
+	for _, name := range order {
+		kept = append(kept, latest[name])
+	}
+	return kept
+}
+
+func lastMetaWins(metas []metaRule) []metaRule {
+	latest := make(map[string]metaRule, len(metas))
+	order := make([]string, 0, len(metas))
+	for _, one := range metas {
+		if _, seen := latest[one.name]; !seen {
+			order = append(order, one.name)
+		}
+		latest[one.name] = one
+	}
+	kept := make([]metaRule, 0, len(order))
+	for _, name := range order {
+		kept = append(kept, latest[name])
+	}
+	return kept
 }
 
 func filterRules(rules []rule, skip map[string]bool, descriptions map[string]string) []rule {
