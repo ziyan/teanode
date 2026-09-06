@@ -47,6 +47,11 @@ func main() {
 				Usage:   "do not verify the server's certificate; for a development server with a self-signed one",
 				Sources: cli.EnvVars("TEANODE_INSECURE"),
 			},
+			&cli.BoolFlag{
+				Name:    "read-only",
+				Usage:   "refuse to change anything on the server, whatever the profile allows; for handing the tool to a script or an agent that should only look",
+				Sources: cli.EnvVars("TEANODE_READ_ONLY"),
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Aliases: []string{"l"},
@@ -58,6 +63,9 @@ func main() {
 			cmd.SetupLogging(command.String("log-level"))
 			return ctx, nil
 		},
+		// The library would otherwise print and exit on its own for an error
+		// carrying an exit code, before main below could print it as JSON.
+		ExitErrHandler: func(ctx context.Context, command *cli.Command, err error) {},
 		Commands: []*cli.Command{
 			cmd.NewAuthCommand(),
 			cmd.NewDomainCommand(),
@@ -81,11 +89,44 @@ func main() {
 		},
 	}
 
+	setUsageErrorHandlers(command)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Errors are printed here rather than left to the library, so that a
+	// command asked for JSON fails in JSON, and the exit code says what kind
+	// of failure it was.
 	if err := command.Run(ctx, os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(1)
+		// An error from before the flags were parsed never reached a flag
+		// action, so whether JSON was wanted is read from the arguments.
+		cmd.NoteUsageError(nil, os.Args)
+		err = cmd.Describe(command, err)
+		cmd.PrintError(err)
+		os.Exit(cmd.ExitCode(err))
+	}
+}
+
+// setUsageErrorHandlers makes a flag that does not exist, a value that is
+// not a number, or a command that does not exist, exit with the usage code
+// and say where the rest are listed. The library consults the handlers of
+// the command that was parsing, not the root's, so every command in the
+// tree gets them.
+//
+// The library's own answer to an unknown command is "No help topic for
+// 'x'" and exit code 3, which reads as a help system with a page missing,
+// and 3 is the code a read-only refusal exits with.
+func setUsageErrorHandlers(command *cli.Command) {
+	command.OnUsageError = func(ctx context.Context, failed *cli.Command, err error, isSubcommand bool) error {
+		cmd.NoteUsageError(failed, os.Args)
+		return cmd.Usage(fmt.Sprintf("%s; '%s --help' shows the flags", err, failed.FullName()))
+	}
+	command.CommandNotFound = func(ctx context.Context, parent *cli.Command, name string) {
+		cmd.NoteUsageError(parent, os.Args)
+		cmd.PrintError(cmd.Usage(fmt.Sprintf("unknown command %q; '%s --help' lists them", name, parent.FullName())))
+		os.Exit(cmd.ExitUsage)
+	}
+	for _, subcommand := range command.Commands {
+		setUsageErrorHandlers(subcommand)
 	}
 }

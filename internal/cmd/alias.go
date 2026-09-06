@@ -60,6 +60,7 @@ func NewAliasCommand() *cli.Command {
 				Aliases:   []string{"remove"},
 				Usage:     "remove an alias",
 				ArgsUsage: "<alias-id>",
+				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runAliasDelete,
 			},
 		},
@@ -169,7 +170,7 @@ func aliasParameters(command *cli.Command) (*client.AliasParameters, error) {
 func runAliasList(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode alias list <domain>")
+		return usage("which domain? usage: teanode alias list <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -212,7 +213,7 @@ func printAliases(aliases []*client.Alias) error {
 func runAliasMatch(ctx context.Context, command *cli.Command) error {
 	name, address := command.Args().Get(0), command.Args().Get(1)
 	if name == "" || address == "" {
-		return fmt.Errorf("usage: teanode alias match <domain> <address>")
+		return usage("usage: teanode alias match <domain> <address>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -239,10 +240,10 @@ func runAliasMatch(ctx context.Context, command *cli.Command) error {
 func runAliasCreate(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode alias create <domain> --pattern <regexp> --kind <kind>")
+		return usage("which domain? usage: teanode alias create <domain> --pattern <regexp> --kind <kind>")
 	}
 	if !command.IsSet("kind") {
-		return fmt.Errorf("which kind? pass --kind email, webhook, mailServer or null")
+		return usage("which kind? pass --kind email, webhook, mailServer or null")
 	}
 	parameters, err := aliasParameters(command)
 	if err != nil {
@@ -270,11 +271,15 @@ func runAliasCreate(ctx context.Context, command *cli.Command) error {
 func runAliasUpdate(ctx context.Context, command *cli.Command) error {
 	aliasId := command.Args().First()
 	if aliasId == "" {
-		return fmt.Errorf("which alias? usage: teanode alias update <alias-id> [--kind ...]; 'teanode alias list <domain>' shows the identifiers")
+		return usage("which alias? usage: teanode alias update <alias-id> [--kind ...]; 'teanode alias list <domain>' shows the identifiers")
 	}
 	parameters, err := aliasParameters(command)
 	if err != nil {
 		return err
+	}
+	if parameters.Pattern == "" && parameters.Kind == "" && parameters.Comment == nil && parameters.Email == nil &&
+		parameters.Webhook == nil && parameters.Disabled == nil && parameters.MailServer == nil {
+		return usage("nothing to change; pass at least one of the settings flags")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -282,7 +287,7 @@ func runAliasUpdate(ctx context.Context, command *cli.Command) error {
 	}
 	alias, err := client.UpdateAlias(ctx, connection, aliasId, parameters)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "alias "+aliasId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(alias)
@@ -294,14 +299,17 @@ func runAliasUpdate(ctx context.Context, command *cli.Command) error {
 func runAliasDelete(ctx context.Context, command *cli.Command) error {
 	aliasId := command.Args().First()
 	if aliasId == "" {
-		return fmt.Errorf("which alias? usage: teanode alias delete <alias-id>; 'teanode alias list <domain>' shows the identifiers")
+		return usage("which alias? usage: teanode alias delete <alias-id>; 'teanode alias list <domain>' shows the identifiers")
+	}
+	if err := confirm(command, fmt.Sprintf("This removes alias %s; mail it matched is refused from now on, unless another alias matches.", aliasId)); err != nil {
+		return err
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
 	if err := client.DeleteAlias(ctx, connection, aliasId); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "alias "+aliasId)
 	}
 	fmt.Printf("removed alias %s\n", aliasId)
 	return nil

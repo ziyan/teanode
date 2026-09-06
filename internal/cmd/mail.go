@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewMailCommand builds "teanode mail": the messages this server has handled,
@@ -144,8 +145,29 @@ func mailFilterFlags() []cli.Flag {
 	}
 }
 
+// The values the enumerated filters accept. Checked here, because the server
+// answers a value it does not know with an empty list, which reads as a quiet
+// server rather than as a typo. The field "count --by" takes is not listed:
+// the server refuses one it does not know, and knows more than the help
+// names.
+var (
+	mailStatuses = []string{
+		string(models.MailStatusReceived), string(models.MailStatusAccepted), string(models.MailStatusRejected),
+	}
+	mailKinds = []string{
+		string(models.MailKindIncoming), string(models.MailKindOutgoing), string(models.MailKindExchange),
+		string(models.MailKindDSN), string(models.MailKindRUA), string(models.MailKindRUF),
+	}
+)
+
 // mailFilters reads the filter flags into the tests the list query applies.
 func mailFilters(ctx context.Context, command *cli.Command, connection *client.Client) (string, []client.Filter, error) {
+	if err := oneOf("status", command.String("status"), mailStatuses...); err != nil {
+		return "", nil, err
+	}
+	if err := oneOf("kind", command.String("kind"), mailKinds...); err != nil {
+		return "", nil, err
+	}
 	domainId := ""
 	if name := command.String("domain"); name != "" {
 		domain, err := requireDomain(ctx, command, connection, name)
@@ -175,10 +197,13 @@ func runMailList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	mails, err := client.ListMails(ctx, connection, domainId, filters, int(command.Int("first")))
+	first := int(command.Int("first"))
+	mails, err := client.ListMails(ctx, connection, domainId, filters, pageSize(first))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
+	mails, more := capPage(mails, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(mails)
 	}
@@ -223,7 +248,7 @@ func deliverySummary(deliveries []*client.Delivery) string {
 func runMailGet(ctx context.Context, command *cli.Command) error {
 	mailId := command.Args().First()
 	if mailId == "" {
-		return fmt.Errorf("which message? usage: teanode mail get <mail-id>")
+		return usage("which message? usage: teanode mail get <mail-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -231,7 +256,7 @@ func runMailGet(ctx context.Context, command *cli.Command) error {
 	}
 	message, err := client.GetMail(ctx, connection, mailId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "message "+mailId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(message)
@@ -329,7 +354,7 @@ func authenticationSummary(raw json.RawMessage) [][2]string {
 func runMailContent(ctx context.Context, command *cli.Command) error {
 	mailId := command.Args().First()
 	if mailId == "" {
-		return fmt.Errorf("which message? usage: teanode mail content <mail-id>")
+		return usage("which message? usage: teanode mail content <mail-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -337,7 +362,7 @@ func runMailContent(ctx context.Context, command *cli.Command) error {
 	}
 	content, err := client.GetMailContent(ctx, connection, mailId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "message "+mailId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(content)
@@ -371,7 +396,7 @@ func runMailContent(ctx context.Context, command *cli.Command) error {
 func runMailDownload(ctx context.Context, command *cli.Command) error {
 	mailId := command.Args().First()
 	if mailId == "" {
-		return fmt.Errorf("which message? usage: teanode mail download <mail-id>")
+		return usage("which message? usage: teanode mail download <mail-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -379,7 +404,7 @@ func runMailDownload(ctx context.Context, command *cli.Command) error {
 	}
 	response, err := connection.Download(ctx, strings.Replace(api.PathMailRaw, "{mailId}", mailId, 1))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "stored message "+mailId)
 	}
 	defer func() {
 		_ = response.Body.Close()
@@ -411,7 +436,7 @@ func runMailDownload(ctx context.Context, command *cli.Command) error {
 func runMailOpens(ctx context.Context, command *cli.Command) error {
 	mailId := command.Args().First()
 	if mailId == "" {
-		return fmt.Errorf("which message? usage: teanode mail opens <mail-id>")
+		return usage("which message? usage: teanode mail opens <mail-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -419,7 +444,7 @@ func runMailOpens(ctx context.Context, command *cli.Command) error {
 	}
 	opens, err := client.GetMailOpens(ctx, connection, mailId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "message "+mailId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(opens)
@@ -452,7 +477,7 @@ func runMailCount(ctx context.Context, command *cli.Command) error {
 	}
 	facets, err := client.CountMailsBy(ctx, connection, domainId, command.String("by"), filters)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(facets)
@@ -471,7 +496,7 @@ func runMailCount(ctx context.Context, command *cli.Command) error {
 func runMailSend(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode mail send <domain> --from <address> --to <address>")
+		return usage("which domain? usage: teanode mail send <domain> --from <address> --to <address>")
 	}
 	message := &client.MessageParameters{
 		From:     command.String("from"),
@@ -483,7 +508,7 @@ func runMailSend(ctx context.Context, command *cli.Command) error {
 		Locale:   command.String("locale"),
 	}
 	if len(message.To)+len(message.Cc)+len(message.Bcc) == 0 {
-		return fmt.Errorf("who is it for? pass --to")
+		return usage("who is it for? pass --to")
 	}
 	for _, address := range append(append(append([]string{}, message.To...), message.Cc...), message.Bcc...) {
 		if _, err := mail.ParseAddress(address); err != nil {
@@ -538,7 +563,7 @@ func runMailSend(ctx context.Context, command *cli.Command) error {
 		}
 		message.TemplateID = template.ID
 	} else if message.TextContent == "" && message.HTMLContent == "" && len(message.Attachments) == 0 {
-		return fmt.Errorf("what should it say? pass --text or --html with a file, or --template")
+		return usage("what should it say? pass --text or --html with a file, or --template")
 	}
 
 	sent, err := client.SendMail(ctx, connection, domain.ID, message)

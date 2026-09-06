@@ -55,7 +55,7 @@ func runSessionList(ctx context.Context, command *cli.Command) error {
 	}
 	sessions, err := client.ListSessions(ctx, connection, command.String("user"), command.Bool("revoked"))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(sessions)
@@ -81,14 +81,14 @@ func runSessionList(ctx context.Context, command *cli.Command) error {
 func runSessionRevoke(ctx context.Context, command *cli.Command) error {
 	sessionId := command.Args().First()
 	if sessionId == "" {
-		return fmt.Errorf("which session? usage: teanode session revoke <session-id>")
+		return usage("which session? usage: teanode session revoke <session-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
 	if err := client.RevokeSession(ctx, connection, sessionId); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "session "+sessionId+" belonging to this account")
 	}
 	fmt.Printf("ended session %s\n", sessionId)
 	return nil
@@ -103,7 +103,7 @@ func runSessionRevokeAll(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if err := client.RevokeAllSessions(ctx, connection); err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	fmt.Println("ended every session")
 	return nil

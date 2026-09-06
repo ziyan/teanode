@@ -69,7 +69,7 @@ func NewTokenCommand() *cli.Command {
 func runTokenCreate(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("what will hold it? usage: teanode token create <name>")
+		return usage("what will hold it? usage: teanode token create <name>")
 	}
 
 	connection, err := openClient(command)
@@ -83,19 +83,26 @@ func runTokenCreate(ctx context.Context, command *cli.Command) error {
 
 	token, secret, err := client.CreateToken(ctx, connection, name, username, command.String("lifetime"))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"token": token, "secret": secret})
 	}
 
+	// The server's own address when it is known, so the line can be pasted
+	// as it is; on the console the client only knows the loopback.
+	serverUrl := "https://your-server"
+	if resolved, err := resolveCommandTarget(command); err == nil && !resolved.Local {
+		serverUrl = resolved.URL
+	}
 	fmt.Printf("Issued %s for %s. Only its hash is stored, so this is the only time\n", token.ID, token.Username)
 	fmt.Printf("it is shown.\n\n")
 	fmt.Printf("  %s\n\n", secret)
 	fmt.Printf("Use it from another machine by saving it as a profile:\n\n")
-	fmt.Printf("  teanode auth login --url https://%s --token %s\n\n", "your-server", secret)
-	fmt.Printf("Or, in a script, set TEANODE_URL and TEANODE_TOKEN.\n")
+	fmt.Printf("  teanode auth login --url %s --token -\n\n", serverUrl)
+	fmt.Printf("and paste it at the prompt, so it stays out of the shell history. Or, in\n")
+	fmt.Printf("a script, set TEANODE_URL and TEANODE_TOKEN.\n")
 	return nil
 }
 
@@ -106,7 +113,7 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 	}
 	tokens, err := client.ListTokens(ctx, connection, command.String("user"), command.Bool("revoked"))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(tokens)
@@ -136,7 +143,7 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 func runTokenRevoke(ctx context.Context, command *cli.Command) error {
 	id := command.Args().First()
 	if id == "" {
-		return fmt.Errorf("which token? usage: teanode token revoke <id>")
+		return usage("which token? usage: teanode token revoke <id>")
 	}
 
 	connection, err := openClient(command)
@@ -144,7 +151,7 @@ func runTokenRevoke(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if err := client.DeleteToken(ctx, connection, id); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "token "+id+" belonging to this account")
 	}
 	fmt.Printf("revoked %s\n", id)
 	return nil
@@ -163,7 +170,7 @@ func tokenOwner(ctx context.Context, command *cli.Command, connection *client.Cl
 
 	current, err := client.GetCurrentUser(ctx, connection)
 	if err != nil {
-		return "", describeConnectionError(command, err)
+		return "", describeError(command, err)
 	}
 	if current != nil {
 		return current.Username, nil
@@ -184,7 +191,7 @@ func tokenOwner(ctx context.Context, command *cli.Command, connection *client.Cl
 		for _, user := range users {
 			names = append(names, user.Username)
 		}
-		return "", fmt.Errorf("which account should hold it? pass --user with one of: %s",
-			strings.Join(names, ", "))
+		return "", usage(fmt.Sprintf("which account should hold it? pass --user with one of: %s",
+			strings.Join(names, ", ")))
 	}
 }

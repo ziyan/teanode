@@ -45,6 +45,12 @@ type Profile struct {
 	// Insecure skips verifying the server's certificate. Off unless
 	// "auth login --insecure" said so.
 	Insecure bool `json:"insecure,omitempty"`
+
+	// ReadOnly refuses every mutation through this profile before it is
+	// sent. For a profile handed to a script or an agent that should be able
+	// to look but not change. Off unless "auth login --read-only" or "auth
+	// set-read-only" said so.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 // Profiles is the file.

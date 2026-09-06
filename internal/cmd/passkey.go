@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,6 +37,7 @@ func NewPasskeyCommand() *cli.Command {
 				Aliases:   []string{"remove"},
 				Usage:     "remove a passkey, so that authenticator can no longer sign in",
 				ArgsUsage: "<passkey-id>",
+				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runPasskeyDelete,
 			},
 		},
@@ -49,7 +51,7 @@ func runPasskeyList(ctx context.Context, command *cli.Command) error {
 	}
 	policy, err := client.GetPasskeyPolicy(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	passkeys, err := client.ListPasskeys(ctx, connection)
 	if err != nil {
@@ -79,21 +81,30 @@ func runPasskeyList(ctx context.Context, command *cli.Command) error {
 // than what was asked: passkeys belong to an account, and the console — a
 // token minted from the server secret — is not one.
 func describeAccountError(command *cli.Command, err error) error {
-	if err == nil || !strings.Contains(err.Error(), "not logged in") {
-		return describeConnectionError(command, err)
+	if !errors.Is(err, client.ErrUnauthorized) {
+		return describeError(command, err)
 	}
 	resolved, resolveError := resolveCommandTarget(command)
 	if resolveError == nil && resolved.Local {
-		return fmt.Errorf("passkeys belong to an account, and the console is not one; " +
-			"sign in as somebody with 'teanode auth login', or pass --url and a token")
+		return &describedError{fmt.Errorf("%w; passkeys belong to an account, and the console is not one. "+
+			"Sign in as somebody with 'teanode auth login', or pass --url and a token", err)}
 	}
-	return err
+	return describeError(command, err)
+}
+
+// describePasskeyError is describeAccountError for a command that named one
+// passkey, so that a missing one is named too.
+func describePasskeyError(command *cli.Command, err error, passkeyId string) error {
+	if errors.Is(err, client.ErrNotFound) {
+		return describeNotFound(command, err, "passkey "+passkeyId)
+	}
+	return describeAccountError(command, err)
 }
 
 func runPasskeyRename(ctx context.Context, command *cli.Command) error {
 	passkeyId, name := command.Args().Get(0), command.Args().Get(1)
 	if passkeyId == "" || name == "" {
-		return fmt.Errorf("usage: teanode passkey rename <passkey-id> <name>")
+		return usage("usage: teanode passkey rename <passkey-id> <name>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -101,7 +112,7 @@ func runPasskeyRename(ctx context.Context, command *cli.Command) error {
 	}
 	passkey, err := client.RenamePasskey(ctx, connection, passkeyId, name)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describePasskeyError(command, err, passkeyId)
 	}
 	fmt.Printf("renamed %s to %q\n", passkey.ID, passkey.Name)
 	return nil
@@ -110,14 +121,17 @@ func runPasskeyRename(ctx context.Context, command *cli.Command) error {
 func runPasskeyDelete(ctx context.Context, command *cli.Command) error {
 	passkeyId := command.Args().First()
 	if passkeyId == "" {
-		return fmt.Errorf("which passkey? usage: teanode passkey delete <passkey-id>")
+		return usage("which passkey? usage: teanode passkey delete <passkey-id>")
+	}
+	if err := confirm(command, fmt.Sprintf("This removes passkey %s; the authenticator it names can no longer sign in.", passkeyId)); err != nil {
+		return err
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
 	if err := client.DeletePasskey(ctx, connection, passkeyId); err != nil {
-		return describeConnectionError(command, err)
+		return describePasskeyError(command, err, passkeyId)
 	}
 	fmt.Printf("removed passkey %s\n", passkeyId)
 	return nil

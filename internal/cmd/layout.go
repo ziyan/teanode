@@ -132,7 +132,7 @@ func applyLayoutFlags(command *cli.Command, parameters *client.LayoutParameters)
 func runLayoutList(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode layout list <domain>")
+		return usage("which domain? usage: teanode layout list <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -170,7 +170,7 @@ func runLayoutList(ctx context.Context, command *cli.Command) error {
 func requireLayoutArgument(command *cli.Command, verb string) (string, error) {
 	layoutId := command.Args().First()
 	if layoutId == "" {
-		return "", fmt.Errorf("which layout? usage: teanode layout %s <layout-id>; 'teanode layout list <domain>' shows the identifiers", verb)
+		return "", usage(fmt.Sprintf("which layout? usage: teanode layout %s <layout-id>; 'teanode layout list <domain>' shows the identifiers", verb))
 	}
 	return layoutId, nil
 }
@@ -186,7 +186,7 @@ func runLayoutGet(ctx context.Context, command *cli.Command) error {
 	}
 	layout, err := client.GetLayout(ctx, connection, layoutId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "layout "+layoutId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(layout.Parameters())
@@ -218,7 +218,7 @@ func runLayoutGet(ctx context.Context, command *cli.Command) error {
 func runLayoutCreate(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode layout create <domain>")
+		return usage("which domain? usage: teanode layout create <domain>")
 	}
 	parameters := &client.LayoutParameters{}
 	if err := applyLayoutFlags(command, parameters); err != nil {
@@ -254,7 +254,7 @@ func runLayoutUpdate(ctx context.Context, command *cli.Command) error {
 	}
 	layout, err := client.GetLayout(ctx, connection, layoutId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "layout "+layoutId)
 	}
 	parameters := layout.Parameters()
 	if err := applyLayoutFlags(command, parameters); err != nil {
@@ -284,7 +284,7 @@ func runLayoutDelete(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if err := client.DeleteLayout(ctx, connection, layoutId); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "layout "+layoutId)
 	}
 	fmt.Printf("removed layout %s\n", layoutId)
 	return nil
@@ -305,7 +305,7 @@ func runLayoutRender(ctx context.Context, command *cli.Command) error {
 	}
 	layout, err := client.GetLayout(ctx, connection, layoutId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "layout "+layoutId)
 	}
 	rendered, err := client.RenderLayout(ctx, connection, layout.DomainID, layout.Parameters(), command.String("locale"), variables)
 	if err != nil {

@@ -82,6 +82,7 @@ func NewUserCommand() *cli.Command {
 				Aliases:   []string{"remove"},
 				Usage:     "remove an account, along with the API tokens issued to it",
 				ArgsUsage: "<username>",
+				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runUserDelete,
 			},
 			{
@@ -91,12 +92,7 @@ func NewUserCommand() *cli.Command {
 					"asked to create an account. Useful for trying the first-run flow. Anyone\n" +
 					"who can reach the dashboard can claim it until somebody does, so do not\n" +
 					"leave it in that state.",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:  "force",
-						Usage: "do not ask for confirmation",
-					},
-				},
+				Flags:  []cli.Flag{ForceFlag()},
 				Action: runUserReset,
 			},
 		},
@@ -110,7 +106,7 @@ func runUserList(ctx context.Context, command *cli.Command) error {
 	}
 	users, err := client.ListUsers(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(users)
@@ -131,7 +127,7 @@ func runUserList(ctx context.Context, command *cli.Command) error {
 func runUserCreate(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return fmt.Errorf("which username? usage: teanode user create <username>")
+		return usage("which username? usage: teanode user create <username>")
 	}
 	password, err := ReadPassword(command.Bool("stdin"))
 	if err != nil {
@@ -143,7 +139,7 @@ func runUserCreate(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if _, err := client.CreateUser(ctx, connection, username, password, command.String("email")); err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	fmt.Printf("added %s\n", username)
 	return nil
@@ -152,7 +148,7 @@ func runUserCreate(ctx context.Context, command *cli.Command) error {
 func runUserPassword(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return fmt.Errorf("which username? usage: teanode user password <username>")
+		return usage("which username? usage: teanode user password <username>")
 	}
 	password, err := ReadPassword(command.Bool("stdin"))
 	if err != nil {
@@ -164,7 +160,7 @@ func runUserPassword(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if _, err := client.SetUserPassword(ctx, connection, username, password); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "account called "+username)
 	}
 	fmt.Printf("changed the password for %s\n", username)
 	return nil
@@ -173,15 +169,18 @@ func runUserPassword(ctx context.Context, command *cli.Command) error {
 func runUserDelete(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return fmt.Errorf("which username? usage: teanode user delete <username>")
+		return usage("which username? usage: teanode user delete <username>")
 	}
 
+	if err := confirm(command, fmt.Sprintf("This removes the account %s and revokes every API token issued to it.", username)); err != nil {
+		return err
+	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
 	if err := client.DeleteUser(ctx, connection, username); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "account called "+username)
 	}
 	fmt.Printf("removed %s\n", username)
 
@@ -200,7 +199,7 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 	}
 	users, err := client.ListUsers(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if len(users) == 0 {
 		fmt.Println("there are no accounts; the server is already unclaimed")
@@ -224,7 +223,7 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 func runUserUpdate(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return fmt.Errorf("which username? usage: teanode user update <username> [--name ...] [--email ...] [--rename ...]")
+		return usage("which username? usage: teanode user update <username> [--name ...] [--email ...] [--rename ...]")
 	}
 	parameters := &client.UserParameters{}
 	if command.IsSet("name") {
@@ -249,7 +248,7 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 	}
 	user, err := client.UpdateUser(ctx, connection, username, parameters)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "account called "+username)
 	}
 	if command.Bool("json") {
 		return PrintJSON(user)

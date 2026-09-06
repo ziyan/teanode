@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -583,8 +584,10 @@ func (self *authenticator) RevokeSession(username, sessionId string) error {
 	if err != nil {
 		return err
 	}
+	// Somebody else's session is reported the same way as no session, so
+	// that revoking is not a way of finding out which identifiers exist.
 	if session == nil || session.UserID != user.ID {
-		return ErrSessionInvalid
+		return api.ErrNotFound
 	}
 	return self.database.RevokeSession(sessionId, time.Now())
 }
@@ -646,8 +649,10 @@ func (self *authenticator) RevokeToken(username, tokenId string) error {
 	if err != nil {
 		return err
 	}
+	// Somebody else's token is reported the same way as no token, so that
+	// revoking is not a way of finding out which identifiers exist.
 	if token == nil || token.UserID != user.ID {
-		return ErrSessionInvalid
+		return api.ErrNotFound
 	}
 	return self.database.RevokeToken(tokenId, time.Now())
 }

@@ -24,7 +24,8 @@ const LocalTokenLifetime = 5 * time.Minute
 //
 // This is what "teanode credential add" uses when it is run on the server, and
 // the reason no token has to be set up before the tool is usable there.
-func Local(configuration *config.Configuration) (*Client, error) {
+// readOnly refuses mutations, as it does for a client over the network.
+func Local(configuration *config.Configuration, readOnly bool) (*Client, error) {
 	token, err := configuration.MintLocalToken(LocalTokenLifetime)
 	if err != nil {
 		return nil, err
@@ -35,7 +36,7 @@ func Local(configuration *config.Configuration) (*Client, error) {
 	// issued for the server's public name should be trusted when reached at
 	// 127.0.0.1.
 	if port := portOf(configuration.Listen.HTTP); port != "" {
-		return New(Options{URL: "http://127.0.0.1:" + port, Token: token})
+		return New(Options{URL: "http://127.0.0.1:" + port, Token: token, ReadOnly: readOnly})
 	}
 
 	port := portOf(configuration.Listen.HTTPS)
@@ -51,6 +52,7 @@ func Local(configuration *config.Configuration) (*Client, error) {
 		URL:        "https://127.0.0.1:" + port,
 		Token:      token,
 		HTTPClient: &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}},
+		ReadOnly:   readOnly,
 	})
 }
 

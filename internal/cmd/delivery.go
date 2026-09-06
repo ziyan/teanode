@@ -62,21 +62,26 @@ func runDeliveryList(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	var deliveries []*client.Delivery
+	first := int(command.Int("first"))
 	switch {
 	case command.String("mail") != "":
+		// One message's deliveries are few, and all of them are the answer.
+		first = 0
 		deliveries, err = client.ListDeliveriesByMail(ctx, connection, command.String("mail"))
 	case command.String("domain") != "":
 		domain, domainError := requireDomain(ctx, command, connection, command.String("domain"))
 		if domainError != nil {
 			return domainError
 		}
-		deliveries, err = client.ListDeliveries(ctx, connection, domain.ID, int(command.Int("first")))
+		deliveries, err = client.ListDeliveries(ctx, connection, domain.ID, pageSize(first))
 	default:
-		return fmt.Errorf("whose deliveries? pass --domain <domain> or --mail <mail-id>; 'teanode delivery pending' lists the queue")
+		return usage("whose deliveries? pass --domain <domain> or --mail <mail-id>; 'teanode delivery pending' lists the queue")
 	}
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
+	deliveries, more := capPage(deliveries, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(deliveries)
 	}
@@ -100,10 +105,13 @@ func runDeliveryPending(ctx context.Context, command *cli.Command) error {
 		}
 		domainId = domain.ID
 	}
-	deliveries, err := client.ListPendingDeliveries(ctx, connection, domainId, int(command.Int("first")))
+	first := int(command.Int("first"))
+	deliveries, err := client.ListPendingDeliveries(ctx, connection, domainId, pageSize(first))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
+	deliveries, more := capPage(deliveries, first)
+	defer noteCapped(more, first)
 	if command.Bool("json") {
 		return PrintJSON(deliveries)
 	}
@@ -128,7 +136,7 @@ func printDeliveries(deliveries []*client.Delivery) error {
 func runDeliveryGet(ctx context.Context, command *cli.Command) error {
 	deliveryId := command.Args().First()
 	if deliveryId == "" {
-		return fmt.Errorf("which delivery? usage: teanode delivery get <delivery-id>")
+		return usage("which delivery? usage: teanode delivery get <delivery-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -136,7 +144,7 @@ func runDeliveryGet(ctx context.Context, command *cli.Command) error {
 	}
 	delivery, err := client.GetDelivery(ctx, connection, deliveryId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "delivery "+deliveryId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(delivery)
@@ -163,7 +171,7 @@ func runDeliveryGet(ctx context.Context, command *cli.Command) error {
 func runDeliveryRetry(ctx context.Context, command *cli.Command) error {
 	deliveryId := command.Args().First()
 	if deliveryId == "" {
-		return fmt.Errorf("which delivery? usage: teanode delivery retry <delivery-id>")
+		return usage("which delivery? usage: teanode delivery retry <delivery-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -171,7 +179,7 @@ func runDeliveryRetry(ctx context.Context, command *cli.Command) error {
 	}
 	delivery, err := client.RetryDelivery(ctx, connection, deliveryId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "delivery "+deliveryId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(delivery)

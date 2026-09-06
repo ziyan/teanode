@@ -32,25 +32,15 @@ func NewAPICommand() *cli.Command {
 				Name:      "list",
 				Usage:     "list every operation the server offers",
 				ArgsUsage: "[substring]",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:  "json",
-						Usage: "print the listing as JSON",
-					},
-				},
-				Action: runApiList,
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runApiList,
 			},
 			{
 				Name:      "describe",
 				Usage:     "describe an operation, its arguments and what it returns",
 				ArgsUsage: "<operation>",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{
-						Name:  "json",
-						Usage: "print the description as JSON",
-					},
-				},
-				Action: runApiDescribe,
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runApiDescribe,
 			},
 			{
 				Name:      "call",
@@ -75,7 +65,9 @@ func NewAPICommand() *cli.Command {
 						Usage: "GraphQL selection set to use instead of the generated one, for example \"{ id domain }\"",
 					},
 				},
-				Action: runApiCall,
+				Metadata: map[string]any{alwaysJsonMetadata: true},
+				Before:   alwaysJson,
+				Action:   runApiCall,
 			},
 			{
 				Name:      "graphql",
@@ -94,7 +86,9 @@ func NewAPICommand() *cli.Command {
 						Usage: "variables as a JSON object",
 					},
 				},
-				Action: runApiGraphQl,
+				Metadata: map[string]any{alwaysJsonMetadata: true},
+				Before:   alwaysJson,
+				Action:   runApiGraphQl,
 			},
 		},
 	}
@@ -149,7 +143,7 @@ func runApiList(ctx context.Context, command *cli.Command) error {
 func runApiDescribe(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which operation? usage: teanode api describe <operation>")
+		return usage("which operation? usage: teanode api describe <operation>")
 	}
 
 	schema, err := introspect(ctx, command)
@@ -198,7 +192,7 @@ func runApiDescribe(ctx context.Context, command *cli.Command) error {
 func runApiCall(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which operation? usage: teanode api call <operation> [name=value ...]")
+		return usage("which operation? usage: teanode api call <operation> [name=value ...]")
 	}
 
 	connection, err := openClient(command)
@@ -207,7 +201,7 @@ func runApiCall(ctx context.Context, command *cli.Command) error {
 	}
 	schema, err := client.Introspect(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	operation := schema.FindOperation(name)
 	if operation == nil {
@@ -232,7 +226,7 @@ func runApiCall(ctx context.Context, command *cli.Command) error {
 
 	var result map[string]any
 	if err := connection.Execute(ctx, query, arguments, &result); err != nil {
-		return err
+		return describeError(command, err)
 	}
 	return PrintJSON(result[operation.Name])
 }
@@ -256,7 +250,7 @@ func runApiGraphQl(ctx context.Context, command *cli.Command) error {
 	}
 	var result any
 	if err := connection.Execute(ctx, query, variables, &result); err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	return PrintJSON(result)
 }
@@ -388,7 +382,7 @@ func introspect(ctx context.Context, command *cli.Command) (*client.Schema, erro
 	}
 	schema, err := client.Introspect(ctx, connection)
 	if err != nil {
-		return nil, describeConnectionError(command, err)
+		return nil, describeError(command, err)
 	}
 	return schema, nil
 }

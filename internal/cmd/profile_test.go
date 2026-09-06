@@ -102,7 +102,7 @@ func TestLoadProfilesRejectsGarbage(t *testing.T) {
 func TestResolveTarget(t *testing.T) {
 	useTemporaryProfiles(t)
 	profiles, _ := LoadProfiles()
-	profiles.Set(&Profile{Name: "production", URL: "https://mail.example.com", Token: "tnt_production"})
+	profiles.Set(&Profile{Name: "production", URL: "https://mail.example.com", Token: "tnt_production", ReadOnly: true})
 	profiles.Set(&Profile{Name: "staging", URL: "https://staging.example.com", Token: "tnt_staging", Insecure: true})
 	if err := profiles.Save(); err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestResolveTarget(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolved, err := resolveTarget(test.url, test.token, test.profile, test.insecure)
+			resolved, err := resolveTarget(test.url, test.token, test.profile, test.insecure, false)
 			if test.wantError {
 				if err == nil {
 					t.Fatalf("expected an error, got %+v", resolved)
@@ -148,7 +148,7 @@ func TestResolveTarget(t *testing.T) {
 	}
 
 	// The staging profile skips certificate checks; --url to it inherits that.
-	resolved, err := resolveTarget("https://staging.example.com", "", "", false)
+	resolved, err := resolveTarget("https://staging.example.com", "", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,11 +156,37 @@ func TestResolveTarget(t *testing.T) {
 		t.Error("a profile's insecure flag should carry over to --url")
 	}
 
+	// A read-only profile makes a read-only target, whether named or reached
+	// by --url; the global flag makes any target read-only; nothing turns it
+	// off from a flag.
+	for _, readOnly := range []struct {
+		url, token, profile string
+		flag                bool
+		want                bool
+	}{
+		{profile: "production", want: true},
+		{url: "https://mail.example.com", want: true},
+		// An explicit token is a credential of its own, not the profile's.
+		{url: "https://mail.example.com", token: "tnt_x", want: false},
+		{profile: "staging", want: false},
+		{profile: "staging", flag: true, want: true},
+		{profile: "local", flag: true, want: true},
+		{url: "https://other.example.com", token: "tnt_x", flag: true, want: true},
+	} {
+		resolved, err := resolveTarget(readOnly.url, readOnly.token, readOnly.profile, false, readOnly.flag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.ReadOnly != readOnly.want {
+			t.Errorf("%+v: read-only %v, want %v", readOnly, resolved.ReadOnly, readOnly.want)
+		}
+	}
+
 	// With no profiles at all, the console is the default.
 	if err := os.Remove(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "teanode", "profiles.json")); err != nil {
 		t.Fatal(err)
 	}
-	resolved, err = resolveTarget("", "", "", false)
+	resolved, err = resolveTarget("", "", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

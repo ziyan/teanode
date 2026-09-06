@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 )
 
 // PrintJSON writes a value to standard output as indented JSON, which is what
@@ -19,6 +21,17 @@ func PrintJSON(value any) error {
 	return encoder.Encode(value)
 }
 
+// jsonRequested records that the command that ran asked for JSON, so that
+// when it fails the error can be printed the same way. Set by the flag's own
+// action, which runs once the flags are parsed and before the command does,
+// and by the commands that print JSON without being asked.
+var jsonRequested bool
+
+// JSONRequested says whether the command that ran wanted JSON.
+func JSONRequested() bool {
+	return jsonRequested
+}
+
 // JSONFlag is offered by every command that prints a table, so that a script
 // or a language model driving the tool gets structured output from the same
 // command a person reads.
@@ -26,15 +39,65 @@ func JSONFlag() cli.Flag {
 	return &cli.BoolFlag{
 		Name:  "json",
 		Usage: "print the result as JSON",
+		Action: func(ctx context.Context, command *cli.Command, value bool) error {
+			jsonRequested = value
+			return nil
+		},
 	}
 }
 
+// alwaysJsonMetadata marks a command that prints JSON whether or not it was
+// asked to, so that its errors are JSON as well: the ones the library
+// reports before the command runs, through NoteUsageError, and the ones the
+// command returns, through alwaysJson.
+const alwaysJsonMetadata = "alwaysJson"
+
+// alwaysJson is the Before of a command marked with alwaysJsonMetadata.
+func alwaysJson(ctx context.Context, command *cli.Command) (context.Context, error) {
+	jsonRequested = true
+	return ctx, nil
+}
+
+// NoteUsageError records whether JSON was asked for when the library refused
+// the arguments before any flag action or Before could run: --json is looked
+// for in the arguments as they were typed, and a command that always prints
+// JSON is known by its metadata.
+func NoteUsageError(failed *cli.Command, arguments []string) {
+	if failed != nil && failed.Metadata[alwaysJsonMetadata] == true {
+		jsonRequested = true
+	}
+	for _, argument := range arguments {
+		if argument == "--json" || argument == "--json=true" {
+			jsonRequested = true
+		}
+	}
+}
+
+// PrintError writes a failed command's error the way its output would have
+// been written: as JSON when JSON was asked for, so a script parses failure
+// the same way it parses success, and as text otherwise. Always to standard
+// error, so that a failure is never mistaken for a result.
+func PrintError(err error) {
+	if !jsonRequested {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		return
+	}
+	encoded, encodeError := json.Marshal(map[string]any{"error": err.Error(), "exitCode": ExitCode(err)})
+	if encodeError != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s\n", encoded)
+}
+
 // ForceFlag is offered by every command that would otherwise ask before doing
-// something that cannot be undone.
+// something that cannot be undone. TEANODE_FORCE sets it for every command
+// in a shell, for a script that has already decided.
 func ForceFlag() cli.Flag {
 	return &cli.BoolFlag{
-		Name:  "force",
-		Usage: "do not ask for confirmation",
+		Name:    "force",
+		Usage:   "do not ask for confirmation",
+		Sources: cli.EnvVars("TEANODE_FORCE"),
 	}
 }
 
@@ -61,9 +124,17 @@ func printFields(fields [][2]string) error {
 }
 
 // confirm asks before something irreversible, unless --force was given.
+//
+// A question is only asked of somebody who can answer it. When standard
+// input is not a terminal — a script, a pipe, an agent — the command refuses
+// at once and says what to pass, rather than printing a prompt nobody sees
+// and failing with "cancelled" after standard input runs dry.
 func confirm(command *cli.Command, warning string) error {
 	if command.Bool("force") {
 		return nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return usage(fmt.Sprintf("%s\nRefusing without confirmation, and standard input is not a terminal to ask on; pass --force to proceed", warning))
 	}
 	fmt.Printf("%s Type 'yes' to continue: ", warning)
 	var answer string
@@ -72,6 +143,52 @@ func confirm(command *cli.Command, warning string) error {
 		return fmt.Errorf("cancelled")
 	}
 	return nil
+}
+
+// pageSize is how many to ask the server for when --first is wanted: one
+// more, so that a list which comes back longer than asked is known to have
+// been cut short, rather than guessed at from a page that is exactly full.
+// Zero asks for everything, and stays zero.
+func pageSize(first int) int {
+	if first <= 0 {
+		return 0
+	}
+	return first + 1
+}
+
+// capPage trims a list fetched with pageSize back to --first, and says
+// whether there was more.
+func capPage[Item any](items []Item, first int) ([]Item, bool) {
+	if first <= 0 || len(items) <= first {
+		return items, false
+	}
+	return items[:first], true
+}
+
+// noteCapped says on standard error when a list was cut short at --first,
+// so that a page is never mistaken for the whole. The same command with
+// --first 0 is the one to run: the filters that produced the page are its
+// own, and are not repeated here.
+func noteCapped(more bool, first int) {
+	if !more {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "note: showing the first %d of more; add --first 0 to the same command for every one\n", first)
+}
+
+// oneOf checks a flag against the values it accepts, so that a typo in a
+// filter is an error rather than an empty list that looks like a quiet
+// server.
+func oneOf(flag, value string, choices ...string) error {
+	if value == "" {
+		return nil
+	}
+	for _, choice := range choices {
+		if value == choice {
+			return nil
+		}
+	}
+	return usage(fmt.Sprintf("--%s must be one of %s, not %q", flag, strings.Join(choices, ", "), value))
 }
 
 // formatTime renders a time for a table, or "never" for one that has not

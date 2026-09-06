@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 	"time"
 
@@ -304,10 +305,15 @@ func (self *graph) FinishPasskeyAssertion(ctx context.Context, arguments FinishP
 		return nil, api.ErrNotLoggedIn
 	}
 
+	// The port is dropped, as it is for a session: it names one connection
+	// of one browser, which is nothing a reader of the list can act on.
 	request := api.ContextRequest(ctx)
 	ip, userAgent := "", ""
 	if request != nil {
 		ip, userAgent = request.RemoteAddr, request.UserAgent()
+		if host, _, err := net.SplitHostPort(ip); err == nil {
+			ip = host
+		}
 	}
 	if err := self.database.RecordPasskeyUse(matched.ID, int64(credential.Authenticator.SignCount),
 		credential.Flags.BackupState, time.Now(), ip, userAgent); err != nil {

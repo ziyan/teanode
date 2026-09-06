@@ -47,7 +47,7 @@ func NewDKIMCommand() *cli.Command {
 func runDkimGenerate(ctx context.Context, command *cli.Command) error {
 	domainName := command.Args().First()
 	if domainName == "" {
-		return fmt.Errorf("which domain? usage: teanode dkim generate <domain>")
+		return usage("which domain? usage: teanode dkim generate <domain>")
 	}
 
 	connection, err := openClient(command)
@@ -93,7 +93,7 @@ func runDkimShow(ctx context.Context, command *cli.Command) error {
 
 	domains, err := client.ListDomains(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 
 	if command.Bool("json") {

@@ -66,6 +66,30 @@ A script that would rather not have a file sets `TEANODE_URL` and
 `TEANODE_TOKEN`, which bypass profiles. Given `--url` and no token, a saved
 profile for that server lends its token.
 
+A profile can be *read-only*: every change is refused on this machine, before
+anything is sent, and reads go through as they would otherwise. That is the
+profile to hand to a script or an agent that should be able to look but not
+touch. The token itself is unchanged — the server would accept the change,
+and this profile does not ask it to.
+
+    teanode auth login --url https://mail.example.com --read-only
+    teanode auth set-read-only mail.example.com true
+    teanode auth set-read-only mail.example.com false
+
+`--read-only` on any command, or `TEANODE_READ_ONLY=1` in the environment,
+does the same for one command or one shell, whatever the profile says. There
+is no flag in the other direction: something handed the variable cannot talk
+its way out of it. A refused change exits with code 3 and says which of the
+three switches to undo. `auth logout` still revokes the profile's token,
+because forgetting a profile and leaving its token live is the worse outcome.
+
+Signing in again to a saved profile — `auth login` with no `--url`, which
+means the profile `--profile` names or else the active one, or with the
+`--url` or `--name` of one — replaces its token and revokes the old one on
+the server, and says so. It keeps the profile's read-only and certificate
+settings unless told otherwise. On a read-only profile the old token is left
+alone and named, for revoking by hand.
+
 **On the server itself**, nothing has to be set up. With the server's
 environment in the shell — which a container already has — the client reads
 the server secret from the stored configuration, mints a token signed with
@@ -130,7 +154,42 @@ Some examples:
 Things are named the way a person names them: a domain by its name, a
 template by its domain and name, an alias or a credential by the identifier
 its list prints. Anything that cannot be undone asks first; `--force` skips
-the question.
+the question. The `--status` and `--kind` filters are checked before
+anything is sent, so a typo is an error rather than an empty list; `mail
+count --by` is checked by the server, which knows every field. A list that
+stopped at `--first` says so on standard error, so a page is never mistaken
+for the whole.
+
+### From a script, or an agent
+
+The same commands serve a script, with three differences that matter when
+nobody is watching.
+
+A question is only asked of somebody who can answer it. When standard input
+is not a terminal, a command that would confirm refuses at once with a
+`--force` hint instead of printing a prompt nobody sees. `TEANODE_FORCE=1`
+answers every such question for a shell that has already decided.
+
+`--json` applies to failure as well as success: the error goes to standard
+error as `{"error": "...", "exitCode": N}`, so a caller parses both the same
+way. `teanode api` always prints JSON, and so are its errors.
+
+The exit code says what kind of thing went wrong:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | it worked |
+| `1` | something else went wrong; the message says what |
+| `2` | the command was called wrongly: an argument missing, a flag that does not exist, a confirmation with nobody to ask, a value that is not one of the choices |
+| `3` | a change refused by a read-only profile, `--read-only`, or `TEANODE_READ_ONLY`; nothing was sent |
+| `4` | the server has no such thing |
+| `5` | the server refused the token; sign in again |
+| `6` | the server could not be reached at all |
+
+Shell completion comes from the binary itself:
+
+    source <(teanode completion bash)
+    source <(teanode completion zsh)
 
 `settings set` is generic: the keys and their types come from the server's
 own schema, and `settings describe <section>` lists them. A value of `-` is
