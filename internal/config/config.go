@@ -333,6 +333,25 @@ type Database struct {
 	LogQueries bool `yaml:"logQueries"`
 }
 
+// DefaultSpamFilterScoreThreshold is what a domain is scored against when it
+// has never been given a threshold of its own.
+const DefaultSpamFilterScoreThreshold = 5
+
+// SpamThreshold is the score above which this domain's mail is rejected.
+//
+// A domain with no threshold stored gets the default rather than zero. This
+// is not tidiness: a stored zero means "reject anything scoring above zero",
+// which is every message the filter has any opinion about at all. Domains
+// created before this field was set carry a zero, and scoring is now on by
+// default, so reading the field directly would turn an upgrade into a mail
+// server that refuses almost everything.
+func (self *Domain) SpamThreshold() float64 {
+	if self.SpamFilterScoreThreshold <= 0 {
+		return DefaultSpamFilterScoreThreshold
+	}
+	return self.SpamFilterScoreThreshold
+}
+
 // SMTP holds behaviour shared by both SMTP listeners.
 type SMTP struct {
 	// TrustedSenders are domains whose mail skips the greylisting delay
@@ -577,8 +596,10 @@ type Domain struct {
 	// tells it the name of a domain it did not ask for.
 	TLS DomainCertificate `yaml:"tls,omitempty"`
 
-	// SpamFilterScoreThreshold is the SpamAssassin score at or above which
-	// mail is rejected. Only meaningful when antispam is enabled.
+	// SpamFilterScoreThreshold is the spam score above which mail for this
+	// domain is rejected. Only meaningful when antispam is enabled. Read it
+	// with SpamThreshold(), which supplies the default for a domain that has
+	// never been given one.
 	SpamFilterScoreThreshold float64 `yaml:"spamFilterScoreThreshold"`
 
 	// Aliases decide where mail for this domain goes. Every alias whose

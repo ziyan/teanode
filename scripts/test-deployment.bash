@@ -24,6 +24,11 @@ readonly SERVER_BINARY="build/teanode-server"
 readonly DATABASE_PORT=15433
 readonly DATABASE_URL="postgres://teanode:teanode@127.0.0.1:${DATABASE_PORT}/teanode?sslmode=disable"
 
+# An empty configuration directory for every client invocation, so that a
+# saved profile on the developer's machine cannot redirect this harness at
+# their own server. See teanode_local for why that matters.
+readonly SCRATCH_CONFIG="${TMPDIR:-/tmp}/teanode-test-deployment-config"
+
 readonly SMTP_PORT=12525
 readonly SUBMISSION_PORT=12587
 readonly HTTP_PORT=12580
@@ -162,8 +167,18 @@ teanode_server() {
 # teanode_local runs the client the way somebody on the server's own console
 # would: with the server's environment and no token, so it reaches the server
 # over loopback with a token minted from the stored secret.
+#
+# XDG_CONFIG_HOME points at a throwaway directory, and that is not a detail.
+# The client prefers a saved profile over the environment — deliberately, so a
+# script that signed in is not overridden by ambient variables — so on a
+# machine where the developer has run "teanode auth login", every command
+# here would talk to whatever server they last signed in to. That is somebody's
+# live mail server, and this harness creates domains, sends mail and asserts
+# refusals. An empty configuration directory means there is no profile to
+# prefer, and the console path is taken.
 teanode_local() {
-  env TEANODE_DATABASE_URL="${DATABASE_URL}" "${BINARY}" "$@"
+  env TEANODE_DATABASE_URL="${DATABASE_URL}" \
+    XDG_CONFIG_HOME="${SCRATCH_CONFIG}" "${BINARY}" "$@"
 }
 
 build_environment() {
@@ -301,6 +316,16 @@ replace("""    aliases: []""", """    aliases:
         mailServer:
           host: %s
           port: %s""" % (forward_host, forward_port, forward_host, forward_port))
+
+# The block lists are turned off for this deployment. They are real public
+# services, and a test that queried them would depend on somebody else's
+# infrastructure, be rate limited in CI, and — because the DNS server here
+# answers wildcards for the fake domains — report every sender as listed. What
+# is being proved is that mail is scored with no spam daemon running, which
+# the other checks do without leaving the network.
+replace("""    dns:
+      enabled: true""", """    dns:
+      enabled: false""")
 
 # Last, because "tls self-signed" resolved its paths against the host copy.
 replace("  dataDirectory: ", "  dataDirectory: /var/lib/teanode  # was: ")
@@ -463,7 +488,8 @@ psql_value() {
 }
 
 teanode_cli() {
-  TEANODE_URL="${API}" TEANODE_TOKEN="${TOKEN:-}" "${BINARY}" "$@"
+  TEANODE_URL="${API}" TEANODE_TOKEN="${TOKEN:-}" \
+    XDG_CONFIG_HOME="${SCRATCH_CONFIG}" "${BINARY}" "$@"
 }
 
 check_onboarding() {
@@ -1491,6 +1517,9 @@ check_object_store() {
 # --- run ----------------------------------------------------------------------
 
 main() {
+  rm -rf "${SCRATCH_CONFIG}"
+  mkdir -p "${SCRATCH_CONFIG}"
+
   build_environment
   start_database
   configure_deployment

@@ -2,6 +2,7 @@ package strainer_test
 
 import (
 	"context"
+	"net/netip"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -67,9 +68,14 @@ func TestAWellConfiguredSenderScoresBelowZero(t *testing.T) {
 	}
 }
 
-// The opposite: everything wrong at once has to cross the default threshold
-// of five, or the filter catches nothing.
-func TestAnUnauthenticatedSenderCrossesTheDefaultThreshold(t *testing.T) {
+// Everything wrong at once still must not reject a message on its own.
+//
+// Every signal is a statement about how the sender is configured, and
+// legitimate senders are misconfigured all the time. Crossing the threshold
+// has to take corroboration from something that looked at the message. The
+// deployment test is what established this: an ordinary test message was
+// refused at the door on configuration faults alone.
+func TestConfigurationFaultsAloneCannotRejectAMessage(t *testing.T) {
 	t.Parallel()
 
 	total, fired := score(t, &spamfilter.Message{
@@ -78,16 +84,75 @@ func TestAnUnauthenticatedSenderCrossesTheDefaultThreshold(t *testing.T) {
 		ServerName:  "mail.example.net",
 		Authentication: &models.AuthenticationResults{
 			SPF:   &models.SPFResult{Result: "fail"},
+			DKIMs: []*models.DKIMResult{{Result: "fail"}},
 			DMARC: &models.DMARCResult{Result: "fail"},
 		},
 	})
-	if total <= 5 {
-		t.Errorf("score = %v, want above the default threshold of 5; fired = %v", total, fired)
+	if total > 5 {
+		t.Errorf("score = %v with every signal against the sender, want at or below the default threshold of 5; fired = %v", total, fired)
 	}
-	for _, symbol := range []string{"SPF_FAIL", "DMARC_FAIL", "NO_CONFIRMED_REVERSE_DNS", "HELO_IS_OUR_NAME"} {
+	for _, symbol := range []string{"DMARC_FAIL", "NO_CONFIRMED_REVERSE_DNS", "HELO_IS_OUR_NAME"} {
 		if _, ok := fired[symbol]; !ok {
 			t.Errorf("expected %s to fire, got %v", symbol, fired)
 		}
+	}
+
+	// Not SPF_FAIL: the domain's own DMARC policy already reached a verdict
+	// on whether SPF aligned, and scoring both counts one fact twice.
+	if _, ok := fired["SPF_FAIL"]; ok {
+		t.Errorf("SPF was scored alongside a conclusive DMARC verdict: %v", fired)
+	}
+}
+
+// And the corroboration that does cross it. A sender that is both badly
+// configured and listed in a public block list is the case the threshold is
+// for.
+func TestSignalsPlusReputationCrossTheThreshold(t *testing.T) {
+	t.Parallel()
+
+	settings := &config.AntispamBuiltin{
+		Signals: config.AntispamSignals{Enabled: true},
+		DNS: config.AntispamDNS{
+			Enabled:      true,
+			AddressLists: []config.AntispamList{{Zone: "zen.example.org", Weight: 3.0}},
+		},
+	}
+	resolver := &fakeResolver{listed: map[string]bool{"4.100.51.198.zen.example.org": true}}
+	result, err := strainer.New(settings, resolver, nil).Check(context.Background(), &spamfilter.Message{
+		RemoteAddress: netip.MustParseAddr("198.51.100.4"),
+		HelloName:     "mail.example.net",
+		ServerName:    "mail.example.net",
+		Authentication: &models.AuthenticationResults{
+			DMARC: &models.DMARCResult{Result: "fail"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	if result.Score <= 5 {
+		t.Errorf("score = %v for a badly configured sender that is also listed, want above 5; got %v",
+			result.Score, result.Checks)
+	}
+}
+
+// A sender whose only fault is SPF, with no DMARC policy published, is a
+// misconfiguration rather than a forgery, and must not be rejected on that
+// alone. This is the case the deployment test caught: it used to score 7.5
+// against a threshold of 5 and the message was refused at the door.
+func TestOneBrokenRecordDoesNotCondemnAMessage(t *testing.T) {
+	t.Parallel()
+
+	total, fired := score(t, &spamfilter.Message{
+		ReverseName: "",
+		Authentication: &models.AuthenticationResults{
+			SPF: &models.SPFResult{Result: "fail"},
+		},
+	})
+	if total > 5 {
+		t.Errorf("score = %v for a sender with one broken record and no DMARC, want at or below the default threshold of 5; fired = %v", total, fired)
+	}
+	if _, ok := fired["SPF_FAIL"]; !ok {
+		t.Errorf("SPF should still be scored when no DMARC policy answered: %v", fired)
 	}
 }
 

@@ -83,7 +83,15 @@ func Default() *Configuration {
 			Port: 3310,
 		},
 		Antispam: Antispam{
-			Engine: AntispamEngineBuiltin,
+			// On by default, which it could not be while scoring required a
+			// second program to be running. The built-in filter needs
+			// nothing, so a new server scores its mail rather than silently
+			// not doing it.
+			//
+			// This changes nothing for an existing deployment: the stored
+			// configuration wins, and a server that had it off keeps it off.
+			Enabled: true,
+			Engine:  AntispamEngineBuiltin,
 			Spamd: AntispamSpamd{
 				Host: "127.0.0.1",
 				Port: 783,

@@ -305,7 +305,13 @@ var seedVariables = []struct {
 		if value == "" || target.FindDomain(value) != nil {
 			return nil
 		}
-		target.Domains = append(target.Domains, &config.Domain{ID: config.NewID(), Domain: value})
+		target.Domains = append(target.Domains, &config.Domain{
+			ID:     config.NewID(),
+			Domain: value,
+			// Spelled out rather than left at zero, which would mean
+			// "reject anything the filter has any opinion about".
+			SpamFilterScoreThreshold: config.DefaultSpamFilterScoreThreshold,
+		})
 		return nil
 	}},
 	{"SERVER_DATA_DIRECTORY", func(target *config.Configuration, value string) error {

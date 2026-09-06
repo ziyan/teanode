@@ -211,7 +211,7 @@ func (self *exchange) authenticateDsn(ctx context.Context, envelope *mailparse.E
 	}
 
 	// then score, which reads what those checks established
-	if err := self.checkSpam(ctx, envelope, mail, domain.SpamFilterScoreThreshold); err != nil {
+	if err := self.checkSpam(ctx, envelope, mail, domain.SpamThreshold()); err != nil {
 		return err
 	}
 

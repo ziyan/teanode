@@ -146,9 +146,22 @@ func (self *Strainer) signalChecks(message *spamfilter.Message) []check {
 	checks := make([]check, 0, 8)
 
 	if authentication := message.Authentication; authentication != nil {
-		checks = append(checks, spfChecks(authentication)...)
+		// DMARC is the sender domain's own verdict on whether SPF and DKIM
+		// aligned, so when it has reached one, scoring SPF as well counts the
+		// same fact twice. A domain publishing "-all" and no DMARC record
+		// still gets its SPF failure scored; a domain with DMARC gets one
+		// verdict, its own.
+		//
+		// Found by the deployment test: an unauthenticated sender with no
+		// reverse DNS scored SPF_FAIL 3.0 plus DMARC_FAIL 3.0 plus 1.5 and
+		// was rejected outright, which is what a legitimate sender with one
+		// broken record would also have been.
+		if conclusiveDmarc(authentication) {
+			checks = append(checks, dmarcChecks(authentication)...)
+		} else {
+			checks = append(checks, spfChecks(authentication)...)
+		}
 		checks = append(checks, dkimChecks(authentication)...)
-		checks = append(checks, dmarcChecks(authentication)...)
 		checks = append(checks, arcChecks(authentication)...)
 	}
 
@@ -160,12 +173,54 @@ func (self *Strainer) signalChecks(message *spamfilter.Message) []check {
 	if message.ReverseName == "" {
 		checks = append(checks, check{
 			symbol:      symbolNoConfirmedReverseDNS,
-			score:       1.5,
+			score:       1.0,
 			description: "the connecting address has no reverse DNS name that resolves back to it",
 		})
 	}
 
 	checks = append(checks, helloChecks(message)...)
+	return capSignals(checks)
+}
+
+// maximumSignalScore is the most the signal checks together may contribute.
+//
+// Every one of them is a statement about how the sender is *configured*, and
+// legitimate senders are misconfigured all the time: no reverse DNS, a HELO
+// that is not a fully qualified name, a DMARC record that does not cover the
+// path the message actually took. None of that is evidence of spam on its
+// own, and a server that refused mail for it would refuse a great deal of
+// real mail.
+//
+// So the signals are capped below the default threshold of five. Crossing it
+// takes corroboration from something that looked at the message rather than
+// at its sender's DNS: a block list, the classifier, or the pattern rules.
+// The deployment test is what established this was needed — an ordinary test
+// message was refused at the door with 5.5 points of configuration faults and
+// nothing else.
+const maximumSignalScore = 4.0
+
+// capSignals holds the signal checks to their share of the budget.
+//
+// Scaled in proportion rather than truncated, so that the breakdown the
+// dashboard shows still adds up to the score, and so no single check is
+// silently dropped.
+func capSignals(checks []check) []check {
+	var positive float64
+	for _, fired := range checks {
+		if fired.score > 0 {
+			positive += fired.score
+		}
+	}
+	if positive <= maximumSignalScore {
+		return checks
+	}
+
+	scale := maximumSignalScore / positive
+	for index := range checks {
+		if checks[index].score > 0 {
+			checks[index].score *= scale
+		}
+	}
 	return checks
 }
 
@@ -177,13 +232,13 @@ func spfChecks(authentication *models.AuthenticationResults) []check {
 	case authres.ResultFail, authres.ResultHardFail:
 		return []check{{
 			symbol:      symbolSPFFail,
-			score:       3.0,
+			score:       2.0,
 			description: "the sender domain's published policy says this host may not send for it",
 		}}
 	case authres.ResultSoftFail:
 		return []check{{
 			symbol:      symbolSPFSoftFail,
-			score:       1.5,
+			score:       1.0,
 			description: "the sender domain's policy discourages mail from this host",
 		}}
 	}
@@ -216,11 +271,24 @@ func dkimChecks(authentication *models.AuthenticationResults) []check {
 	case invalid:
 		return []check{{
 			symbol:      symbolDKIMInvalid,
-			score:       2.0,
+			score:       1.5,
 			description: "carries a DKIM signature that did not verify",
 		}}
 	}
 	return nil
+}
+
+// conclusiveDmarc reports whether the sender domain published a policy and it
+// produced a verdict, rather than there being no record to consult.
+func conclusiveDmarc(authentication *models.AuthenticationResults) bool {
+	if authentication.DMARC == nil {
+		return false
+	}
+	switch authres.ResultValue(authentication.DMARC.Result) {
+	case authres.ResultPass, authres.ResultFail, authres.ResultHardFail:
+		return true
+	}
+	return false
 }
 
 func dmarcChecks(authentication *models.AuthenticationResults) []check {
@@ -237,7 +305,7 @@ func dmarcChecks(authentication *models.AuthenticationResults) []check {
 	case authres.ResultFail, authres.ResultHardFail:
 		return []check{{
 			symbol:      symbolDMARCFail,
-			score:       3.0,
+			score:       2.5,
 			description: "the sender domain's own DMARC policy considers this message unaligned",
 		}}
 	}
@@ -272,7 +340,7 @@ func helloChecks(message *spamfilter.Message) []check {
 	if !strings.HasPrefix(hello, "[") && !strings.Contains(strings.TrimSuffix(hello, "."), ".") {
 		checks = append(checks, check{
 			symbol:      symbolHelloNotQualified,
-			score:       1.0,
+			score:       0.5,
 			description: "announced itself with a name that is not fully qualified",
 		})
 	}

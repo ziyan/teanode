@@ -373,8 +373,10 @@ func (self *graph) CheckDomain(ctx context.Context, arguments CheckDomainArgumen
 	return describeDomain(self.config.Current(), domain, records), nil
 }
 
-// defaultSpamFilterScoreThreshold is what SpamAssassin itself treats as spam.
-const defaultSpamFilterScoreThreshold = 5
+// defaultSpamFilterScoreThreshold is what a new domain is given. Defined
+// once, in internal/config, because the exchange has to agree with the
+// dashboard about what an unset threshold means.
+const defaultSpamFilterScoreThreshold = config.DefaultSpamFilterScoreThreshold
 
 func applyDomainParameters(domain *config.Domain, parameters *DomainParameters) {
 	if parameters.Domain != nil && strings.TrimSpace(*parameters.Domain) != "" {
@@ -473,7 +475,7 @@ func describeDomain(configuration *config.Configuration, domain *config.Domain, 
 		Domain:                   domain.Domain,
 		Subdomain:                domain.Subdomain,
 		Comment:                  domain.Comment,
-		SpamFilterScoreThreshold: domain.SpamFilterScoreThreshold,
+		SpamFilterScoreThreshold: domain.SpamThreshold(),
 		Aliases:                  make([]*Alias, 0, len(domain.Aliases)),
 		Credentials:              make([]*Credential, 0, len(domain.Credentials)),
 		Records:                  records,
