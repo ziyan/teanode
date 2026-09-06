@@ -87,8 +87,6 @@ export const en = {
   'login.passkeyFailed': 'That passkey could not be used to sign in.',
   'login.signingIn': 'signing in…',
   'login.failed': 'could not log in',
-  'login.hint': 'Locked out? Add an account on the server itself:',
-
   'setupAccount.intro': 'This server has no account yet. Choose a username and password.',
   'setupAccount.passwordAgain': 'Password again',
   'setupAccount.create': 'Create account',

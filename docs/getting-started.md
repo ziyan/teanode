@@ -158,6 +158,31 @@ The dashboard lists exactly which DNS records are still missing or wrong, per
 domain, so you can see what is left rather than guessing. It checks
 periodically; there is no need to reload it.
 
+### If you are locked out
+
+There is no password reset by mail; the server's own host is the way back
+in. On it, with the server's environment in the shell — which a container
+already has — the client reaches the server as the console and can add an
+account or set a password:
+
+    teanode user create you
+    teanode user password you
+
+    docker compose exec teanode teanode user create you      # in a container
+
+When the server is not running, or is running but nobody can sign in and the
+console cannot reach it either, `teanode-server user` edits the stored
+configuration directly and needs only the database:
+
+    teanode-server user list
+    teanode-server user add you
+    teanode-server user password you
+
+`teanode-server user reset` removes every account, after which the next
+visitor to the dashboard creates one, as on the first day. Anyone who can
+reach the dashboard can claim it until somebody does, so do not leave it in
+that state.
+
 ## 6. Send yourself something
 
 Send a message to `hello@example.com` from an account elsewhere. Within a few
