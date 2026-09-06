@@ -1700,7 +1700,12 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: #ffffff;
+  /* The surface colour, not white: the document inside paints its own
+     ground, but this shows at the rounded corners, before the document has
+     loaded, and wherever a message leaves its body transparent — and in the
+     dark theme a white element behind a dark document was a thin bright
+     halo around every message. */
+  background: var(--surface);
 }
 
 /* --- column filters -------------------------------------------------------
