@@ -948,6 +948,15 @@ and `Port` retained and marked deprecated.
       The usable corpus went 2287 → 1214 → 722 as each was fixed.
 - [x] (2026-09-06) The classifier taught from the operator's own mail: 181
       marked not-spam and 32 spam, past the minimum, so it now contributes.
+      First live contribution seen at 07:05: a message scored −2.5 carrying
+      `BAYES_00`.
+- [x] (2026-09-06) Round four: the dashboard. The settings page could not be
+      saved — its mutation named `SmtpParametersInput` and
+      `ServiceParametersInput`, neither in the schema — and now has a guard
+      test shared with the command line. The spam filter is a tab of its own
+      under Server. Teaching the filter is a segmented pair in the Tag
+      palette, remembered across reloads through `GetSpamTraining`, shown
+      only when the classifier is on; scores are written with one decimal.
 - [ ] The signed update channel for rule files, when the OpenPGP dependency
       question is settled.
 
