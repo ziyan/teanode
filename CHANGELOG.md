@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-06
+
+### Added
+
+- `database.sslRootCertificate`, and `sslrootcert` in `TEANODE_DATABASE_URL`, so a self-signed or private-authority PostgreSQL can be verified rather than merely encrypted. (#25)
+- `docs/reference/deployment.md`: the compose deployment end to end, with upgrades, what to back up, and how to recover from a bad first start. (#25)
+
+### Changed
+
+- The connection to PostgreSQL is encrypted and verified. The compose file generates a certificate for it and starts PostgreSQL serving TLS, and the generated `TEANODE_DATABASE_URL` asks for `sslmode=verify-full` rather than `sslmode=disable`. (#25)
+- `config env` says which variables to delete once the server has started, and the generated file explains why keeping them is a trap. (#25)
+
+### Fixed
+
+- The compose deployment could not be brought up from nothing. The SpamAssassin image it named had been deleted from Docker Hub, and compose pulls every service before starting any of them, so `docker compose up -d` failed outright. It now names a maintained image, pinned. (#25)
+- `config env` wrote a data directory that the compose file does not mount, so a first start either could not create it or wrote keys, certificates and the spool into a container that the next upgrade discarded. The generated file now matches the volume. (#25)
+- The compose file creates the data directory and gives it to the uid the server runs as. Docker creates a missing bind-mount source owned by root, which the server, running unprivileged, then could not write to. (#25)
+
 ## [0.5.1] - 2026-09-06
 
 ### Changed
