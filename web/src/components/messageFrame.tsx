@@ -46,10 +46,32 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // and it is what is shown while the first measurement is still pending.
 const MINIMUM_HEIGHT = 240
 
-export function MessageFrame({ document: source, title }: { document: string; title: string }) {
+// darkened inverts the frame from out here rather than from inside its
+// document. A filter on the iframe element is one composited layer the
+// parent owns; the same filter on a large div inside the document made the
+// renderer so slow that a screenshot of the page timed out. And toggling it
+// out here changes nothing in the document, so the frame is not reloaded and
+// re-measured for a choice about colour.
+export function MessageFrame({
+  document: source,
+  title,
+  darkened = false,
+  onGroundMeasured,
+}: {
+  document: string
+  title: string
+  darkened?: boolean
+  // Told, once the document has loaded, whether the message paints a dark
+  // ground of its own. Such a message must not be inverted: inversion turns
+  // its black to white and its pictures — inverted back — sit on that white
+  // looking like negatives, which is what "Dark" did to a black newsletter.
+  onGroundMeasured?: (alreadyDark: boolean) => void
+}) {
   const frame = useRef<HTMLIFrameElement>(null)
   const lastWidth = useRef(0)
   const [height, setHeight] = useState(MINIMUM_HEIGHT)
+  const [alreadyDark, setAlreadyDark] = useState(false)
+  const measuredGround = useRef<string | null>(null)
 
   const measure = useCallback(() => {
     const element = frame.current
@@ -91,6 +113,7 @@ export function MessageFrame({ document: source, title }: { document: string; ti
   useEffect(() => {
     lastWidth.current = 0
     setHeight(MINIMUM_HEIGHT)
+    setAlreadyDark(false)
   }, [source])
 
   useEffect(() => {
@@ -113,6 +136,14 @@ export function MessageFrame({ document: source, title }: { document: string; ti
       if (!content) {
         return
       }
+      // Once per document: the ground does not change after load, and the
+      // result changes whether the frame is inverted, which reloads nothing.
+      if (measuredGround.current !== source) {
+        measuredGround.current = source
+        const dark = paintsDarkGround(content)
+        setAlreadyDark(dark)
+        onGroundMeasured?.(dark)
+      }
       observer = new ResizeObserver(measure)
       observer.observe(content)
     }
@@ -132,7 +163,7 @@ export function MessageFrame({ document: source, title }: { document: string; ti
   return (
     <iframe
       ref={frame}
-      className="message-frame"
+      className={darkened && !alreadyDark ? 'message-frame darkened' : 'message-frame'}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={source}
       title={title}
@@ -140,4 +171,42 @@ export function MessageFrame({ document: source, title }: { document: string; ti
       scrolling="no"
     />
   )
+}
+
+// paintsDarkGround says whether the message's own painted ground is dark:
+// the largest painted area, by computed background, is on the dark side.
+// bgcolor attributes and inline styles both arrive as computed colours, so
+// the table-built newsletters of the world are measured the same way.
+function paintsDarkGround(content: HTMLElement): boolean {
+  const areas = new Map<string, number>()
+  const view = content.ownerDocument.defaultView
+  if (!view) {
+    return false
+  }
+  for (const element of content.querySelectorAll<HTMLElement>('*')) {
+    const background = view.getComputedStyle(element).backgroundColor
+    if (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)') {
+      continue
+    }
+    const box = element.getBoundingClientRect()
+    const area = box.width * box.height
+    if (area > 0) {
+      areas.set(background, (areas.get(background) ?? 0) + area)
+    }
+  }
+  let largest = 0
+  let ground = ''
+  for (const [background, area] of areas) {
+    if (area > largest) {
+      largest = area
+      ground = background
+    }
+  }
+  const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(ground)
+  if (!match) {
+    return false
+  }
+  // Perceived brightness, the usual weights; below the midpoint is dark.
+  const [red, green, blue] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  return (0.299 * red + 0.587 * green + 0.114 * blue) / 255 < 0.5
 }

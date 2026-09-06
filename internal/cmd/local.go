@@ -42,6 +42,20 @@ func OpenLocalStore() (config.Store, func(), error) {
 	return store, closeDatabase, nil
 }
 
+// OpenLocalDatabase connects to the database the environment names, for the
+// commands that read and write tables rather than the configuration.
+//
+// Deliberately not migrating, for the same reason OpenLocalStore does not: a
+// command line tool that silently changes the schema of a database a server
+// is running against is a way to be surprised.
+func OpenLocalDatabase() (db.Database, func(), error) {
+	bootstrapped, err := bootstrap.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	return OpenBootstrapDatabase(bootstrapped)
+}
+
 // OpenBootstrapDatabase connects to the database the environment names,
 // without migrating it. The caller calls the returned function to close it.
 func OpenBootstrapDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error) {

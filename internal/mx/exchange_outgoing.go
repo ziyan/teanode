@@ -287,7 +287,6 @@ func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailpa
 
 	if envelope.CredentialID != "" {
 		self.checkVirus(authenticator, mail.Headers, mail.Body)
-		self.checkSpam(authenticator, mail.Headers, mail.Body, domain.SpamFilterScoreThreshold)
 	}
 	self.checkContent(authenticator, mail.Headers, mail.Body)
 
@@ -296,6 +295,13 @@ func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailpa
 	mail.AuthenticationResults = authenticationResults
 	if err != nil {
 		return err
+	}
+
+	// then score, which reads what those checks established
+	if envelope.CredentialID != "" {
+		if err := self.checkSpam(ctx, envelope, mail, domain.SpamThreshold()); err != nil {
+			return err
+		}
 	}
 
 	// change status

@@ -2,6 +2,7 @@ package mx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -256,11 +257,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 		// send mail externally
 		size, err := self.sendMail(ctxWithTimeout, sender, delivery.Recipient, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
 		if err != nil {
-			if err2, ok := err.(*textproto.Error); ok {
-				delivery.Error = smtpc.CollapseResponse(err2.Msg)
-			} else {
-				delivery.Error = err.Error()
-			}
+			recordFailure(delivery, err)
 			return err
 		}
 		delivery.Size = size
@@ -279,11 +276,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 				// send email
 				size, err := self.sendMail(ctxWithTimeout, sender, delivery.Alias.Email, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
 				if err != nil {
-					if err2, ok := err.(*textproto.Error); ok {
-						delivery.Error = smtpc.CollapseResponse(err2.Msg)
-					} else {
-						delivery.Error = err.Error()
-					}
+					recordFailure(delivery, err)
 					return err
 				}
 				delivery.Size = size
@@ -306,11 +299,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 				mailServer := delivery.Alias.MailServer
 				size, err := self.forwardMail(ctxWithTimeout, sender, delivery.Recipient, mailServer.Host, mailServer.Port, mailServer.Username, mailServer.Password, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
 				if err != nil {
-					if err2, ok := err.(*textproto.Error); ok {
-						delivery.Error = smtpc.CollapseResponse(err2.Msg)
-					} else {
-						delivery.Error = err.Error()
-					}
+					recordFailure(delivery, err)
 					return err
 				}
 				delivery.Size = size
@@ -601,4 +590,31 @@ func signingDomain(domain *config.Domain) string {
 		return ""
 	}
 	return domain.Domain
+}
+
+// recordFailure writes what went wrong on the delivery, and decides whether
+// it is worth trying again.
+//
+// A 5xx reply is the other server saying "no, and asking again will not
+// change the answer" — RFC 5321's permanent negative completion. Retrying it
+// on the backoff schedule anyway was how a message Gmail had refused as
+// unsolicited was offered to Gmail four more times over a day, each attempt
+// costing this server reputation with the one receiver that matters most.
+// Such a delivery is dropped now; the retry schedule is for 4xx and for
+// connections that failed before any reply.
+func recordFailure(delivery *models.Delivery, err error) {
+	var reply *textproto.Error
+	if errors.As(err, &reply) {
+		delivery.Error = smtpc.CollapseResponse(reply.Msg)
+		if isPermanentReply(reply.Code) {
+			delivery.Status = models.DeliveryStatusDropped
+		}
+		return
+	}
+	delivery.Error = err.Error()
+}
+
+// isPermanentReply says whether an SMTP status code means "do not retry".
+func isPermanentReply(code int) bool {
+	return code >= 500 && code < 600
 }

@@ -19,7 +19,7 @@ const settingsSelection = `{
 	s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
 	route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
 	antivirus { enabled host port }
-	antispam { enabled host port }
+	antispam { enabled engine effectiveEngine host port signalsEnabled dnsEnabled bayesEnabled rulesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam }
 	relay { enabled host port security username hasPassword }
 	submission { host port effectiveHost effectivePort }
 	proxy { socks5 }
@@ -55,21 +55,30 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 	}
 	// The variable declarations name each section's input type, which the
 	// schema derives from the Go type: S3Parameters becomes S3ParametersInput.
+	//
+	// These are spelled out rather than introspected, so they drift silently
+	// when a Go type is renamed — the mutation then fails validation as a
+	// whole, for every section, not just the one that moved. Two had drifted:
+	// SMTPParameters was written here as SmtpParametersInput, which the
+	// schema never had, and antispam grew a type of its own when the built-in
+	// filter arrived. TestSettingsMutationNamesRealTypes keeps them honest.
 	query := `mutation (
 		$s3: S3ParametersInput, $route53: Route53ParametersInput,
-		$antivirus: ServiceParametersInput, $antispam: ServiceParametersInput,
+		$antivirus: ServiceParametersInput, $antispam: AntispamParametersInput,
 		$relay: RelayParametersInput, $submission: SubmissionParametersInput,
 		$proxy: ProxyParametersInput, $certificates: CertificateParametersInput,
-		$smtp: SmtpParametersInput, $resolver: ResolverParametersInput,
+		$smtp: SMTPParametersInput, $resolver: ResolverParametersInput,
 		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
 		$listen: ListenParametersInput, $identity: IdentityParametersInput,
-		$storage: StorageParametersInput, $geoip: GeoIPParametersInput
+		$storage: StorageParametersInput, $geoip: GeoIPParametersInput,
+		$upgrade: UpgradeParametersInput
 	) {
 		UpdateSettings(
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
 			relay: $relay, submission: $submission, proxy: $proxy, certificates: $certificates,
 			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
-			listen: $listen, identity: $identity, storage: $storage, geoip: $geoip
+			listen: $listen, identity: $identity, storage: $storage, geoip: $geoip,
+			upgrade: $upgrade
 		) ` + settingsSelection + `
 	}`
 	if err := connection.Execute(ctx, query, sections, &result); err != nil {

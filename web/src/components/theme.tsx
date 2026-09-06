@@ -87,6 +87,28 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   return [theme, setTheme]
 }
 
+// The system theme has to be resolved to know what is on screen, and it can
+// change under a running page — the OS switching at dusk — so this subscribes
+// to the media query rather than reading it once.
+const darkQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+
+function subscribeSystem(listener: () => void): () => void {
+  darkQuery?.addEventListener('change', listener)
+  return () => darkQuery?.removeEventListener('change', listener)
+}
+
+// useResolvedTheme is the theme as rendered: "light" or "dark", never
+// "system". For anything that has to write a colour rather than use a token —
+// the message frame builds its document as a string and cannot use var().
+export function useResolvedTheme(): 'light' | 'dark' {
+  const [theme] = useTheme()
+  const systemDark = useSyncExternalStore(subscribeSystem, () => darkQuery?.matches ?? false)
+  if (theme === 'system') {
+    return systemDark ? 'dark' : 'light'
+  }
+  return theme
+}
+
 const LABELS: Record<Theme, Key> = {
   system: 'theme.system',
   light: 'theme.light',

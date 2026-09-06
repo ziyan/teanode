@@ -1700,7 +1700,12 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: #ffffff;
+  /* The surface colour, not white: the document inside paints its own
+     ground, but this shows at the rounded corners, before the document has
+     loaded, and wherever a message leaves its body transparent — and in the
+     dark theme a white element behind a dark document was a thin bright
+     halo around every message. */
+  background: var(--surface);
 }
 
 /* --- column filters -------------------------------------------------------
@@ -3238,4 +3243,113 @@ a.button.primary:hover {
   white-space: nowrap;
   border: 0;
   clip-path: inset(50%);
+}
+
+/* The spam score's breakdown: which check fired, and what it cost. Laid out
+   as chips so a message with a dozen of them stays readable, and so the sign
+   of each contribution is visible without reading the number. */
+.spam-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.spam-check {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.spam-check-bad {
+  color: var(--bad);
+}
+
+.spam-check-good {
+  color: var(--good);
+}
+
+/* A segmented pair, drawn in the Tag palette. First used for teaching the
+   spam filter under a message's verdict; also for choosing how a message is
+   rendered in the dark.
+
+   Drawn in the Tag palette — the same tint, text colour and
+   35% border the verdict tags above it use — so the pressed segment reads as
+   "this message is tagged not-spam" rather than as a filled button, and so it
+   follows both themes through the same tokens the tags do. A solid red or
+   green fill was the one saturated block on a page of tints. */
+.mark-spam {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.5;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button:hover:not(:disabled):not(.active) {
+  color: var(--text);
+  background: var(--sidebar-hover);
+}
+
+.segmented button.active.bad {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 35%, transparent);
+}
+
+.segmented button.active.good {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 35%, transparent);
+}
+
+/* The reader's choice to darken a message that paints its own light ground.
+   The frame element is inverted here, as one composited layer the page owns;
+   the message's pictures are inverted back inside the document so they keep
+   their colours. */
+.message-frame.darkened {
+  filter: invert(1) hue-rotate(180deg);
+  /* The filter inverts the element's own border with everything else; a
+     border in the text colour inverts back to roughly the border colour. */
+  border-color: var(--text);
+}
+
+/* Choosing how a message renders in the dark, just above the frame. */
+.frame-mode {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.segmented button.active {
+  color: var(--text);
+  background: var(--sidebar-hover);
+}
+
+/* How a delivery is handed on, under its head line. */
+.delivery-method {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
 }

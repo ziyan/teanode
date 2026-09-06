@@ -24,6 +24,11 @@ readonly SERVER_BINARY="build/teanode-server"
 readonly DATABASE_PORT=15433
 readonly DATABASE_URL="postgres://teanode:teanode@127.0.0.1:${DATABASE_PORT}/teanode?sslmode=disable"
 
+# An empty configuration directory for every client invocation, so that a
+# saved profile on the developer's machine cannot redirect this harness at
+# their own server. See teanode_local for why that matters.
+readonly SCRATCH_CONFIG="${TMPDIR:-/tmp}/teanode-test-deployment-config"
+
 readonly SMTP_PORT=12525
 readonly SUBMISSION_PORT=12587
 readonly HTTP_PORT=12580
@@ -162,8 +167,18 @@ teanode_server() {
 # teanode_local runs the client the way somebody on the server's own console
 # would: with the server's environment and no token, so it reaches the server
 # over loopback with a token minted from the stored secret.
+#
+# XDG_CONFIG_HOME points at a throwaway directory, and that is not a detail.
+# The client prefers a saved profile over the environment — deliberately, so a
+# script that signed in is not overridden by ambient variables — so on a
+# machine where the developer has run "teanode auth login", every command
+# here would talk to whatever server they last signed in to. That is somebody's
+# live mail server, and this harness creates domains, sends mail and asserts
+# refusals. An empty configuration directory means there is no profile to
+# prefer, and the console path is taken.
 teanode_local() {
-  env TEANODE_DATABASE_URL="${DATABASE_URL}" "${BINARY}" "$@"
+  env TEANODE_DATABASE_URL="${DATABASE_URL}" \
+    XDG_CONFIG_HOME="${SCRATCH_CONFIG}" "${BINARY}" "$@"
 }
 
 build_environment() {
@@ -301,6 +316,16 @@ replace("""    aliases: []""", """    aliases:
         mailServer:
           host: %s
           port: %s""" % (forward_host, forward_port, forward_host, forward_port))
+
+# The block lists are turned off for this deployment. They are real public
+# services, and a test that queried them would depend on somebody else's
+# infrastructure, be rate limited in CI, and — because the DNS server here
+# answers wildcards for the fake domains — report every sender as listed. What
+# is being proved is that mail is scored with no spam daemon running, which
+# the other checks do without leaving the network.
+replace("""    dns:
+      enabled: true""", """    dns:
+      enabled: false""")
 
 # Last, because "tls self-signed" resolved its paths against the host copy.
 replace("  dataDirectory: ", "  dataDirectory: /var/lib/teanode  # was: ")
@@ -463,7 +488,8 @@ psql_value() {
 }
 
 teanode_cli() {
-  TEANODE_URL="${API}" TEANODE_TOKEN="${TOKEN:-}" "${BINARY}" "$@"
+  TEANODE_URL="${API}" TEANODE_TOKEN="${TOKEN:-}" \
+    XDG_CONFIG_HOME="${SCRATCH_CONFIG}" "${BINARY}" "$@"
 }
 
 check_onboarding() {
@@ -723,6 +749,98 @@ await_message() {
     sleep 1
   done
   return 1
+}
+
+# check_spam_filter proves that mail is scored without a second program.
+#
+# This deployment runs no spam daemon at all — there is no spamassassin service
+# in deploy/docker-compose.test.yml — so a score here can only have come from
+# the filter inside the server. That is the whole claim being tested, and it is
+# not something a unit test can make: it depends on the engine being resolved
+# at startup, the filter being handed to the exchange, and the checks running
+# after the authentication results exist rather than alongside them.
+check_spam_filter() {
+  step "Scoring mail without a spam daemon"
+
+  check_contains "the built-in filter is what is running" '"effectiveEngine":"builtin"' \
+    graphql '{ GetSettings { antispam { enabled engine effectiveEngine } } }' \
+    -H "Authorization: Bearer ${TOKEN}"
+
+  # A message from a sender with nothing configured: this connection has no
+  # confirmed reverse DNS, because it comes from a container address nobody
+  # publishes a PTR record for.
+  local subject="spam-score-$(date +%s)"
+  python3 - "${SMTP_PORT}" "${DOMAIN}" "${subject}" "${SENDER_DOMAIN}" <<'PYTHON'
+import smtplib, sys
+from email.message import EmailMessage
+
+port, domain, subject, sender_domain = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+
+message = EmailMessage()
+message["From"] = f"sender@{sender_domain}"
+message["To"] = f"anything@{domain}"
+message["Subject"] = subject
+message.set_content("Sent by scripts/test-deployment.bash to be scored.")
+
+with smtplib.SMTP("127.0.0.1", port, timeout=30) as smtp:
+    smtp.send_message(message)
+PYTHON
+
+  # The score is stored on the message, so read it back through the API the
+  # dashboard uses rather than out of the database.
+  local scored attempt
+  for attempt in $(seq 1 30); do
+    scored="$(graphql 'query { ListMails(domainId: "", pagination: { first: 20 }) { subject authenticationResults { spamFilter { score result symbols checks { symbol score description } } } } }' \
+      -H "Authorization: Bearer ${TOKEN}" 2>/dev/null || true)"
+    if grep -q "${subject}" <<<"${scored}"; then
+      break
+    fi
+    sleep 1
+  done
+
+  if ! grep -q "${subject}" <<<"${scored}"; then
+    fail "the message never appeared in the API"
+    return 0
+  fi
+
+  # Narrow to this message, so another message's score cannot pass this.
+  # The JSON is passed as an argument, not on standard input: the script
+  # itself arrives on standard input through the heredoc, and a command has
+  # only one of those.
+  local mine
+  mine="$(python3 - "${subject}" "${scored}" <<'PYTHON'
+import json, sys
+
+subject, document = sys.argv[1], json.loads(sys.argv[2])
+for item in document.get("data", {}).get("ListMails") or []:
+    if item.get("subject") == subject:
+        print(json.dumps(item.get("authenticationResults", {}).get("spamFilter") or {}))
+        break
+PYTHON
+)"
+
+  if [[ -z "${mine}" || "${mine}" == "{}" ]]; then
+    fail "the message was not scored at all: ${scored:0:400}"
+    return 0
+  fi
+  pass "the message was scored with no spam daemon anywhere: ${mine}"
+
+  # A breakdown, not just a number. The external daemon's protocol cannot
+  # produce this, so its presence is what distinguishes the two engines.
+  if grep -q '"checks"' <<<"${mine}" && grep -q '"symbol"' <<<"${mine}"; then
+    pass "the score comes with a per-check breakdown"
+  else
+    fail "the score has no breakdown: ${mine}"
+  fi
+
+  # This sender has no reverse DNS that resolves back to it, which the server
+  # established before the SMTP session began. Seeing the symbol proves the
+  # filter read what the server already knew rather than working it out again.
+  if grep -q "NO_CONFIRMED_REVERSE_DNS" <<<"${mine}"; then
+    pass "it scored a signal the server had already established"
+  else
+    fail "expected NO_CONFIRMED_REVERSE_DNS for an address with no PTR: ${mine}"
+  fi
 }
 
 check_rejections() {
@@ -1402,6 +1520,9 @@ check_object_store() {
 # --- run ----------------------------------------------------------------------
 
 main() {
+  rm -rf "${SCRATCH_CONFIG}"
+  mkdir -p "${SCRATCH_CONFIG}"
+
   build_environment
   start_database
   configure_deployment
@@ -1413,6 +1534,7 @@ main() {
   issue_token
   check_cli
   check_incoming_mail
+  check_spam_filter
   check_rejections
   check_submission
   check_media

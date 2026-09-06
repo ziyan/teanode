@@ -83,8 +83,59 @@ func Default() *Configuration {
 			Port: 3310,
 		},
 		Antispam: Antispam{
-			Host: "127.0.0.1",
-			Port: 783,
+			// On by default, which it could not be while scoring required a
+			// second program to be running. The built-in filter needs
+			// nothing, so a new server scores its mail rather than silently
+			// not doing it.
+			//
+			// This changes nothing for an existing deployment: the stored
+			// configuration wins, and a server that had it off keeps it off.
+			Enabled: true,
+
+			// Engine is deliberately left empty here, and Spamd.Host with
+			// it. Antispam.ResolvedEngine() reads an empty engine as "spamd
+			// when a host is configured, builtin when none is", which is what
+			// keeps a deployment already talking to a daemon talking to it
+			// across an upgrade.
+			//
+			// Defaulting either field defeats that rule, silently. A default
+			// of "builtin" means the field is never empty, so an existing
+			// deployment resolves to the built-in filter and stops using the
+			// daemon it was configured with; a default host means the
+			// opposite, and a new installation would look for a daemon that
+			// is not there. Found on a live server, which switched engines on
+			// restart without being asked.
+			//
+			// The port stands alone: it is what spamd listens on, and is only
+			// consulted once a host has been set.
+			Spamd: AntispamSpamd{
+				Port: 783,
+			},
+			Builtin: AntispamBuiltin{
+				Signals: AntispamSignals{Enabled: true},
+				DNS: AntispamDNS{
+					Enabled: true,
+					Timeout: Duration(5 * time.Second),
+					AddressLists: []AntispamList{
+						{Zone: "zen.spamhaus.org", Weight: 3.0},
+					},
+					DomainLists: []AntispamList{
+						{Zone: "dbl.spamhaus.org", Weight: 3.0},
+					},
+					MaximumDomains: 10,
+				},
+				Bayes: AntispamBayes{
+					Enabled:         true,
+					MinimumMessages: 200,
+					Weight:          3.0,
+				},
+				Rules: AntispamRules{
+					Enabled:               false,
+					Channels:              []string{"updates.spamassassin.org"},
+					UpdateInterval:        Duration(24 * time.Hour),
+					MaximumEvaluationTime: Duration(2 * time.Second),
+				},
+			},
 		},
 		Storage: Storage{
 			Directory:      "mail",

@@ -4,9 +4,9 @@ package apigraph
 // turned into a schema by reflection in internal/util/graphapi.
 //
 // Queries over mail, deliveries and reports read the database. Everything
-// about domains, aliases and credentials reads and writes the configuration
-// file through config.Store, so a change made in the dashboard ends up in
-// teanode.yaml and survives a restart.
+// about domains, aliases and credentials reads and writes the stored
+// configuration through config.Store, which is itself in the database, so a
+// change made in the dashboard reaches every instance and survives a restart.
 
 // Query is every read operation.
 type Query interface {
@@ -26,6 +26,7 @@ type Query interface {
 	ReportQuery
 	LayoutQuery
 	TemplateQuery
+	SpamQuery
 }
 
 var _ Query = &graph{}
@@ -48,6 +49,7 @@ type Mutation interface {
 	LayoutMutation
 	TemplateMutation
 	SendMutation
+	SpamMutation
 }
 
 var _ Mutation = &graph{}

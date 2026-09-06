@@ -21,7 +21,7 @@ const SETTINGS = `
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
       route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
       antivirus { enabled host port }
-      antispam { enabled host port }
+      antispam { enabled engine effectiveEngine host port signalsEnabled dnsEnabled bayesEnabled rulesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam }
       relay { enabled host port security username hasPassword }
       proxy { socks5 }
       certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
@@ -41,11 +41,11 @@ export const UPDATE = `
     $s3: S3ParametersInput
     $route53: Route53ParametersInput
     $antivirus: ServiceParametersInput
-    $antispam: ServiceParametersInput
+    $antispam: AntispamParametersInput
     $relay: RelayParametersInput
     $proxy: ProxyParametersInput
     $certificates: CertificateParametersInput
-    $smtp: SmtpParametersInput
+    $smtp: SMTPParametersInput
     $resolver: ResolverParametersInput
     $session: SessionParametersInput
     $passkey: PasskeyParametersInput
@@ -74,7 +74,7 @@ export const UPDATE = `
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
       route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
       antivirus { enabled host port }
-      antispam { enabled host port }
+      antispam { enabled engine effectiveEngine host port signalsEnabled dnsEnabled bayesEnabled rulesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam }
       relay { enabled host port security username hasPassword }
       certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
       smtp { maxMessageSize maxRecipientsIncoming maxRecipientsOutgoing greylistDelay authRateLimit authRateBurst trustedSenders }
@@ -156,11 +156,28 @@ export type Identity = { name: string; mailServers?: string[]; logLevel: string;
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }
 
+// Spam scoring has two engines and the built-in one has parts, so it is not
+// a Service — that shape is a host and a port and nothing else.
+export type Antispam = {
+  enabled: boolean
+  engine: string
+  effectiveEngine: string
+  host: string
+  port: number
+  signalsEnabled: boolean
+  dnsEnabled: boolean
+  bayesEnabled: boolean
+  rulesEnabled: boolean
+  bayesMinimumMessages: number
+  bayesLearnedSpam: number
+  bayesLearnedHam: number
+}
+
 type Settings = {
   s3: S3
   route53: Route53
   antivirus: Service
-  antispam: Service
+  antispam: Antispam
   relay: Relay
   proxy: Proxy
   certificates: Certificates
@@ -189,6 +206,7 @@ export type Section =
   | 'storage'
   | 'resolver'
   | 'scanning'
+  | 'spam'
   | 'sessions'
 
 // The tabs these four are, for the Server page to render along with the rest
@@ -203,6 +221,10 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   { id: 'storage', label: 'integrations.tabStorage' },
   { id: 'resolver', label: 'serverSettings.tabResolver' },
   { id: 'scanning', label: 'integrations.tabScanning' },
+  // Its own tab rather than a card under Scanning: the spam filter has an
+  // engine to choose and four parts to switch, and beside the antivirus's
+  // host and port it was the one card on the page that needed reading.
+  { id: 'spam', label: 'integrations.tabSpam' },
   { id: 'sessions', label: 'serverSettings.tabSessions' },
 ]
 
@@ -277,15 +299,9 @@ export function IntegrationsSection({ section }: { section: Section }) {
             field="antivirus"
             onSaved={reload}
           />
-          <ServiceForm
-            title={t('integrations.antispam')}
-            description={t('integrations.antispamDescription')}
-            settings={settings.antispam}
-            field="antispam"
-            onSaved={reload}
-          />
         </>
       )}
+      {section === 'spam' && <AntispamForm settings={settings.antispam} onSaved={reload} />}
     </>
   )
 }
@@ -921,7 +937,7 @@ function ServiceForm({
   title: string
   description: string
   settings: Service
-  field: 'antivirus' | 'antispam'
+  field: 'antivirus'
   onSaved: () => void
 }) {
   const { t } = useTranslation()
@@ -969,6 +985,150 @@ function ServiceForm({
           />
         </label>
       </div>
+
+      <SaveRow busy={busy} saved={saved} problem={problem} />
+    </form>
+  )
+}
+
+// AntispamForm is the spam filter's settings: which engine, and — for the
+// built-in one — which of its parts are on.
+//
+// The engine select shows what the server resolved an empty setting to, so an
+// operator who never chose can still see what is running. The daemon's host
+// and port appear only when the daemon is chosen, since with the built-in
+// filter there is nothing to point at. The classifier's progress is shown
+// beside its switch: it says nothing until it has learned enough, and the
+// number is the only way to know how far off that is.
+function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+
+  const [enabled, setEnabled] = useState(settings.enabled)
+  const [engine, setEngine] = useState(settings.engine || settings.effectiveEngine)
+  const [host, setHost] = useState(settings.host)
+  const [port, setPort] = useState(String(settings.port))
+  const [signalsEnabled, setSignalsEnabled] = useState(settings.signalsEnabled)
+  const [dnsEnabled, setDnsEnabled] = useState(settings.dnsEnabled)
+  const [bayesEnabled, setBayesEnabled] = useState(settings.bayesEnabled)
+  const [rulesEnabled, setRulesEnabled] = useState(settings.rulesEnabled)
+  const [bayesMinimum, setBayesMinimum] = useState(String(settings.bayesMinimumMessages))
+
+  useEffect(() => {
+    setEnabled(settings.enabled)
+    setEngine(settings.engine || settings.effectiveEngine)
+    setHost(settings.host)
+    setPort(String(settings.port))
+    setSignalsEnabled(settings.signalsEnabled)
+    setDnsEnabled(settings.dnsEnabled)
+    setBayesEnabled(settings.bayesEnabled)
+    setRulesEnabled(settings.rulesEnabled)
+    setBayesMinimum(String(settings.bayesMinimumMessages))
+  }, [settings])
+
+  const learned = settings.bayesLearnedSpam + settings.bayesLearnedHam
+  const minimum = Number(bayesMinimum) || 0
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({
+          antispam: {
+            enabled,
+            engine,
+            host,
+            port: Number(port) || 0,
+            signalsEnabled,
+            dnsEnabled,
+            bayesEnabled,
+            rulesEnabled,
+            bayesMinimumMessages: minimum,
+          },
+        })
+      }}
+    >
+      <h3>{t('integrations.antispam')}</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {t('integrations.antispamDescription')}
+      </p>
+
+      <label>
+        <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
+        {t('integrations.enabled')}
+      </label>
+
+      <label>
+        <span>{t('integrations.antispamEngine')}</span>
+        <select value={engine} onChange={(event) => setEngine(event.target.value)}>
+          <option value="builtin">{t('integrations.antispamBuiltin')}</option>
+          <option value="spamd">{t('integrations.antispamSpamd')}</option>
+        </select>
+      </label>
+
+      {engine === 'spamd' ? (
+        <div className="row">
+          <label>
+            <span>{t('integrations.host')}</span>
+            <input value={host} onChange={(event) => setHost(event.target.value)} />
+          </label>
+          <label className="shrink">
+            <span>{t('integrations.port')}</span>
+            <input
+              value={port}
+              inputMode="numeric"
+              onChange={(event) => setPort(event.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </label>
+        </div>
+      ) : (
+        <>
+          <p className="muted">{t('integrations.antispamBuiltinDescription')}</p>
+          <label>
+            <input
+              type="checkbox"
+              checked={signalsEnabled}
+              onChange={(event) => setSignalsEnabled(event.target.checked)}
+            />{' '}
+            {t('integrations.antispamSignals')}
+          </label>
+          <label>
+            <input type="checkbox" checked={dnsEnabled} onChange={(event) => setDnsEnabled(event.target.checked)} />{' '}
+            {t('integrations.antispamDns')}
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={bayesEnabled}
+              onChange={(event) => setBayesEnabled(event.target.checked)}
+            />{' '}
+            {t('integrations.antispamBayes')}
+            <span className="muted">
+              {' '}
+              {learned >= minimum
+                ? t('integrations.antispamBayesReady', { learned })
+                : t('integrations.antispamBayesLearning', { learned, minimum })}
+            </span>
+          </label>
+          <label className="shrink">
+            <span>{t('integrations.antispamBayesMinimum')}</span>
+            <input
+              value={bayesMinimum}
+              inputMode="numeric"
+              onChange={(event) => setBayesMinimum(event.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={rulesEnabled}
+              onChange={(event) => setRulesEnabled(event.target.checked)}
+            />{' '}
+            {t('integrations.antispamRules')}
+          </label>
+        </>
+      )}
 
       <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>

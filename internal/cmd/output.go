@@ -118,6 +118,13 @@ func printTable(headers []string, rows [][]string) error {
 func printFields(fields [][2]string) error {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	for _, field := range fields {
+		// An empty name is a continuation of the field above — the checks
+		// behind a spam score, say. Printing the colon anyway left a column
+		// of bare punctuation down the page.
+		if field[0] == "" {
+			_, _ = fmt.Fprintf(writer, "\t%s\n", field[1])
+			continue
+		}
 		_, _ = fmt.Fprintf(writer, "%s:\t%s\n", field[0], field[1])
 	}
 	return writer.Flush()

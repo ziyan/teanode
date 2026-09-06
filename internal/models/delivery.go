@@ -1,11 +1,30 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/dsn"
 )
+
+// Describe fills Method and Destination from the alias the delivery was
+// made for, which is configuration rather than a stored column. An external
+// delivery has no alias: it is this server sending to the recipient directly.
+func (self *Delivery) Describe(alias *config.Alias) {
+	switch {
+	case self.Kind == DeliveryKindExternal:
+		self.Method, self.Destination = "smtp", self.Recipient
+	case alias == nil:
+		return
+	case alias.Kind == config.AliasKindEmail:
+		self.Method, self.Destination = "email", alias.Email
+	case alias.Kind == config.AliasKindWebhook:
+		self.Method, self.Destination = "webhook", alias.Webhook
+	case alias.Kind == config.AliasKindMailServer && alias.MailServer != nil:
+		self.Method, self.Destination = "mailServer", fmt.Sprintf("%s:%d", alias.MailServer.Host, alias.MailServer.Port)
+	}
+}
 
 type DeliveryKind string
 
@@ -121,6 +140,17 @@ type Delivery struct {
 
 	// How many attempts has been made
 	Attempts uint64 `json:"attempts,omitempty"`
+
+	// Method is how the message is handed on — "email" for a forward to an
+	// address by looking up its mail servers, "mailServer" for a relay to a
+	// configured host, "webhook" for a POST, "smtp" for a message this
+	// server sends out itself. Derived from the alias when the delivery is
+	// read; not stored.
+	Method string `json:"method,omitempty"`
+
+	// Destination is where that goes: the address, the host and port, or
+	// the URL. Derived alongside Method.
+	Destination string `json:"destination,omitempty"`
 
 	// Last error reported
 	Error string `json:"error,omitempty"`

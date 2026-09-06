@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
@@ -17,9 +17,25 @@ import { MessageFrame } from '../components/messageFrame'
 import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
+import { useResolvedTheme } from '../components/theme'
+
+// Teaching the built-in filter. The classifier is the part that does most of
+// the work and it learns nothing on its own, so marking a message has to be
+// one press from reading it.
+const MARK = `
+  mutation ($mailId: String!, $label: String!) {
+    MarkMail(mailId: $mailId, label: $label) { mailId label learnedSpam learnedHam }
+  }`
+
+const FORGET = `
+  mutation ($mailId: String!) {
+    ForgetMail(mailId: $mailId) { mailId label learnedSpam learnedHam }
+  }`
 
 const MAIL = `
   query ($mailId: String!) {
+    GetSpamTraining(mailId: $mailId) { label }
+    GetSettings { antispam { effectiveEngine bayesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam } }
     GetMail(mailId: $mailId) {
       id sender from subject recipients status kind size receivedAt
       ip rdns hello messageId envelopeId tlsVersion tlsCipherSuite
@@ -31,7 +47,7 @@ const MAIL = `
         dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result }
         dkims { domain selector identifier result }
         arc { result instances }
-        spamFilter { score result symbols }
+        spamFilter { score result symbols checks { symbol score description } }
         antivirus { viruses }
         contentFilter { unsafeExtensions }
         errors
@@ -46,7 +62,7 @@ const MAIL = `
       trackable opened openedAt lastOpenedAt openCount ip
     }
     ListDeliveriesByMail(mailId: $mailId) {
-      id recipient kind status size attempts error
+      id recipient kind status size attempts error method destination
       attemptedAt deliveredAt droppedAt notifiedAt retryAt
       deliveryStatuses {
         reportingMta
@@ -56,6 +72,16 @@ const MAIL = `
   }`
 
 type Response = {
+  GetSpamTraining: { label: string } | null
+  GetSettings: {
+    antispam: {
+      effectiveEngine: string
+      bayesEnabled: boolean
+      bayesMinimumMessages: number
+      bayesLearnedSpam: number
+      bayesLearnedHam: number
+    }
+  }
   GetMail: Mail
   GetMailContent: MailContent
   GetMailOpens: MailOpens
@@ -75,6 +101,17 @@ type Check = {
 
 type Tab = 'rendered' | 'text' | 'html' | 'source' | 'raw'
 
+// A score is a sum of floating-point weights, and a sum of floats is
+// 11.606000000000002. One decimal: the threshold is a whole number and the
+// question a reader has is "how far past it", which 11.6 answers and 11.606
+// only obscures. Through Number so that 3.0 reads as 3 and -1.0 as -1.
+function formatScore(score: number): string {
+  return String(Number(score.toFixed(1)))
+}
+
+// What the two training mutations return.
+type Training = { mailId: string; label: string; learnedSpam: number; learnedHam: number }
+
 export function MailDetailPage() {
   const { t, plural } = useTranslation()
   const label = useEnumLabel()
@@ -83,12 +120,71 @@ export function MailDetailPage() {
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
 
+  // Reading in the dark. The frame's document is built as a string, so the
+  // dashboard's theme has to be resolved here and written in as literals.
+  // "darkened" is the reader's choice to invert a message that paints its
+  // own light ground, remembered per reader rather than per message: whoever
+  // wants dark mail wants it for the next message too.
+  const resolvedTheme = useResolvedTheme()
+  const dark = resolvedTheme === 'dark'
+  const [darkened, setDarkened] = useState(() => {
+    try {
+      return window.localStorage.getItem(DARKENED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [alreadyDark, setAlreadyDark] = useState(false)
+  const chooseDarkened = (next: boolean) => {
+    setDarkened(next)
+    try {
+      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
+    } catch {
+      // A browser that refuses storage still gets the choice for this visit.
+    }
+  }
+  const [marked, setMarked] = useState<string | null>(null)
+  const [marking, setMarking] = useState(false)
+  const [markError, setMarkError] = useState<string | null>(null)
+  const [learned, setLearned] = useState<{ spam: number; ham: number } | null>(null)
+
+  // What the server already knows: whether this message was taught, and how
+  // far the classifier has got. Local state only ever knew about a marking
+  // made on this visit, so a reload offered to teach a message again.
+  useEffect(() => {
+    setMarked(data?.GetSpamTraining?.label ?? null)
+    const antispam = data?.GetSettings?.antispam
+    setLearned(antispam ? { spam: antispam.bayesLearnedSpam, ham: antispam.bayesLearnedHam } : null)
+  }, [data])
+
+  // Marked here rather than re-fetched: the score on this message is what it
+  // was when it arrived, and marking it does not change that. What changes is
+  // what the next message will be scored against.
+  const mark = async (label: 'spam' | 'ham' | null) => {
+    if (!mailId) return
+    setMarking(true)
+    setMarkError(null)
+    try {
+      const result = label
+        ? await graphql<{ MarkMail: Training }>(MARK, { mailId, label })
+        : await graphql<{ ForgetMail: Training }>(FORGET, { mailId })
+      const training = 'MarkMail' in result ? result.MarkMail : result.ForgetMail
+      setMarked(label)
+      setLearned({ spam: training.learnedSpam, ham: training.learnedHam })
+    } catch (failure) {
+      setMarkError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setMarking(false)
+    }
+  }
+
   useBreadcrumbDetail(data?.GetMail?.subject || (data ? t('mail.noSubject') : null))
 
   const content = data?.GetMailContent
   const document = useMemo(
-    () => (content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined) : ''),
-    [content?.html, loadRemote, mailId],
+    () =>
+      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
+    [content?.html, loadRemote, mailId, dark, darkened],
   )
 
   if (loading) {
@@ -121,6 +217,56 @@ export function MailDetailPage() {
         <KindTag value={mail.kind} />
         <span className="muted">{verdictLine(t, plural, mail, data.ListDeliveriesByMail)}</span>
       </div>
+
+      {/* Teaching the filter, only when something reads what it is taught:
+          the built-in filter with its classifier on. Offered on every message
+          rather than only on ones it got wrong, because the classifier needs
+          examples of ordinary mail at least as much as examples of spam.
+
+          Two toggles rather than two links and an undo: the pressed one is
+          the message's current label, and pressing it again clears it. */}
+      {data.GetSettings?.antispam?.effectiveEngine === 'builtin' && data.GetSettings.antispam.bayesEnabled ? (
+        <div className="mark-spam">
+          <div className="segmented" role="group" aria-label={t('mailDetail.markPrompt')}>
+            <button
+              type="button"
+              className={marked === 'spam' ? 'active bad' : ''}
+              aria-pressed={marked === 'spam'}
+              disabled={marking}
+              onClick={() => mark(marked === 'spam' ? null : 'spam')}
+            >
+              {t('mailDetail.markSpam')}
+            </button>
+            <button
+              type="button"
+              className={marked === 'ham' ? 'active good' : ''}
+              aria-pressed={marked === 'ham'}
+              disabled={marking}
+              onClick={() => mark(marked === 'ham' ? null : 'ham')}
+            >
+              {t('mailDetail.markHam')}
+            </button>
+          </div>
+          <span className="muted">
+            {markError
+              ? markError
+              : marked
+                ? marked === 'spam'
+                  ? t('mailDetail.markedSpam')
+                  : t('mailDetail.markedHam')
+                : t('mailDetail.markPrompt')}
+            {learned
+              ? ' · ' +
+                (learned.spam + learned.ham >= data.GetSettings.antispam.bayesMinimumMessages
+                  ? t('mailDetail.classifierReady', { learned: learned.spam + learned.ham })
+                  : t('mailDetail.classifierLearning', {
+                      learned: learned.spam + learned.ham,
+                      minimum: data.GetSettings.antispam.bayesMinimumMessages,
+                    }))
+              : ''}
+          </span>
+        </div>
+      ) : null}
 
       <div className="card">
         <table className="detail">
@@ -222,10 +368,44 @@ export function MailDetailPage() {
                   </button>
                 </div>
               )}
+              {/* Only in the dark theme: in the light one there is nothing
+                  to fix, and the control would be a question nobody asked.
+                  A plain message is already dark from the frame's ground;
+                  this is for one that paints its own, which the inversion
+                  darkens while keeping its pictures the right way round. */}
+              {dark && (
+                <div className="frame-mode">
+                  <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
+                    <button
+                      type="button"
+                      className={darkened ? '' : 'active'}
+                      aria-pressed={!darkened}
+                      onClick={() => chooseDarkened(false)}
+                    >
+                      {t('mailDetail.asSent')}
+                    </button>
+                    <button
+                      type="button"
+                      className={darkened && !alreadyDark ? 'active' : ''}
+                      aria-pressed={darkened && !alreadyDark}
+                      disabled={alreadyDark}
+                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                      onClick={() => chooseDarkened(true)}
+                    >
+                      {t('mailDetail.darkened')}
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Rendered in a sandbox that permits no scripts, on top of
                   the server-side sanitising and a policy of default-src
                   'none' inside the frame. It is mail from a stranger. */}
-              <MessageFrame document={document} title={t('mailDetail.message')} />
+              <MessageFrame
+                document={document}
+                title={t('mailDetail.message')}
+                darkened={dark && darkened}
+                onGroundMeasured={setAlreadyDark}
+              />
             </>
           )}
 
@@ -427,11 +607,23 @@ function Authentication({ results }: { results: AuthenticationResults }) {
   if (results.spamFilter) {
     checks.push({
       label: t('mailDetail.spam'),
-      verdict: String(results.spamFilter.score),
+      verdict: formatScore(results.spamFilter.score),
       tone: results.spamFilter.result === 'fail' ? 'bad' : 'good',
-      // The symbols are the whole explanation of the score. They were fetched
-      // and then thrown away.
-      detail: results.spamFilter.symbols?.length ? (
+      // The breakdown is the whole explanation of the score: which check
+      // fired and what it cost. An external daemon reports only names, so
+      // fall back to those when that is all there is.
+      detail: results.spamFilter.checks?.length ? (
+        <span className="spam-checks">
+          {results.spamFilter.checks.map((check) => (
+            <span key={check.symbol} className="spam-check" title={check.description ?? ''}>
+              <span className="mono">{check.symbol}</span>
+              <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
+                {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
+              </span>
+            </span>
+          ))}
+        </span>
+      ) : results.spamFilter.symbols?.length ? (
         <span className="mono wrap">{results.spamFilter.symbols.join(' ')}</span>
       ) : (
         t('mailDetail.noSymbols')
@@ -520,6 +712,19 @@ function Authentication({ results }: { results: AuthenticationResults }) {
 // remote MTA, an enhanced status code and a diagnostic string from the far
 // end, and those are the three things somebody debugging a bounce wants. None
 // of them fitted in a five-column table, so none of them were shown.
+function deliveryMethodKey(method: NonNullable<Delivery['method']>): Key {
+  switch (method) {
+    case 'email':
+      return 'mailDetail.methodEmail'
+    case 'mailServer':
+      return 'mailDetail.methodMailServer'
+    case 'webhook':
+      return 'mailDetail.methodWebhook'
+    default:
+      return 'mailDetail.methodSmtp'
+  }
+}
+
 function DeliveryDetail({ delivery }: { delivery: Delivery }) {
   const { t } = useTranslation()
   const label = useEnumLabel()
@@ -534,6 +739,16 @@ function DeliveryDetail({ delivery }: { delivery: Delivery }) {
         <span className="delivery-recipient">{delivery.recipient}</span>
         <KindTag value={delivery.kind} />
       </div>
+      {/* How it is handed on, and where. The recipient above is who the
+          message was for; this is what was done about it — a forward to an
+          address by looking up its mail servers, a relay to a configured
+          host, a POST to a URL — which is the thing to check when a
+          delivery is stuck. */}
+      {delivery.method && delivery.destination ? (
+        <p className="muted delivery-method">
+          {t(deliveryMethodKey(delivery.method), { destination: delivery.destination })}
+        </p>
+      ) : null}
 
       <table className="detail">
         <tbody>
@@ -605,7 +820,7 @@ function verdictLine(
       return t('mailDetail.whyVirus', { viruses: results.antivirus.viruses.join(', ') })
     }
     if (results?.spamFilter?.result === 'fail') {
-      return t('mailDetail.whySpam', { score: results.spamFilter.score })
+      return t('mailDetail.whySpam', { score: formatScore(results.spamFilter.score) })
     }
     if (results?.dmarc?.result && toneFor(results.dmarc.result) === 'bad') {
       return t('mailDetail.whyDmarc', { policy: results.dmarc.policy ?? 'none' })
@@ -646,7 +861,29 @@ function alignmentMode(t: (key: Key) => string, mode: string): string {
 // the server-side sanitiser, it cannot execute or call home from here. When
 // remote images are not being loaded, img-src is restricted to data URLs so a
 // tracking pixel cannot fire.
-function buildDocument(html: string, mailId?: string): string {
+const DARKENED_KEY = 'teanode.mail.darkened'
+
+// buildDocument writes the whole document the frame shows, colours included.
+//
+// The frame cannot read the dashboard's tokens — it is a separate document
+// built from a string — so the two colours are written here as literals,
+// taken from the dark palette at the top of style.css so they match rather
+// than approximate. In the dark theme the ground is dark and the text light,
+// which a plain message inherits; a message that sets its own colours keeps
+// them, since a default is exactly what it overrides.
+//
+// "darkened" is the reader's choice to invert the message. The inversion
+// itself is applied to the frame element by MessageFrame; what has to be
+// written in here is the other half — pictures inverted back so they come
+// out the right way round, and a light ground so a message with none
+// inverts to dark rather than to nothing. Imperfect on gradients, which is
+// why it is a choice.
+function buildDocument(html: string, mailId?: string, dark = false, darkened = false): string {
+  // Under inversion the document is built light, not dark. The frame element
+  // is what gets inverted, and it inverts everything in it — a dark ground
+  // built in here came out as a thick white border around the inverted
+  // message. Light in, dark out.
+  const darkGround = dark && !darkened
   // 'self' covers every image that can appear in here: the ones the message
   // carried with it, which the server rewrote from cid: to its own attachment
   // endpoint, and the remote ones, which go through the server too once the
@@ -663,8 +900,16 @@ function buildDocument(html: string, mailId?: string): string {
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
-<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#16161a;background:#fff;word-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style>
-</head><body><div id="teanode-content">${body}</div></body></html>`
+<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
+    darkGround ? '#f4f4f5' : '#16161a'
+  };background:${darkGround ? '#1a1a1d' : '#fff'};word-wrap:break-word${
+    darkGround ? ';color-scheme:dark' : ''
+  }}img{max-width:100%;height:auto}table{max-width:100%}${
+    darkened
+      ? '.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
+      : ''
+  }</style>
+</head><body><div id="teanode-content"${darkened ? ' class="darkened"' : ''}>${body}</div></body></html>`
 }
 
 // restoreRemoteImages points the blocked images at this server, once the

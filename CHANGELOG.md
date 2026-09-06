@@ -6,6 +6,49 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Mail is scored for spam by a filter inside the server, so a deployment needs
+  no second program for it. It reads what the server already established about
+  a message — the SPF, DKIM, DMARC and ARC results, whether the sending host
+  has a forward-confirmed reverse DNS name, the name it gave in HELO —
+  consults public block lists over ordinary DNS, and applies a classifier
+  trained on the mail you mark in the dashboard. Scores carry a breakdown of
+  which check contributed what.
+- `antispam.engine` chooses between that filter and an external SpamAssassin
+  daemon. Leaving it empty is resolved rather than defaulted, so a deployment
+  already talking to a daemon keeps talking to it.
+- Marking a message as spam, or as not spam, in the dashboard. That is what
+  teaches the classifier, and it says nothing until it has seen enough of both.
+- `teanode-server config rules import` and `config rules show`, which load the
+  published pattern rules into the database and report how much of a set this
+  server can use. Off until `antispam.builtin.rules.enabled` is set, and there
+  is no automatic download: fetching rules unattended means verifying the
+  publisher's signature.
+- `teanode settings set upgrade …`, which the schema accepted and the command
+  line could not reach.
+
+### Changed
+
+- A delivery refused with a permanent 5xx reply is dropped rather than retried
+  on the backoff schedule. A message Gmail had refused as unsolicited was being
+  offered to Gmail again every few hours, each attempt costing reputation.
+- A message's deliveries say how each one is handed on and where — forwarded
+  to an address by looking up its mail servers, relayed to a configured host,
+  or posted to a URL.
+- The compose file no longer starts a spam daemon. It is behind a `spamd`
+  profile for deployments that want one, so nothing in the default path
+  depends on a third-party image continuing to exist.
+
+### Fixed
+
+- A domain with no spam threshold stored carried zero, which means "reject
+  anything the filter has any opinion about". Harmless while scoring needed a
+  daemon and was off; with scoring on by default it would have refused almost
+  everything.
+- `teanode settings set` named an input type the schema has never had, so it
+  failed for every section, not just the one being set.
+
 ## [0.7.0] - 2026-09-06
 
 ### Added

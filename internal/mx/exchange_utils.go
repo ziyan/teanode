@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net"
+	"net/netip"
 	"net/textproto"
 	"path/filepath"
 	"strings"
@@ -18,9 +19,9 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/arc"
 	"github.com/ziyan/teanode/internal/util/authres"
-	"github.com/ziyan/teanode/internal/util/bufferpool"
 	"github.com/ziyan/teanode/internal/util/deferutil"
 	"github.com/ziyan/teanode/internal/util/dkim"
 	"github.com/ziyan/teanode/internal/util/dmarc"
@@ -619,43 +620,66 @@ func (self *exchange) checkVirus(authenticator *authenticator, headers []string,
 	})
 }
 
-func (self *exchange) checkSpam(authenticator *authenticator, headers []string, body []byte, scoreThreshold float64) {
-	if self.spamc == nil {
-		return
+// checkSpam scores the message, after the other checks have finished.
+//
+// It runs on its own rather than alongside them, because the built-in filter
+// reads what they established: SPF, DKIM, DMARC and ARC are inputs to the
+// score, and while the checks all ran together those answers did not exist
+// yet at this point. The cost of giving up that concurrency is small — the
+// built-in filter does no lookups of its own — and the alternative is scoring
+// a message while ignoring what the server just learned about it.
+//
+// A filter that fails does not reject mail. Spam scoring is advisory, and a
+// broken scorer that bounced messages would be worse than no scorer at all,
+// so the error is logged and the message goes on unscored.
+func (self *exchange) checkSpam(
+	ctx context.Context,
+	envelope *mailparse.Envelope,
+	mail *models.Mail,
+	scoreThreshold float64,
+) error {
+	if self.spamFilter == nil {
+		return nil
 	}
-	authenticator.do(func(ctx context.Context) (models.AuthenticationResults, []authres.Result, error) {
-		// get a buffer from pool
-		buffer, releaseBuffer := bufferpool.AcquireBuffer()
-		defer releaseBuffer()
 
-		if err := mailparse.Unsplit(buffer, body, headers); err != nil {
-			return models.AuthenticationResults{}, nil, mailparse.ErrSpamCheckFailed
+	start := time.Now()
+	message := &spamfilter.Message{
+		Headers:        mail.Headers,
+		Body:           mail.Body,
+		Authentication: &mail.AuthenticationResults,
+		ReverseName:    envelope.RDNS,
+		Location:       envelope.Location,
+		HelloName:      envelope.Hello,
+		ServerName:     self.config.Current().Server.Name,
+		Authenticated:  envelope.CredentialID != "",
+	}
+	if envelope.IP != nil {
+		if address, ok := netip.AddrFromSlice(envelope.IP); ok {
+			message.RemoteAddress = address.Unmap()
 		}
+	}
 
-		start := time.Now()
-		spamResult, err := self.spamc.Check(ctx, buffer)
-		if err != nil {
-			log.Warningf("failed to check spam: %s", err)
-			return models.AuthenticationResults{}, nil, nil
-		}
-		log.Debugf("spamassassin: took %s to check for spam: score = %f, symbols = %v", time.Since(start), spamResult.Score, spamResult.Symbols)
+	spamResult, err := self.spamFilter.Check(ctx, message)
+	if err != nil {
+		log.Warningf("failed to check spam: %s", err)
+		return nil
+	}
+	if spamResult == nil {
+		return nil
+	}
+	log.Debugf("spam filter: took %s to check for spam: score = %f, symbols = %v",
+		time.Since(start), spamResult.Score, spamResult.Symbols)
 
-		result := "pass"
-		if spamResult.Score > scoreThreshold {
-			result = "fail"
-		}
-		authenticationResults := models.AuthenticationResults{
-			SpamFilter: &models.SpamFilterResult{
-				Score:   spamResult.Score,
-				Symbols: spamResult.Symbols,
-				Result:  result,
-			},
-		}
-		if spamResult.Score > scoreThreshold {
-			return authenticationResults, nil, mailparse.ErrSpamCheckFailed
-		}
-		return authenticationResults, nil, nil
-	})
+	spamResult.Result = "pass"
+	if spamResult.Score > scoreThreshold {
+		spamResult.Result = "fail"
+	}
+	mail.AuthenticationResults.SpamFilter = spamResult
+
+	if spamResult.Score > scoreThreshold {
+		return mailparse.ErrSpamCheckFailed
+	}
+	return nil
 }
 
 func (self *exchange) checkIp(ctx context.Context, ip net.IP, timeout time.Duration) string {

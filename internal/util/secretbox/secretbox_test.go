@@ -99,9 +99,18 @@ func TestAnAlteredValueIsRefused(t *testing.T) {
 		t.Fatalf("Seal: %s", err)
 	}
 
+	// A byte that is definitely different from the one it replaces. Writing
+	// a constant here made the test fail about one run in sixty-four, when
+	// the character being overwritten already was that constant and the value
+	// came back unaltered — which Open then quite correctly accepted.
+	flipped := "A"
+	if sealed[len(sealed)-6] == 'A' {
+		flipped = "B"
+	}
+
 	altered := []string{
 		// A flipped byte in the middle.
-		sealed[:len(sealed)-6] + "A" + sealed[len(sealed)-5:],
+		sealed[:len(sealed)-6] + flipped + sealed[len(sealed)-5:],
 		// Truncated.
 		sealed[:len(sealed)/2],
 		// Not base64 at all.

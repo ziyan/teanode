@@ -32,7 +32,9 @@ import (
 	"github.com/ziyan/teanode/internal/frontend"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/strainer"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/autoacme"
 	"github.com/ziyan/teanode/internal/util/ceremony"
@@ -46,7 +48,6 @@ import (
 	"github.com/ziyan/teanode/internal/util/resolver"
 	"github.com/ziyan/teanode/internal/util/smtpc"
 	"github.com/ziyan/teanode/internal/util/smtpd"
-	"github.com/ziyan/teanode/internal/util/spamc"
 	"github.com/ziyan/teanode/internal/version"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -233,6 +234,11 @@ type server struct {
 	restarter        *api.Restarter
 	restartRequested chan struct{}
 
+	// spamFilter scores incoming mail. Kept so that serve can start the
+	// built-in filter's rule refresher, which needs a context that openServer
+	// does not have.
+	spamFilter spamfilter.Filter
+
 	// upgrader knows what has been released and, after an upgrade, what this
 	// process should become. Read at the end of serve, once everything is
 	// drained: that is the only safe moment to replace the process image.
@@ -332,14 +338,15 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	self.locator = openLocator(configuration)
 	self.resolver = resolver.New()
 
-	antispamClient, err := openAntispam(configuration)
+	spamFilter, err := openAntispam(configuration, self.resolver, self.database)
 	if err != nil {
 		return nil, err
 	}
-	if antispamClient != nil {
+	self.spamFilter = spamFilter
+	if spamFilter != nil {
 		self.onClose(func() {
-			if err := antispamClient.Close(); err != nil {
-				log.Errorf("failed to close spamassassin: %s", err)
+			if err := spamFilter.Close(); err != nil {
+				log.Errorf("failed to close spam filter: %s", err)
 			}
 		})
 	}
@@ -360,7 +367,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		return nil, err
 	}
 
-	if err := self.openExchange(configuration, antispamClient, antivirusClient); err != nil {
+	if err := self.openExchange(configuration, spamFilter, antivirusClient); err != nil {
 		return nil, err
 	}
 
@@ -610,7 +617,7 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 	return nil
 }
 
-func (self *server) openExchange(configuration *config.Configuration, antispamClient spamc.Client, antivirusClient clamav.Client) error {
+func (self *server) openExchange(configuration *config.Configuration, spamFilter spamfilter.Filter, antivirusClient clamav.Client) error {
 	settings := &mx.Settings{
 		Server:          configuration.Server.Name,
 		Service:         fmt.Sprintf("teanode/%s", version.Version()),
@@ -621,7 +628,7 @@ func (self *server) openExchange(configuration *config.Configuration, antispamCl
 		DisableSendMail: configuration.SMTP.DisableSend,
 		Relay:           relaySettings(configuration),
 	}
-	exchange, err := mx.Open(self.database, self.store, self.storage, self.resolver, antispamClient, antivirusClient, self.locator, settings)
+	exchange, err := mx.Open(self.database, self.store, self.storage, self.resolver, spamFilter, antivirusClient, self.locator, settings)
 	if err != nil {
 		return err
 	}
@@ -875,6 +882,15 @@ func (self *server) serve(ctx context.Context) error {
 	unsubscribe := self.warnOnStartupOnlyChanges()
 	defer unsubscribe()
 
+	// The built-in filter's rules live in the database, because instances
+	// share them. This watches for a set this instance has not parsed —
+	// placed there by another instance, or by "config rules import".
+	if refresher, ok := self.spamFilter.(interface {
+		StartRuleRefresh(ctx context.Context)
+	}); ok {
+		refresher.StartRuleRefresh(ctx)
+	}
+
 	tlsConfig, err := self.tlsConfig(configuration)
 	if err != nil {
 		return err
@@ -1074,18 +1090,29 @@ func openLocator(configuration *config.Configuration) geoip.Locator {
 	return geoip.NewLocator(configuration.Path(configuration.GeoIP.DatabaseFile))
 }
 
-func openAntispam(configuration *config.Configuration) (spamc.Client, error) {
+// openAntispam builds whichever filter the configuration asks for.
+//
+// The engine is resolved rather than read, so that a server which has been
+// talking to a daemon keeps talking to it across an upgrade that never
+// mentioned the setting, and a server with no daemon configured gets the
+// filter inside this process.
+func openAntispam(configuration *config.Configuration, nameResolver resolver.Resolver, database db.Database) (spamfilter.Filter, error) {
 	if !configuration.Antispam.Enabled {
 		return nil, nil
 	}
-	client, err := spamc.Open(&spamc.Settings{
-		Host: configuration.Antispam.Host,
-		Port: configuration.Antispam.Port,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("cannot connect to spamassassin at %s:%d: %w", configuration.Antispam.Host, configuration.Antispam.Port, err)
+	switch configuration.Antispam.ResolvedEngine() {
+	case config.AntispamEngineSpamd:
+		host, port := configuration.Antispam.SpamdHost(), configuration.Antispam.SpamdPort()
+		filter, err := spamfilter.NewSpamd(host, port)
+		if err != nil {
+			return nil, err
+		}
+		log.Noticef("spam filter: an external spamassassin daemon at %s:%d", host, port)
+		return filter, nil
+	default:
+		log.Noticef("spam filter: the built-in filter")
+		return strainer.New(&configuration.Antispam.Builtin, nameResolver, database), nil
 	}
-	return client, nil
 }
 
 func openAntivirus(configuration *config.Configuration) (clamav.Client, error) {

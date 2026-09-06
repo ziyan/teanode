@@ -76,6 +76,11 @@ type Database interface {
 	MediaOperation
 	MediaLinkOperation
 
+	// The built-in spam filter reads its learned counts while scoring a
+	// message, outside any transaction the delivery is in: an advisory score
+	// must not be able to hold a delivery's transaction open.
+	SpamOperation
+
 	// migrate database schema
 	Migrate() error
 	UnknownMigrations() ([]string, error)

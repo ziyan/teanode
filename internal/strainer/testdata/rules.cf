@@ -1,0 +1,53 @@
+# A small rule file in the published format, covering the shapes this parser
+# has to handle. Written here rather than copied from a published set so that
+# the test does not depend on somebody else's corpus, and so the expected
+# outcome is obvious by reading it.
+
+header  SUBJECT_SHOUTS      Subject =~ /FREE MONEY/i
+describe SUBJECT_SHOUTS     The subject offers free money
+score   SUBJECT_SHOUTS      2.5 1.0 2.5 1.0
+
+header  HAS_UNSUBSCRIBE     exists:List-Unsubscribe
+describe HAS_UNSUBSCRIBE    Carries an unsubscribe header
+score   HAS_UNSUBSCRIBE     -0.5
+
+header  NOT_FROM_FRIEND     From !~ /friend\.example\.com/
+score   NOT_FROM_FRIEND     0.5
+
+body    BODY_URGENT         /act now|limited time/i
+describe BODY_URGENT        The body is in a hurry
+score   BODY_URGENT         1.5
+
+uri     URI_SHORTENER       /https?:\/\/short\.example\.net/
+score   URI_SHORTENER       1.0
+
+meta    SHOUTS_AND_HURRIES  SUBJECT_SHOUTS && BODY_URGENT
+describe SHOUTS_AND_HURRIES Shouts in the subject and hurries in the body
+score   SHOUTS_AND_HURRIES  1.0
+
+meta    ENOUGH_SIGNALS      (SUBJECT_SHOUTS + BODY_URGENT + URI_SHORTENER) > 2
+score   ENOUGH_SIGNALS      0.5
+
+# Go's regular expression engine will not compile a lookahead. This rule has
+# to be skipped and counted, not fatal.
+body    NEEDS_LOOKAHEAD     /(?=.*viagra)(?=.*cheap)/i
+score   NEEDS_LOOKAHEAD     3.0
+
+# A rule implemented by a plugin this server does not have.
+header  PLUGIN_RULE         eval:check_rbl('example', 'example.org.')
+score   PLUGIN_RULE         2.0
+
+# A rule that needs the network, which is scored elsewhere here.
+body    NET_RULE            /anything/
+tflags  NET_RULE            net
+score   NET_RULE            1.0
+
+# Everything inside a plugin block is skipped: this server has no plugins.
+ifplugin Mail::SpamAssassin::Plugin::Something
+body    INSIDE_PLUGIN       /never matches because it is skipped/
+score   INSIDE_PLUGIN       5.0
+endif
+
+# A rule with no score is not counted, because the published sets score
+# everything they mean.
+body    UNSCORED            /act now/i
