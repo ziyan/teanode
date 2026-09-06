@@ -651,6 +651,7 @@ func (self *exchange) checkSpam(
 		Location:       envelope.Location,
 		HelloName:      envelope.Hello,
 		ServerName:     self.config.Current().Server.Name,
+		Authenticated:  envelope.CredentialID != "",
 	}
 	if envelope.IP != nil {
 		if address, ok := netip.AddrFromSlice(envelope.IP); ok {

@@ -185,3 +185,55 @@ func TestNoAuthenticationResults(t *testing.T) {
 		t.Errorf("score = %v, want 0 with nothing known; fired = %v", total, fired)
 	}
 }
+
+// Mail submitted with a credential is scored on what it contains, never on
+// where it came from.
+//
+// The connection checks ask whether a host is entitled to be sending mail,
+// and somebody who presented a password has answered that. The honest
+// answers are also wrong for a laptop: it has no reverse DNS, and its home
+// address is in the block lists deliberately, because mail servers do not
+// usually live there. Without this, the operator's own outgoing mail
+// collects points for having been sent from home.
+func TestAuthenticatedSubmissionIsNotScoredOnItsConnection(t *testing.T) {
+	t.Parallel()
+
+	// Everything about this connection looks wrong, and none of it should
+	// count: no reverse DNS, a bare HELO, and an address the block list says
+	// is listed.
+	settings := &config.AntispamBuiltin{
+		Signals: config.AntispamSignals{Enabled: true},
+		DNS: config.AntispamDNS{
+			Enabled:      true,
+			AddressLists: []config.AntispamList{{Zone: "zen.example.org", Weight: 3.0}},
+		},
+	}
+	resolver := &fakeResolver{listed: map[string]bool{"4.100.51.198.zen.example.org": true}}
+
+	message := &spamfilter.Message{
+		Authenticated: true,
+		RemoteAddress: netip.MustParseAddr("198.51.100.4"),
+		ReverseName:   "",
+		HelloName:     "laptop",
+	}
+	result, err := strainer.New(settings, resolver, nil).Check(context.Background(), message)
+	if err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	if result.Score != 0 || len(result.Checks) != 0 {
+		t.Errorf("authenticated submission scored %v with %v, want nothing", result.Score, result.Checks)
+	}
+	if queries := resolver.queries.Load(); queries != 0 {
+		t.Errorf("asked a block list %d times about an authenticated sender's own address", queries)
+	}
+
+	// The same connection, unauthenticated, is scored.
+	message.Authenticated = false
+	result, err = strainer.New(settings, resolver, nil).Check(context.Background(), message)
+	if err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	if result.Score == 0 {
+		t.Errorf("the same connection scored nothing when it was not authenticated")
+	}
+}

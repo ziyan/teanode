@@ -64,4 +64,17 @@ type Message struct {
 	// ServerName is this server's own name, for noticing a sender that
 	// claimed to be us.
 	ServerName string
+
+	// Authenticated is true when the message was submitted with a
+	// credential rather than delivered by another mail server.
+	//
+	// It changes what may be scored. The checks that look at the connection
+	// — reverse DNS, the name given in HELO, the address's reputation — ask
+	// "is this host entitled to be sending mail", and somebody who presented
+	// a password has already answered that. Worse, the honest answers are
+	// wrong: a laptop has no reverse DNS, and home addresses are listed in
+	// the block lists on purpose, precisely because mail servers do not
+	// usually live there. Scoring them would put points on the operator's
+	// own outgoing mail for being sent from a home connection.
+	Authenticated bool
 }

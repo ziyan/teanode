@@ -106,10 +106,15 @@ func (self *Strainer) Check(ctx context.Context, message *spamfilter.Message) (*
 	}
 
 	checks := make([]check, 0, 8)
-	if self.settings.Signals.Enabled {
+
+	// A message submitted with a credential is scored on what it contains,
+	// never on where it came from: the sender proved who they are, and the
+	// connection checks would otherwise punish them for sending from a
+	// laptop. See spamfilter.Message.Authenticated.
+	if self.settings.Signals.Enabled && !message.Authenticated {
 		checks = append(checks, self.signalChecks(message)...)
 	}
-	if self.settings.DNS.Enabled {
+	if self.settings.DNS.Enabled && !message.Authenticated {
 		checks = append(checks, self.dnsChecks(ctx, message)...)
 	}
 	if self.settings.Bayes.Enabled {
