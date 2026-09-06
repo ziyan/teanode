@@ -94,6 +94,11 @@ func parseRules(text string) *ruleSet {
 	descriptions := make(map[string]string)
 	skipRule := make(map[string]bool)
 
+	// Skipped names, not skipped definitions: a set defining a rule twice
+	// skips it twice otherwise, and the number the dashboard shows an
+	// operator was inflated the same way the loaded count once was.
+	skippedNames := make(map[string]bool)
+
 	// ifplugin blocks name a plugin this server does not have, so everything
 	// inside one is skipped. Nesting is counted rather than tracked as a
 	// boolean, because these files nest them.
@@ -151,14 +156,16 @@ func parseRules(text string) *ruleSet {
 			}
 			parsed, err := parseMeta(strings.TrimSpace(expression))
 			if err != nil {
-				set.skipped++
+				skippedNames[name] = true
 				continue
 			}
 			set.metas = append(set.metas, metaRule{name: name, expression: parsed})
 		case "header", "body", "rawbody", "full", "uri":
 			parsed, ok := parseRule(keyword, rest)
 			if !ok {
-				set.skipped++
+				if name, _, found := strings.Cut(rest, " "); found {
+					skippedNames[name] = true
+				}
 				continue
 			}
 			set.rules = append(set.rules, parsed)
@@ -178,6 +185,7 @@ func parseRules(text string) *ruleSet {
 	set.rules = filterRules(lastDefinitionWins(set.rules), skipRule, descriptions)
 	set.metas = filterMetas(lastMetaWins(set.metas), skipRule, descriptions)
 	set.loaded = len(set.rules) + len(set.metas)
+	set.skipped = len(skippedNames)
 	return set
 }
 

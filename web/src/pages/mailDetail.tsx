@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
@@ -33,6 +33,8 @@ const FORGET = `
 
 const MAIL = `
   query ($mailId: String!) {
+    GetSpamTraining(mailId: $mailId) { label }
+    GetSettings { antispam { effectiveEngine bayesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam } }
     GetMail(mailId: $mailId) {
       id sender from subject recipients status kind size receivedAt
       ip rdns hello messageId envelopeId tlsVersion tlsCipherSuite
@@ -69,6 +71,16 @@ const MAIL = `
   }`
 
 type Response = {
+  GetSpamTraining: { label: string } | null
+  GetSettings: {
+    antispam: {
+      effectiveEngine: string
+      bayesEnabled: boolean
+      bayesMinimumMessages: number
+      bayesLearnedSpam: number
+      bayesLearnedHam: number
+    }
+  }
   GetMail: Mail
   GetMailContent: MailContent
   GetMailOpens: MailOpens
@@ -88,6 +100,9 @@ type Check = {
 
 type Tab = 'rendered' | 'text' | 'html' | 'source' | 'raw'
 
+// What the two training mutations return.
+type Training = { mailId: string; label: string; learnedSpam: number; learnedHam: number }
+
 export function MailDetailPage() {
   const { t, plural } = useTranslation()
   const label = useEnumLabel()
@@ -98,6 +113,16 @@ export function MailDetailPage() {
   const [marked, setMarked] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | null>(null)
+  const [learned, setLearned] = useState<{ spam: number; ham: number } | null>(null)
+
+  // What the server already knows: whether this message was taught, and how
+  // far the classifier has got. Local state only ever knew about a marking
+  // made on this visit, so a reload offered to teach a message again.
+  useEffect(() => {
+    setMarked(data?.GetSpamTraining?.label ?? null)
+    const antispam = data?.GetSettings?.antispam
+    setLearned(antispam ? { spam: antispam.bayesLearnedSpam, ham: antispam.bayesLearnedHam } : null)
+  }, [data])
 
   // Marked here rather than re-fetched: the score on this message is what it
   // was when it arrived, and marking it does not change that. What changes is
@@ -107,12 +132,12 @@ export function MailDetailPage() {
     setMarking(true)
     setMarkError(null)
     try {
-      if (label) {
-        await graphql(MARK, { mailId, label })
-      } else {
-        await graphql(FORGET, { mailId })
-      }
+      const result = label
+        ? await graphql<{ MarkMail: Training }>(MARK, { mailId, label })
+        : await graphql<{ ForgetMail: Training }>(FORGET, { mailId })
+      const training = 'MarkMail' in result ? result.MarkMail : result.ForgetMail
       setMarked(label)
+      setLearned({ spam: training.learnedSpam, ham: training.learnedHam })
     } catch (failure) {
       setMarkError(failure instanceof Error ? failure.message : String(failure))
     } finally {
@@ -159,29 +184,55 @@ export function MailDetailPage() {
         <span className="muted">{verdictLine(t, plural, mail, data.ListDeliveriesByMail)}</span>
       </div>
 
-      {/* Teaching the filter. Offered on every message rather than only on
-          ones it got wrong, because the classifier needs examples of ordinary
-          mail at least as much as it needs examples of spam. */}
-      <div className="mark-spam">
-        <span className="muted">{t('mailDetail.markPrompt')}</span>
-        <button className="link" disabled={marking || marked === 'spam'} onClick={() => mark('spam')}>
-          {t('mailDetail.markSpam')}
-        </button>
-        <button className="link" disabled={marking || marked === 'ham'} onClick={() => mark('ham')}>
-          {t('mailDetail.markHam')}
-        </button>
-        {marked ? (
-          <>
-            <span className="muted">
-              {marked === 'spam' ? t('mailDetail.markedSpam') : t('mailDetail.markedHam')}
-            </span>
-            <button className="link" disabled={marking} onClick={() => mark(null)}>
-              {t('mailDetail.markUndo')}
+      {/* Teaching the filter, only when something reads what it is taught:
+          the built-in filter with its classifier on. Offered on every message
+          rather than only on ones it got wrong, because the classifier needs
+          examples of ordinary mail at least as much as examples of spam.
+
+          Two toggles rather than two links and an undo: the pressed one is
+          the message's current label, and pressing it again clears it. */}
+      {data.GetSettings?.antispam?.effectiveEngine === 'builtin' && data.GetSettings.antispam.bayesEnabled ? (
+        <div className="mark-spam">
+          <div className="mark-spam-toggle" role="group" aria-label={t('mailDetail.markPrompt')}>
+            <button
+              type="button"
+              className={marked === 'spam' ? 'active bad' : ''}
+              aria-pressed={marked === 'spam'}
+              disabled={marking}
+              onClick={() => mark(marked === 'spam' ? null : 'spam')}
+            >
+              {t('mailDetail.markSpam')}
             </button>
-          </>
-        ) : null}
-        {markError ? <span className="bad">{markError}</span> : null}
-      </div>
+            <button
+              type="button"
+              className={marked === 'ham' ? 'active good' : ''}
+              aria-pressed={marked === 'ham'}
+              disabled={marking}
+              onClick={() => mark(marked === 'ham' ? null : 'ham')}
+            >
+              {t('mailDetail.markHam')}
+            </button>
+          </div>
+          <span className="muted">
+            {markError
+              ? markError
+              : marked
+                ? marked === 'spam'
+                  ? t('mailDetail.markedSpam')
+                  : t('mailDetail.markedHam')
+                : t('mailDetail.markPrompt')}
+            {learned
+              ? ' · ' +
+                (learned.spam + learned.ham >= data.GetSettings.antispam.bayesMinimumMessages
+                  ? t('mailDetail.classifierReady', { learned: learned.spam + learned.ham })
+                  : t('mailDetail.classifierLearning', {
+                      learned: learned.spam + learned.ham,
+                      minimum: data.GetSettings.antispam.bayesMinimumMessages,
+                    }))
+              : ''}
+          </span>
+        </div>
+      ) : null}
 
       <div className="card">
         <table className="detail">

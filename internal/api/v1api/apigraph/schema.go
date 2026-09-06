@@ -26,6 +26,7 @@ type Query interface {
 	ReportQuery
 	LayoutQuery
 	TemplateQuery
+	SpamQuery
 }
 
 var _ Query = &graph{}

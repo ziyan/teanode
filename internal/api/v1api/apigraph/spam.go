@@ -16,6 +16,25 @@ import (
 // That is what these two mutations are for: the dashboard puts them behind a
 // button on a message.
 
+// SpamQuery is what the message page needs to draw the marking control: what
+// this message was taught as, if anything.
+type SpamQuery interface {
+	// What the classifier was taught about a message, or null
+	GetSpamTraining(ctx context.Context, arguments ForgetMailArguments) (*models.SpamTraining, error)
+}
+
+// GetSpamTraining says whether a message has been marked, and as what.
+//
+// Without this the page only knew about a marking it had made itself, so a
+// reload showed an unmarked message that the classifier had already learned
+// from — and offered to teach it again.
+func (self *graph) GetSpamTraining(ctx context.Context, arguments ForgetMailArguments) (*models.SpamTraining, error) {
+	if err := self.requireOperator(ctx); err != nil {
+		return nil, err
+	}
+	return self.database.GetSpamTraining(arguments.MailID)
+}
+
 // SpamMutation is teaching the classifier.
 type SpamMutation interface {
 	// Teach the built-in spam filter that a message is spam, or is not

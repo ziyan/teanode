@@ -3264,11 +3264,53 @@ a.button.primary:hover {
   color: var(--good);
 }
 
-/* Teaching the spam filter, directly under the verdict on a message. */
+/* Teaching the spam filter, directly under the verdict on a message.
+
+   A segmented pair: the pressed button is the message's current label and
+   carries the same tone as the verdict tags above it — red for spam, green
+   for not — so the state reads at a glance without reading the words. The
+   line beside it says what the press did and how far the classifier has got,
+   because a classifier that is silent until it has learned two hundred
+   messages needs to say so, or every press looks like it did nothing. */
 .mark-spam {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
+}
+
+.mark-spam-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+
+.mark-spam-toggle button {
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 5px 12px;
+  font-weight: 500;
+}
+
+.mark-spam-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.mark-spam-toggle button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--sidebar-hover);
+}
+
+.mark-spam-toggle button.active.bad {
+  background: var(--bad);
+  color: #fff;
+}
+
+.mark-spam-toggle button.active.good {
+  background: var(--good);
+  color: #fff;
 }
