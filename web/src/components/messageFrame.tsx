@@ -46,7 +46,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // and it is what is shown while the first measurement is still pending.
 const MINIMUM_HEIGHT = 240
 
-export function MessageFrame({ document: source, title }: { document: string; title: string }) {
+// darkened inverts the frame from out here rather than from inside its
+// document. A filter on the iframe element is one composited layer the
+// parent owns; the same filter on a large div inside the document made the
+// renderer so slow that a screenshot of the page timed out. And toggling it
+// out here changes nothing in the document, so the frame is not reloaded and
+// re-measured for a choice about colour.
+export function MessageFrame({
+  document: source,
+  title,
+  darkened = false,
+}: {
+  document: string
+  title: string
+  darkened?: boolean
+}) {
   const frame = useRef<HTMLIFrameElement>(null)
   const lastWidth = useRef(0)
   const [height, setHeight] = useState(MINIMUM_HEIGHT)
@@ -132,7 +146,7 @@ export function MessageFrame({ document: source, title }: { document: string; ti
   return (
     <iframe
       ref={frame}
-      className="message-frame"
+      className={darkened ? 'message-frame darkened' : 'message-frame'}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={source}
       title={title}

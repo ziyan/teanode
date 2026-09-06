@@ -397,7 +397,7 @@ export function MailDetailPage() {
               {/* Rendered in a sandbox that permits no scripts, on top of
                   the server-side sanitising and a policy of default-src
                   'none' inside the frame. It is mail from a stranger. */}
-              <MessageFrame document={document} title={t('mailDetail.message')} />
+              <MessageFrame document={document} title={t('mailDetail.message')} darkened={dark && darkened} />
             </>
           )}
 
@@ -841,9 +841,12 @@ const DARKENED_KEY = 'teanode.mail.darkened'
 // which a plain message inherits; a message that sets its own colours keeps
 // them, since a default is exactly what it overrides.
 //
-// "darkened" inverts the whole document and inverts pictures back, which is
-// the only transform that darkens a document nobody understands while keeping
-// its hues recognisable. Imperfect on gradients, which is why it is a choice.
+// "darkened" is the reader's choice to invert the message. The inversion
+// itself is applied to the frame element by MessageFrame; what has to be
+// written in here is the other half — pictures inverted back so they come
+// out the right way round, and a light ground so a message with none
+// inverts to dark rather than to nothing. Imperfect on gradients, which is
+// why it is a choice.
 function buildDocument(html: string, mailId?: string, dark = false, darkened = false): string {
   // 'self' covers every image that can appear in here: the ones the message
   // carried with it, which the server rewrote from cid: to its own attachment
@@ -867,7 +870,7 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
     dark ? ';color-scheme:dark' : ''
   }}img{max-width:100%;height:auto}table{max-width:100%}${
     darkened
-      ? '.darkened{filter:invert(1) hue-rotate(180deg);background:#fff}.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
+      ? '.darkened{background:#fff;color:#16161a}.darkened img,.darkened video,.darkened [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}'
       : ''
   }</style>
 </head><body><div id="teanode-content"${darkened ? ' class="darkened"' : ''}>${body}</div></body></html>`

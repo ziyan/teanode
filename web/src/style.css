@@ -3320,6 +3320,14 @@ a.button.primary:hover {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 35%, transparent);
 }
 
+/* The reader's choice to darken a message that paints its own light ground.
+   The frame element is inverted here, as one composited layer the page owns;
+   the message's pictures are inverted back inside the document so they keep
+   their colours. */
+.message-frame.darkened {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 /* Choosing how a message renders in the dark, just above the frame. */
 .frame-mode {
   display: flex;
