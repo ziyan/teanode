@@ -725,6 +725,95 @@ await_message() {
   return 1
 }
 
+# check_spam_filter proves that mail is scored without a second program.
+#
+# This deployment runs no spam daemon at all — there is no spamassassin service
+# in deploy/docker-compose.test.yml — so a score here can only have come from
+# the filter inside the server. That is the whole claim being tested, and it is
+# not something a unit test can make: it depends on the engine being resolved
+# at startup, the filter being handed to the exchange, and the checks running
+# after the authentication results exist rather than alongside them.
+check_spam_filter() {
+  step "Scoring mail without a spam daemon"
+
+  check_contains "the built-in filter is what is running" '"effectiveEngine":"builtin"' \
+    graphql '{ GetSettings { antispam { enabled engine effectiveEngine } } }' \
+    -H "Authorization: Bearer ${TOKEN}"
+
+  # A message from a sender with nothing configured: this connection has no
+  # confirmed reverse DNS, because it comes from a container address nobody
+  # publishes a PTR record for.
+  local subject="spam-score-$(date +%s)"
+  python3 - "${SMTP_PORT}" "${DOMAIN}" "${subject}" "${SENDER_DOMAIN}" <<'PYTHON'
+import smtplib, sys
+from email.message import EmailMessage
+
+port, domain, subject, sender_domain = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+
+message = EmailMessage()
+message["From"] = f"sender@{sender_domain}"
+message["To"] = f"anything@{domain}"
+message["Subject"] = subject
+message.set_content("Sent by scripts/test-deployment.bash to be scored.")
+
+with smtplib.SMTP("127.0.0.1", port, timeout=30) as smtp:
+    smtp.send_message(message)
+PYTHON
+
+  # The score is stored on the message, so read it back through the API the
+  # dashboard uses rather than out of the database.
+  local scored attempt
+  for attempt in $(seq 1 30); do
+    scored="$(graphql 'query { ListMails(domainId: "", pagination: { first: 20 }) { subject authenticationResults { spamFilter { score result symbols checks { symbol score description } } } } }' \
+      -H "Authorization: Bearer ${TOKEN}" 2>/dev/null || true)"
+    if grep -q "${subject}" <<<"${scored}"; then
+      break
+    fi
+    sleep 1
+  done
+
+  if ! grep -q "${subject}" <<<"${scored}"; then
+    fail "the message never appeared in the API"
+    return 0
+  fi
+
+  # Narrow to this message, so another message's score cannot pass this.
+  local mine
+  mine="$(python3 - "${subject}" <<'PYTHON'
+import json, sys
+subject = sys.argv[1]
+document = json.load(sys.stdin)
+for item in document.get("data", {}).get("ListMails") or []:
+    if item.get("subject") == subject:
+        print(json.dumps(item.get("authenticationResults", {}).get("spamFilter") or {}))
+        break
+PYTHON
+<<<"${scored}")"
+
+  if [[ -z "${mine}" || "${mine}" == "{}" ]]; then
+    fail "the message was not scored at all: ${scored:0:400}"
+    return 0
+  fi
+  pass "the message was scored with no spam daemon anywhere: ${mine}"
+
+  # A breakdown, not just a number. The external daemon's protocol cannot
+  # produce this, so its presence is what distinguishes the two engines.
+  if grep -q '"checks"' <<<"${mine}" && grep -q '"symbol"' <<<"${mine}"; then
+    pass "the score comes with a per-check breakdown"
+  else
+    fail "the score has no breakdown: ${mine}"
+  fi
+
+  # This sender has no reverse DNS that resolves back to it, which the server
+  # established before the SMTP session began. Seeing the symbol proves the
+  # filter read what the server already knew rather than working it out again.
+  if grep -q "NO_CONFIRMED_REVERSE_DNS" <<<"${mine}"; then
+    pass "it scored a signal the server had already established"
+  else
+    fail "expected NO_CONFIRMED_REVERSE_DNS for an address with no PTR: ${mine}"
+  fi
+}
+
 check_rejections() {
   step "Refusing what it should refuse"
 
@@ -1413,6 +1502,7 @@ main() {
   issue_token
   check_cli
   check_incoming_mail
+  check_spam_filter
   check_rejections
   check_submission
   check_media

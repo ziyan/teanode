@@ -151,13 +151,17 @@ func (self *exchange) authenticateIncoming(ctx context.Context, envelope *mailpa
 	self.checkDmarcSpfDkim(authenticator, mail.From, envelope, mail.Headers, mail.Body)
 	self.checkArc(authenticator, mail.Headers, mail.Body)
 	self.checkVirus(authenticator, mail.Headers, mail.Body)
-	self.checkSpam(authenticator, mail.Headers, mail.Body, domain.SpamFilterScoreThreshold)
 	self.checkContent(authenticator, mail.Headers, mail.Body)
 
 	// wait for all
 	authenticationResults, results, err := authenticator.wait()
 	mail.AuthenticationResults = authenticationResults
 	if err != nil {
+		return err
+	}
+
+	// then score, which reads what those checks established
+	if err := self.checkSpam(ctx, envelope, mail, domain.SpamFilterScoreThreshold); err != nil {
 		return err
 	}
 

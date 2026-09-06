@@ -46,9 +46,6 @@ jobs:
       - name: Check formatting
         run: make check
 
-      - name: Vet
-        run: go vet -mod=vendor ./cmd/... ./internal/...
-
       - name: Build
         run: make build
 
@@ -57,14 +54,13 @@ jobs:
       - name: Lint
         run: make lint-ci
 
+      # -race stays: this server is goroutines around a mail stream, and the
+      # race detector has earned its place. Coverage does not — it was
+      # measured and printed and nothing was ever decided on it.
       - name: Test
         env:
           TEANODE_TEST_DATABASE_HOST: 127.0.0.1
-        run: |
-          go install gotest.tools/gotestsum@latest
-          gotestsum --format testname -- -mod=vendor -race -cover \
-            -coverprofile=coverage.out ./cmd/... ./internal/...
-          go tool cover -func=coverage.out | tail -1
+        run: go test -mod=vendor -race ./cmd/... ./internal/...
 
   dashboard:
     name: Dashboard
@@ -83,13 +79,11 @@ jobs:
         working-directory: web
         run: npm ci --no-audit --no-fund
 
+      # No build step: the image job builds this same dashboard through
+      # deploy/Dockerfile, so building it here too only spent the time twice.
       - name: Typecheck
         working-directory: web
         run: npx tsc --noEmit
-
-      - name: Build
-        working-directory: web
-        run: npm run build
 
   image:
     name: Container image

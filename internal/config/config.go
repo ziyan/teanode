@@ -812,11 +812,163 @@ type Antivirus struct {
 	Port    uint16 `yaml:"port"`
 }
 
-// Antispam configures the optional SpamAssassin integration.
+// Antispam configures spam scoring. The score a message is compared against
+// is the domain's spamFilterScoreThreshold, not a setting here.
 type Antispam struct {
-	Enabled bool   `yaml:"enabled"`
-	Host    string `yaml:"host"`
-	Port    uint16 `yaml:"port"`
+	Enabled bool `yaml:"enabled"`
+
+	// Engine chooses what does the scoring: "builtin" for the filter inside
+	// this server, or "spamd" for an external SpamAssassin daemon.
+	//
+	// Empty is resolved rather than defaulted, so that an existing deployment
+	// keeps working without being edited: empty with a host configured means
+	// "spamd", and empty with no host means "builtin". Read it with
+	// ResolvedEngine(), never directly.
+	Engine string `yaml:"engine,omitempty"`
+
+	// Spamd is where the external daemon listens, used when Engine is
+	// "spamd".
+	Spamd AntispamSpamd `yaml:"spamd"`
+
+	// Builtin configures the filter inside this server.
+	Builtin AntispamBuiltin `yaml:"builtin"`
+
+	// Host and Port are where the external daemon listens.
+	//
+	// Deprecated: use Spamd. Kept because it is what deployments in the field
+	// have stored, and it still works.
+	Host string `yaml:"host,omitempty"`
+	Port uint16 `yaml:"port,omitempty"`
+}
+
+// AntispamEngineBuiltin and AntispamEngineSpamd are the values Engine takes.
+const (
+	AntispamEngineBuiltin = "builtin"
+	AntispamEngineSpamd   = "spamd"
+)
+
+// ResolvedEngine says which filter scores messages, resolving the empty
+// value.
+//
+// An upgrade must not move a server that is talking to a daemon onto a
+// different filter behind the operator's back, and must not ask a new
+// installation to configure a daemon it does not have. So an unset engine
+// means "spamd" when a host is configured and "builtin" when none is.
+func (self *Antispam) ResolvedEngine() string {
+	switch self.Engine {
+	case AntispamEngineBuiltin, AntispamEngineSpamd:
+		return self.Engine
+	}
+	if self.SpamdHost() != "" {
+		return AntispamEngineSpamd
+	}
+	return AntispamEngineBuiltin
+}
+
+// SpamdHost is where the daemon listens, preferring the current setting over
+// the deprecated one.
+func (self *Antispam) SpamdHost() string {
+	if self.Spamd.Host != "" {
+		return self.Spamd.Host
+	}
+	return self.Host
+}
+
+// SpamdPort is the port the daemon listens on, preferring the current
+// setting over the deprecated one.
+func (self *Antispam) SpamdPort() uint16 {
+	if self.Spamd.Port != 0 {
+		return self.Spamd.Port
+	}
+	return self.Port
+}
+
+// AntispamSpamd points at an external SpamAssassin daemon.
+type AntispamSpamd struct {
+	Host string `yaml:"host,omitempty"`
+	Port uint16 `yaml:"port,omitempty"`
+}
+
+// AntispamBuiltin configures the filter inside this server.
+type AntispamBuiltin struct {
+	// Signals scores what the server already established about a message:
+	// its authentication results, the sending host's confirmed reverse DNS
+	// name, and the name it gave in HELO. Costs no lookups, because all of
+	// it is computed before scoring begins.
+	Signals AntispamSignals `yaml:"signals"`
+
+	// DNS scores reputation lookups in public block lists.
+	DNS AntispamDNS `yaml:"dns"`
+
+	// Bayes scores a classifier trained on this server's own mail.
+	Bayes AntispamBayes `yaml:"bayes"`
+
+	// Rules scores public pattern rules, downloaded into the database.
+	Rules AntispamRules `yaml:"rules"`
+}
+
+// AntispamSignals configures scoring from what the server already knows.
+type AntispamSignals struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// AntispamDNS configures block list lookups.
+type AntispamDNS struct {
+	Enabled bool `yaml:"enabled"`
+
+	// Timeout bounds the whole set of lookups for one message.
+	Timeout Duration `yaml:"timeout,omitempty"`
+
+	// AddressLists are consulted about the connecting address.
+	AddressLists []AntispamList `yaml:"addressLists,omitempty"`
+
+	// DomainLists are consulted about domains found in the message.
+	DomainLists []AntispamList `yaml:"domainLists,omitempty"`
+
+	// MaximumDomains caps how many domains from one message are looked up,
+	// so that a message full of links is not a burst of DNS queries.
+	MaximumDomains int `yaml:"maximumDomains,omitempty"`
+}
+
+// AntispamList is one block list.
+type AntispamList struct {
+	// Zone is the suffix queries are built with, for example
+	// zen.spamhaus.org.
+	Zone string `yaml:"zone"`
+
+	// Weight is the points a listing contributes.
+	Weight float64 `yaml:"weight"`
+}
+
+// AntispamBayes configures the classifier.
+type AntispamBayes struct {
+	Enabled bool `yaml:"enabled"`
+
+	// MinimumMessages is how many messages must have been learned before the
+	// classifier is allowed to contribute. A classifier trained on four
+	// messages is confidently wrong.
+	MinimumMessages int64 `yaml:"minimumMessages,omitempty"`
+
+	// Weight scales its opinion, which it expresses between -1 and 1.
+	Weight float64 `yaml:"weight,omitempty"`
+}
+
+// AntispamRules configures the public pattern rules.
+type AntispamRules struct {
+	// Enabled is off by default: an upgrade should not begin downloading and
+	// running rule files nobody asked for.
+	Enabled bool `yaml:"enabled"`
+
+	// Channels are the update channels to fetch, by name.
+	Channels []string `yaml:"channels,omitempty"`
+
+	// UpdateInterval is how often to look for a new version.
+	UpdateInterval Duration `yaml:"updateInterval,omitempty"`
+
+	// MaximumEvaluationTime bounds one message's whole rule pass. Thousands
+	// of patterns run over text an attacker chose, so this is a limit rather
+	// than a target.
+	MaximumEvaluationTime Duration `yaml:"maximumEvaluationTime,omitempty"`
 }
 
 // GeoIP configures optional sender geolocation. Supply your own MaxMind

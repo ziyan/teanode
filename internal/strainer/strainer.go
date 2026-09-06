@@ -1,0 +1,252 @@
+// Package strainer scores mail for spam inside this server.
+//
+// It is named for the thing that holds the leaves back when you pour. It is
+// not SpamAssassin, is not an implementation of it, and does not claim
+// compatibility with it; it is a different filter with different behaviour,
+// and the documentation and the dashboard describe it as the built-in filter.
+//
+// Its governing rule is that it recomputes nothing. By the time a message is
+// scored, this server has already resolved the sending host's name, verified
+// its signatures, evaluated its domain's policies and parsed the message. An
+// external daemon is handed bytes on a socket and has to work all of that out
+// again; the strainer reads what is already there. If you find yourself
+// adding a lookup here for something the server already knows, that is a
+// defect rather than an improvement.
+package strainer
+
+import (
+	"context"
+	"strings"
+
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/spamfilter"
+	"github.com/ziyan/teanode/internal/util/authres"
+)
+
+// check is one thing the strainer noticed, and what it cost.
+//
+// Weights are deliberately small: the threshold a message is compared against
+// is the domain's spamFilterScoreThreshold, five by default, and no single
+// signal should be able to condemn a message on its own. Negative weights
+// matter as much as positive ones — without them, mail from a well-configured
+// sender scores the same as mail from a sender with no opinion, and the
+// threshold has to be raised until it catches nothing.
+type check struct {
+	symbol      string
+	score       float64
+	description string
+}
+
+const (
+	symbolSPFFail               = "SPF_FAIL"
+	symbolSPFSoftFail           = "SPF_SOFTFAIL"
+	symbolDKIMInvalid           = "DKIM_INVALID"
+	symbolDKIMValid             = "DKIM_VALID"
+	symbolDMARCFail             = "DMARC_FAIL"
+	symbolDMARCPass             = "DMARC_PASS"
+	symbolARCPass               = "ARC_PASS"
+	symbolNoConfirmedReverseDNS = "NO_CONFIRMED_REVERSE_DNS"
+	symbolHelloNotQualified     = "HELO_NOT_FQDN"
+	symbolHelloIsOurName        = "HELO_IS_OUR_NAME"
+)
+
+// Strainer scores messages. Safe for concurrent use.
+type Strainer struct {
+	settings *config.AntispamBuiltin
+}
+
+// New returns a strainer reading the given settings.
+func New(settings *config.AntispamBuiltin) *Strainer {
+	return &Strainer{settings: settings}
+}
+
+// Close releases nothing today, and exists so that the strainer satisfies
+// spamfilter.Filter alongside the adapter that does hold a connection.
+func (self *Strainer) Close() error {
+	return nil
+}
+
+// Check scores one message.
+//
+// It never returns an error for a message it merely dislikes: the score says
+// that. An error here means the strainer could not do its job, and the caller
+// treats that as "unscored", not as "spam".
+func (self *Strainer) Check(ctx context.Context, message *spamfilter.Message) (*models.SpamFilterResult, error) {
+	if message == nil {
+		return nil, nil
+	}
+
+	checks := make([]check, 0, 8)
+	if self.settings.Signals.Enabled {
+		checks = append(checks, self.signalChecks(message)...)
+	}
+
+	return buildResult(checks), nil
+}
+
+// buildResult turns the checks that fired into what the dashboard shows.
+func buildResult(checks []check) *models.SpamFilterResult {
+	result := &models.SpamFilterResult{
+		Symbols: make([]string, 0, len(checks)),
+		Checks:  make([]models.SpamFilterCheck, 0, len(checks)),
+	}
+	for _, fired := range checks {
+		result.Score += fired.score
+		result.Symbols = append(result.Symbols, fired.symbol)
+		result.Checks = append(result.Checks, models.SpamFilterCheck{
+			Symbol:      fired.symbol,
+			Score:       fired.score,
+			Description: fired.description,
+		})
+	}
+	return result
+}
+
+// signalChecks scores what the server already established. Every branch here
+// reads a value computed before scoring began; none of it costs a lookup.
+func (self *Strainer) signalChecks(message *spamfilter.Message) []check {
+	checks := make([]check, 0, 8)
+
+	if authentication := message.Authentication; authentication != nil {
+		checks = append(checks, spfChecks(authentication)...)
+		checks = append(checks, dkimChecks(authentication)...)
+		checks = append(checks, dmarcChecks(authentication)...)
+		checks = append(checks, arcChecks(authentication)...)
+	}
+
+	// An empty reverse name already means "no confirmed name". The server
+	// resolves the address's PTR record and then resolves each name it gets
+	// back, keeping the name only when one of those addresses is the
+	// connecting address. So there is no separate "mismatch" case to score,
+	// and asking for one would mean repeating both lookups.
+	if message.ReverseName == "" {
+		checks = append(checks, check{
+			symbol:      symbolNoConfirmedReverseDNS,
+			score:       1.5,
+			description: "the connecting address has no reverse DNS name that resolves back to it",
+		})
+	}
+
+	checks = append(checks, helloChecks(message)...)
+	return checks
+}
+
+func spfChecks(authentication *models.AuthenticationResults) []check {
+	if authentication.SPF == nil {
+		return nil
+	}
+	switch authres.ResultValue(authentication.SPF.Result) {
+	case authres.ResultFail, authres.ResultHardFail:
+		return []check{{
+			symbol:      symbolSPFFail,
+			score:       3.0,
+			description: "the sender domain's published policy says this host may not send for it",
+		}}
+	case authres.ResultSoftFail:
+		return []check{{
+			symbol:      symbolSPFSoftFail,
+			score:       1.5,
+			description: "the sender domain's policy discourages mail from this host",
+		}}
+	}
+	return nil
+}
+
+// dkimChecks scores signatures, not signature count. A message carrying one
+// good signature and one broken one is signed by somebody, which is what the
+// receiver cares about, so a valid signature wins.
+func dkimChecks(authentication *models.AuthenticationResults) []check {
+	var valid, invalid bool
+	for _, dkim := range authentication.DKIMs {
+		if dkim == nil {
+			continue
+		}
+		switch authres.ResultValue(dkim.Result) {
+		case authres.ResultPass:
+			valid = true
+		case authres.ResultFail, authres.ResultHardFail, authres.ResultPermError:
+			invalid = true
+		}
+	}
+	switch {
+	case valid:
+		return []check{{
+			symbol:      symbolDKIMValid,
+			score:       -1.0,
+			description: "carries a valid DKIM signature",
+		}}
+	case invalid:
+		return []check{{
+			symbol:      symbolDKIMInvalid,
+			score:       2.0,
+			description: "carries a DKIM signature that did not verify",
+		}}
+	}
+	return nil
+}
+
+func dmarcChecks(authentication *models.AuthenticationResults) []check {
+	if authentication.DMARC == nil {
+		return nil
+	}
+	switch authres.ResultValue(authentication.DMARC.Result) {
+	case authres.ResultPass:
+		return []check{{
+			symbol:      symbolDMARCPass,
+			score:       -1.0,
+			description: "aligned with the sender domain's DMARC policy",
+		}}
+	case authres.ResultFail, authres.ResultHardFail:
+		return []check{{
+			symbol:      symbolDMARCFail,
+			score:       3.0,
+			description: "the sender domain's own DMARC policy considers this message unaligned",
+		}}
+	}
+	return nil
+}
+
+func arcChecks(authentication *models.AuthenticationResults) []check {
+	if authentication.ARC == nil {
+		return nil
+	}
+	if authres.ResultValue(authentication.ARC.Result) == authres.ResultPass {
+		return []check{{
+			symbol:      symbolARCPass,
+			score:       -1.0,
+			description: "an intact chain of custody through a forwarder",
+		}}
+	}
+	return nil
+}
+
+// helloChecks looks at the name the sending host announced itself with.
+func helloChecks(message *spamfilter.Message) []check {
+	hello := strings.TrimSpace(message.HelloName)
+	if hello == "" {
+		return nil
+	}
+	checks := make([]check, 0, 2)
+
+	// A bare name, or an address literal, is not what a mail server on the
+	// internet announces. Address literals are bracketed and legal, so they
+	// are not scored here.
+	if !strings.HasPrefix(hello, "[") && !strings.Contains(strings.TrimSuffix(hello, "."), ".") {
+		checks = append(checks, check{
+			symbol:      symbolHelloNotQualified,
+			score:       1.0,
+			description: "announced itself with a name that is not fully qualified",
+		})
+	}
+
+	// Claiming to be this server is something no legitimate sender does.
+	if message.ServerName != "" && strings.EqualFold(strings.TrimSuffix(hello, "."), strings.TrimSuffix(message.ServerName, ".")) {
+		checks = append(checks, check{
+			symbol:      symbolHelloIsOurName,
+			score:       2.5,
+			description: "announced itself using this server's own name",
+		})
+	}
+	return checks
+}

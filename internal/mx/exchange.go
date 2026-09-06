@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/bufferpool"
 	"github.com/ziyan/teanode/internal/util/clamav"
@@ -18,17 +19,16 @@ import (
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/periodic"
 	"github.com/ziyan/teanode/internal/util/resolver"
-	"github.com/ziyan/teanode/internal/util/spamc"
 )
 
 type exchange struct {
-	database db.Database
-	config   config.Store
-	resolver resolver.Resolver
-	spamc    spamc.Client
-	clamav   clamav.Client
-	locator  geoip.Locator
-	settings *Settings
+	database   db.Database
+	config     config.Store
+	resolver   resolver.Resolver
+	spamFilter spamfilter.Filter
+	clamav     clamav.Client
+	locator    geoip.Locator
+	settings   *Settings
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,16 +46,16 @@ type exchange struct {
 	storage storage.Storage
 }
 
-func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamc spamc.Client, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {
+func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamFilter spamfilter.Filter, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {
 	self := &exchange{
-		database: database,
-		config:   configuration,
-		storage:  storage,
-		resolver: resolver,
-		spamc:    spamc,
-		clamav:   clamav,
-		locator:  locator,
-		settings: settings,
+		database:   database,
+		config:     configuration,
+		storage:    storage,
+		resolver:   resolver,
+		spamFilter: spamFilter,
+		clamav:     clamav,
+		locator:    locator,
+		settings:   settings,
 	}
 	self.ctx, self.cancel = context.WithCancel(context.TODO())
 	self.periodicDeliver = periodic.New(self.ctx, &self.waitGroup, self.deliverOnce, &periodic.Settings{

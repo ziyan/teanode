@@ -104,6 +104,11 @@ readonly ALLOWED_HOSTS=(
   .wikipedia.org
   .openspf.org
   .spamhaus.org
+  # The default block lists and rule update channel the built-in spam filter
+  # ships with. They are public services this server queries by name, so the
+  # names are configuration rather than a private reference.
+  .spamcop.net
+  .spamassassin.org
   .semver.org
   .keepachangelog.com
   .unicode.org

@@ -662,11 +662,76 @@ the dashboard then asks the operator for the address instead.
 
 ### `antispam`
 
-**`enabled`** — See the field above; the two are set together.
+Spam scoring. The score a message is compared against is the domain's
+`spamFilterScoreThreshold`, not a setting here.
 
-**`host`** — See the field above; the two are set together.
+**`enabled`** — Whether messages are scored at all.
 
-**`port`** — See the field above; the two are set together.
+**`engine`** — What does the scoring: `builtin` for the filter inside this
+server, or `spamd` for an external SpamAssassin daemon. Leaving it empty is
+resolved rather than defaulted, so that an existing deployment keeps working
+without being edited: empty with a host configured means `spamd`, and empty
+with no host means `builtin`.
+
+**`spamd`** — Where the external daemon listens, used when `engine` is
+`spamd`. Its `host` and `port` are the two fields.
+
+**`host`**, **`port`** — Deprecated: use `spamd`. Kept because it is what
+deployments in the field have stored, and it still works.
+
+**`builtin`** — The filter inside this server. It scores from what the server
+already knows, from public block lists, from a classifier trained on your own
+mail, and optionally from public pattern rules. The four groups below can be
+turned on and off independently.
+
+**`signals`** — Scoring from what the server already established about a
+message: its authentication results, the sending host's confirmed reverse DNS
+name, and the name it gave in HELO. Costs no lookups, because all of it is
+computed before scoring begins. Its one field is `enabled`.
+
+**`dns`** — Reputation lookups in public block lists. A block list is queried
+with an ordinary DNS lookup, so this needs no service of its own.
+
+**`timeout`** — Bounds the whole set of block list lookups for one message.
+
+**`addressLists`** — The lists consulted about the connecting address. Each
+entry has a `zone` and a `weight`.
+
+**`domainLists`** — The lists consulted about domains found in the message.
+Each entry has a `zone` and a `weight`.
+
+**`zone`** — The suffix queries are built with, for example
+`zen.spamhaus.org`.
+
+**`weight`** — The points a listing contributes.
+
+**`maximumDomains`** — Caps how many domains from one message are looked up,
+so that a message full of links is not a burst of DNS queries.
+
+**`bayes`** — A classifier trained on this server's own mail, from messages
+marked as spam or not spam in the dashboard. It is usually the most accurate
+part of a spam filter, because it learns the mail you actually get.
+
+**`minimumMessages`** — How many messages must have been learned before the
+classifier is allowed to contribute anything. A classifier trained on four
+messages is confidently wrong.
+
+**`rules`** — Public pattern rules, downloaded into the database and evaluated
+in this process. Off by default: an upgrade should not begin downloading and
+running rule files nobody asked for.
+
+**`channels`** — The update channels to fetch, by name.
+
+**`updateInterval`** — How often to look for a new version of the rules.
+
+**`maximumEvaluationTime`** — Bounds one message's whole rule pass. Thousands
+of patterns run over text an attacker chose, so this is a limit rather than a
+target.
+
+The rule data published on `updates.spamassassin.org` is produced by the
+Apache SpamAssassin project and licensed under the Apache License 2.0. The
+built-in filter is a different program and is not SpamAssassin; it only reads
+that published rule data when you enable it.
 
 ### `geoip`
 

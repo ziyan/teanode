@@ -272,8 +272,26 @@ type SpamFilterResult struct {
 	// Spam symbols
 	Symbols []string `json:"symbols,omitempty"`
 
+	// Checks is the breakdown behind Score: which checks fired and what each
+	// one cost. Empty for a message scored by an external SpamAssassin
+	// daemon, whose protocol reports names without points.
+	Checks []SpamFilterCheck `json:"checks,omitempty"`
+
 	// Spam filter result
 	Result string `json:"result,omitempty"`
+}
+
+// SpamFilterCheck is one check that fired, and what it contributed.
+type SpamFilterCheck struct {
+	// Symbol is the check's short name, for example SPF_FAIL.
+	Symbol string `json:"symbol"`
+
+	// Score is the points this check contributed. Negative for a check that
+	// vouches for a message rather than accusing it.
+	Score float64 `json:"score"`
+
+	// Description is a sentence for a human reading the dashboard.
+	Description string `json:"description,omitempty"`
 }
 
 // ContentFilterResult holds authentication results related to content filtering.

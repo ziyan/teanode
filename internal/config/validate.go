@@ -528,11 +528,29 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		}
 	}
 	if self.Antispam.Enabled {
-		if self.Antispam.Host == "" {
-			validator.add("antispam.host", "required when antispam is enabled: where spamd is listening")
+		switch self.Antispam.Engine {
+		case "", AntispamEngineBuiltin, AntispamEngineSpamd:
+		default:
+			validator.add("antispam.engine",
+				`must be "builtin" for the filter inside this server, "spamd" for an external SpamAssassin daemon, or empty to keep what this server already does`)
 		}
-		if self.Antispam.Port == 0 {
-			validator.add("antispam.port", "required when antispam is enabled, usually 783")
+		if self.Antispam.ResolvedEngine() == AntispamEngineSpamd {
+			if self.Antispam.SpamdHost() == "" {
+				validator.add("antispam.spamd.host", "required when antispam.engine is spamd: where the daemon is listening")
+			}
+			if self.Antispam.SpamdPort() == 0 {
+				validator.add("antispam.spamd.port", "required when antispam.engine is spamd, usually 783")
+			}
+		}
+		for index, list := range self.Antispam.Builtin.DNS.AddressLists {
+			if list.Zone == "" {
+				validator.add(fmt.Sprintf("antispam.builtin.dns.addressLists[%d].zone", index), "required: the suffix queries are built with, for example zen.spamhaus.org")
+			}
+		}
+		for index, list := range self.Antispam.Builtin.DNS.DomainLists {
+			if list.Zone == "" {
+				validator.add(fmt.Sprintf("antispam.builtin.dns.domainLists[%d].zone", index), "required: the suffix queries are built with, for example dbl.spamhaus.org")
+			}
 		}
 	}
 	if self.GeoIP.Enabled {

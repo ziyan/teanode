@@ -83,8 +83,36 @@ func Default() *Configuration {
 			Port: 3310,
 		},
 		Antispam: Antispam{
-			Host: "127.0.0.1",
-			Port: 783,
+			Engine: AntispamEngineBuiltin,
+			Spamd: AntispamSpamd{
+				Host: "127.0.0.1",
+				Port: 783,
+			},
+			Builtin: AntispamBuiltin{
+				Signals: AntispamSignals{Enabled: true},
+				DNS: AntispamDNS{
+					Enabled: true,
+					Timeout: Duration(5 * time.Second),
+					AddressLists: []AntispamList{
+						{Zone: "zen.spamhaus.org", Weight: 3.0},
+					},
+					DomainLists: []AntispamList{
+						{Zone: "dbl.spamhaus.org", Weight: 3.0},
+					},
+					MaximumDomains: 10,
+				},
+				Bayes: AntispamBayes{
+					Enabled:         true,
+					MinimumMessages: 200,
+					Weight:          3.0,
+				},
+				Rules: AntispamRules{
+					Enabled:               false,
+					Channels:              []string{"updates.spamassassin.org"},
+					UpdateInterval:        Duration(24 * time.Hour),
+					MaximumEvaluationTime: Duration(2 * time.Second),
+				},
+			},
 		},
 		Storage: Storage{
 			Directory:      "mail",

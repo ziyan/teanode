@@ -37,7 +37,7 @@ type Settings struct {
 	Antivirus *ServiceSettings `json:"antivirus"`
 
 	// Spam scoring through SpamAssassin
-	Antispam *ServiceSettings `json:"antispam"`
+	Antispam *AntispamSettings `json:"antispam"`
 
 	// The mail server outgoing mail is handed to, instead of delivering it
 	// by MX lookup
@@ -186,6 +186,42 @@ type ServiceSettings struct {
 	Port    uint16 `json:"port"`
 }
 
+// AntispamSettings is how mail is scored for spam.
+//
+// Unlike the antivirus, there are two ways to do this — the filter inside
+// this server, or an external SpamAssassin daemon — so the host and port are
+// only half the answer and this cannot share ServiceSettings.
+type AntispamSettings struct {
+	Enabled bool `json:"enabled"`
+
+	// Engine is what the operator chose: "builtin", "spamd", or empty.
+	Engine string `json:"engine"`
+
+	// EffectiveEngine is what that resolves to, which is what the server is
+	// actually doing. An operator who never set the field should still be
+	// able to see which filter is running.
+	EffectiveEngine string `json:"effectiveEngine"`
+
+	// Host and Port are where the external daemon listens.
+	Host string `json:"host"`
+	Port uint16 `json:"port"`
+
+	// The built-in filter's parts, each independently switchable.
+	SignalsEnabled bool `json:"signalsEnabled"`
+	DNSEnabled     bool `json:"dnsEnabled"`
+	BayesEnabled   bool `json:"bayesEnabled"`
+	RulesEnabled   bool `json:"rulesEnabled"`
+
+	// BayesMinimumMessages is how many learned messages the classifier waits
+	// for before it contributes.
+	BayesMinimumMessages int64 `json:"bayesMinimumMessages"`
+
+	// BayesLearnedSpam and BayesLearnedHam are how many it has, so the
+	// dashboard can say how far along it is.
+	BayesLearnedSpam int64 `json:"bayesLearnedSpam"`
+	BayesLearnedHam  int64 `json:"bayesLearnedHam"`
+}
+
 func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
@@ -232,10 +268,17 @@ func describeSettings(configuration *config.Configuration) *Settings {
 			CertificateFile:  configuration.TLS.CertificateFile,
 			PrivateKeyFile:   configuration.TLS.PrivateKeyFile,
 		},
-		Antispam: &ServiceSettings{
-			Enabled: configuration.Antispam.Enabled,
-			Host:    configuration.Antispam.Host,
-			Port:    configuration.Antispam.Port,
+		Antispam: &AntispamSettings{
+			Enabled:              configuration.Antispam.Enabled,
+			Engine:               configuration.Antispam.Engine,
+			EffectiveEngine:      configuration.Antispam.ResolvedEngine(),
+			Host:                 configuration.Antispam.SpamdHost(),
+			Port:                 configuration.Antispam.SpamdPort(),
+			SignalsEnabled:       configuration.Antispam.Builtin.Signals.Enabled,
+			DNSEnabled:           configuration.Antispam.Builtin.DNS.Enabled,
+			BayesEnabled:         configuration.Antispam.Builtin.Bayes.Enabled,
+			RulesEnabled:         configuration.Antispam.Builtin.Rules.Enabled,
+			BayesMinimumMessages: configuration.Antispam.Builtin.Bayes.MinimumMessages,
 		},
 		Submission: &SubmissionSettings{
 			Host:          configuration.SMTP.Submission.Host,
@@ -298,6 +341,21 @@ type ServiceParameters struct {
 	Enabled *bool   `json:"enabled"`
 	Host    *string `json:"host"`
 	Port    *uint16 `json:"port"`
+}
+
+// AntispamParameters are the spam settings an operator can change.
+type AntispamParameters struct {
+	Enabled *bool   `json:"enabled"`
+	Engine  *string `json:"engine"`
+	Host    *string `json:"host"`
+	Port    *uint16 `json:"port"`
+
+	SignalsEnabled *bool `json:"signalsEnabled"`
+	DNSEnabled     *bool `json:"dnsEnabled"`
+	BayesEnabled   *bool `json:"bayesEnabled"`
+	RulesEnabled   *bool `json:"rulesEnabled"`
+
+	BayesMinimumMessages *int64 `json:"bayesMinimumMessages"`
 }
 
 // RelayParameters are the relay settings an operator can change.
@@ -379,7 +437,7 @@ type UpdateSettingsArguments struct {
 	S3         *S3Parameters         `json:"s3"`
 	Route53    *Route53Parameters    `json:"route53"`
 	Antivirus  *ServiceParameters    `json:"antivirus"`
-	Antispam   *ServiceParameters    `json:"antispam"`
+	Antispam   *AntispamParameters   `json:"antispam"`
 	Relay      *RelayParameters      `json:"relay"`
 	Submission *SubmissionParameters `json:"submission"`
 	Proxy      *ProxyParameters      `json:"proxy"`
@@ -432,8 +490,18 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 		}
 		if parameters := arguments.Antispam; parameters != nil {
 			applyBool(&configuration.Antispam.Enabled, parameters.Enabled)
-			applyString(&configuration.Antispam.Host, parameters.Host)
-			applyPort(&configuration.Antispam.Port, parameters.Port)
+			applyString(&configuration.Antispam.Engine, parameters.Engine)
+			// Written to the current field, never the deprecated one, so a
+			// server edited through the dashboard stops depending on it.
+			applyString(&configuration.Antispam.Spamd.Host, parameters.Host)
+			applyPort(&configuration.Antispam.Spamd.Port, parameters.Port)
+			applyBool(&configuration.Antispam.Builtin.Signals.Enabled, parameters.SignalsEnabled)
+			applyBool(&configuration.Antispam.Builtin.DNS.Enabled, parameters.DNSEnabled)
+			applyBool(&configuration.Antispam.Builtin.Bayes.Enabled, parameters.BayesEnabled)
+			applyBool(&configuration.Antispam.Builtin.Rules.Enabled, parameters.RulesEnabled)
+			if parameters.BayesMinimumMessages != nil {
+				configuration.Antispam.Builtin.Bayes.MinimumMessages = *parameters.BayesMinimumMessages
+			}
 		}
 		if parameters := arguments.Upgrade; parameters != nil {
 			applyBool(&configuration.Upgrade.Enabled, parameters.Enabled)
