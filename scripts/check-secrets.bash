@@ -85,8 +85,10 @@ readonly ALLOWED_HOSTS=(
   .example.org
   .example.edu
 
-  # Where the project lives, and what it is written in.
+  # Where the project lives, and what it is written in. The raw host is where
+  # the deployment guide fetches the compose file from.
   .github.com
+  raw.githubusercontent.com
   .golang.org
   .go.dev
   .gopkg.in
