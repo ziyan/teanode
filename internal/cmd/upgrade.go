@@ -63,7 +63,7 @@ func runUpgradeStatus(ctx context.Context, command *cli.Command) error {
 	}
 	upgrade, err := client.GetUpgrade(ctx, connection, command.Bool("check"))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(upgrade)
@@ -128,7 +128,7 @@ func runUpgradeApply(ctx context.Context, command *cli.Command) error {
 	}
 	current, err := client.GetUpgrade(ctx, connection, false)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if !current.Applicable {
 		reason := current.Reason

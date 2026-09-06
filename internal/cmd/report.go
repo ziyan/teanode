@@ -55,8 +55,9 @@ func runReportList(ctx context.Context, command *cli.Command) error {
 	}
 	reports, err := client.ListReports(ctx, connection, domainId, int(command.Int("first")))
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
+	defer noteCapped(len(reports), int(command.Int("first")), "teanode report list")
 	if command.Bool("json") {
 		return PrintJSON(reports)
 	}
@@ -91,7 +92,7 @@ func alignment(report *client.Report) string {
 func runReportGet(ctx context.Context, command *cli.Command) error {
 	reportId := command.Args().First()
 	if reportId == "" {
-		return fmt.Errorf("which report? usage: teanode report get <report-id>")
+		return usage("which report? usage: teanode report get <report-id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -99,7 +100,7 @@ func runReportGet(ctx context.Context, command *cli.Command) error {
 	}
 	report, err := client.GetReport(ctx, connection, reportId)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "report "+reportId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(report)

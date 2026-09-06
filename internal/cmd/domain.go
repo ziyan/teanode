@@ -145,7 +145,7 @@ func runDomainList(ctx context.Context, command *cli.Command) error {
 	}
 	domains, err := client.ListDomains(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(domains)
@@ -173,7 +173,7 @@ func runDomainList(ctx context.Context, command *cli.Command) error {
 func runDomainGet(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode domain get <domain>")
+		return usage("which domain? usage: teanode domain get <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -249,7 +249,7 @@ func printRecords(records *client.RecordSet) error {
 func runDomainCreate(ctx context.Context, command *cli.Command) error {
 	name := strings.ToLower(strings.TrimSpace(command.Args().First()))
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode domain create <domain>")
+		return usage("which domain? usage: teanode domain create <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -259,7 +259,7 @@ func runDomainCreate(ctx context.Context, command *cli.Command) error {
 	parameters.Domain = &name
 	domain, err := client.CreateDomain(ctx, connection, parameters)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(domain)
@@ -271,7 +271,7 @@ func runDomainCreate(ctx context.Context, command *cli.Command) error {
 func runDomainUpdate(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode domain update <domain> [--comment ...]")
+		return usage("which domain? usage: teanode domain update <domain> [--comment ...]")
 	}
 	parameters := domainParameters(command)
 	if *parameters == (client.DomainParameters{}) {
@@ -303,7 +303,7 @@ func runDomainUpdate(ctx context.Context, command *cli.Command) error {
 func runDomainDelete(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode domain delete <domain>")
+		return usage("which domain? usage: teanode domain delete <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -327,7 +327,7 @@ func runDomainDelete(ctx context.Context, command *cli.Command) error {
 func runDomainCheck(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode domain check <domain>")
+		return usage("which domain? usage: teanode domain check <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -352,7 +352,7 @@ func runDomainCheck(ctx context.Context, command *cli.Command) error {
 func requireDomain(ctx context.Context, command *cli.Command, connection *client.Client, name string) (*client.Domain, error) {
 	domain, err := client.FindDomain(ctx, connection, name)
 	if err != nil {
-		return nil, describeConnectionError(command, err)
+		return nil, describeError(command, err)
 	}
 	if domain != nil {
 		return domain, nil

@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/web"
@@ -565,6 +566,18 @@ func TestBearerTokenAuthentication(t *testing.T) {
 	}
 	if err := authenticator.RevokeToken("ziyan", revoked.ID); err != nil {
 		t.Fatalf("RevokeToken: %s", err)
+	}
+	// A token that is not there, and one that is somebody else's, are the
+	// same "not found": revoking must not be a way of listing identifiers.
+	if err := authenticator.RevokeToken("ziyan", "01nope"); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("revoking an unknown token: got %v, want ErrNotFound", err)
+	}
+	orphaned, _, err := authenticator.IssueToken("temporary", "theirs", 0)
+	if err != nil {
+		t.Fatalf("IssueToken: %s", err)
+	}
+	if err := authenticator.RevokeToken("ziyan", orphaned.ID); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("revoking somebody else's token: got %v, want ErrNotFound", err)
 	}
 
 	local, err := store.Current().MintLocalToken(time.Minute)

@@ -73,6 +73,7 @@ func NewCredentialCommand() *cli.Command {
 				Aliases:   []string{"remove"},
 				Usage:     "delete a credential",
 				ArgsUsage: "[domain] <id>",
+				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runCredentialDelete,
 			},
 		},
@@ -82,7 +83,7 @@ func NewCredentialCommand() *cli.Command {
 func runCredentialCreate(ctx context.Context, command *cli.Command) error {
 	domainName := command.Args().First()
 	if domainName == "" {
-		return fmt.Errorf("which domain? usage: teanode credential create <domain>")
+		return usage("which domain? usage: teanode credential create <domain>")
 	}
 
 	connection, err := openClient(command)
@@ -131,7 +132,7 @@ func runCredentialList(ctx context.Context, command *cli.Command) error {
 
 	domains, err := client.ListDomains(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if name := command.Args().First(); name != "" {
 		domain, err := requireDomain(ctx, command, connection, name)
@@ -198,7 +199,7 @@ func runCredentialList(ctx context.Context, command *cli.Command) error {
 func runCredentialUpdate(ctx context.Context, command *cli.Command) error {
 	credentialId := command.Args().First()
 	if credentialId == "" {
-		return fmt.Errorf("which credential? usage: teanode credential update <id> [--disabled]")
+		return usage("which credential? usage: teanode credential update <id> [--disabled]")
 	}
 	parameters := &client.CredentialParameters{}
 	if command.IsSet("comment") {
@@ -223,7 +224,7 @@ func runCredentialUpdate(ctx context.Context, command *cli.Command) error {
 	}
 	credential, err := client.UpdateCredential(ctx, connection, credentialId, parameters)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "credential "+credentialId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(credential)
@@ -247,7 +248,7 @@ func runCredentialDelete(ctx context.Context, command *cli.Command) error {
 	case 2:
 		domainName, credentialId = command.Args().Get(0), command.Args().Get(1)
 	default:
-		return fmt.Errorf("which credential? usage: teanode credential delete <id>")
+		return usage("which credential? usage: teanode credential delete <id>")
 	}
 
 	connection, err := openClient(command)
@@ -259,8 +260,11 @@ func runCredentialDelete(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 	}
+	if err := confirm(command, fmt.Sprintf("This deletes credential %s; anything still configured with it stops being able to send.", credentialId)); err != nil {
+		return err
+	}
 	if err := client.DeleteCredential(ctx, connection, credentialId); err != nil {
-		return describeConnectionError(command, err)
+		return describeNotFound(command, err, "credential "+credentialId)
 	}
 
 	fmt.Printf("removed %s\n\n", credentialId)

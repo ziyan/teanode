@@ -67,7 +67,7 @@ func runSettingsShow(ctx context.Context, command *cli.Command) error {
 	}
 	settings, err := client.GetSettings(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 
 	section := command.Args().First()
@@ -159,7 +159,7 @@ func runSettingsSet(ctx context.Context, command *cli.Command) error {
 	section := command.Args().First()
 	pairs := command.Args().Tail()
 	if section == "" || len(pairs) == 0 {
-		return fmt.Errorf("usage: teanode settings set <section> key=value [key=value ...]")
+		return usage("usage: teanode settings set <section> key=value [key=value ...]")
 	}
 
 	connection, err := openClient(command)
@@ -168,7 +168,7 @@ func runSettingsSet(ctx context.Context, command *cli.Command) error {
 	}
 	schema, err := client.Introspect(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	inputType, err := sectionInput(schema, section)
 	if err != nil {
@@ -226,7 +226,7 @@ func runSettingsSet(ctx context.Context, command *cli.Command) error {
 func runSettingsDescribe(ctx context.Context, command *cli.Command) error {
 	section := command.Args().First()
 	if section == "" {
-		return fmt.Errorf("which section? usage: teanode settings describe <section>")
+		return usage("which section? usage: teanode settings describe <section>")
 	}
 	schema, err := introspect(ctx, command)
 	if err != nil {

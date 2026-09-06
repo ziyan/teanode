@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,10 @@ func NewAuthCommand() *cli.Command {
 						Name:  "insecure",
 						Usage: "do not verify the server's certificate, and remember that in the profile",
 					},
+					&cli.BoolFlag{
+						Name:  "read-only",
+						Usage: "save a profile that can look but not change anything; for a script or an agent",
+					},
 				},
 				Action: runAuthLogin,
 			},
@@ -99,6 +104,20 @@ func NewAuthCommand() *cli.Command {
 				ArgsUsage: "<profile>",
 				Action:    runAuthRemove,
 			},
+			{
+				Name:      "set-read-only",
+				Usage:     "make a saved profile refuse changes, or allow them again",
+				ArgsUsage: "<profile> <true|false>",
+				Description: "A read-only profile refuses every change before it is sent, on this\n" +
+					"machine, so a script or an agent given the profile can look but not\n" +
+					"touch. The token itself is unchanged; the server would accept the\n" +
+					"change, and this profile does not ask it to.\n\n" +
+					"  teanode auth set-read-only mail.example.com true\n\n" +
+					"TEANODE_READ_ONLY=1 in the environment, or --read-only on a command,\n" +
+					"does the same for one shell or one command, and no profile setting\n" +
+					"overrides it.",
+				Action: runAuthSetReadOnly,
+			},
 		},
 	}
 }
@@ -115,9 +134,16 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	}
 	name := command.String("name")
 	insecure := command.Bool("insecure") || command.Root().Bool("insecure")
+	readOnly := command.Bool("read-only")
 
 	// Signing in again to a saved profile need not repeat its address, and
-	// keeps its certificate posture unless told otherwise.
+	// keeps its certificate posture and its read-only bit unless told
+	// otherwise. With neither an address nor a name, the profile being
+	// re-signed in to is the active one: the common case is a token that has
+	// expired on the server somebody was already using.
+	if serverUrl == "" && name == "" && profiles.Active != "" {
+		name = profiles.Active
+	}
 	if existing := profiles.Find(name); existing != nil {
 		if serverUrl == "" {
 			serverUrl = existing.URL
@@ -125,9 +151,12 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		if !command.IsSet("insecure") {
 			insecure = insecure || existing.Insecure
 		}
+		if !command.IsSet("read-only") {
+			readOnly = existing.ReadOnly
+		}
 	}
 	if serverUrl == "" {
-		return fmt.Errorf("which server? usage: teanode auth login --url https://mail.example.com")
+		return usage("which server? usage: teanode auth login --url https://mail.example.com")
 	}
 	serverUrl = client.NormalizeURL(serverUrl)
 	if name == "" {
@@ -137,7 +166,7 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("%q is the name of the console and cannot be a saved profile; pass --name", LocalProfileName)
 	}
 
-	profile := &Profile{Name: name, URL: serverUrl, Insecure: insecure}
+	profile := &Profile{Name: name, URL: serverUrl, Insecure: insecure, ReadOnly: readOnly}
 	if command.IsSet("token") {
 		token := strings.TrimSpace(command.String("token"))
 		if token == "-" {
@@ -187,6 +216,9 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	fmt.Printf("Signed in to %s as %s; saved profile %q, now active.\n", profile.URL, who, profile.Name)
 	if profile.Insecure {
 		fmt.Printf("This profile does not verify the server's certificate.\n")
+	}
+	if profile.ReadOnly {
+		fmt.Printf("This profile is read-only: commands through it can look but not change anything.\n")
 	}
 	return nil
 }
@@ -243,6 +275,9 @@ func runAuthLogout(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no profile called %q; 'teanode auth list' shows them", name)
 	}
 
+	// Revoked whether or not the profile is read-only: forgetting a profile
+	// and leaving its token live is the worse outcome, and signing out is
+	// the reader's own act.
 	if !command.Bool("keep-token") && profile.TokenID != "" {
 		connection, err := client.New(client.Options{URL: profile.URL, Token: profile.Token, Insecure: profile.Insecure})
 		if err != nil {
@@ -302,6 +337,7 @@ func runAuthStatus(ctx context.Context, command *cli.Command) error {
 			"url":       resolved.URL,
 			"local":     resolved.Local,
 			"insecure":  resolved.Insecure,
+			"readOnly":  resolved.ReadOnly,
 			"reachable": reachable,
 			"username":  username,
 			"error":     problem,
@@ -313,6 +349,9 @@ func runAuthStatus(ctx context.Context, command *cli.Command) error {
 		fmt.Printf("Acts as:  %s\n", username)
 	} else {
 		fmt.Printf("Problem:  %s\n", problem)
+	}
+	if resolved.ReadOnly {
+		fmt.Printf("Access:   read-only; changes are refused before they are sent\n")
 	}
 	if resolved.Insecure {
 		fmt.Printf("Warning:  the server's certificate is not verified\n")
@@ -333,6 +372,7 @@ func runAuthList(ctx context.Context, command *cli.Command) error {
 			Username string `json:"username,omitempty"`
 			TokenID  string `json:"tokenId,omitempty"`
 			Insecure bool   `json:"insecure"`
+			ReadOnly bool   `json:"readOnly"`
 			Active   bool   `json:"active"`
 		}
 		listing := make([]listed, 0, len(profiles.Profiles))
@@ -340,7 +380,7 @@ func runAuthList(ctx context.Context, command *cli.Command) error {
 			profile := profiles.Profiles[name]
 			listing = append(listing, listed{
 				Name: name, URL: profile.URL, Username: profile.Username, TokenID: profile.TokenID,
-				Insecure: profile.Insecure, Active: name == profiles.Active,
+				Insecure: profile.Insecure, ReadOnly: profile.ReadOnly, Active: name == profiles.Active,
 			})
 		}
 		return PrintJSON(listing)
@@ -361,15 +401,19 @@ func runAuthList(ctx context.Context, command *cli.Command) error {
 		if profile.Insecure {
 			insecure = "yes"
 		}
-		rows = append(rows, []string{active, name, profile.URL, profile.Username, insecure})
+		readOnly := ""
+		if profile.ReadOnly {
+			readOnly = "yes"
+		}
+		rows = append(rows, []string{active, name, profile.URL, profile.Username, readOnly, insecure})
 	}
-	return printTable([]string{"", "NAME", "URL", "ACTS AS", "INSECURE"}, rows)
+	return printTable([]string{"", "NAME", "URL", "ACTS AS", "READ ONLY", "INSECURE"}, rows)
 }
 
 func runAuthSwitch(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which profile? usage: teanode auth switch <profile>")
+		return usage("which profile? usage: teanode auth switch <profile>")
 	}
 	profiles, err := LoadProfiles()
 	if err != nil {
@@ -389,7 +433,7 @@ func runAuthSwitch(ctx context.Context, command *cli.Command) error {
 func runAuthRemove(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which profile? usage: teanode auth remove <profile>")
+		return usage("which profile? usage: teanode auth remove <profile>")
 	}
 	profiles, err := LoadProfiles()
 	if err != nil {
@@ -408,5 +452,34 @@ func runAuthRemove(ctx context.Context, command *cli.Command) error {
 		fmt.Printf("; revoke it with 'teanode token revoke %s' or from the dashboard", profile.TokenID)
 	}
 	fmt.Println(".")
+	return nil
+}
+
+func runAuthSetReadOnly(ctx context.Context, command *cli.Command) error {
+	name, value := command.Args().Get(0), command.Args().Get(1)
+	if name == "" || value == "" {
+		return usage("usage: teanode auth set-read-only <profile> <true|false>")
+	}
+	readOnly, err := strconv.ParseBool(value)
+	if err != nil {
+		return usage(fmt.Sprintf("%q is not true or false; usage: teanode auth set-read-only <profile> <true|false>", value))
+	}
+	profiles, err := LoadProfiles()
+	if err != nil {
+		return err
+	}
+	profile := profiles.Find(name)
+	if profile == nil {
+		return usage(fmt.Sprintf("no profile called %q; 'teanode auth list' shows them", name))
+	}
+	profile.ReadOnly = readOnly
+	if err := profiles.Save(); err != nil {
+		return err
+	}
+	if readOnly {
+		fmt.Printf("Profile %q is read-only: commands through it can look but not change anything.\n", name)
+	} else {
+		fmt.Printf("Profile %q can make changes again.\n", name)
+	}
 	return nil
 }

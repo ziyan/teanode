@@ -26,9 +26,10 @@ var log = logging.MustGetLogger("client") //nolint:unused
 
 // Client is a connection to one server's API.
 type Client struct {
-	url    string
-	token  string
-	client *http.Client
+	url      string
+	token    string
+	client   *http.Client
+	readOnly bool
 }
 
 // Options configure a Client.
@@ -51,6 +52,11 @@ type Options struct {
 
 	// Timeout for a single request. Zero means one minute.
 	Timeout time.Duration
+
+	// ReadOnly refuses every mutation before it is sent, so that a profile
+	// handed to a script or an agent can look but not change. Queries,
+	// introspection and downloads go through as they would otherwise.
+	ReadOnly bool
 }
 
 // NormalizeURL is how a server is named everywhere the client remembers one:
@@ -87,12 +93,17 @@ func New(options Options) (*Client, error) {
 		}
 	}
 
-	return &Client{url: url, token: options.Token, client: httpClient}, nil
+	return &Client{url: url, token: options.Token, client: httpClient, readOnly: options.ReadOnly}, nil
 }
 
 // URL returns the server this client talks to.
 func (self *Client) URL() string {
 	return self.url
+}
+
+// ReadOnly says whether this client refuses mutations.
+func (self *Client) ReadOnly() bool {
+	return self.readOnly
 }
 
 // Error is a message the server returned for a query.
@@ -123,6 +134,12 @@ func (self Errors) Error() string {
 // Execute runs a query or mutation and decodes the data into result, which
 // should be a pointer to a struct with the field names the query selects.
 func (self *Client) Execute(ctx context.Context, query string, variables map[string]any, result any) error {
+	// Checked before anything else, so that a refused mutation has not been
+	// encoded, let alone sent, and the caller can be sure nothing changed.
+	if self.readOnly && IsMutationDocument(query) {
+		return &ReadOnlyError{URL: self.url}
+	}
+
 	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
 	if err != nil {
 		return fmt.Errorf("client: cannot encode the query: %w", err)
@@ -139,14 +156,14 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 
 	response, err := self.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("client: cannot reach %s: %w", self.url, err)
+		return &ConnectionError{URL: self.url, Cause: err}
 	}
 	defer func() {
 		_ = response.Body.Close()
 	}()
 
 	if response.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("client: %s refused the token; sign in again with 'teanode auth login', or run this on the server itself", self.url)
+		return fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
 	}
 
 	var envelope struct {
@@ -157,7 +174,7 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
 	}
 	if len(envelope.Errors) > 0 {
-		return envelope.Errors
+		return classify(envelope.Errors)
 	}
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
@@ -185,13 +202,17 @@ func (self *Client) Download(ctx context.Context, path string) (*http.Response, 
 	}
 	response, err := self.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("client: cannot reach %s: %w", self.url, err)
+		return nil, &ConnectionError{URL: self.url, Cause: err}
 	}
-	if response.StatusCode == http.StatusUnauthorized {
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
 		_ = response.Body.Close()
-		return nil, fmt.Errorf("client: %s refused the token; sign in again with 'teanode auth login', or run this on the server itself", self.url)
-	}
-	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	case http.StatusNotFound:
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 404 for %s", ErrNotFound, self.url, path)
+	default:
 		_ = response.Body.Close()
 		return nil, fmt.Errorf("client: %s answered HTTP %d for %s", self.url, response.StatusCode, path)
 	}

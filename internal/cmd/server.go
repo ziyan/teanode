@@ -61,7 +61,7 @@ func runServerStatus(ctx context.Context, command *cli.Command) error {
 	}
 	status, err := client.GetServerStatus(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(status)
@@ -93,7 +93,7 @@ func runServerRestart(ctx context.Context, command *cli.Command) error {
 	}
 	status, err := client.GetServerStatus(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if err := confirm(command, fmt.Sprintf("This restarts instance %s; mail is refused for the few seconds it takes.", status.Instance)); err != nil {
 		return err
@@ -120,7 +120,7 @@ func runServerAddresses(ctx context.Context, command *cli.Command) error {
 	}
 	addresses, err := client.GetServerAddresses(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(addresses)
@@ -149,7 +149,7 @@ func runServerIdentity(ctx context.Context, command *cli.Command) error {
 	}
 	identity, err := client.GetOutgoingIdentity(ctx, connection)
 	if err != nil {
-		return describeConnectionError(command, err)
+		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(identity)

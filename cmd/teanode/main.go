@@ -47,6 +47,11 @@ func main() {
 				Usage:   "do not verify the server's certificate; for a development server with a self-signed one",
 				Sources: cli.EnvVars("TEANODE_INSECURE"),
 			},
+			&cli.BoolFlag{
+				Name:    "read-only",
+				Usage:   "refuse to change anything on the server, whatever the profile allows; for handing the tool to a script or an agent that should only look",
+				Sources: cli.EnvVars("TEANODE_READ_ONLY"),
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Aliases: []string{"l"},
@@ -58,6 +63,16 @@ func main() {
 			cmd.SetupLogging(command.String("log-level"))
 			return ctx, nil
 		},
+		// The library's own answer to a command it does not know is "No help
+		// topic for 'x'" and exit code 3, which reads as a help system with a
+		// page missing, and 3 is the code a read-only refusal exits with.
+		CommandNotFound: func(ctx context.Context, command *cli.Command, name string) {
+			fmt.Fprintf(os.Stderr, "unknown command %q; 'teanode --help' lists them\n", name)
+			os.Exit(cmd.ExitUsage)
+		},
+		// The library would otherwise print and exit on its own for an error
+		// carrying an exit code, before main below could print it as JSON.
+		ExitErrHandler: func(ctx context.Context, command *cli.Command, err error) {},
 		Commands: []*cli.Command{
 			cmd.NewAuthCommand(),
 			cmd.NewDomainCommand(),
@@ -81,11 +96,29 @@ func main() {
 		},
 	}
 
+	setUsageErrorHandler(command)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Errors are printed here rather than left to the library, so that a
+	// command asked for JSON fails in JSON, and the exit code says what kind
+	// of failure it was.
 	if err := command.Run(ctx, os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(1)
+		cmd.PrintError(err)
+		os.Exit(cmd.ExitCode(err))
+	}
+}
+
+// setUsageErrorHandler makes a flag that does not exist, or a value that is
+// not a number, exit with the usage code and say where the flags are listed.
+// The library consults the handler of the command that was parsing, not the
+// root's, so every command in the tree gets one.
+func setUsageErrorHandler(command *cli.Command) {
+	command.OnUsageError = func(ctx context.Context, failed *cli.Command, err error, isSubcommand bool) error {
+		return cli.Exit(fmt.Sprintf("%s; '%s --help' shows the flags", err, failed.FullName()), cmd.ExitUsage)
+	}
+	for _, subcommand := range command.Commands {
+		setUsageErrorHandler(subcommand)
 	}
 }

@@ -164,7 +164,7 @@ func requireTemplate(ctx context.Context, connection *client.Client, domain *cli
 func domainAndTemplate(ctx context.Context, command *cli.Command, verb string) (*client.Client, *client.Domain, *client.Template, error) {
 	name, templateName := command.Args().Get(0), command.Args().Get(1)
 	if name == "" || templateName == "" {
-		return nil, nil, nil, fmt.Errorf("usage: teanode template %s <domain> <name>", verb)
+		return nil, nil, nil, usage(fmt.Sprintf("usage: teanode template %s <domain> <name>", verb))
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -184,7 +184,7 @@ func domainAndTemplate(ctx context.Context, command *cli.Command, verb string) (
 func runTemplateList(ctx context.Context, command *cli.Command) error {
 	name := command.Args().First()
 	if name == "" {
-		return fmt.Errorf("which domain? usage: teanode template list <domain>")
+		return usage("which domain? usage: teanode template list <domain>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -260,7 +260,7 @@ func runTemplateGet(ctx context.Context, command *cli.Command) error {
 func runTemplateCreate(ctx context.Context, command *cli.Command) error {
 	name, templateName := command.Args().Get(0), command.Args().Get(1)
 	if name == "" || templateName == "" {
-		return fmt.Errorf("usage: teanode template create <domain> <name>")
+		return usage("usage: teanode template create <domain> <name>")
 	}
 	parameters := &client.TemplateParameters{}
 	if err := applyTemplateFlags(command, parameters); err != nil {
