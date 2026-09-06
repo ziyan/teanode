@@ -461,9 +461,15 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, spfErr)
 			return authenticationResults, nil, mailparse.ErrSPFValidationError
 		}
+		// A verification error is not a failed signature. It means the key
+		// could not be fetched or read — a resolver hiccup, a malformed
+		// record at the signer's end — and RFC 6376 §6.1.2 says that makes
+		// the signature unverifiable, not the message rejectable. Refusing
+		// here with a permanent 550 bounced a school's mail sent through
+		// SparkPost, with SPF passing, over a key lookup. Logged, recorded as
+		// no signature verdict, and left to DMARC and the spam filter.
 		if dkimErr != nil {
-			log.Errorf("failed to verify dkim: %s", dkimErr)
-			return authenticationResults, nil, mailparse.ErrDKIMVerificationFailed
+			log.Warningf("could not verify dkim for sender %q: %s", envelope.Sender, dkimErr)
 		}
 		if dmarcErr != nil {
 			log.Errorf("failed to verify dmarc: %s", dmarcErr)
@@ -484,10 +490,8 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 				log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q", envelope.IP, senderDomain, envelope.Sender, spfResult)
 				return authenticationResults, nil, mailparse.ErrSPFValidationFailed
 			}
-			for _, dkimResult := range dkimResults {
-				if dkimResult.Result != dkim.ResultPass {
-					return authenticationResults, nil, mailparse.ErrDKIMVerificationFailed
-				}
+			if err := dkimVerdict(dkimResults, spfResult); err != nil {
+				return authenticationResults, nil, err
 			}
 		}
 
@@ -741,4 +745,29 @@ func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string,
 		}
 	}
 	return deliveries, nil
+}
+
+// dkimVerdict decides, for a sender with no DMARC policy, whether the DKIM
+// results alone are grounds to refuse the message.
+//
+// They almost never are. Mail through a forwarder or a relay carries two
+// signatures — the original, broken in transit, and the relay's, intact —
+// and refusing on the first non-passing one bounced ten legitimate messages
+// through Apple's private relay in six days, all with SPF passing and one
+// valid signature each. RFC 6376 §6.3: verifiers should not reject a message
+// solely on a failed signature.
+//
+// So a message is refused here only when it carries signatures, none of them
+// verify, and SPF did not pass either — the one combination where nothing at
+// all vouches for it.
+func dkimVerdict(results []*dkim.Verification, spfResult spf.Result) error {
+	if len(results) == 0 || spfResult == spf.ResultPass {
+		return nil
+	}
+	for _, result := range results {
+		if result.Result == dkim.ResultPass {
+			return nil
+		}
+	}
+	return mailparse.ErrDKIMVerificationFailed
 }
