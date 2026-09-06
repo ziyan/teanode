@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-06
+
+### Added
+
+- Read-only profiles: `teanode auth login --read-only`, `teanode auth set-read-only`, and `--read-only` or `TEANODE_READ_ONLY=1` for one command or one shell, refuse every change on this machine before it is sent. For handing the tool to a script or an agent that should be able to look but not touch. (#26)
+- The client's exit code says what kind of thing went wrong: 2 for a command called wrongly, 3 for a change refused by read-only, 4 for something the server does not have, 5 for a refused token, 6 for a server that could not be reached. With `--json`, a failure is printed as JSON on standard error as well. (#26)
+
+### Changed
+
+- A command that would ask for confirmation refuses at once, with a `--force` hint, when standard input is not a terminal; `TEANODE_FORCE=1` answers for a whole shell. `teanode alias delete`, `credential delete`, `user delete` and `passkey delete` now ask first, like `domain delete` already did — a script doing those passes `--force`. (#26)
+- A refused token, a missing message or delivery, and a typo in a `mail list` filter are now reported as what they are, rather than as the server's error value or an empty list. A list that stopped at `--first` says so on standard error. (#26)
+
+### Fixed
+
+- `teanode passkey list` showed the last-used address with a port after it; the port is no longer recorded. Revoking a token that is not the caller's said "session is not valid"; it now says the token was not found. (#26)
+
 ## [0.6.0] - 2026-09-06
 
 ### Added
