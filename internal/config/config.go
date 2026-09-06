@@ -1,14 +1,15 @@
-// Package config defines the TeaNode configuration file and the store that
-// owns it.
+// Package config defines the TeaNode configuration and the store that owns it.
 //
-// The configuration file, by convention /opt/teanode/teanode.yaml, is the
-// single source of truth for everything an operator can change: which domains
-// are served, which aliases forward where, which credentials may relay mail,
-// who may log into the dashboard, and which optional integrations are enabled.
-// The running server may rewrite the file when configuration is changed
-// through the dashboard, so the file is both hand-editable and machine
-// written. Comments written by hand do not survive a machine write; a fixed
-// explanatory header is re-emitted on every write.
+// The configuration is the single source of truth for everything an operator
+// can change: which domains are served, which aliases forward where, which
+// credentials may relay mail, who may log into the dashboard, and which
+// optional integrations are enabled. It is stored in the database as one
+// document, so several instances share one answer and a change made in the
+// dashboard reaches all of them; see internal/configdb.
+//
+// The YAML in this package is what "config export" writes and "config import"
+// reads, which is how a server is described in a file, reviewed and loaded.
+// It is not what the running server reads.
 package config
 
 import (
@@ -298,9 +299,13 @@ type Route53 struct {
 	Nameservers []string `yaml:"nameservers,omitempty"`
 }
 
-// Database points at the PostgreSQL server that stores mail, deliveries,
-// DMARC reports, usage counters and mail templates. Configuration is not
-// stored there; this file is.
+// Database points at the PostgreSQL server, which holds everything: the
+// configuration, the signing keys, mail, deliveries, DMARC reports, usage
+// counters and mail templates. It is the one thing worth backing up.
+//
+// These settings are the exception to configuration living in the database,
+// for the obvious reason: they are how it is reached. They come from
+// TEANODE_DATABASE_URL and are read on every start.
 type Database struct {
 	Host     string `yaml:"host"`
 	Port     uint16 `yaml:"port"`
@@ -310,7 +315,19 @@ type Database struct {
 
 	// SSLMode is passed to the PostgreSQL driver: disable, allow, prefer,
 	// require, verify-ca or verify-full.
+	//
+	// "require" encrypts the connection but believes whatever answers on the
+	// port. "verify-full" also checks that the certificate is signed by
+	// SSLRootCertificate and names the host being dialled, which is what stops
+	// something else on the network from answering as the database.
 	SSLMode string `yaml:"sslMode"`
+
+	// SSLRootCertificate is the PEM file the server's certificate is checked
+	// against, for the two verify modes. The compose file generates one and
+	// mounts it at /certs/server.crt; a managed PostgreSQL will publish its
+	// own. Empty means the system trust store, which a self-signed certificate
+	// is not in.
+	SSLRootCertificate string `yaml:"sslRootCertificate,omitempty"`
 
 	// LogQueries echoes every SQL statement to the log. Very noisy.
 	LogQueries bool `yaml:"logQueries"`

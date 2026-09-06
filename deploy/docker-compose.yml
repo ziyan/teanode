@@ -20,17 +20,61 @@
 # through PostgreSQL, the stored messages through MinIO, and half-finished
 # passkey sign-ins through Redis. Give each one its own TEANODE_INSTANCE_ID.
 services:
+  # A certificate for PostgreSQL, so the server's connection to it is
+  # encrypted. Generated once, here, because the official postgres image ships
+  # with ssl off and no certificate: without this the only honest setting is
+  # sslmode=disable, and the database password and every message crosses the
+  # Docker network in the clear.
+  #
+  # It is self-signed and its own authority, with the name "postgres" — the
+  # service name the server dials — so the server can verify it with
+  # sslmode=verify-full rather than merely encrypting. Ten years, because
+  # nobody wants their mail server to stop on a morning they had forgotten
+  # about; it protects one hop on a private network.
+  #
+  # Uses the postgres image because it already has openssl, and the file has
+  # to be owned by the uid postgres runs as or the server refuses to start.
+  postgres-certs:
+    image: postgres:17
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /certs/server.key ]; then
+          openssl req -new -x509 -days 3650 -nodes \
+            -subj "/CN=postgres" -addext "subjectAltName=DNS:postgres" \
+            -out /certs/server.crt -keyout /certs/server.key
+        fi
+        chown 999:999 /certs/server.key /certs/server.crt
+        chmod 600 /certs/server.key
+        chmod 644 /certs/server.crt
+    volumes:
+      - ./data/certs:/certs
+
   postgres:
     image: postgres:17
     restart: always
+    depends_on:
+      postgres-certs:
+        condition: service_completed_successfully
     environment:
       POSTGRES_DB: teanode
       POSTGRES_USER: teanode
       POSTGRES_PASSWORD: teanode
+    # Serve TLS. The connection string in .env asks for it and verifies the
+    # certificate, so turning this off means the server can no longer connect.
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+      - ./data/certs:/certs:ro
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
@@ -150,24 +194,52 @@ services:
 
   # Optional. Remove this service and set antispam.enabled to false to skip
   # spam scoring.
+  #
+  # The server talks spamd on 783. There is no official SpamAssassin image, and
+  # the one this file used to name was deleted from Docker Hub — which broke
+  # "docker compose up -d" entirely rather than just the spam scoring, because
+  # compose pulls every service before it starts any of them. Hence a pinned
+  # tag, and a note to look at it when you upgrade.
+  #
+  # The volume holds the rules sa-update fetches; the image refreshes them
+  # daily on its own.
   spamassassin:
-    image: tiredofit/spamassassin
+    image: instantlinux/spamassassin:4.0.2-3
     restart: always
     ports:
       - "127.0.0.1:783:783"
     volumes:
-      - ./data/spamassassin/config:/config
-      - ./data/spamassassin/data:/data
-      - ./data/spamassassin/logs:/logs
-    environment:
-      UPDATE_PERIOD: '*/15 * * * *'
-      CHILD_MAX: 2
-      CHILD_MAX_SPARE: 1
-      ENABLE_LEARNING: 'FALSE'
+      - ./data/spamassassin:/var/lib/spamassassin
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     logging:
       options:
         max-size: 50M
         max-file: "10"
+
+  # Creates the data directory and gives it to the uid the server runs as.
+  #
+  # Docker creates a missing bind-mount source itself, owned by root, and the
+  # server runs as 65532 — so without this a first "docker compose up -d"
+  # starts, opens its listeners, and then cannot write a message:
+  #
+  #     storage: cannot create /var/lib/teanode/mail: permission denied
+  #
+  # It also covers the other direction: a directory left by a version that ran
+  # as root is chowned once, here, rather than by hand.
+  # The chown is skipped when it has already been done, because this runs on
+  # every "up" and the directory holds the mail archive — walking millions of
+  # files to change nothing is a slow way to start a mail server.
+  teanode-data:
+    image: alpine:3.23
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /data/upgrade
+        [ "$$(stat -c %u /data)" = 65532 ] || chown -R 65532:65532 /data
+    volumes:
+      - ./data/teanode:/data
 
   teanode:
     # The published image, so "docker compose up -d" pulls rather than builds.
@@ -189,6 +261,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      teanode-data:
+        condition: service_completed_successfully
       # Not depended on: MinIO is in a profile, and a dependency on a service
       # that is not started would stop the default single-instance stack from
       # coming up at all.
@@ -197,10 +271,8 @@ services:
     # binding 25, 80, 443 and 587, all below 1024. Everything else root was
     # carrying along with it is gone.
     #
-    # The mounted directory has to be readable and writable by that uid. On a
-    # server that ran an earlier version as root it will not be:
-    #
-    #     chown -R 65532:65532 ./data/teanode
+    # The mounted directory has to be readable and writable by that uid, which
+    # is what the teanode-data service above arranges.
     cap_add:
       - NET_BIND_SERVICE
     env_file:
@@ -220,6 +292,8 @@ services:
       TEANODE_UPGRADE_DIRECTORY: /var/lib/teanode/upgrade
     volumes:
       - ./data/teanode:/var/lib/teanode:rw
+      # The certificate PostgreSQL serves, so sslmode=verify-full can check it.
+      - ./data/certs:/certs:ro
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/ssl:/etc/ssl:ro

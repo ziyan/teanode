@@ -305,7 +305,7 @@ authority. Generated on first use and kept here with the other secrets; losing
 it means registering again, which works but spends rate limit.
 
 **`certificate`** — Certificate and PrivateKey hold the issued certificate, in
-PEM. They are written here by the renewal, so a configuration file is the
+PEM. They are written here by the renewal, so an exported configuration is the
 whole of a working server: restoring one elsewhere keeps the certificate
 instead of asking the authority for another and spending rate limit.  This is
 the opposite choice from tls.certificateFile above, and for a reason: these
@@ -367,7 +367,17 @@ variables set, and because `config show` prints them.
 **`name`** — See the field above; the two are set together.
 
 **`sslMode`** — SSLMode is passed to the PostgreSQL driver: disable, allow,
-prefer, require, verify-ca or verify-full.
+prefer, require, verify-ca or verify-full. `require` encrypts the connection
+but believes whatever answers on the port; `verify-full` also checks that the
+certificate is signed by `sslRootCertificate` and names the host being dialled,
+which is what stops something else on the network from answering as the
+database.
+
+**`sslRootCertificate`** — SSLRootCertificate is the PEM file the server's
+certificate is checked against, for the two verify modes. The compose file
+generates one and mounts it at `/certs/server.crt`; a managed PostgreSQL will
+publish its own. Empty means the system trust store, which a self-signed
+certificate is not in.
 
 **`logQueries`** — LogQueries echoes every SQL statement to the log. Very
 noisy.

@@ -348,3 +348,40 @@ func TestNoUpgradeDirectoryWithoutOne(t *testing.T) {
 		t.Errorf("it guessed %q", loaded.UpgradeDirectory)
 	}
 }
+
+// TestRootCertificateCrossesWithTheMode: a verified TLS connection needs both
+// parameters, and the parser has to keep refusing the ones it does not
+// understand.
+//
+// sslmode=verify-full without a root certificate is the trap this guards: the
+// compose file generates a self-signed certificate, which is in no system
+// trust store, so the connection fails unless sslrootcert names it. Both cross
+// in one URL or neither is useful.
+func TestRootCertificateCrossesWithTheMode(t *testing.T) {
+	clearEnvironment(t)
+	t.Setenv("TEANODE_DATABASE_URL",
+		"postgres://teanode:secret@postgres:5432/teanode?sslmode=verify-full&sslrootcert=/certs/server.crt")
+
+	bootstrapped, err := bootstrap.Load()
+	if err != nil {
+		t.Fatalf("bootstrap.Load() = %v, want the URL accepted", err)
+	}
+	if bootstrapped.Database.SSLMode != "verify-full" {
+		t.Errorf("SSLMode = %q, want verify-full", bootstrapped.Database.SSLMode)
+	}
+	if bootstrapped.Database.SSLRootCertificate != "/certs/server.crt" {
+		t.Errorf("SSLRootCertificate = %q, want /certs/server.crt",
+			bootstrapped.Database.SSLRootCertificate)
+	}
+}
+
+// TestClientCertificateIsRefused: sslcert is a real libpq option that this
+// server does not pass on, so it is refused rather than quietly ignored.
+func TestClientCertificateIsRefused(t *testing.T) {
+	clearEnvironment(t)
+	t.Setenv("TEANODE_DATABASE_URL", "postgres://teanode@postgres:5432/mail?sslcert=/certs/client.crt")
+
+	if _, err := bootstrap.Load(); err == nil {
+		t.Errorf("expected a refusal for a parameter the server does not pass on")
+	}
+}

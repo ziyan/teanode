@@ -46,14 +46,16 @@ func OpenLocalStore() (config.Store, func(), error) {
 // without migrating it. The caller calls the returned function to close it.
 func OpenBootstrapDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error) {
 	database, err := db.Open(&db.Settings{
-		Host:       bootstrapped.Database.Host,
-		Port:       bootstrapped.Database.Port,
-		User:       bootstrapped.Database.User,
-		Password:   bootstrapped.Database.Password,
-		DBName:     bootstrapped.Database.Name,
-		SSLMode:    bootstrapped.Database.SSLMode,
-		LogQueries: bootstrapped.Database.LogQueries,
-		BackendID:  bootstrapped.InstanceID,
+		Host:     bootstrapped.Database.Host,
+		Port:     bootstrapped.Database.Port,
+		User:     bootstrapped.Database.User,
+		Password: bootstrapped.Database.Password,
+		DBName:   bootstrapped.Database.Name,
+		SSLMode:  bootstrapped.Database.SSLMode,
+
+		SSLRootCertificate: bootstrapped.Database.SSLRootCertificate,
+		LogQueries:         bootstrapped.Database.LogQueries,
+		BackendID:          bootstrapped.InstanceID,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot connect to the database at %s:%d: %w",

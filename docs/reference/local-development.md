@@ -138,8 +138,8 @@ Set `antivirus.enabled: true` to use it.
 
 ## Binding the real mail ports without root
 
-In production the systemd unit grants `CAP_NET_BIND_SERVICE`, so the server
-binds 25, 80, 443 and 587 as an unprivileged user. If you would rather run on
+In production the compose file grants `CAP_NET_BIND_SERVICE`, so the server
+binds 25, 80, 443 and 587 as uid 65532 rather than as root. If you would rather run on
 high ports and redirect, this also works:
 
     iptables  -t nat -A PREROUTING -i eth0 -p tcp --dport 25  -j REDIRECT --to-port 10025

@@ -17,6 +17,10 @@ type Settings struct {
 	DBName   string
 	SSLMode  string
 
+	// SSLRootCertificate is the PEM file the server's certificate is verified
+	// against. Only meaningful for the verify-ca and verify-full modes.
+	SSLRootCertificate string
+
 	// LogQueries echoes every SQL statement to the log. Very noisy; off
 	// unless the operator asks for it.
 	LogQueries bool
@@ -32,6 +36,9 @@ type database struct {
 // Open database.
 func Open(settings *Settings) (Database, error) {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s", settings.Host, settings.Port, settings.User, settings.Password, settings.DBName, settings.SSLMode)
+	if settings.SSLRootCertificate != "" {
+		dsn += " sslrootcert=" + settings.SSLRootCertificate
+	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err

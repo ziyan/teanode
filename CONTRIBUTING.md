@@ -60,8 +60,11 @@ trace back.
 - **Configuration identifiers are stable.** A domain, alias or credential `id`
   in the configuration is generated once and never changed, because stored mail
   and deliveries reference it. Editing a pattern must not regenerate an id.
-- **The configuration file is the source of truth.** Do not add a settings
-  table. Anything an operator sets belongs in `internal/config`.
+- **The stored configuration is the source of truth.** It lives in the
+  database, as one document, and `internal/config` defines its shape. Do not
+  add a settings table of your own, and do not read an environment variable at
+  the point of use: the environment says where the database is and seeds a
+  first run, and everything else an operator sets belongs in `internal/config`.
 - **No cloud dependency in a default code path.** S3, Route53 and GeoIP are
   optional and off. Code guarded by `if settings.Enabled` must not construct a
   client, open a file or dial anything when disabled.
