@@ -21,6 +21,7 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/authres"
@@ -60,18 +61,22 @@ const (
 type Strainer struct {
 	settings *config.AntispamBuiltin
 	resolver resolver.Resolver
+	database db.SpamOperation
 	cache    *listCache
+	totals   corpusTotals
 }
 
 // New returns a strainer reading the given settings.
 //
 // The resolver is the server's own, so block list lookups go the same way
-// every other lookup does. It may be nil, and then the lookups are skipped
-// rather than the strainer refusing to start.
-func New(settings *config.AntispamBuiltin, nameResolver resolver.Resolver) *Strainer {
+// every other lookup does. Both it and the database may be nil, and then the
+// checks that need them are skipped rather than the strainer refusing to
+// start — which is what the command line's one-off invocations get.
+func New(settings *config.AntispamBuiltin, nameResolver resolver.Resolver, database db.SpamOperation) *Strainer {
 	return &Strainer{
 		settings: settings,
 		resolver: nameResolver,
+		database: database,
 		cache:    newListCache(),
 	}
 }
@@ -98,6 +103,9 @@ func (self *Strainer) Check(ctx context.Context, message *spamfilter.Message) (*
 	}
 	if self.settings.DNS.Enabled {
 		checks = append(checks, self.dnsChecks(ctx, message)...)
+	}
+	if self.settings.Bayes.Enabled {
+		checks = append(checks, self.bayesChecks(ctx, message)...)
 	}
 
 	return buildResult(checks), nil

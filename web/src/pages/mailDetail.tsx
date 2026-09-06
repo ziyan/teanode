@@ -18,6 +18,19 @@ import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 
+// Teaching the built-in filter. The classifier is the part that does most of
+// the work and it learns nothing on its own, so marking a message has to be
+// one press from reading it.
+const MARK = `
+  mutation ($mailId: String!, $label: String!) {
+    MarkMail(mailId: $mailId, label: $label) { mailId label learnedSpam learnedHam }
+  }`
+
+const FORGET = `
+  mutation ($mailId: String!) {
+    ForgetMail(mailId: $mailId) { mailId label learnedSpam learnedHam }
+  }`
+
 const MAIL = `
   query ($mailId: String!) {
     GetMail(mailId: $mailId) {
@@ -31,7 +44,7 @@ const MAIL = `
         dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result }
         dkims { domain selector identifier result }
         arc { result instances }
-        spamFilter { score result symbols }
+        spamFilter { score result symbols checks { symbol score description } }
         antivirus { viruses }
         contentFilter { unsafeExtensions }
         errors
@@ -82,6 +95,30 @@ export function MailDetailPage() {
   const { data, error, loading } = useQuery(() => graphql<Response>(MAIL, { mailId }), [mailId])
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
+  const [marked, setMarked] = useState<string | null>(null)
+  const [marking, setMarking] = useState(false)
+  const [markError, setMarkError] = useState<string | null>(null)
+
+  // Marked here rather than re-fetched: the score on this message is what it
+  // was when it arrived, and marking it does not change that. What changes is
+  // what the next message will be scored against.
+  const mark = async (label: 'spam' | 'ham' | null) => {
+    if (!mailId) return
+    setMarking(true)
+    setMarkError(null)
+    try {
+      if (label) {
+        await graphql(MARK, { mailId, label })
+      } else {
+        await graphql(FORGET, { mailId })
+      }
+      setMarked(label)
+    } catch (failure) {
+      setMarkError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setMarking(false)
+    }
+  }
 
   useBreadcrumbDetail(data?.GetMail?.subject || (data ? t('mail.noSubject') : null))
 
@@ -120,6 +157,30 @@ export function MailDetailPage() {
         <Tag value={label.status(mail.status) || t('status.unknown')} tone={toneFor(mail.status)} />
         <KindTag value={mail.kind} />
         <span className="muted">{verdictLine(t, plural, mail, data.ListDeliveriesByMail)}</span>
+      </div>
+
+      {/* Teaching the filter. Offered on every message rather than only on
+          ones it got wrong, because the classifier needs examples of ordinary
+          mail at least as much as it needs examples of spam. */}
+      <div className="mark-spam">
+        <span className="muted">{t('mailDetail.markPrompt')}</span>
+        <button className="link" disabled={marking || marked === 'spam'} onClick={() => mark('spam')}>
+          {t('mailDetail.markSpam')}
+        </button>
+        <button className="link" disabled={marking || marked === 'ham'} onClick={() => mark('ham')}>
+          {t('mailDetail.markHam')}
+        </button>
+        {marked ? (
+          <>
+            <span className="muted">
+              {marked === 'spam' ? t('mailDetail.markedSpam') : t('mailDetail.markedHam')}
+            </span>
+            <button className="link" disabled={marking} onClick={() => mark(null)}>
+              {t('mailDetail.markUndo')}
+            </button>
+          </>
+        ) : null}
+        {markError ? <span className="bad">{markError}</span> : null}
       </div>
 
       <div className="card">
@@ -429,9 +490,21 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       label: t('mailDetail.spam'),
       verdict: String(results.spamFilter.score),
       tone: results.spamFilter.result === 'fail' ? 'bad' : 'good',
-      // The symbols are the whole explanation of the score. They were fetched
-      // and then thrown away.
-      detail: results.spamFilter.symbols?.length ? (
+      // The breakdown is the whole explanation of the score: which check
+      // fired and what it cost. An external daemon reports only names, so
+      // fall back to those when that is all there is.
+      detail: results.spamFilter.checks?.length ? (
+        <span className="spam-checks">
+          {results.spamFilter.checks.map((check) => (
+            <span key={check.symbol} className="spam-check" title={check.description ?? ''}>
+              <span className="mono">{check.symbol}</span>
+              <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
+                {check.score > 0 ? `+${check.score}` : String(check.score)}
+              </span>
+            </span>
+          ))}
+        </span>
+      ) : results.spamFilter.symbols?.length ? (
         <span className="mono wrap">{results.spamFilter.symbols.join(' ')}</span>
       ) : (
         t('mailDetail.noSymbols')

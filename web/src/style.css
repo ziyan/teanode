@@ -3239,3 +3239,36 @@ a.button.primary:hover {
   border: 0;
   clip-path: inset(50%);
 }
+
+/* The spam score's breakdown: which check fired, and what it cost. Laid out
+   as chips so a message with a dozen of them stays readable, and so the sign
+   of each contribution is visible without reading the number. */
+.spam-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.spam-check {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.spam-check-bad {
+  color: var(--bad);
+}
+
+.spam-check-good {
+  color: var(--good);
+}
+
+/* Teaching the spam filter, directly under the verdict on a message. */
+.mark-spam {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}

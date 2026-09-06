@@ -226,7 +226,20 @@ func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
 	if err := self.requireOperator(ctx); err != nil {
 		return nil, err
 	}
-	return describeSettings(self.config.Current()), nil
+	settings := describeSettings(self.config.Current())
+
+	// The learned counts come from the database rather than the
+	// configuration, and are what tells an operator whether the classifier
+	// has seen enough to say anything yet.
+	if settings.Antispam != nil {
+		spam, ham, err := self.database.CountSpamTraining()
+		if err != nil {
+			return nil, err
+		}
+		settings.Antispam.BayesLearnedSpam = spam
+		settings.Antispam.BayesLearnedHam = ham
+	}
+	return settings, nil
 }
 
 func describeSettings(configuration *config.Configuration) *Settings {

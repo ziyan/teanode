@@ -71,7 +71,7 @@ func TestAListedAddressScores(t *testing.T) {
 	t.Parallel()
 
 	resolver := &fakeResolver{listed: map[string]bool{"4.100.51.198.zen.example.org": true}}
-	result, err := strainer.New(dnsSettings(), resolver).Check(context.Background(), &spamfilter.Message{
+	result, err := strainer.New(dnsSettings(), resolver, nil).Check(context.Background(), &spamfilter.Message{
 		RemoteAddress: netip.MustParseAddr("198.51.100.4"),
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestABrokenResolverScoresNothing(t *testing.T) {
 	t.Parallel()
 
 	resolver := &fakeResolver{broken: true}
-	result, err := strainer.New(dnsSettings(), resolver).Check(context.Background(), &spamfilter.Message{
+	result, err := strainer.New(dnsSettings(), resolver, nil).Check(context.Background(), &spamfilter.Message{
 		RemoteAddress: netip.MustParseAddr("198.51.100.4"),
 	})
 	if err != nil {
@@ -106,7 +106,7 @@ func TestManyListedLinksScoreOnce(t *testing.T) {
 
 	body := strings.Repeat("visit https://bad.example.net/offer now. ", 40)
 	resolver := &fakeResolver{listed: map[string]bool{"bad.example.net.dbl.example.org": true}}
-	result, err := strainer.New(dnsSettings(), resolver).Check(context.Background(), &spamfilter.Message{
+	result, err := strainer.New(dnsSettings(), resolver, nil).Check(context.Background(), &spamfilter.Message{
 		Body: []byte(body),
 	})
 	if err != nil {
@@ -132,7 +132,7 @@ func TestTheNumberOfDomainsIsCapped(t *testing.T) {
 	settings.DNS.MaximumDomains = 5
 
 	resolver := &fakeResolver{}
-	if _, err := strainer.New(settings, resolver).Check(context.Background(), &spamfilter.Message{
+	if _, err := strainer.New(settings, resolver, nil).Check(context.Background(), &spamfilter.Message{
 		Body: []byte(builder.String()),
 	}); err != nil {
 		t.Fatalf("Check() = %v", err)
@@ -148,7 +148,7 @@ func TestAnswersAreCached(t *testing.T) {
 	t.Parallel()
 
 	resolver := &fakeResolver{listed: map[string]bool{"4.100.51.198.zen.example.org": true}}
-	filter := strainer.New(dnsSettings(), resolver)
+	filter := strainer.New(dnsSettings(), resolver, nil)
 	message := &spamfilter.Message{RemoteAddress: netip.MustParseAddr("198.51.100.4")}
 
 	for index := 0; index < 5; index++ {

@@ -22,7 +22,7 @@ func settings() *config.AntispamBuiltin {
 func score(t *testing.T, message *spamfilter.Message) (float64, map[string]float64) {
 	t.Helper()
 
-	result, err := strainer.New(settings(), nil).Check(context.Background(), message)
+	result, err := strainer.New(settings(), nil, nil).Check(context.Background(), message)
 	if err != nil {
 		t.Fatalf("Check() = %v, want no error", err)
 	}

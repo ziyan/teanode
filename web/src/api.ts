@@ -296,7 +296,14 @@ export interface AuthenticationResults {
   }
   dkims?: { domain?: string; selector?: string; identifier?: string; result?: string }[]
   arc?: { result?: string; instances?: number }
-  spamFilter?: { score: number; result?: string; symbols?: string[] }
+  spamFilter?: {
+    score: number
+    result?: string
+    symbols?: string[]
+    // The per-check breakdown, which only the built-in filter can produce:
+    // the daemon's protocol reports names without the points each contributed.
+    checks?: { symbol: string; score: number; description?: string }[]
+  }
   antivirus?: { viruses?: string[] }
   contentFilter?: { unsafeExtensions?: string[] }
   errors?: string[]

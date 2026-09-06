@@ -333,7 +333,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	self.locator = openLocator(configuration)
 	self.resolver = resolver.New()
 
-	spamFilter, err := openAntispam(configuration, self.resolver)
+	spamFilter, err := openAntispam(configuration, self.resolver, self.database)
 	if err != nil {
 		return nil, err
 	}
@@ -1081,7 +1081,7 @@ func openLocator(configuration *config.Configuration) geoip.Locator {
 // talking to a daemon keeps talking to it across an upgrade that never
 // mentioned the setting, and a server with no daemon configured gets the
 // filter inside this process.
-func openAntispam(configuration *config.Configuration, nameResolver resolver.Resolver) (spamfilter.Filter, error) {
+func openAntispam(configuration *config.Configuration, nameResolver resolver.Resolver, database db.Database) (spamfilter.Filter, error) {
 	if !configuration.Antispam.Enabled {
 		return nil, nil
 	}
@@ -1096,7 +1096,7 @@ func openAntispam(configuration *config.Configuration, nameResolver resolver.Res
 		return filter, nil
 	default:
 		log.Noticef("spam filter: the built-in filter")
-		return strainer.New(&configuration.Antispam.Builtin, nameResolver), nil
+		return strainer.New(&configuration.Antispam.Builtin, nameResolver, database), nil
 	}
 }
 
