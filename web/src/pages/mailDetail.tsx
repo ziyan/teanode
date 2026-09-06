@@ -134,6 +134,7 @@ export function MailDetailPage() {
       return false
     }
   })
+  const [alreadyDark, setAlreadyDark] = useState(false)
   const chooseDarkened = (next: boolean) => {
     setDarkened(next)
     try {
@@ -385,8 +386,10 @@ export function MailDetailPage() {
                     </button>
                     <button
                       type="button"
-                      className={darkened ? 'active' : ''}
-                      aria-pressed={darkened}
+                      className={darkened && !alreadyDark ? 'active' : ''}
+                      aria-pressed={darkened && !alreadyDark}
+                      disabled={alreadyDark}
+                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
                       onClick={() => chooseDarkened(true)}
                     >
                       {t('mailDetail.darkened')}
@@ -397,7 +400,12 @@ export function MailDetailPage() {
               {/* Rendered in a sandbox that permits no scripts, on top of
                   the server-side sanitising and a policy of default-src
                   'none' inside the frame. It is mail from a stranger. */}
-              <MessageFrame document={document} title={t('mailDetail.message')} darkened={dark && darkened} />
+              <MessageFrame
+                document={document}
+                title={t('mailDetail.message')}
+                darkened={dark && darkened}
+                onGroundMeasured={setAlreadyDark}
+              />
             </>
           )}
 

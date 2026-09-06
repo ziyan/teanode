@@ -209,6 +209,7 @@ export const zh: Catalog = {
   'mailDetail.classifierLearning': '分类器学满 {minimum} 封后生效，现 {learned} 封',
   'mailDetail.frameMode': '邮件显示方式',
   'mailDetail.asSent': '原样',
+  'mailDetail.alreadyDark': '这封邮件本身已是深色',
   'mailDetail.darkened': '深色',
   'mailDetail.virus': '病毒',
   'mailDetail.clean': '未发现',

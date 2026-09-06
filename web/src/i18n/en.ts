@@ -212,6 +212,7 @@ export const en = {
   'mailDetail.classifierLearning': 'classifier silent until {minimum} learned, at {learned}',
   'mailDetail.frameMode': 'How the message is shown',
   'mailDetail.asSent': 'As sent',
+  'mailDetail.alreadyDark': 'This message is already dark as sent',
   'mailDetail.darkened': 'Dark',
   'mailDetail.virus': 'Virus',
   'mailDetail.clean': 'clean',

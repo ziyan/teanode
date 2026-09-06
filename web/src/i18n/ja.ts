@@ -210,6 +210,7 @@ export const ja: Catalog = {
   'mailDetail.classifierLearning': '分類器は {minimum} 通学習するまで沈黙、現在 {learned} 通',
   'mailDetail.frameMode': 'メッセージの表示',
   'mailDetail.asSent': '送信されたまま',
+  'mailDetail.alreadyDark': 'このメッセージは元からダークです',
   'mailDetail.darkened': 'ダーク',
   'mailDetail.virus': 'ウイルス',
   'mailDetail.clean': '検出なし',

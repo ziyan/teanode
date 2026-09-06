@@ -56,14 +56,22 @@ export function MessageFrame({
   document: source,
   title,
   darkened = false,
+  onGroundMeasured,
 }: {
   document: string
   title: string
   darkened?: boolean
+  // Told, once the document has loaded, whether the message paints a dark
+  // ground of its own. Such a message must not be inverted: inversion turns
+  // its black to white and its pictures — inverted back — sit on that white
+  // looking like negatives, which is what "Dark" did to a black newsletter.
+  onGroundMeasured?: (alreadyDark: boolean) => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const lastWidth = useRef(0)
   const [height, setHeight] = useState(MINIMUM_HEIGHT)
+  const [alreadyDark, setAlreadyDark] = useState(false)
+  const measuredGround = useRef<string | null>(null)
 
   const measure = useCallback(() => {
     const element = frame.current
@@ -105,6 +113,7 @@ export function MessageFrame({
   useEffect(() => {
     lastWidth.current = 0
     setHeight(MINIMUM_HEIGHT)
+    setAlreadyDark(false)
   }, [source])
 
   useEffect(() => {
@@ -127,6 +136,14 @@ export function MessageFrame({
       if (!content) {
         return
       }
+      // Once per document: the ground does not change after load, and the
+      // result changes whether the frame is inverted, which reloads nothing.
+      if (measuredGround.current !== source) {
+        measuredGround.current = source
+        const dark = paintsDarkGround(content)
+        setAlreadyDark(dark)
+        onGroundMeasured?.(dark)
+      }
       observer = new ResizeObserver(measure)
       observer.observe(content)
     }
@@ -146,7 +163,7 @@ export function MessageFrame({
   return (
     <iframe
       ref={frame}
-      className={darkened ? 'message-frame darkened' : 'message-frame'}
+      className={darkened && !alreadyDark ? 'message-frame darkened' : 'message-frame'}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={source}
       title={title}
@@ -154,4 +171,42 @@ export function MessageFrame({
       scrolling="no"
     />
   )
+}
+
+// paintsDarkGround says whether the message's own painted ground is dark:
+// the largest painted area, by computed background, is on the dark side.
+// bgcolor attributes and inline styles both arrive as computed colours, so
+// the table-built newsletters of the world are measured the same way.
+function paintsDarkGround(content: HTMLElement): boolean {
+  const areas = new Map<string, number>()
+  const view = content.ownerDocument.defaultView
+  if (!view) {
+    return false
+  }
+  for (const element of content.querySelectorAll<HTMLElement>('*')) {
+    const background = view.getComputedStyle(element).backgroundColor
+    if (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)') {
+      continue
+    }
+    const box = element.getBoundingClientRect()
+    const area = box.width * box.height
+    if (area > 0) {
+      areas.set(background, (areas.get(background) ?? 0) + area)
+    }
+  }
+  let largest = 0
+  let ground = ''
+  for (const [background, area] of areas) {
+    if (area > largest) {
+      largest = area
+      ground = background
+    }
+  }
+  const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(ground)
+  if (!match) {
+    return false
+  }
+  // Perceived brightness, the usual weights; below the midpoint is dark.
+  const [red, green, blue] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  return (0.299 * red + 0.587 * green + 0.114 * blue) / 255 < 0.5
 }
