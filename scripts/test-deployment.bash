@@ -804,17 +804,20 @@ PYTHON
   fi
 
   # Narrow to this message, so another message's score cannot pass this.
+  # The JSON is passed as an argument, not on standard input: the script
+  # itself arrives on standard input through the heredoc, and a command has
+  # only one of those.
   local mine
-  mine="$(python3 - "${subject}" <<'PYTHON'
+  mine="$(python3 - "${subject}" "${scored}" <<'PYTHON'
 import json, sys
-subject = sys.argv[1]
-document = json.load(sys.stdin)
+
+subject, document = sys.argv[1], json.loads(sys.argv[2])
 for item in document.get("data", {}).get("ListMails") or []:
     if item.get("subject") == subject:
         print(json.dumps(item.get("authenticationResults", {}).get("spamFilter") or {}))
         break
 PYTHON
-<<<"${scored}")"
+)"
 
   if [[ -z "${mine}" || "${mine}" == "{}" ]]; then
     fail "the message was not scored at all: ${scored:0:400}"
