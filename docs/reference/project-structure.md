@@ -33,6 +33,26 @@ empty database — what kind of server to create. Small on purpose. Anything
 here is per-process and needs a restart to change, where anything in the
 database is shared and does not.
 
+**`internal/spamfilter`** — the seam between the mail path and whatever
+scores a message. Two things satisfy it: an adapter for an external
+SpamAssassin daemon, and the filter below. `Message` carries what the server
+already established — the authentication results, the confirmed reverse DNS
+name, the parsed message — so that a filter reads them rather than working
+them out again.
+
+**`internal/strainer`** — the built-in spam filter. Named for the thing that
+holds the leaves back when you pour; it is not SpamAssassin and does not
+claim to be. Four sources, each switchable: the signals the server already
+has, public block lists over ordinary DNS, a classifier trained on this
+server's own mail, and the published pattern rules.
+
+    strainer.go             the checks that read what the server already knows
+    dns.go                  block list lookups, cached, and their refusal codes
+    bayes.go                the classifier, and teaching it
+    rules.go                the published rule format, parsed and evaluated
+    meta.go                 the expression language rules combine each other in
+    ruleload.go             keeping the parsed rules in step with the database
+
 **`internal/mx`** — the mail path, and the only package that decides what
 happens to a message.
 

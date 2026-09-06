@@ -38,6 +38,8 @@ retried.
       dns/                  advisory DNS record checking for configured domains
       mailer/               template rendering and transactional send
       models/               structs shared across packages
+      spamfilter/           the seam between the server and whatever scores mail
+      strainer/             the built-in spam filter, which scores it here
       util/                 protocol implementations: smtpd, smtpc, dkim, spf,
                             dmarc, arc, mailparse, autoacme, clamav, spamc
     web/                    dashboard source (React, TypeScript, webpack)

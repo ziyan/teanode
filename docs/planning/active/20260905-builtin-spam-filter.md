@@ -921,13 +921,26 @@ and `Port` retained and marked deprecated.
       established that milestone one needs no lookups at all. Found that the
       checks run concurrently, so milestone one is a reordering rather than
       plumbing.
-- [ ] Milestone one: the seam, and scoring from signals the server already has.
-- [ ] Milestone two: DNS block list reputation.
-- [ ] Milestone three: Bayesian classification trained on this server's mail
-      (tables `spam_token` and `spam_training`).
-- [ ] Milestone four: public rule files, and the update channel (table
-      `spam_rule_set`).
-- [ ] Milestone five: remove the spam service from the default compose stack.
+- [x] (2026-09-05) Milestone one: the seam, and scoring from signals the
+      server already has. `internal/spamfilter` with two implementations,
+      `internal/strainer` for the built-in one, `antispam.engine` to choose,
+      and the three call sites in `internal/mx` reordered into two phases.
+- [x] (2026-09-05) Milestone two: DNS block list reputation, cached, with
+      refusal codes distinguished from listings.
+- [x] (2026-09-05) Milestone three: Bayesian classification, tables
+      `spam_token` and `spam_training`, and the dashboard buttons that teach
+      it.
+- [x] (2026-09-05) Milestone four: the rule format parsed and evaluated, the
+      meta expression language, and `spam_rule_set` in the database.
+      Remaining: the signed update channel, deliberately not built — see the
+      decision below.
+- [x] (2026-09-05) Milestone five: the spam daemon is behind a compose
+      profile, so nothing in the default path depends on a third-party image.
+- [x] (2026-09-05) Proved end to end: `make test-deployment` passes 104 checks
+      against a stack with no spam daemon in it, including that a message is
+      scored and carries a per-check breakdown.
+- [ ] The signed update channel for rule files, when the OpenPGP dependency
+      question is settled.
 
 ## Surprises & Discoveries
 
@@ -945,6 +958,27 @@ and `Port` retained and marked deprecated.
   no-network calibration, and is the weakest configuration it offers. The
   strength of the product is Bayes plus network lookups, neither of which is
   in the rule files.
+
+- Observation: a default value can defeat a resolution rule silently, and did
+  so on a live server.
+  Evidence: `config.Default()` set `engine: builtin`; the stored section is
+  unmarshalled over the defaults, so `Antispam.Engine` was never empty and
+  `ResolvedEngine()` never reached the "spamd when a host is configured"
+  branch. The server restarted and logged
+  `spam filter: the built-in filter` while its configuration still named a
+  daemon.
+
+- Observation: a block list answering successfully does not mean "listed".
+  Evidence: the lists reserve 127.255.255.0/24 to say they will not answer —
+  a query through a public resolver, or too many of them. Treating those as
+  listings puts the list's full weight on every sender at once.
+
+- Observation: the deployment test found two scoring faults that no unit test
+  would have, because both only appear when a real message crosses a real
+  threshold.
+  Evidence: an ordinary test message was refused with
+  `550 5.7.26 Spam check failed`, first because SPF and DMARC were both
+  scored for one fact, and then because a seeded domain's threshold was zero.
 
 - Observation: the score breakdown the dashboard needs costs no migration.
   Evidence: `AuthenticationResults` is stored as one `jsonb` column
@@ -1060,6 +1094,37 @@ and why, so a later reader can see the reasoning rather than guess at it.
   installations get the built-in filter.
   Date/Author: 2026-09-05, Ziyan
 
+### Decisions taken during implementation
+
+- Decision: the signal checks are capped, together, below the rejection
+  threshold.
+  Rationale: each is a statement about how the sender is configured, and
+  legitimate senders are misconfigured constantly. Crossing the threshold
+  should take corroboration from something that looked at the message. The
+  deployment test refused an ordinary message before this existed.
+  Date/Author: 2026-09-05, Ziyan
+
+- Decision: when a domain's DMARC policy reaches a verdict, SPF is not scored
+  separately.
+  Rationale: the DMARC verdict is largely the answer to whether SPF aligned,
+  so scoring both counts one fact twice and doubles the penalty for a single
+  misconfiguration.
+  Date/Author: 2026-09-05, Ziyan
+
+- Decision: authenticated submission is scored on content only.
+  Rationale: the connection checks ask whether a host is entitled to send
+  mail, which a credential answers. Their honest answers are also wrong for a
+  laptop, whose home address is in the block lists on purpose.
+  Date/Author: 2026-09-05, Ziyan
+
+- Decision: ship milestone four without the signed update channel, and load
+  rule sets deliberately instead.
+  Rationale: rules are patterns run against every message, so an unattended
+  fetch has to verify the publisher's signature, and the OpenPGP package that
+  would do it is deprecated upstream. Adding a frozen cryptography dependency
+  to a mail server is a decision to take on its own.
+  Date/Author: 2026-09-05, Ziyan
+
 ### Recommendations awaiting a decision
 
 These are proposals from the research, not settled matters. They are recorded
@@ -1092,6 +1157,44 @@ rather than assume.
 
 ## Outcomes & Retrospective
 
-Not started. Write an entry here at the end of each milestone comparing what
-was built against the purpose stated at the top: can a new deployment score
-spam with no second program, and can an operator still choose the daemon?
+**All five milestones are implemented.** A new deployment scores spam with no
+second program: `deploy/docker-compose.yml` starts no spam service, and
+`make test-deployment` proves a message is scored anyway, with the breakdown
+that only the built-in filter can produce. An operator can still choose the
+daemon, and one that was already using it keeps using it without being asked.
+
+What the end-to-end test found, which no unit test would have:
+
+The first version rejected an ordinary message at the SMTP door. SPF and
+DMARC were both scored, which counts one fact twice — a DMARC verdict is
+largely the answer to whether SPF aligned — and the total crossed the
+threshold on configuration faults alone. Both are fixed, and the signal
+checks are now capped below the threshold on purpose: every one of them is a
+statement about how a sender is configured, and legitimate senders are
+misconfigured all the time.
+
+A domain seeded from the environment carried a spam threshold of zero, which
+means "reject anything the filter has any opinion about". That was latent for
+as long as scoring required a daemon and was off by default. Turning the
+built-in filter on by default would have turned an upgrade into a mail server
+that refused almost everything.
+
+Deploying to a live server found the worst one. `config.Default()` set
+`engine: builtin`, and the stored configuration is unmarshalled over the
+defaults, so the field was never empty and the resolution rule never fired.
+The server restarted, logged "spam filter: the built-in filter", and stopped
+using the daemon it had been configured with. The rule existed precisely to
+prevent that, and a default defeated it silently.
+
+Two more came out of reviewing the result rather than running it. A block
+list answers in 127.0.0.0/8 and uses the top of that range to say it will not
+answer — through a public resolver, or too often — and reading those as
+listings would have put the full weight on every sender at once. And the
+connection checks were being applied to authenticated submission, where they
+are both meaningless and wrong: a laptop has no reverse DNS and its home
+address is in the block lists deliberately.
+
+What remains is the signed update channel for rule files. Rules are patterns
+this server runs against every message, so fetching them unattended means
+verifying the publisher's signature, and the package that would do it is
+deprecated upstream. Loading a set deliberately works today.
