@@ -83,6 +83,13 @@ its way out of it. A refused change exits with code 3 and says which of the
 three switches to undo. `auth logout` still revokes the profile's token,
 because forgetting a profile and leaving its token live is the worse outcome.
 
+Signing in again to a saved profile — `auth login` with no `--url`, which
+means the profile `--profile` names or else the active one, or with the
+`--url` or `--name` of one — replaces its token and revokes the old one on
+the server, and says so. It keeps the profile's read-only and certificate
+settings unless told otherwise. On a read-only profile the old token is left
+alone and named, for revoking by hand.
+
 **On the server itself**, nothing has to be set up. With the server's
 environment in the shell — which a container already has — the client reads
 the server secret from the stored configuration, mints a token signed with
@@ -147,10 +154,11 @@ Some examples:
 Things are named the way a person names them: a domain by its name, a
 template by its domain and name, an alias or a credential by the identifier
 its list prints. Anything that cannot be undone asks first; `--force` skips
-the question. Enumerated filters — `mail list --status`, `--kind`, `mail
-count --by` — are checked before anything is sent, so a typo is an error
-rather than an empty list. A list that stopped at `--first` says so on
-standard error, so a page is never mistaken for the whole.
+the question. The `--status` and `--kind` filters are checked before
+anything is sent, so a typo is an error rather than an empty list; `mail
+count --by` is checked by the server, which knows every field. A list that
+stopped at `--first` says so on standard error, so a page is never mistaken
+for the whole.
 
 ### From a script, or an agent
 

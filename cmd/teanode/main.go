@@ -98,6 +98,9 @@ func main() {
 	// command asked for JSON fails in JSON, and the exit code says what kind
 	// of failure it was.
 	if err := command.Run(ctx, os.Args); err != nil {
+		// An error from before the flags were parsed never reached a flag
+		// action, so whether JSON was wanted is read from the arguments.
+		cmd.NoteUsageError(nil, os.Args)
 		err = cmd.Describe(command, err)
 		cmd.PrintError(err)
 		os.Exit(cmd.ExitCode(err))
@@ -116,12 +119,11 @@ func main() {
 func setUsageErrorHandlers(command *cli.Command) {
 	command.OnUsageError = func(ctx context.Context, failed *cli.Command, err error, isSubcommand bool) error {
 		cmd.NoteUsageError(failed, os.Args)
-		return cli.Exit(fmt.Sprintf("%s; '%s --help' shows the flags", err, failed.FullName()), cmd.ExitUsage)
+		return cmd.Usage(fmt.Sprintf("%s; '%s --help' shows the flags", err, failed.FullName()))
 	}
 	command.CommandNotFound = func(ctx context.Context, parent *cli.Command, name string) {
 		cmd.NoteUsageError(parent, os.Args)
-		err := cli.Exit(fmt.Sprintf("unknown command %q; '%s --help' lists them", name, parent.FullName()), cmd.ExitUsage)
-		cmd.PrintError(err)
+		cmd.PrintError(cmd.Usage(fmt.Sprintf("unknown command %q; '%s --help' lists them", name, parent.FullName())))
 		os.Exit(cmd.ExitUsage)
 	}
 	for _, subcommand := range command.Commands {

@@ -144,6 +144,9 @@ func RenderLayout(ctx context.Context, connection *Client, domainId string, para
 // isNotFound reports whether the server answered "not found", which a
 // lookup by name turns into a nil result rather than an error.
 func isNotFound(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
 	var reported Errors
 	if errors.As(err, &reported) {
 		for _, candidate := range reported {

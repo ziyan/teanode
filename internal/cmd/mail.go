@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewMailCommand builds "teanode mail": the messages this server has handled,
@@ -150,8 +151,13 @@ func mailFilterFlags() []cli.Flag {
 // the server refuses one it does not know, and knows more than the help
 // names.
 var (
-	mailStatuses = []string{"received", "accepted", "rejected"}
-	mailKinds    = []string{"incoming", "outgoing", "exchange", "dsn", "rua", "ruf"}
+	mailStatuses = []string{
+		string(models.MailStatusReceived), string(models.MailStatusAccepted), string(models.MailStatusRejected),
+	}
+	mailKinds = []string{
+		string(models.MailKindIncoming), string(models.MailKindOutgoing), string(models.MailKindExchange),
+		string(models.MailKindDSN), string(models.MailKindRUA), string(models.MailKindRUF),
+	}
 )
 
 // mailFilters reads the filter flags into the tests the list query applies.

@@ -136,24 +136,33 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	insecure := command.Bool("insecure") || command.Root().Bool("insecure")
 	readOnly := command.Bool("read-only") || command.Root().Bool("read-only")
 
-	// Signing in again to a saved profile need not repeat its address, and
-	// keeps its certificate posture and its read-only bit unless told
-	// otherwise. With neither an address nor a name, the profile being
-	// re-signed in to is the active one: the common case is a token that has
-	// expired on the server somebody was already using.
-	if serverUrl == "" && name == "" && profiles.Active != "" {
-		name = profiles.Active
+	// Signing in again to a saved profile need not repeat its address. With
+	// neither an address nor a name, the profile meant is the one --profile
+	// names, or else the active one: the common case is a token that has
+	// expired on the server somebody was already using. It is said which,
+	// because the profile's token is about to be replaced.
+	if serverUrl == "" && name == "" {
+		name = command.Root().String("profile")
+		if name == "" {
+			name = profiles.Active
+		}
+		if name == LocalProfileName {
+			return usage("the console is not signed in to; usage: teanode auth login --url https://mail.example.com")
+		}
+		if name == "" {
+			return usage("which server? usage: teanode auth login --url https://mail.example.com")
+		}
+		if profiles.Find(name) == nil {
+			return usage(fmt.Sprintf("no profile called %q to sign in to again; usage: teanode auth login --url https://mail.example.com", name))
+		}
+		fmt.Printf("Signing in again to profile %q, %s.\n", name, profiles.Find(name).URL)
 	}
-	if existing := profiles.Find(name); existing != nil {
-		if serverUrl == "" {
-			serverUrl = existing.URL
-		}
-		if !command.IsSet("insecure") {
-			insecure = insecure || existing.Insecure
-		}
-		if !command.IsSet("read-only") && !command.Root().IsSet("read-only") {
-			readOnly = existing.ReadOnly
-		}
+	if name == LocalProfileName {
+		return usage(fmt.Sprintf("%q is the name of the console and cannot be a saved profile; pass --name", LocalProfileName))
+	}
+	existing := profiles.Find(name)
+	if existing != nil && serverUrl == "" {
+		serverUrl = existing.URL
 	}
 	if serverUrl == "" {
 		return usage("which server? usage: teanode auth login --url https://mail.example.com")
@@ -161,9 +170,19 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	serverUrl = client.NormalizeURL(serverUrl)
 	if name == "" {
 		name = hostOf(serverUrl)
+		existing = profiles.Find(name)
 	}
-	if name == LocalProfileName {
-		return fmt.Errorf("%q is the name of the console and cannot be a saved profile; pass --name", LocalProfileName)
+
+	// A profile signed in to again keeps its certificate posture and its
+	// read-only bit unless told otherwise, so that a look-only profile does
+	// not become a writable one because its token expired.
+	if existing != nil {
+		if !command.IsSet("insecure") {
+			insecure = insecure || existing.Insecure
+		}
+		if !command.IsSet("read-only") && !command.Root().IsSet("read-only") {
+			readOnly = existing.ReadOnly
+		}
 	}
 
 	profile := &Profile{Name: name, URL: serverUrl, Insecure: insecure, ReadOnly: readOnly}
@@ -198,21 +217,26 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 	}
 	current, err := client.GetCurrentUser(ctx, connection)
 	if err != nil {
-		return fmt.Errorf("the token did not work against %s: %w", profile.URL, err)
+		// Described here, where the server it was tried against is known;
+		// the general advice would be about whichever server the root flags
+		// name, which is not this one.
+		return &describedError{fmt.Errorf("the token did not work against %s: %w. Sign in again, or check the token", profile.URL, err)}
 	}
 	if current != nil {
 		profile.Username = current.Username
 	}
 
-	// Re-signing in replaces the profile's token. The old one is revoked so
-	// that it does not live on, unseen from here, in the server's list.
-	if existing := profiles.Find(name); existing != nil {
-		revokeReplacedToken(ctx, existing, profile)
-	}
-
 	profiles.Set(profile)
 	if err := profiles.Save(); err != nil {
 		return err
+	}
+
+	// Re-signing in replaced the profile's token. The old one is revoked so
+	// that it does not live on, unseen from here, in the server's list —
+	// after the new one is safely saved, so that a failed save never leaves
+	// the profile holding a token that has just been revoked.
+	if existing != nil {
+		revokeReplacedToken(ctx, command, existing, profile)
 	}
 
 	who := profile.Username
@@ -230,10 +254,20 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 }
 
 // revokeReplacedToken revokes the token a profile held before a new sign-in
-// replaced it. Best effort: the old token may already be gone, which is why
-// somebody signed in again, and the new one works either way.
-func revokeReplacedToken(ctx context.Context, existing, replacement *Profile) {
+// replaced it, and says so, because the old token may have been copied
+// somewhere that is still using it. Best effort: it may already be gone,
+// which is why somebody signed in again, and the new one works either way.
+//
+// Not on a read-only target: a revocation is a change, and the switches
+// that refuse changes are not talked around here either. The old token is
+// named instead, for revoking by hand.
+func revokeReplacedToken(ctx context.Context, command *cli.Command, existing, replacement *Profile) {
 	if existing.TokenID == "" || existing.TokenID == replacement.TokenID || existing.URL != replacement.URL {
+		return
+	}
+	if replacement.ReadOnly || command.Root().Bool("read-only") {
+		fmt.Printf("The previous token %s is still valid, and this connection is read-only; revoke it with 'teanode token revoke %s' or from the dashboard.\n",
+			existing.TokenID, existing.TokenID)
 		return
 	}
 	connection, err := client.New(client.Options{URL: existing.URL, Token: existing.Token, Insecure: existing.Insecure})
@@ -243,7 +277,9 @@ func revokeReplacedToken(ctx context.Context, existing, replacement *Profile) {
 	if err := client.DeleteToken(ctx, connection, existing.TokenID); err != nil {
 		fmt.Printf("The previous token %s could not be revoked (%s); revoke it with 'teanode token revoke %s' if it is still listed.\n",
 			existing.TokenID, err, existing.TokenID)
+		return
 	}
+	fmt.Printf("Revoked the previous token %s.\n", existing.TokenID)
 }
 
 // browserLogin runs the loopback handshake described in loopback.go.

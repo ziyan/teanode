@@ -219,12 +219,15 @@ func howToWrite(command *cli.Command) string {
 }
 
 // describeNotFound names the thing a command was given when the server has
-// no such thing, so that the error says what was looked for rather than the
-// name of the server's error value. Other errors pass through describeError.
+// no such thing, so that the error says what was looked for as well as the
+// name of the server's error value. The server's own words are kept: what
+// it could not find is sometimes not the thing named but something it
+// depends on, such as the domain a delivery was for. Other errors pass
+// through describeError.
 func describeNotFound(command *cli.Command, err error, what string) error {
 	var described *describedError
 	if errors.Is(err, client.ErrNotFound) && !errors.As(err, &described) {
-		return &describedError{fmt.Errorf("%w: there is no %s", client.ErrNotFound, what)}
+		return &describedError{fmt.Errorf("%w, looking for %s", err, what)}
 	}
 	return describeError(command, err)
 }
