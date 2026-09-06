@@ -66,10 +66,19 @@ type SessionState struct {
 	// dashboard falls back to the username, which is what it had before there
 	// was anywhere to say a name.
 	Name string `json:"name,omitempty"`
+
+	// Whether this server offers passkeys, so the sign-in form shows the
+	// passkey button only where pressing it could work. Told to an anonymous
+	// caller on purpose: it is the one thing about the configuration the form
+	// has to know, and pressing the button would have revealed it anyway.
+	PasskeysEnabled bool `json:"passkeysEnabled"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
-	state := &SessionState{AuthenticationRequired: self.authenticator.Required()}
+	state := &SessionState{
+		AuthenticationRequired: self.authenticator.Required(),
+		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
+	}
 	if request := api.ContextRequest(ctx); request != nil {
 		state.Username, state.Authenticated = self.authenticator.Authenticate(request)
 	}
@@ -89,6 +98,7 @@ func (self *graph) signedInAs(username string) *SessionState {
 		AuthenticationRequired: true,
 		Username:               username,
 		Name:                   self.displayName(username),
+		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
 	}
 }
 
