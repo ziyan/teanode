@@ -3442,6 +3442,23 @@ a.button.primary:hover {
 .sidebar nav a[data-depth='3'] {
   padding-left: 64px;
 }
+/* Collapsed to icons, the rail has no room for a tree: every icon sits on
+   the same axis. The phone's overlay always shows labels, so it keeps the
+   indent. */
+.sidebar.collapsed nav a[data-depth] {
+  padding-left: 0;
+}
+@media (max-width: 760px) {
+  .sidebar.collapsed nav a[data-depth='1'] {
+    padding-left: 32px;
+  }
+  .sidebar.collapsed nav a[data-depth='2'] {
+    padding-left: 48px;
+  }
+  .sidebar.collapsed nav a[data-depth='3'] {
+    padding-left: 64px;
+  }
+}
 
 /* The mailbox page: the list of a folder beside the message being read.
    The rail already spent one column on the folders, so the page has two. */
@@ -3858,4 +3875,28 @@ a.button.primary:hover {
 .folder-name svg {
   flex: 0 0 auto;
   opacity: 0.7;
+}
+
+/* Renaming or moving a folder happens in its own row: the field, then the
+   buttons, wrapping onto a second line where the row is narrow rather than
+   pushing the table sideways. */
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.inline-form input,
+.inline-form select {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 320px;
+  width: auto;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .inline-form input,
+  .inline-form select {
+    flex-basis: 120px;
+  }
 }

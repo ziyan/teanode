@@ -1145,6 +1145,7 @@ export const zh: Catalog = {
   'mailboxSettings.autoReplyText': '内容',
   'common.saved': '已保存。',
   'common.rename': '重命名',
+  'common.move': '移动',
   'common.delete': '删除',
   'mailbox.newMessage': '新邮件',
   'mailbox.reply': '回复',

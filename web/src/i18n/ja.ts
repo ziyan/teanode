@@ -1160,6 +1160,7 @@ export const ja: Catalog = {
   'mailboxSettings.autoReplyText': 'メッセージ',
   'common.saved': '保存しました。',
   'common.rename': '名前を変更',
+  'common.move': '移動',
   'common.delete': '削除',
   'mailbox.newMessage': '新規メッセージ',
   'mailbox.reply': '返信',

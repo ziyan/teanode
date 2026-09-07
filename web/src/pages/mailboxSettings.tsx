@@ -242,7 +242,25 @@ function FoldersTab({ view }: { view: MailboxView }) {
   const [renaming, setRenaming] = useState<MailboxFolder | null>(null)
   const [renameTo, setRenameTo] = useState('')
   const [deleting, setDeleting] = useState<MailboxFolder | null>(null)
+  const [moving, setMoving] = useState<MailboxFolder | null>(null)
+  const [moveTo, setMoveTo] = useState('')
   const rows = folderRows(view.folders)
+
+  // A folder cannot go inside itself or anything under it.
+  const insideOf = (folder: MailboxFolder): Set<string> => {
+    const inside = new Set<string>([folder.id])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const candidate of view.folders) {
+        if (candidate.parentId && inside.has(candidate.parentId) && !inside.has(candidate.id)) {
+          inside.add(candidate.id)
+          grew = true
+        }
+      }
+    }
+    return inside
+  }
 
   return (
     <>
@@ -252,52 +270,96 @@ function FoldersTab({ view }: { view: MailboxView }) {
           <tbody>
             {rows.map(({ folder, depth }) => (
               <tr key={folder.id}>
-                <td style={{ paddingLeft: 8 + depth * 20 }}>
-                  {renaming?.id === folder.id ? (
-                    <form
-                      className="inline-form"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        void save(UPDATE_FOLDER, { folderId: folder.id, name: renameTo.trim() }).then(() => setRenaming(null))
-                      }}
-                    >
-                      <input value={renameTo} onChange={(event) => setRenameTo(event.target.value)} autoFocus required />
-                      <button type="submit" className="primary" disabled={busy || !renameTo.trim()}>
-                        {t('common.save')}
-                      </button>
-                      <button type="button" onClick={() => setRenaming(null)}>
-                        {t('common.cancel')}
-                      </button>
-                    </form>
-                  ) : (
-                    <span className="folder-name">
-                      <FolderKindIcon kind={folder.kind} size={16} />
-                      {folderLabel(t, folder)}
-                    </span>
-                  )}
-                </td>
-                <td className="shrink muted">{folder.total}</td>
-                <td className="shrink">
-                  {/* Only the owner's own folders can be renamed or removed;
-                      the system folders are what the mailbox is. */}
-                  {!folder.kind && renaming?.id !== folder.id && (
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        className="link"
-                        onClick={() => {
-                          setRenaming(folder)
-                          setRenameTo(folder.name)
+                {renaming?.id === folder.id || moving?.id === folder.id ? (
+                  // Renaming or moving takes the whole row: the count and
+                  // the actions mean nothing while the folder is being
+                  // changed, and the form needs the width on a phone.
+                  <td colSpan={3} style={{ paddingLeft: 8 + depth * 20 }}>
+                    {renaming?.id === folder.id ? (
+                      <form
+                        className="inline-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void save(UPDATE_FOLDER, { folderId: folder.id, name: renameTo.trim() }).then(() => setRenaming(null))
                         }}
                       >
-                        {t('common.rename')}
-                      </button>
-                      <button type="button" className="link danger" onClick={() => setDeleting(folder)}>
-                        {t('common.delete')}
-                      </button>
-                    </div>
-                  )}
-                </td>
+                        <input value={renameTo} onChange={(event) => setRenameTo(event.target.value)} autoFocus required />
+                        <button type="submit" className="primary" disabled={busy || !renameTo.trim()}>
+                          {t('common.save')}
+                        </button>
+                        <button type="button" onClick={() => setRenaming(null)}>
+                          {t('common.cancel')}
+                        </button>
+                      </form>
+                    ) : (
+                      <form
+                        className="inline-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void save(UPDATE_FOLDER, { folderId: folder.id, parentId: moveTo }).then(() => setMoving(null))
+                        }}
+                      >
+                        <select value={moveTo} onChange={(event) => setMoveTo(event.target.value)} autoFocus>
+                          <option value="">{t('mailboxSettings.folderTop')}</option>
+                          {rows
+                            .filter((candidate) => !insideOf(folder).has(candidate.folder.id))
+                            .map((candidate) => (
+                              <option key={candidate.folder.id} value={candidate.folder.id}>
+                                {'  '.repeat(candidate.depth) + folderLabel(t, candidate.folder)}
+                              </option>
+                            ))}
+                        </select>
+                        <button type="submit" className="primary" disabled={busy || moveTo === (folder.parentId ?? '')}>
+                          {t('common.save')}
+                        </button>
+                        <button type="button" onClick={() => setMoving(null)}>
+                          {t('common.cancel')}
+                        </button>
+                      </form>
+                    )}
+                  </td>
+                ) : (
+                  <>
+                    <td style={{ paddingLeft: 8 + depth * 20 }}>
+                      <span className="folder-name">
+                        <FolderKindIcon kind={folder.kind} size={16} />
+                        {folderLabel(t, folder)}
+                      </span>
+                    </td>
+                    <td className="shrink muted hide-narrow">{folder.total}</td>
+                    <td className="shrink">
+                      {/* Only the owner's own folders can be renamed or removed;
+                          the system folders are what the mailbox is. */}
+                      {!folder.kind && (
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="link"
+                            onClick={() => {
+                              setRenaming(folder)
+                              setRenameTo(folder.name)
+                            }}
+                          >
+                            {t('common.rename')}
+                          </button>
+                          <button
+                            type="button"
+                            className="link"
+                            onClick={() => {
+                              setMoving(folder)
+                              setMoveTo(folder.parentId ?? '')
+                            }}
+                          >
+                            {t('common.move')}
+                          </button>
+                          <button type="button" className="link danger" onClick={() => setDeleting(folder)}>
+                            {t('common.delete')}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

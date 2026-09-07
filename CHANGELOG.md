@@ -16,6 +16,8 @@ Notable changes to TeaNode. The format follows
   all, forward, drafts whose attachments upload once with a progress bar, a
   signature, and an out-of-office reply with the protections that keep it
   from answering machines, lists or another mailbox that is also away.
+  Folders nest to any depth, can be renamed and moved, and each kind has its
+  own icon.
 - IMAP, on port 993 and with STARTTLS on 143, so a mail program reads the
   same mailbox; and app passwords, one per device, which sign in to IMAP and
   to submission on port 587 with the mailbox's own addresses.

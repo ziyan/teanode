@@ -1170,6 +1170,7 @@ export const en = {
   'mailboxSettings.autoReplyText': 'Message',
   'common.saved': 'Saved.',
   'common.rename': 'Rename',
+  'common.move': 'Move',
   'common.delete': 'Delete',
   'mailbox.newMessage': 'New message',
   'mailbox.reply': 'Reply',
