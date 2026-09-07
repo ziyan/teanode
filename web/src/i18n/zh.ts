@@ -1269,4 +1269,5 @@ export const zh: Catalog = {
   'mailboxSettings.contactCount': '{count} 封',
   'mailboxSettings.deleteContact': '删除联系人',
   'mailboxSettings.deleteContactConfirm': '删除 {address}？如果该地址再次来信，它会重新出现。',
+  'mailboxSettings.contactCountOne': '1 封',
 }

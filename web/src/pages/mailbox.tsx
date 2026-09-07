@@ -36,7 +36,7 @@ const ITEMS = `
       total
       items {
         id folderId mailId uid seen flagged answered forwarded draft addedAt
-        mail { id from sender subject recipients receivedAt size kind status }
+        mail { id from fromName sender subject recipients receivedAt size kind status }
       }
     }
   }`
@@ -45,7 +45,7 @@ const ITEM = `
   query ($itemId: String!) {
     GetMailboxItem(itemId: $itemId) {
       id folderId mailId uid seen flagged answered forwarded draft addedAt
-      mail { id from sender subject recipients receivedAt size kind status messageId }
+      mail { id from fromName sender subject recipients receivedAt size kind status messageId }
     }
   }`
 

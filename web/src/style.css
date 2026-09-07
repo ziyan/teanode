@@ -3817,3 +3817,10 @@ a.button.primary:hover {
   max-width: 320px;
   margin-bottom: 10px;
 }
+
+/* A row's own actions, side by side with air between them. */
+.row-actions {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}

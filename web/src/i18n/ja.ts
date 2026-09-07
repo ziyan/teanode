@@ -1284,4 +1284,5 @@ export const ja: Catalog = {
   'mailboxSettings.contactCount': '{count} 件',
   'mailboxSettings.deleteContact': '連絡先を削除',
   'mailboxSettings.deleteContactConfirm': '{address} を削除しますか？そのアドレスから再びメールが届くと戻ってきます。',
+  'mailboxSettings.contactCountOne': '1 件',
 }

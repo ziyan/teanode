@@ -1062,7 +1062,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
 type Contact = { address: string; name?: string; lastSeenAt: string; count: number }
 
 function ContactsTab({ view }: { view: MailboxView }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const [prefix, setPrefix] = useState('')
   const query = useQuery(
     () => graphql<{ ListMailboxContacts: Contact[] }>(CONTACTS, { mailboxId: view.mailbox.id, prefix: prefix || null, first: 500 }),
@@ -1171,7 +1171,7 @@ function ContactsTab({ view }: { view: MailboxView }) {
                       </>
                     )}
                   </td>
-                  <td className="shrink muted">{t('mailboxSettings.contactCount', { count: contact.count })}</td>
+                  <td className="shrink muted">{plural(contact.count, { one: 'mailboxSettings.contactCountOne', other: 'mailboxSettings.contactCount' }, { count: contact.count })}</td>
                   <td className="shrink muted">
                     <RelativeTime value={contact.lastSeenAt} />
                   </td>

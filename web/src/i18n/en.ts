@@ -1294,4 +1294,5 @@ export const en = {
   'mailboxSettings.contactCount': '{count} messages',
   'mailboxSettings.deleteContact': 'Delete contact',
   'mailboxSettings.deleteContactConfirm': 'Delete {address}? It comes back if that address writes again.',
+  'mailboxSettings.contactCountOne': '1 message',
 }
