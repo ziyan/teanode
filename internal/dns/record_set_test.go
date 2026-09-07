@@ -8,6 +8,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // TestPublishesDKIMKey guards a mistake that reported a domain's DKIM as
@@ -59,7 +60,7 @@ func TestPublishesDKIMKey(t *testing.T) {
 func TestEveryDomainPublishesItsOwnKey(t *testing.T) {
 	t.Parallel()
 
-	shared, err := config.GenerateDomainKey("teanode1")
+	shared, err := models.GenerateDomainKey("teanode1")
 	if err != nil {
 		t.Fatalf("GenerateDomainKey: %s", err)
 	}
@@ -70,7 +71,7 @@ func TestEveryDomainPublishesItsOwnKey(t *testing.T) {
 
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
-	configuration.Domains = []*config.Domain{
+	domains := []*models.Domain{
 		{ID: "primary.test", Domain: "primary.test", DKIM: shared},
 		{ID: "same.test", Domain: "same.test", DKIM: shared},
 	}
@@ -85,10 +86,10 @@ func TestEveryDomainPublishesItsOwnKey(t *testing.T) {
 	}
 	verifier.client.Timeout = 50 * time.Millisecond
 
-	for _, domain := range configuration.Domains {
+	for _, domain := range domains {
 		t.Run(domain.Domain, func(t *testing.T) {
-			set := verifier.resolveDomainRecords(context.Background(), configuration, domain)
-			name := dnsName(config.DomainKeyName("teanode1", domain.Domain))
+			set := verifier.resolveDomainRecords(context.Background(), configuration, domain, domains)
+			name := dnsName(models.DomainKeyName("teanode1", domain.Domain))
 
 			var found *Record
 			for _, record := range set.Records {

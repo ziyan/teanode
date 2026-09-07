@@ -87,21 +87,6 @@ func TestRedactReplacesSecretsAndLeavesTheOriginal(t *testing.T) {
 	configuration.Database.Password = "the-database-password"
 	configuration.TLS.ACME.Route53.AccessKeyID = "AKIAEXAMPLE"
 	configuration.TLS.ACME.Route53.SecretAccessKey = "the-aws-secret"
-	configuration.Domains = []*Domain{{
-		ID:     "domain",
-		Domain: "example.com",
-		DKIM:   DomainKey{Selector: "teanode1", PrivateKey: "the-signing-key"},
-		Credentials: []*Credential{
-			{ID: "credential", Key: "the-credential-key"},
-		},
-		Aliases: []*Alias{
-			{ID: "alias", Kind: AliasKindMailServer, MailServer: &MailServer{Host: "smtp.example.net", Password: "the-relay-password"}},
-		},
-	}}
-	configuration.Users = []*User{{
-		Username:     "ziyan",
-		PasswordHash: "the-hash",
-	}}
 
 	redacted, err := configuration.Redact()
 	if err != nil {
@@ -113,10 +98,6 @@ func TestRedactReplacesSecretsAndLeavesTheOriginal(t *testing.T) {
 		"session.key":             redacted.Session.Key,
 		"database.password":       redacted.Database.Password,
 		"route53.secretAccessKey": redacted.TLS.ACME.Route53.SecretAccessKey,
-		"domain dkim.privateKey":  redacted.Domains[0].DKIM.PrivateKey,
-		"credential.key":          redacted.Domains[0].Credentials[0].Key,
-		"mailServer.password":     redacted.Domains[0].Aliases[0].MailServer.Password,
-		"user.passwordHash":       redacted.Users[0].PasswordHash,
 	} {
 		if value != Redacted {
 			t.Errorf("%s was not redacted: %q", name, value)
@@ -128,17 +109,11 @@ func TestRedactReplacesSecretsAndLeavesTheOriginal(t *testing.T) {
 	if redacted.TLS.ACME.Route53.AccessKeyID != "AKIAEXAMPLE" {
 		t.Errorf("the access key identifier should not be redacted, got %q", redacted.TLS.ACME.Route53.AccessKeyID)
 	}
-	if redacted.Domains[0].DKIM.Selector != "teanode1" {
-		t.Errorf("the selector should not be redacted, got %q", redacted.Domains[0].DKIM.Selector)
-	}
-	if redacted.Domains[0].Domain != "example.com" {
-		t.Errorf("the domain name should not be redacted, got %q", redacted.Domains[0].Domain)
-	}
 
 	if configuration.Server.Secret != "the-server-secret" {
 		t.Errorf("Redact changed the original: %q", configuration.Server.Secret)
 	}
-	if configuration.Domains[0].Credentials[0].Key != "the-credential-key" {
-		t.Errorf("Redact changed the original credential key")
+	if configuration.Session.Key != "the-session-key" {
+		t.Errorf("Redact changed the original session key")
 	}
 }

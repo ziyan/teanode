@@ -174,7 +174,14 @@ func (self *mail) rawView(response http.ResponseWriter, request *http.Request) {
 // rather than leaving it assumed, because a server with no accounts is open
 // by design.
 func (self *mail) requireOperator(request *http.Request) error {
-	if len(self.config.Current().Users) > 0 && api.UsernameFromRequest(request) == "" {
+	if api.UsernameFromRequest(request) != "" {
+		return nil
+	}
+	count, err := self.database.CountUsers()
+	if err != nil {
+		return err
+	}
+	if count > 0 {
 		return api.ErrNotLoggedIn
 	}
 	return nil

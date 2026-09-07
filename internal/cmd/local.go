@@ -5,8 +5,8 @@ import (
 
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // OpenLocalStore opens the configuration where the server keeps it: the
@@ -34,7 +34,7 @@ func OpenLocalStore() (config.Store, func(), error) {
 	// the schema of a database a server is running against is a way to be
 	// surprised; "teanode run" and "teanode config init" do it, at a moment
 	// when the operator is expecting a deployment.
-	store, err := configdb.Open(database, bootstrapped.Database)
+	store, err := config.OpenStore(database, bootstrapped.Database)
 	if err != nil {
 		closeDatabase()
 		return nil, nil, fmt.Errorf("cannot read the configuration from the database: %w", err)
@@ -116,4 +116,32 @@ func UpdateLocalConfiguration(mutate func(*config.Configuration) error) error {
 		_ = store.Close()
 	}()
 	return store.Update(mutate)
+}
+
+// LoadLocalDomains reads every domain from the database the environment
+// names, for a command that runs where the server does but without it.
+func LoadLocalDomains() ([]*models.Domain, error) {
+	store, closeDatabase, err := OpenLocalStore()
+	if err != nil {
+		return nil, err
+	}
+	defer closeDatabase()
+	defer func() {
+		_ = store.Close()
+	}()
+	database, closeAgain, err := OpenLocalDatabase()
+	if err != nil {
+		return nil, err
+	}
+	defer closeAgain()
+	if err := database.SetSecret(store.Current().Secret()); err != nil {
+		return nil, err
+	}
+	var domains []*models.Domain
+	err = database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domains, err = tx.ListDomains()
+		return err
+	})
+	return domains, err
 }

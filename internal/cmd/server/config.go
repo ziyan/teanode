@@ -12,7 +12,8 @@ import (
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/configdb"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/version"
 )
@@ -243,14 +244,14 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
 	if err != nil {
 		return err
 	}
 	if !seeded {
 		fmt.Printf("this database is already configured; nothing was changed\n")
 
-		store, err := configdb.Open(database, bootstrapped.Database)
+		store, err := config.OpenStore(database, bootstrapped.Database)
 		if err != nil {
 			return err
 		}
@@ -259,6 +260,9 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 		}()
 		bootstrapped.ReportIgnoredSeed(store.Current())
 		return nil
+	}
+	if err := seedDomain(database, bootstrapped); err != nil {
+		return err
 	}
 
 	fmt.Printf("the database is ready\n\n")
@@ -338,14 +342,14 @@ func newConfigShowCommand() *cli.Command {
 func newConfigExportCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "export",
-		Usage: "write the stored configuration to a file",
-		Description: "The counterpart to \"config import\": a backup of everything the\n" +
-			"database holds about how this server is configured, in a form that can\n" +
-			"be loaded into another one.\n\n" +
-			"The file carries signing keys, credential keys and the server secret in\n" +
-			"the clear — it has to, or restoring it would invalidate every SMTP\n" +
-			"password and every published DKIM record. It is written readable only by\n" +
-			"you. Treat it as a private key.",
+		Usage: "write the stored settings to a file",
+		Description: "The counterpart to \"config import\": the server's settings, in a form\n" +
+			"that can be loaded into another one. Domains, aliases, credentials and\n" +
+			"users are rows in the database, not settings, and travel with a database\n" +
+			"backup instead.\n\n" +
+			"The file carries the server secret and the session key in the clear — it\n" +
+			"has to, or restoring it would invalidate every SMTP password. It is\n" +
+			"written readable only by you. Treat it as a private key.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "file",
@@ -372,17 +376,47 @@ func newConfigExportCommand() *cli.Command {
 				return err
 			}
 
-			var aliases, credentials int
-			for _, domain := range configuration.Domains {
-				aliases += len(domain.Aliases)
-				credentials += len(domain.Credentials)
-			}
 			fmt.Printf("wrote %s\n", filename)
-			fmt.Printf("  %d domains, %d aliases, %d credentials, %d operators\n\n",
-				len(configuration.Domains), aliases, credentials, len(configuration.Users))
+			fmt.Printf("  the settings; domains, aliases, credentials and users are rows, and a\n")
+			fmt.Printf("  database backup is what carries those\n\n")
 			fmt.Printf("It contains secrets in the clear. Load it back with:\n")
 			fmt.Printf("  teanode config import --file %s\n", filename)
 			return nil
 		},
 	}
+}
+
+// seedDomain creates the domain a first run names, once the settings that
+// decide its subdomain and selector are stored.
+func seedDomain(database db.Database, bootstrapped *bootstrap.Bootstrap) error {
+	seed, err := bootstrapped.SeedConfiguration()
+	if err != nil {
+		return err
+	}
+	domain, err := bootstrapped.SeedDomainRow(seed)
+	if err != nil {
+		return err
+	}
+	if domain == nil {
+		return nil
+	}
+	if err := database.SetSecret(seed.Secret()); err != nil {
+		return err
+	}
+	return database.Transaction(func(tx db.Transaction) error {
+		if existing, err := tx.GetDomainByName(domain.Domain); err != nil {
+			return err
+		} else if existing != nil {
+			return nil
+		}
+		// Named for itself, like a domain created in the web UI: the name is
+		// unique already and reads well wherever the identifier appears.
+		domain.ID = domain.Domain
+		if _, err := tx.CreateDomain(domain); err != nil {
+			return err
+		}
+		log.Noticef("created the domain %q named by the environment; publish %s before its mail can be verified",
+			domain.Domain, models.DomainKeyName(domain.DKIM.Selector, domain.Domain))
+		return nil
+	})
 }

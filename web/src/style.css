@@ -3353,3 +3353,42 @@ a.button.primary:hover {
   margin: 0 0 var(--space-2);
   font-size: 13px;
 }
+
+/* Lists of things to tick: users in a group, roles of a group, permissions of a role. */
+.check-list {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.check-list legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.check-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.check-list-item input {
+  margin: 0;
+}
+
+/* The row before and after a change, in the audit log. */
+.audit-diff {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.audit-diff pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  max-height: 20rem;
+  overflow: auto;
+}

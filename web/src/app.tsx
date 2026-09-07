@@ -29,6 +29,7 @@ import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
 import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
+import { SessionProvider, hasAnywhere } from './session'
 
 export function App() {
   const { t } = useTranslation()
@@ -107,6 +108,7 @@ export function App() {
   // rather than the bar running across the top of both: the rail is the
   // product's own furniture, and the bar belongs to the page it is above.
   return (
+    <SessionProvider value={session}>
     <BreadcrumbProvider>
       <div className="layout">
         <Sidebar
@@ -167,7 +169,13 @@ export function App() {
             <PageHeading />
             <Routes>
               <Route path="/" element={<Navigate to="/mail" replace />} />
-              <Route path="/mail" element={<MailPage />} />
+              {/* Until the mailbox lands, a person with no management
+                  permission has nothing to see here but a note saying so;
+                  the operator's view of every message needs mail:audit. */}
+              <Route
+                path="/mail"
+                element={hasAnywhere(session.permissions, 'mail:audit') ? <MailPage /> : <MemberHome />}
+              />
               {/* Before the message route: "compose" is not a message
                   identifier, and the router should never treat it as one. */}
               <Route path="/mail/compose" element={<ComposePage />} />
@@ -226,6 +234,18 @@ export function App() {
         </div>
       </div>
     </BreadcrumbProvider>
+    </SessionProvider>
+  )
+}
+
+// MemberHome is the empty page a member lands on before there are mailboxes.
+function MemberHome() {
+  const { t } = useTranslation()
+  return (
+    <div className="card">
+      <h3>{t('mail.memberHome')}</h3>
+      <p className="muted">{t('mail.memberHomeHint')}</p>
+    </div>
   )
 }
 

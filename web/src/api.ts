@@ -90,6 +90,22 @@ export interface Session {
   // Whether this server offers passkeys. The sign-in form shows the passkey
   // button only when it does.
   passkeysEnabled: boolean
+
+  // ID of the account; empty for the console and for nobody.
+  userId?: string
+
+  // What the caller may do, resolved from their groups.
+  permissions?: Permissions | null
+
+  // Whether the caller holds any permission that opens the management side.
+  manages?: boolean
+}
+
+// Permissions is what a request may do: server and all-domains permissions
+// everywhere, and domain permissions by domain.
+export interface Permissions {
+  everywhere: string[]
+  byDomain: { domainId: string; permissions: string[] }[]
 }
 
 // Logging in goes through the same GraphQL endpoint as everything else. It
@@ -98,7 +114,8 @@ export interface Session {
 // credential is a cookie, so the reply has to set a header. The server does
 // that from the resolver.
 
-const SESSION_FIELDS = '{ authenticated authenticationRequired username name passkeysEnabled }'
+const SESSION_FIELDS =
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages permissions { everywhere byDomain { domainId permissions } } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

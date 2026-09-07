@@ -20,8 +20,12 @@ import {
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
+import { hasAnywhere, hasPermission, useSession } from '../session'
 
-type Item = { label: Key; to: string; icon: React.ReactNode }
+// permission is what a row needs, when it needs one: a domain permission held
+// over at least one domain, or a server permission. A row nothing gates is
+// for everyone who is signed in.
+type Item = { label: Key; to: string; icon: React.ReactNode; anyOf?: string[] }
 type Group = { label?: Key; items: Item[] }
 
 // One icon per settings surface that appears in the rail. Here rather than in
@@ -65,19 +69,20 @@ const GROUPS: Group[] = [
   {
     label: 'nav.groupMail',
     items: [
-      { label: 'nav.mail', to: '/mail', icon: <MailIcon /> },
-      { label: 'nav.queue', to: '/queue', icon: <QueueIcon /> },
-      { label: 'nav.reports', to: '/reports', icon: <ShieldIcon /> },
+      { label: 'nav.mail', to: '/mail', icon: <MailIcon />, anyOf: ['mail:audit'] },
+      { label: 'nav.queue', to: '/queue', icon: <QueueIcon />, anyOf: ['queue:manage'] },
+      { label: 'nav.reports', to: '/reports', icon: <ShieldIcon />, anyOf: ['report:read'] },
     ],
   },
   {
     label: 'nav.groupConfiguration',
     items: [
-      { label: 'nav.domains', to: '/domains', icon: <DomainsIcon /> },
+      { label: 'nav.domains', to: '/domains', icon: <DomainsIcon />, anyOf: ['domain:manage'] },
       ...surfacesByCategory('server').map((surface) => ({
         label: surface.label,
         to: surface.path,
         icon: SERVER_ICONS[surface.segment],
+        anyOf: ['server:manage', 'user:manage', 'group:manage', 'role:manage', 'audit:read'],
       })),
     ],
   },
@@ -146,7 +151,17 @@ export function Sidebar({
   // is already about.
   const surface = matchSettingsSurface(location.pathname)
   const inAccount = surface?.category === 'account'
-  const groups = inAccount ? [ACCOUNT_GROUP] : GROUPS
+
+  // Only the rows the caller may open. What is hidden here is refused by the
+  // server anyway; hiding it is the courtesy of not offering a door that
+  // does not open. A group with no rows left is not drawn at all.
+  const session = useSession()
+  const permitted = (item: Item) =>
+    !item.anyOf ||
+    item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key))
+  const groups = (inAccount ? [ACCOUNT_GROUP] : GROUPS)
+    .map((group) => ({ ...group, items: group.items.filter(permitted) }))
+    .filter((group) => group.items.length > 0)
 
   return (
     <>

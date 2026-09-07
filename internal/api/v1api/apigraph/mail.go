@@ -84,7 +84,7 @@ type Facet struct {
 // an answer computed from the most recent five hundred is a different
 // question wearing the same words.
 func (self *graph) CountMailsBy(ctx context.Context, arguments CountMailsByArguments) ([]*Facet, error) {
-	domainIds, err := self.domainsToList(ctx, arguments.DomainID)
+	domainIds, err := self.domainsToList(ctx, models.PermissionMailAudit, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ type ListMailsArguments struct {
 // configured domain, which is what somebody opening the dashboard to see "did
 // my mail arrive" actually wants.
 func (self *graph) ListMails(ctx context.Context, arguments ListMailsArguments) ([]*models.Mail, error) {
-	domainIds, err := self.domainsToList(ctx, arguments.DomainID)
+	domainIds, err := self.domainsToList(ctx, models.PermissionMailAudit, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ type GetMailArguments struct {
 }
 
 func (self *graph) GetMail(ctx context.Context, arguments GetMailArguments) (*models.Mail, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +190,7 @@ func (self *graph) GetMail(ctx context.Context, arguments GetMailArguments) (*mo
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(mail.DomainID) == nil {
+	if !self.domainStillExists(ctx, mail.DomainID) {
 		return nil, api.ErrNotFound
 	}
 

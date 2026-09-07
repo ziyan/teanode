@@ -4,24 +4,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/dsn"
 )
 
 // Describe fills Method and Destination from the alias the delivery was
 // made for, which is configuration rather than a stored column. An external
 // delivery has no alias: it is this server sending to the recipient directly.
-func (self *Delivery) Describe(alias *config.Alias) {
+func (self *Delivery) Describe(alias *Alias) {
 	switch {
 	case self.Kind == DeliveryKindExternal:
 		self.Method, self.Destination = "smtp", self.Recipient
 	case alias == nil:
 		return
-	case alias.Kind == config.AliasKindEmail:
+	case alias.Kind == AliasKindEmail:
 		self.Method, self.Destination = "email", alias.Email
-	case alias.Kind == config.AliasKindWebhook:
+	case alias.Kind == AliasKindWebhook:
 		self.Method, self.Destination = "webhook", alias.Webhook
-	case alias.Kind == config.AliasKindMailServer && alias.MailServer != nil:
+	case alias.Kind == AliasKindMailServer && alias.MailServer != nil:
 		self.Method, self.Destination = "mailServer", fmt.Sprintf("%s:%d", alias.MailServer.Host, alias.MailServer.Port)
 	}
 }
@@ -108,8 +107,8 @@ type Delivery struct {
 	// Alias that was matched to this delivery. The identifier is stored; the
 	// pointer is resolved from the configuration and is nil once the alias has
 	// been removed, which historical deliveries have to tolerate.
-	AliasID string        `json:"aliasId,omitempty"`
-	Alias   *config.Alias `json:"-"`
+	AliasID string `json:"aliasId,omitempty"`
+	Alias   *Alias `json:"-"`
 
 	// Recipient address, indicating the recipient in the Mail being delivered to
 	Recipient string `json:"recipient,omitempty"`

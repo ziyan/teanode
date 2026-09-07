@@ -13,6 +13,9 @@ type Query interface {
 	DomainQuery
 	AliasQuery
 	UserQuery
+	RoleQuery
+	GroupQuery
+	AuditQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery
@@ -36,6 +39,8 @@ type Mutation interface {
 	DomainMutation
 	AliasMutation
 	UserMutation
+	RoleMutation
+	GroupMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation

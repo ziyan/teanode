@@ -44,6 +44,9 @@ type exchange struct {
 	credentialUsagesMap map[string][]models.Usage
 
 	storage storage.Storage
+
+	// directory caches what the domain table is read for per message.
+	directory directory
 }
 
 func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamFilter spamfilter.Filter, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {

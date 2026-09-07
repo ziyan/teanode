@@ -8,7 +8,6 @@ import (
 	"net/textproto"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/dsn"
@@ -49,7 +48,10 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 	}
 
 	// look up the domain the bounced mail was for
-	domain := self.config.Current().FindDomainByID(originalMail.DomainID)
+	domain, err := tx.GetDomain(originalMail.DomainID)
+	if err != nil {
+		return nil, err
+	}
 	if domain == nil {
 		return nil, mailparse.ErrMailBoxUnavailable
 	}
@@ -188,7 +190,7 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 	return tx.CreateDeliveries(deliveries, nil)
 }
 
-func (self *exchange) authenticateDsn(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *config.Domain) error {
+func (self *exchange) authenticateDsn(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *models.Domain) error {
 	start := time.Now()
 	mail.Status = models.MailStatusRejected
 

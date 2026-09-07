@@ -5,7 +5,18 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
+
+// findDomain is the one named, out of a test's list.
+func findDomain(domains []*models.Domain, name string) *models.Domain {
+	for _, domain := range domains {
+		if domain.Domain == name {
+			return domain
+		}
+	}
+	return nil
+}
 
 // Which name a domain's mail arrives at, and so which name its MX records
 // point at, its certificate is issued for, and its headers report.
@@ -44,17 +55,17 @@ func TestMailHostsFor(t *testing.T) {
 		t.Run(test.serverName+"/"+test.domain, func(t *testing.T) {
 			configuration := config.Default()
 			configuration.Server.Name = test.serverName
-			configuration.Domains = []*config.Domain{
+			domains := []*models.Domain{
 				{Domain: "primary.test"},
 				{Domain: "second.test"},
 				{Domain: "a.example.com"},
 				{Domain: "example.com"},
 			}
-			domain := configuration.FindDomain(test.domain)
+			domain := findDomain(domains, test.domain)
 			if domain == nil {
 				t.Fatalf("%q is not in the test configuration", test.domain)
 			}
-			if got := configuration.MailHostFor(domain); got != test.want {
+			if got := configuration.MailHostFor(domain, domains); got != test.want {
 				t.Errorf("MailHostFor(%q) with server %q = %q, want %q",
 					test.domain, test.serverName, got, test.want)
 			}
@@ -72,14 +83,14 @@ func TestAPairOfServerNamesBecomesOneNameElsewhere(t *testing.T) {
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
 	configuration.Server.MailServers = []string{"mx1.primary.test", "mx2.primary.test"}
-	configuration.Domains = []*config.Domain{{Domain: "primary.test"}, {Domain: "other.test"}}
+	domains := []*models.Domain{{Domain: "primary.test"}, {Domain: "other.test"}}
 
-	owner := configuration.MailHostsFor(configuration.FindDomain("primary.test"))
+	owner := configuration.MailHostsFor(findDomain(domains, "primary.test"), domains)
 	if strings.Join(owner, ",") != "mx1.primary.test,mx2.primary.test" {
 		t.Errorf("the domain the server is named under got %v, want both of the server's names", owner)
 	}
 
-	other := configuration.MailHostsFor(configuration.FindDomain("other.test"))
+	other := configuration.MailHostsFor(findDomain(domains, "other.test"), domains)
 	if strings.Join(other, ",") != "mx.other.test" {
 		t.Errorf("another domain got %v, want the single mx.other.test", other)
 	}
@@ -93,49 +104,28 @@ func TestConfiguredMailServersWin(t *testing.T) {
 
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
-	configuration.Domains = []*config.Domain{
+	domains := []*models.Domain{
 		{Domain: "primary.test"},
 		{Domain: "pair.test", MailServers: []string{"mx1.pair.test", "mx2.pair.test"}},
-		{Domain: "elsewhere.test", MailServers: []string{"mail.primary.test"}},
-		{Domain: "spaced.test", MailServers: []string{" MX.Spaced.Test. ", "", "  "}},
+		{Domain: "pointed.test", MailServers: []string{"mail.primary.test"}},
+		// Tidied on the way through, so a list typed with a trailing comma
+		// and a stray capital means what it looks like.
+		{Domain: "spaced.test", MailServers: []string{" MX.Spaced.Test. ", ""}},
+		// Nothing said, so the default applies.
 		{Domain: "default.test"},
 	}
 
 	for _, test := range []struct{ domain, want string }{
 		{"pair.test", "mx1.pair.test,mx2.pair.test"},
-		// Pointing at a host in another zone, which is what everything did
-		// before this was a choice.
-		{"elsewhere.test", "mail.primary.test"},
-		// Tidied on the way through, so a list typed with a trailing comma
-		// and a stray capital means what it looks like.
+		{"pointed.test", "mail.primary.test"},
 		{"spaced.test", "mx.spaced.test"},
-		// Nothing said, so the default applies.
 		{"default.test", "mx.default.test"},
 	} {
 		t.Run(test.domain, func(t *testing.T) {
-			got := configuration.MailHostsFor(configuration.FindDomain(test.domain))
+			got := configuration.MailHostsFor(findDomain(domains, test.domain), domains)
 			if strings.Join(got, ",") != test.want {
 				t.Errorf("MailHostsFor(%q) = %v, want %s", test.domain, got, test.want)
 			}
 		})
-	}
-}
-
-// Which names an operator has to publish an address record for, and which this
-// server may obtain a certificate for: the ones in the domain's own zone. A
-// domain pointing at somebody else's name does neither.
-func TestInThisDomain(t *testing.T) {
-	t.Parallel()
-
-	domain := &config.Domain{Domain: "example.com"}
-	for _, host := range []string{"example.com", "mx.example.com", "MX.Example.Com.", "a.b.example.com"} {
-		if !domain.InThisDomain(host) {
-			t.Errorf("%q should be in example.com", host)
-		}
-	}
-	for _, host := range []string{"mx.example.net", "notexample.test", "example.com.elsewhere.test", ""} {
-		if domain.InThisDomain(host) {
-			t.Errorf("%q should not be in example.com", host)
-		}
 	}
 }

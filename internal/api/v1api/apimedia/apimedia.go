@@ -121,7 +121,7 @@ func remoteAddress(request *http.Request) string {
 // uploadView stores a picture. An operator's action, so it is behind the
 // session the rest of the dashboard is behind.
 func (self *media) uploadView(response http.ResponseWriter, request *http.Request) {
-	if len(self.config.Current().Users) > 0 && api.UsernameFromRequest(request) == "" {
+	if api.UsernameFromRequest(request) == "" && self.claimed() {
 		http.Error(response, "not logged in", http.StatusUnauthorized)
 		return
 	}
@@ -135,7 +135,15 @@ func (self *media) uploadView(response http.ResponseWriter, request *http.Reques
 	}
 
 	domainId := strings.TrimSpace(request.FormValue("domainId"))
-	domain := self.config.Current().FindDomainByID(domainId)
+	var domain *models.Domain
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domain, err = tx.GetDomain(domainId)
+		return err
+	}); err != nil {
+		http.Error(response, "cannot read the domain", http.StatusInternalServerError)
+		return
+	}
 	if domain == nil {
 		http.Error(response, "no such domain", http.StatusBadRequest)
 		return
@@ -299,4 +307,16 @@ func filename(value string) string {
 		value = value[:128]
 	}
 	return value
+}
+
+// claimed reports whether this server has an account, in which case a
+// request without one is refused. A server with none is open by design, so
+// that the first person to arrive can claim it.
+func (self *media) claimed() bool {
+	count, err := self.database.CountUsers()
+	if err != nil {
+		log.Errorf("could not count the accounts: %s", err)
+		return true
+	}
+	return count > 0
 }

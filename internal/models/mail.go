@@ -5,7 +5,6 @@ package models
 import (
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/geoip"
 )
 
@@ -82,13 +81,13 @@ type Mail struct {
 	// Domain that the Mail belongs to. The identifier is stored; the pointer
 	// is resolved from the configuration when the Mail is loaded, and is nil
 	// when the domain has since been removed from the configuration.
-	DomainID string         `json:"domainId,omitempty"`
-	Domain   *config.Domain `json:"-"`
+	DomainID string  `json:"domainId,omitempty"`
+	Domain   *Domain `json:"-"`
 
 	// Credential that was used to send this Mail, if any. Resolved from the
 	// configuration in the same way, and nil once it is deleted.
-	CredentialID string             `json:"credentialId,omitempty"`
-	Credential   *config.Credential `json:"-"`
+	CredentialID string      `json:"credentialId,omitempty"`
+	Credential   *Credential `json:"-"`
 
 	// For DSN mail, the Delivery that caused the bounce, if any
 	DeliveryID string    `json:"deliveryId,omitempty"`

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,16 +22,17 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/frontend"
 	"github.com/ziyan/teanode/internal/mailer"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
@@ -136,12 +138,17 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	}
 	defer closeDatabase()
 
-	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
 	if err != nil {
 		return "", "", err
 	}
+	if seeded {
+		if err := seedDomain(database, bootstrapped); err != nil {
+			return "", "", err
+		}
+	}
 
-	store, err := configdb.Open(database, bootstrapped.Database)
+	store, err := config.OpenStore(database, bootstrapped.Database)
 	if err != nil {
 		return "", "", err
 	}
@@ -180,10 +187,13 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 		return "", "", err
 	}
 
-	// An installation upgraded from a release that stored the signing keys in
-	// the clear rewrites them once, here, rather than waiting for whatever
-	// unrelated edit would otherwise have done it.
-	if err := configdb.EnsureSealed(database, store); err != nil {
+	// A server that predates roles and groups gets them now, with every
+	// existing account an administrator, so that nobody can do less than
+	// they could the day before.
+	if err := database.Transaction(func(tx db.Transaction) error {
+		_, err := access.EnsureSeeded(tx)
+		return err
+	}); err != nil {
 		return "", "", err
 	}
 	configuration = store.Current()
@@ -315,11 +325,15 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		return nil, err
 	}
 
-	if err := self.openCertificates(configuration); err != nil {
+	domains, err := self.listDomains()
+	if err != nil {
+		return nil, err
+	}
+	if err := self.openCertificates(configuration, domains); err != nil {
 		return nil, err
 	}
 
-	for _, domain := range configuration.Domains {
+	for _, domain := range domains {
 		var enabled int
 		for _, alias := range domain.Aliases {
 			if !alias.Disabled {
@@ -327,7 +341,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 			}
 		}
 		if enabled == 0 {
-			log.Warningf("domain %q has no enabled alias, so mail for it will be refused; add one with the dashboard or in the configuration file", domain.Domain)
+			log.Warningf("domain %q has no enabled alias, so mail for it will be refused; add one in the web UI", domain.Domain)
 		}
 	}
 
@@ -422,7 +436,20 @@ func (self *server) listen(configuration *config.Configuration) error {
 // and no domain has an empty one.
 const serverCertificateKey = ""
 
-func (self *server) openCertificates(configuration *config.Configuration) error {
+// listDomains reads every domain, for the parts of starting up that need
+// them: the warning about a domain nothing delivers for, and the certificate
+// each domain's own mail server name is served.
+func (self *server) listDomains() ([]*models.Domain, error) {
+	var domains []*models.Domain
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domains, err = tx.ListDomains()
+		return err
+	})
+	return domains, err
+}
+
+func (self *server) openCertificates(configuration *config.Configuration, domains []*models.Domain) error {
 	if !configuration.TLS.ACME.Enabled {
 		return nil
 	}
@@ -451,21 +478,22 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 			})
 		},
 		SaveCertificate: func(key, certificate, privateKey string) error {
-			return self.store.Update(func(configuration *config.Configuration) error {
-				if key == serverCertificateKey {
+			if key == serverCertificateKey {
+				return self.store.Update(func(configuration *config.Configuration) error {
 					configuration.TLS.ACME.Certificate = certificate
 					configuration.TLS.ACME.PrivateKey = privateKey
 					return nil
-				}
-				domain := configuration.FindDomainByID(key)
-				if domain == nil {
+				})
+			}
+			// A domain's certificate is a column of its row.
+			return self.database.Transaction(func(tx db.Transaction) error {
+				err := tx.SetDomainCertificate(key, models.DomainCertificate{Certificate: certificate, PrivateKey: privateKey})
+				if errors.Is(err, db.ErrNotFound) {
 					// The domain was removed while its certificate was being
 					// obtained. Nothing to keep it on, and nothing to fix.
 					return nil
 				}
-				domain.TLS.Certificate = certificate
-				domain.TLS.PrivateKey = privateKey
-				return nil
+				return err
 			})
 		},
 	}
@@ -478,12 +506,12 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 	// and asking for a second one for the same name would spend rate limit to
 	// obtain a duplicate.
 	if configuration.TLS.ACME.PerDomain {
-		for _, domain := range configuration.Domains {
+		for _, domain := range domains {
 			if domain == nil || domain.Domain == "" {
 				continue
 			}
 			var hosts []string
-			for _, host := range configuration.MailHostsFor(domain) {
+			for _, host := range configuration.MailHostsFor(domain, domains) {
 				// Only names in this domain's own zone. A domain pointing at
 				// a name somebody else owns is served that owner's
 				// certificate, which is correct: it is their name.
@@ -642,8 +670,10 @@ func (self *server) openExchange(configuration *config.Configuration, spamFilter
 }
 
 func (self *server) openWeb(configuration *config.Configuration) error {
-	if len(configuration.Users) == 0 {
-		log.Warningf("this server has no account yet, so anyone who can reach the dashboard can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
+	if count, err := self.database.CountUsers(); err != nil {
+		return err
+	} else if count == 0 {
+		log.Warningf("this server has no account yet, so anyone who can reach the web UI can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
 	}
 
 	mailerComponent, err := mailer.New(self.database, self.store, self.exchange, nil)
@@ -656,7 +686,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		}
 	})
 
-	verifier, err := dns.Open(self.store, &dns.Settings{
+	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
 		Nameserver:    configuration.DNS.Nameserver,
 		CheckInterval: configuration.DNS.CheckInterval.Duration(),
 	})

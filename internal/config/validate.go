@@ -1,18 +1,15 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"regexp"
-	"regexp/syntax"
 	"strings"
 	"time"
 
 	"github.com/op/go-logging"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Error is a single problem found in the configuration file. Path is the YAML
@@ -62,8 +59,7 @@ func (self *Configuration) Validate() error {
 	self.validateDatabase(validator)
 	self.validateSmtp(validator)
 	self.validateDkim(validator)
-	self.validateDomains(validator)
-	self.validateUsers(validator)
+	self.validateSession(validator)
 	self.validateIntegrations(validator)
 
 	if len(validator.errors) == 0 {
@@ -296,191 +292,10 @@ func (self *Configuration) validateDkim(validator *validator) {
 	}
 }
 
-func (self *Configuration) validateDomains(validator *validator) {
-	if len(self.Domains) == 0 {
-		validator.add("domains", "required: at least one domain to receive mail for")
-	}
-	seenDomains := make(map[string]int, len(self.Domains))
-	seenIds := make(map[string]string)
-	for index, domain := range self.Domains {
-		path := fmt.Sprintf("domains[%d]", index)
-		if domain == nil {
-			validator.add(path, "is empty")
-			continue
-		}
-		if domain.ID == "" {
-			validator.add(path+".id", "required: a stable identifier; stored mail references it")
-		} else if other, ok := seenIds[domain.ID]; ok {
-			validator.add(path+".id", "%q is already used by %s", domain.ID, other)
-		} else {
-			seenIds[domain.ID] = path
-		}
-		if domain.Domain == "" {
-			validator.add(path+".domain", "required: the mail domain, for example example.com")
-		} else if !isHostname(domain.Domain) {
-			validator.add(path+".domain", "%q is not a domain name", domain.Domain)
-		} else if previous, ok := seenDomains[strings.ToLower(domain.Domain)]; ok {
-			validator.add(path+".domain", "%q is already configured as domains[%d]", domain.Domain, previous)
-		} else {
-			seenDomains[strings.ToLower(domain.Domain)] = index
-		}
-		if domain.Subdomain != "" && !isHostLabel(domain.Subdomain) {
-			validator.add(path+".subdomain", "%q is not a single host label, for example mail", domain.Subdomain)
-		}
-		for index, host := range domain.MailServers {
-			// A blank entry is a trailing comma in a form, which means
-			// nothing and is dropped rather than refused.
-			if strings.TrimSpace(host) == "" {
-				continue
-			}
-			if !isHostname(strings.TrimSuffix(strings.TrimSpace(host), ".")) {
-				validator.add(fmt.Sprintf("%s.mailServers[%d]", path, index),
-					"%q is not a host name, for example mx.%s", host, domain.Domain)
-			}
-		}
-		if host := strings.TrimSuffix(strings.TrimSpace(domain.LinkHost), "."); host != "" {
-			if !isHostname(host) {
-				validator.add(path+".linkHost", "%q is not a host name, for example %s", domain.LinkHost, domain.Domain)
-			} else if !domain.InThisDomain(host) {
-				// A name in somebody else's domain would put that domain in
-				// front of every recipient who reads where a picture came
-				// from, which is exactly what a per-domain name exists to
-				// avoid. It is also a name this server cannot get a
-				// certificate for.
-				validator.add(path+".linkHost", "%q is not under %s; an address in another domain names whoever runs that one", host, domain.Domain)
-			}
-		}
-		if domain.SpamFilterScoreThreshold < 0 {
-			validator.add(path+".spamFilterScoreThreshold", "must not be negative")
-		}
-		self.validateDomainKey(validator, path, domain)
-		self.validateAliases(validator, path, domain, seenIds)
-		self.validateCredentials(validator, path, domain, seenIds)
-	}
-}
-
-// validateDomainKey checks a domain's signing key. A domain with no key is
-// allowed: it can still receive mail, it just cannot sign what it sends, and
-// the dashboard offers to generate one.
-func (self *Configuration) validateDomainKey(validator *validator, domainPath string, domain *Domain) {
-	if domain.DKIM.Selector == "" && domain.DKIM.PrivateKey == "" {
-		return
-	}
-	if domain.DKIM.Selector == "" {
-		validator.add(domainPath+".dkim.selector", "required when a signing key is set")
-	} else if !isHostLabel(domain.DKIM.Selector) {
-		validator.add(domainPath+".dkim.selector", "%q is not usable as a DNS label", domain.DKIM.Selector)
-	}
-	if domain.DKIM.PrivateKey == "" {
-		validator.add(domainPath+".dkim.privateKey", "required when a selector is set; generate one in the dashboard or with 'teanode dkim generate'")
-		return
-	}
-	if _, err := domain.DKIM.Signer(); err != nil {
-		validator.add(domainPath+".dkim.privateKey", "cannot be used: %s", err)
-	}
-}
-
-func (self *Configuration) validateAliases(validator *validator, domainPath string, domain *Domain, seenIds map[string]string) {
-	for index, alias := range domain.Aliases {
-		path := fmt.Sprintf("%s.aliases[%d]", domainPath, index)
-		if alias == nil {
-			validator.add(path, "is empty")
-			continue
-		}
-		if alias.ID == "" {
-			validator.add(path+".id", "required: a stable identifier; stored deliveries reference it")
-		} else if other, ok := seenIds[alias.ID]; ok {
-			validator.add(path+".id", "%q is already used by %s", alias.ID, other)
-		} else {
-			seenIds[alias.ID] = path
-		}
-		// An empty pattern is a catch-all rather than a mistake.
-		if alias.Pattern != "" {
-			if _, err := regexp.Compile(alias.Pattern); err != nil {
-				validator.add(path+".pattern", "invalid regular expression: %s", regexpErrorMessage(err))
-			}
-		}
-		switch alias.Kind {
-		case AliasKindNull:
-		case AliasKindEmail:
-			if alias.Email == "" {
-				validator.add(path+".email", "required when kind is email: the address to forward to")
-			} else if !isEmailAddress(alias.Email) {
-				validator.add(path+".email", "%q is not an email address", alias.Email)
-			}
-		case AliasKindWebhook:
-			if alias.Webhook == "" {
-				validator.add(path+".webhook", "required when kind is webhook: the URL to post to")
-			} else if parsed, err := url.Parse(alias.Webhook); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				validator.add(path+".webhook", "%q is not an http or https URL", alias.Webhook)
-			}
-		case AliasKindMailServer:
-			if alias.MailServer == nil || alias.MailServer.Host == "" {
-				validator.add(path+".mailServer.host", "required when kind is mailServer: the server to relay to")
-			} else if !isRelayHost(alias.MailServer.Host) {
-				validator.add(path+".mailServer.host", "%q is not a host name or address", alias.MailServer.Host)
-			}
-			if alias.MailServer != nil && alias.MailServer.Port == 0 {
-				validator.add(path+".mailServer.port", "required when kind is mailServer, usually 25")
-			}
-		case "":
-			validator.add(path+".kind", "required, one of null, email, webhook or mailServer")
-		default:
-			validator.add(path+".kind", "%q is not a kind, expected null, email, webhook or mailServer", alias.Kind)
-		}
-	}
-}
-
-func (self *Configuration) validateCredentials(validator *validator, domainPath string, domain *Domain, seenIds map[string]string) {
-	for index, credential := range domain.Credentials {
-		path := fmt.Sprintf("%s.credentials[%d]", domainPath, index)
-		if credential == nil {
-			validator.add(path, "is empty")
-			continue
-		}
-		if credential.ID == "" {
-			validator.add(path+".id", "required: a stable identifier; stored mail references it")
-		} else if other, ok := seenIds[credential.ID]; ok {
-			validator.add(path+".id", "%q is already used by %s", credential.ID, other)
-		} else {
-			seenIds[credential.ID] = path
-		}
-		if credential.Key == "" {
-			validator.add(path+".key", "required: the secret half of the credential")
-		}
-	}
-}
-
-// validateUsers checks the people who may administer this server. An empty
-// list is allowed and means the server has not been claimed yet: it then shows
-// a setup screen asking the first visitor to create an account.
-func (self *Configuration) validateUsers(validator *validator) {
+// validateSession checks how long a login lasts.
+func (self *Configuration) validateSession(validator *validator) {
 	if self.Session.Lifetime <= 0 {
 		validator.add("session.lifetime", "must be positive, for example 30d")
-	}
-
-	seenUsernames := make(map[string]int, len(self.Users))
-	for index, user := range self.Users {
-		path := fmt.Sprintf("users[%d]", index)
-		if user == nil {
-			validator.add(path, "is empty")
-			continue
-		}
-		if user.Username == "" {
-			validator.add(path+".username", "required")
-		} else if previous, ok := seenUsernames[user.Username]; ok {
-			validator.add(path+".username", "%q is already used by users[%d]", user.Username, previous)
-		} else {
-			seenUsernames[user.Username] = index
-		}
-		if user.PasswordHash == "" {
-			validator.add(path+".passwordHash", "required: a bcrypt hash, generate one with 'teanode password'")
-		} else if _, err := bcrypt.Cost([]byte(user.PasswordHash)); err != nil {
-			validator.add(path+".passwordHash", "is not a bcrypt hash (%s); generate one with 'teanode password' and do not paste the plain password here", err)
-		}
-		if user.Email != "" && !isEmailAddress(user.Email) {
-			validator.add(path+".email", "%q is not an email address", user.Email)
-		}
 	}
 }
 
@@ -574,10 +389,7 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 	}
 }
 
-var (
-	hostLabelPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
-	emailPattern     = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
-)
+var hostLabelPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 
 func isHostLabel(value string) bool {
 	return hostLabelPattern.MatchString(value)
@@ -597,43 +409,6 @@ func isHostname(value string) bool {
 		}
 	}
 	return true
-}
-
-// isRelayHost reports whether a value names something this server can open an
-// SMTP connection to.
-//
-// Looser than isHostname on purpose. A relay target is reached over whatever
-// network this server is on, not looked up in public DNS: an address, a
-// single-label name from a container network or a search domain, or a fully
-// qualified name are all ordinary. isHostname is for the names this server
-// publishes and obtains certificates for, which do have to be qualified.
-func isRelayHost(value string) bool {
-	if value == "" || len(value) > 253 {
-		return false
-	}
-	if net.ParseIP(value) != nil {
-		return true
-	}
-	for _, label := range strings.Split(strings.TrimSuffix(value, "."), ".") {
-		if !isHostLabel(label) {
-			return false
-		}
-	}
-	return true
-}
-
-func isEmailAddress(value string) bool {
-	return emailPattern.MatchString(value)
-}
-
-// regexpErrorMessage strips the "error parsing regexp: " prefix that
-// regexp.Compile adds, because the surrounding message already says that.
-func regexpErrorMessage(err error) string {
-	var parseError *syntax.Error
-	if errors.As(err, &parseError) {
-		return fmt.Sprintf("%s in %s", parseError.Code, parseError.Expr)
-	}
-	return err.Error()
 }
 
 // ValidateFiles checks that the files the configuration refers to exist and

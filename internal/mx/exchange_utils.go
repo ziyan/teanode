@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/arc"
@@ -146,14 +145,15 @@ func (self *exchange) receivedBy(envelope *mailparse.Envelope) string {
 
 	if envelope != nil {
 		configuration := self.config.Current()
+		domains := self.allDomains()
 		name := ""
 		for _, recipient := range envelope.Recipients {
 			_, recipientDomain := mailparse.SplitAddress(recipient)
-			domain := configuration.FindDomain(recipientDomain)
+			domain := self.domainByName(recipientDomain)
 			if domain == nil {
 				return self.settings.Server
 			}
-			host := configuration.MailHostFor(domain)
+			host := configuration.MailHostFor(domain, domains)
 			if name != "" && !strings.EqualFold(name, host) {
 				return self.settings.Server
 			}
@@ -706,8 +706,8 @@ func (self *exchange) checkIp(ctx context.Context, ip net.IP, timeout time.Durat
 	return ""
 }
 
-func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
-	aliases := self.config.Current().MatchAliases(domain, recipientAlias)
+func (self *exchange) matchAliases(domain *models.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
+	aliases := self.matchingAliases(domain, recipientAlias)
 	if len(aliases) == 0 {
 		return nil, nil
 	}
@@ -722,11 +722,11 @@ func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string,
 		})
 		var deliver bool
 		switch alias.Kind {
-		case config.AliasKindEmail:
+		case models.AliasKindEmail:
 			deliver = alias.Email != ""
-		case config.AliasKindWebhook:
+		case models.AliasKindWebhook:
 			deliver = alias.Webhook != ""
-		case config.AliasKindMailServer:
+		case models.AliasKindMailServer:
 			deliver = alias.MailServer != nil && alias.MailServer.Host != ""
 		}
 		if deliver {

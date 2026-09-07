@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -42,14 +43,14 @@ type mailHost struct {
 // per domain to update instead of one. That is the same trade the DKIM records
 // make, and it is the reason this is derived from the server's names rather
 // than invented — mx1 stays mx1, so what to change is obvious.
-func mailHostsFor(configuration *config.Configuration, domain *config.Domain) []mailHost {
+func mailHostsFor(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain) []mailHost {
 	// The names themselves are the configuration's answer, so the panel and
 	// the rest of the server cannot disagree about what a domain's mail
 	// arrives at. What is added here is only what checking needs: the
 	// server's own names still count as reaching it, which is what an
 	// installation set up before this points at.
 	servers := configuration.MailServers()
-	names := configuration.MailHostsFor(domain)
+	names := configuration.MailHostsFor(domain, domains)
 
 	hosts := make([]mailHost, 0, len(names))
 	for _, name := range names {
@@ -165,7 +166,7 @@ func (self *RecordSet) DeliverableTo() bool {
 // exist. Unlike the hosted service this grew out of, the DKIM record is a TXT
 // holding the public key rather than a CNAME, because this server holds the
 // key itself.
-func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *config.Configuration, domain *config.Domain) *RecordSet {
+func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *config.Configuration, domain *models.Domain, domains []*models.Domain) *RecordSet {
 	start := time.Now()
 
 	recordSet := &RecordSet{
@@ -190,7 +191,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// can go and create. It used to list the server's names, which meant
 	// twenty-four pages out of twenty-five carried two rows that were somebody
 	// else's to publish.
-	hosts := mailHostsFor(configuration, domain)
+	hosts := mailHostsFor(configuration, domain, domains)
 	for _, host := range hosts {
 		// Only for a name in this domain's own zone. A domain configured to
 		// point at a name somebody else owns — the server's own, most likely
@@ -344,7 +345,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// copied straight into a DNS provider's form rather than being fetched
 	// with a separate command.
 	if domain.DKIM.Selector != "" {
-		name := dnsName(config.DomainKeyName(domain.DKIM.Selector, domain.Domain))
+		name := dnsName(models.DomainKeyName(domain.DKIM.Selector, domain.Domain))
 		domainKey := &Record{
 			Type:    "TXT",
 			Name:    name,
@@ -564,7 +565,7 @@ func (self *verifier) serverAddressRecords(ctx context.Context, host string, ext
 // Signing needs the server secret; with none — a configuration being checked
 // before the first start — the plain form is shown rather than nothing, and it
 // is corrected the moment there is a secret.
-func reportAddress(configuration *config.Configuration, domain *config.Domain) string {
+func reportAddress(configuration *config.Configuration, domain *models.Domain) string {
 	secret := configuration.Secret()
 	if len(secret) == 0 {
 		return "rua@" + domain.Hostname()

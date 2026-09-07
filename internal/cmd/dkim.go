@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewDKIMCommand builds "teanode dkim", which manages the keys that sign
-// outgoing mail. Keys live in the configuration file, one per domain, and are
+// outgoing mail. Keys live in the domain table, one per domain, and are
 // created automatically when a domain is added — so these commands exist for
 // rotation and for looking up a record, not for first-time setup.
 func NewDKIMCommand() *cli.Command {
@@ -77,7 +78,7 @@ func runDkimShow(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if configuration != nil {
-		return showDkimOffline(command, configuration, command.Args().First())
+		return showDkimOffline(command, command.Args().First())
 	}
 
 	if domainName := command.Args().First(); domainName != "" {
@@ -163,12 +164,21 @@ func dkimRecord(domain *client.Domain) *client.Record {
 	return domain.Records.FindRecord("TXT", name)
 }
 
-// showDkimOffline prints the record straight from the configuration file, for
-// a server that is not running yet. It cannot say whether the record is
-// published, because that needs the DNS check the server performs.
-func showDkimOffline(command *cli.Command, configuration *config.Configuration, domainName string) error {
+// showDkimOffline prints the record straight from the database, for a server
+// that is not running yet. It cannot say whether the record is published,
+// because that needs the DNS check the server performs.
+func showDkimOffline(command *cli.Command, domainName string) error {
+	domains, err := LoadLocalDomains()
+	if err != nil {
+		return err
+	}
 	if domainName != "" {
-		domain := configuration.FindDomain(domainName)
+		var domain *models.Domain
+		for _, candidate := range domains {
+			if strings.EqualFold(candidate.Domain, domainName) {
+				domain = candidate
+			}
+		}
 		if domain == nil {
 			return fmt.Errorf("%q is not a configured domain", domainName)
 		}
@@ -183,8 +193,8 @@ func showDkimOffline(command *cli.Command, configuration *config.Configuration, 
 	}
 
 	if command.Bool("json") {
-		listing := make([]any, 0, len(configuration.Domains))
-		for _, domain := range configuration.Domains {
+		listing := make([]any, 0, len(domains))
+		for _, domain := range domains {
 			described, err := describeDkimOffline(domain)
 			if err != nil {
 				return err
@@ -196,7 +206,7 @@ func showDkimOffline(command *cli.Command, configuration *config.Configuration, 
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(writer, "DOMAIN\tSELECTOR\tKEY")
-	for _, domain := range configuration.Domains {
+	for _, domain := range domains {
 		key := "none"
 		if domain.DKIM.PrivateKey != "" {
 			key = "present"
@@ -210,7 +220,7 @@ func showDkimOffline(command *cli.Command, configuration *config.Configuration, 
 	return nil
 }
 
-func printDomainKeyOffline(domain *config.Domain) error {
+func printDomainKeyOffline(domain *models.Domain) error {
 	if domain.DKIM.PrivateKey == "" {
 		return fmt.Errorf("%q has no signing key; run 'teanode dkim generate %s'", domain.Domain, domain.Domain)
 	}
@@ -218,7 +228,7 @@ func printDomainKeyOffline(domain *config.Domain) error {
 	if err != nil {
 		return err
 	}
-	name := config.DomainKeyName(domain.DKIM.Selector, domain.Domain)
+	name := models.DomainKeyName(domain.DKIM.Selector, domain.Domain)
 
 	fmt.Printf("Publish this DNS record, then wait for it to propagate:\n\n")
 	fmt.Printf("  type:  TXT\n")
@@ -246,10 +256,10 @@ func describeDkim(domain *client.Domain) map[string]any {
 	return described
 }
 
-// describeDkimOffline is describeDkim built from the configuration file, for
-// when there is no server to ask. It reports the same shape, minus whether the
-// record is published — that needs the DNS check the server performs.
-func describeDkimOffline(domain *config.Domain) (map[string]any, error) {
+// describeDkimOffline is describeDkim built from the database, for when there
+// is no server to ask. It reports the same shape, minus whether the record is
+// published — that needs the DNS check the server performs.
+func describeDkimOffline(domain *models.Domain) (map[string]any, error) {
 	described := map[string]any{
 		"domain":   domain.Domain,
 		"domainId": domain.ID,
@@ -259,14 +269,13 @@ func describeDkimOffline(domain *config.Domain) (map[string]any, error) {
 	if domain.DKIM.PrivateKey == "" {
 		return described, nil
 	}
-
 	value, err := domain.DKIM.PublicKeyRecord()
 	if err != nil {
 		return nil, err
 	}
 	described["record"] = map[string]any{
 		"type":     "TXT",
-		"name":     config.DomainKeyName(domain.DKIM.Selector, domain.Domain),
+		"name":     models.DomainKeyName(domain.DKIM.Selector, domain.Domain),
 		"expected": value,
 	}
 	return described, nil

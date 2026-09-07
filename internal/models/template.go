@@ -2,8 +2,6 @@ package models
 
 import (
 	"time"
-
-	"github.com/ziyan/teanode/internal/config"
 )
 
 // Template is a mail template.
@@ -18,8 +16,8 @@ type Template struct {
 	ModifiedAt time.Time `json:"modifiedAt,omitempty"`
 
 	// Domain that the Template belongs to
-	DomainID string         `json:"domainId,omitempty"`
-	Domain   *config.Domain `json:"-"`
+	DomainID string  `json:"domainId,omitempty"`
+	Domain   *Domain `json:"-"`
 
 	// Layout that the Template uses
 	LayoutID string  `json:"layoutId,omitempty"`

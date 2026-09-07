@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
@@ -35,8 +34,10 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	// DNS records are correct is reported in the dashboard rather than being a
 	// condition of accepting mail; see the decision record on advisory
 	// verification.
-	configuration := self.config.Current()
-	domain := configuration.FindDomain(recipientDomain)
+	domain, err := tx.GetDomainByName(recipientDomain)
+	if err != nil {
+		return nil, err
+	}
 	if domain == nil {
 		return nil, mailparse.ErrMailBoxUnavailable
 	}
@@ -100,7 +101,7 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 
 		// also track alias usages
 		for _, recipientAlias := range recipientAliases {
-			for _, alias := range configuration.MatchAliases(domain, recipientAlias) {
+			for _, alias := range self.matchingAliases(domain, recipientAlias) {
 				self.trackAliasUsage(envelope.ReceivedAt, alias.ID, aliasUsage{
 					bytesReceived: envelope.Size,
 					mailsRejected: 1,
@@ -138,7 +139,7 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	return tx.CreateDeliveries(deliveries, nil)
 }
 
-func (self *exchange) authenticateIncoming(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *config.Domain) error {
+func (self *exchange) authenticateIncoming(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *models.Domain) error {
 	start := time.Now()
 	mail.Status = models.MailStatusRejected
 

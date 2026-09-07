@@ -89,7 +89,7 @@ type SendMailReturnValue struct {
 // credential's submission goes: signed with the domain's key, recorded
 // under Mail, and queued for delivery.
 func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*SendMailReturnValue, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}

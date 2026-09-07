@@ -2,10 +2,11 @@ package apigraph
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 type AliasQuery interface {
@@ -34,11 +35,10 @@ type ListAliasesArguments struct {
 }
 
 func (self *graph) ListAliases(ctx context.Context, arguments ListAliasesArguments) ([]*Alias, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
-
 	aliases := make([]*Alias, 0, len(domain.Aliases))
 	for _, alias := range domain.Aliases {
 		aliases = append(aliases, describeAlias(alias))
@@ -55,14 +55,12 @@ type MatchAliasesArguments struct {
 }
 
 // MatchAliases answers "where would mail to this address actually go?". More
-// than one alias can match, and every match produces a delivery, so a
-// catch-all listed after a specific alias means two copies.
+// than one alias can match, and every match produces a delivery.
 func (self *graph) MatchAliases(ctx context.Context, arguments MatchAliasesArguments) ([]*Alias, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
-
 	localPart := arguments.Address
 	if index := strings.Index(localPart, "@"); index >= 0 {
 		localPart = localPart[:index]
@@ -70,8 +68,7 @@ func (self *graph) MatchAliases(ctx context.Context, arguments MatchAliasesArgum
 	if localPart == "" {
 		return nil, api.ErrInvalidArguments
 	}
-
-	matched := self.config.Current().MatchAliases(domain, localPart)
+	matched := matchAliases(domain, localPart)
 	aliases := make([]*Alias, 0, len(matched))
 	for _, alias := range matched {
 		aliases = append(aliases, describeAlias(alias))
@@ -87,7 +84,7 @@ type AliasParameters struct {
 	// Note for the operator
 	Comment *string `json:"comment"`
 
-	// One of null, email, webhook or mailServer
+	// One of null, email, webhook, mailServer or mailbox
 	Kind string `json:"kind"`
 
 	// Destination address, when kind is email
@@ -98,6 +95,9 @@ type AliasParameters struct {
 
 	// Destination server, when kind is mailServer
 	MailServer *MailServerParameters `json:"mailServer"`
+
+	// Destination mailbox on this server, when kind is mailbox
+	MailboxID *string `json:"mailboxId"`
 
 	// Whether to ignore this Alias without deleting it
 	Disabled *bool `json:"disabled"`
@@ -121,7 +121,8 @@ type CreateAliasArguments struct {
 }
 
 func (self *graph) CreateAlias(ctx context.Context, arguments CreateAliasArguments) (*Alias, error) {
-	if _, err := self.requireDomain(ctx, arguments.DomainID); err != nil {
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
+	if err != nil {
 		return nil, err
 	}
 	if arguments.AliasParameters == nil {
@@ -130,23 +131,14 @@ func (self *graph) CreateAlias(ctx context.Context, arguments CreateAliasArgumen
 	if err := validatePattern(arguments.AliasParameters.Pattern); err != nil {
 		return nil, err
 	}
-
-	created := &config.Alias{ID: config.NewID()}
+	created := &models.Alias{DomainID: domain.ID}
 	applyAliasParameters(created, arguments.AliasParameters)
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		domain := configuration.FindDomainByID(arguments.DomainID)
-		if domain == nil {
-			return api.ErrNotFound
-		}
-		domain.Aliases = append(domain.Aliases, created)
-		return nil
-	}); err != nil {
-		return nil, err
+	stored, err := self.transaction(ctx).CreateAlias(created)
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	log.Noticef("%s added alias %q", operatorName(ctx), created.Pattern)
-	return describeAlias(created), nil
+	log.Noticef("%s added alias %q to %q", operatorName(ctx), stored.Pattern, domain.Domain)
+	return describeAlias(stored), nil
 }
 
 type UpdateAliasArguments struct {
@@ -156,8 +148,27 @@ type UpdateAliasArguments struct {
 	AliasParameters *AliasParameters `json:"aliasParameters"`
 }
 
+// requireAlias finds an alias the caller may manage: not found when the
+// alias does not exist or belongs to a domain they may not touch.
+func (self *graph) requireAlias(ctx context.Context, aliasId string) (*models.Alias, error) {
+	if _, err := self.requireSignedIn(ctx); err != nil {
+		return nil, err
+	}
+	alias, err := self.transaction(ctx).GetAlias(aliasId)
+	if err != nil {
+		return nil, err
+	}
+	if alias == nil {
+		return nil, api.ErrNotFound
+	}
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, alias.DomainID); err != nil {
+		return nil, err
+	}
+	return alias, nil
+}
+
 func (self *graph) UpdateAlias(ctx context.Context, arguments UpdateAliasArguments) (*Alias, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAlias(ctx, arguments.AliasID); err != nil {
 		return nil, err
 	}
 	if arguments.AliasParameters == nil {
@@ -166,23 +177,17 @@ func (self *graph) UpdateAlias(ctx context.Context, arguments UpdateAliasArgumen
 	if err := validatePattern(arguments.AliasParameters.Pattern); err != nil {
 		return nil, err
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		alias := configuration.FindAliasByID(arguments.AliasID)
-		if alias == nil {
-			return api.ErrNotFound
-		}
+	updated, err := self.transaction(ctx).UpdateAlias(arguments.AliasID, func(alias *models.Alias) error {
 		// The identifier is left alone on purpose: deliveries already stored
 		// point at it, and changing it would orphan them.
 		applyAliasParameters(alias, arguments.AliasParameters)
 		return nil
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	alias := self.config.Current().FindAliasByID(arguments.AliasID)
-	log.Noticef("%s changed alias %q", operatorName(ctx), alias.Pattern)
-	return describeAlias(alias), nil
+	log.Noticef("%s changed alias %q", operatorName(ctx), updated.Pattern)
+	return describeAlias(updated), nil
 }
 
 type DeleteAliasArguments struct {
@@ -191,32 +196,44 @@ type DeleteAliasArguments struct {
 }
 
 func (self *graph) DeleteAlias(ctx context.Context, arguments DeleteAliasArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	alias, err := self.requireAlias(ctx, arguments.AliasID)
+	if err != nil {
 		return err
 	}
-
-	var pattern string
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		for _, domain := range configuration.Domains {
-			for index, alias := range domain.Aliases {
-				if alias.ID != arguments.AliasID {
-					continue
-				}
-				pattern = alias.Pattern
-				domain.Aliases = append(domain.Aliases[:index], domain.Aliases[index+1:]...)
-				return nil
-			}
-		}
-		return api.ErrNotFound
-	}); err != nil {
-		return err
+	if err := self.transaction(ctx).DeleteAlias(alias.ID); err != nil {
+		return translateError(err)
 	}
-
-	log.Noticef("%s removed alias %q", operatorName(ctx), pattern)
+	log.Noticef("%s removed alias %q", operatorName(ctx), alias.Pattern)
 	return nil
 }
 
-func applyAliasParameters(alias *config.Alias, parameters *AliasParameters) {
+// matchAliases is the exchange's rule, applied here for the dry run: every
+// enabled alias whose pattern matches, or the catch-alls when none does.
+func matchAliases(domain *models.Domain, localPart string) []*models.Alias {
+	var matched, catchAll []*models.Alias
+	for _, alias := range domain.Aliases {
+		if alias == nil || alias.Disabled {
+			continue
+		}
+		if alias.IsCatchAll() {
+			catchAll = append(catchAll, alias)
+			continue
+		}
+		compiled, err := regexp.Compile("(?i)" + alias.Pattern)
+		if err != nil {
+			continue
+		}
+		if compiled.MatchString(localPart) {
+			matched = append(matched, alias)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	return catchAll
+}
+
+func applyAliasParameters(alias *models.Alias, parameters *AliasParameters) {
 	if parameters.Pattern != "" {
 		alias.Pattern = parameters.Pattern
 	}
@@ -224,7 +241,7 @@ func applyAliasParameters(alias *config.Alias, parameters *AliasParameters) {
 		alias.Comment = *parameters.Comment
 	}
 	if parameters.Kind != "" {
-		alias.Kind = config.AliasKind(parameters.Kind)
+		alias.Kind = models.AliasKind(parameters.Kind)
 	}
 	if parameters.Email != nil {
 		alias.Email = strings.TrimSpace(*parameters.Email)
@@ -232,12 +249,15 @@ func applyAliasParameters(alias *config.Alias, parameters *AliasParameters) {
 	if parameters.Webhook != nil {
 		alias.Webhook = strings.TrimSpace(*parameters.Webhook)
 	}
+	if parameters.MailboxID != nil {
+		alias.MailboxID = strings.TrimSpace(*parameters.MailboxID)
+	}
 	if parameters.Disabled != nil {
 		alias.Disabled = *parameters.Disabled
 	}
 	if parameters.MailServer != nil {
 		if alias.MailServer == nil {
-			alias.MailServer = &config.MailServer{}
+			alias.MailServer = &models.MailServer{}
 		}
 		if parameters.MailServer.Host != "" {
 			alias.MailServer.Host = parameters.MailServer.Host
@@ -255,21 +275,18 @@ func applyAliasParameters(alias *config.Alias, parameters *AliasParameters) {
 		}
 	}
 
-	// Keep only the destination the kind actually uses, so a configuration
-	// file never carries a stale address on a webhook alias.
+	// Keep only the destination the kind actually uses, so a row never
+	// carries a stale address on a webhook alias.
 	switch alias.Kind {
-	case config.AliasKindEmail:
-		alias.Webhook = ""
-		alias.MailServer = nil
-	case config.AliasKindWebhook:
-		alias.Email = ""
-		alias.MailServer = nil
-	case config.AliasKindMailServer:
-		alias.Email = ""
-		alias.Webhook = ""
-	case config.AliasKindNull:
-		alias.Email = ""
-		alias.Webhook = ""
-		alias.MailServer = nil
+	case models.AliasKindEmail:
+		alias.Webhook, alias.MailServer, alias.MailboxID = "", nil, ""
+	case models.AliasKindWebhook:
+		alias.Email, alias.MailServer, alias.MailboxID = "", nil, ""
+	case models.AliasKindMailServer:
+		alias.Email, alias.Webhook, alias.MailboxID = "", "", ""
+	case models.AliasKindMailbox:
+		alias.Email, alias.Webhook, alias.MailServer = "", "", nil
+	case models.AliasKindNull:
+		alias.Email, alias.Webhook, alias.MailServer, alias.MailboxID = "", "", nil, ""
 	}
 }

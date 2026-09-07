@@ -100,7 +100,7 @@ type ListTokensArguments struct {
 }
 
 func (self *graph) ListTokens(ctx context.Context, arguments ListTokensArguments) ([]*Token, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 
@@ -135,7 +135,7 @@ type CreateTokenArguments struct {
 }
 
 func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArguments) (*CreatedToken, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 
@@ -174,7 +174,7 @@ type DeleteTokenArguments struct {
 }
 
 func (self *graph) DeleteToken(ctx context.Context, arguments DeleteTokenArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return err
 	}
 
@@ -208,7 +208,9 @@ func (self *graph) owner(ctx context.Context, requested *string) (string, error)
 			return "", fmt.Errorf("apigraph: the console is not an account, so say whose this is with --user")
 		}
 		named := strings.TrimSpace(*requested)
-		if self.config.Current().FindUser(named) == nil {
+		if user, err := self.database.GetUserByUsername(named); err != nil {
+			return "", err
+		} else if user == nil {
 			return "", fmt.Errorf("apigraph: there is no account called %q", named)
 		}
 		return named, nil

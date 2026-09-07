@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 
@@ -47,22 +48,17 @@ type Facet struct {
 	Count int
 }
 
-// ErrConfigurationChanged is returned when a change was made against a
-// configuration that somebody else has since replaced. The caller reloads and
-// tries again; it is not a failure, it is two people editing at once.
-var ErrConfigurationChanged = errors.New("db: the configuration changed while this change was being made")
-
 type Database interface {
-	// ConfigurationVersion is what the stored configuration is at, for an
-	// instance checking whether its copy is stale.
-	ConfigurationVersion() (int64, error)
+	// The settings, read on start and on every change made elsewhere.
+	ConfigurationOperation
 
-	// LoadConfiguration reads the whole configuration.
-	LoadConfiguration() (*ConfigurationRows, error)
+	// SetSecret hands over the server secret the domain table's secrets are
+	// sealed with, once the settings that hold it have been read.
+	SetSecret(secret []byte) error
 
-	// SaveConfiguration replaces it, refusing when the caller's copy is
-	// stale, and returns the new version.
-	SaveConfiguration(rows *ConfigurationRows) (int64, error)
+	// Users are looked up on every authenticated request, outside any
+	// transaction.
+	UserLookup
 
 	// Sessions, API tokens and passkeys are read and written outside a
 	// transaction: every authenticated request looks one up, and wrapping
@@ -88,12 +84,25 @@ type Database interface {
 	// close opened database
 	Close() error
 
-	// run a function in transaction
+	// Transaction runs a function in a transaction, as the server itself.
 	Transaction(func(Transaction) error) error
+
+	// TransactionContext runs a function in a transaction on behalf of
+	// whoever the context says is acting, so that every audited write in it
+	// names them. See ContextWithAuditPrincipal.
+	TransactionContext(ctx context.Context, function func(Transaction) error) error
 }
 
 type Transaction interface {
 	Commit() error
+
+	DomainOperation
+	AliasOperation
+	CredentialOperation
+	UserOperation
+	RoleOperation
+	GroupOperation
+	AuditOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

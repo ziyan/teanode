@@ -1,15 +1,18 @@
 // Package config defines the TeaNode configuration and the store that owns it.
 //
-// The configuration is the single source of truth for everything an operator
-// can change: which domains are served, which aliases forward where, which
-// credentials may relay mail, who may log into the dashboard, and which
-// optional integrations are enabled. It is stored in the database as one
-// document, so several instances share one answer and a change made in the
-// dashboard reaches all of them; see internal/configdb.
+// The configuration is the server's settings: how it is reached, how it
+// speaks SMTP, which optional integrations are on, and the secrets it signs
+// with. It is stored in the database, one section per row, so several
+// instances share one answer and a change made in the web UI reaches all of
+// them.
+//
+// Domains, aliases, credentials, users, roles, groups and mailboxes are not
+// settings. They are rows in tables of their own, in internal/models and
+// internal/db.
 //
 // The YAML in this package is what "config export" writes and "config import"
-// reads, which is how a server is described in a file, reviewed and loaded.
-// It is not what the running server reads.
+// reads, which is how the settings are described in a file, reviewed and
+// loaded. It is not what the running server reads.
 package config
 
 import (
@@ -19,7 +22,7 @@ import (
 
 var log = logging.MustGetLogger("config")
 
-// Configuration is the whole of teanode.yaml.
+// Configuration is every setting an operator can change.
 type Configuration struct {
 	// Server identity and where runtime state is kept
 	Server Server `yaml:"server"`
@@ -38,14 +41,6 @@ type Configuration struct {
 
 	// The key used to sign outgoing mail
 	DKIM DKIM `yaml:"dkim"`
-
-	// Domains served by this server, with their aliases and credentials
-	Domains []*Domain `yaml:"domains"`
-
-	// People who may administer this server, through the dashboard or the
-	// API. Not a dashboard setting: they are the server's operators, and the
-	// dashboard is only one of the things they use.
-	Users []*User `yaml:"users"`
 
 	// How long a login lasts, and the key that signs it
 	Session Session `yaml:"session"`
@@ -76,12 +71,6 @@ type Configuration struct {
 	// so that "teanode credential list" run from a different directory reads
 	// the same secret the server does. Set by Load; not part of the file.
 	baseDirectory string
-
-	// Derived lookup tables, built on first use. Not part of the file: an
-	// unexported field is invisible to the YAML encoder. A snapshot is
-	// immutable once it is active, so the tables never go stale; Store
-	// replaces the whole Configuration rather than editing one in place.
-	index index
 }
 
 // Upgrade is how this server learns about new releases, and what it may do
@@ -333,25 +322,6 @@ type Database struct {
 	LogQueries bool `yaml:"logQueries"`
 }
 
-// DefaultSpamFilterScoreThreshold is what a domain is scored against when it
-// has never been given a threshold of its own.
-const DefaultSpamFilterScoreThreshold = 5
-
-// SpamThreshold is the score above which this domain's mail is rejected.
-//
-// A domain with no threshold stored gets the default rather than zero. This
-// is not tidiness: a stored zero means "reject anything scoring above zero",
-// which is every message the filter has any opinion about at all. Domains
-// created before this field was set carry a zero, and scoring is now on by
-// default, so reading the field directly would turn an upgrade into a mail
-// server that refuses almost everything.
-func (self *Domain) SpamThreshold() float64 {
-	if self.SpamFilterScoreThreshold <= 0 {
-		return DefaultSpamFilterScoreThreshold
-	}
-	return self.SpamFilterScoreThreshold
-}
-
 // SMTP holds behaviour shared by both SMTP listeners.
 type SMTP struct {
 	// TrustedSenders are domains whose mail skips the greylisting delay
@@ -498,215 +468,6 @@ type DKIM struct {
 	Selector string `yaml:"selector"`
 }
 
-// DomainCertificate is the TLS certificate for one domain's mail server name.
-//
-// Kept with the rest of the configuration rather than in a file beside it, for
-// the same reason the signing key is: one thing to back up, and restoring it
-// elsewhere restores a working server rather than one that has to obtain
-// everything again.
-type DomainCertificate struct {
-	// Certificate is the issued chain, in PEM.
-	Certificate string `yaml:"certificate,omitempty"`
-
-	// PrivateKey is its private half, in PEM. Encrypted in the database the
-	// same way the signing key is.
-	PrivateKey string `yaml:"privateKey,omitempty" secret:"true"`
-}
-
-// DomainKey is a domain's DKIM signing key.
-//
-// The key lives in this file rather than in a separate PEM alongside it. A
-// self-hoster then has one file to back up and one to copy to a new machine,
-// and creating a domain in the dashboard can generate a key without also
-// having to manage files. It does mean this file is secret; it is written
-// with mode 600 and should be treated like any other private key.
-type DomainKey struct {
-	// Selector this key is published under.
-	Selector string `yaml:"selector"`
-
-	// PrivateKey is a PKCS#8 RSA key in PEM form.
-	PrivateKey string `yaml:"privateKey" secret:"true"`
-}
-
-// Domain is a mail domain served by this instance.
-type Domain struct {
-	// ID identifies the domain in stored mail, deliveries and usage rows, and
-	// in dashboard URLs. It is the domain name: unique already, stable for as
-	// long as the domain is configured, and readable wherever it appears.
-	//
-	// Older configurations carry a generated identifier here instead, and
-	// keep working — the rows that reference it still match. Changing it means
-	// updating those rows too, so nothing rewrites it automatically.
-	ID string `yaml:"id"`
-
-	// Domain is the mail domain itself, for example "example.com".
-	Domain string `yaml:"domain"`
-
-	// Subdomain is the label whose CNAME points at this server, so that
-	// bounces and DMARC reports have somewhere to arrive. Usually "mail",
-	// making mail.example.com a CNAME to server.name.
-	Subdomain string `yaml:"subdomain"`
-
-	// MailServers are the names this domain's MX records point at, and so
-	// the names a sender connects to and is handed a certificate for.
-	//
-	// Empty means one name derived from the domain itself, "mx." in front of
-	// it, which is what most people want and what the DNS panel then asks
-	// for. Set it to publish something else: a pair of names for the look of
-	// redundancy, a name that is not "mx", or the server's own name — which
-	// is how a domain points at a host in somebody else's zone, the
-	// arrangement this defaulted to before it was configurable.
-	//
-	// A name inside this domain is one the operator publishes an address
-	// record for, and one this server can obtain a certificate for. A name
-	// outside it is neither: it belongs to whoever owns that zone.
-	MailServers []string `yaml:"mailServers,omitempty"`
-
-	// LinkHost is the name in the addresses this server writes into mail it
-	// sends — today the pictures in a template, each one an address belonging
-	// to a single message.
-	//
-	// Empty means the domain's first mail server name, which is right when
-	// this server answers HTTPS on it. It often does not: a mail server name
-	// resolves to a host whose port 443 belongs to something else entirely,
-	// and then every picture in every message is broken while the mail itself
-	// is fine. The name here is a way to say where this domain's HTTPS
-	// actually is — the site on the apex behind a CDN, a name pointed at this
-	// server for the purpose — without moving where its mail arrives.
-	//
-	// It has to be a name that reaches this server over HTTPS with a
-	// certificate a mail program will accept, and it has to be under this
-	// domain or under one of its own: an address in somebody else's domain
-	// tells the reader who runs the server, which is the thing per-domain
-	// names exist to stop.
-	LinkHost string `yaml:"linkHost,omitempty"`
-
-	// Comment is a note for the operator; it is never used in mail handling.
-	Comment string `yaml:"comment,omitempty"`
-
-	// DKIM is the key that signs mail sent from this domain. It is generated
-	// when the domain is created; the matching public key has to be published
-	// in DNS, which the dashboard shows you.
-	DKIM DomainKey `yaml:"dkim"`
-
-	// TLS is the certificate served to a sender connecting to this domain's
-	// own mail server name, obtained automatically when tls.acme.perDomain is
-	// on. Without one, a sender is served the server's own certificate, which
-	// works — almost every sender accepts a name that does not match — but
-	// tells it the name of a domain it did not ask for.
-	TLS DomainCertificate `yaml:"tls,omitempty"`
-
-	// SpamFilterScoreThreshold is the spam score above which mail for this
-	// domain is rejected. Only meaningful when antispam is enabled. Read it
-	// with SpamThreshold(), which supplies the default for a domain that has
-	// never been given one.
-	SpamFilterScoreThreshold float64 `yaml:"spamFilterScoreThreshold"`
-
-	// Aliases decide where mail for this domain goes. Every alias whose
-	// pattern matches produces a delivery, so one address can forward to
-	// several places; an alias with an empty pattern is a catch-all and
-	// receives only what nothing else matched.
-	Aliases []*Alias `yaml:"aliases"`
-
-	// Credentials may authenticate to the submission port and send mail as
-	// this domain.
-	Credentials []*Credential `yaml:"credentials,omitempty"`
-}
-
-// AliasKind selects what an alias does with matching mail.
-type AliasKind string
-
-const (
-	// AliasKindNull accepts the mail and discards it.
-	AliasKindNull AliasKind = "null"
-
-	// AliasKindEmail forwards the mail to another email address.
-	AliasKindEmail AliasKind = "email"
-
-	// AliasKindWebhook posts the mail to an HTTP endpoint.
-	AliasKindWebhook AliasKind = "webhook"
-
-	// AliasKindMailServer relays the mail to a specific mail server, which is
-	// how you put a real mailbox server behind TeaNode.
-	AliasKindMailServer AliasKind = "mailServer"
-)
-
-// Alias matches recipient addresses and says where the mail goes.
-type Alias struct {
-	// ID is generated once and never changes; stored deliveries reference it.
-	ID string `yaml:"id"`
-
-	// Pattern is a Go regular expression matched against the local part of the
-	// recipient address, the part before the "@", without regard to case.
-	// Anchor it: "^hello$" matches only hello@, while "hello" also matches
-	// say-hello-now@.
-	//
-	// An empty pattern makes this a catch-all. Catch-alls are a fallback: they
-	// receive mail only for addresses that no pattern matched, so adding one
-	// does not duplicate mail that already has somewhere to go.
-	Pattern string `yaml:"pattern"`
-
-	// Comment is a note for the operator.
-	Comment string `yaml:"comment,omitempty"`
-
-	// Kind is one of null, email, webhook or mailServer.
-	Kind AliasKind `yaml:"kind"`
-
-	// Email is the destination address when kind is email.
-	Email string `yaml:"email,omitempty"`
-
-	// Webhook is the destination URL when kind is webhook.
-	Webhook string `yaml:"webhook,omitempty"`
-
-	// MailServer is the destination server when kind is mailServer.
-	MailServer *MailServer `yaml:"mailServer,omitempty"`
-
-	// Disabled stops the alias from matching without deleting it.
-	Disabled bool `yaml:"disabled,omitempty"`
-}
-
-// IsCatchAll reports whether this alias receives everything that no other
-// alias matched. An empty pattern means exactly that.
-func (self *Alias) IsCatchAll() bool {
-	return self.Pattern == ""
-}
-
-// MailServer is a downstream SMTP server to relay to.
-type MailServer struct {
-	Host     string `yaml:"host"`
-	Port     uint16 `yaml:"port"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty" secret:"true"`
-}
-
-// Credential is an SMTP AUTH identity for the submission port. The username
-// and password an SMTP client uses are derived from the identifier and key
-// together with the server secret; "teanode credential" prints them.
-type Credential struct {
-	// ID identifies the domain in stored mail, deliveries and usage rows, and
-	// in dashboard URLs. It is the domain name: unique already, stable for as
-	// long as the domain is configured, and readable wherever it appears.
-	//
-	// Older configurations carry a generated identifier here instead, and
-	// keep working — the rows that reference it still match. Changing it means
-	// updating those rows too, so nothing rewrites it automatically.
-	ID string `yaml:"id"`
-
-	// Key is the secret half of the credential.
-	Key string `yaml:"key" secret:"true"`
-
-	// Alias, when set, restricts this credential to sending as exactly that
-	// local part of the domain. A credential for "noreply" cannot then send
-	// as anybody else, which limits the damage if it leaks.
-	Alias string `yaml:"alias,omitempty"`
-
-	// Comment names the device or service that holds this credential.
-	Comment string `yaml:"comment,omitempty"`
-
-	// Disabled refuses authentication without deleting the credential.
-	Disabled bool `yaml:"disabled,omitempty"`
-}
-
 // Passkey configures signing in with an authenticator rather than a password.
 //
 // WebAuthn binds a credential to one origin, permanently: a passkey registered
@@ -777,30 +538,6 @@ type Session struct {
 	Lifetime Duration `yaml:"lifetime"`
 
 	deprecatedSession `yaml:",inline"`
-}
-
-// User is somebody who may administer this server.
-type User struct {
-	// ID is stable for the account's lifetime; the username is not, because
-	// it can be changed. Sessions, API tokens and passkeys name the
-	// identifier, so a rename does not invalidate them. Generated when the
-	// account is stored, so an account written into a file by hand does not
-	// have to invent one.
-	ID string `yaml:"id,omitempty"`
-
-	Username string `yaml:"username"`
-
-	// Name is what to call this person, when they have said. The username is
-	// what they sign in with, which is not always something to greet somebody
-	// by. Optional.
-	Name string `yaml:"name,omitempty"`
-
-	// PasswordHash is a bcrypt hash. Generate one with "teanode password".
-	PasswordHash string `yaml:"passwordHash" secret:"true"`
-
-	// Email receives notifications, such as a domain whose DNS records have
-	// stopped resolving. Optional.
-	Email string `yaml:"email,omitempty"`
 }
 
 // DNS configures the resolver used to check that configured domains publish

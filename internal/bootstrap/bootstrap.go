@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 var log = logging.MustGetLogger("bootstrap")
@@ -71,6 +72,11 @@ type Bootstrap struct {
 	// It is not a complete configuration on its own — see SeedConfiguration,
 	// which is what fills in the rest and says what is missing.
 	Seed *config.Configuration
+
+	// SeedDomain names a domain this server should serve, remembered as a
+	// row in the domain table on a first run rather than as a setting. Empty
+	// when the environment named none; the web UI adds domains afterwards.
+	SeedDomain string
 
 	// seeded names the variables that went into Seed, in the order they were
 	// read, and pairs each with what it does, so that a start which ignores
@@ -295,25 +301,6 @@ var seedVariables = []struct {
 		target.Server.Name = value
 		return nil
 	}},
-	// Not a setting. It names a domain this server should serve, and is
-	// remembered as that domain rather than as a property of the server —
-	// which is the whole difference from the "primary domain" this replaced.
-	// The subdomain and the signing key are filled in afterwards, once every
-	// other variable has been applied and the server name and selector are
-	// final.
-	{"SERVER_DOMAIN", func(target *config.Configuration, value string) error {
-		if value == "" || target.FindDomain(value) != nil {
-			return nil
-		}
-		target.Domains = append(target.Domains, &config.Domain{
-			ID:     config.NewID(),
-			Domain: value,
-			// Spelled out rather than left at zero, which would mean
-			// "reject anything the filter has any opinion about".
-			SpamFilterScoreThreshold: config.DefaultSpamFilterScoreThreshold,
-		})
-		return nil
-	}},
 	{"SERVER_DATA_DIRECTORY", func(target *config.Configuration, value string) error {
 		target.Server.DataDirectory = value
 		return nil
@@ -411,7 +398,16 @@ var seedVariables = []struct {
 	}},
 }
 
+// seedDomainVariable names the domain a first run creates. Not in the table
+// above: it is a row rather than a setting, and is applied once the settings
+// are final, because its subdomain and its signing key depend on them.
+const seedDomainVariable = "SERVER_DOMAIN"
+
 func (self *Bootstrap) loadSeed() error {
+	if value, ok := lookup(seedDomainVariable); ok {
+		self.SeedDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+		self.seeded = append(self.seeded, seededVariable{name: seedDomainVariable, value: value})
+	}
 	for _, variable := range seedVariables {
 		value, ok := lookup(variable.name)
 		if !ok {
@@ -455,48 +451,6 @@ func (self *Bootstrap) SeedConfiguration() (*config.Configuration, error) {
 		return nil, err
 	}
 
-	// Every domain the seed named gets the parts that depend on values only
-	// settled once all the variables have been applied: where its own records
-	// live, and a signing key.
-	//
-	// Creating the domain here is what turns two variables into a working
-	// server. Without it a first start would store something that does not
-	// validate, and the operator would be told to add a domain before they
-	// could reach the dashboard that adds domains.
-	for _, domain := range seed.Domains {
-		if domain == nil {
-			continue
-		}
-		if domain.Subdomain == "" {
-			// The label the server's own records live under, taken from the
-			// server name rather than asked for separately: mail.example.com
-			// serving example.com means "mail", and there is no second answer
-			// worth offering. It matters because a domain with no subdomain
-			// wants its CNAME at the apex, where the MX record already is.
-			domain.Subdomain = subdomainOf(seed.Server.Name, domain.Domain)
-		}
-		if domain.DKIM.PrivateKey == "" {
-			// Signed from the start, so that nobody has to know DKIM exists
-			// before their mail is trusted. Its own key, not a copy of
-			// anybody else's: every domain publishes its own record.
-			//
-			// Here rather than left to config.EnsureSecrets, which would also
-			// do it, because configuring a database is its own step: an
-			// operator can run it, ask "teanode dkim show" for the record to
-			// publish, and put it in DNS before the server has ever started.
-			// A domain with no key until first run makes that impossible.
-			//
-			// It is written before there is a server secret to encrypt it
-			// with, so it is stored as it stands and sealed by the save that
-			// generates the secret, moments later. See internal/configdb.
-			key, err := config.GenerateDomainKey(seed.DKIM.Selector)
-			if err != nil {
-				return nil, err
-			}
-			domain.DKIM = key
-		}
-	}
-
 	// A certificate is for the name this server answers to, which is the one
 	// already given.
 	if len(seed.TLS.Hosts) == 0 && seed.Server.Name != "" {
@@ -507,7 +461,6 @@ func (self *Bootstrap) SeedConfiguration() (*config.Configuration, error) {
 	// the first person to arrive to choose their own username and password,
 	// which beats inventing one called "admin" and putting its password in an
 	// environment variable that every "docker inspect" prints.
-	seed.Users = nil
 
 	if err := seed.Validate(); err != nil {
 		return nil, fmt.Errorf("bootstrap: this database has no configuration yet, and the environment "+
@@ -585,6 +538,11 @@ func (self *Bootstrap) WouldChange(current *config.Configuration) ([]string, err
 // targets: the table says how to write each variable and nothing says how to
 // read one back, and keeping a second mapping for that is how the two drift.
 func (self *seededVariable) wouldChange(current *config.Configuration) (bool, error) {
+	if self.apply == nil {
+		// The seed domain is a row, applied on a first run only; whether it
+		// exists is not a question the settings can answer.
+		return false, nil
+	}
 	changed, err := config.Clone(current)
 	if err != nil {
 		return false, err
@@ -627,11 +585,12 @@ var databaseVariables = []string{
 // because a second list is one that goes out of date the first time somebody
 // adds a variable and does not know it exists.
 func Variables() []string {
-	names := make([]string, 0, len(databaseVariables)+len(seedVariables)+1)
+	names := make([]string, 0, len(databaseVariables)+len(seedVariables)+2)
 	for _, name := range databaseVariables {
 		names = append(names, Prefix+name)
 	}
 	names = append(names, Prefix+"INSTANCE_ID")
+	names = append(names, Prefix+seedDomainVariable)
 	for _, variable := range seedVariables {
 		names = append(names, Prefix+variable.name)
 	}
@@ -672,4 +631,42 @@ func parsePort(value string, target *uint16) error {
 	}
 	*target = uint16(parsed)
 	return nil
+}
+
+// SeedDomainRow is the domain a first run creates, with the parts that
+// depend on values only settled once every variable has been applied: where
+// its own records live, and a signing key. Nil when the environment named no
+// domain.
+//
+// Creating the domain here is what turns two variables into a working
+// server: without it a first start would store a server with nowhere for
+// mail to go, and the operator would be told to add a domain before they
+// could reach the web UI that adds domains.
+func (self *Bootstrap) SeedDomainRow(seed *config.Configuration) (*models.Domain, error) {
+	if self.SeedDomain == "" {
+		return nil, nil
+	}
+	domain := &models.Domain{
+		Domain: self.SeedDomain,
+		// The label the server's own records live under, taken from the
+		// server name rather than asked for separately: mail.example.com
+		// serving example.com means "mail", and there is no second answer
+		// worth offering.
+		Subdomain: subdomainOf(seed.Server.Name, self.SeedDomain),
+		// Spelled out rather than left at zero, which would mean "reject
+		// anything the filter has any opinion about".
+		SpamFilterScoreThreshold: models.DefaultSpamFilterScoreThreshold,
+	}
+	// Signed from the start, so that nobody has to know DKIM exists before
+	// their mail is trusted. Its own key, not a copy of anybody else's: every
+	// domain publishes its own record.
+	key, err := models.GenerateDomainKey(seed.DKIM.Selector)
+	if err != nil {
+		return nil, err
+	}
+	domain.DKIM = key
+	if err := domain.Validate(); err != nil {
+		return nil, fmt.Errorf("bootstrap: %s%s: %w", Prefix, seedDomainVariable, err)
+	}
+	return domain, nil
 }

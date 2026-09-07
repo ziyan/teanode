@@ -1442,6 +1442,23 @@ record.
 
 ## Progress
 
+- [x] Foundation (2026-09-06): the configuration table holds settings only.
+      Domains, aliases, credentials and users are rows managed by
+      `internal/db` like every other model, each change audited in the same
+      transaction; `internal/configdb` is gone and `config.OpenStore` reads
+      the settings. Roles, groups, `user_group`, `group_role`,
+      `group_domain` and `audit_event` arrive in migration 0014.
+- [x] Milestone one, server side: `internal/access` seeds the three roles and
+      the two groups, every resolver checks a permission, effective
+      permissions travel on the request, `GetSession` reports them,
+      `teanode-server user rescue` exists, the first account claims the
+      server as an administrator.
+- [x] Milestone one, web UI: the rail shows only what the caller may open;
+      Users, Groups, Roles and Audit are tabs of the Server page; a member
+      lands on a placeholder until milestone two.
+- [ ] Milestone one, docs and command line: `teanode group` and `teanode
+      role`, the deployment and getting-started pages for the new model.
+
 - [x] (2026-09-06) Design and data model; the reference model's shape studied
       and adapted; milestones ordered by dependency.
 - [ ] Milestone one: access control.
@@ -1453,6 +1470,24 @@ record.
 - [ ] Milestone seven: the rest.
 
 ## Surprises & Discoveries
+
+- Observation: domains, aliases, credentials and users were already tables,
+  but they were read into one configuration document and written back whole
+  on every change, through `internal/configdb`, as the file they replaced had
+  been. The plan's data model assumed rows managed one at a time. The owner
+  decided the configuration table is for settings only and everything else
+  is a model like any other; that rework came before milestone one and is
+  what the audit seam hangs off.
+  Date: 2026-09-06
+- Observation: `models` imported `config` only for the domain types, and
+  `db` imported it only for the configuration rows. With those moved, the
+  settings store could live in `config` itself, over `db`, with no cycle.
+  Date: 2026-09-06
+- Observation: the seed domain named by `TEANODE_SERVER_DOMAIN` is a row, not
+  a setting, so a first run writes it after the settings it depends on — its
+  subdomain comes from the server name and its selector from the DKIM
+  settings — rather than as part of the seed document.
+  Date: 2026-09-06
 
 - Observation: the server already copies a message for a local recipient of
   a submission, which is the one place the "no copies" rule is broken today.

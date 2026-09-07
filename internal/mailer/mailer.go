@@ -232,17 +232,16 @@ func (self *mailer) SendMail(ctx context.Context, envelope *mailparse.Envelope, 
 	}
 	_, domainDomain := mailparse.SplitAddress(senderAddress)
 
-	// The domain comes from the configuration; the template and layout it
-	// renders are content and come from the database.
-	domain := self.config.Current().FindDomain(domainDomain)
-	if domain == nil {
-		return fmt.Errorf("mailer: %q is not a configured domain", domainDomain)
-	}
-
 	var template *models.Template
 	var layout *models.Layout
 	if err := self.database.Transaction(func(tx db.Transaction) error {
-		var err error
+		domain, err := tx.GetDomainByName(domainDomain)
+		if err != nil {
+			return err
+		}
+		if domain == nil {
+			return fmt.Errorf("mailer: %q is not a configured domain", domainDomain)
+		}
 		template, err = tx.GetTemplateByName(domain.ID, templateName, nil)
 		if err != nil {
 			return err
@@ -292,7 +291,18 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 		return err
 	}
 	_, domainDomain := mailparse.SplitAddress(senderAddress)
-	domain := self.config.Current().FindDomain(domainDomain)
+	var domain *models.Domain
+	var domains []*models.Domain
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		if domain, err = tx.GetDomainByName(domainDomain); err != nil {
+			return err
+		}
+		domains, err = tx.ListDomains()
+		return err
+	}); err != nil {
+		return err
+	}
 	if domain == nil {
 		return fmt.Errorf("mailer: %q is not a configured domain", domainDomain)
 	}
@@ -329,7 +339,7 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	// unique, so a fetch of it says this message was opened. Here rather than
 	// where the template was rendered, because this is where the message
 	// first has an identifier to belong to.
-	html := self.rewriteMedia(id, domain, message.HTML)
+	html := self.rewriteMedia(id, domain, domains, message.HTML)
 
 	var body bytes.Buffer
 	bodyHeaders, err := mailparse.Compose(&body, []byte(message.Text), []byte(html), message.Attachments)

@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"fmt"
+	"sync"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -31,6 +33,12 @@ type Settings struct {
 type database struct {
 	db       *gorm.DB
 	settings *Settings
+
+	// sealer encrypts the domain table's secrets. Set once the server
+	// secret has been read from the settings; nil before, which is the
+	// first run's brief window.
+	sealerMutex sync.RWMutex
+	sealer      *sealer
 }
 
 // Open database.
@@ -63,11 +71,19 @@ func (self *database) Close() error {
 type transaction struct {
 	tx       *gorm.DB
 	database *database
+
+	// ctx carries who is acting, for the audit rows the writes produce.
+	ctx context.Context
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {
+	return self.TransactionContext(context.Background(), f)
+}
+
+func (self *database) TransactionContext(ctx context.Context, f func(Transaction) error) error {
 	tx := &transaction{
 		database: self,
+		ctx:      ctx,
 	}
 	defer tx.rollback()
 

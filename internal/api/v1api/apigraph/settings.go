@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"github.com/ziyan/teanode/internal/models"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -223,7 +224,7 @@ type AntispamSettings struct {
 }
 
 func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	settings := describeSettings(self.config.Current())
@@ -471,7 +472,7 @@ type UpdateSettingsArguments struct {
 }
 
 func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsArguments) (*Settings, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 
