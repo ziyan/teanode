@@ -212,9 +212,7 @@ func (self *exchange) logEnvelope(kind models.MailKind, envelope *mailparse.Enve
 }
 
 func (self *exchange) scavengeOnce(ctx context.Context) error {
-	if err := self.database.Transaction(func(tx db.Transaction) error {
-		return tx.ScavengeMails(nil)
-	}); err != nil {
+	if err := self.scavengeMailOnce(ctx); err != nil {
 		log.Warningf("failed to scavenge mails: %s", err)
 	}
 	if err := self.database.Transaction(func(tx db.Transaction) error {

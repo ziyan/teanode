@@ -181,7 +181,7 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 
 		// forward the dns mail
 		recipientAlias, _ := mailparse.SplitAddress(originalMail.Sender)
-		matchedDeliveries, err := self.matchAliases(domain, recipientAlias, mail)
+		matchedDeliveries, err := self.matchAliases(tx, domain, recipientAlias, mail)
 		if err != nil {
 			return nil, err
 		}

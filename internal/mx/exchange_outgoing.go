@@ -192,7 +192,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		recipientAlias, recipientDomainName := mailparse.SplitAddress(recipient)
 		if recipientDomainName == domain.Domain {
 			// looping back to same domain
-			matchedDeliveries, err := self.matchAliases(domain, recipientAlias, mail)
+			matchedDeliveries, err := self.matchAliases(tx, domain, recipientAlias, mail)
 			if err != nil {
 				return nil, err
 			}
@@ -281,7 +281,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		})
 
 		// recipient is internal, need to resolve alias
-		matchedDeliveries, err := self.matchAliases(recipientDomain, recipientAlias, recipientMail)
+		matchedDeliveries, err := self.matchAliases(tx, recipientDomain, recipientAlias, recipientMail)
 		if err != nil {
 			return nil, err
 		}

@@ -515,3 +515,90 @@ export interface Rendered {
   locale: string
   variables?: string[]
 }
+
+// --- mailboxes --------------------------------------------------------------
+
+export interface MailboxAddress {
+  aliasId: string
+  domainId: string
+  domain: string
+  localPart: string
+  address: string
+}
+
+export interface MailboxRuleCondition {
+  field: string
+  header?: string
+  operator: string
+  value?: string
+}
+
+export interface MailboxRuleAction {
+  kind: string
+  folderId?: string
+  address?: string
+}
+
+export interface MailboxRule {
+  name: string
+  enabled: boolean
+  conditions: MailboxRuleCondition[]
+  actions: MailboxRuleAction[]
+  stop: boolean
+}
+
+export interface MailboxAutoReply {
+  enabled: boolean
+  from?: string | null
+  until?: string | null
+  subject: string
+  text: string
+  html?: string
+}
+
+export interface Mailbox {
+  id: string
+  userId: string
+  name: string
+  signatureHtml?: string
+  signatureText?: string
+  rules?: MailboxRule[]
+  autoReply?: MailboxAutoReply | null
+  addresses?: MailboxAddress[]
+}
+
+export interface MailboxFolder {
+  id: string
+  mailboxId: string
+  parentId?: string
+  name: string
+  kind?: string
+  unread: number
+  total: number
+}
+
+// MailboxView is a mailbox with its folder tree, as ListMailboxes returns it.
+export interface MailboxView {
+  mailbox: Mailbox
+  folders: MailboxFolder[]
+  unread: number
+}
+
+export interface MailboxItem {
+  id: string
+  folderId: string
+  mailId: string
+  mail?: Mail | null
+  uid: number
+  seen: boolean
+  flagged: boolean
+  answered: boolean
+  forwarded: boolean
+  draft: boolean
+  addedAt: string
+}
+
+export interface MailboxItemPage {
+  items: MailboxItem[]
+  total: number
+}

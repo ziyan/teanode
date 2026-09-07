@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -173,7 +174,7 @@ func (self *s3Storage) Delete(ctx context.Context, id string) error {
 //
 // Several instances sweeping the same bucket is fine. They delete the same
 // objects, and deleting one twice is not an error.
-func (self *s3Storage) Sweep(ctx context.Context, cutoff time.Time) (int, error) {
+func (self *s3Storage) Sweep(ctx context.Context, cutoff time.Time, keep func(context.Context, string) (bool, error)) (int, error) {
 	var removed int
 
 	paginator := s3.NewListObjectsV2Paginator(self.client, &s3.ListObjectsV2Input{
@@ -195,6 +196,16 @@ func (self *s3Storage) Sweep(ctx context.Context, cutoff time.Time) (int, error)
 			// instances whose clocks differ agree on what is old.
 			if object.LastModified.After(cutoff) {
 				continue
+			}
+			if keep != nil {
+				id := strings.TrimSuffix(strings.TrimPrefix(*object.Key, keyPrefix), ".eml")
+				wanted, err := keep(ctx, id)
+				if err != nil {
+					return removed, fmt.Errorf("storage: cannot tell whether %s is still wanted: %w", id, err)
+				}
+				if wanted {
+					continue
+				}
 			}
 			expired = append(expired, types.ObjectIdentifier{Key: object.Key})
 		}

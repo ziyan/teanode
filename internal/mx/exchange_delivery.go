@@ -262,6 +262,18 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 		delivery.Size = size
 		delivery.Status = models.DeliveryStatusDelivered
 	case models.DeliveryKindForward:
+		// A mailbox rule forwards to an address with no alias behind it: the
+		// delivery itself names where.
+		if delivery.Alias == nil && delivery.Method == "email" && delivery.Destination != "" {
+			size, err := self.sendMail(ctxWithTimeout, sender, delivery.Destination, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
+			if err != nil {
+				recordFailure(delivery, err)
+				return err
+			}
+			delivery.Size = size
+			delivery.Status = models.DeliveryStatusDelivered
+			break
+		}
 		// forward mail
 		if delivery.Alias == nil {
 			err := fmt.Errorf("mx: alias missing for delivery %q", delivery.ID)

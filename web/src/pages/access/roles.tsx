@@ -10,12 +10,12 @@ import { hasPermission, useSession } from '../../session'
 import { CheckList, PermissionDescription, ROLE_FIELDS, Role, listPermissions, listRoles, usePermissionLabel } from './common'
 
 const CREATE = `
-  mutation ($name: String!, $description: String, $permissions: [String]) {
+  mutation ($name: String!, $description: String, $permissions: [String!]) {
     CreateRole(name: $name, description: $description, permissions: $permissions) ${ROLE_FIELDS}
   }`
 
 const UPDATE = `
-  mutation ($roleId: String!, $name: String, $description: String, $permissions: [String]) {
+  mutation ($roleId: String!, $name: String, $description: String, $permissions: [String!]) {
     UpdateRole(roleId: $roleId, name: $name, description: $description, permissions: $permissions) ${ROLE_FIELDS}
   }`
 

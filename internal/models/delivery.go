@@ -14,6 +14,11 @@ func (self *Delivery) Describe(alias *Alias) {
 	switch {
 	case self.Kind == DeliveryKindExternal:
 		self.Method, self.Destination = "smtp", self.Recipient
+	case self.Kind == DeliveryKindMailbox:
+		self.Method = "mailbox"
+		if self.Destination == "" {
+			self.Destination = self.Recipient
+		}
 	case alias == nil:
 		return
 	case alias.Kind == AliasKindEmail:
@@ -32,6 +37,11 @@ const (
 	DeliveryKindInternal DeliveryKind = "internal"
 	DeliveryKindExternal DeliveryKind = "external"
 	DeliveryKindForward  DeliveryKind = "forward"
+
+	// DeliveryKindMailbox is the message placed in a folder of a mailbox on
+	// this server: one per mailbox the message reached, created in the
+	// receipt transaction, already delivered, like the internal kind.
+	DeliveryKindMailbox DeliveryKind = "mailbox"
 )
 
 func (self DeliveryKind) String() string {
@@ -46,6 +56,8 @@ func GetDeliveryKind(value string) DeliveryKind {
 		return DeliveryKindExternal
 	case "forward":
 		return DeliveryKindForward
+	case "mailbox":
+		return DeliveryKindMailbox
 	}
 	return DeliveryKindUnknown
 }
@@ -109,6 +121,11 @@ type Delivery struct {
 	// been removed, which historical deliveries have to tolerate.
 	AliasID string `json:"aliasId,omitempty"`
 	Alias   *Alias `json:"-"`
+
+	// MailboxID and MailboxItemID name the mailbox and the item a delivery
+	// of kind mailbox produced.
+	MailboxID     string `json:"mailboxId,omitempty"`
+	MailboxItemID string `json:"mailboxItemId,omitempty"`
 
 	// Recipient address, indicating the recipient in the Mail being delivered to
 	Recipient string `json:"recipient,omitempty"`

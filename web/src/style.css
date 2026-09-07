@@ -3392,3 +3392,288 @@ a.button.primary:hover {
   max-height: 20rem;
   overflow: auto;
 }
+.audit-filter select {
+  width: auto;
+  display: inline-block;
+  margin-left: 6px;
+}
+
+/* --- mailbox ------------------------------------------------------------ */
+
+/* The rail in mailbox mode: which mailbox, then its folders. */
+.sidebar-mailbox {
+  padding: 4px 12px 8px;
+}
+.sidebar-mailbox select {
+  width: 100%;
+  font-size: 13px;
+}
+.sidebar-mailbox-name {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar nav a .sidebar-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.sidebar nav a.unread .sidebar-label {
+  font-weight: 600;
+}
+.sidebar nav a.unread .sidebar-count {
+  color: var(--text);
+  font-weight: 600;
+}
+.sidebar.collapsed .sidebar-count,
+.sidebar.collapsed .sidebar-mailbox {
+  display: none;
+}
+.sidebar nav a[data-depth='1'] {
+  padding-left: 32px;
+}
+.sidebar nav a[data-depth='2'] {
+  padding-left: 48px;
+}
+.sidebar nav a[data-depth='3'] {
+  padding-left: 64px;
+}
+
+/* The mailbox page: the list of a folder beside the message being read.
+   The rail already spent one column on the folders, so the page has two. */
+.mailbox {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 0;
+  min-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.mailbox-list {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mailbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mailbox-toolbar input[type='search'] {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 13px;
+}
+.mailbox-toolbar .segmented button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.mailbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.mailbox-actions button,
+.mailbox-actions select {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.mailbox-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.mailbox-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+}
+.mailbox-row:hover {
+  background: var(--field);
+}
+.mailbox-row.active {
+  background: var(--sidebar-hover);
+}
+.mailbox-row.unread .mailbox-row-from,
+.mailbox-row.unread .mailbox-row-subject {
+  font-weight: 600;
+}
+.mailbox-row-from,
+.mailbox-row-subject {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mailbox-row-subject {
+  color: var(--muted);
+}
+.mailbox-row.unread .mailbox-row-subject {
+  color: var(--text);
+}
+.mailbox-row-when {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mailbox-row input[type='checkbox'] {
+  margin: 3px 0 0;
+}
+.mailbox-star {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mailbox-star.on {
+  color: #d99a1b;
+}
+.mailbox-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.mailbox-pane {
+  padding: 12px 16px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.mailbox-pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.mailbox-pane-head h2 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1 1 100%;
+  text-wrap: balance;
+}
+.mailbox-pane-meta {
+  font-size: 13px;
+  color: var(--muted);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin-bottom: 12px;
+}
+.mailbox-pane-meta dt {
+  margin: 0;
+}
+.mailbox-pane-meta dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.mailbox-pane-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mailbox-pane-actions button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.mailbox-placeholder {
+  color: var(--muted);
+  padding: 40px 16px;
+  text-align: center;
+}
+@media (max-width: 860px) {
+  .mailbox {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mailbox-list {
+    border-right: 0;
+  }
+  .mailbox.reading .mailbox-list {
+    display: none;
+  }
+  .mailbox:not(.reading) .mailbox-pane {
+    display: none;
+  }
+}
+.mailbox-actions select,
+.mailbox-pane-actions select {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* A rule in the mailbox settings: its name and switches on one line, then
+   each condition and each action on a line of its own. */
+.rule h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+}
+.rule-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+.rule-head > input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.rule-head .row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+.rule-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.rule-line select,
+.rule-line input {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.rule-line input[type='text'],
+.rule-line input:not([type]),
+.rule-line input[type='email'] {
+  flex: 1 1 160px;
+}
+.rule .check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}

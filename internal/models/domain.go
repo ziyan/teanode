@@ -416,3 +416,22 @@ func (self *Credential) Validate() error {
 	}
 	return errors.ErrOrNil()
 }
+
+// LocalPartOfPattern is the one local part an anchored, literal pattern
+// names — "^alice$" is alice — or empty for a pattern that names several
+// or none, which is what a mailbox address has to be exactly one of.
+func LocalPartOfPattern(pattern string) string {
+	if !strings.HasPrefix(pattern, "^") || !strings.HasSuffix(pattern, "$") {
+		return ""
+	}
+	local := pattern[1 : len(pattern)-1]
+	if local == "" || strings.ContainsAny(local, `.*+?()[]{}|\^$`) {
+		return ""
+	}
+	return strings.ToLower(local)
+}
+
+// PatternForLocalPart is the pattern that names exactly one local part.
+func PatternForLocalPart(localPart string) string {
+	return "^" + regexp.QuoteMeta(strings.ToLower(strings.TrimSpace(localPart))) + "$"
+}

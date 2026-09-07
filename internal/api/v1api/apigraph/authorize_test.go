@@ -33,6 +33,11 @@ var authorizing = map[string]bool{
 	// Whoever may see the roles or groups.
 	"requireRoleReader":  true,
 	"requireGroupReader": true,
+	// A message the caller may see, and a mailbox, folder or items they own.
+	"requireReadableMail": true,
+	"requireMailbox":      true,
+	"requireFolder":       true,
+	"requireItems":        true,
 }
 
 // unauthenticated are the operations that must work before the caller is

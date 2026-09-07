@@ -191,8 +191,19 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	// existing account an administrator, so that nobody can do less than
 	// they could the day before.
 	if err := database.Transaction(func(tx db.Transaction) error {
-		_, err := access.EnsureSeeded(tx)
-		return err
+		if _, err := access.EnsureSeeded(tx); err != nil {
+			return err
+		}
+		// And a mailbox for everyone who has none, the first time a server
+		// starts with mailboxes.
+		made, err := access.EnsureMailboxes(tx)
+		if err != nil {
+			return err
+		}
+		if made > 0 {
+			log.Noticef("created a mailbox for %d users who had none", made)
+		}
+		return nil
 	}); err != nil {
 		return "", "", err
 	}
@@ -619,6 +630,12 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 	settings := &storage.Settings{
 		Directory: configuration.Path(configuration.Storage.Directory),
 		Retention: configuration.Storage.SpoolRetention.Duration(),
+		// A message a mailbox still holds outlives the retention: the row
+		// says whether one does, and the sweep in the exchange is what
+		// removes the row and the file together once nothing does.
+		Keep: func(_ context.Context, id string) (bool, error) {
+			return self.database.MailExists(id)
+		},
 	}
 	if configuration.Storage.S3.Enabled {
 		settings.S3 = &storage.S3Settings{

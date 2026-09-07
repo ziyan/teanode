@@ -54,6 +54,11 @@ type Settings struct {
 	// Zero keeps messages forever, which will eventually fill the disk.
 	Retention time.Duration
 
+	// Keep says whether a message older than the retention is still wanted:
+	// one a mailbox holds. Nil keeps nothing past the retention, which is
+	// what the spool did before there were mailboxes.
+	Keep func(ctx context.Context, id string) (bool, error)
+
 	// S3 mirrors messages to an object store as well. Optional; when nil no
 	// AWS client is constructed.
 	S3 *S3Settings

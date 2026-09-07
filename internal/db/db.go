@@ -60,6 +60,10 @@ type Database interface {
 	// transaction.
 	UserLookup
 
+	// MailExists says whether a stored message still has a row, for the
+	// spool sweep deciding what it may remove.
+	MailExists(mailId string) (bool, error)
+
 	// Sessions, API tokens and passkeys are read and written outside a
 	// transaction: every authenticated request looks one up, and wrapping
 	// that in a transaction would buy nothing.
@@ -96,6 +100,10 @@ type Database interface {
 type Transaction interface {
 	Commit() error
 
+	// TryAdvisoryLock takes an advisory lock for the rest of the
+	// transaction, or says another transaction holds it.
+	TryAdvisoryLock(key int64) (bool, error)
+
 	DomainOperation
 	AliasOperation
 	CredentialOperation
@@ -103,6 +111,7 @@ type Transaction interface {
 	RoleOperation
 	GroupOperation
 	AuditOperation
+	MailboxOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

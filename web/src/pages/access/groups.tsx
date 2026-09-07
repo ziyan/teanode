@@ -10,12 +10,12 @@ import { hasPermission, useSession } from '../../session'
 import { CheckList, DomainSummary, GROUP_FIELDS, Group, Role, User, listDomains, listGroups, listRoles, listUsers } from './common'
 
 const CREATE = `
-  mutation ($name: String!, $description: String, $idpGroup: String, $userIds: [String], $roleIds: [String], $domainIds: [String]) {
+  mutation ($name: String!, $description: String, $idpGroup: String, $userIds: [String!], $roleIds: [String!], $domainIds: [String!]) {
     CreateGroup(name: $name, description: $description, idpGroup: $idpGroup, userIds: $userIds, roleIds: $roleIds, domainIds: $domainIds) ${GROUP_FIELDS}
   }`
 
 const UPDATE = `
-  mutation ($groupId: String!, $name: String, $description: String, $idpGroup: String, $userIds: [String], $roleIds: [String], $domainIds: [String]) {
+  mutation ($groupId: String!, $name: String, $description: String, $idpGroup: String, $userIds: [String!], $roleIds: [String!], $domainIds: [String!]) {
     UpdateGroup(groupId: $groupId, name: $name, description: $description, idpGroup: $idpGroup, userIds: $userIds, roleIds: $roleIds, domainIds: $domainIds) ${GROUP_FIELDS}
   }`
 

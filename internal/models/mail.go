@@ -43,6 +43,7 @@ const (
 	MailKindDSN      MailKind = "dsn"
 	MailKindRUA      MailKind = "rua"
 	MailKindRUF      MailKind = "ruf"
+	MailKindDraft    MailKind = "draft"
 )
 
 func (self MailKind) String() string {
@@ -63,6 +64,8 @@ func GetMailKind(value string) MailKind {
 		return MailKindRUA
 	case "ruf":
 		return MailKindRUF
+	case "draft":
+		return MailKindDraft
 	}
 	return MailKindUnknown
 }
@@ -132,6 +135,19 @@ type Mail struct {
 	// Raw data, not saved in database
 	Headers []string `json:"-"`
 	Body    []byte   `json:"-"`
+
+	// ThreadID is the conversation this message is part of, derived from
+	// In-Reply-To and References: the root message's own id when it starts
+	// one. What "show me the thread" reads.
+	ThreadID string `json:"threadId,omitempty"`
+
+	// UnreferencedAt is when the last mailbox item holding this message went
+	// away — or its arrival, for a message no mailbox took. Nil while any
+	// item references it. Retention prunes what has been unreferenced for
+	// longer than the retention period, nothing else.
+	UnreferencedAt *time.Time `json:"unreferencedAt,omitempty"`
+
+	// Kind gains draft for a message being written.
 
 	// Size of the received Mail
 	Size uint64 `json:"size,omitempty"`

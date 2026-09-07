@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -19,12 +20,13 @@ import (
 // without a PostgreSQL in the way. That the same operations behave against a
 // real one is covered in internal/db.
 type memoryStore struct {
-	mutex    sync.Mutex
-	sessions map[string]*storedCredential
-	tokens   map[string]*storedCredential
-	users    map[string]*models.User
-	roles    []*models.Role
-	groups   []*models.Group
+	mutex     sync.Mutex
+	sessions  map[string]*storedCredential
+	tokens    map[string]*storedCredential
+	users     map[string]*models.User
+	roles     []*models.Role
+	groups    []*models.Group
+	mailboxes []*models.Mailbox
 }
 
 type storedCredential struct {
@@ -346,6 +348,26 @@ func (self *memoryTransaction) UpdateUser(userId string, modify func(*models.Use
 	}
 	copied := *user
 	return &copied, nil
+}
+
+// The first account is given a mailbox as it is created. The store remembers
+// that it happened and nothing else about it; what a mailbox holds is the
+// database's business and tested there.
+func (self *memoryTransaction) ListMailboxes(userId string) ([]*models.Mailbox, error) {
+	var mailboxes []*models.Mailbox
+	for _, mailbox := range self.store.mailboxes {
+		if mailbox.UserID == userId {
+			mailboxes = append(mailboxes, mailbox)
+		}
+	}
+	return mailboxes, nil
+}
+
+func (self *memoryTransaction) CreateMailbox(mailbox *models.Mailbox) (*models.Mailbox, error) {
+	created := *mailbox
+	created.ID = fmt.Sprintf("mailbox-%d", len(self.store.mailboxes)+1)
+	self.store.mailboxes = append(self.store.mailboxes, &created)
+	return &created, nil
 }
 
 func (self *memoryTransaction) ListRoles() ([]*models.Role, error)   { return self.store.roles, nil }

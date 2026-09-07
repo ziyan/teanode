@@ -177,21 +177,9 @@ type GetMailArguments struct {
 }
 
 func (self *graph) GetMail(ctx context.Context, arguments GetMailArguments) (*models.Mail, error) {
-	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
-		return nil, err
-	}
-
-	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
+	mail, err := self.requireReadableMail(ctx, arguments.MailID)
 	if err != nil {
 		return nil, err
-	}
-	if mail == nil {
-		return nil, api.ErrNotFound
-	}
-
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, mail.DomainID) {
-		return nil, api.ErrNotFound
 	}
 
 	return mail, nil

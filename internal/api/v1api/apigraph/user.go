@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
@@ -165,6 +166,9 @@ func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments
 	stored, err := tx.CreateUser(created)
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if _, err := access.EnsureMailbox(tx, stored); err != nil {
+		return nil, err
 	}
 	log.Noticef("%s created the account %q", operatorName(ctx), stored.Username)
 	return describeUser(stored), nil

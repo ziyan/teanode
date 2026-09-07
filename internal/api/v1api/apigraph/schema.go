@@ -16,6 +16,7 @@ type Query interface {
 	RoleQuery
 	GroupQuery
 	AuditQuery
+	MailboxQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery
@@ -41,6 +42,7 @@ type Mutation interface {
 	UserMutation
 	RoleMutation
 	GroupMutation
+	MailboxMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation

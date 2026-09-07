@@ -50,8 +50,15 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 		receivedHeader,
 	}, envelope.Headers)
 
+	// The conversation this message is part of, from what it answers.
+	threadId, err := threadIDFor(tx, envelope.Headers)
+	if err != nil {
+		return nil, err
+	}
+
 	// prepare mail
 	mail := &models.Mail{
+		ThreadID:       threadId,
 		DomainID:       domain.ID,
 		Domain:         domain,
 		EnvelopeID:     envelope.ID,
@@ -115,6 +122,16 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	if _, err := tx.CreateMail(mail, nil); err != nil {
 		return nil, err
 	}
+	if mail.ThreadID == "" {
+		// It starts a conversation of its own.
+		mail.ThreadID = mail.ID
+		if _, err := tx.ModifyMail(mail.ID, func(mail *models.Mail) error {
+			mail.ThreadID = mail.ID
+			return nil
+		}, nil); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -128,7 +145,7 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	// resolve each alias
 	var deliveries []*models.Delivery
 	for _, recipientAlias := range recipientAliases {
-		matchedDeliveries, err := self.matchAliases(domain, recipientAlias, mail)
+		matchedDeliveries, err := self.matchAliases(tx, domain, recipientAlias, mail)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +153,20 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	}
 
 	// insert into database
-	return tx.CreateDeliveries(deliveries, nil)
+	created, err := tx.CreateDeliveries(deliveries, nil)
+	if err != nil {
+		return nil, err
+	}
+	held := false
+	for _, delivery := range created {
+		if delivery.Kind == models.DeliveryKindMailbox {
+			held = true
+		}
+	}
+	if err := self.indexMail(tx, mail, held); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 func (self *exchange) authenticateIncoming(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *models.Domain) error {

@@ -183,3 +183,79 @@ func contains(values []string, value string) bool {
 	}
 	return false
 }
+
+// EnsureMailbox gives a user their mailbox when they have none: "Personal",
+// with the folders every mail program expects. Reports whether it made one.
+func EnsureMailbox(tx db.Transaction, user *models.User) (bool, error) {
+	if user == nil {
+		return false, nil
+	}
+	mailboxes, err := tx.ListMailboxes(user.ID)
+	if err != nil {
+		return false, err
+	}
+	if len(mailboxes) > 0 {
+		return false, nil
+	}
+	if _, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"}); err != nil {
+		return false, fmt.Errorf("access: cannot create a mailbox for %q: %w", user.Username, err)
+	}
+	return true, nil
+}
+
+// EnsureMailboxes gives every user who has none a mailbox: what a server
+// that predates mailboxes runs on the first start with them.
+func EnsureMailboxes(tx db.Transaction) (int, error) {
+	users, err := tx.ListUsers()
+	if err != nil {
+		return 0, err
+	}
+	made := 0
+	for _, user := range users {
+		created, err := EnsureMailbox(tx, user)
+		if err != nil {
+			return made, err
+		}
+		if created {
+			made++
+		}
+	}
+	return made, nil
+}
+
+// CanReadMail says whether a person may see a message: as the operator of
+// its domain, holding mail:audit over it, or as the owner of a mailbox
+// holding it, with mail:read.
+func CanReadMail(tx db.Transaction, user *models.User, permissions *models.EffectivePermissions, mail *models.Mail) (bool, error) {
+	if mail == nil || permissions == nil {
+		return false, nil
+	}
+	if mail.DomainID != "" && permissions.HasOverDomain(models.PermissionMailAudit, mail.DomainID) {
+		return true, nil
+	}
+	if user == nil || !permissions.Has(models.PermissionMailRead) {
+		return false, nil
+	}
+	items, err := tx.ListItemsByMail(mail.ID)
+	if err != nil || len(items) == 0 {
+		return false, err
+	}
+	mailboxes, err := tx.ListMailboxes(user.ID)
+	if err != nil {
+		return false, err
+	}
+	owned := map[string]bool{}
+	for _, mailbox := range mailboxes {
+		owned[mailbox.ID] = true
+	}
+	for _, item := range items {
+		folder, err := tx.GetFolder(item.FolderID)
+		if err != nil {
+			return false, err
+		}
+		if folder != nil && owned[folder.MailboxID] {
+			return true, nil
+		}
+	}
+	return false, nil
+}

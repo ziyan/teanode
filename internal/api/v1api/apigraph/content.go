@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ziyan/teanode/internal/models"
 	"io"
 	"mime"
 	"net/textproto"
@@ -147,16 +146,9 @@ type GetMailContentArguments struct {
 }
 
 func (self *graph) GetMailContent(ctx context.Context, arguments GetMailContentArguments) (*MailContent, error) {
-	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
-		return nil, err
-	}
-
-	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
+	mail, err := self.requireReadableMail(ctx, arguments.MailID)
 	if err != nil {
 		return nil, err
-	}
-	if mail == nil {
-		return nil, api.ErrNotFound
 	}
 	// The domain may have been removed since; that is not a reason to hide
 	// mail that was received while it existed.

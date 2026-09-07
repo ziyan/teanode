@@ -1458,11 +1458,38 @@ record.
       lands on a placeholder until milestone two.
 - [ ] Milestone one, docs and command line: `teanode group` and `teanode
       role`, the deployment and getting-started pages for the new model.
+- [x] Milestone two, server side (2026-09-06): migration 0015 adds
+      `mailbox`, `mailbox_folder`, `mailbox_item`, `mailbox_folder_expunge`,
+      `mailbox_contact` and `mailbox_app_password`; an alias of kind
+      `mailbox` places the message in the Inbox by reference in the delivery
+      transaction, or in Junk when the filter failed it or its sender's
+      DMARC policy asked for quarantine; the mailbox's rules run on the new
+      item; `mail.thread_id` and the search document are written on
+      receipt; retention keeps every referenced message and sweeps the rest
+      after `mail.unreferenced_at` passes the retention period; the GraphQL
+      API lists mailboxes and folders with unread counts, pages a folder
+      with unread/flagged filters and full-text search, reads an item, sets
+      flags, moves, deletes (to Trash, then for good), empties Trash, and
+      manages folders and the mailbox's name, signature, rules and
+      out-of-office setting. Every mailbox operation is refused unless the
+      caller owns the mailbox.
+- [x] Milestone two, web UI (2026-09-06): signing in lands in the mailbox;
+      the rail shows the mailbox switcher and the folder tree with unread
+      counts, and the tab title carries the total; the management pages are
+      a mode entered from "Manage" at the foot of the rail and left by "Back
+      to mailbox"; the mailbox page is a folder's list beside the message,
+      with search, unread and flagged filters, selection, mark read/unread,
+      flag, archive, move, delete and empty trash; the message reuses the
+      audit page's body, tabs and attachments; Mailbox settings has General
+      (name, signatures, addresses), Folders, Rules and Out of office tabs.
+      Verified on the dev server with delivered mail: reading marks seen,
+      counts follow, a rule moved a matching message to Archive.
 
 - [x] (2026-09-06) Design and data model; the reference model's shape studied
       and adapted; milestones ordered by dependency.
-- [ ] Milestone one: access control.
-- [ ] Milestone two: mailboxes and delivery by reference.
+- [x] Milestone one: access control (docs and command line still open).
+- [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
+      still needs the mailbox picker; `teanode api` reaches everything).
 - [ ] Milestone three: reply, forward, drafts.
 - [ ] Milestone four: search, filters, rules, contacts.
 - [ ] Milestone five: IMAP and submission.
@@ -1489,6 +1516,21 @@ record.
   settings — rather than as part of the seed document.
   Date: 2026-09-06
 
+- Observation: every domain a developer might send from — `example.com`,
+  `example.net`, and the well-known open-source projects — publishes a DMARC
+  record now, and the server refused any DMARC failure whatever the policy
+  said. So `swaks --from someone@example.net`, as the local-development page
+  suggested, was rejected outright, and there was no sender a local server
+  would accept. The check now refuses only under a `reject` policy; `none`
+  and `quarantine` are recorded, held to the tests a domain with no policy
+  gets, and a quarantined message lands in Junk rather than the Inbox.
+  Date: 2026-09-06
+- Observation: an alias's pattern is a regular expression over the local
+  part (`^ziyan$`), not an address. Creating one through the API with the
+  full address matched nothing, silently: the message was refused as
+  "mailbox unavailable" with no log line naming the alias that did not
+  match. Worth a warning at alias creation when the pattern contains "@".
+  Date: 2026-09-06
 - Observation: the server already copies a message for a local recipient of
   a submission, which is the one place the "no copies" rule is broken today.
   Evidence: `internal/mx/exchange_outgoing.go` creates a `mail` row per

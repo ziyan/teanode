@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -47,8 +48,19 @@ type MailOperation interface {
 	// delete mail
 	DeleteMail(mailId string, options *Options) error
 
-	// scavenge mails
-	ScavengeMails(options *Options) error
+	// ScavengeMails removes messages that have been unreferenced for longer
+	// than the retention, up to a limit, and returns their identifiers so
+	// the caller can remove what is stored for them.
+	ScavengeMails(before time.Time, limit int) ([]string, error)
+
+	// FindThreadID is the conversation any of these message identifiers is
+	// part of, or empty when none of them is known: how a reply joins the
+	// thread of what it answers.
+	FindThreadID(messageIds []string) (string, error)
+
+	// SetMailSearch writes the search document: subject, sender, recipients
+	// and the message's text, bounded by the caller.
+	SetMailSearch(mailId string, text string) error
 }
 
 type mailModel struct {
@@ -89,6 +101,12 @@ type mailModel struct {
 	ReceivedAt time.Time
 
 	Kind string `gorm:"size:32"`
+
+	// ThreadID is the conversation; UnreferencedAt the retention clock, null
+	// while a mailbox item holds the message. The search document is written
+	// by SetMailSearch and never read back into the model.
+	ThreadID       string     `gorm:"column:thread_id;size:32"`
+	UnreferencedAt *time.Time `gorm:"column:unreferenced_at"`
 }
 
 func (self *mailModel) TableName() string {
@@ -97,6 +115,7 @@ func (self *mailModel) TableName() string {
 
 func getMailFromMailModel(model mailModel) *models.Mail {
 	mail := &models.Mail{
+		UnreferencedAt: localTime(model.UnreferencedAt),
 		ID:             model.ID,
 		CreatedAt:      model.CreatedAt.In(time.Local),
 		ModifiedAt:     model.ModifiedAt.In(time.Local),
@@ -115,6 +134,7 @@ func getMailFromMailModel(model mailModel) *models.Mail {
 		Status:         models.GetMailStatus(model.Status),
 		ReceivedAt:     model.ReceivedAt,
 		Kind:           models.GetMailKind(model.Kind),
+		ThreadID:       model.ThreadID,
 	}
 	if model.DomainID != nil {
 		mail.DomainID = *model.DomainID
@@ -231,6 +251,14 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 	}
 	if model.ReceivedAt != mail.ReceivedAt {
 		model.ReceivedAt = mail.ReceivedAt
+		dirty = true
+	}
+	if model.ThreadID != mail.ThreadID {
+		model.ThreadID = mail.ThreadID
+		dirty = true
+	}
+	if !optionalTimesAreEqual(model.UnreferencedAt, mail.UnreferencedAt) {
+		model.UnreferencedAt = mail.UnreferencedAt
 		dirty = true
 	}
 	if model.Kind != mail.Kind.String() {
@@ -425,9 +453,51 @@ func (self *transaction) DeleteMail(mailId string, options *Options) error {
 	return nil
 }
 
-func (self *transaction) ScavengeMails(options *Options) error {
-	if err := self.tx.Where("\"received_at\" < ?", time.Now().In(time.Local).Add(-7*24*time.Hour)).Delete(&mailModel{}).Error; err != nil {
-		return err
+func (self *transaction) ScavengeMails(before time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 1000
 	}
-	return nil
+	var mailIds []string
+	if err := self.tx.Model(&mailModel{}).Where("\"unreferenced_at\" IS NOT NULL AND \"unreferenced_at\" < ?", before).
+		Order("\"unreferenced_at\" ASC").Limit(limit).Pluck("id", &mailIds).Error; err != nil {
+		return nil, err
+	}
+	if len(mailIds) == 0 {
+		return nil, nil
+	}
+	if err := self.tx.Where("\"id\" IN ?", mailIds).Delete(&mailModel{}).Error; err != nil {
+		return nil, err
+	}
+	return mailIds, nil
+}
+
+func (self *transaction) FindThreadID(messageIds []string) (string, error) {
+	cleaned := make([]string, 0, len(messageIds))
+	for _, messageId := range messageIds {
+		if messageId = strings.TrimSpace(messageId); messageId != "" {
+			cleaned = append(cleaned, messageId)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "", nil
+	}
+	var threadIds []string
+	if err := self.tx.Model(&mailModel{}).Where("\"message_id\" IN ? AND \"thread_id\" <> ''", cleaned).
+		Order("\"received_at\" ASC").Limit(1).Pluck("thread_id", &threadIds).Error; err != nil {
+		return "", err
+	}
+	if len(threadIds) == 0 {
+		return "", nil
+	}
+	return threadIds[0], nil
+}
+
+func (self *transaction) SetMailSearch(mailId string, text string) error {
+	return self.tx.Exec(`UPDATE "mail" SET "search" = to_tsvector('simple', ?) WHERE "id" = ?`, text, mailId).Error
+}
+
+func (self *database) MailExists(mailId string) (bool, error) {
+	var count int64
+	err := self.db.Model(&mailModel{}).Where("\"id\" = ?", mailId).Count(&count).Error
+	return count > 0, err
 }

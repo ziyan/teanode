@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useMailboxes } from '../mailboxes'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import { matchSettingsSurface } from '../pages/settings/nav'
@@ -31,6 +32,7 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // it names itself from the same list, and a trail reading
   // "Settings > Server" named a page that does not exist.
   { prefix: '/settings', trail: [{ label: 'nav.settings', to: '/settings' }] },
+  { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
   { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
   { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },
   { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
@@ -51,7 +53,10 @@ const DOMAIN_ITEM_PAGES: { prefix: string; label: Key; list: string }[] = [
 
 // A page under a section that is a page of its own rather than a thing in
 // the section: writing a message is under Mail, and is not a message.
-const SECTION_PAGES: { path: string; label: Key }[] = [{ path: '/mail/compose', label: 'nav.compose' }]
+const SECTION_PAGES: { path: string; label: Key }[] = [
+  { path: '/mail/compose', label: 'nav.compose' },
+  { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
+]
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)
 const DetailContext = createContext<string[]>([])
@@ -146,6 +151,11 @@ function DocumentTitle() {
   const { t } = useTranslation()
   const trail = useTrail()
 
+  // What is unread across every mailbox, in front of everything else: the
+  // one number a tab can show from behind another tab.
+  const { views } = useMailboxes()
+  const unread = views.reduce((sum, view) => sum + view.unread, 0)
+
   useEffect(() => {
     // Reversed: a row of tabs is read left to right and truncated from the
     // right, so the part that tells them apart has to come before the part
@@ -154,8 +164,9 @@ function DocumentTitle() {
       .map((crumb) => crumb.label)
       .filter((label) => label !== '')
       .reverse()
-    document.title = [...parts, t('app.name')].join(' · ')
-  }, [trail, t])
+    const title = [...parts, t('app.name')].join(' · ')
+    document.title = unread > 0 ? `(${unread}) ${title}` : title
+  }, [trail, t, unread])
 
   return null
 }

@@ -140,7 +140,7 @@ func TestEffectivePermissionsComeFromGroups(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
-	var userId string
+	var userId, operatorId string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for _, name := range []string{"one.test", "two.test"} {
 			if _, err := tx.CreateDomain(&models.Domain{ID: name, Domain: name}); err != nil {
@@ -159,13 +159,7 @@ func TestEffectivePermissionsComeFromGroups(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
 		}
-		// A row naming a permission the code has forgotten — one a newer
-		// release wrote, or an older one — is ignored rather than fatal.
-		dbtest.Exec(t, database, `INSERT INTO "role_permission" ("role_id", "permission_key") VALUES ('`+operator.ID+`', 'carrier:pigeon')`)
-		reread, err := tx.GetRole(operator.ID)
-		if err != nil || reread == nil || len(reread.Permissions) != 3 {
-			t.Errorf("an unknown permission row was not ignored: %+v, %v", reread, err)
-		}
+		operatorId = operator.ID
 		auditor, err := tx.CreateRole(&models.Role{Name: "Auditor", Permissions: []models.Permission{models.PermissionMailAuditAll}})
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
@@ -182,7 +176,15 @@ func TestEffectivePermissionsComeFromGroups(t *testing.T) {
 		}
 	})
 
+	// A row naming a permission the code has forgotten — one a newer release
+	// wrote, or an older one — is ignored rather than fatal.
+	dbtest.Exec(t, database, `INSERT INTO "role_permission" ("role_id", "permission_key") VALUES ('`+operatorId+`', 'carrier:pigeon')`)
+
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		reread, err := tx.GetRole(operatorId)
+		if err != nil || reread == nil || len(reread.Permissions) != 3 {
+			t.Errorf("an unknown permission row was not ignored: %+v, %v", reread, err)
+		}
 		permissions, err := tx.EffectivePermissions(userId)
 		if err != nil {
 			t.Fatalf("EffectivePermissions: %s", err)

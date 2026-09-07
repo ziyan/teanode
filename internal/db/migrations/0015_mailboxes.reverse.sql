@@ -1,0 +1,16 @@
+DROP INDEX IF EXISTS "delivery_mailbox";
+ALTER TABLE "delivery" DROP COLUMN "mailbox_item_id", DROP COLUMN "mailbox_id";
+DELETE FROM "delivery" WHERE "kind" = 'mailbox';
+DROP INDEX IF EXISTS "mail_unreferenced";
+DROP INDEX IF EXISTS "mail_search";
+DROP INDEX IF EXISTS "mail_message_id";
+DROP INDEX IF EXISTS "mail_thread";
+ALTER TABLE "mail" DROP COLUMN "unreferenced_at", DROP COLUMN "search", DROP COLUMN "thread_id";
+DELETE FROM "mail" WHERE "kind" = 'draft';
+DROP TABLE "mailbox_app_password";
+DROP TABLE "mailbox_contact";
+DROP TABLE "mailbox_folder_expunge";
+DROP TABLE "mailbox_item";
+DROP TABLE "mailbox_folder";
+DROP TABLE "mailbox";
+DELETE FROM "alias" WHERE "kind" = 'mailbox';

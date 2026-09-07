@@ -173,6 +173,9 @@ func runUserAdd(ctx context.Context, command *cli.Command) error {
 		if err := access.AddUserToGroups(tx, user.ID, models.GroupNameAdministrators, models.GroupNameMembers); err != nil {
 			return err
 		}
+		if _, err := access.EnsureMailbox(tx, user); err != nil {
+			return err
+		}
 		fmt.Printf("added %s as an administrator\n", username)
 		return nil
 	})

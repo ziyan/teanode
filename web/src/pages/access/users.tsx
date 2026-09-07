@@ -10,12 +10,12 @@ import { useSession } from '../../session'
 import { CheckList, Group, USER_FIELDS, User, listGroups, listUsers } from './common'
 
 const CREATE = `
-  mutation ($username: String!, $password: String, $name: String, $email: String, $groupIds: [String]) {
+  mutation ($username: String!, $password: String, $name: String, $email: String, $groupIds: [String!]) {
     CreateUser(username: $username, password: $password, name: $name, email: $email, groupIds: $groupIds) ${USER_FIELDS}
   }`
 
 const UPDATE = `
-  mutation ($userId: String!, $username: String, $name: String, $email: String, $disabled: Boolean, $groupIds: [String]) {
+  mutation ($userId: String!, $username: String, $name: String, $email: String, $disabled: Boolean, $groupIds: [String!]) {
     UpdateUser(userId: $userId, username: $username, name: $name, email: $email, disabled: $disabled, groupIds: $groupIds) ${USER_FIELDS}
   }`
 

@@ -53,18 +53,19 @@ export function AuditTab() {
   const events = page?.events ?? []
 
   return (
-    <SettingsSection
-      description={t('access.audit.intro')}
-      action={
-        <select value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
-          {RESOURCE_TYPES.map((candidate) => (
-            <option key={candidate} value={candidate}>
-              {candidate === '' ? t('access.audit.everything') : candidate}
-            </option>
-          ))}
-        </select>
-      }
-    >
+    <SettingsSection description={t('access.audit.intro')}>
+      <p className="audit-filter">
+        <label>
+          {t('access.audit.filter')}{' '}
+          <select value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
+            {RESOURCE_TYPES.map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate === '' ? t('access.audit.everything') : candidate}
+              </option>
+            ))}
+          </select>
+        </label>
+      </p>
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
       {page && events.length === 0 && <SettingsEmpty>{t('access.audit.empty')}</SettingsEmpty>}

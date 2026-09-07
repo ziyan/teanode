@@ -501,6 +501,9 @@ func (self *authenticator) CreateFirstUser(ctx context.Context, username, passwo
 		if _, err := access.EnsureSeeded(tx); err != nil {
 			return err
 		}
+		if _, err := access.EnsureMailbox(tx, user); err != nil {
+			return err
+		}
 		return access.AddUserToGroups(tx, user.ID, models.GroupNameAdministrators, models.GroupNameMembers)
 	}); err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -215,4 +216,29 @@ func translateError(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, validation.Error())
 	}
 	return err
+}
+
+// requireReadableMail is a message the caller may see: as the operator of
+// its domain, or as the owner of a mailbox holding it. Anything else, and a
+// message that does not exist, is not found.
+func (self *graph) requireReadableMail(ctx context.Context, mailId string) (*models.Mail, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mail, err := self.transaction(ctx).GetMail(mailId, nil)
+	if err != nil {
+		return nil, err
+	}
+	if mail == nil {
+		return nil, api.ErrNotFound
+	}
+	allowed, err := access.CanReadMail(self.transaction(ctx), principal.User, principal.Permissions, mail)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, api.ErrNotFound
+	}
+	return mail, nil
 }

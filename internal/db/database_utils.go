@@ -93,3 +93,21 @@ func (self *database) RawQueryString(query string) (string, error) {
 func (self *database) RawExec(statement string) error {
 	return self.db.Exec(statement).Error
 }
+
+// localTime is a stored optional time in the local zone.
+func localTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	local := value.In(time.Local)
+	return &local
+}
+
+// TryAdvisoryLock takes a PostgreSQL advisory lock for the rest of the
+// transaction, or reports that another transaction holds it. What makes a
+// sweep one instance's job at a time.
+func (self *transaction) TryAdvisoryLock(key int64) (bool, error) {
+	var locked bool
+	err := self.tx.Raw("SELECT pg_try_advisory_xact_lock(?)", key).Scan(&locked).Error
+	return locked, err
+}

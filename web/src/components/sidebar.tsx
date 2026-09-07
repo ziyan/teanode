@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import {
   ChevronRightIcon,
   DomainsIcon,
+  GridIcon,
   RefreshIcon,
   KeyIcon,
   LogoutIcon,
@@ -12,6 +13,7 @@ import {
   QueueIcon,
   ServerIcon,
   ServiceIcon,
+  SettingsIcon,
   SetupIcon,
   ShieldIcon,
   TerminalIcon,
@@ -21,6 +23,7 @@ import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { hasAnywhere, hasPermission, useSession } from '../session'
+import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 
 // permission is what a row needs, when it needs one: a domain permission held
 // over at least one domain, or a server permission. A row nothing gates is
@@ -152,6 +155,16 @@ export function Sidebar({
   const surface = matchSettingsSurface(location.pathname)
   const inAccount = surface?.category === 'account'
 
+  // The mailbox is where the page opens and where most people stay. The
+  // management pages — every message, the queue, reports, domains, the
+  // server — are a mode entered from the foot of the rail, in parallel with
+  // the account settings, and left by the row at the top of it. Somebody
+  // with nothing to manage never sees that mode at all.
+  const inMailbox = location.pathname === '/mailbox' || location.pathname.startsWith('/mailbox/')
+  const inManagement = !inAccount && !inMailbox
+  const navigate = useNavigate()
+  const mailboxes = useMailboxes()
+
   // Only the rows the caller may open. What is hidden here is refused by the
   // server anyway; hiding it is the courtesy of not offering a door that
   // does not open. A group with no rows left is not drawn at all.
@@ -159,9 +172,17 @@ export function Sidebar({
   const permitted = (item: Item) =>
     !item.anyOf ||
     item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key))
-  const groups = (inAccount ? [ACCOUNT_GROUP] : GROUPS)
+  const groups = (inAccount ? [ACCOUNT_GROUP] : inMailbox ? [] : GROUPS)
     .map((group) => ({ ...group, items: group.items.filter(permitted) }))
     .filter((group) => group.items.length > 0)
+
+  // Where "Manage" goes: the first management row this person may open.
+  const firstManagementRow = GROUPS.flatMap((group) => group.items).find(permitted)
+  // Somebody whose only permission is over their own mailbox has no
+  // management side, and a person with no mailbox at all (the console, or a
+  // group with no mail:read) has no mailbox side.
+  const hasMailbox = Boolean(session.userId) && (!mailboxes.loaded || mailboxes.views.length > 0)
+  const current = mailboxes.current
 
   return (
     <>
@@ -201,14 +222,75 @@ export function Sidebar({
           {/* The way back out. First, and on its own, because it is the one
               row that changes what the rail is showing rather than where in
               it you are. */}
-          {inAccount && (
+          {(inAccount || inManagement) && hasMailbox && (
             <div className="sidebar-group">
-              <Link className="sidebar-back" to="/mail" title={collapsed ? t('nav.backToMail') : undefined}>
+              <Link className="sidebar-back" to="/mailbox" title={collapsed ? t('nav.backToMailbox') : undefined}>
                 <span className="sidebar-icon flip">
                   <ChevronRightIcon size={18} />
                 </span>
-                <span className="sidebar-label">{t('nav.backToMail')}</span>
+                <span className="sidebar-label">{t('nav.backToMailbox')}</span>
               </Link>
+            </div>
+          )}
+
+          {/* The mailbox: which one, when there are several, then its
+              folders with what is unread in each. The tree is here rather
+              than in the page because it is navigation, and the rail is
+              where navigation lives. */}
+          {inMailbox && current && (
+            <div className="sidebar-group">
+              <div className="sidebar-mailbox">
+                {mailboxes.views.length > 1 ? (
+                  <select
+                    aria-label={t('nav.chooseMailbox')}
+                    value={current.mailbox.id}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      mailboxes.setCurrentId(event.target.value)
+                      navigate('/mailbox')
+                    }}
+                  >
+                    {mailboxes.views.map((view) => (
+                      <option key={view.mailbox.id} value={view.mailbox.id}>
+                        {view.mailbox.name}
+                        {view.unread > 0 ? ` (${view.unread})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="sidebar-mailbox-name sidebar-label" title={current.mailbox.name}>
+                    {current.mailbox.name}
+                  </div>
+                )}
+              </div>
+              {folderRows(current.folders).map(({ folder, depth }) => {
+                const label = folderLabel(t, folder)
+                return (
+                  <NavLink
+                    key={folder.id}
+                    to={`/mailbox/${folder.id}`}
+                    className={folder.unread > 0 ? 'unread' : undefined}
+                    data-depth={Math.min(depth, 3)}
+                    title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
+                  >
+                    <span className="sidebar-icon">
+                      <MailIcon />
+                    </span>
+                    <span className="sidebar-label">{label}</span>
+                    {folder.unread > 0 && (
+                      <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
+                        {folder.unread}
+                      </span>
+                    )}
+                  </NavLink>
+                )
+              })}
+              <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
+                <span className="sidebar-icon">
+                  <SettingsIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.mailboxSettings')}</span>
+              </NavLink>
             </div>
           )}
 
@@ -250,6 +332,24 @@ export function Sidebar({
             when you use it is a trap. */}
         {(onToggle || account) && (
           <div className="sidebar-account">
+            {/* Into management mode. Beside the account menu because the two
+                are the same kind of thing: a mode about something other than
+                the mailbox, entered on purpose and left by the row at the
+                top. Only for somebody who has anything to manage. */}
+            {!inManagement && firstManagementRow && (
+              <button
+                type="button"
+                className="sidebar-collapse"
+                title={t('nav.manageTooltip')}
+                aria-label={t('nav.manage')}
+                onClick={() => navigate(firstManagementRow.to)}
+              >
+                <span className="sidebar-icon">
+                  <GridIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.manage')}</span>
+              </button>
+            )}
             {onToggle && (
               <button
                 type="button"
