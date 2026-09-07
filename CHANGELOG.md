@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Two ways a legitimate message was refused on DKIM grounds with SPF passing.
+  A verification *error* — the signer's key could not be fetched or read —
+  was answered with a permanent 550; it is now recorded and left to DMARC and
+  the spam filter. And with no DMARC policy, any non-passing signature
+  refused the message, which bounced mail through Apple's private relay for
+  carrying a second, broken signature beside a valid one; one valid signature,
+  or SPF passing, is now enough. Eleven legitimate messages in six days.
+
 ## [0.8.0] - 2026-09-06
 
 ### Added
