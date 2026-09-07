@@ -35,6 +35,14 @@ updates:
       # shipped to anybody: webpack, its loaders, the TypeScript compiler.
       build:
         dependency-type: development
+    ignore:
+      # TypeScript 7 cannot be installed here: @typescript-eslint declares a
+      # peer of "typescript >=4.8.4 <6.1.0", so npm refuses the tree and every
+      # job fails before it builds anything. Two pull requests have arrived
+      # and failed that way. Remove this when @typescript-eslint supports 7,
+      # and the next weekly run proposes it again.
+      - dependency-name: typescript
+        versions: ['>=7']
 
   - package-ecosystem: github-actions
     directory: /
