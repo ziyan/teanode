@@ -1,12 +1,16 @@
 package web_test
 
 import (
+	"context"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // memoryStore is a CredentialStore in a map.
@@ -16,9 +20,13 @@ import (
 // without a PostgreSQL in the way. That the same operations behave against a
 // real one is covered in internal/db.
 type memoryStore struct {
-	mutex    sync.Mutex
-	sessions map[string]*storedCredential
-	tokens   map[string]*storedCredential
+	mutex     sync.Mutex
+	sessions  map[string]*storedCredential
+	tokens    map[string]*storedCredential
+	users     map[string]*models.User
+	roles     []*models.Role
+	groups    []*models.Group
+	mailboxes []*models.Mailbox
 }
 
 type storedCredential struct {
@@ -27,11 +35,16 @@ type storedCredential struct {
 	token   *models.Token
 }
 
-func newMemoryStore() *memoryStore {
-	return &memoryStore{
+func newMemoryStore(users ...*models.User) *memoryStore {
+	self := &memoryStore{
 		sessions: map[string]*storedCredential{},
 		tokens:   map[string]*storedCredential{},
+		users:    map[string]*models.User{},
 	}
+	for _, user := range users {
+		self.addUser(user)
+	}
+	return self
 }
 
 func (self *memoryStore) CreateSession(session *models.Session, keyHash string) (*models.Session, error) {
@@ -221,4 +234,173 @@ func (self *memoryStore) ScavengeTokens(now time.Time) (int64, error) {
 		}
 	}
 	return removed, nil
+}
+
+// The user table, in the same map. The authenticator looks accounts up on
+// every request and writes two of them — claiming the server, and a password
+// change — through a transaction; the fake honours exactly that much, and
+// what seeding the roles and groups needs, and panics on anything else so
+// that a new dependency is noticed rather than silently absent.
+
+func (self *memoryStore) addUser(user *models.User) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.users == nil {
+		self.users = map[string]*models.User{}
+	}
+	copied := *user
+	if copied.ID == "" {
+		copied.ID = security.NewULID()
+	}
+	self.users[copied.ID] = &copied
+}
+
+func (self *memoryStore) removeUser(username string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for id, user := range self.users {
+		if strings.EqualFold(user.Username, username) {
+			delete(self.users, id)
+		}
+	}
+}
+
+func (self *memoryStore) GetUser(userId string) (*models.User, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if user, ok := self.users[userId]; ok {
+		copied := *user
+		return &copied, nil
+	}
+	return nil, nil
+}
+
+func (self *memoryStore) GetUserByUsername(username string) (*models.User, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, user := range self.users {
+		if strings.EqualFold(user.Username, username) {
+			copied := *user
+			return &copied, nil
+		}
+	}
+	return nil, nil
+}
+
+func (self *memoryStore) CountUsers() (int64, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return int64(len(self.users)), nil
+}
+
+func (self *memoryStore) TransactionContext(_ context.Context, function func(db.Transaction) error) error {
+	return function(&memoryTransaction{store: self})
+}
+
+// memoryTransaction is the handful of writes the authenticator makes, over
+// the same map. The embedded interface is nil: any method not written here
+// panics, which is the point.
+type memoryTransaction struct {
+	db.Transaction
+	store *memoryStore
+}
+
+func (self *memoryTransaction) GetUser(userId string) (*models.User, error) {
+	return self.store.GetUser(userId)
+}
+
+func (self *memoryTransaction) GetUserByUsername(username string) (*models.User, error) {
+	return self.store.GetUserByUsername(username)
+}
+
+func (self *memoryTransaction) CountUsers() (int64, error) {
+	return self.store.CountUsers()
+}
+
+func (self *memoryTransaction) ListUsers() ([]*models.User, error) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	users := make([]*models.User, 0, len(self.store.users))
+	for _, user := range self.store.users {
+		copied := *user
+		users = append(users, &copied)
+	}
+	return users, nil
+}
+
+func (self *memoryTransaction) CreateUser(user *models.User) (*models.User, error) {
+	if existing, _ := self.store.GetUserByUsername(user.Username); existing != nil {
+		return nil, db.ErrAlreadyExists
+	}
+	self.store.addUser(user)
+	return self.store.GetUserByUsername(user.Username)
+}
+
+func (self *memoryTransaction) UpdateUser(userId string, modify func(*models.User) error) (*models.User, error) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	user, ok := self.store.users[userId]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	if err := modify(user); err != nil {
+		return nil, err
+	}
+	copied := *user
+	return &copied, nil
+}
+
+// The first account is given a mailbox as it is created. The store remembers
+// that it happened and nothing else about it; what a mailbox holds is the
+// database's business and tested there.
+func (self *memoryTransaction) ListMailboxes(userId string) ([]*models.Mailbox, error) {
+	var mailboxes []*models.Mailbox
+	for _, mailbox := range self.store.mailboxes {
+		if mailbox.UserID == userId {
+			mailboxes = append(mailboxes, mailbox)
+		}
+	}
+	return mailboxes, nil
+}
+
+func (self *memoryTransaction) CreateMailbox(mailbox *models.Mailbox) (*models.Mailbox, error) {
+	created := *mailbox
+	created.ID = fmt.Sprintf("mailbox-%d", len(self.store.mailboxes)+1)
+	self.store.mailboxes = append(self.store.mailboxes, &created)
+	return &created, nil
+}
+
+func (self *memoryTransaction) ListRoles() ([]*models.Role, error)   { return self.store.roles, nil }
+func (self *memoryTransaction) ListGroups() ([]*models.Group, error) { return self.store.groups, nil }
+
+func (self *memoryTransaction) CreateRole(role *models.Role) (*models.Role, error) {
+	copied := *role
+	copied.ID = security.NewULID()
+	self.store.roles = append(self.store.roles, &copied)
+	return &copied, nil
+}
+
+func (self *memoryTransaction) CreateGroup(group *models.Group) (*models.Group, error) {
+	copied := *group
+	copied.ID = security.NewULID()
+	self.store.groups = append(self.store.groups, &copied)
+	return &copied, nil
+}
+
+func (self *memoryTransaction) GetGroupByName(name string) (*models.Group, error) {
+	for _, group := range self.store.groups {
+		if strings.EqualFold(group.Name, name) {
+			return group, nil
+		}
+	}
+	return nil, nil
+}
+
+func (self *memoryTransaction) UpdateGroup(groupId string, modify func(*models.Group) error) (*models.Group, error) {
+	for _, group := range self.store.groups {
+		if group.ID == groupId {
+			return group, modify(group)
+		}
+	}
+	return nil, db.ErrNotFound
 }

@@ -117,32 +117,6 @@ export function MailDetailPage() {
   const label = useEnumLabel()
   const { mailId } = useParams()
   const { data, error, loading } = useQuery(() => graphql<Response>(MAIL, { mailId }), [mailId])
-  const [chosen, setChosen] = useState<Tab | null>(null)
-  const [loadRemote, setLoadRemote] = useState(false)
-
-  // Reading in the dark. The frame's document is built as a string, so the
-  // dashboard's theme has to be resolved here and written in as literals.
-  // "darkened" is the reader's choice to invert a message that paints its
-  // own light ground, remembered per reader rather than per message: whoever
-  // wants dark mail wants it for the next message too.
-  const resolvedTheme = useResolvedTheme()
-  const dark = resolvedTheme === 'dark'
-  const [darkened, setDarkened] = useState(() => {
-    try {
-      return window.localStorage.getItem(DARKENED_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  const [alreadyDark, setAlreadyDark] = useState(false)
-  const chooseDarkened = (next: boolean) => {
-    setDarkened(next)
-    try {
-      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
-    } catch {
-      // A browser that refuses storage still gets the choice for this visit.
-    }
-  }
   const [marked, setMarked] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | null>(null)
@@ -180,13 +154,6 @@ export function MailDetailPage() {
 
   useBreadcrumbDetail(data?.GetMail?.subject || (data ? t('mail.noSubject') : null))
 
-  const content = data?.GetMailContent
-  const document = useMemo(
-    () =>
-      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
-    [content?.html, loadRemote, mailId, dark, darkened],
-  )
-
   if (loading) {
     return <Loading />
   }
@@ -199,13 +166,6 @@ export function MailDetailPage() {
 
   const mail = data.GetMail
   const results = mail.authenticationResults
-
-  // A message with no HTML has no rendered view and no markup behind one, so
-  // those two tabs are not offered rather than offered and disabled — a
-  // control that can never be used is a thing to wonder about. Plain text
-  // opens on its text, which is the whole of what it is.
-  const hasHtml = Boolean(content?.html)
-  const tab = chosen ?? (hasHtml ? 'rendered' : 'text')
 
   return (
     <>
@@ -316,148 +276,208 @@ export function MailDetailPage() {
       </div>
 
       <h3>{t('mailDetail.message')}</h3>
-      {!content?.available ? (
-        <p className="muted">{t('mailDetail.notStored')}</p>
-      ) : (
-        <>
-          <div className="tabs">
-            {hasHtml && (
-              <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
-                {t('mailDetail.rendered')}
-              </button>
-            )}
-            <button
-              className={tab === 'text' ? 'active' : ''}
-              onClick={() => setChosen('text')}
-              disabled={!content.text}
-            >
-              {t('mailDetail.text')}
-            </button>
-            {/* The markup behind the rendered view. What the frame shows has
-                been sanitised and rewritten; when it looks wrong, this is the
-                only way to see what it is actually rendering. */}
-            {hasHtml && (
-              <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
-                {t('mailDetail.html')}
-              </button>
-            )}
-            <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
-              {t('mailDetail.headers')}
-            </button>
-            <button
-              className={tab === 'raw' ? 'active' : ''}
-              onClick={() => setChosen('raw')}
-              disabled={!content.rawHeaders}
-            >
-              {t('mailDetail.rawHeaders')}
-            </button>
-            {/* A real link, so the browser saves it the way it saves anything
-                else, and middle-click and "save as" both work. */}
-            <a className="tab-action" href={`/api/v1/mail/${mail.id}/raw`} download>
-              {t('mailDetail.download')}
-            </a>
-          </div>
+      <MessageContent mailId={mail.id} content={data.GetMailContent} />
+    </>
+  )
+}
 
-          {tab === 'rendered' && content.html && (
-            <>
-              {content.hasRemoteContent && !loadRemote && (
-                <div className="banner">
-                  {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => setLoadRemote(true)}>
-                    {t('mailDetail.loadRemote')}
+// MessageContent is the message itself: rendered, as text, as markup, with
+// its headers, and with its attachments. The audit page shows it under the
+// verdict and the deliveries; the mailbox shows it under the subject line.
+// One component, so that what a message looks like does not depend on which
+// page it is read from.
+export function MessageContent({ mailId, content }: { mailId: string; content?: MailContent | null }) {
+  const { t } = useTranslation()
+  const [chosen, setChosen] = useState<Tab | null>(null)
+  const [loadRemote, setLoadRemote] = useState(false)
+
+  // Reading in the dark. The frame's document is built as a string, so the
+  // web UI's theme has to be resolved here and written in as literals.
+  // "darkened" is the reader's choice to invert a message that paints its
+  // own light ground, remembered per reader rather than per message: whoever
+  // wants dark mail wants it for the next message too.
+  const resolvedTheme = useResolvedTheme()
+  const dark = resolvedTheme === 'dark'
+  const [darkened, setDarkened] = useState(() => {
+    try {
+      return window.localStorage.getItem(DARKENED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [alreadyDark, setAlreadyDark] = useState(false)
+  const chooseDarkened = (next: boolean) => {
+    setDarkened(next)
+    try {
+      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
+    } catch {
+      // A browser that refuses storage still gets the choice for this visit.
+    }
+  }
+
+  // A new message starts on its own default tab, without remote content.
+  useEffect(() => {
+    setChosen(null)
+    setLoadRemote(false)
+  }, [mailId])
+
+  const document = useMemo(
+    () =>
+      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
+    [content?.html, loadRemote, mailId, dark, darkened],
+  )
+
+  // A message with no HTML has no rendered view and no markup behind one, so
+  // those two tabs are not offered rather than offered and disabled — a
+  // control that can never be used is a thing to wonder about. Plain text
+  // opens on its text, which is the whole of what it is.
+  const hasHtml = Boolean(content?.html)
+  const tab = chosen ?? (hasHtml ? 'rendered' : 'text')
+
+  return (
+    <>
+    {!content?.available ? (
+      <p className="muted">{t('mailDetail.notStored')}</p>
+    ) : (
+      <>
+        <div className="tabs">
+          {hasHtml && (
+            <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
+              {t('mailDetail.rendered')}
+            </button>
+          )}
+          <button
+            className={tab === 'text' ? 'active' : ''}
+            onClick={() => setChosen('text')}
+            disabled={!content.text}
+          >
+            {t('mailDetail.text')}
+          </button>
+          {/* The markup behind the rendered view. What the frame shows has
+              been sanitised and rewritten; when it looks wrong, this is the
+              only way to see what it is actually rendering. */}
+          {hasHtml && (
+            <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
+              {t('mailDetail.html')}
+            </button>
+          )}
+          <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
+            {t('mailDetail.headers')}
+          </button>
+          <button
+            className={tab === 'raw' ? 'active' : ''}
+            onClick={() => setChosen('raw')}
+            disabled={!content.rawHeaders}
+          >
+            {t('mailDetail.rawHeaders')}
+          </button>
+          {/* A real link, so the browser saves it the way it saves anything
+              else, and middle-click and "save as" both work. */}
+          <a className="tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
+            {t('mailDetail.download')}
+          </a>
+        </div>
+
+        {tab === 'rendered' && content.html && (
+          <>
+            {content.hasRemoteContent && !loadRemote && (
+              <div className="banner">
+                {t('mailDetail.remoteBlocked')}{' '}
+                <button className="link" onClick={() => setLoadRemote(true)}>
+                  {t('mailDetail.loadRemote')}
+                </button>
+              </div>
+            )}
+            {/* Only in the dark theme: in the light one there is nothing
+                to fix, and the control would be a question nobody asked.
+                A plain message is already dark from the frame's ground;
+                this is for one that paints its own, which the inversion
+                darkens while keeping its pictures the right way round. */}
+            {dark && (
+              <div className="frame-mode">
+                <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
+                  <button
+                    type="button"
+                    className={darkened ? '' : 'active'}
+                    aria-pressed={!darkened}
+                    onClick={() => chooseDarkened(false)}
+                  >
+                    {t('mailDetail.asSent')}
+                  </button>
+                  <button
+                    type="button"
+                    className={darkened && !alreadyDark ? 'active' : ''}
+                    aria-pressed={darkened && !alreadyDark}
+                    disabled={alreadyDark}
+                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                    onClick={() => chooseDarkened(true)}
+                  >
+                    {t('mailDetail.darkened')}
                   </button>
                 </div>
-              )}
-              {/* Only in the dark theme: in the light one there is nothing
-                  to fix, and the control would be a question nobody asked.
-                  A plain message is already dark from the frame's ground;
-                  this is for one that paints its own, which the inversion
-                  darkens while keeping its pictures the right way round. */}
-              {dark && (
-                <div className="frame-mode">
-                  <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
-                    <button
-                      type="button"
-                      className={darkened ? '' : 'active'}
-                      aria-pressed={!darkened}
-                      onClick={() => chooseDarkened(false)}
-                    >
-                      {t('mailDetail.asSent')}
-                    </button>
-                    <button
-                      type="button"
-                      className={darkened && !alreadyDark ? 'active' : ''}
-                      aria-pressed={darkened && !alreadyDark}
-                      disabled={alreadyDark}
-                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
-                      onClick={() => chooseDarkened(true)}
-                    >
-                      {t('mailDetail.darkened')}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* Rendered in a sandbox that permits no scripts, on top of
-                  the server-side sanitising and a policy of default-src
-                  'none' inside the frame. It is mail from a stranger. */}
-              <MessageFrame
-                document={document}
-                title={t('mailDetail.message')}
-                darkened={dark && darkened}
-                onGroundMeasured={setAlreadyDark}
-              />
-            </>
-          )}
+              </div>
+            )}
+            {/* Rendered in a sandbox that permits no scripts, on top of
+                the server-side sanitising and a policy of default-src
+                'none' inside the frame. It is mail from a stranger. */}
+            <MessageFrame
+              document={document}
+              title={t('mailDetail.message')}
+              darkened={dark && darkened}
+              onGroundMeasured={setAlreadyDark}
+            />
+          </>
+        )}
 
-          {tab === 'text' && <pre className="message-text">{content.text}</pre>}
+        {tab === 'text' && <pre className="message-text">{content.text}</pre>}
 
-          {/* The sanitised markup, not the original: it is what the frame
-              above is rendering, which is the thing being explained. The
-              untouched original is in the .eml behind Download. */}
-          {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
+        {/* The sanitised markup, not the original: it is what the frame
+            above is rendering, which is the thing being explained. The
+            untouched original is in the .eml behind Download. */}
+        {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
 
-          {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
+        {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
 
-          {tab === 'source' && (
+        {tab === 'source' && (
+          <table>
+            <tbody>
+              {(content.headers ?? []).map((header, index) => (
+                <tr key={index}>
+                  <td className="shrink muted">{header.key}</td>
+                  <td className="mono wrap">{header.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {content.attachments?.length ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>{t('mailDetail.attachments')}</h3>
             <table>
               <tbody>
-                {(content.headers ?? []).map((header, index) => (
+                {content.attachments.map((attachment, index) => (
                   <tr key={index}>
-                    <td className="shrink muted">{header.key}</td>
-                    <td className="mono wrap">{header.value}</td>
+                    <td>
+                      {/* A real link, so saving it works the way saving
+                          anything else does. */}
+                      <a
+                        href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
+                        download={attachment.filename}
+                      >
+                        {attachment.filename}
+                      </a>
+                    </td>
+                    <td className="shrink muted">{attachment.contentType}</td>
+                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-
-          {content.attachments?.length ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>{t('mailDetail.attachments')}</h3>
-              <table>
-                <tbody>
-                  {content.attachments.map((attachment, index) => (
-                    <tr key={index}>
-                      <td>
-                        {/* A real link, so saving it works the way saving
-                            anything else does. */}
-                        <a
-                          href={`/api/v1/mail/${mail.id}/attachment/${attachment.index}`}
-                          download={attachment.filename}
-                        >
-                          {attachment.filename}
-                        </a>
-                      </td>
-                      <td className="shrink muted">{attachment.contentType}</td>
-                      <td className="shrink muted">{formatBytes(attachment.size)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </>
-      )}
+          </div>
+        ) : null}
+      </>
+    )}
     </>
   )
 }

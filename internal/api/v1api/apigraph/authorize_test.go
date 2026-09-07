@@ -12,17 +12,34 @@ import (
 // authorizing are the helpers that establish the caller may do a thing. Every
 // one of them refuses when there is no operator.
 var authorizing = map[string]bool{
-	"requireOperator": true,
-	"requireDomain":   true,
+	"requireSignedIn":         true,
+	"requirePermission":       true,
+	"requireAnyPermission":    true,
+	"requireManagement":       true,
+	"requireDomainPermission": true,
 	// Resolves a domain filter into the domains to query, and refuses a caller
-	// who is not an operator on the way. Checked by reading it, not assumed.
+	// who holds the permission over none of them on the way.
 	"domainsToList": true,
-	// requireOperator, plus the account it resolved to. Anything about a
+
+	// requireSignedIn, plus the account it resolved to. Anything about a
 	// person rather than about the server needs the account itself.
 	"requireAccount": true,
 	// requireAccount, plus the passkey, which it refuses unless it belongs to
 	// that account.
 	"requireOwnPasskey": true,
+	// The row, refused unless the caller may manage its domain.
+	"requireAlias":      true,
+	"requireCredential": true,
+	// Whoever may see the roles or groups.
+	"requireRoleReader":  true,
+	"requireGroupReader": true,
+	// A message the caller may see, and a mailbox, folder or items they own.
+	"requireReadableMail": true,
+	"requireMailbox":      true,
+	"requireFolder":       true,
+	"requireItems":        true,
+	// The mailbox holding a draft, refused unless the caller owns it.
+	"requireDraftOwner": true,
 }
 
 // unauthenticated are the operations that must work before the caller is
@@ -98,7 +115,7 @@ func TestEveryOperationAuthorises(t *testing.T) {
 				}
 				if !callsAuthorizing(function) {
 					t.Errorf("%s does not authorise the caller. Every resolver must call "+
-						"requireOperator or requireDomain, because the GraphQL endpoint is "+
+						"one of the require helpers, because the GraphQL endpoint is "+
 						"reachable without a session. If it is genuinely safe to leave open, "+
 						"add it to unauthenticated with the reason.", operation)
 				}

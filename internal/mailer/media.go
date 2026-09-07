@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -51,11 +50,11 @@ func newToken() (string, error) {
 // which is worse than a message not sent only if the message matters less than
 // the logo in it. It does not: the picture is dropped back to the address that
 // works for everybody, and the send goes on.
-func (self *mailer) rewriteMedia(envelopeId string, domain *config.Domain, html string) string {
+func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domains []*models.Domain, html string) string {
 	if html == "" || domain == nil {
 		return html
 	}
-	host := self.config.Current().LinkHostFor(domain)
+	host := self.config.Current().LinkHostFor(domain, domains)
 	if host == "" {
 		return html
 	}

@@ -12,12 +12,16 @@ func servedConfiguration(t *testing.T) config.Store {
 	t.Helper()
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
-	configuration.Domains = []*config.Domain{
+	return config.NewMemoryStore(configuration)
+}
+
+// servedDomains are the rows the domain table would hold.
+func servedDomains() staticDomains {
+	return staticDomains{
 		{ID: "primary.test", Domain: "primary.test", Subdomain: "mail"},
 		{ID: "other.test", Domain: "other.test", Subdomain: "mail"},
 		{ID: "third.test", Domain: "third.test", Subdomain: "mail"},
 	}
-	return config.NewMemoryStore(configuration)
 }
 
 // The name reported as having received a message is the one the sender
@@ -29,8 +33,9 @@ func TestReceivedByNamesTheHostTheSenderReached(t *testing.T) {
 	t.Parallel()
 
 	exchange := &exchange{
-		config:   servedConfiguration(t),
-		settings: &Settings{Server: "mail.primary.test"},
+		config:    servedConfiguration(t),
+		settings:  &Settings{Server: "mail.primary.test"},
+		directory: directory{source: servedDomains()},
 	}
 
 	tests := []struct {
@@ -102,8 +107,9 @@ func TestReceivedByFallsBackWhenNoNameWasGiven(t *testing.T) {
 	t.Parallel()
 
 	exchange := &exchange{
-		config:   servedConfiguration(t),
-		settings: &Settings{Server: "mail.primary.test"},
+		config:    servedConfiguration(t),
+		settings:  &Settings{Server: "mail.primary.test"},
+		directory: directory{source: servedDomains()},
 	}
 	envelope := &mailparse.Envelope{
 		TLS:        &tls.ConnectionState{},

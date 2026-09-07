@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // An empty pattern is a catch-all, which is how most domains are set up: one
@@ -20,11 +20,11 @@ func TestAnEmptyPatternIsACatchAllRatherThanMissing(t *testing.T) {
 	}
 
 	// And the configuration layer agrees about what it means.
-	alias := &config.Alias{Pattern: ""}
+	alias := &models.Alias{Pattern: ""}
 	if !alias.IsCatchAll() {
 		t.Error("config does not read an empty pattern as a catch-all, so the two layers disagree")
 	}
-	if (&config.Alias{Pattern: "^hello$"}).IsCatchAll() {
+	if (&models.Alias{Pattern: "^hello$"}).IsCatchAll() {
 		t.Error("a real pattern was read as a catch-all")
 	}
 }

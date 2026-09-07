@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"github.com/ziyan/teanode/internal/models"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -45,6 +46,7 @@ type Settings struct {
 
 	// What a mail client is told to connect to
 	Submission *SubmissionSettings `json:"submission"`
+	SSO        *SSOSettings        `json:"sso"`
 
 	// How outgoing mail leaves this machine, when not directly
 	Proxy *ProxySettings `json:"proxy"`
@@ -223,7 +225,7 @@ type AntispamSettings struct {
 }
 
 func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	settings := describeSettings(self.config.Current())
@@ -293,6 +295,7 @@ func describeSettings(configuration *config.Configuration) *Settings {
 			RulesEnabled:         configuration.Antispam.Builtin.Rules.Enabled,
 			BayesMinimumMessages: configuration.Antispam.Builtin.Bayes.MinimumMessages,
 		},
+		SSO: ssoSettingsOf(configuration),
 		Submission: &SubmissionSettings{
 			Host:          configuration.SMTP.Submission.Host,
 			Port:          int(configuration.SMTP.Submission.Port),
@@ -453,6 +456,7 @@ type UpdateSettingsArguments struct {
 	Antispam   *AntispamParameters   `json:"antispam"`
 	Relay      *RelayParameters      `json:"relay"`
 	Submission *SubmissionParameters `json:"submission"`
+	SSO        *SSOParameters        `json:"sso"`
 	Proxy      *ProxyParameters      `json:"proxy"`
 	Upgrade    *UpgradeParameters    `json:"upgrade"`
 
@@ -471,7 +475,7 @@ type UpdateSettingsArguments struct {
 }
 
 func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsArguments) (*Settings, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 
@@ -520,6 +524,35 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 			applyBool(&configuration.Upgrade.Enabled, parameters.Enabled)
 			applyBool(&configuration.Upgrade.Automatic, parameters.Automatic)
 			applyString(&configuration.Upgrade.Window, parameters.Window)
+		}
+		if parameters := arguments.SSO; parameters != nil {
+			// The list as given replaces the list stored, except that a
+			// provider whose secret is left blank keeps the one it had:
+			// the page never sees the secret and cannot send it back.
+			previous := map[string]string{}
+			for _, provider := range configuration.SSO.Providers {
+				previous[provider.ID] = provider.ClientSecret
+			}
+			providers := make([]config.SSOProvider, 0, len(parameters.Providers))
+			for _, given := range parameters.Providers {
+				if given == nil {
+					continue
+				}
+				secret := given.ClientSecret
+				if secret == "" {
+					secret = previous[given.ID]
+				}
+				providers = append(providers, config.SSOProvider{
+					ID:           strings.TrimSpace(given.ID),
+					Name:         strings.TrimSpace(given.Name),
+					Issuer:       strings.TrimSpace(given.Issuer),
+					ClientID:     strings.TrimSpace(given.ClientID),
+					ClientSecret: secret,
+					GroupsClaim:  strings.TrimSpace(given.GroupsClaim),
+					CreateUsers:  given.CreateUsers,
+				})
+			}
+			configuration.SSO.Providers = providers
 		}
 		if parameters := arguments.Submission; parameters != nil {
 			applyString(&configuration.SMTP.Submission.Host, parameters.Host)
@@ -592,4 +625,55 @@ func applySecret(target *string, value *string) {
 		return
 	}
 	*target = strings.TrimSpace(*value)
+}
+
+// SSOParameters replace the identity providers offered on the sign-in page.
+type SSOParameters struct {
+	Providers []*SSOProviderParameters `json:"providers"`
+}
+
+// SSOProviderParameters is one provider as the settings page sends it.
+type SSOProviderParameters struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"clientId"`
+
+	// Blank keeps the secret already stored for this id.
+	ClientSecret string `json:"clientSecret" graphapi:"nullable"`
+
+	GroupsClaim string `json:"groupsClaim" graphapi:"nullable"`
+	CreateUsers bool   `json:"createUsers"`
+}
+
+// SSOSettings are the identity providers as the settings page sees them:
+// everything but the secret, and whether there is one.
+type SSOSettings struct {
+	Providers []*SSOProviderSettings `json:"providers"`
+}
+
+type SSOProviderSettings struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Issuer          string `json:"issuer"`
+	ClientID        string `json:"clientId"`
+	HasClientSecret bool   `json:"hasClientSecret"`
+	GroupsClaim     string `json:"groupsClaim,omitempty"`
+	CreateUsers     bool   `json:"createUsers"`
+}
+
+func ssoSettingsOf(configuration *config.Configuration) *SSOSettings {
+	settings := &SSOSettings{Providers: []*SSOProviderSettings{}}
+	for _, provider := range configuration.SSO.Providers {
+		settings.Providers = append(settings.Providers, &SSOProviderSettings{
+			ID:              provider.ID,
+			Name:            provider.Name,
+			Issuer:          provider.Issuer,
+			ClientID:        provider.ClientID,
+			HasClientSecret: provider.ClientSecret != "",
+			GroupsClaim:     provider.GroupsClaim,
+			CreateUsers:     provider.CreateUsers,
+		})
+	}
+	return settings
 }

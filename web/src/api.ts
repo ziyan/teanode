@@ -90,6 +90,25 @@ export interface Session {
   // Whether this server offers passkeys. The sign-in form shows the passkey
   // button only when it does.
   passkeysEnabled: boolean
+
+  // ID of the account; empty for the console and for nobody.
+  userId?: string
+
+  // What the caller may do, resolved from their groups.
+  permissions?: Permissions | null
+
+  // Whether the caller holds any permission that opens the management side.
+  manages?: boolean
+
+  // Identity providers to offer on the sign-in page, one button each.
+  ssoProviders?: { id: string; name: string }[]
+}
+
+// Permissions is what a request may do: server and all-domains permissions
+// everywhere, and domain permissions by domain.
+export interface Permissions {
+  everywhere: string[]
+  byDomain: { domainId: string; permissions: string[] }[]
 }
 
 // Logging in goes through the same GraphQL endpoint as everything else. It
@@ -98,7 +117,8 @@ export interface Session {
 // credential is a cookie, so the reply has to set a header. The server does
 // that from the resolver.
 
-const SESSION_FIELDS = '{ authenticated authenticationRequired username name passkeysEnabled }'
+const SESSION_FIELDS =
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
@@ -216,6 +236,9 @@ export interface Alias {
   webhook?: string
   mailServer?: { host: string; port: number; username?: string }
   disabled: boolean
+
+  // Where an alias of kind "mailbox" delivers.
+  mailboxId?: string
 }
 
 export interface Credential {
@@ -497,4 +520,91 @@ export interface Rendered {
   textContent: string
   locale: string
   variables?: string[]
+}
+
+// --- mailboxes --------------------------------------------------------------
+
+export interface MailboxAddress {
+  aliasId: string
+  domainId: string
+  domain: string
+  localPart: string
+  address: string
+}
+
+export interface MailboxRuleCondition {
+  field: string
+  header?: string
+  operator: string
+  value?: string
+}
+
+export interface MailboxRuleAction {
+  kind: string
+  folderId?: string
+  address?: string
+}
+
+export interface MailboxRule {
+  name: string
+  enabled: boolean
+  conditions: MailboxRuleCondition[]
+  actions: MailboxRuleAction[]
+  stop: boolean
+}
+
+export interface MailboxAutoReply {
+  enabled: boolean
+  from?: string | null
+  until?: string | null
+  subject: string
+  text: string
+  html?: string
+}
+
+export interface Mailbox {
+  id: string
+  userId: string
+  name: string
+  signatureHtml?: string
+  signatureText?: string
+  rules?: MailboxRule[]
+  autoReply?: MailboxAutoReply | null
+  addresses?: MailboxAddress[]
+}
+
+export interface MailboxFolder {
+  id: string
+  mailboxId: string
+  parentId?: string
+  name: string
+  kind?: string
+  unread: number
+  total: number
+}
+
+// MailboxView is a mailbox with its folder tree, as ListMailboxes returns it.
+export interface MailboxView {
+  mailbox: Mailbox
+  folders: MailboxFolder[]
+  unread: number
+}
+
+export interface MailboxItem {
+  id: string
+  folderId: string
+  mailId: string
+  mail?: Mail | null
+  uid: number
+  seen: boolean
+  flagged: boolean
+  answered: boolean
+  forwarded: boolean
+  draft: boolean
+  addedAt: string
+}
+
+export interface MailboxItemPage {
+  items: MailboxItem[]
+  total: number
 }

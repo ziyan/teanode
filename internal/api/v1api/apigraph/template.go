@@ -41,7 +41,7 @@ type ListTemplatesArguments struct {
 }
 
 func (self *graph) ListTemplates(ctx context.Context, arguments ListTemplatesArguments) ([]*models.Template, error) {
-	if _, err := self.requireDomain(ctx, arguments.DomainID); err != nil {
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID); err != nil {
 		return nil, err
 	}
 
@@ -77,7 +77,7 @@ type GetTemplateArguments struct {
 }
 
 func (self *graph) GetTemplate(ctx context.Context, arguments GetTemplateArguments) (*models.Template, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return nil, err
 	}
 
@@ -96,7 +96,7 @@ func (self *graph) GetTemplate(ctx context.Context, arguments GetTemplateArgumen
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(template.DomainID) == nil {
+	if !self.domainStillExists(ctx, template.DomainID) {
 		return nil, api.ErrNotFound
 	}
 
@@ -260,7 +260,7 @@ type CreateTemplateReturnValue struct {
 }
 
 func (self *graph) CreateTemplate(ctx context.Context, arguments CreateTemplateArguments) (*CreateTemplateReturnValue, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +317,7 @@ type ModifyTemplateReturnValue struct {
 }
 
 func (self *graph) ModifyTemplate(ctx context.Context, arguments ModifyTemplateArguments) (*ModifyTemplateReturnValue, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return nil, err
 	}
 	tx := api.ContextTransaction(ctx)
@@ -330,7 +330,7 @@ func (self *graph) ModifyTemplate(ctx context.Context, arguments ModifyTemplateA
 		return nil, api.ErrNotFound
 	}
 
-	domain, err := self.requireDomain(ctx, template.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, template.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ type DeleteTemplateArguments struct {
 }
 
 func (self *graph) DeleteTemplate(ctx context.Context, arguments DeleteTemplateArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return err
 	}
 
@@ -396,7 +396,7 @@ func (self *graph) DeleteTemplate(ctx context.Context, arguments DeleteTemplateA
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(template.DomainID) == nil {
+	if !self.domainStillExists(ctx, template.DomainID) {
 		return api.ErrNotFound
 	}
 
@@ -423,7 +423,7 @@ type RenderTemplateArguments struct {
 // RenderTemplate is the preview: what a message from this template would
 // say, rendered by the same code that sends it.
 func (self *graph) RenderTemplate(ctx context.Context, arguments RenderTemplateArguments) (*mailer.Rendered, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}

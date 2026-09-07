@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/web"
 )
 
@@ -16,7 +16,7 @@ import (
 func TestAuthenticationMiddleware(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := web.NewAuthenticator(newStore(t, newUser(t, "admin", "hunter2")), newMemoryStore())
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -98,7 +98,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 func TestAuthenticationMiddlewareStripsForgedHeader(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := web.NewAuthenticator(newStore(t, newUser(t, "admin", "hunter2")), newMemoryStore())
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -168,8 +168,8 @@ func TestAPIRepliesAreNotCacheable(t *testing.T) {
 // Identifying the caller and deciding whether to refuse them are separate
 // questions, and this pins them apart.
 func TestAPublicPathStillIdentifiesTheCaller(t *testing.T) {
-	store := newStore(t, &config.User{ID: config.NewID(), Username: "ziyan", PasswordHash: testPasswordHash})
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(&models.User{Username: "ziyan", PasswordHash: testPasswordHash}))
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}

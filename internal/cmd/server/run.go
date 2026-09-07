@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/imap"
 	"net"
 	"net/http"
 	"os"
@@ -21,16 +23,17 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/frontend"
 	"github.com/ziyan/teanode/internal/mailer"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
@@ -136,12 +139,17 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	}
 	defer closeDatabase()
 
-	seeded, err := configdb.Initialize(database, bootstrapped.SeedConfiguration)
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
 	if err != nil {
 		return "", "", err
 	}
+	if seeded {
+		if err := seedDomain(database, bootstrapped); err != nil {
+			return "", "", err
+		}
+	}
 
-	store, err := configdb.Open(database, bootstrapped.Database)
+	store, err := config.OpenStore(database, bootstrapped.Database)
 	if err != nil {
 		return "", "", err
 	}
@@ -180,10 +188,24 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 		return "", "", err
 	}
 
-	// An installation upgraded from a release that stored the signing keys in
-	// the clear rewrites them once, here, rather than waiting for whatever
-	// unrelated edit would otherwise have done it.
-	if err := configdb.EnsureSealed(database, store); err != nil {
+	// A server that predates roles and groups gets them now, with every
+	// existing account an administrator, so that nobody can do less than
+	// they could the day before.
+	if err := database.Transaction(func(tx db.Transaction) error {
+		if _, err := access.EnsureSeeded(tx); err != nil {
+			return err
+		}
+		// And a mailbox for everyone who has none, the first time a server
+		// starts with mailboxes.
+		made, err := access.EnsureMailboxes(tx)
+		if err != nil {
+			return err
+		}
+		if made > 0 {
+			log.Noticef("created a mailbox for %d users who had none", made)
+		}
+		return nil
+	}); err != nil {
 		return "", "", err
 	}
 	configuration = store.Current()
@@ -262,6 +284,8 @@ type server struct {
 	listeners struct {
 		smtpIncoming net.Listener
 		smtpOutgoing net.Listener
+		imap         net.Listener
+		imaps        net.Listener
 		http         net.Listener
 		https        net.Listener
 	}
@@ -315,11 +339,15 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 		return nil, err
 	}
 
-	if err := self.openCertificates(configuration); err != nil {
+	domains, err := self.listDomains()
+	if err != nil {
+		return nil, err
+	}
+	if err := self.openCertificates(configuration, domains); err != nil {
 		return nil, err
 	}
 
-	for _, domain := range configuration.Domains {
+	for _, domain := range domains {
 		var enabled int
 		for _, alias := range domain.Aliases {
 			if !alias.Disabled {
@@ -327,7 +355,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 			}
 		}
 		if enabled == 0 {
-			log.Warningf("domain %q has no enabled alias, so mail for it will be refused; add one with the dashboard or in the configuration file", domain.Domain)
+			log.Warningf("domain %q has no enabled alias, so mail for it will be refused; add one in the web UI", domain.Domain)
 		}
 	}
 
@@ -397,6 +425,8 @@ func (self *server) listen(configuration *config.Configuration) error {
 	}{
 		{"incoming smtp", configuration.Listen.SMTPIncoming, &self.listeners.smtpIncoming},
 		{"outgoing smtp", configuration.Listen.SMTPOutgoing, &self.listeners.smtpOutgoing},
+		{"imap", configuration.Listen.IMAP, &self.listeners.imap},
+		{"imaps", configuration.Listen.IMAPS, &self.listeners.imaps},
 		{"http", configuration.Listen.HTTP, &self.listeners.http},
 		{"https", configuration.Listen.HTTPS, &self.listeners.https},
 	}
@@ -422,7 +452,20 @@ func (self *server) listen(configuration *config.Configuration) error {
 // and no domain has an empty one.
 const serverCertificateKey = ""
 
-func (self *server) openCertificates(configuration *config.Configuration) error {
+// listDomains reads every domain, for the parts of starting up that need
+// them: the warning about a domain nothing delivers for, and the certificate
+// each domain's own mail server name is served.
+func (self *server) listDomains() ([]*models.Domain, error) {
+	var domains []*models.Domain
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domains, err = tx.ListDomains()
+		return err
+	})
+	return domains, err
+}
+
+func (self *server) openCertificates(configuration *config.Configuration, domains []*models.Domain) error {
 	if !configuration.TLS.ACME.Enabled {
 		return nil
 	}
@@ -451,21 +494,22 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 			})
 		},
 		SaveCertificate: func(key, certificate, privateKey string) error {
-			return self.store.Update(func(configuration *config.Configuration) error {
-				if key == serverCertificateKey {
+			if key == serverCertificateKey {
+				return self.store.Update(func(configuration *config.Configuration) error {
 					configuration.TLS.ACME.Certificate = certificate
 					configuration.TLS.ACME.PrivateKey = privateKey
 					return nil
-				}
-				domain := configuration.FindDomainByID(key)
-				if domain == nil {
+				})
+			}
+			// A domain's certificate is a column of its row.
+			return self.database.Transaction(func(tx db.Transaction) error {
+				err := tx.SetDomainCertificate(key, models.DomainCertificate{Certificate: certificate, PrivateKey: privateKey})
+				if errors.Is(err, db.ErrNotFound) {
 					// The domain was removed while its certificate was being
 					// obtained. Nothing to keep it on, and nothing to fix.
 					return nil
 				}
-				domain.TLS.Certificate = certificate
-				domain.TLS.PrivateKey = privateKey
-				return nil
+				return err
 			})
 		},
 	}
@@ -478,12 +522,12 @@ func (self *server) openCertificates(configuration *config.Configuration) error 
 	// and asking for a second one for the same name would spend rate limit to
 	// obtain a duplicate.
 	if configuration.TLS.ACME.PerDomain {
-		for _, domain := range configuration.Domains {
+		for _, domain := range domains {
 			if domain == nil || domain.Domain == "" {
 				continue
 			}
 			var hosts []string
-			for _, host := range configuration.MailHostsFor(domain) {
+			for _, host := range configuration.MailHostsFor(domain, domains) {
 				// Only names in this domain's own zone. A domain pointing at
 				// a name somebody else owns is served that owner's
 				// certificate, which is correct: it is their name.
@@ -591,6 +635,12 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 	settings := &storage.Settings{
 		Directory: configuration.Path(configuration.Storage.Directory),
 		Retention: configuration.Storage.SpoolRetention.Duration(),
+		// A message a mailbox still holds outlives the retention: the row
+		// says whether one does, and the sweep in the exchange is what
+		// removes the row and the file together once nothing does.
+		Keep: func(_ context.Context, id string) (bool, error) {
+			return self.database.MailExists(id)
+		},
 	}
 	if configuration.Storage.S3.Enabled {
 		settings.S3 = &storage.S3Settings{
@@ -642,8 +692,10 @@ func (self *server) openExchange(configuration *config.Configuration, spamFilter
 }
 
 func (self *server) openWeb(configuration *config.Configuration) error {
-	if len(configuration.Users) == 0 {
-		log.Warningf("this server has no account yet, so anyone who can reach the dashboard can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
+	if count, err := self.database.CountUsers(); err != nil {
+		return err
+	} else if count == 0 {
+		log.Warningf("this server has no account yet, so anyone who can reach the web UI can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
 	}
 
 	mailerComponent, err := mailer.New(self.database, self.store, self.exchange, nil)
@@ -656,7 +708,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		}
 	})
 
-	verifier, err := dns.Open(self.store, &dns.Settings{
+	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
 		Nameserver:    configuration.DNS.Nameserver,
 		CheckInterval: configuration.DNS.CheckInterval.Duration(),
 	})
@@ -931,6 +983,24 @@ func (self *server) serve(ctx context.Context) error {
 
 	greeting := fmt.Sprintf("%s teanode/%s", configuration.Server.Name, version.Version())
 
+	// A mail program signing in to send: one of the mailbox's addresses and
+	// an app password. The exchange checks the sender against the mailbox's
+	// addresses when the message arrives, so the domain is left to it.
+	authenticateMailbox := func(username, password string) (string, string, bool) {
+		var mailbox *models.Mailbox
+		if err := self.database.Transaction(func(tx db.Transaction) error {
+			var err error
+			mailbox, err = access.AuthenticateAppPassword(tx, username, password)
+			return err
+		}); err != nil {
+			if !errors.Is(err, access.ErrInvalidAppPassword) {
+				log.Errorf("app password sign-in as %q failed: %s", username, err)
+			}
+			return "", "", false
+		}
+		return mailbox.ID, "", true
+	}
+
 	if self.listeners.smtpIncoming != nil {
 		waitGroup.Add(1)
 		go func() {
@@ -982,11 +1052,47 @@ func (self *server) serve(ctx context.Context) error {
 				TLSConfig:     tlsConfig,
 				Secret:        self.secret,
 
-				AuthLimiter: authLimiter,
+				AuthLimiter:         authLimiter,
+				AuthenticateMailbox: authenticateMailbox,
 			}); err != nil {
 				log.Debugf("outgoing smtp server exited: %s", err)
 			}
 			stopped <- "outgoing smtp"
+		}()
+	}
+
+	// Mail programs. Two listeners for one server: STARTTLS on the plain
+	// port, TLS from the first byte on the other, which is what most
+	// programs try first.
+	imapSettings := &imap.Settings{
+		Database:    self.database,
+		Storage:     self.storage,
+		TLSConfig:   tlsConfig,
+		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
+		AuthLimiter: authLimiter,
+	}
+	if self.listeners.imap != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := imap.Serve(ctx, self.listeners.imap, imapSettings); err != nil {
+				log.Debugf("imap server exited: %s", err)
+			}
+			stopped <- "imap"
+		}()
+	}
+	if self.listeners.imaps != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			implicit := *imapSettings
+			implicit.ImplicitTLS = true
+			if err := imap.Serve(ctx, tls.NewListener(self.listeners.imaps, tlsConfig), &implicit); err != nil {
+				log.Debugf("imaps server exited: %s", err)
+			}
+			stopped <- "imaps"
 		}()
 	}
 

@@ -3,9 +3,9 @@ package mx
 import (
 	"context"
 	"fmt"
+	"github.com/ziyan/teanode/internal/access"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/authres"
@@ -25,13 +25,22 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	subject := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "Subject"))
 	messageId := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "Message-ID"))
 
-	// find the credential in the configuration
-	configuration := self.config.Current()
-	var credential *config.Credential
-	var domain *config.Domain
+	// find the credential, and the domain it belongs to
+	var credential *models.Credential
+	var domain *models.Domain
 	if envelope.CredentialID != "" {
-		domain, credential = configuration.FindCredential(envelope.CredentialID)
+		credential, err = tx.GetCredential(envelope.CredentialID)
+		if err != nil {
+			return nil, err
+		}
 		if credential == nil || credential.Disabled {
+			return nil, mailparse.ErrInvalidCredentials
+		}
+		domain, err = tx.GetDomain(credential.DomainID)
+		if err != nil {
+			return nil, err
+		}
+		if domain == nil {
 			return nil, mailparse.ErrInvalidCredentials
 		}
 		if credential.Key != envelope.CredentialKey {
@@ -45,11 +54,45 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 			return nil, mailparse.ErrInvalidCredentials
 		}
 		envelope.DomainID = domain.ID
-	} else {
-		domain = configuration.FindDomainByID(envelope.DomainID)
+	} else if envelope.DomainID != "" {
+		domain, err = tx.GetDomain(envelope.DomainID)
+		if err != nil {
+			return nil, err
+		}
+	} else if envelope.MailboxID != "" {
+		// A person's submission names no domain: the sender address does,
+		// and whether it is theirs is checked below.
+		domain, err = tx.GetDomainByName(senderDomain)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if domain == nil || domain.Domain != senderDomain {
 		return nil, mailparse.ErrInvalidCredentials
+	}
+	// A person's submission — from the web UI or with an app password —
+	// may only be sent as one of their mailbox's own addresses, and only if
+	// they may send at all.
+	if envelope.MailboxID != "" {
+		mailbox, err := tx.GetMailbox(envelope.MailboxID)
+		if err != nil {
+			return nil, err
+		}
+		if mailbox == nil {
+			return nil, mailparse.ErrInvalidCredentials
+		}
+		// Both the envelope sender and the From header: a program can set
+		// either, and the recipient reads the header.
+		for _, sender := range []string{envelope.Sender, from} {
+			allowed, err := access.MailboxMaySend(tx, mailbox, sender)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				log.Warningf("mailbox %q may not send as %q, rejecting", mailbox.ID, sender)
+				return nil, mailparse.ErrInvalidCredentials
+			}
+		}
 	}
 
 	// add Received header
@@ -77,7 +120,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	// unsigned, which receivers may treat with suspicion — so say so once,
 	// loudly enough to be noticed.
 	var signatureHeaders []string
-	if signer, selector, ok := configuration.SignerFor(domain); ok {
+	if signer, selector, ok := self.signerFor(domain); ok {
 		signatureHeaders, err = dkim.Sign(envelope.Headers, envelope.Body, &dkim.SignOptions{
 			Domain:   domain.Domain,
 			Selector: selector,
@@ -157,6 +200,14 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	if _, err := tx.CreateMail(mail, nil); err != nil {
 		return nil, err
 	}
+	// A person's submission goes in their Sent folder, by reference, in the
+	// same transaction as the row: there is no moment at which the message
+	// exists and their Sent folder does not know it.
+	if envelope.MailboxID != "" {
+		if err := self.fileInSent(tx, envelope.MailboxID, mail); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -174,14 +225,13 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	}
 
 	// create a delivery for each recipient
-	recipientDomains := make(map[string]*config.Domain) // example.com -> configured domain
-	recipientMails := make(map[string]*models.Mail)     // example.com -> mail model (for lookup cache)
+	recipientDomains := make(map[string]*models.Domain) // example.com -> configured domain
 	var deliveries []*models.Delivery
 	for _, recipient := range envelope.Recipients {
 		recipientAlias, recipientDomainName := mailparse.SplitAddress(recipient)
 		if recipientDomainName == domain.Domain {
 			// looping back to same domain
-			matchedDeliveries, err := self.matchAliases(domain, recipientAlias, mail)
+			matchedDeliveries, err := self.matchAliases(tx, domain, recipientAlias, mail)
 			if err != nil {
 				return nil, err
 			}
@@ -192,7 +242,10 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		// look up domain
 		recipientDomain, ok := recipientDomains[recipientDomainName]
 		if !ok {
-			recipientDomain = configuration.FindDomain(recipientDomainName)
+			recipientDomain, err = tx.GetDomainByName(recipientDomainName)
+			if err != nil {
+				return nil, err
+			}
 			recipientDomains[recipientDomainName] = recipientDomain
 		}
 
@@ -209,53 +262,21 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		}
 
 		// create delivery for internal, do not need to queue
-		recipientDelivery, err := tx.CreateDelivery(&models.Delivery{
+		if _, err := tx.CreateDelivery(&models.Delivery{
 			MailID:      mail.ID,
 			Mail:        mail,
 			Recipient:   recipient,
 			Kind:        models.DeliveryKindInternal,
 			Status:      models.DeliveryStatusDelivered,
 			DeliveredAt: &envelope.ReceivedAt,
-		}, nil)
-		if err != nil {
+		}, nil); err != nil {
 			return nil, err
 		}
 
-		// create copy of mail for this recipient domain
-		recipientMail, ok := recipientMails[recipientDomainName]
-		if !ok {
-			m, err := tx.CreateMail(&models.Mail{
-				DomainID:              recipientDomain.ID,
-				Domain:                recipientDomain,
-				DeliveryID:            recipientDelivery.ID,
-				Delivery:              recipientDelivery,
-				EnvelopeID:            mail.EnvelopeID,
-				Hello:                 mail.Hello,
-				IP:                    mail.IP,
-				RDNS:                  mail.RDNS,
-				TLSVersion:            mail.TLSVersion,
-				TLSCipherSuite:        mail.TLSCipherSuite,
-				Location:              mail.Location,
-				Sender:                mail.Sender,
-				Recipients:            mail.Recipients,
-				MessageID:             mail.MessageID,
-				From:                  mail.From,
-				Subject:               mail.Subject,
-				Headers:               mail.Headers,
-				Body:                  mail.Body,
-				Size:                  mail.Size,
-				Status:                mail.Status,
-				AuthenticationResults: mail.AuthenticationResults,
-				ReceivedAt:            mail.ReceivedAt,
-				Kind:                  models.MailKindExchange,
-			}, nil)
-			if err != nil {
-				return nil, err
-			}
-			recipientMails[recipientDomainName] = m
-			recipientMail = m
-		}
-
+		// The recipient's copy used to be a second row of the same bytes,
+		// stored under their domain. It is the same row now: a mailbox at
+		// the recipient's address holds a reference to the message that was
+		// sent, which is what "no copies" means.
 		// track usages
 		self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
 			bytesSent:           envelope.Size,
@@ -267,7 +288,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		})
 
 		// recipient is internal, need to resolve alias
-		matchedDeliveries, err := self.matchAliases(recipientDomain, recipientAlias, recipientMail)
+		matchedDeliveries, err := self.matchAliases(tx, recipientDomain, recipientAlias, mail)
 		if err != nil {
 			return nil, err
 		}
@@ -277,7 +298,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	return tx.CreateDeliveries(deliveries, nil)
 }
 
-func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *config.Domain) error {
+func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailparse.Envelope, mail *models.Mail, domain *models.Domain) error {
 	start := time.Now()
 	mail.Status = models.MailStatusRejected
 
@@ -309,4 +330,21 @@ func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailpa
 
 	log.Debugf("took %s to authenticate outgoing mail %q", time.Since(start), envelope.ID)
 	return nil
+}
+
+// fileInSent puts a message a person sent in their Sent folder. A mailbox
+// with no Sent folder is being deleted, and the message goes out regardless.
+func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *models.Mail) error {
+	sent, err := tx.GetFolderByKind(mailboxId, models.MailboxFolderKindSent)
+	if err != nil {
+		return err
+	}
+	if sent == nil {
+		return nil
+	}
+	seen := true
+	if _, err := tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
+		return err
+	}
+	return tx.SetMailSearch(mail.ID, searchDocument(mail))
 }

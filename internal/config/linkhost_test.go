@@ -1,8 +1,9 @@
 package config
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Where a picture in a message is fetched from, when nobody has said. The
@@ -14,9 +15,9 @@ func TestPicturesComeFromTheMailHostByDefault(t *testing.T) {
 	configuration := Default()
 	configuration.Server.Name = "mail.primary.test"
 	configuration.Server.MailServers = []string{"mx1.primary.test"}
-	configuration.Domains = []*Domain{{Domain: "primary.test"}, {Domain: "other.test"}}
+	domains := []*models.Domain{{Domain: "primary.test"}, {Domain: "other.test"}}
 
-	if host := configuration.LinkHostFor(configuration.FindDomain("other.test")); host != "mx.other.test" {
+	if host := configuration.LinkHostFor(domains[1], domains); host != "mx.other.test" {
 		t.Errorf("got %q, want the name its mail arrives at", host)
 	}
 }
@@ -32,7 +33,7 @@ func TestAConfiguredNameIsUsedForPictures(t *testing.T) {
 	configuration := Default()
 	configuration.Server.Name = "mail.primary.test"
 	configuration.Server.MailServers = []string{"mx1.primary.test"}
-	configuration.Domains = []*Domain{
+	domains := []*models.Domain{
 		{Domain: "primary.test"},
 		{Domain: "other.test", LinkHost: "other.test"},
 		// Tidied the way every other host name is, so a name pasted with a
@@ -40,35 +41,10 @@ func TestAConfiguredNameIsUsedForPictures(t *testing.T) {
 		{Domain: "spaced.test", LinkHost: " Pictures.Spaced.Test. "},
 	}
 
-	if host := configuration.LinkHostFor(configuration.FindDomain("other.test")); host != "other.test" {
+	if host := configuration.LinkHostFor(domains[1], domains); host != "other.test" {
 		t.Errorf("got %q, want the configured name", host)
 	}
-	if host := configuration.LinkHostFor(configuration.FindDomain("spaced.test")); host != "pictures.spaced.test" {
+	if host := configuration.LinkHostFor(domains[2], domains); host != "pictures.spaced.test" {
 		t.Errorf("got %q, want it trimmed and lowercased", host)
-	}
-}
-
-// A name in somebody else's domain is refused. The addresses in a message are
-// read by whoever receives it, and one naming another domain tells them who
-// runs the server — which is the whole thing per-domain names exist to stop.
-// It is also a name this server could not obtain a certificate for.
-func TestAPictureHostOutsideTheDomainIsRefused(t *testing.T) {
-	t.Parallel()
-
-	configuration := configurationRelayingTo("smtp.example.com")
-	configuration.Domains[0].LinkHost = "pictures.somewhere-else.test"
-
-	err := configuration.Validate()
-	if err == nil {
-		t.Fatal("a name in another domain was accepted")
-	}
-	if !strings.Contains(err.Error(), "linkHost") {
-		t.Errorf("the complaint does not name the field: %s", err)
-	}
-
-	// The same name under the domain is fine.
-	configuration.Domains[0].LinkHost = "pictures.example.com"
-	if err := configuration.Validate(); err != nil {
-		t.Errorf("a name under the domain was refused: %s", err)
 	}
 }

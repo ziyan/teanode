@@ -34,7 +34,7 @@ type ListReportsArguments struct {
 // so making them pick a domain first hides the answer behind a choice they
 // cannot make usefully.
 func (self *graph) ListReports(ctx context.Context, arguments ListReportsArguments) ([]*models.Report, error) {
-	domainIds, err := self.domainsToList(ctx, arguments.DomainID)
+	domainIds, err := self.domainsToList(ctx, models.PermissionMailAudit, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ type GetReportArguments struct {
 }
 
 func (self *graph) GetReport(ctx context.Context, arguments GetReportArguments) (*models.Report, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -69,7 +69,7 @@ func (self *graph) GetReport(ctx context.Context, arguments GetReportArguments) 
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(report.DomainID) == nil {
+	if !self.domainStillExists(ctx, report.DomainID) {
 		return nil, api.ErrNotFound
 	}
 

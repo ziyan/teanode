@@ -3,9 +3,12 @@ package apigraph
 import (
 	"context"
 	"errors"
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/web"
 )
 
@@ -72,17 +75,38 @@ type SessionState struct {
 	// caller on purpose: it is the one thing about the configuration the form
 	// has to know, and pressing the button would have revealed it anyway.
 	PasskeysEnabled bool `json:"passkeysEnabled"`
+
+	// SSOProviders are the identity providers to offer buttons for, by id
+	// and name; empty when there are none.
+	SSOProviders []*SSOProviderInfo `json:"ssoProviders"`
+
+	// ID of the account, empty for the console and for nobody
+	UserID string `json:"userId,omitempty"`
+
+	// What the caller may do, resolved from their groups. The web UI hides
+	// what they cannot; every mutation is checked again on the server.
+	Permissions *models.EffectivePermissions `json:"permissions,omitempty"`
+
+	// Whether the caller holds any permission that opens the management
+	// side of the web UI
+	Manages bool `json:"manages"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
 	state := &SessionState{
 		AuthenticationRequired: self.authenticator.Required(),
 		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
+		SSOProviders:           self.ssoProviders(),
 	}
 	if request := api.ContextRequest(ctx); request != nil {
 		state.Username, state.Authenticated = self.authenticator.Authenticate(request)
 	}
 	state.Name = self.displayName(state.Username)
+	if principal := api.ContextPrincipal(ctx); principal != nil {
+		state.UserID = principal.UserID()
+		state.Permissions = principal.Permissions
+		state.Manages = principal.Permissions.Manages()
+	}
 	return state
 }
 
@@ -92,14 +116,28 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 // A constructor rather than a struct literal in six places, because that is
 // how a field added later ends up filled in on five of them. Adding Name was
 // exactly that change.
-func (self *graph) signedInAs(username string) *SessionState {
-	return &SessionState{
+func (self *graph) signedInAs(ctx context.Context, username string) *SessionState {
+	state := &SessionState{
 		Authenticated:          true,
 		AuthenticationRequired: true,
 		Username:               username,
 		Name:                   self.displayName(username),
 		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
+		SSOProviders:           self.ssoProviders(),
 	}
+	// What they may do, resolved now: the request that signed them in
+	// started as nobody, so the principal on the context is empty.
+	if tx := api.ContextTransaction(ctx); tx != nil {
+		user, err := tx.GetUserByUsername(username)
+		if err == nil && user != nil {
+			if principal, err := self.resolvePrincipal(tx, username, user); err == nil && principal != nil {
+				state.UserID = principal.UserID()
+				state.Permissions = principal.Permissions
+				state.Manages = principal.Permissions.Manages()
+			}
+		}
+	}
+	return state
 }
 
 // displayName is what to call somebody, when they have said. Read here rather
@@ -107,10 +145,14 @@ func (self *graph) signedInAs(username string) *SessionState {
 // it draws anything, and a name arriving later means the rail renders the
 // username and then changes its mind.
 func (self *graph) displayName(username string) string {
-	if user := self.config.Current().FindUser(username); user != nil {
-		return user.Name
+	if username == "" || username == config.LocalUsername {
+		return ""
 	}
-	return ""
+	user, err := self.database.GetUserByUsername(username)
+	if err != nil || user == nil {
+		return ""
+	}
+	return user.Name
 }
 
 func (self *graph) GetSession(ctx context.Context) (*SessionState, error) {
@@ -145,7 +187,7 @@ func (self *graph) Login(ctx context.Context, arguments LoginArguments) (*Sessio
 		return nil, err
 	}
 
-	return self.signedInAs(arguments.Username), nil
+	return self.signedInAs(ctx, arguments.Username), nil
 }
 
 func (self *graph) Logout(ctx context.Context) (*SessionState, error) {
@@ -174,7 +216,10 @@ func (self *graph) CreateFirstAccount(ctx context.Context, arguments CreateFirst
 		return nil, api.ErrAlreadyExists
 	}
 
-	if err := self.authenticator.CreateFirstUser(arguments.Username, arguments.Password); err != nil {
+	// Recorded as coming from where it came from: the first arrival is
+	// nobody yet, and the address is what the audit row can say.
+	claim := db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorSystem, SourceIP: remoteAddress(api.ContextRequest(ctx))})
+	if err := self.authenticator.CreateFirstUser(claim, arguments.Username, arguments.Password); err != nil {
 		if errors.Is(err, web.ErrInvalidAccount) || errors.Is(err, web.ErrAccountExists) {
 			return nil, err
 		}
@@ -190,7 +235,7 @@ func (self *graph) CreateFirstAccount(ctx context.Context, arguments CreateFirst
 		}
 	}
 
-	return self.signedInAs(arguments.Username), nil
+	return self.signedInAs(ctx, arguments.Username), nil
 }
 
 type ChangePasswordArguments struct {
@@ -202,7 +247,7 @@ type ChangePasswordArguments struct {
 }
 
 func (self *graph) ChangePassword(ctx context.Context, arguments ChangePasswordArguments) (*SessionState, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 	username := api.ContextAuthenticatedUsername(ctx)
@@ -221,7 +266,7 @@ func (self *graph) ChangePassword(ctx context.Context, arguments ChangePasswordA
 	// The session stays valid: its signature covers the username and expiry,
 	// not the password, and forcing a re-login after a deliberate change is
 	// friction with no security benefit.
-	return self.signedInAs(username), nil
+	return self.signedInAs(ctx, username), nil
 }
 
 // Session is one signed-in browser, as the list shows it.
@@ -263,7 +308,7 @@ type ListSessionsArguments struct {
 
 // ListSessions returns this account's signed-in browsers, newest first.
 func (self *graph) ListSessions(ctx context.Context, arguments ListSessionsArguments) ([]*Session, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 
@@ -306,7 +351,7 @@ type RevokeSessionArguments struct {
 
 // RevokeSession ends one signed-in browser.
 func (self *graph) RevokeSession(ctx context.Context, arguments RevokeSessionArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return err
 	}
 
@@ -332,7 +377,7 @@ func (self *graph) RevokeSession(ctx context.Context, arguments RevokeSessionArg
 // The caller is signed out too. Anything else would mean keeping one browser
 // alive for whoever asked to sign them all out, which is not what they asked.
 func (self *graph) RevokeAllSessions(ctx context.Context) (*SessionState, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 
@@ -347,4 +392,19 @@ func (self *graph) RevokeAllSessions(ctx context.Context) (*SessionState, error)
 
 	log.Noticef("%s ended %d of their sessions, including this one", username, ended)
 	return &SessionState{AuthenticationRequired: self.authenticator.Required()}, nil
+}
+
+// SSOProviderInfo is what the sign-in page knows about a provider: enough
+// for a button, and no secret.
+type SSOProviderInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (self *graph) ssoProviders() []*SSOProviderInfo {
+	providers := []*SSOProviderInfo{}
+	for _, provider := range self.config.Current().SSO.Providers {
+		providers = append(providers, &SSOProviderInfo{ID: provider.ID, Name: provider.Name})
+	}
+	return providers
 }

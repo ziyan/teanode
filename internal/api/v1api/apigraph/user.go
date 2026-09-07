@@ -3,135 +3,180 @@ package apigraph
 import (
 	"context"
 	"strings"
+	"time"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
 type UserQuery interface {
-	// List the people who may administer this server
+	// List every User. Needs user:manage.
 	ListUsers(ctx context.Context) ([]*User, error)
 
-	// Get the User this request is authenticated as, or null when the server
-	// has no accounts and is open to whoever can reach it
+	// Get the User this request is authenticated as, or null for the
+	// console and for a server that has no accounts
 	GetCurrentUser(ctx context.Context) (*User, error)
 }
 
 type UserMutation interface {
-	// Add a User who may administer this server
+	// Add a User, into the groups named or into Members when none is
 	CreateUser(ctx context.Context, arguments CreateUserArguments) (*User, error)
 
-	// Change a User's name, email address, or the username they sign in with
+	// Change a User: their name, email address, the username they sign in
+	// with, whether they may sign in at all, and which groups they are in
 	UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error)
 
 	// Set a User's password. The current password is not required, because
-	// the caller is already an operator; changing your own from the dashboard
-	// goes through /api/password, which does require it.
+	// the caller manages users; changing your own goes through ChangePassword,
+	// which does require it.
 	SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error)
 
-	// Remove a User, along with the API tokens issued to them. Removing the
-	// last one leaves the server unclaimed, so the next visitor is asked to
-	// create an account.
+	// Remove a User, along with their sessions, tokens, passkeys and
+	// memberships. Removing the last one leaves the server unclaimed.
 	DeleteUser(ctx context.Context, arguments DeleteUserArguments) error
 }
 
-// User is somebody who may administer this server.
+// User is somebody with an account on this server.
 type User struct {
+	// ID of the User, stable for its lifetime
+	ID string `json:"id"`
+
 	// Username they log in with
 	Username string `json:"username"`
 
 	// What to call this person, when they have said. Empty otherwise; the
-	// dashboard falls back to the username.
+	// web UI falls back to the username.
 	Name string `json:"name,omitempty"`
 
 	// Address that receives notifications, such as a domain whose DNS records
 	// have stopped resolving
 	Email string `json:"email,omitempty"`
+
+	// When this person was disabled, or null while they may sign in
+	DisabledAt *time.Time `json:"disabledAt,omitempty"`
+
+	// Whether they have a password at all. One without signs in with a
+	// passkey or through an identity provider.
+	HasPassword bool `json:"hasPassword"`
+
+	// Locale the web UI greets them in, when they chose one
+	Locale string `json:"locale,omitempty"`
+
+	// The groups this person is in
+	GroupIDs []string `json:"groupIds"`
+
+	CreatedAt time.Time `json:"createdAt"`
 }
 
-func describeUser(user *config.User) *User {
+func describeUser(user *models.User) *User {
 	if user == nil {
 		return nil
 	}
-	return &User{Username: user.Username, Name: user.Name, Email: user.Email}
+	groupIds := user.GroupIDs
+	if groupIds == nil {
+		groupIds = []string{}
+	}
+	return &User{
+		ID:          user.ID,
+		Username:    user.Username,
+		Name:        user.Name,
+		Email:       user.Email,
+		DisabledAt:  user.DisabledAt,
+		HasPassword: user.PasswordHash != "",
+		Locale:      user.Locale,
+		GroupIDs:    groupIds,
+		CreatedAt:   user.CreatedAt,
+	}
 }
 
 func (self *graph) ListUsers(ctx context.Context) ([]*User, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
 		return nil, err
 	}
-	configuration := self.config.Current()
-	users := make([]*User, 0, len(configuration.Users))
-	for _, user := range configuration.Users {
+	stored, err := self.transaction(ctx).ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	users := make([]*User, 0, len(stored))
+	for _, user := range stored {
 		users = append(users, describeUser(user))
 	}
 	return users, nil
 }
 
 func (self *graph) GetCurrentUser(ctx context.Context) (*User, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
 		return nil, err
 	}
-	username := api.ContextAuthenticatedUsername(ctx)
-	if username == "" || username == config.LocalUsername {
-		return nil, nil
-	}
-	return describeUser(self.config.Current().FindUser(username)), nil
+	return describeUser(principal.User), nil
 }
 
 type CreateUserArguments struct {
 	// Username they will log in with
 	Username string `json:"username"`
 
-	// Password they will log in with
-	Password string `json:"password"`
+	// Password they will log in with. Empty leaves them without one, for a
+	// person who will sign in through an identity provider.
+	Password *string `json:"password"`
+
+	// What to call this person
+	Name *string `json:"name"`
 
 	// Address that receives notifications
 	Email *string `json:"email"`
+
+	// Groups to put them in. Omitted means Members, so that a person made
+	// here can read the mailbox they are about to be given.
+	GroupIDs *[]string `json:"groupIds"`
 }
 
 func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments) (*User, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
 		return nil, err
 	}
 	username := strings.TrimSpace(arguments.Username)
 	if err := validateUsername(username); err != nil {
 		return nil, err
 	}
-	if arguments.Password == "" {
-		return nil, api.ErrInvalidArguments
+	created := &models.User{Username: username}
+	if arguments.Password != nil && *arguments.Password != "" {
+		hash, err := security.HashPassword(*arguments.Password)
+		if err != nil {
+			return nil, err
+		}
+		created.PasswordHash = string(hash)
 	}
-
-	hash, err := security.HashPassword(arguments.Password)
-	if err != nil {
-		return nil, err
+	if arguments.Name != nil {
+		created.Name = strings.TrimSpace(*arguments.Name)
 	}
-
-	// The identifier is minted here rather than when the row is written, so
-	// that the account has one the moment anything can refer to it.
-	created := &config.User{ID: config.NewID(), Username: username, PasswordHash: string(hash)}
 	if arguments.Email != nil {
 		created.Email = strings.TrimSpace(*arguments.Email)
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		if configuration.FindUser(username) != nil {
-			return api.ErrAlreadyExists
-		}
-		configuration.Users = append(configuration.Users, created)
-		return nil
-	}); err != nil {
+	tx := self.transaction(ctx)
+	if arguments.GroupIDs != nil {
+		created.GroupIDs = *arguments.GroupIDs
+	} else if members, err := tx.GetGroupByName(models.GroupNameMembers); err != nil {
+		return nil, err
+	} else if members != nil {
+		created.GroupIDs = []string{members.ID}
+	}
+	stored, err := tx.CreateUser(created)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if _, err := access.EnsureMailbox(tx, stored); err != nil {
 		return nil, err
 	}
-
-	log.Noticef("%s created the account %q", api.ContextAuthenticatedUsername(ctx), username)
-	return describeUser(created), nil
+	log.Noticef("%s created the account %q", operatorName(ctx), stored.Username)
+	return describeUser(stored), nil
 }
 
 type UpdateUserArguments struct {
-	// Username of the User to change
-	Username string `json:"username"`
+	// ID of the User to change
+	UserID string `json:"userId"`
 
 	// What to call this person. Empty clears it.
 	Name *string `json:"name"`
@@ -141,39 +186,31 @@ type UpdateUserArguments struct {
 
 	// The username to sign in with from now on. Sessions and API tokens move
 	// with the account, so nobody is signed out by their own rename.
-	NewUsername *string `json:"newUsername"`
+	Username *string `json:"username"`
+
+	// Whether this person may sign in. Disabling keeps everything of theirs.
+	Disabled *bool `json:"disabled"`
+
+	// The groups this person is in, replacing the current list
+	GroupIDs *[]string `json:"groupIds"`
+
+	// Locale the web UI greets them in; empty means the browser's
+	Locale *string `json:"locale"`
 }
 
 func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	if err != nil {
 		return nil, err
 	}
-
-	renamed := ""
-	if arguments.NewUsername != nil {
-		candidate := strings.TrimSpace(*arguments.NewUsername)
-		if candidate != arguments.Username {
-			if err := validateUsername(candidate); err != nil {
-				return nil, err
-			}
-			renamed = candidate
+	if arguments.Username != nil {
+		if err := validateUsername(strings.TrimSpace(*arguments.Username)); err != nil {
+			return nil, err
 		}
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		user := configuration.FindUser(arguments.Username)
-		if user == nil {
-			return api.ErrNotFound
-		}
-		if renamed != "" {
-			// Case-insensitively too: two accounts differing only in case are
-			// two accounts nobody can tell apart on a sign-in form.
-			for _, other := range configuration.Users {
-				if other != nil && other != user && strings.EqualFold(other.Username, renamed) {
-					return api.ErrAlreadyExists
-				}
-			}
-			user.Username = renamed
+	updated, err := self.transaction(ctx).UpdateUser(arguments.UserID, func(user *models.User) error {
+		if arguments.Username != nil {
+			user.Username = strings.TrimSpace(*arguments.Username)
 		}
 		if arguments.Name != nil {
 			user.Name = strings.TrimSpace(*arguments.Name)
@@ -181,88 +218,90 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 		if arguments.Email != nil {
 			user.Email = strings.TrimSpace(*arguments.Email)
 		}
+		if arguments.Locale != nil {
+			user.Locale = strings.TrimSpace(*arguments.Locale)
+		}
+		if arguments.Disabled != nil {
+			if *arguments.Disabled && user.ID == principal.UserID() {
+				// Disabling oneself is a lock-out with nobody left to undo
+				// it from the same screen.
+				return api.ErrInvalidArguments
+			}
+			if *arguments.Disabled && user.DisabledAt == nil {
+				now := time.Now()
+				user.DisabledAt = &now
+			} else if !*arguments.Disabled {
+				user.DisabledAt = nil
+			}
+		}
+		if arguments.GroupIDs != nil {
+			user.GroupIDs = *arguments.GroupIDs
+		}
 		return nil
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	username := arguments.Username
-	if renamed != "" {
-		username = renamed
-		// Nothing else to move. Sessions, tokens and passkeys name the
-		// account by its identifier, which a rename does not touch — which is
-		// the whole reason the account has one.
-		log.Noticef("%s renamed the account %q to %q", api.ContextAuthenticatedUsername(ctx), arguments.Username, renamed)
-	}
-
-	return describeUser(self.config.Current().FindUser(username)), nil
+	log.Noticef("%s changed the account %q", operatorName(ctx), updated.Username)
+	return describeUser(updated), nil
 }
 
 type SetUserPasswordArguments struct {
-	// Username of the User whose password to set
-	Username string `json:"username"`
+	// ID of the User whose password to set
+	UserID string `json:"userId"`
 
 	// The new password
 	Password string `json:"password"`
 }
 
 func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
 		return nil, err
 	}
 	if arguments.Password == "" {
 		return nil, api.ErrInvalidArguments
 	}
-
 	hash, err := security.HashPassword(arguments.Password)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		user := configuration.FindUser(arguments.Username)
-		if user == nil {
-			return api.ErrNotFound
-		}
+	updated, err := self.transaction(ctx).UpdateUser(arguments.UserID, func(user *models.User) error {
 		user.PasswordHash = string(hash)
 		return nil
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	log.Noticef("%s set the password for %q", api.ContextAuthenticatedUsername(ctx), arguments.Username)
-	return describeUser(self.config.Current().FindUser(arguments.Username)), nil
+	log.Noticef("%s set the password for %q", operatorName(ctx), updated.Username)
+	return describeUser(updated), nil
 }
 
 type DeleteUserArguments struct {
-	// Username of the User to remove
-	Username string `json:"username"`
+	// ID of the User to remove
+	UserID string `json:"userId"`
 }
 
 func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	if err != nil {
 		return err
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		if configuration.FindUser(arguments.Username) == nil {
-			return api.ErrNotFound
-		}
-		remaining := make([]*config.User, 0, len(configuration.Users))
-		for _, user := range configuration.Users {
-			if user != nil && user.Username != arguments.Username {
-				remaining = append(remaining, user)
-			}
-		}
-		// The account's tokens go with it, because they live inside it.
-		configuration.Users = remaining
-		return nil
-	}); err != nil {
+	if arguments.UserID == principal.UserID() {
+		return api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	user, err := tx.GetUser(arguments.UserID)
+	if err != nil {
 		return err
 	}
-
-	log.Noticef("%s removed the account %q", api.ContextAuthenticatedUsername(ctx), arguments.Username)
-	if len(self.config.Current().Users) == 0 {
+	if user == nil {
+		return api.ErrNotFound
+	}
+	if err := tx.DeleteUser(user.ID); err != nil {
+		return translateError(err)
+	}
+	log.Noticef("%s removed the account %q", operatorName(ctx), user.Username)
+	if count, err := tx.CountUsers(); err == nil && count == 0 {
 		log.Warningf("no accounts remain; this server is unclaimed and the next visitor can take it")
 	}
 	return nil

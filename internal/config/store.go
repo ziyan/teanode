@@ -23,7 +23,7 @@ var (
 // Store owns the configuration. It holds the active configuration in memory,
 // hands out snapshots that callers treat as read only, and persists changes
 // wherever the implementation keeps them — for the server, the database; see
-// internal/configdb.
+// the configuration table; see dbstore.go.
 //
 // The mail path reads Current() per message rather than caching it, so a
 // change made in the dashboard takes effect on the next message without a
@@ -74,7 +74,7 @@ type memoryStore struct {
 // nowhere else.
 //
 // For tests, and for the commands that construct a configuration to look at
-// rather than to persist. A server uses configdb.Open, because a change made
+// rather than to persist. A server uses OpenStore, because a change made
 // on one instance has to reach the others.
 func NewMemoryStore(configuration *Configuration) Store {
 	return &memoryStore{
@@ -143,7 +143,6 @@ func (self *memoryStore) apply(mutate func(*Configuration) error) (*Configuratio
 	// The mutation may have both read and changed the snapshot. A read builds
 	// the lookup tables, so anything added afterwards would be missing from
 	// them; rebuild on next use.
-	updated.invalidateIndex()
 
 	if err := updated.Validate(); err != nil {
 		return nil, err
@@ -261,7 +260,6 @@ func (self *Configuration) Adopt(other *Configuration) {
 		}
 		target.Field(index).Set(source.Field(index))
 	}
-	self.invalidateIndex()
 }
 
 func clone(configuration *Configuration) (*Configuration, error) {

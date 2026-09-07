@@ -25,8 +25,6 @@ retried.
                             server's own: run, config, tls, user, password
       config/               the configuration: types, validation, the Store
                             interface. Everything an operator can set
-      configdb/             config.Store backed by PostgreSQL, with a version
-                            row so several instances can write safely
       bootstrap/            the environment: how to reach the database, which
                             instance this is, and what to create on a first run
       mx/                   the mail path. Start at exchange.go HandleEnvelope

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -103,7 +105,7 @@ type Authenticator interface {
 	Required() bool
 
 	// CreateFirstUser claims a server that has no account yet.
-	CreateFirstUser(username, password string) error
+	CreateFirstUser(ctx context.Context, username, password string) error
 
 	// ChangePassword replaces an account's password, after checking the
 	// current one.
@@ -126,6 +128,11 @@ const (
 type CredentialStore interface {
 	db.SessionOperation
 	db.TokenOperation
+	db.UserLookup
+
+	// TransactionContext is for the two writes to the user table made here:
+	// claiming a fresh server, and a person changing their own password.
+	TransactionContext(ctx context.Context, function func(db.Transaction) error) error
 }
 
 type authenticator struct {
@@ -175,7 +182,14 @@ func NewAuthenticator(configuration config.Store, database CredentialStore) (Aut
 }
 
 func (self *authenticator) Required() bool {
-	return len(self.config.Current().Users) > 0
+	count, err := self.database.CountUsers()
+	if err != nil {
+		log.Errorf("could not count the accounts: %s", err)
+		// Refusing is the safe direction: a database that cannot be read
+		// cannot authenticate anybody either.
+		return true
+	}
+	return count > 0
 }
 
 func (self *authenticator) Authenticate(request *http.Request) (string, bool) {
@@ -217,7 +231,7 @@ func (self *authenticator) authenticate(request *http.Request) (string, string, 
 	// A session for an account that has since been removed stops working
 	// immediately, without waiting for the row to expire.
 	user := self.findUserById(session.UserID)
-	if user == nil {
+	if user == nil || user.Disabled() {
 		return "", "", false
 	}
 	return user.Username, session.ID, true
@@ -305,7 +319,7 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 	// A token acts as the account it belongs to, so removing the account
 	// takes its tokens with it.
 	user := self.findUserById(token.UserID)
-	if user == nil {
+	if user == nil || user.Disabled() {
 		return "", false
 	}
 
@@ -333,9 +347,11 @@ func (self *authenticator) Login(response http.ResponseWriter, request *http.Req
 	}
 
 	user := self.findUser(username)
-	if user == nil {
+	if user == nil || user.Disabled() || user.PasswordHash == "" {
 		// Spend the time anyway, so that a missing user and a wrong password
-		// take about as long and cannot be told apart by timing.
+		// take about as long and cannot be told apart by timing. A disabled
+		// user, and one who signs in only with a passkey or through an
+		// identity provider, are refused the same way for the same reason.
 		_ = bcrypt.CompareHashAndPassword([]byte("$2a$12$"+strings.Repeat("x", 53)), []byte(password))
 		return ErrInvalidCredentials
 	}
@@ -350,13 +366,13 @@ func (self *authenticator) Login(response http.ResponseWriter, request *http.Req
 // caller that established who this is some other way.
 func (self *authenticator) StartSession(response http.ResponseWriter, request *http.Request, username string) error {
 	user := self.findUser(username)
-	if user == nil {
+	if user == nil || user.Disabled() {
 		return ErrInvalidCredentials
 	}
 	return self.startSession(response, request, user)
 }
 
-func (self *authenticator) startSession(response http.ResponseWriter, request *http.Request, user *config.User) error {
+func (self *authenticator) startSession(response http.ResponseWriter, request *http.Request, user *models.User) error {
 	lifetime := self.config.Current().Session.Lifetime.Duration()
 	expiry := time.Now().Add(lifetime)
 
@@ -447,7 +463,7 @@ func isSecureRequest(request *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(forwarded), "https")
 }
 
-func (self *authenticator) CreateFirstUser(username, password string) error {
+func (self *authenticator) CreateFirstUser(ctx context.Context, username, password string) error {
 	username = strings.TrimSpace(username)
 
 	if username == "" {
@@ -465,16 +481,30 @@ func (self *authenticator) CreateFirstUser(username, password string) error {
 		return fmt.Errorf("web: cannot hash the password: %w", err)
 	}
 
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		// Re-checked inside the update, because two people could reach a
-		// fresh server at the same moment and only one may win.
-		if len(configuration.Users) > 0 {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// Re-checked inside the transaction, because two people could reach
+		// a fresh server at the same moment and only one may win.
+		count, err := tx.CountUsers()
+		if err != nil {
+			return err
+		}
+		if count > 0 {
 			return ErrAccountExists
 		}
-		configuration.Users = []*config.User{
-			{ID: config.NewID(), Username: username, PasswordHash: string(hash)},
+		user, err := tx.CreateUser(&models.User{Username: username, PasswordHash: string(hash)})
+		if err != nil {
+			return err
 		}
-		return nil
+		// The first person is the administrator, and a member like everyone
+		// else. The roles and groups are seeded here if a first start did
+		// not get to it.
+		if _, err := access.EnsureSeeded(tx); err != nil {
+			return err
+		}
+		if _, err := access.EnsureMailbox(tx, user); err != nil {
+			return err
+		}
+		return access.AddUserToGroups(tx, user.ID, models.GroupNameAdministrators, models.GroupNameMembers)
 	}); err != nil {
 		return err
 	}
@@ -506,14 +536,12 @@ func (self *authenticator) ChangePassword(username, current, replacement string)
 		return fmt.Errorf("web: cannot hash the password: %w", err)
 	}
 
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		for _, candidate := range configuration.Users {
-			if candidate != nil && candidate.Username == username {
-				candidate.PasswordHash = string(hash)
-				return nil
-			}
-		}
-		return ErrInvalidCredentials
+	if err := self.database.TransactionContext(context.Background(), func(tx db.Transaction) error {
+		_, err := tx.UpdateUser(user.ID, func(user *models.User) error {
+			user.PasswordHash = string(hash)
+			return nil
+		})
+		return err
 	}); err != nil {
 		return err
 	}
@@ -522,31 +550,31 @@ func (self *authenticator) ChangePassword(username, current, replacement string)
 	return nil
 }
 
-func (self *authenticator) findUser(username string) *config.User {
+func (self *authenticator) findUser(username string) *models.User {
 	if username == "" {
 		return nil
 	}
-	for _, user := range self.config.Current().Users {
-		if user != nil && user.Username == username {
-			return user
-		}
+	user, err := self.database.GetUserByUsername(username)
+	if err != nil {
+		log.Errorf("could not read the account %q: %s", username, err)
+		return nil
 	}
-	return nil
+	return user
 }
 
 // findUserById is how a stored session or token names its account. The
 // identifier is what is stored, because a username can be changed and a
 // session must not be ended by its owner renaming themselves.
-func (self *authenticator) findUserById(userId string) *config.User {
+func (self *authenticator) findUserById(userId string) *models.User {
 	if userId == "" {
 		return nil
 	}
-	for _, user := range self.config.Current().Users {
-		if user != nil && user.ID == userId {
-			return user
-		}
+	user, err := self.database.GetUser(userId)
+	if err != nil {
+		log.Errorf("could not read the account %q: %s", userId, err)
+		return nil
 	}
-	return nil
+	return user
 }
 
 // ListSessions returns an account's sessions, newest first.

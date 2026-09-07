@@ -98,6 +98,8 @@ type PasskeySettings struct {
 type ListenSettings struct {
 	SMTPIncoming string `json:"smtpIncoming"`
 	SMTPOutgoing string `json:"smtpOutgoing"`
+	IMAP         string `json:"imap"`
+	IMAPS        string `json:"imaps"`
 	HTTP         string `json:"http"`
 	HTTPS        string `json:"https"`
 
@@ -183,6 +185,8 @@ type PasskeyParameters struct {
 type ListenParameters struct {
 	SMTPIncoming *string `json:"smtpIncoming"`
 	SMTPOutgoing *string `json:"smtpOutgoing"`
+	IMAP         *string `json:"imap"`
+	IMAPS        *string `json:"imaps"`
 	HTTP         *string `json:"http"`
 	HTTPS        *string `json:"https"`
 	Debug        *string `json:"debug"`
@@ -239,6 +243,8 @@ func describeServerSettings(configuration *config.Configuration, settings *Setti
 	settings.Listen = &ListenSettings{
 		SMTPIncoming: configuration.Listen.SMTPIncoming,
 		SMTPOutgoing: configuration.Listen.SMTPOutgoing,
+		IMAP:         configuration.Listen.IMAP,
+		IMAPS:        configuration.Listen.IMAPS,
 		HTTP:         configuration.Listen.HTTP,
 		HTTPS:        configuration.Listen.HTTPS,
 		Debug:        configuration.Listen.Debug,
@@ -305,6 +311,8 @@ func applyServerSettings(configuration *config.Configuration, arguments UpdateSe
 		listen := &configuration.Listen
 		applyString(&listen.SMTPIncoming, parameters.SMTPIncoming)
 		applyString(&listen.SMTPOutgoing, parameters.SMTPOutgoing)
+		applyString(&listen.IMAP, parameters.IMAP)
+		applyString(&listen.IMAPS, parameters.IMAPS)
 		applyString(&listen.HTTP, parameters.HTTP)
 		applyString(&listen.HTTPS, parameters.HTTPS)
 		applyString(&listen.Debug, parameters.Debug)

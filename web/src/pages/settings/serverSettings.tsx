@@ -351,6 +351,8 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
 
   const [smtpIncoming, setSmtpIncoming] = useState(settings.smtpIncoming)
   const [smtpOutgoing, setSmtpOutgoing] = useState(settings.smtpOutgoing)
+  const [imap, setImap] = useState(settings.imap ?? '')
+  const [imaps, setImaps] = useState(settings.imaps ?? '')
   const [http, setHttp] = useState(settings.http)
   const [https, setHttps] = useState(settings.https)
   const [debug, setDebug] = useState(settings.debug ?? '')
@@ -359,6 +361,8 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
   useEffect(() => {
     setSmtpIncoming(settings.smtpIncoming)
     setSmtpOutgoing(settings.smtpOutgoing)
+    setImap(settings.imap ?? '')
+    setImaps(settings.imaps ?? '')
     setHttp(settings.http)
     setHttps(settings.https)
     setDebug(settings.debug ?? '')
@@ -368,6 +372,8 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
   const changed =
     smtpIncoming !== settings.smtpIncoming ||
     smtpOutgoing !== settings.smtpOutgoing ||
+    imap !== (settings.imap ?? '') ||
+    imaps !== (settings.imaps ?? '') ||
     http !== settings.http ||
     https !== settings.https ||
     debug !== (settings.debug ?? '')
@@ -397,6 +403,18 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
           <input className="mono" value={smtpOutgoing} onChange={(event) => setSmtpOutgoing(event.target.value)} />
         </label>
         <p className="muted field-hint">{t('serverSettings.listenSmtpOutgoingHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.listenImaps')}</span>
+          <input className="mono" value={imaps} onChange={(event) => setImaps(event.target.value)} placeholder=":993" />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.listenImapsHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.listenImap')}</span>
+          <input className="mono" value={imap} onChange={(event) => setImap(event.target.value)} placeholder=":143" />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.listenImapHint')}</p>
 
         <label>
           <span>{t('serverSettings.listenHttp')}</span>
@@ -433,7 +451,7 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
             disabled={busy}
             onClick={() => {
               setConfirming(false)
-              void save({ listen: { smtpIncoming, smtpOutgoing, http, https, debug } })
+              void save({ listen: { smtpIncoming, smtpOutgoing, imap, imaps, http, https, debug } })
             }}
           >
             {t('serverSettings.listenConfirmSave')}

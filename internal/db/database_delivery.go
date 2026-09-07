@@ -53,6 +53,9 @@ type deliveryModel struct {
 	MailID  string  `gorm:"size:32"`
 	AliasID *string `gorm:"size:32"`
 
+	MailboxID     string `gorm:"column:mailbox_id;size:32"`
+	MailboxItemID string `gorm:"column:mailbox_item_id;size:32"`
+
 	Recipient string `gorm:"size:320"`
 
 	Kind   string `gorm:"size:32"`
@@ -79,16 +82,18 @@ func (self *deliveryModel) TableName() string {
 
 func getDeliveryFromDeliveryModel(model deliveryModel) *models.Delivery {
 	delivery := &models.Delivery{
-		ID:         model.ID,
-		CreatedAt:  model.CreatedAt.In(time.Local),
-		ModifiedAt: model.ModifiedAt.In(time.Local),
-		MailID:     model.MailID,
-		Recipient:  model.Recipient,
-		Kind:       models.GetDeliveryKind(model.Kind),
-		Status:     models.GetDeliveryStatus(model.Status),
-		Size:       model.Size,
-		Attempts:   model.Attempts,
-		Error:      model.Error,
+		ID:            model.ID,
+		CreatedAt:     model.CreatedAt.In(time.Local),
+		ModifiedAt:    model.ModifiedAt.In(time.Local),
+		MailID:        model.MailID,
+		Recipient:     model.Recipient,
+		Kind:          models.GetDeliveryKind(model.Kind),
+		MailboxID:     model.MailboxID,
+		MailboxItemID: model.MailboxItemID,
+		Status:        models.GetDeliveryStatus(model.Status),
+		Size:          model.Size,
+		Attempts:      model.Attempts,
+		Error:         model.Error,
 	}
 	if model.AliasID != nil {
 		delivery.AliasID = *model.AliasID
@@ -136,6 +141,10 @@ func updateDeliveryModelFromDelivery(model *deliveryModel, delivery *models.Deli
 	}
 	if model.Recipient != delivery.Recipient {
 		model.Recipient = delivery.Recipient
+		dirty = true
+	}
+	if model.MailboxID != delivery.MailboxID || model.MailboxItemID != delivery.MailboxItemID {
+		model.MailboxID, model.MailboxItemID = delivery.MailboxID, delivery.MailboxItemID
 		dirty = true
 	}
 	if model.Kind != delivery.Kind.String() {

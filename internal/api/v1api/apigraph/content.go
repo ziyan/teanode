@@ -146,20 +146,13 @@ type GetMailContentArguments struct {
 }
 
 func (self *graph) GetMailContent(ctx context.Context, arguments GetMailContentArguments) (*MailContent, error) {
-	if err := self.requireOperator(ctx); err != nil {
-		return nil, err
-	}
-
-	mail, err := api.ContextTransaction(ctx).GetMail(arguments.MailID, nil)
+	mail, err := self.requireReadableMail(ctx, arguments.MailID)
 	if err != nil {
 		return nil, err
 	}
-	if mail == nil {
-		return nil, api.ErrNotFound
-	}
 	// The domain may have been removed since; that is not a reason to hide
 	// mail that was received while it existed.
-	if mail.DomainID != "" && self.config.Current().FindDomainByID(mail.DomainID) == nil {
+	if mail.DomainID != "" && !self.domainStillExists(ctx, mail.DomainID) {
 		log.Debugf("showing mail %q whose domain %q is no longer configured", mail.ID, mail.DomainID)
 	}
 

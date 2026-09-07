@@ -22,6 +22,7 @@ import (
 	"github.com/ziyan/teanode/internal/api/v1api/apimail"
 	"github.com/ziyan/teanode/internal/api/v1api/apimedia"
 	"github.com/ziyan/teanode/internal/api/v1api/apisend"
+	"github.com/ziyan/teanode/internal/api/v1api/apisso"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
@@ -70,7 +71,11 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &v1{components: []web.Component{graph, send, raw, pictures}}, nil
+	signOn, err := apisso.New(database, configuration, authenticator, settings)
+	if err != nil {
+		return nil, err
+	}
+	return &v1{components: []web.Component{graph, send, raw, pictures, signOn}}, nil
 }
 
 func (self *v1) AddRoutes(router *mux.Router) error {

@@ -1,256 +1,11 @@
 package config
 
 import (
-	"crypto"
-	"regexp"
 	"strconv"
 	"strings"
-	"sync"
+
+	"github.com/ziyan/teanode/internal/models"
 )
-
-// index holds the derived lookup tables for one configuration snapshot, so
-// that the mail path never recompiles a regular expression or scans a slice
-// per message.
-//
-// It is built lazily and can be invalidated. Lazily, because most snapshots
-// are never queried; invalidated, because Store.Update hands the mutation
-// function a snapshot it may both read and change, and a read before a change
-// would otherwise leave the tables permanently missing whatever was added
-// after it. That is not hypothetical: it made a domain created through the
-// dashboard invisible to every request until the process restarted.
-type index struct {
-	mutex sync.RWMutex
-	built bool
-
-	domainsByName map[string]*Domain
-	domainsById   map[string]*Domain
-	aliasesById   map[string]*Alias
-
-	// credentials maps a credential identifier to the domain that owns it,
-	// because the mail path needs both.
-	credentialsById map[string]*credentialOwner
-
-	// patterns holds one compiled expression per alias, keyed by alias
-	// identifier. An alias whose pattern does not compile is absent, which
-	// makes it match nothing; Validate reports it separately.
-	patterns map[string]*regexp.Regexp
-
-	// signers holds one parsed signing key per domain. Parsing PEM for every
-	// outgoing message would be wasteful, and a domain with no usable key is
-	// simply absent here.
-	signers map[string]crypto.Signer
-}
-
-type credentialOwner struct {
-	domain     *Domain
-	credential *Credential
-}
-
-func (self *Configuration) indexIsBuilt() bool {
-	self.index.mutex.RLock()
-	defer self.index.mutex.RUnlock()
-	return self.index.built
-}
-
-// InvalidateIndex marks the lookup tables as needing to be rebuilt.
-//
-// Every Store implementation has to call this after running a mutation. The
-// tables are built on first read, and a mutation that reads before it writes
-// — which is what a create does when it checks for a duplicate first — builds
-// them from the state before the change. Without this the new domain, alias
-// or credential cannot be found by anything, and the symptom is remote from
-// the cause: mail is refused with "Invalid credentials" using a credential
-// that is plainly there in the configuration.
-func (self *Configuration) InvalidateIndex() {
-	self.invalidateIndex()
-}
-
-func (self *Configuration) invalidateIndex() {
-	self.index.mutex.Lock()
-	defer self.index.mutex.Unlock()
-	self.index.built = false
-}
-
-func (self *Configuration) buildIndex() {
-	if self.indexIsBuilt() {
-		return
-	}
-
-	self.index.mutex.Lock()
-	defer self.index.mutex.Unlock()
-	if self.index.built {
-		return
-	}
-
-	func() {
-		self.index.domainsByName = make(map[string]*Domain, len(self.Domains))
-		self.index.domainsById = make(map[string]*Domain, len(self.Domains))
-		self.index.aliasesById = make(map[string]*Alias)
-		self.index.credentialsById = make(map[string]*credentialOwner)
-		self.index.patterns = make(map[string]*regexp.Regexp)
-		self.index.signers = make(map[string]crypto.Signer)
-
-		for _, domain := range self.Domains {
-			if domain == nil {
-				continue
-			}
-			if domain.Domain != "" {
-				self.index.domainsByName[strings.ToLower(domain.Domain)] = domain
-			}
-			if domain.ID != "" {
-				self.index.domainsById[domain.ID] = domain
-			}
-			for _, alias := range domain.Aliases {
-				if alias == nil {
-					continue
-				}
-				if alias.ID != "" {
-					self.index.aliasesById[alias.ID] = alias
-				}
-				if alias.IsCatchAll() {
-					continue
-				}
-				// Matching is case insensitive: the local part of an address
-				// is not required to be, and a recipient who capitalises their
-				// own address must still reach the alias they were given.
-				compiled, err := regexp.Compile("(?i)" + alias.Pattern)
-				if err != nil {
-					log.Errorf("alias %q of domain %q has an invalid pattern %q and will match nothing: %s", alias.ID, domain.Domain, alias.Pattern, err)
-					continue
-				}
-				self.index.patterns[alias.ID] = compiled
-			}
-			if domain.DKIM.PrivateKey != "" {
-				signer, err := domain.DKIM.Signer()
-				if err != nil {
-					log.Errorf("domain %q has an unusable signing key, so its outgoing mail will not be signed: %s", domain.Domain, err)
-				} else {
-					self.index.signers[domain.ID] = signer
-				}
-			}
-			for _, credential := range domain.Credentials {
-				if credential == nil || credential.ID == "" {
-					continue
-				}
-				self.index.credentialsById[credential.ID] = &credentialOwner{domain: domain, credential: credential}
-			}
-		}
-	}()
-	self.index.built = true
-}
-
-// FindDomain returns the configured domain with this name, or nil. Matching is
-// case insensitive because domain names are.
-func (self *Configuration) FindDomain(name string) *Domain {
-	self.buildIndex()
-	return self.index.domainsByName[strings.ToLower(name)]
-}
-
-// FindDomainByID returns the configured domain with this identifier, or nil.
-// Stored mail references domains by identifier, and the domain may since have
-// been deleted, so callers must handle nil.
-func (self *Configuration) FindDomainByID(id string) *Domain {
-	self.buildIndex()
-	return self.index.domainsById[id]
-}
-
-// FindAliasByID returns the configured alias with this identifier, or nil.
-// Stored deliveries reference aliases by identifier, and the alias may since
-// have been deleted, so callers must handle nil.
-func (self *Configuration) FindAliasByID(id string) *Alias {
-	self.buildIndex()
-	return self.index.aliasesById[id]
-}
-
-// FindCredential returns the credential with this identifier together with the
-// domain that owns it. Both are nil when the credential is unknown.
-func (self *Configuration) FindCredential(id string) (*Domain, *Credential) {
-	self.buildIndex()
-	owner, ok := self.index.credentialsById[id]
-	if !ok {
-		return nil, nil
-	}
-	return owner.domain, owner.credential
-}
-
-// MatchAliases returns the enabled aliases of this domain that should receive
-// mail for a local part, in configuration order.
-//
-// A catch-all is a fallback, not an addition. If any alias with a pattern
-// matches, only those are returned; the catch-alls are used only when nothing
-// specific matched. Without that rule, an address covered by both a specific
-// alias and a catch-all would be delivered twice, which is not what an
-// operator who set up a catch-all as a safety net expects.
-//
-// Several specific aliases can still match at once, and each produces its own
-// delivery. That is how one address forwards to two places.
-func (self *Configuration) MatchAliases(domain *Domain, localPart string) []*Alias {
-	if domain == nil {
-		return nil
-	}
-	self.buildIndex()
-
-	var matched []*Alias
-	var catchAll []*Alias
-	for _, alias := range domain.Aliases {
-		if alias == nil || alias.Disabled {
-			continue
-		}
-		if alias.IsCatchAll() {
-			catchAll = append(catchAll, alias)
-			continue
-		}
-		pattern, ok := self.index.patterns[alias.ID]
-		if !ok {
-			continue
-		}
-		if pattern.MatchString(localPart) {
-			matched = append(matched, alias)
-		}
-	}
-	if len(matched) > 0 {
-		return matched
-	}
-	return catchAll
-}
-
-// SignerFor returns the parsed signing key for a domain, and whether it has
-// one. A domain with no key can still receive mail; what it sends is simply
-// unsigned, which receivers are entitled to treat with suspicion.
-func (self *Configuration) SignerFor(domain *Domain) (crypto.Signer, string, bool) {
-	if domain == nil {
-		return nil, "", false
-	}
-	self.buildIndex()
-	signer, ok := self.index.signers[domain.ID]
-	if !ok {
-		return nil, "", false
-	}
-	return signer, domain.DKIM.Selector, true
-}
-
-// Hostname returns the fully qualified name that mail for this domain arrives
-// at, for example "mail.example.com", used as the bounce and DMARC report
-// domain. It falls back to the bare domain when no subdomain is configured.
-func (self *Domain) Hostname() string {
-	if self.Subdomain == "" {
-		return self.Domain
-	}
-	return self.Subdomain + "." + self.Domain
-}
-
-// FindUser returns the account with this username, or nil.
-func (self *Configuration) FindUser(username string) *User {
-	if username == "" {
-		return nil
-	}
-	for _, user := range self.Users {
-		if user != nil && user.Username == username {
-			return user
-		}
-	}
-	return nil
-}
 
 // MailServers returns the hosts every domain's MX records should name, in
 // order of preference.
@@ -281,15 +36,12 @@ func (self *Configuration) MailServers() []string {
 // Every other domain gets one name of its own, "mx." in front of the domain.
 // It could be told to point at the server's name instead, and used to be, but
 // then every domain published the name of a different one — look up the MX of
-// any of them and you have the set they belong to. One name rather than one
-// per name the server answers on, because a pair only means something when it
-// is a pair of addresses: here both resolve to the same host, so the second is
-// a record to publish and a certificate name to keep renewed, for nothing.
+// any of them and you have the set they belong to.
 //
-// The cost is that the server's address is written down once per domain rather
-// than once, so a server that changes address has one record per domain to
-// update. That is the same trade the signing keys make.
-func (self *Configuration) MailHostsFor(domain *Domain) []string {
+// The other domains are what decide which one owns the server's name, which
+// is why they are passed in: the caller has them, and this package no longer
+// holds them.
+func (self *Configuration) MailHostsFor(domain *models.Domain, domains []*models.Domain) []string {
 	if domain == nil || domain.Domain == "" {
 		return self.MailServers()
 	}
@@ -306,7 +58,7 @@ func (self *Configuration) MailHostsFor(domain *Domain) []string {
 	servers := self.MailServers()
 	owned := make([]string, 0, len(servers))
 	for _, host := range servers {
-		if !self.ownsServerName(domain, host) {
+		if !ownsServerName(domain, host, domains) {
 			return []string{"mx." + domain.Domain}
 		}
 		owned = append(owned, host)
@@ -329,20 +81,11 @@ func trimmedHosts(hosts []string) []string {
 	return trimmed
 }
 
-// InThisDomain reports whether a name belongs to this domain's own zone, and
-// so whether its address record is this operator's to publish and its
-// certificate this server's to obtain.
-func (self *Domain) InThisDomain(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
-	name := strings.ToLower(self.Domain)
-	return host == name || strings.HasSuffix(host, "."+name)
-}
-
 // MailHostFor is the one name to use where only one is wanted — naming the
 // host a sender reached, in a header. The first, which is the one an MX record
 // prefers.
-func (self *Configuration) MailHostFor(domain *Domain) string {
-	hosts := self.MailHostsFor(domain)
+func (self *Configuration) MailHostFor(domain *models.Domain, domains []*models.Domain) string {
+	hosts := self.MailHostsFor(domain, domains)
 	if len(hosts) == 0 {
 		return self.Server.Name
 	}
@@ -356,15 +99,14 @@ func (self *Configuration) MailHostFor(domain *Domain) string {
 // The domain's own, when it has one. Otherwise the name its mail arrives at,
 // which is the right guess and is sometimes wrong for a reason that has
 // nothing to do with mail: the host it resolves to may answer HTTPS with
-// something else. That is what LinkHost is for, and why this is a separate
-// question from where the mail goes.
-func (self *Configuration) LinkHostFor(domain *Domain) string {
+// something else. That is what LinkHost is for.
+func (self *Configuration) LinkHostFor(domain *models.Domain, domains []*models.Domain) string {
 	if domain != nil {
 		if host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain.LinkHost), ".")); host != "" {
 			return host
 		}
 	}
-	return self.MailHostFor(domain)
+	return self.MailHostFor(domain, domains)
 }
 
 // ownsServerName reports whether this domain is the one a name belonging to
@@ -374,9 +116,9 @@ func (self *Configuration) LinkHostFor(domain *Domain) string {
 // while serving example.com — nobody would be shown the records for it at all,
 // so every domain is treated as the owner and the Setup page carries the
 // address as well.
-func (self *Configuration) ownsServerName(domain *Domain, serverName string) bool {
+func ownsServerName(domain *models.Domain, serverName string, domains []*models.Domain) bool {
 	owner := ""
-	for _, candidate := range self.Domains {
+	for _, candidate := range domains {
 		if candidate == nil || candidate.Domain == "" {
 			continue
 		}

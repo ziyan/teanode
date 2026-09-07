@@ -4,10 +4,33 @@ import { beginPasskeyAssertion, finishPasskeyAssertion, login } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
 import { KeyIcon } from '../components/icons'
 import { cancelled, getAssertion, isPasskeySupported } from '../passkeys'
-import { useTranslation } from '../i18n/i18n'
+import { Key, useTranslation } from '../i18n/i18n'
 
-export function LoginPage({ onLoggedIn, passkeysEnabled }: { onLoggedIn: () => void; passkeysEnabled: boolean }) {
+// What a failed single sign-on came back with, as a code the server chose:
+// the address bar is not a place to carry a sentence anyone could write.
+const SSO_MESSAGES: Record<string, Key> = {
+  refused: 'login.sso.refused',
+  state: 'login.sso.state',
+  verify: 'login.sso.verify',
+  noaccount: 'login.sso.noAccount',
+  disabled: 'login.sso.disabled',
+  failed: 'login.sso.failed',
+}
+
+export function LoginPage({
+  onLoggedIn,
+  passkeysEnabled,
+  ssoProviders = [],
+}: {
+  onLoggedIn: () => void
+  passkeysEnabled: boolean
+  ssoProviders?: { id: string; name: string }[]
+}) {
   const { t } = useTranslation()
+  // A single sign-on that failed comes back here with what went wrong in
+  // the address bar, since the page it failed on was the provider's.
+  const [ssoCode] = useState(() => new URLSearchParams(window.location.search).get('sso'))
+  const ssoMessage = ssoCode ? t(SSO_MESSAGES[ssoCode] ?? 'login.sso.failed') : null
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -73,6 +96,7 @@ export function LoginPage({ onLoggedIn, passkeysEnabled }: { onLoggedIn: () => v
       />
 
       {error && <p className="error">{error}</p>}
+      {!error && ssoMessage && <p className="error">{ssoMessage}</p>}
 
       <button className="primary auth-button" type="submit" disabled={busy}>
         {busy ? t('login.signingIn') : t('login.signIn')}
@@ -98,6 +122,15 @@ export function LoginPage({ onLoggedIn, passkeysEnabled }: { onLoggedIn: () => v
             {t('login.withPasskey')}
           </button>
         </>
+      )}
+      {ssoProviders.length > 0 && (
+        <div className="sso-buttons">
+          {ssoProviders.map((provider) => (
+            <a key={provider.id} className="button" href={`/api/v1/sso/${encodeURIComponent(provider.id)}/start`}>
+              {t('login.withProvider', { name: provider.name })}
+            </a>
+          ))}
+        </div>
       )}
     </AuthCard>
   )

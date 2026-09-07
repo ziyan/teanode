@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/models"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -96,7 +97,7 @@ type GetUpgradeArguments struct {
 }
 
 func (self *graph) GetUpgrade(ctx context.Context, arguments GetUpgradeArguments) (*Upgrade, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	if self.upgrade == nil {
@@ -132,7 +133,7 @@ type ApplyUpgradeArguments struct {
 }
 
 func (self *graph) ApplyUpgrade(ctx context.Context, arguments ApplyUpgradeArguments) (*Upgrade, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	if self.upgrade == nil {

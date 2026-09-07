@@ -11,6 +11,7 @@ type Alias struct {
 	Email      string      `json:"email"`
 	Webhook    string      `json:"webhook"`
 	MailServer *MailServer `json:"mailServer"`
+	MailboxID  string      `json:"mailboxId"`
 	Disabled   bool        `json:"disabled"`
 }
 
@@ -25,6 +26,8 @@ type MailServer struct {
 // Destination is where an alias sends mail, as one string for a table.
 func (self *Alias) Destination() string {
 	switch self.Kind {
+	case "mailbox":
+		return "mailbox " + self.MailboxID
 	case "email":
 		return self.Email
 	case "webhook":
@@ -39,7 +42,7 @@ func (self *Alias) Destination() string {
 	}
 }
 
-const aliasFields = `{ id pattern comment kind email webhook mailServer { host port username } disabled }`
+const aliasFields = `{ id pattern comment kind email webhook mailboxId mailServer { host port username } disabled }`
 
 // ListAliases returns a domain's aliases in the order they are evaluated.
 func ListAliases(ctx context.Context, connection *Client, domainId string) ([]*Alias, error) {
@@ -76,6 +79,7 @@ type AliasParameters struct {
 	Email      *string               `json:"email,omitempty"`
 	Webhook    *string               `json:"webhook,omitempty"`
 	MailServer *MailServerParameters `json:"mailServer,omitempty"`
+	MailboxID  *string               `json:"mailboxId,omitempty"`
 	Disabled   *bool                 `json:"disabled,omitempty"`
 }
 

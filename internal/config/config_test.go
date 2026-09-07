@@ -1,14 +1,11 @@
 package config_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ziyan/teanode/internal/config"
 )
@@ -21,16 +18,8 @@ func writeValidConfiguration(t *testing.T, mutate func(*config.Configuration)) (
 
 	directory := t.TempDir()
 
-	hash, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("failed to hash password: %s", err)
-	}
-
 	configuration := config.Example()
 	configuration.Server.DataDirectory = directory
-	configuration.Users = []*config.User{
-		{Username: "admin", PasswordHash: string(hash)},
-	}
 	if mutate != nil {
 		mutate(configuration)
 	}
@@ -81,12 +70,6 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 	}
 	if loaded.Storage.SpoolRetention != saved.Storage.SpoolRetention {
 		t.Errorf("storage.spoolRetention did not round trip: %s != %s", loaded.Storage.SpoolRetention, saved.Storage.SpoolRetention)
-	}
-	if len(loaded.Domains) != 1 || loaded.Domains[0].ID != saved.Domains[0].ID {
-		t.Fatalf("domains did not round trip")
-	}
-	if len(loaded.Domains[0].Aliases) != len(saved.Domains[0].Aliases) {
-		t.Fatalf("aliases did not round trip: %d != %d", len(loaded.Domains[0].Aliases), len(saved.Domains[0].Aliases))
 	}
 }
 
@@ -143,71 +126,6 @@ func TestValidationErrors(t *testing.T) {
 			wantPath: "server.name",
 		},
 		{
-			name:     "no domains",
-			mutate:   func(configuration *config.Configuration) { configuration.Domains = nil },
-			wantPath: "domains",
-		},
-		{
-			name: "duplicate domain",
-			mutate: func(configuration *config.Configuration) {
-				duplicate := *configuration.Domains[0]
-				duplicate.ID = config.NewID()
-				configuration.Domains = append(configuration.Domains, &duplicate)
-			},
-			wantPath: "domains[1].domain",
-		},
-		{
-			name: "invalid alias pattern",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[0].Pattern = "^["
-			},
-			wantPath: "domains[0].aliases[0].pattern",
-		},
-		{
-			name: "email alias without an address",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[0].Email = ""
-			},
-			wantPath: "domains[0].aliases[0].email",
-		},
-		{
-			name: "webhook alias without a URL",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[0].Kind = config.AliasKindWebhook
-				configuration.Domains[0].Aliases[0].Email = ""
-			},
-			wantPath: "domains[0].aliases[0].webhook",
-		},
-		{
-			name: "mail server alias without a host",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[0].Kind = config.AliasKindMailServer
-				configuration.Domains[0].Aliases[0].Email = ""
-			},
-			wantPath: "domains[0].aliases[0].mailServer.host",
-		},
-		{
-			name: "unknown alias kind",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[0].Kind = "carrierPigeon"
-			},
-			wantPath: "domains[0].aliases[0].kind",
-		},
-		{
-			name: "duplicate identifier",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].Aliases[1].ID = configuration.Domains[0].Aliases[0].ID
-			},
-			wantPath: "domains[0].aliases[1].id",
-		},
-		{
-			name: "plain password instead of a hash",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Users[0].PasswordHash = "hunter2"
-			},
-			wantPath: "users[0].passwordHash",
-		},
-		{
 			name: "dns-01 without a provider",
 			mutate: func(configuration *config.Configuration) {
 				configuration.TLS.ACME.Challenge = config.ChallengeDNS01
@@ -236,27 +154,6 @@ func TestValidationErrors(t *testing.T) {
 			wantPath: "tls.acme.enabled",
 		},
 		{
-			name: "a signing key with no selector",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].DKIM = config.DomainKey{PrivateKey: unusableKey()}
-			},
-			wantPath: "domains[0].dkim.selector",
-		},
-		{
-			name: "a selector with no signing key",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].DKIM = config.DomainKey{Selector: "teanode1"}
-			},
-			wantPath: "domains[0].dkim.privateKey",
-		},
-		{
-			name: "an unusable signing key",
-			mutate: func(configuration *config.Configuration) {
-				configuration.Domains[0].DKIM = config.DomainKey{Selector: "teanode1", PrivateKey: "not a key"}
-			},
-			wantPath: "domains[0].dkim.privateKey",
-		},
-		{
 			name: "geoip enabled without a database",
 			mutate: func(configuration *config.Configuration) {
 				configuration.GeoIP.Enabled = true
@@ -274,17 +171,11 @@ func TestValidationErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			directory := t.TempDir()
-			hash, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
-			if err != nil {
-				t.Fatalf("failed to hash password: %s", err)
-			}
 			configuration := config.Example()
-			configuration.Server.DataDirectory = directory
-			configuration.Users = []*config.User{{Username: "admin", PasswordHash: string(hash)}}
+			configuration.Server.DataDirectory = t.TempDir()
 			test.mutate(configuration)
 
-			err = configuration.Validate()
+			err := configuration.Validate()
 			if err == nil {
 				t.Fatalf("expected a validation error mentioning %q", test.wantPath)
 			}
@@ -302,14 +193,8 @@ func TestStoreUpdateAppliesTheChange(t *testing.T) {
 	unsubscribe := store.Subscribe(func(*config.Configuration) { notified++ })
 	defer unsubscribe()
 
-	aliasId := config.NewID()
 	if err := store.Update(func(configuration *config.Configuration) error {
-		configuration.Domains[0].Aliases = append(configuration.Domains[0].Aliases, &config.Alias{
-			ID:      aliasId,
-			Pattern: "^support$",
-			Kind:    config.AliasKindEmail,
-			Email:   "support@example.net",
-		})
+		configuration.SMTP.MaxRecipientsIncoming = 42
 		return nil
 	}); err != nil {
 		t.Fatalf("failed to update configuration: %s", err)
@@ -318,150 +203,28 @@ func TestStoreUpdateAppliesTheChange(t *testing.T) {
 	if notified != 1 {
 		t.Errorf("subscribers notified %d times, want 1", notified)
 	}
-	if store.Current().FindAliasByID(aliasId) == nil {
-		t.Error("the new alias is not in the active configuration")
+	if store.Current().SMTP.MaxRecipientsIncoming != 42 {
+		t.Error("the change is not in the active configuration")
 	}
 
 	// That the change also survives being stored and read back is covered
-	// against a real database, in internal/configdb.
+	// against a real database, in internal/db.
 }
 
 func TestStoreUpdateRollsBackOnInvalidChange(t *testing.T) {
 	store, _ := openValidStore(t, nil)
-	originalAliases := len(store.Current().Domains[0].Aliases)
+	original := store.Current().Server.Name
 
 	err := store.Update(func(configuration *config.Configuration) error {
-		configuration.Domains[0].Aliases = append(configuration.Domains[0].Aliases, &config.Alias{
-			ID:      config.NewID(),
-			Pattern: "^[",
-			Kind:    config.AliasKindEmail,
-			Email:   "support@example.net",
-		})
+		configuration.Server.Name = ""
 		return nil
 	})
 	if err == nil {
 		t.Fatal("an invalid change should be refused")
 	}
 
-	if got := len(store.Current().Domains[0].Aliases); got != originalAliases {
-		t.Errorf("the active configuration was modified by a failed update: %d aliases, want %d", got, originalAliases)
-	}
-}
-
-func TestMatchAliases(t *testing.T) {
-	_, configuration := writeValidConfiguration(t, func(configuration *config.Configuration) {
-		domain := configuration.Domains[0]
-		domain.Aliases = []*config.Alias{
-			{ID: "specific", Pattern: "^hello$", Kind: config.AliasKindEmail, Email: "one@example.net"},
-			{ID: "disabled", Pattern: "^hello$", Kind: config.AliasKindEmail, Email: "two@example.net", Disabled: true},
-			{ID: "second", Pattern: "^hello$", Kind: config.AliasKindEmail, Email: "three@example.net"},
-			{ID: "prefix", Pattern: "^ci-.*$", Kind: config.AliasKindNull},
-			{ID: "catchall", Pattern: "", Kind: config.AliasKindEmail, Email: "four@example.net"},
-		}
-	})
-
-	domain := configuration.FindDomain("EXAMPLE.COM")
-	if domain == nil {
-		t.Fatal("domain lookup should be case insensitive")
-	}
-
-	tests := []struct {
-		name      string
-		localPart string
-		want      []string
-	}{
-		{
-			// Two enabled aliases share the pattern, so the message goes to
-			// both. The disabled one does not count, and the catch-all is not
-			// added on top.
-			name:      "a specific match wins over the catch-all",
-			localPart: "hello", want: []string{"specific", "second"},
-		},
-		{
-			name:      "matching ignores case, as the old SQL operator did",
-			localPart: "HeLLo", want: []string{"specific", "second"},
-		},
-		{
-			name:      "a pattern that matches nothing falls back to the catch-all",
-			localPart: "anything-else", want: []string{"catchall"},
-		},
-		{
-			name:      "a prefix pattern still suppresses the catch-all",
-			localPart: "ci-build", want: []string{"prefix"},
-		},
-		{
-			name:      "case insensitivity applies to prefix patterns too",
-			localPart: "CI-Build", want: []string{"prefix"},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			matched := configuration.MatchAliases(domain, test.localPart)
-			got := make([]string, 0, len(matched))
-			for _, alias := range matched {
-				got = append(got, alias.ID)
-			}
-			if strings.Join(got, ",") != strings.Join(test.want, ",") {
-				t.Errorf("matched %v, want %v", got, test.want)
-			}
-		})
-	}
-
-	if configuration.FindDomain("other.example") != nil {
-		t.Error("an unconfigured domain should not be found")
-	}
-}
-
-// TestMatchAliasesWithoutCatchAll checks that an address matching nothing gets
-// nothing, rather than everything.
-func TestMatchAliasesWithoutCatchAll(t *testing.T) {
-	_, configuration := writeValidConfiguration(t, func(configuration *config.Configuration) {
-		configuration.Domains[0].Aliases = []*config.Alias{
-			{ID: "only", Pattern: "^hello$", Kind: config.AliasKindEmail, Email: "one@example.net"},
-		}
-	})
-
-	domain := configuration.FindDomain("example.com")
-	if matched := configuration.MatchAliases(domain, "nobody"); len(matched) != 0 {
-		t.Errorf("matched %d aliases with no catch-all configured, want 0", len(matched))
-	}
-}
-
-// TestCatchAllIsValid guards the import path: the previous release stored a
-// catch-all as an empty pattern, and twenty-five of twenty-six aliases in a
-// real deployment were exactly that. Rejecting it would make the migration
-// impossible.
-func TestCatchAllIsValid(t *testing.T) {
-	_, configuration := writeValidConfiguration(t, func(configuration *config.Configuration) {
-		configuration.Domains[0].Aliases = []*config.Alias{
-			{ID: config.NewID(), Pattern: "", Kind: config.AliasKindEmail, Email: "everything@example.net"},
-		}
-	})
-	if err := configuration.Validate(); err != nil {
-		t.Fatalf("a catch-all should be valid, got: %s", err)
-	}
-	if !configuration.Domains[0].Aliases[0].IsCatchAll() {
-		t.Error("an empty pattern should be a catch-all")
-	}
-}
-
-func TestFindCredential(t *testing.T) {
-	_, configuration := writeValidConfiguration(t, func(configuration *config.Configuration) {
-		configuration.Domains[0].Credentials = []*config.Credential{
-			{ID: "laptop", Key: "secret", Comment: "my laptop"},
-		}
-	})
-
-	domain, credential := configuration.FindCredential("laptop")
-	if domain == nil || credential == nil {
-		t.Fatal("the credential should be found together with its domain")
-	}
-	if domain.Domain != "example.com" || credential.Key != "secret" {
-		t.Errorf("found the wrong credential: %s / %s", domain.Domain, credential.Key)
-	}
-
-	if domain, credential := configuration.FindCredential("unknown"); domain != nil || credential != nil {
-		t.Error("an unknown credential should not be found")
+	if got := store.Current().Server.Name; got != original {
+		t.Errorf("the active configuration was modified by a failed update: %q, want %q", got, original)
 	}
 }
 
@@ -550,14 +313,8 @@ func TestRelativePathsResolveAgainstTheConfigurationFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(directory, "state"), 0o700); err != nil {
 		t.Fatalf("failed to create state directory: %s", err)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("failed to hash password: %s", err)
-	}
-
 	configuration := config.Example()
 	configuration.Server.DataDirectory = "state"
-	configuration.Users = []*config.User{{Username: "admin", PasswordHash: string(hash)}}
 
 	filename := filepath.Join(directory, "teanode.yaml")
 	if err := config.Save(filename, configuration); err != nil {
@@ -641,134 +398,3 @@ func TestSecretIsAdoptedFromTheLegacyFile(t *testing.T) {
 // TestUpdateThatReadsBeforeWriting guards a bug that made a domain created
 // through the dashboard invisible until the process restarted.
 //
-// The lookup tables are built lazily. A mutation that reads the configuration
-// before changing it — which is exactly what a create does when it checks for
-// a duplicate first — used to build them from the state before the change, and
-// they were never rebuilt. The new domain then could not be found by anything.
-func TestUpdateThatReadsBeforeWriting(t *testing.T) {
-	store, _ := openValidStore(t, nil)
-
-	domainId := config.NewID()
-	aliasId := config.NewID()
-	credentialId := config.NewID()
-
-	if err := store.Update(func(configuration *config.Configuration) error {
-		// The read that builds the tables, before anything is added.
-		if configuration.FindDomain("second.example") != nil {
-			return fmt.Errorf("the domain already exists")
-		}
-		configuration.Domains = append(configuration.Domains, &config.Domain{
-			ID:        domainId,
-			Domain:    "second.example",
-			Subdomain: "mail",
-			Aliases: []*config.Alias{
-				{ID: aliasId, Pattern: "^support$", Kind: config.AliasKindEmail, Email: "support@example.net"},
-			},
-			Credentials: []*config.Credential{
-				{ID: credentialId, Key: "0123456789abcdef"},
-			},
-		})
-		return nil
-	}); err != nil {
-		t.Fatalf("failed to add the domain: %s", err)
-	}
-
-	configuration := store.Current()
-	if configuration.FindDomain("second.example") == nil {
-		t.Error("the new domain cannot be found by name")
-	}
-	if configuration.FindDomainByID(domainId) == nil {
-		t.Error("the new domain cannot be found by identifier")
-	}
-	if configuration.FindAliasByID(aliasId) == nil {
-		t.Error("the new alias cannot be found")
-	}
-	if _, credential := configuration.FindCredential(credentialId); credential == nil {
-		t.Error("the new credential cannot be found")
-	}
-
-	// The compiled patterns have to be rebuilt too, or mail to the new alias
-	// matches nothing.
-	domain := configuration.FindDomain("second.example")
-	if matched := configuration.MatchAliases(domain, "support"); len(matched) != 1 {
-		t.Errorf("matched %d aliases for support@second.example, want 1", len(matched))
-	}
-}
-
-// unusableKey returns something PEM-shaped that is not a key.
-//
-// The markers are assembled rather than written out because the secret guard
-// refuses a tracked file containing a PEM private key header, and it is right
-// to: a guard with exceptions for "but this one is fake" stops being a guard.
-func unusableKey() string {
-	const marker = "-----%s PRIVATE KEY-----\n"
-	return fmt.Sprintf(marker, "BEGIN") + "not actually a key\n" + fmt.Sprintf(marker, "END")
-}
-
-// Every domain signs with its own key, so a domain that arrives without one —
-// from a configuration file written by hand, an import, or a release that did
-// not give it one — has to be given one on the way up. A domain with no key
-// sends unsigned mail, which is mail receivers treat as suspicious for a
-// reason nothing in the dashboard explains.
-func TestEveryDomainIsGivenItsOwnSigningKey(t *testing.T) {
-	// A key already published in DNS, standing in for one an installation
-	// already has.
-	published, err := config.GenerateDomainKey("older")
-	if err != nil {
-		t.Fatalf("failed to generate a key for the test: %s", err)
-	}
-
-	store, _ := openValidStore(t, func(configuration *config.Configuration) {
-		configuration.DKIM.Selector = "teanode"
-		configuration.Domains = []*config.Domain{
-			{ID: "one.test", Domain: "one.test", Subdomain: "mail"},
-			{ID: "two.test", Domain: "two.test", Subdomain: "mail"},
-			// This one already has a key, under a selector of its own.
-			{ID: "three.test", Domain: "three.test", Subdomain: "mail", DKIM: published},
-		}
-	})
-
-	if err := config.EnsureSecrets(store); err != nil {
-		t.Fatalf("failed to generate secrets: %s", err)
-	}
-
-	keys := map[string]string{}
-	for _, domain := range store.Current().Domains {
-		if domain.DKIM.PrivateKey == "" {
-			t.Fatalf("%s was left without a signing key", domain.Domain)
-		}
-		if domain.DKIM.Selector == "" {
-			t.Errorf("%s has a key with no selector, so there is nowhere to publish it", domain.Domain)
-		}
-		if previous, ok := keys[domain.DKIM.PrivateKey]; ok {
-			t.Errorf("%s was given the same key as %s", domain.Domain, previous)
-		}
-		keys[domain.DKIM.PrivateKey] = domain.Domain
-	}
-
-	// A key already here matches a record already published. Replacing it
-	// would break signing for that domain until somebody noticed.
-	third := store.Current().FindDomain("three.test")
-	if third.DKIM.PrivateKey != published.PrivateKey || third.DKIM.Selector != "older" {
-		t.Error("an existing signing key was replaced; that domain's mail would stop verifying")
-	}
-
-	// The generated ones have to be usable, and published where the domain
-	// says they are.
-	first := store.Current().FindDomain("one.test")
-	if first.DKIM.Selector != "teanode" {
-		t.Errorf("the generated key uses the selector %q, want the configured default", first.DKIM.Selector)
-	}
-	if _, err := first.DKIM.PublicKeyRecord(); err != nil {
-		t.Errorf("the generated key cannot be published: %s", err)
-	}
-
-	// And a second start leaves them alone, the same way it leaves the server
-	// secret alone.
-	if err := config.EnsureSecrets(store); err != nil {
-		t.Fatalf("failed on the second call: %s", err)
-	}
-	if store.Current().FindDomain("one.test").DKIM.PrivateKey != first.DKIM.PrivateKey {
-		t.Error("the signing key changed on the second start; the published record would stop matching")
-	}
-}

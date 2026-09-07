@@ -58,7 +58,7 @@ type GetMailOpensArguments struct {
 // that can be known. Read the warning on MailOpens before showing the number
 // to anybody.
 func (self *graph) GetMailOpens(ctx context.Context, arguments GetMailOpensArguments) (*MailOpens, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -145,7 +145,7 @@ func existingMails(mails []*models.Mail) []*models.Mail {
 }
 
 func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArguments) ([]*MailOpens, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 	if len(arguments.MailIDs) == 0 {

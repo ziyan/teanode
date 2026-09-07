@@ -9,6 +9,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
@@ -26,16 +27,26 @@ func deadVerifier(t *testing.T, configuration *config.Configuration) *verifier {
 	return verifier
 }
 
-func manyDomains() *config.Configuration {
+func manyDomains() (*config.Configuration, []*models.Domain) {
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
 	configuration.Server.MailServers = []string{"mx1.primary.test", "mx2.primary.test"}
 	configuration.Server.Secret = "a-secret-long-enough-to-sign-with"
-	configuration.Domains = []*config.Domain{
+	domains := []*models.Domain{
 		{ID: "primary.test", Domain: "primary.test", Subdomain: "mail"},
 		{ID: "other.test", Domain: "other.test", Subdomain: "mail"},
 	}
-	return configuration
+	return configuration, domains
+}
+
+// findDomain is the one named, out of a test's list.
+func findDomain(domains []*models.Domain, name string) *models.Domain {
+	for _, domain := range domains {
+		if domain.Domain == name {
+			return domain
+		}
+	}
+	return nil
 }
 
 // A domain that is not the one the server is named under publishes its own
@@ -44,9 +55,9 @@ func manyDomains() *config.Configuration {
 func TestADomainPublishesItsOwnMailServerNames(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	other := configuration.FindDomain("other.test")
-	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other)
+	configuration, domains := manyDomains()
+	other := findDomain(domains, "other.test")
+	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other, domains)
 
 	var mx, addresses []string
 	for _, record := range set.Records {
@@ -85,9 +96,9 @@ func TestADomainPublishesItsOwnMailServerNames(t *testing.T) {
 func TestTheDomainThatOwnsTheServerNameKeepsIt(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	primary := configuration.FindDomain("primary.test")
-	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, primary)
+	configuration, domains := manyDomains()
+	primary := findDomain(domains, "primary.test")
+	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, primary, domains)
 
 	var mx []string
 	for _, record := range set.Records {
@@ -107,9 +118,9 @@ func TestTheDomainThatOwnsTheServerNameKeepsIt(t *testing.T) {
 func TestTheBounceNameGetsItsOwnMailExchanger(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	other := configuration.FindDomain("other.test")
-	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other)
+	configuration, domains := manyDomains()
+	other := findDomain(domains, "other.test")
+	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other, domains)
 
 	// The MX rows only. An SPF record lives at this name too, and it is a TXT.
 	var found []*Record
@@ -140,8 +151,8 @@ func TestTheBounceNameGetsItsOwnMailExchanger(t *testing.T) {
 func TestTheOlderShapeStillCounts(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	hosts := mailHostsFor(configuration, configuration.FindDomain("other.test"))
+	configuration, domains := manyDomains()
+	hosts := mailHostsFor(configuration, findDomain(domains, "other.test"), domains)
 	if len(hosts) != 1 {
 		t.Fatalf("got %d mail hosts, want 1", len(hosts))
 	}
@@ -170,9 +181,9 @@ func TestTheOlderShapeStillCounts(t *testing.T) {
 func TestTheReportAddressIsOneTheServerAccepts(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	other := configuration.FindDomain("other.test")
-	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other)
+	configuration, domains := manyDomains()
+	other := findDomain(domains, "other.test")
+	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other, domains)
 
 	var dmarc *Record
 	for _, record := range set.Records {
@@ -202,7 +213,7 @@ func TestTheReportAddressIsOneTheServerAccepts(t *testing.T) {
 
 	// Stable, or every check would ask for a DNS record that differs from the
 	// one published last time.
-	again := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other)
+	again := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other, domains)
 	for _, record := range again.Records {
 		if record.Name == "_dmarc.other.test." && record.Expected != dmarc.Expected {
 			t.Errorf("the report address changed between two checks:\n  %s\n  %s", dmarc.Expected, record.Expected)
@@ -260,9 +271,9 @@ func TestAuthorisesSending(t *testing.T) {
 func TestTheReturnPathIsAskedForAnSPFRecord(t *testing.T) {
 	t.Parallel()
 
-	configuration := manyDomains()
-	other := configuration.FindDomain("other.test")
-	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other)
+	configuration, domains := manyDomains()
+	other := findDomain(domains, "other.test")
+	set := deadVerifier(t, configuration).resolveDomainRecords(context.Background(), configuration, other, domains)
 
 	var spf *Record
 	for _, record := range set.Records {

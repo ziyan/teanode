@@ -11,7 +11,6 @@ func servedConfigurationForOutgoing(t *testing.T) config.Store {
 	t.Helper()
 	configuration := config.Default()
 	configuration.Server.Name = "mail.primary.test"
-	configuration.Domains = []*config.Domain{{ID: "other.test", Domain: "other.test"}}
 	return config.NewMemoryStore(configuration)
 }
 

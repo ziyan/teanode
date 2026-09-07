@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/arc"
@@ -146,14 +146,15 @@ func (self *exchange) receivedBy(envelope *mailparse.Envelope) string {
 
 	if envelope != nil {
 		configuration := self.config.Current()
+		domains := self.allDomains()
 		name := ""
 		for _, recipient := range envelope.Recipients {
 			_, recipientDomain := mailparse.SplitAddress(recipient)
-			domain := configuration.FindDomain(recipientDomain)
+			domain := self.domainByName(recipientDomain)
 			if domain == nil {
 				return self.settings.Server
 			}
-			host := configuration.MailHostFor(domain)
+			host := configuration.MailHostFor(domain, domains)
 			if name != "" && !strings.EqualFold(name, host) {
 				return self.settings.Server
 			}
@@ -476,8 +477,22 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
 		}
 
+		// A failed alignment is refused only when the sender asked for that.
+		// DMARC's "p=none" asks for reports and no action, and "quarantine"
+		// asks for suspicion rather than refusal: a message under either is
+		// held to the same tests as one from a domain with no policy at all,
+		// with the failure recorded for the spam filter and the mailbox to
+		// act on. Refusing every failure regardless of policy bounced mail
+		// from every domain that had only begun to monitor — which, since
+		// the reserved example domains grew reject policies, was also every
+		// message a developer could send a local server.
+		enforced := dmarcResult
+		if dmarcResult == authres.ResultFail && dmarcPolicy != nil && dmarcPolicy.Policy() != dmarc.PolicyReject {
+			enforced = authres.ResultNone
+		}
+
 		// only error spf or dkim if dmarc didn't pass
-		switch dmarcResult {
+		switch enforced {
 		case authres.ResultPass:
 		case authres.ResultFail:
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
@@ -710,8 +725,8 @@ func (self *exchange) checkIp(ctx context.Context, ip net.IP, timeout time.Durat
 	return ""
 }
 
-func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
-	aliases := self.config.Current().MatchAliases(domain, recipientAlias)
+func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
+	aliases := self.matchingAliases(domain, recipientAlias)
 	if len(aliases) == 0 {
 		return nil, nil
 	}
@@ -726,12 +741,31 @@ func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string,
 		})
 		var deliver bool
 		switch alias.Kind {
-		case config.AliasKindEmail:
+		case models.AliasKindEmail:
 			deliver = alias.Email != ""
-		case config.AliasKindWebhook:
+		case models.AliasKindWebhook:
 			deliver = alias.Webhook != ""
-		case config.AliasKindMailServer:
+		case models.AliasKindMailServer:
 			deliver = alias.MailServer != nil && alias.MailServer.Host != ""
+		case models.AliasKindMailbox:
+			// Placed in the mailbox now, in this transaction; the delivery
+			// row says so and is not queued.
+			mailbox, err := tx.GetMailbox(alias.MailboxID)
+			if err != nil {
+				return nil, err
+			}
+			if mailbox == nil {
+				log.Warningf("alias %q delivers into mailbox %q, which no longer exists", alias.ID, alias.MailboxID)
+				continue
+			}
+			delivery, err := self.deliverToMailbox(tx, mailbox, alias, recipient, mail)
+			if err != nil {
+				return nil, err
+			}
+			if delivery != nil {
+				deliveries = append(deliveries, delivery)
+			}
+			continue
 		}
 		if deliver {
 			deliveries = append(deliveries, &models.Delivery{

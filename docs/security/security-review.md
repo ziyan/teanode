@@ -264,17 +264,53 @@ Authentication runs before routing. Before any account exists the path falls
 through to the dashboard and returns 200 with HTML, which is what made the
 deployment test's failures unreadable.
 
+### SEC-11 — Mailboxes, app passwords, IMAP and single sign-on (Informational)
+
+Added with the mailbox programme (`docs/planning/active/20260906-mailboxes.md`)
+and reviewed as it was built rather than after:
+
+- Every mailbox, folder and item operation in the API resolves the row and
+  refuses unless the caller owns the mailbox (`requireMailbox`,
+  `requireFolder`, `requireItems` in `internal/api/v1api/apigraph`); a
+  message's content is readable only by its mailbox's owner or a holder of
+  `mail:audit` over its domain (`access.CanReadMail`). Denial is "not found".
+- App passwords are twenty characters of a 32-letter alphabet, bcrypt-hashed,
+  shown once, revoked singly, and never the account password. IMAP and
+  submission sign-ins go through the same per-address rate limiter as
+  credentials, and every way of being wrong is one answer.
+- IMAP advertises `LOGINDISABLED` until the connection is encrypted; port
+  993 is TLS from the first byte. A submission signed in with an app password
+  is refused unless the sender is one of the mailbox's own addresses.
+- DMARC failures are refused only under a `reject` policy now; `none` and
+  `quarantine` are recorded, a quarantined message lands in Junk, and the
+  spam filter scores the failure. This is looser than before and what the
+  policy asks for.
+- Single sign-on uses the authorization-code flow with PKCE and a nonce, a
+  state signed with the server secret and expiring in ten minutes, an `https`
+  issuer whose discovery document must name itself, and an HTTP client that
+  refuses to connect to a private, loopback or link-local address whatever
+  name resolves to it. The client secret is write-only in the API. The
+  identity provider's groups only ever touch groups that name one.
+- The redirect URL a provider is given is built from `Host` and
+  `X-Forwarded-Proto`, so SEC-7 applies to it too.
+
+Open: the IMAP server does not advertise CONDSTORE or QRESYNC yet, so a
+client syncs a large folder the slow way; a draft's attachments go up
+base64 inside the save mutation rather than through a `PUT` path.
+
 ## 5. Controls verified
 
 These were examined and found sound. Where a test now exists, it is named.
 
 ### 5.1 It is not an open relay
 
-Carrying mail to a third party requires `envelope.CredentialID` or
-`envelope.DomainID` to be set (`internal/mx/exchange.go:126`). The SMTP server
-only ever sets `CredentialID`, and only from a completed `AUTH`
-(`internal/util/smtpd/smtpd.go:482`). `DomainID` is reachable only from the
-internal send path.
+Carrying mail to a third party requires `envelope.CredentialID`,
+`envelope.DomainID` or `envelope.MailboxID` to be set
+(`internal/mx/exchange.go`). The SMTP server sets `CredentialID` or
+`MailboxID`, and only from a completed `AUTH`; `DomainID` is reachable only
+from the internal send path. A `MailboxID` submission is further refused
+unless the sender is one of that mailbox's addresses and its owner holds
+`mail:send`.
 
 An unauthenticated message therefore goes to `handleIncoming`, which requires
 the recipient domain to be one the configuration serves and answers

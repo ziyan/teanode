@@ -5,6 +5,9 @@ import { Session, getSession, logout } from './api'
 import { LoginPage } from './pages/login'
 import { MailPage } from './pages/mail'
 import { MailDetailPage } from './pages/mailDetail'
+import { MailboxPage } from './pages/mailbox'
+import { MailboxSettingsPage } from './pages/mailboxSettings'
+import { MailboxComposePage } from './pages/mailboxCompose'
 import { QueuePage } from './pages/queue'
 import { ReportsPage } from './pages/reports'
 import { ReportDetailPage } from './pages/reportDetail'
@@ -29,6 +32,8 @@ import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
 import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
+import { SessionProvider, hasAnywhere } from './session'
+import { MailboxesProvider } from './mailboxes'
 
 export function App() {
   const { t } = useTranslation()
@@ -86,7 +91,7 @@ export function App() {
     return (
       <div className="auth-page">
         {corner}
-        <LoginPage onLoggedIn={refresh} passkeysEnabled={session.passkeysEnabled} />
+        <LoginPage onLoggedIn={refresh} passkeysEnabled={session.passkeysEnabled} ssoProviders={session.ssoProviders} />
       </div>
     )
   }
@@ -107,6 +112,8 @@ export function App() {
   // rather than the bar running across the top of both: the rail is the
   // product's own furniture, and the bar belongs to the page it is above.
   return (
+    <SessionProvider value={session}>
+    <MailboxesProvider>
     <BreadcrumbProvider>
       <div className="layout">
         <Sidebar
@@ -166,8 +173,24 @@ export function App() {
             <Breadcrumb />
             <PageHeading />
             <Routes>
-              <Route path="/" element={<Navigate to="/mail" replace />} />
-              <Route path="/mail" element={<MailPage />} />
+              {/* Home is the mailbox, for anyone who has one. The console
+                  and an account without mail:read land on the first
+                  management page instead. */}
+              <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/mail'} replace />} />
+              <Route path="/mailbox" element={<MailboxPage />} />
+              <Route path="/mailbox/compose" element={<MailboxComposePage />} />
+              <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
+              <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
+              <Route path="/mailbox/:folderId" element={<MailboxPage />} />
+              <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
+              {/* The operator's view of every message needs mail:audit;
+                  without it this is not a page, and the mailbox is. */}
+              <Route
+                path="/mail"
+                element={
+                  hasAnywhere(session.permissions, 'mail:audit') ? <MailPage /> : <Navigate to="/mailbox" replace />
+                }
+              />
               {/* Before the message route: "compose" is not a message
                   identifier, and the router should never treat it as one. */}
               <Route path="/mail/compose" element={<ComposePage />} />
@@ -226,6 +249,8 @@ export function App() {
         </div>
       </div>
     </BreadcrumbProvider>
+    </MailboxesProvider>
+    </SessionProvider>
   )
 }
 

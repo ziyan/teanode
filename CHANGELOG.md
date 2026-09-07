@@ -6,6 +6,41 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Mailboxes. Every account has one, the web UI opens on it, and an alias of
+  kind "mailbox" delivers into it by reference: a message is stored once,
+  however many folders hold it, and kept for as long as any does. Folders,
+  flags, search, rules with a dry run, reply, reply all, forward, drafts, a
+  signature, and an out-of-office reply with the protections that keep it
+  from answering machines, lists or another mailbox that is also away.
+- IMAP, on port 993 and with STARTTLS on 143, so a mail program reads the
+  same mailbox; and app passwords, one per device, which sign in to IMAP and
+  to submission on port 587 with the mailbox's own addresses.
+- Roles, groups and permissions. The management pages — every message, the
+  queue, reports, domains, the server — are a mode behind "Manage" and show
+  only what the signed-in person may do. Administrator, Operator and Member
+  come seeded and all of it is editable; a group can be tied to a domain so
+  its permissions reach only that far. Every change to a user, group, role,
+  domain, alias, credential or mailbox is in the audit log.
+- Single sign-on through an OpenID Connect provider, with a group's "IdP
+  group" following the directory.
+- `teanode-server user rescue`, which makes an account an administrator when
+  nobody can.
+
+### Changed
+
+- Domains, aliases, credentials and users are rows managed one at a time
+  rather than a configuration document written back whole; the
+  `configuration` table holds settings only.
+- A DMARC failure is refused only when the sender's policy says `reject`;
+  under `none` or `quarantine` the message is accepted, scored, and — in a
+  mailbox — filed in Junk when quarantined. Every reserved example domain
+  publishes `reject` now, which had made a local server refuse every test
+  message.
+- `listen.imap` and `listen.imaps` are settings, editable on the server page,
+  since the environment only describes a first run.
+
 ## [0.8.1] - 2026-09-07
 
 ### Fixed

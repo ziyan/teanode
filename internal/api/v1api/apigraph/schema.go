@@ -13,6 +13,15 @@ type Query interface {
 	DomainQuery
 	AliasQuery
 	UserQuery
+	RoleQuery
+	GroupQuery
+	AuditQuery
+	MailboxQuery
+	MailboxComposeQuery
+	MailboxRulesQuery
+	MailboxAppPasswordQuery
+	MailProgramQuery
+	MailboxDirectoryQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery
@@ -36,6 +45,11 @@ type Mutation interface {
 	DomainMutation
 	AliasMutation
 	UserMutation
+	RoleMutation
+	GroupMutation
+	MailboxMutation
+	MailboxComposeMutation
+	MailboxAppPasswordMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation
