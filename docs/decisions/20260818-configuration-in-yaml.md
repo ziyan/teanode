@@ -19,7 +19,7 @@ could receive a single message.
 
 All configuration lives in one YAML file, by default
 `/opt/teanode/teanode.yaml`: server identity, listeners, TLS, database
-connection, SMTP behaviour, the DKIM key, domains with their aliases and
+connection, SMTP behavior, the DKIM key, domains with their aliases and
 credentials, dashboard users, and every optional integration.
 
 The file is the single source of truth and is writable from both ends. An

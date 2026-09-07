@@ -76,23 +76,23 @@ export function PasskeyNudge({ username }: { username: string }) {
     if (dismissed || onPasskeysPage || !isPasskeySupported()) {
       return
     }
-    let cancelled = false
+    let canceled = false
     graphql<Response>(PASSKEYS).then(
       (answer) => {
-        if (!cancelled) {
+        if (!canceled) {
           setWanted(answer.GetPasskeyPolicy.enabled && answer.ListPasskeys.length === 0)
         }
       },
       () => {
         // An older server without the query, or one restarting. No nudge is
         // the right answer to either.
-        if (!cancelled) {
+        if (!canceled) {
           setWanted(false)
         }
       },
     )
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [dismissed, onPasskeysPage, username])
 

@@ -1,23 +1,23 @@
 /* One stylesheet, no framework. The dashboard is a handful of tables and
    forms; a component library would be more code than the application.
 
-   THE LOOK: quiet chrome, colour only where it means something.
+   THE LOOK: quiet chrome, color only where it means something.
 
-   Almost nothing here is coloured. The rail is a warm grey against a white
+   Almost nothing here is colored. The rail is a warm gray against a white
    page, the selected row is a raised pill rather than a highlight, and what
-   you press is near-black. Colour is kept for the few things that carry state
+   you press is near-black. Color is kept for the few things that carry state
    — whether a DNS record is published, whether a delivery failed, whether a
    session is the one you are reading this in — so that when something is
-   coloured it is worth looking at.
+   colored it is worth looking at.
 
    It inverts rather than dims for dark. A near-black button on white becomes
    a near-white button on black; the rail stays one step darker than the page
    in both, so the same shape reads the same way round.
 
    The TeaNode mark keeps its green. It is the one piece of brand here, and
-   chrome that competed with it would make it just another coloured thing —
+   chrome that competed with it would make it just another colored thing —
    which is what an accent taken from the logo did: every button, link and
-   active row was the brand colour, so none of them meant anything. */
+   active row was the brand color, so none of them meant anything. */
 
 :root {
   --background: #ffffff;
@@ -41,7 +41,7 @@
   --text: #18181b;
   --muted: #6f6f76;
   /* What you press. Near-black rather than true black, which reads as heavy.
-     This is the accent, and it is deliberately not a colour. */
+     This is the accent, and it is deliberately not a color. */
   --accent: #1f1f22;
   --accent-text: #ffffff;
   --accent-hover: #000000;
@@ -98,7 +98,7 @@
      one; a static panel is an outline and a background, never a shadow.
 
      The one exception is the selected pill in the rail, which lifts by a
-     single pixel — enough to read as raised off the grey without becoming a
+     single pixel — enough to read as raised off the gray without becoming a
      second floating thing. */
   --shadow-floating: 0 8px 28px rgb(0 0 0 / 22%);
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 6%);
@@ -154,7 +154,7 @@
 
 * { box-sizing: border-box; }
 
-/* A scrollbar that does not draw a grey slab down the side of a quiet page. */
+/* A scrollbar that does not draw a gray slab down the side of a quiet page. */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
@@ -181,7 +181,7 @@ body {
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* A link in running text is the text colour, underlined. The accent is what
+/* A link in running text is the text color, underlined. The accent is what
    you press, and painting every link with it turns a page of prose into a
    page of buttons. */
 a { color: var(--text); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
@@ -499,8 +499,8 @@ td a:hover {
 }
 
 /* A group label above a grid or a list. */
-/* The small grey label over a group, in the rail and over a section of
-   settings. Not uppercase: at this size the weight and the colour do the
+/* The small gray label over a group, in the rail and over a section of
+   settings. Not uppercase: at this size the weight and the color do the
    separating, and capitals only make it harder to read. */
 .overline {
   margin: 0 0 var(--space-2);
@@ -514,7 +514,7 @@ td a:hover {
    right. */
 .page-actions {
   display: flex;
-  /* Top, not centre: the heading is above and the action belongs level with
+  /* Top, not center: the heading is above and the action belongs level with
      the first line of the intro, not halfway down a paragraph. */
   align-items: flex-start;
   gap: var(--space-4);
@@ -615,7 +615,7 @@ a.tile:hover {
 
 /* The border, and nothing else. Hover used to recolour the number as well,
    which meant a green "20 accepted" turned near-black under the pointer and a
-   red one turned near-black too — the colour that was carrying the meaning
+   red one turned near-black too — the color that was carrying the meaning
    disappeared exactly when somebody reached for it. */
 a.tile:hover strong {
   color: var(--accent);
@@ -643,12 +643,12 @@ a.tile:hover strong {
   font-variant-numeric: tabular-nums;
 }
 
-/* No colour on the number. It said "this many were accepted" in green and
+/* No color on the number. It said "this many were accepted" in green and
    "this many were rejected" in red, which reads as a verdict on the number —
    but a rejection count is not bad news, it is the count of a thing that
    happened, and zero of them is not good news either. The word beside it says
-   which it is. What is left coloured is the warning mark on a tile that
-   actually wants attention, which is the one place the colour means
+   which it is. What is left colored is the warning mark on a tile that
+   actually wants attention, which is the one place the color means
    something. */
 
 /* The unit belongs to the number but is not part of it, so it stays the
@@ -787,7 +787,7 @@ a.tile:hover strong {
 }
 
 /* Collapsed, it keeps the icons and drops the words. Wide enough for a
-   comfortable target around a centred icon and nothing more. */
+   comfortable target around a centered icon and nothing more. */
 .sidebar.collapsed {
   width: 60px;
   flex: 0 0 60px;
@@ -844,7 +844,7 @@ a.tile:hover strong {
 .sidebar nav a:hover .sidebar-icon {
   color: var(--text);
 }
-/* The row you are on: a raised pill rather than a wash of colour. It says
+/* The row you are on: a raised pill rather than a wash of color. It says
    "you are here" without spending the one accent the page has on navigation,
    and it still reads as selected when the rail is collapsed to icons. */
 .sidebar nav a.active {
@@ -990,7 +990,7 @@ tr:has(.icon-button) > td {
 /* Alternating rows, lighter than the page rather than darker, so a row can be
    followed across a wide table. */
 /* No zebra stripe. A stripe is a second way of saying what the rules under
-   each row already say, and on a page this quiet it reads as two greys
+   each row already say, and on a page this quiet it reads as two grays
    arguing. Rows are told apart by their height and their rule. */
 
 .table-surface tbody tr:hover > td {
@@ -1085,7 +1085,7 @@ td.truncate {
 }
 /* A table of rules, not a grid of boxes. The head is a quiet label in the
    same case as everything else — uppercase at this size is harder to read and
-   buys nothing that weight and colour do not already give. */
+   buys nothing that weight and color do not already give. */
 th { color: var(--muted); font-weight: 550; font-size: 13px; letter-spacing: 0; }
 tbody tr:hover { background: var(--sidebar-hover); }
 td.shrink { width: 1%; white-space: nowrap; }
@@ -1204,7 +1204,7 @@ td .cell-note {
 
 /* A chip is the size of the word in it. Neutral by default — most of them
    say what something is, not that anything is wrong — and tinted only for the
-   three that carry state. The tint is the colour at low opacity rather than a
+   three that carry state. The tint is the color at low opacity rather than a
    second palette, so it follows the theme without a dark variant of its own. */
 .tag {
   display: inline-block;
@@ -1415,7 +1415,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   min-height: 100vh;
   min-height: 100dvh;
   padding: var(--space-6);
-  /* The rail's grey rather than the page's white, so the card is a card. On
+  /* The rail's gray rather than the page's white, so the card is a card. On
      white it was a white rectangle held together by a hairline, and the eye
      had nothing to land on. */
   background: var(--rail);
@@ -1432,7 +1432,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 
 /* What you have reached, before it asks you for anything. This page has no
    navigation, no heading and nothing else on it, so the mark and the name are
-   the only things that say where you are — centred and given room, rather
+   the only things that say where you are — centered and given room, rather
    than tucked into the corner above the first field. */
 .auth-header {
   text-align: center;
@@ -1537,7 +1537,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 }
 
 /* On a line of its own, and selectable as one thing. Set through the middle
-   of a centred sentence it wrapped in the middle of the command. */
+   of a centered sentence it wrapped in the middle of the command. */
 .auth-command {
   display: block;
   margin-top: var(--space-2);
@@ -1561,7 +1561,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 
 /* --- a suggestion above the page ------------------------------------------
    One row: an icon, a sentence, and the two answers to it. A card rather than
-   a coloured band, and the icon in the accent rather than a warning colour,
+   a colored band, and the icon in the accent rather than a warning color,
    because nothing is wrong: it is an offer, and it should look like one. On
    a phone the answers drop under the sentence rather than squeezing it. */
 .nudge {
@@ -1686,8 +1686,8 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
     display: none;
   }
 }
-/* The indicator is the text colour rather than the accent. Switching a
-   section of the page is not an action to be pressed, and colouring it spends
+/* The indicator is the text color rather than the accent. Switching a
+   section of the page is not an action to be pressed, and coloring it spends
    the one emphasis the page has on something you are already looking at. */
 .tabs button.active { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
 
@@ -1703,7 +1703,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  /* The surface colour, not white: the document inside paints its own
+  /* The surface color, not white: the document inside paints its own
      ground, but this shows at the rounded corners, before the document has
      loaded, and wherever a message leaves its body transparent — and in the
      dark theme a white element behind a dark document was a thin bright
@@ -1915,7 +1915,7 @@ pre.message-text {
 */
 
 /* Where the toggle sits when there is no sidebar to put it in: the login and
-   first-run pages, which are a centred card on an empty page. */
+   first-run pages, which are a centered card on an empty page. */
 .page-corner {
   display: flex;
   align-items: center;
@@ -2283,7 +2283,7 @@ body,
 }
 
 /* One line the reader is meant to stop at, rather than the running commentary
-   that .muted carries. Neutral by default; .good and .bad colour the edge for
+   that .muted carries. Neutral by default; .good and .bad color the edge for
    something that went right or something to be careful about. */
 .notice {
   border-left: 3px solid var(--border);
@@ -2371,14 +2371,14 @@ body,
 }
 
 /* Collapsed to icons there is no room to read one, and a label with no room
-   is a grey smear above the icons. */
+   is a gray smear above the icons. */
 .sidebar.collapsed .sidebar-group-label {
   display: none;
 }
 
 /* The way back out of settings mode. A row like any other, but it changes
    what the rail is showing rather than where in it you are, so it reads in
-   the muted colour and does not take the selected pill. */
+   the muted color and does not take the selected pill. */
 .sidebar-back {
   display: flex;
   align-items: center;
@@ -2709,7 +2709,7 @@ label.checkbox input {
 }
 
 /* --- highlighted markup ---------------------------------------------------
-   Five colours and no more. A highlighter that gives every token type its own
+   Five colors and no more. A highlighter that gives every token type its own
    hue is a rainbow to read past; what a reader needs here is to tell the
    structure from the content, so the tags recede and the values stand out.
    The palette follows the page's, light and dark, so this looks like the rest
@@ -2877,7 +2877,7 @@ label.checkbox input {
 }
 
 /* The languages a template or layout is written in, beside its name: chips
-   on the name's own line, centred on it. */
+   on the name's own line, centered on it. */
 .languages {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2965,7 +2965,7 @@ a.button.primary:hover {
 }
 
 /* A select draws itself a little taller than an input with the same padding,
-   which put the caption of this field two pixels above its neighbour's. */
+   which put the caption of this field two pixels above its neighbor's. */
 .address-input > input,
 .address-input > select {
   height: 36px;
@@ -3182,7 +3182,7 @@ a.button.primary:hover {
 }
 
 /* The gap below the mark belongs to the row now, or the button beside it would
-   be centred against the mark's margin box and sit a few pixels high. */
+   be centered against the mark's margin box and sit a few pixels high. */
 .sidebar-top .sidebar-brand {
   margin-bottom: 0;
 }
@@ -3281,7 +3281,7 @@ a.button.primary:hover {
    spam filter under a message's verdict; also for choosing how a message is
    rendered in the dark.
 
-   Drawn in the Tag palette — the same tint, text colour and
+   Drawn in the Tag palette — the same tint, text color and
    35% border the verdict tags above it use — so the pressed segment reads as
    "this message is tagged not-spam" rather than as a filled button, and so it
    follows both themes through the same tokens the tags do. A solid red or
@@ -3336,11 +3336,11 @@ a.button.primary:hover {
 /* The reader's choice to darken a message that paints its own light ground.
    The frame element is inverted here, as one composited layer the page owns;
    the message's pictures are inverted back inside the document so they keep
-   their colours. */
+   their colors. */
 .message-frame.darkened {
   filter: invert(1) hue-rotate(180deg);
   /* The filter inverts the element's own border with everything else; a
-     border in the text colour inverts back to roughly the border colour. */
+     border in the text color inverts back to roughly the border color. */
   border-color: var(--text);
 }
 

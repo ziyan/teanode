@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 //
 //   allow-same-origin   so the height can be measured, as above.
 //
-//   allow-popups        so a link opens at all. The sanitiser puts
+//   allow-popups        so a link opens at all. The sanitizer puts
 //                       target="_blank" on every link it keeps, and without
 //                       this the browser silently drops the click — which is
 //                       what it used to do.
@@ -48,16 +48,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // gets a one-line frame, not a tall box of nothing under it.
 const MINIMUM_HEIGHT = 36
 
-// The padding buildDocument puts above and below the message, which the
-// wrapper's own height does not include.
-const BODY_PADDING = 6
+// How many times the height may change for one document. Content settles
+// after a handful of reflows; a height still changing after this many is a
+// measurement chasing itself, and it stops here.
+const CHANGE_BUDGET = 40
 
 // darkened inverts the frame from out here rather than from inside its
 // document. A filter on the iframe element is one composited layer the
 // parent owns; the same filter on a large div inside the document made the
 // renderer so slow that a screenshot of the page timed out. And toggling it
 // out here changes nothing in the document, so the frame is not reloaded and
-// re-measured for a choice about colour.
+// re-measured for a choice about color.
 export function MessageFrame({
   document: source,
   title,
@@ -74,7 +75,7 @@ export function MessageFrame({
   onGroundMeasured?: (alreadyDark: boolean) => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
-  const lastWidth = useRef(0)
+  const changes = useRef(0)
   const [height, setHeight] = useState(MINIMUM_HEIGHT)
   const [alreadyDark, setAlreadyDark] = useState(false)
   const measuredGround = useRef<string | null>(null)
@@ -96,9 +97,7 @@ export function MessageFrame({
     // The wrapper scrolls sideways for a message wider than the frame — a
     // fixed-width table on a phone — and its scrollbar is part of its
     // height, which offsetHeight counts and scrollHeight does not.
-    const measured = Math.max(content.scrollHeight, content.offsetHeight) + 2 * BODY_PADDING
-    const wanted = Math.max(measured, MINIMUM_HEIGHT)
-    const width = element.clientWidth
+    const wanted = Math.max(content.scrollHeight, content.offsetHeight, MINIMUM_HEIGHT)
 
     setHeight((previous) => {
       // Sub-pixel churn from a reflow is not worth a re-render, and
@@ -106,14 +105,13 @@ export function MessageFrame({
       if (Math.abs(previous - wanted) <= 1) {
         return previous
       }
-      // Only ever taller, unless the frame itself changed width. Content
-      // grows as images arrive; it does not legitimately shrink while the
-      // frame stays the same size, so a shrink is the signature of a
-      // measurement chasing its own tail.
-      if (wanted < previous && width === lastWidth.current) {
+      // Taller as images arrive, shorter as a table finds its width on a
+      // phone: both are real. What is not real is a height that never
+      // settles, so a document gets a budget of changes and no more.
+      if (changes.current >= CHANGE_BUDGET) {
         return previous
       }
-      lastWidth.current = width
+      changes.current += 1
       return wanted
     })
   }, [])
@@ -121,7 +119,7 @@ export function MessageFrame({
   // A new message starts over: the height of the last one is not a floor for
   // this one.
   useEffect(() => {
-    lastWidth.current = 0
+    changes.current = 0
     setHeight(MINIMUM_HEIGHT)
     setAlreadyDark(false)
   }, [source])
@@ -154,11 +152,16 @@ export function MessageFrame({
         setAlreadyDark(dark)
         onGroundMeasured?.(dark)
       }
-      // Measured on the next frame, not inside the observer's own
-      // callback: setting the frame's height there reflows the content
-      // the observer is watching, which the browser reports as a loop.
-      observer = new ResizeObserver(() => window.requestAnimationFrame(measure))
+      // The observer belongs to the frame's own window: one made here
+      // watches an element in another document and is never told of its
+      // changes, which left a newsletter at the height of its first,
+      // narrowest layout. Measured on the next frame rather than inside
+      // the callback, since setting the height reflows what is watched,
+      // which the browser would otherwise report as a loop.
+      const Observer = inner.defaultView?.ResizeObserver ?? ResizeObserver
+      observer = new Observer(() => window.requestAnimationFrame(measure))
       observer.observe(content)
+      observer.observe(inner.body)
     }
 
     element.addEventListener('load', onLoad)
@@ -188,7 +191,7 @@ export function MessageFrame({
 
 // paintsDarkGround says whether the message's own painted ground is dark:
 // the largest painted area, by computed background, is on the dark side.
-// bgcolor attributes and inline styles both arrive as computed colours, so
+// bgcolor attributes and inline styles both arrive as computed colors, so
 // the table-built newsletters of the world are measured the same way.
 function paintsDarkGround(content: HTMLElement): boolean {
   const areas = new Map<string, number>()

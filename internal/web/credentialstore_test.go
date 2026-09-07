@@ -15,7 +15,7 @@ import (
 
 // memoryStore is a CredentialStore in a map.
 //
-// The authenticator's own behaviour — what a wrong secret does, when an
+// The authenticator's own behavior — what a wrong secret does, when an
 // expired session stops working, what logging out ends — is worth testing
 // without a PostgreSQL in the way. That the same operations behave against a
 // real one is covered in internal/db.
@@ -238,7 +238,7 @@ func (self *memoryStore) ScavengeTokens(now time.Time) (int64, error) {
 
 // The user table, in the same map. The authenticator looks accounts up on
 // every request and writes two of them — claiming the server, and a password
-// change — through a transaction; the fake honours exactly that much, and
+// change — through a transaction; the fake honors exactly that much, and
 // what seeding the roles and groups needs, and panics on anything else so
 // that a new dependency is noticed rather than silently absent.
 

@@ -84,7 +84,7 @@ func TestSchemaBuilds(t *testing.T) {
 	}
 
 	// A message's attachments carry bytes, which travel as base64 through
-	// the Data scalar. If the generator ever stops recognising []byte the
+	// the Data scalar. If the generator ever stops recognizing []byte the
 	// field would silently become a list of Any.
 	message := schema.Type("MessageParametersInput").(*graphql.InputObject)
 	attachments := message.Fields()["attachments"].Type.String()

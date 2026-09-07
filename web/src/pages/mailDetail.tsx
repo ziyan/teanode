@@ -490,7 +490,7 @@ export function MessageContent({
             {t('mailDetail.text')}
           </button>
           {/* The markup behind the rendered view. What the frame shows has
-              been sanitised and rewritten; when it looks wrong, this is the
+              been sanitized and rewritten; when it looks wrong, this is the
               only way to see what it is actually rendering. */}
           {hasHtml && (
             <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
@@ -554,7 +554,7 @@ export function MessageContent({
               </div>
             )}
             {/* Rendered in a sandbox that permits no scripts, on top of
-                the server-side sanitising and a policy of default-src
+                the server-side sanitizing and a policy of default-src
                 'none' inside the frame. It is mail from a stranger. */}
             <MessageFrame
               document={document}
@@ -567,7 +567,7 @@ export function MessageContent({
 
         {tab === 'text' && <pre className="message-text">{content.text}</pre>}
 
-        {/* The sanitised markup, not the original: it is what the frame
+        {/* The sanitized markup, not the original: it is what the frame
             above is rendering, which is the thing being explained. The
             untouched original is in the .eml behind Download. */}
         {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
@@ -688,6 +688,28 @@ function Field({ label, mono, children }: { label: string; mono?: boolean; child
 // The previous version was a line of tags reading "SPF pass DKIM pass DMARC
 // pass", which is enough to know nothing went wrong and never enough to work
 // out why something did.
+// The sentence for an SPF result, by what the domain's record said about
+// the address: allowed, refused, doubted, silent, absent, or unreadable.
+function spfDetailKey(result?: string | null): Key {
+  switch ((result ?? '').toLowerCase()) {
+    case 'pass':
+      return 'mailDetail.spfDetailPass'
+    case 'fail':
+      return 'mailDetail.spfDetailFail'
+    case 'softfail':
+      return 'mailDetail.spfDetailSoftfail'
+    case 'neutral':
+      return 'mailDetail.spfDetailNeutral'
+    case 'none':
+      return 'mailDetail.spfDetailNone'
+    case 'temperror':
+    case 'permerror':
+      return 'mailDetail.spfDetailError'
+    default:
+      return 'mailDetail.spfDetail'
+  }
+}
+
 function Authentication({ results }: { results: AuthenticationResults }) {
   const { t } = useTranslation()
   const checks: Check[] = []
@@ -698,8 +720,8 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       verdict: results.spf.result || t('common.none'),
       tone: toneFor(results.spf.result),
       // SPF is a question about one pair: may this address send for this
-      // domain. Saying which pair is most of the answer.
-      detail: t('mailDetail.spfDetail', {
+      // domain. Saying which pair, and what the domain said, is the answer.
+      detail: t(spfDetailKey(results.spf.result), {
         domain: results.spf.domain ?? '—',
         ip: results.spf.ip ?? '—',
       }),
@@ -1011,21 +1033,21 @@ function alignmentMode(t: (key: Key) => string, mode: string): string {
   return mode === 's' ? t('mailDetail.alignmentStrict') : t('mailDetail.alignmentRelaxed')
 }
 
-// buildDocument wraps the sanitised HTML in a complete document for the frame.
+// buildDocument wraps the sanitized HTML in a complete document for the frame.
 //
 // The content security policy is the second layer: even if something got past
-// the server-side sanitiser, it cannot execute or call home from here. When
+// the server-side sanitizer, it cannot execute or call home from here. When
 // remote images are not being loaded, img-src is restricted to data URLs so a
 // tracking pixel cannot fire.
 const DARKENED_KEY = 'teanode.mail.darkened'
 
-// buildDocument writes the whole document the frame shows, colours included.
+// buildDocument writes the whole document the frame shows, colors included.
 //
 // The frame cannot read the dashboard's tokens — it is a separate document
-// built from a string — so the two colours are written here as literals,
+// built from a string — so the two colors are written here as literals,
 // taken from the dark palette at the top of style.css so they match rather
 // than approximate. In the dark theme the ground is dark and the text light,
-// which a plain message inherits; a message that sets its own colours keeps
+// which a plain message inherits; a message that sets its own colors keeps
 // them, since a default is exactly what it overrides.
 //
 // "darkened" is the reader's choice to invert the message. The inversion
@@ -1056,7 +1078,7 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
-<style>#teanode-content{overflow-x:auto;overflow-y:hidden}body{margin:0;padding:6px 8px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
+<style>#teanode-content{overflow-x:auto;overflow-y:hidden}body{margin:0;padding:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
     darkGround ? '#f4f4f5' : '#16161a'
   };background:${darkGround ? '#1a1a1d' : '#fff'};word-wrap:break-word${
     darkGround ? ';color-scheme:dark' : ''

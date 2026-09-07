@@ -138,7 +138,7 @@ func (self *exchange) pattern(alias *models.Alias) *regexp.Regexp {
 		return cached.(*regexp.Regexp)
 	}
 	// Matching is case insensitive: the local part of an address is not
-	// required to be, and a recipient who capitalises their own address must
+	// required to be, and a recipient who capitalizes their own address must
 	// still reach the alias they were given.
 	compiled, err := regexp.Compile("(?i)" + alias.Pattern)
 	if err != nil {

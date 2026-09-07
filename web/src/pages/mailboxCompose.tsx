@@ -212,13 +212,13 @@ export function MailboxComposePage() {
     if (!view) {
       return
     }
-    let cancelled = false
+    let canceled = false
     const load = async () => {
       try {
         if (draftOf) {
           const response = await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftOf })
           const draft = response.GetMailboxDraft
-          if (cancelled) {
+          if (canceled) {
             return
           }
           const draftItem = (await graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId: draftOf })).GetMailboxItem
@@ -248,7 +248,7 @@ export function MailboxComposePage() {
           const content = original
             ? (await graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId: original.id })).GetMailContent
             : null
-          if (cancelled) {
+          if (canceled) {
             return
           }
           const originalFrom = original?.from || original?.sender || ''
@@ -299,18 +299,18 @@ export function MailboxComposePage() {
           }
         }
       } catch (failure) {
-        if (!cancelled) {
+        if (!canceled) {
           setLoadError(failure)
         }
       } finally {
-        if (!cancelled) {
+        if (!canceled) {
           setLoading(false)
         }
       }
     }
     void load()
     return () => {
-      cancelled = true
+      canceled = true
     }
     // Once, for the message named in the address bar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -801,7 +801,7 @@ export function MailboxComposePage() {
                 )}
               </li>
             ))}
-            {/* Cancelling is for while the bytes are still going up. Once
+            {/* Canceling is for while the bytes are still going up. Once
                 they have all arrived the server is writing the draft, and
                 an abort then would leave a draft the page knows nothing
                 about. */}

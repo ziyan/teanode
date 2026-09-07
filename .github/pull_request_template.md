@@ -16,7 +16,7 @@ to upgrade. Say what changed for them, not what changed in the code.
 Keep the heading that fits and delete the rest:
 
   ### Added       something new (a minor release)
-  ### Changed     existing behaviour is different (a patch)
+  ### Changed     existing behavior is different (a patch)
   ### Deprecated  still there, going away (a patch)
   ### Removed     gone, and an upgrade may break somebody (a minor release)
   ### Fixed       something that was wrong is not any more (a patch)

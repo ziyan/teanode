@@ -139,7 +139,7 @@ endpoint. `Render` chooses a translation by locale and fills a template in;
 `mx` as outgoing mail from the domain.
 
 **`internal/models`** — plain structs shared between `db`, `api` and `mx`. No
-behaviour beyond enum helpers.
+behavior beyond enum helpers.
 
 **`internal/util`** — protocol implementations, each independently testable and
 free of project-specific assumptions:

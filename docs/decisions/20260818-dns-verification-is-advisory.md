@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-08-18
-- Deciders: Claude, within the owner's instruction to keep existing behaviour
+- Deciders: Claude, within the owner's instruction to keep existing behavior
 
 ## Context
 

@@ -70,7 +70,7 @@ export function uploadFiles(
       }
     }
     request.onerror = () => reject(new Error('The upload failed.'))
-    request.onabort = () => reject(new DOMException('The upload was cancelled.', 'AbortError'))
+    request.onabort = () => reject(new DOMException('The upload was canceled.', 'AbortError'))
     request.open(method, url)
     request.setRequestHeader('Accept', 'application/json')
     request.send(body)

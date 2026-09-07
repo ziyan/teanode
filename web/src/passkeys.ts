@@ -19,7 +19,7 @@ export function isPasskeySupported(): boolean {
 }
 
 // getAssertion runs the sign-in ceremony and returns what the server needs to
-// verify, serialised.
+// verify, serialized.
 export async function getAssertion(options: string): Promise<string> {
   const parsed = JSON.parse(options)
   const request = PublicKeyCredential.parseRequestOptionsFromJSON(parsed.publicKey ?? parsed)
@@ -41,12 +41,12 @@ export async function createCredential(options: string): Promise<string> {
   return JSON.stringify((credential as PublicKeyCredential).toJSON())
 }
 
-// cancelled reports whether a ceremony ended because the person dismissed the
+// canceled reports whether a ceremony ended because the person dismissed the
 // browser's prompt rather than because anything went wrong.
 //
 // Worth telling apart: somebody who closed the dialog does not want to be told
 // their passkey failed, and an error banner for a deliberate cancel is the
 // kind of thing that makes people stop trusting the banner.
-export function cancelled(error: unknown): boolean {
+export function canceled(error: unknown): boolean {
   return error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')
 }

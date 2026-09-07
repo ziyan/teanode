@@ -239,7 +239,7 @@ func (self *exchange) indexMail(tx db.Transaction, mail *models.Mail, held bool)
 
 // scavengeRetention is the grace a message gets once nothing holds it: the
 // spool retention, which is what the age-based sweep used before there were
-// mailboxes, so today's behaviour is the degenerate case.
+// mailboxes, so today's behavior is the degenerate case.
 func (self *exchange) scavengeRetention() time.Duration {
 	return self.config.Current().Storage.SpoolRetention.Duration()
 }

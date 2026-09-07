@@ -40,7 +40,7 @@ type Configuration struct {
 	// Where mail metadata is stored
 	Database Database `yaml:"database"`
 
-	// SMTP behaviour shared by the incoming and outgoing listeners
+	// SMTP behavior shared by the incoming and outgoing listeners
 	SMTP SMTP `yaml:"smtp"`
 
 	// The key used to sign outgoing mail
@@ -372,7 +372,7 @@ type Database struct {
 	LogQueries bool `yaml:"logQueries"`
 }
 
-// SMTP holds behaviour shared by both SMTP listeners.
+// SMTP holds behavior shared by both SMTP listeners.
 type SMTP struct {
 	// TrustedSenders are domains whose mail skips the greylisting delay
 	// applied to unknown senders.
@@ -483,7 +483,7 @@ type Relay struct {
 	Security RelaySecurity `yaml:"security"`
 
 	// Username and Password authenticate to it. Leave both empty for a relay
-	// that authorises by address instead.
+	// that authorizes by address instead.
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty" secret:"true"`
 }

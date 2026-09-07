@@ -24,7 +24,7 @@ const (
 	autoReplyQuiet = 7 * 24 * time.Hour
 
 	// autoReplyHourlyLimit is the most replies a mailbox sends in an hour, a
-	// last defence against whatever the other rules did not catch.
+	// last defense against whatever the other rules did not catch.
 	autoReplyHourlyLimit = 50
 )
 

@@ -47,7 +47,7 @@ const maximumSize = 1 << 20
 // operator's own domain, so anything the browser might treat as a document
 // would run with that origin. SVG is the reason the list is written out rather
 // than being "anything beginning image/" — an SVG is a document that can carry
-// script, and refusing one format is cheaper than being sure about sanitising
+// script, and refusing one format is cheaper than being sure about sanitizing
 // it.
 var displayable = map[string]bool{
 	"image/png":  true,

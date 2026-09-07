@@ -23,7 +23,7 @@ type AuditEvent struct {
 	// when read, never stored, so a renamed user reads by their current name.
 	ActorLabel string `json:"actorLabel,omitempty"`
 
-	// TokenID is the session or API token that authorised the request; never
+	// TokenID is the session or API token that authorized the request; never
 	// its secret.
 	TokenID  string `json:"tokenId,omitempty"`
 	SourceIP string `json:"sourceIp,omitempty"`

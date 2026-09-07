@@ -1,5 +1,5 @@
 // The TeaNode mark. Kept from the original design; the greens here are where
-// the interface's accent colour comes from.
+// the interface's accent color comes from.
 export function Logo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox='0 0 512 512'>

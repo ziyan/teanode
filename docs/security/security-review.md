@@ -250,9 +250,9 @@ everything else now refuses an anonymous caller whether or not an account
 exists. `teanode user add --offline` writes the configuration file directly and
 is unaffected, which is the path the cutover runbook uses.
 
-`TestEveryOperationAuthorises` already asserted that every resolver
-authorises, and its own comment claimed each one "refuses when there is no
-operator" — which was not true until this change. The behaviour now has a test
+`TestEveryOperationAuthorizes` already asserted that every resolver
+authorizes, and its own comment claimed each one "refuses when there is no
+operator" — which was not true until this change. The behavior now has a test
 of its own beside it.
 
 This was found because a check in the deployment harness asserted an empty
@@ -266,7 +266,7 @@ deployment test's failures unreadable.
 
 ### SEC-11 — Mailboxes, app passwords, IMAP and single sign-on (Informational)
 
-Added with the mailbox programme (`docs/planning/active/20260906-mailboxes.md`)
+Added with the mailbox program (`docs/planning/active/20260906-mailboxes.md`)
 and reviewed as it was built rather than after:
 
 - Every mailbox, folder and item operation in the API resolves the row and
@@ -342,7 +342,7 @@ to one local part sending as another.
 ### 5.2 The aggregation pipeline cannot carry SQL
 
 Field names reach the statement as identifiers, which cannot be
-parameterised, so the only defence is that a name must be one the table
+parameterised, so the only defense is that a name must be one the table
 offered — a map lookup in `Columns.resolve`. Values always go to a
 placeholder. Sort direction is a literal `ASC` or `DESC` chosen by a branch,
 never caller text, and is validated against a closed set besides.
@@ -415,5 +415,5 @@ stripped.
 No fuzzing of the MIME and header parsers, which is where a mail server's
 remaining memory and complexity bugs usually live. No review of the DKIM, ARC
 and SPF implementations against their specifications beyond the existing
-tests. No penetration test against a running instance. No dependency licence
+tests. No penetration test against a running instance. No dependency license
 audit. Each is worth doing before this is recommended to anybody else.

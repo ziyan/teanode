@@ -4,7 +4,7 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises &
 Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to
 date as work proceeds. It is maintained in accordance with `~/.claude/PLAN.md`.
 
-This is a programme rather than a feature: it is too large to implement from
+This is a program rather than a feature: it is too large to implement from
 one document. It fixes the design — above all the data model — and divides the
 work into milestones that are each independently shippable. Each milestone
 becomes its own ExecPlan when it starts, incorporating this one by reference.
@@ -19,8 +19,8 @@ their mail here*. There is one kind of account — an operator who can do
 everything — and the mail a message became is a delivery record, not a thing
 in anyone's possession.
 
-After this programme, this server is somewhere mail *lives*. A person signs in
-— with a password, a passkey, or their organisation's identity provider — and
+After this program, this server is somewhere mail *lives*. A person signs in
+— with a password, a passkey, or their organization's identity provider — and
 has an inbox. Messages for their addresses land in it, without being copied.
 They read, reply, reply to all, forward, file into folders they made, search,
 archive, delete, and set rules so the inbox sorts itself. They read the same
@@ -42,7 +42,7 @@ Read these before designing anything further; the plan relies on them.
 **Mail is stored once.** `internal/models/mail.go` is a received or sent
 message — envelope, headers, authentication results, spam score — as a row in
 the `mail` table, with the raw message in the spool (`internal/storage`, a
-directory with an optional S3 mirror). Everything in this programme
+directory with an optional S3 mirror). Everything in this program
 *references* that row and that stored message. Nothing copies them. The one
 place that copies today — a submission to a local address in
 `internal/mx/exchange_outgoing.go` creates a second `mail` row per recipient
@@ -58,7 +58,7 @@ row in a folder.
 holds username, name, password hash and a notification email. Every user is an
 operator: `requireOperator` in `internal/api/v1api/apigraph/authorize.go` asks
 only whether somebody is signed in. Sessions, API tokens and passkeys already
-work and are untouched by this plan; the authorisation layer above them is
+work and are untouched by this plan; the authorization layer above them is
 what changes.
 
 **Retention prunes by age.** `internal/storage/filesystem.go` sweeps messages
@@ -83,7 +83,7 @@ is watching over IMAP — goes through the database.
 ## Several instances, one mailbox
 
 This server runs as several instances against one PostgreSQL, and this
-programme is judged against that on every milestone. A person's mailbox is
+program is judged against that on every milestone. A person's mailbox is
 one thing however many instances serve it; a message arriving at instance A
 is readable over IMAP from instance B a moment later; and no instance holds
 anything in memory that another one would need. Concretely:
@@ -152,7 +152,7 @@ administrators reach a domain created tomorrow without anyone listing it.
 
 **IMAP** is the protocol mail programs read a mailbox with; each folder is an
 IMAP mailbox, each item a message with a **UID** that never changes while it
-stays in that folder. **SSO** here means signing in through an organisation's
+stays in that folder. **SSO** here means signing in through an organization's
 identity provider using **OIDC**; the provider says who the person is and
 which of its groups they are in, and this server maps those onto its own.
 
@@ -472,7 +472,7 @@ to renumber.
         "created_at"    timestamptz  NOT NULL,
         "actor_kind"    varchar(8)   NOT NULL,   -- "user", "system" (a sweep, SSO reconciling a group), "rescue" (teanode-server on the host)
         "actor_user_id" varchar(32),             -- the signed-in user, when actor_kind is "user"; kept after the user is deleted
-        "token_id"      varchar(32),             -- the session or API token that authorised the request; never its secret
+        "token_id"      varchar(32),             -- the session or API token that authorized the request; never its secret
         "source_ip"     varchar(45)  NOT NULL DEFAULT '',
         "instance"      varchar(64)  NOT NULL DEFAULT '',  -- which instance served the request
         "resource_type" varchar(32)  NOT NULL,   -- user, group, role, domain, mailbox, mailbox_address, mailbox_app_password, token, passkey, setting
@@ -921,7 +921,7 @@ once it has been **unreferenced for longer than `storage.spoolRetention`**.
 The clock is `mail.unreferenced_at`: null while any `mailbox_item` holds the
 message; set, in the same transaction, when the last item is deleted; set on
 arrival for a message no mailbox took, which is every message today, so
-today's behaviour is the degenerate case. Creating an item clears it again.
+today's behavior is the degenerate case. Creating an item clears it again.
 A message that sat in a folder for two years and was then deleted is kept
 for a further thirty days, not zero — long enough to notice.
 
@@ -1028,7 +1028,7 @@ lessons of every autoresponder loop since:
   the same sender at the same moment take the row lock in turn and only
   one of them sends.
 - The mailbox has sent **fewer than fifty automatic replies in the last
-  hour**. A last defence, counted from the same column, against something
+  hour**. A last defense, counted from the same column, against something
   none of the above caught.
 
 The reply itself is built so that it cannot start a loop even if the other
@@ -1115,7 +1115,7 @@ and the `identity` table and `disabled_at` column are shaped for it now.
 Configuration, in the database like everything else, under `sso.providers`:
 a name, the discovery URL, client id and secret, the claim that carries group
 names, and whether a user who arrives with no account is created. Sign-in is
-the authorisation-code flow with PKCE, a signed and expiring `state`, an
+the authorization-code flow with PKCE, a signed and expiring `state`, an
 allowlist of issuer hosts, and a guard against redirecting or fetching to a
 private address. The web UI's sign-in page shows a button per provider
 beside the password and passkey forms.
@@ -1159,7 +1159,7 @@ that holds only unseen rows, so it costs what it should — proportional to
 the unread, not the mailbox. It is resolved on `MailboxFolder.Unread` when
 the tree is listed, and refreshes the way the rest of the web UI already
 does: on the interval the query hook keeps, and at once when the tab
-becomes visible again. No push channel in this programme; when IMAP `IDLE`
+becomes visible again. No push channel in this program; when IMAP `IDLE`
 exists the same notification could drive one.
 
 **Three places for settings, and a sidebar with two modes.** Settings are
@@ -1231,7 +1231,7 @@ the milestone that decides on the beta dependency. Acceptance: a phone's mail
 app reads and flags the inbox, is woken when a message arrives at another
 instance, and a message sent from it appears in the web UI's Sent folder.
 
-**Six — the organisation's identity.** OIDC sign-in with the flow above,
+**Six — the organization's identity.** OIDC sign-in with the flow above,
 identity rows, just-in-time users, group reconciliation. Acceptance: a user
 who exists only in the provider signs in for the first time, has a mailbox,
 and holds the roles their provider groups map to; removing them from a
@@ -1246,7 +1246,7 @@ second message from them within the week gets none; a message from a list,
 a bounce, or another mailbox on this server with its own out-of-office on
 gets none; the reply sent has an empty `Return-Path`.
 
-**Not in this programme**, by decision: per-mailbox quotas, notifications
+**Not in this program**, by decision: per-mailbox quotas, notifications
 outside the web UI, SCIM provisioning, and JMAP. Each is its own small
 plan if it is ever wanted; nothing here makes any of them harder.
 
@@ -1369,16 +1369,16 @@ Decisions are the repository owner's.
   supersedes and deletes the previous one, with no retention grace. No
   structured draft. Attachments are uploaded once through their own path
   and copied part-to-part between saves, never re-sent from the browser.
-  Rationale: one representation and one parser, and the same behaviour a
+  Rationale: one representation and one parser, and the same behavior a
   mail program has over IMAP, so the two never disagree about a draft.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: out-of-office replies are built, with the full set of loop and
   list protections; unread counts in the tree, the rail and the tab title
   are built. Per-mailbox quotas, notifications, SCIM provisioning and JMAP
-  are not in this programme.
+  are not in this program.
   Rationale: the first two are what every person with an inbox reaches for
-  in the first week; the rest are asked for by an organisation, later, if
+  in the first week; the rest are asked for by an organization, later, if
   at all.
   Date/Author: 2026-09-06, Ziyan
 
@@ -1422,7 +1422,7 @@ Decisions are the repository owner's.
   a state that the host operator can repair in one command.
   Date/Author: 2026-09-06, Ziyan
 
-- Decision: shared inboxes are out of scope. This programme is per-user
+- Decision: shared inboxes are out of scope. This program is per-user
   mailboxes only.
   Rationale: focus. Nothing here forecloses sharing later.
   Date/Author: 2026-09-06, Ziyan
@@ -1520,7 +1520,7 @@ record.
       IMAP and SMTP submission alike, and a submission is refused unless
       the sender is one of the mailbox's addresses. Verified with a
       scripted client on the dev server. CONDSTORE and QRESYNC are not
-      advertised yet: modseqs are kept and CHANGEDSINCE is honoured, but
+      advertised yet: modseqs are kept and CHANGEDSINCE is honored, but
       the library's fetch writer does not emit MODSEQ, so the capabilities
       stay off until it does or the server is written from the RFCs.
 - [x] Milestone six (2026-09-06): `internal/sso` runs the OpenID Connect
@@ -1572,7 +1572,7 @@ record.
       would never take, an open redirect through `return`, a draft whose
       attachment indexes the browser guessed — were fixed in 3ce9830 and
       the fix deployed to `root@server`. Accepted as is: quoted HTML in a
-      reply carries the sanitised copy's placeholders.
+      reply carries the sanitized copy's placeholders.
 
 - [x] After the review (2026-09-07): search over the whole mailbox with
       sender, recipient, subject, date and attachment filters, attachment
@@ -1698,7 +1698,7 @@ What was not built, and why:
   with every part, and a bar per file in the browser. The base64 path is
   gone from the mailbox mutations.
 - CONDSTORE and QRESYNC are kept in the database — modseqs, an expunge log,
-  `CHANGEDSINCE` honoured — and not advertised, because the library's fetch
+  `CHANGEDSINCE` honored — and not advertised, because the library's fetch
   writer does not emit `MODSEQ`. Turning them on is the next IMAP step,
   with the library or without it.
 - A round trip through a real identity provider. The start redirects with

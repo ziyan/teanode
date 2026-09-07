@@ -332,6 +332,12 @@ export function Sidebar({
                   </>
                 )
               })()}
+              <NavLink to="/mailbox/contacts" title={collapsed ? t('nav.contacts') : undefined}>
+                <span className="sidebar-icon">
+                  <UserIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.contacts')}</span>
+              </NavLink>
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
                 <span className="sidebar-icon">
                   <SettingsIcon />
@@ -344,7 +350,7 @@ export function Sidebar({
           {groups.map((group, index) => (
             <div className="sidebar-group" key={index}>
               {/* Hidden when the rail is collapsed to icons: a label with no
-                  room to be read is a grey smear above the icons. */}
+                  room to be read is a gray smear above the icons. */}
               {group.label && <div className="sidebar-group-label sidebar-label">{t(group.label)}</div>}
               {group.items.map((item) => {
                 const label = t(item.label)

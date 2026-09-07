@@ -80,7 +80,7 @@ export function FormDialog({
 // silently says yes.
 //
 // Destructive by default, because most of these take something away. Signing
-// out does not, and colouring it as though it did makes every red button here
+// out does not, and coloring it as though it did makes every red button here
 // mean less.
 export function ConfirmDialog({
   title,

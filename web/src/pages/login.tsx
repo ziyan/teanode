@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { beginPasskeyAssertion, finishPasskeyAssertion, login } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
 import { KeyIcon } from '../components/icons'
-import { cancelled, getAssertion, isPasskeySupported } from '../passkeys'
+import { canceled, getAssertion, isPasskeySupported } from '../passkeys'
 import { Key, useTranslation } from '../i18n/i18n'
 
 // What a failed single sign-on came back with, as a code the server chose:
@@ -70,7 +70,7 @@ export function LoginPage({
     } catch (caught) {
       // Somebody who dismissed the browser's prompt does not need to be told
       // their passkey failed.
-      if (!cancelled(caught)) {
+      if (!canceled(caught)) {
         setError(caught instanceof Error ? caught.message : t('login.passkeyFailed'))
       }
     } finally {

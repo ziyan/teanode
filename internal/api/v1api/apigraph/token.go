@@ -145,7 +145,7 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 	}
 	name := strings.TrimSpace(arguments.Name)
 	if name == "" {
-		return nil, fmt.Errorf("apigraph: a name is required, so that a token can be recognised later")
+		return nil, fmt.Errorf("apigraph: a name is required, so that a token can be recognized later")
 	}
 
 	var lifetime time.Duration

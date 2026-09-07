@@ -1,4 +1,4 @@
-// English is the source of truth. The other catalogues are typed against this
+// English is the source of truth. The other catalogs are typed against this
 // one, so a key added here without being translated fails the build.
 //
 // Keys are named for where they appear, not for what they say, so that
@@ -197,7 +197,13 @@ export const en = {
   'mailDetail.messageId': 'Message-ID',
   'mailDetail.html': 'HTML',
   'mailDetail.noChecks': 'Nothing was checked. Outgoing mail is not authenticated against itself.',
-  'mailDetail.spfDetail': '{domain} authorises {ip} to send for it',
+  'mailDetail.spfDetail': '{domain} was asked about {ip}',
+  'mailDetail.spfDetailPass': '{domain} authorizes {ip} to send for it',
+  'mailDetail.spfDetailFail': '{domain} does not authorize {ip} to send for it',
+  'mailDetail.spfDetailSoftfail': '{domain} does not list {ip}, but asks that mail from it be accepted anyway',
+  'mailDetail.spfDetailNeutral': '{domain} says nothing either way about {ip}',
+  'mailDetail.spfDetailNone': '{domain} publishes no SPF record, so {ip} could not be checked',
+  'mailDetail.spfDetailError': '{domain}’s SPF record could not be read, so {ip} could not be checked',
   'mailDetail.dkimIdentifier': 'signed for {identifier}',
   'mailDetail.alignmentDkim': 'DKIM alignment {mode}',
   'mailDetail.alignmentSpf': 'SPF alignment {mode}',
@@ -1073,6 +1079,13 @@ export const en = {
   'nav.manageTooltip': 'Mail, queue, reports, domains and this server',
   'nav.backToMailbox': 'Back to mailbox',
   'nav.mailboxSettings': 'Mailbox settings',
+  'nav.contacts': 'Contacts',
+  'contacts.name': 'Name',
+  'contacts.address': 'Address',
+  'contacts.messages': 'Messages',
+  'contacts.lastSeen': 'Last seen',
+  'contacts.countOne': '{count} contact',
+  'contacts.count': '{count} contacts',
   'nav.chooseMailbox': 'Mailbox',
   'mailbox.folder.inbox': 'Inbox',
   'mailbox.folder.sent': 'Sent',
@@ -1290,7 +1303,6 @@ export const en = {
   'mailbox.unpin': 'Unpin',
   'nav.folders': 'Folders',
   'mailbox.nothingStarred': 'Nothing is starred. Flag a message and it appears here, whichever folder it is in.',
-  'mailboxSettings.tabContacts': 'Contacts',
   'mailboxSettings.contacts': 'Contacts',
   'mailboxSettings.contactsHint': 'Everyone who has written to this mailbox, and anyone you add. They complete addresses when you write, and a rule can ask whether a sender is one of them.',
   'mailboxSettings.contactsFilter': 'Find by address or name',

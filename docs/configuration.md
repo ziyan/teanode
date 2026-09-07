@@ -51,7 +51,7 @@ binary has to be found again by a start from any working directory.
 
 It is a variable rather than a setting for one reason: a staged binary has to
 be found and run before anything opens the database, because this program
-reverts migrations it does not recognise and an old binary that reached the
+reverts migrations it does not recognize and an old binary that reached the
 database first would undo the new one's schema. The settings are in the
 database. This cannot be.
 
@@ -64,7 +64,7 @@ start rather than run.
 
 **`TEANODE_ALLOW_MIGRATION_REVERT`** — permits an older binary to undo
 migrations a newer one applied. Off by default, and the default is the
-interesting half: a start that finds migrations it does not recognise refuses
+interesting half: a start that finds migrations it does not recognize refuses
 to run rather than reverting them, because reverting drops the columns they
 added and everything in those columns, and the three ordinary ways to arrive
 there are all accidents. See `docs/coding/database-migrations.md`. Set it to
@@ -546,7 +546,7 @@ whoever answered. `none` does not insist — STARTTLS is still used when it is
 offered — and is refused outright when a password is set.
 
 **`username`** and **`password`** — What it authenticates as. Leave both empty
-for a relay that authorises by address.
+for a relay that authorizes by address.
 
 ### `dkim`
 

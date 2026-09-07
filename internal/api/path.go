@@ -84,8 +84,8 @@ const ()
 //
 // The GraphQL endpoint is on the list, which looks alarming and is not:
 // logging in happens there, so a caller has to be able to reach it before
-// being anybody. Authorisation is the resolvers' job — every one of them
-// refuses a caller who is not an operator, and TestEveryOperationAuthorises
+// being anybody. Authorization is the resolvers' job — every one of them
+// refuses a caller who is not an operator, and TestEveryOperationAuthorizes
 // fails if a new one forgets. The middleware was never the thing keeping the
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.

@@ -63,7 +63,7 @@ func stageBinary(t *testing.T) string {
 	return directory
 }
 
-// Reverting is what Migrate does with a migration it does not recognise, and
+// Reverting is what Migrate does with a migration it does not recognize, and
 // it cannot tell an accident from an intention. So it stops and asks.
 func TestMigrateRefusesToRevertUnasked(t *testing.T) {
 	database := &fakeMigrator{unknown: []string{"0042_something_new"}}

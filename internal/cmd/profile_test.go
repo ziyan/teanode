@@ -71,7 +71,7 @@ func TestProfilesRoundTrip(t *testing.T) {
 
 	// Found by address too, however the address was spelled.
 	if found := loaded.FindByURL("mail.example.com/"); found == nil || found.Name != "mail.example.com" {
-		t.Errorf("FindByURL did not normalise: %+v", found)
+		t.Errorf("FindByURL did not normalize: %+v", found)
 	}
 
 	// Removing the active profile promotes another rather than leaving the

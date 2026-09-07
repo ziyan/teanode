@@ -267,7 +267,7 @@ func TestAuthorisesSending(t *testing.T) {
 
 // The row itself, and the regression that made it necessary: the SPF record
 // lived on an alias, the alias was removed, and nothing anywhere reported that
-// the sending address had stopped being authorised.
+// the sending address had stopped being authorized.
 func TestTheReturnPathIsAskedForAnSPFRecord(t *testing.T) {
 	t.Parallel()
 

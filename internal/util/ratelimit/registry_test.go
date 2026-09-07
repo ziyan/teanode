@@ -10,7 +10,7 @@ import (
 )
 
 // A burst up to the capacity is allowed and the next attempt is not, which is
-// the whole behaviour an authentication limit needs.
+// the whole behavior an authentication limit needs.
 func TestABurstIsAllowedAndThenItIsNot(t *testing.T) {
 	t.Parallel()
 	registry := ratelimit.NewRegistry(1, 3, 1000, time.Minute)

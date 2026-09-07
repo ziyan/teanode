@@ -60,7 +60,7 @@ An `enabled: false` that still dials a socket is a bug.
 
 ## Tests
 
-Test the behaviour that matters, not the implementation. The valuable tests in
+Test the behavior that matters, not the implementation. The valuable tests in
 this repository are the ones that feed a real message through a parser and
 assert the verdict, and the ones that assert a failure mode: a rejected update
 leaves the file untouched, a missing challenge refuses the handshake.

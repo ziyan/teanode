@@ -45,7 +45,7 @@ func TestTheSmallestConfigurationIsValid(t *testing.T) {
 	}
 }
 
-// TestReverseDNSIsRequiredByDefault pins the default on. It is a spam defence
+// TestReverseDNSIsRequiredByDefault pins the default on. It is a spam defense
 // that costs one DNS lookup, and a Go bool defaults to false, so nothing but
 // this test stands between a refactor and every deployment quietly accepting
 // mail from hosts with no reverse name.

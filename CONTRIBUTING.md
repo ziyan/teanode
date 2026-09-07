@@ -22,9 +22,9 @@ never blocked; run it anyway if you have it.
 These are not negotiable, and `make lint` checks most of them.
 
 - **Acronyms follow the first letter.** If the identifier starts with a
-  capital, acronyms are fully capitalised: `ReferenceURI`, `SessionID`,
+  capital, acronyms are fully capitalized: `ReferenceURI`, `SessionID`,
   `GetFTPID`, `DKIMResult`. If it starts lowercase, only the first letter of
-  the acronym is capitalised: `referenceUri`, `sessionId`, `getFtpId`. Register
+  the acronym is capitalized: `referenceUri`, `sessionId`, `getFtpId`. Register
   a new acronym in the lint configuration with a comment saying what it stands
   for.
 - **Do not abbreviate.** `command`, not `cmd`. `response`, not `resp`.
@@ -98,7 +98,7 @@ now with no memory of the conversation that produced it.
   without a cloud account".
 - Body explains why the change was needed and what it costs. Describing what
   the diff does is redundant; the diff is right there.
-- Note behaviour that changed for an operator, and anything that has to be done
+- Note behavior that changed for an operator, and anything that has to be done
   by hand when upgrading.
 
 ## Changelog
@@ -127,7 +127,7 @@ the pull requests takes `GITHUB_REPOSITORY` and a token, which the workflow
 passes it.
 
 A major version is never inferred. Deciding that a change breaks whoever is
-running this is a judgement, so it is the "Major release" workflow, run by
+running this is a judgment, so it is the "Major release" workflow, run by
 hand, with the word MAJOR typed into it.
 
 ## Decisions

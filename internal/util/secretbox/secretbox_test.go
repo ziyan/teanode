@@ -40,7 +40,7 @@ func TestSealAndOpen(t *testing.T) {
 		t.Fatal("the sealed value still contains the plaintext")
 	}
 	if !secretbox.Sealed(sealed) {
-		t.Error("Sealed should recognise what Seal wrote")
+		t.Error("Sealed should recognize what Seal wrote")
 	}
 
 	opened, err := box.Open(sealed)
@@ -118,7 +118,7 @@ func TestAnAlteredValueIsRefused(t *testing.T) {
 		// Shorter than a nonce.
 		"sealed:AAAA",
 		// Plaintext, which is a value written before the column was sealed
-		// and is the caller's to recognise rather than this package's to
+		// and is the caller's to recognize rather than this package's to
 		// hand back as though it had decrypted something.
 		header,
 		"",

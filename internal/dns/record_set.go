@@ -105,8 +105,8 @@ type Record struct {
 
 	// Optional marks a record worth publishing that nothing breaks without.
 	// An AAAA is the case this exists for: a host reachable over IPv4 alone is
-	// a complete, working mail server, and colouring its missing AAAA the same
-	// red as a missing MX teaches an operator to ignore the colour.
+	// a complete, working mail server, and coloring its missing AAAA the same
+	// red as a missing MX teaches an operator to ignore the color.
 	Optional bool `json:"optional,omitempty"`
 
 	// Purpose says, in one sentence, what breaks without this record.
@@ -315,7 +315,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	//
 	// There was no row for this at all until an alias that happened to carry
 	// one was removed, and nothing anywhere said the sending address had
-	// stopped being authorised.
+	// stopped being authorized.
 	spfName := dnsName(domain.Hostname())
 	sender := &Record{
 		Type:     "TXT",
@@ -644,7 +644,7 @@ func authorisesSending(record string) bool {
 	}
 	for _, field := range fields[1:] {
 		// The trailing all, whatever its qualifier, is what happens when
-		// nothing else matched — it is never what authorises a sender.
+		// nothing else matched — it is never what authorizes a sender.
 		if strings.EqualFold(strings.TrimLeft(field, "+-~?"), "all") {
 			continue
 		}

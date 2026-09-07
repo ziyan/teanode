@@ -40,12 +40,12 @@ as the built-in filter.
 It is deliberately **not** presented as SpamAssassin, and must not be
 described as SpamAssassin, an implementation of it, or compatible with it, in
 the user interface, the documentation or the configuration. It is a different
-program with different behaviour.
+program with different behavior.
 
 That naming choice does not remove an attribution obligation. Milestone four
 consumes rule files published by the Apache SpamAssassin project. Those files
 are licensed under the Apache License 2.0, which permits use and
-redistribution but requires that the licence and attribution notices travel
+redistribution but requires that the license and attribution notices travel
 with them. If and when that milestone ships, a `NOTICE` file at the repository
 root must name the Apache SpamAssassin project as the source of the rule data,
 and `docs/configuration.md` must say where the rules come from. This is a
@@ -177,7 +177,7 @@ Milestones two and three do introduce genuinely new work — DNS block list
 queries and classifier lookups — because those facts do not exist yet. Even
 there the rule holds in spirit: the block list checks take the connecting
 address from the envelope rather than re-deriving it, and the classifier
-tokenises the already-parsed body.
+tokenizes the already-parsed body.
 
 ## What the research showed, and why the plan is shaped this way
 
@@ -354,7 +354,7 @@ both engines fill the same field.
 
 **No migration is needed for this**, which is worth understanding before
 reaching for one. `AuthenticationResults` is not a set of columns; it is
-serialised to a single `jsonb` column, declared in `internal/db/database_mail.go`
+serialized to a single `jsonb` column, declared in `internal/db/database_mail.go`
 as:
 
     AuthenticationResults []byte `gorm:"type:jsonb"`
@@ -496,7 +496,7 @@ switch between the two engines with one setting.
 
 The work is in three parts.
 
-First, generalise the seam. In `internal/util/spamc`, the `Client` interface
+First, generalize the seam. In `internal/util/spamc`, the `Client` interface
 is the right shape but the wrong name for a thing that is no longer only a
 SpamAssassin client. Create `internal/spamfilter` defining:
 
@@ -549,7 +549,7 @@ For this milestone the strainer implements only the signal checks, each
 returning a symbol and a weight. Every one of them is a read of something
 already computed — the right-hand column names where the value comes from, and
 implementing any of these with a fresh lookup or a fresh verification is a
-defect, not an optimisation. Take the default weights from the table below,
+defect, not an optimization. Take the default weights from the table below,
 which are chosen to be conservative: no single signal should condemn a message
 on its own, given the threshold of 5.0.
 
@@ -701,7 +701,7 @@ Two warnings to put in `docs/configuration.md`. First, the public lists have
 terms of use: they are free for low volume and require a paid subscription
 above it, and a server behind a large shared resolver may be refused service
 entirely. Second, the default list set must be chosen so that a server which
-cannot reach them degrades to milestone one's behaviour rather than failing.
+cannot reach them degrades to milestone one's behavior rather than failing.
 
 Acceptance. Unit tests with a fake resolver: an address the fake reports as
 listed scores the list's weight and gains a symbol naming the zone; an address
@@ -727,13 +727,13 @@ Storage is the two tables specified in "Data model" above — `spam_token` and
 `docs/coding/database-migrations.md` exactly, including the reverse SQL that
 file requires. Token counts, never message contents. Because they live in
 PostgreSQL, every instance shares one trained classifier, which is the only
-correct behaviour when instances share a mail stream.
+correct behavior when instances share a mail stream.
 
 Training needs a way to say "this is spam". The dashboard's message view gains
 two actions, and the API gains the mutation behind them. Marking a message
 also re-scores nothing retroactively; it teaches the classifier for next time.
 
-Acceptance. A test that trains the classifier on a small labelled corpus
+Acceptance. A test that trains the classifier on a small labeled corpus
 committed under `internal/strainer/testdata` and asserts that held-out spam
 scores above the threshold and held-out legitimate mail below it. In the
 dashboard, mark several messages as spam, then deliver a similar one and see
@@ -794,7 +794,7 @@ than a promise.
 Acceptance. A test that loads a small rule file from `testdata`, evaluates a
 message against it, and asserts the expected symbols and score, including one
 meta rule and one rule that fails to compile and is skipped. A test proving
-the evaluation deadline is honoured. On a real server with a channel
+the evaluation deadline is honored. On a real server with a channel
 configured, the dashboard shows the rule count and the last update time.
 
 ## Milestone five: retiring the dependency
@@ -848,7 +848,7 @@ scores incoming mail, and the dashboard shows named symbols for the checks
 that fired.
 
 Setting `antispam.engine` to `spamd` and pointing `antispam.spamd.host` at a
-daemon restores the previous behaviour exactly, and an existing configuration
+daemon restores the previous behavior exactly, and an existing configuration
 that names a host keeps working across the upgrade with no edit.
 
 With the daemon configured but unreachable, mail is still delivered, and the
@@ -1074,7 +1074,7 @@ and why, so a later reader can see the reasoning rather than guess at it.
 
 - Decision: never present the built-in filter as SpamAssassin in the
   interface, the configuration or the documentation.
-  Rationale: it is a different program with different behaviour, and claiming
+  Rationale: it is a different program with different behavior, and claiming
   otherwise sets an expectation it will not meet.
   Date/Author: 2026-09-05, Ziyan
 
@@ -1179,7 +1179,7 @@ rather than assume.
   Rationale: those rules carry about 2% of the weight, and running a
   backtracking engine over attacker-chosen text with attacker-reachable
   patterns is a denial-of-service surface. The trade looks bad in both
-  directions, but it is a judgement call about accuracy against risk.
+  directions, but it is a judgment call about accuracy against risk.
 
 - Proposed: ship milestone four with `rules.enabled` false.
   Rationale: an upgrade should not silently begin downloading and executing

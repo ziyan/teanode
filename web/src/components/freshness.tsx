@@ -46,7 +46,7 @@ export function useFreshness(): Freshness {
 
   useEffect(() => {
     let loaded = ''
-    let cancelled = false
+    let canceled = false
 
     async function look() {
       let answer: { GetServerStatus?: { commit: string }; GetUpgrade?: { available: boolean } }
@@ -60,7 +60,7 @@ export function useFreshness(): Freshness {
         void caught
         return
       }
-      if (cancelled) {
+      if (canceled) {
         return
       }
 
@@ -98,7 +98,7 @@ export function useFreshness(): Freshness {
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
-      cancelled = true
+      canceled = true
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }

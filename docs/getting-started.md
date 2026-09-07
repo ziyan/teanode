@@ -199,8 +199,8 @@ The Inbox and **Starred**, every flagged message wherever it sits, stay at
 the top of the rail; hover any other folder for a pin that puts it up beside
 them. The search box looks in the open folder, or in the whole mailbox with
 sender, recipient, subject, date and attachment filters behind **More**.
-Contacts, kept from whoever you write to, live on a tab of Mailbox settings
-next to the folders and rules.
+Contacts, kept from whoever you write to, have a page of their own in the
+rail, above Mailbox settings.
 
 ## 6. Give the mailbox an address
 

@@ -254,7 +254,7 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 			var answer string
 			_, _ = fmt.Scanln(&answer)
 			if answer != "yes" {
-				return fmt.Errorf("cancelled")
+				return fmt.Errorf("canceled")
 			}
 		}
 		for _, user := range users {

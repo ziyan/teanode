@@ -1,5 +1,5 @@
 // Package models holds the structs shared between the database, the API and
-// the mail path. They carry no behaviour beyond enum helpers.
+// the mail path. They carry no behavior beyond enum helpers.
 package models
 
 import (

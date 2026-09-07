@@ -213,7 +213,7 @@ function describeExpiry(token: Token, t: Translate): string {
 }
 
 // An expired token is spent rather than broken, and a token that never expires
-// is a standing risk worth a colour that says so quietly.
+// is a standing risk worth a color that says so quietly.
 function expiryTone(token: Token): 'good' | 'bad' | 'warn' | undefined {
   if (!token.expires) {
     return 'warn'

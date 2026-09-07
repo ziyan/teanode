@@ -19,8 +19,8 @@ import (
 //
 // These are also the only operations that do not require an operator: you
 // cannot be one before logging in, and a server with no account has nobody who
-// could be. Every other resolver authorises itself, which
-// TestEveryOperationAuthorises enforces.
+// could be. Every other resolver authorizes itself, which
+// TestEveryOperationAuthorizes enforces.
 
 type SessionQuery interface {
 	// Get who this request is authenticated as, and whether this server has

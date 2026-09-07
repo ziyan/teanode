@@ -58,7 +58,7 @@ type Bootstrap struct {
 	// Here rather than in the configuration, which is where every other path
 	// this server uses lives, because of when it is needed. A staged binary
 	// has to be found and run before anything opens the database — this
-	// program reverts migrations it does not recognise, so an old binary that
+	// program reverts migrations it does not recognize, so an old binary that
 	// reached the database first would undo the new one's schema — and the
 	// configuration is in the database. So it comes from the environment, or
 	// from the data directory the environment names, or from nowhere, in
@@ -214,7 +214,7 @@ func (self *Bootstrap) loadDatabase() error {
 }
 
 // parseDatabaseUrl reads a postgres:// URL. Only the parts TeaNode connects
-// with are taken; an unrecognised query parameter is refused rather than
+// with are taken; an unrecognized query parameter is refused rather than
 // dropped, because a connection option that appears to be set and is not is
 // the kind of thing that is discovered in production — which is the whole
 // reason sslrootcert had to be added here rather than merely passed through.

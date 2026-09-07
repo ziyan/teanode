@@ -11,9 +11,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Every resolver authorises itself, because the GraphQL endpoint is reachable
+// Every resolver authorizes itself, because the GraphQL endpoint is reachable
 // without a session: logging in happens at the same endpoint as everything
-// else. TestEveryOperationAuthorises reads the source and fails when one does
+// else. TestEveryOperationAuthorizes reads the source and fails when one does
 // not call one of the helpers here.
 //
 // The rule for a refusal is "not found", never "forbidden": "you may not touch

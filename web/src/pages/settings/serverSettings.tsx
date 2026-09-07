@@ -29,7 +29,7 @@ import {
 
 // A list typed as one field. Comma separated is how the configuration file
 // writes these and how the mail server names field on a domain already asks
-// for them, so it is what an operator has already learnt here.
+// for them, so it is what an operator has already learned here.
 function toList(value: string): string[] {
   return value
     .split(',')

@@ -105,7 +105,7 @@ export function LayoutEditorPage() {
     if (!request.form) {
       return
     }
-    let cancelled = false
+    let canceled = false
     graphql<{ RenderLayout: Rendered }>(RENDER, {
       domainId,
       layoutParameters: request.form,
@@ -113,18 +113,18 @@ export function LayoutEditorPage() {
       variables: request.samples,
     })
       .then((result) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRendered(result.RenderLayout)
           setRenderProblem(null)
         }
       })
       .catch((caught) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRenderProblem(caught instanceof Error ? caught.message : String(caught))
         }
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [domainId, request])
 

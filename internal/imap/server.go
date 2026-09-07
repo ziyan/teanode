@@ -326,7 +326,7 @@ func noSuchFolder() error {
 	return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeNonExistent, Text: "No such folder"}
 }
 
-// specialUse is the attribute a client uses to recognise a system folder.
+// specialUse is the attribute a client uses to recognize a system folder.
 func specialUse(kind models.MailboxFolderKind) (goimap.MailboxAttr, bool) {
 	switch kind {
 	case models.MailboxFolderKindSent:

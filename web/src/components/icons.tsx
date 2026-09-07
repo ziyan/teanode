@@ -3,7 +3,7 @@
 //
 // All of them are 24×24 outline icons on the same 2px stroke, so they sit
 // together without one looking heavier than the rest, and they take their
-// colour from the text around them.
+// color from the text around them.
 
 type IconProps = { size?: number }
 

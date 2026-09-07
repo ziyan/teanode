@@ -63,19 +63,19 @@ var unauthenticated = map[string]string{
 	"FinishPasskeyAssertion": "exchanges a signed challenge for a session; refuses one that does not verify",
 }
 
-// TestEveryOperationAuthorises is what makes it safe for the GraphQL endpoint
+// TestEveryOperationAuthorizes is what makes it safe for the GraphQL endpoint
 // to be reachable without a session.
 //
-// Authorisation lives in the resolvers, not in the routing, because logging in
+// Authorization lives in the resolvers, not in the routing, because logging in
 // has to happen at the same endpoint as everything else. That is only sound
 // while every resolver actually checks. This reads the source and fails when
 // one does not, so adding an operation that forgets is a failing test rather
 // than a quiet hole through which anybody on the internet reads the mail.
-func TestEveryOperationAuthorises(t *testing.T) {
+func TestEveryOperationAuthorizes(t *testing.T) {
 	t.Parallel()
 
 	// Every .go file in this directory, read directly. ParseDir is deprecated
-	// for not honouring build tags; there are none here, and reading the files
+	// for not honoring build tags; there are none here, and reading the files
 	// is clearer than pulling in the packages loader for one test.
 	names, err := filepath.Glob("*.go")
 	if err != nil {
@@ -108,13 +108,13 @@ func TestEveryOperationAuthorises(t *testing.T) {
 				operation := function.Name.Name
 				if reason, ok := unauthenticated[operation]; ok {
 					if callsAuthorizing(function) && operation != "ChangePassword" {
-						t.Errorf("%s is listed as unauthenticated (%s) but does authorise; "+
+						t.Errorf("%s is listed as unauthenticated (%s) but does authorize; "+
 							"remove it from the list", operation, reason)
 					}
 					continue
 				}
 				if !callsAuthorizing(function) {
-					t.Errorf("%s does not authorise the caller. Every resolver must call "+
+					t.Errorf("%s does not authorize the caller. Every resolver must call "+
 						"one of the require helpers, because the GraphQL endpoint is "+
 						"reachable without a session. If it is genuinely safe to leave open, "+
 						"add it to unauthenticated with the reason.", operation)

@@ -154,7 +154,7 @@ type FinishPasskeyRegistrationArguments struct {
 	// CeremonyID is what BeginPasskeyRegistration returned
 	CeremonyID string `json:"ceremonyId"`
 
-	// Response is what navigator.credentials.create() produced, serialised
+	// Response is what navigator.credentials.create() produced, serialized
 	Response string `json:"response"`
 
 	// Name is what to call this authenticator, for example "phone"
@@ -249,7 +249,7 @@ type FinishPasskeyAssertionArguments struct {
 	// CeremonyID is what BeginPasskeyAssertion returned
 	CeremonyID string `json:"ceremonyId"`
 
-	// Response is what navigator.credentials.get() produced, serialised
+	// Response is what navigator.credentials.get() produced, serialized
 	Response string `json:"response"`
 }
 

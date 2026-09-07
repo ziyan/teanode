@@ -171,7 +171,7 @@ meta   META_TWICE  TWICE && TWICE
 		t.Errorf("total = %v, want 2.5 (the last definitions, each once)", total)
 	}
 
-	// The first definition is gone, not merely deprioritised.
+	// The first definition is gone, not merely deprioritized.
 	if hits := filter.rulesChecks(&spamfilter.Message{Body: []byte("the first pattern is here")}); len(hits) != 0 {
 		t.Errorf("the replaced definition still fires: %v", hits)
 	}

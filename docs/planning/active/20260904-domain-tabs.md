@@ -92,7 +92,7 @@ supplies only the name of the thing it is showing, through the
 `useBreadcrumbDetail()` hook. `Breadcrumb` renders every crumb but the last,
 and `PageHeading` renders the last one as the `<h1>`.
 
-Translations are three catalogues that must stay in step:
+Translations are three catalogs that must stay in step:
 `web/src/i18n/en.ts`, `web/src/i18n/zh.ts`, `web/src/i18n/ja.ts`. English is
 the reference; `make check-catalogs` compares the other two against it and
 fails on a key that is missing or extra.
@@ -164,7 +164,7 @@ domain, whose name becomes the `<h1>`. Leave `DOMAIN_ITEM_PAGES` alone: a
 template editor is still three levels down and still needs its middle crumb,
 which must now point at `/domains/<id>/templates`.
 
-Add these keys to all three catalogues (English text given; translate for `zh`
+Add these keys to all three catalogs (English text given; translate for `zh`
 and `ja`):
 
     domain.tabOverview      Overview
@@ -194,7 +194,7 @@ At the end of this milestone the overview is stats and nothing else, and the
 two links that left the page are buttons in the header.
 
 In `web/src/pages/domainOverview.tsx`, delete the entire second `<Section>` —
-the one labelled `domainOverview.resources` holding the four `ResourceTile`s —
+the one labeled `domainOverview.resources` holding the four `ResourceTile`s —
 and the now-unused imports (`ResourceTile`, `GridIcon`, `QueueIcon`,
 `TemplateIcon`, `DomainsIcon`). The five `StatTile`s stay exactly as they are,
 including their links: the messages, accepted, rejected and queued tiles keep
@@ -210,7 +210,7 @@ The keys `domainOverview.resources`, `domainOverview.mail`,
 `domainOverview.queueDetail`, `domainOverview.templatesDetail`,
 `domainOverview.settings` and `domainOverview.settingsDetail` may now be
 unused. Check each with `grep -rn` across `web/src` before removing it from all
-three catalogues — `domainOverview.settings` in particular was also used by the
+three catalogs — `domainOverview.settings` in particular was also used by the
 breadcrumb's `DOMAIN_PAGES`, which milestone one deleted.
 
 Acceptance. Build, then open a domain's Overview tab: five stat tiles and no
@@ -296,7 +296,7 @@ domain's name rather than the word "Templates".
 - [x] Milestone one: the shell, the five routes, the redirect, the breadcrumb
       and the seven new translation keys
 - [x] Milestone two: the overview's tile wall removed, `ResourceTile` deleted
-      if unused, dead keys removed from all three catalogues
+      if unused, dead keys removed from all three catalogs
 - [x] Milestone three: `domain.tsx` split into `domainDns.tsx`,
       `domainAliases.tsx` and `domainCredentials.tsx`, with the query, `run()`
       and the error line hoisted into the shell

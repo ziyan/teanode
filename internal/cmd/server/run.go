@@ -127,7 +127,7 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	// image still carries the old binary, and this reaches past it.
 	//
 	// It has to come before the database. Migrate reverts migrations it does
-	// not recognise, so the image's older binary opening the database first
+	// not recognize, so the image's older binary opening the database first
 	// would drop the columns the newer one added — and the data in them —
 	// seconds before handing over to it. It does not return when it finds a
 	// binary to run.
@@ -1187,7 +1187,7 @@ func (self *server) execTarget() string {
 }
 
 // openLocator returns a GeoIP locator, or one that locates nothing when the
-// operator has not supplied a MaxMind database. None is bundled: the licence
+// operator has not supplied a MaxMind database. None is bundled: the license
 // requires each user to accept it themselves.
 func openLocator(configuration *config.Configuration) geoip.Locator {
 	if !configuration.GeoIP.Enabled {
