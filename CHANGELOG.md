@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-07
+
 ### Fixed
 
 - The profile form sits like every other settings form: a heading and an
