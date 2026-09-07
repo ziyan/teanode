@@ -92,6 +92,8 @@ readonly ALLOWED_HOSTS=(
   .golang.org
   .go.dev
   .gopkg.in
+  # The module path of the YAML library, which go.sum names.
+  go.yaml.in
   .gorm.io
   # A module host, appearing only in go.mod and go.sum as the name of a
   # dependency. Vanity import paths are hostnames whether or not anything is

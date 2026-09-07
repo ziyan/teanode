@@ -20,6 +20,21 @@ Notable changes to TeaNode. The format follows
   groups are one page there: choosing a group narrows the people to its
   members, and membership is edited from either side.
 
+### Fixed
+
+- A dialog fits the window it is on: a group with three lists in it was
+  taller than a phone, with its title above the screen, its buttons below
+  it, and nothing to scroll. A list of people is searched rather than
+  scrolled past, and what is already chosen sits at the top of it.
+
+## [0.9.1] - 2026-09-07
+
+### Fixed
+
+- The profile form sits like every other settings form: a heading and an
+  intro line, the width cap on the form inside its card rather than on the
+  card, and a saved notice where the others show one.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

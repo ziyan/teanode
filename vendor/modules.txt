@@ -179,7 +179,7 @@ github.com/felixge/httpsnoop
 # github.com/flosch/pongo2/v4 v4.0.2
 ## explicit; go 1.14
 github.com/flosch/pongo2/v4
-# github.com/fxamacker/cbor/v2 v2.9.2
+# github.com/fxamacker/cbor/v2 v2.9.3
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
 # github.com/go-jose/go-jose/v4 v4.1.4
@@ -191,15 +191,17 @@ github.com/go-jose/go-jose/v4/json
 ## explicit; go 1.18
 github.com/go-viper/mapstructure/v2
 github.com/go-viper/mapstructure/v2/internal/errors
-# github.com/go-webauthn/webauthn v0.17.4
+# github.com/go-webauthn/webauthn v0.18.0
 ## explicit; go 1.25.0
 github.com/go-webauthn/webauthn/metadata
 github.com/go-webauthn/webauthn/protocol
 github.com/go-webauthn/webauthn/protocol/webauthncbor
 github.com/go-webauthn/webauthn/protocol/webauthncose
 github.com/go-webauthn/webauthn/webauthn
-# github.com/go-webauthn/x v0.2.6
+# github.com/go-webauthn/x v0.3.0
 ## explicit; go 1.25.0
+github.com/go-webauthn/x/crypto/secp256k1
+github.com/go-webauthn/x/crypto/secp256k1/ecdsa
 github.com/go-webauthn/x/encoding/asn1
 github.com/go-webauthn/x/revoke
 # github.com/golang-jwt/jwt/v5 v5.3.1
@@ -319,7 +321,7 @@ github.com/redis/go-redis/v9/push
 # github.com/tinylib/msgp v1.6.4
 ## explicit; go 1.24
 github.com/tinylib/msgp/msgp
-# github.com/urfave/cli/v3 v3.6.2
+# github.com/urfave/cli/v3 v3.11.0
 ## explicit; go 1.22
 github.com/urfave/cli/v3
 # github.com/x448/float16 v0.8.4
@@ -328,8 +330,8 @@ github.com/x448/float16
 # go.uber.org/atomic v1.11.0
 ## explicit; go 1.18
 go.uber.org/atomic
-# golang.org/x/crypto v0.55.0
-## explicit; go 1.25.0
+# golang.org/x/crypto v0.56.0
+## explicit; go 1.26.0
 golang.org/x/crypto/acme
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish

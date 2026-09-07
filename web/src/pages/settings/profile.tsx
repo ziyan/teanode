@@ -22,10 +22,7 @@ type User = { username: string; name?: string; email?: string }
 // that is about the person rather than about a mechanism.
 export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const { t } = useTranslation()
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ GetCurrentUser: User | null }>(CURRENT_USER),
-    [],
-  )
+  const { data, error, loading, reload } = useQuery(() => graphql<{ GetCurrentUser: User | null }>(CURRENT_USER), [])
 
   // Null until somebody types. The account is what each field shows until
   // then, so a value arriving from the server fills the field without an
@@ -50,7 +47,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   if (!user) {
     // A server with no accounts, reached over a socket that needs none. There
     // is no profile to edit, and saying so beats an empty form.
-    return <p className="muted">{t('profile.noAccount')}</p>
+    return <p className='muted'>{t('profile.noAccount')}</p>
   }
 
   const name = editedName ?? user.name ?? ''
@@ -90,8 +87,13 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
 
   return (
     <>
+      {/* The same shape as every other settings form: a card the width of
+          the column, a heading, and the fields capped inside it. This one
+          used to put the width cap on the card itself, which left it a
+          narrow box alone at the left of the page — the one settings page
+          that did not look like the others. */}
       <form
-        className="card form-narrow"
+        className='card'
         onSubmit={(event) => {
           event.preventDefault()
           if (!ready) {
@@ -107,56 +109,58 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           void save()
         }}
       >
-        <label>
-          <span>{t('profile.name')}</span>
-          <input
-            value={name}
-            maxLength={64}
-            placeholder={t('profile.namePlaceholder')}
-            onChange={(event) => {
-              setEditedName(event.target.value)
-              setSaved(false)
-            }}
-          />
-        </label>
-        <p className="muted field-hint">{t('profile.nameHint')}</p>
+        <h3>{t('profile.title')}</h3>
+        <p className='muted'>{t('settings.profile.description')}</p>
 
-        <label>
-          <span>{t('profile.username')}</span>
-          <input
-            value={username}
-            maxLength={64}
-            autoComplete="username"
-            onChange={(event) => {
-              setEditedUsername(event.target.value)
-              setSaved(false)
-            }}
-          />
-        </label>
-        <p className="muted field-hint">{t('profile.usernameHint')}</p>
+        <div className='form-narrow'>
+          <label>
+            <span>{t('profile.name')}</span>
+            <input
+              value={name}
+              maxLength={64}
+              placeholder={t('profile.namePlaceholder')}
+              onChange={(event) => {
+                setEditedName(event.target.value)
+                setSaved(false)
+              }}
+            />
+          </label>
+          <p className='muted field-hint'>{t('profile.nameHint')}</p>
 
-        <label>
-          <span>{t('profile.email')}</span>
-          <input
-            type="email"
-            value={email}
-            placeholder={t('profile.emailPlaceholder')}
-            onChange={(event) => {
-              setEditedEmail(event.target.value)
-              setSaved(false)
-            }}
-          />
-        </label>
-        <p className="muted field-hint">{t('profile.emailHint')}</p>
+          <label>
+            <span>{t('profile.username')}</span>
+            <input
+              value={username}
+              maxLength={64}
+              autoComplete='username'
+              onChange={(event) => {
+                setEditedUsername(event.target.value)
+                setSaved(false)
+              }}
+            />
+          </label>
+          <p className='muted field-hint'>{t('profile.usernameHint')}</p>
 
-        {problem && <p className="error">{problem}</p>}
-
-        <div className="page-actions">
-          <button className="primary" type="submit" disabled={!ready}>
-            {t('common.save')}
-          </button>
-          {saved && !changed && <span className="muted">{t('profile.saved')}</span>}
+          <label>
+            <span>{t('profile.email')}</span>
+            <input
+              type='email'
+              value={email}
+              placeholder={t('profile.emailPlaceholder')}
+              onChange={(event) => {
+                setEditedEmail(event.target.value)
+                setSaved(false)
+              }}
+            />
+          </label>
+          <p className='muted field-hint'>{t('profile.emailHint')}</p>
         </div>
+
+        {problem && <p className='error'>{problem}</p>}
+        {saved && !changed && <p className='notice good'>{t('profile.saved')}</p>}
+        <button className='primary' type='submit' disabled={!ready}>
+          {t('common.save')}
+        </button>
       </form>
 
       {confirmingRename && (
