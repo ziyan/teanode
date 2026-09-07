@@ -3903,6 +3903,7 @@ a.button.primary:hover {
   justify-content: center;
   width: 22px;
   height: 18px;
+  min-height: 0;
   margin-left: auto;
   padding: 0;
   border: 0;
@@ -3934,15 +3935,11 @@ a.button.primary:hover {
   display: none;
 }
 @media (max-width: 760px) {
-  .sidebar.collapsed nav a .sidebar-pin {
-    display: inline-flex;
-  }
-}
-@media (max-width: 760px) and (hover: hover) {
-  /* The overlay shows labels whatever the collapsed flag says, so the pin
-     comes back with them, where there is a pointer to hover it. */
-  .sidebar.collapsed nav a:hover .sidebar-pin {
-    visibility: visible;
+  /* No pointer to hover it with in the overlay, and a phone's buttons are
+     sized for a thumb, which would make the row taller for nothing: a
+     phone pins from the Folders tab. */
+  .sidebar nav a .sidebar-pin {
+    display: none;
   }
 }
 /* Four actions on a folder row do not fit beside its name on a phone. There
