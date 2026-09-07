@@ -639,11 +639,24 @@ types change. Written out so that "what is added" has one answer:
     
     type Delivery struct {
         // … existing fields …
-        // Kind gains DeliveryKindMailbox: an item placed in a folder. Method
-        // gains "mailbox" and Destination names the mailbox.
+        // Kind gains DeliveryKindMailbox: the message placed in a folder of a
+        // mailbox. One such delivery per mailbox the message reached — three
+        // addresses in three mailboxes is three deliveries, three items, one
+        // Mail. Created in the receipt transaction, already delivered, like the
+        // internal kind today; nothing to queue.
+        MailboxID     string `json:"mailboxId,omitempty"`
+        MailboxItemID string `json:"mailboxItemId,omitempty"`
+        // Method gains "mailbox"; Destination is the mailbox's name, so the
+        // message page reads "delivered into the support mailbox".
     }
-    
+
     const DeliveryKindMailbox DeliveryKind = "mailbox"
+
+    // In the database:
+    //   ALTER TABLE "delivery"
+    //       ADD COLUMN "mailbox_id"      varchar(32),
+    //       ADD COLUMN "mailbox_item_id" varchar(32);
+    //   CREATE INDEX "delivery_mailbox" ON "delivery" ("mailbox_id") WHERE "mailbox_id" IS NOT NULL;
     
     // In internal/config, an alias gains a kind and a target:
     type Alias struct {
@@ -688,9 +701,10 @@ types change. Written out so that "what is added" has one answer:
 An alias gains a fourth kind, `mailbox`, with a `mailboxId`. When a message
 matches it, the delivery is a row: a `mailbox_item` in the mailbox's Inbox,
 referencing the `mail` row that already exists, with the folder's next UID.
-The delivery record is created too, of kind `mailbox`, status delivered, so
-the message page shows "delivered into the support mailbox" beside its
-forwards. No bytes are copied and no second `mail` row is written. A message
+A delivery record is created too — kind `mailbox`, status delivered,
+naming the mailbox and the item it produced — so the message page shows
+"delivered into the support mailbox" beside its forwards, and a rule that
+moved the item can be traced from it. One delivery per mailbox reached. No bytes are copied and no second `mail` row is written. A message
 to three addresses in three mailboxes is one row and three items.
 
 Then the mailbox's rules run, in order, against the new item. A rule that
