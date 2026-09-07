@@ -3891,15 +3891,18 @@ a.button.primary:hover {
   }
 }
 
-/* The pin on a folder row: there on hover or focus, gone otherwise, so the
-   rail stays a list of names. In the pinned area it reads as "unpin". */
+/* The pin on a folder row: shown on hover or focus, invisible otherwise, so
+   the rail stays a list of names. It keeps its place in the row either
+   way, so that hovering moves neither the row's height nor the count
+   beside it. In the pinned area it reads as "unpin". */
 .sidebar-pin {
-  display: none;
+  display: inline-flex;
+  visibility: hidden;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 22px;
-  height: 22px;
+  height: 18px;
   margin-left: auto;
   padding: 0;
   border: 0;
@@ -3914,11 +3917,11 @@ a.button.primary:hover {
    to follow the link; a phone pins from the Folders tab instead. */
 @media (hover: hover) {
   .sidebar nav a:hover .sidebar-pin {
-    display: inline-flex;
+    visibility: visible;
   }
 }
 .sidebar nav a:focus-within .sidebar-pin {
-  display: inline-flex;
+  visibility: visible;
 }
 .sidebar-pin:hover,
 .sidebar-pin.pinned {
@@ -3930,11 +3933,16 @@ a.button.primary:hover {
 .sidebar.collapsed nav a .sidebar-pin {
   display: none;
 }
+@media (max-width: 760px) {
+  .sidebar.collapsed nav a .sidebar-pin {
+    display: inline-flex;
+  }
+}
 @media (max-width: 760px) and (hover: hover) {
   /* The overlay shows labels whatever the collapsed flag says, so the pin
      comes back with them, where there is a pointer to hover it. */
   .sidebar.collapsed nav a:hover .sidebar-pin {
-    display: inline-flex;
+    visibility: visible;
   }
 }
 /* Four actions on a folder row do not fit beside its name on a phone. There
