@@ -76,6 +76,10 @@ type SessionState struct {
 	// has to know, and pressing the button would have revealed it anyway.
 	PasskeysEnabled bool `json:"passkeysEnabled"`
 
+	// SSOProviders are the identity providers to offer buttons for, by id
+	// and name; empty when there are none.
+	SSOProviders []*SSOProviderInfo `json:"ssoProviders"`
+
 	// ID of the account, empty for the console and for nobody
 	UserID string `json:"userId,omitempty"`
 
@@ -92,6 +96,7 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 	state := &SessionState{
 		AuthenticationRequired: self.authenticator.Required(),
 		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
+		SSOProviders:           self.ssoProviders(),
 	}
 	if request := api.ContextRequest(ctx); request != nil {
 		state.Username, state.Authenticated = self.authenticator.Authenticate(request)
@@ -118,6 +123,7 @@ func (self *graph) signedInAs(ctx context.Context, username string) *SessionStat
 		Username:               username,
 		Name:                   self.displayName(username),
 		PasskeysEnabled:        self.config.Current().Passkey.Enabled,
+		SSOProviders:           self.ssoProviders(),
 	}
 	// What they may do, resolved now: the request that signed them in
 	// started as nobody, so the principal on the context is empty.
@@ -386,4 +392,19 @@ func (self *graph) RevokeAllSessions(ctx context.Context) (*SessionState, error)
 
 	log.Noticef("%s ended %d of their sessions, including this one", username, ended)
 	return &SessionState{AuthenticationRequired: self.authenticator.Required()}, nil
+}
+
+// SSOProviderInfo is what the sign-in page knows about a provider: enough
+// for a button, and no secret.
+type SSOProviderInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (self *graph) ssoProviders() []*SSOProviderInfo {
+	providers := []*SSOProviderInfo{}
+	for _, provider := range self.config.Current().SSO.Providers {
+		providers = append(providers, &SSOProviderInfo{ID: provider.ID, Name: provider.Name})
+	}
+	return providers
 }

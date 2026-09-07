@@ -99,6 +99,9 @@ export interface Session {
 
   // Whether the caller holds any permission that opens the management side.
   manages?: boolean
+
+  // Identity providers to offer on the sign-in page, one button each.
+  ssoProviders?: { id: string; name: string }[]
 }
 
 // Permissions is what a request may do: server and all-domains permissions

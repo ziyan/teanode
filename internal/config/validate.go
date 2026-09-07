@@ -61,6 +61,7 @@ func (self *Configuration) Validate() error {
 	self.validateDkim(validator)
 	self.validateSession(validator)
 	self.validateIntegrations(validator)
+	self.validateSSO(validator)
 
 	if len(validator.errors) == 0 {
 		return nil
@@ -475,4 +476,31 @@ func parseUpgradeWindow(window string) (int, int, error) {
 		return 0, 0, fmt.Errorf("config: a window that starts and ends at the same minute is not a window")
 	}
 	return minutes[0], minutes[1], nil
+}
+
+// providerIdPattern is what an identity provider's id may be: it goes into
+// a path and into every identity row under it.
+var providerIdPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+func (self *Configuration) validateSSO(validator *validator) {
+	seen := map[string]bool{}
+	for index, provider := range self.SSO.Providers {
+		path := fmt.Sprintf("sso.providers[%d]", index)
+		if !providerIdPattern.MatchString(provider.ID) {
+			validator.add(path+".id", "%q is not a provider id: lower-case letters, digits and dashes, up to 32", provider.ID)
+		} else if seen[provider.ID] {
+			validator.add(path+".id", "%q is used twice", provider.ID)
+		}
+		seen[provider.ID] = true
+		if strings.TrimSpace(provider.Name) == "" {
+			validator.add(path+".name", "required: what the sign-in button says")
+		}
+		issuer, err := url.Parse(strings.TrimSpace(provider.Issuer))
+		if err != nil || issuer.Scheme != "https" || issuer.Host == "" {
+			validator.add(path+".issuer", "%q is not an https URL", provider.Issuer)
+		}
+		if strings.TrimSpace(provider.ClientID) == "" {
+			validator.add(path+".clientId", "required: the client id the provider issued")
+		}
+	}
 }

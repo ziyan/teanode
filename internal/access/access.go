@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -358,4 +360,159 @@ func MailboxMaySend(tx db.Transaction, mailbox *models.Mailbox, from string) (bo
 		}
 	}
 	return false, nil
+}
+
+// --- single sign-on --------------------------------------------------------------
+
+// IdentityClaims is what an identity provider said about the person signing
+// in, in this package's terms rather than the protocol's.
+type IdentityClaims struct {
+	Subject  string
+	Email    string
+	Name     string
+	Username string
+	Groups   []string
+}
+
+var (
+	// ErrNoAccount is a sign-in by somebody with no account here, at a
+	// provider that does not make one.
+	ErrNoAccount = errors.New("access: no account for this identity")
+
+	// ErrAccountDisabled is a sign-in to an account that has been turned off.
+	ErrAccountDisabled = errors.New("access: the account is disabled")
+)
+
+// SignInWithIdentity is what a single sign-on comes to once the provider has
+// said who this is: the account bound to (provider, subject), or a new one
+// when the provider may make accounts, with the groups that name an
+// identity-provider group reconciled against what was claimed. Returns the
+// user and whether they were just created.
+func SignInWithIdentity(tx db.Transaction, provider string, claims *IdentityClaims, createUsers bool) (*models.User, bool, error) {
+	identity, err := tx.GetIdentity(provider, claims.Subject)
+	if err != nil {
+		return nil, false, err
+	}
+	created := false
+	var user *models.User
+	if identity != nil {
+		user, err = tx.GetUser(identity.UserID)
+		if err != nil {
+			return nil, false, err
+		}
+		if user == nil {
+			// The account went and the identity somehow stayed. Treat as
+			// unknown rather than resurrect it.
+			if err := tx.DeleteIdentity(identity.ID); err != nil {
+				return nil, false, err
+			}
+			identity = nil
+		} else if err := tx.TouchIdentity(identity.ID, claims.Email, time.Now()); err != nil {
+			return nil, false, err
+		}
+	}
+	if identity == nil {
+		if !createUsers {
+			return nil, false, ErrNoAccount
+		}
+		user, err = createUserForIdentity(tx, claims)
+		if err != nil {
+			return nil, false, err
+		}
+		if _, err := tx.CreateIdentity(&models.UserIdentity{UserID: user.ID, Provider: provider, Subject: claims.Subject, Email: claims.Email}); err != nil {
+			return nil, false, err
+		}
+		if _, err := EnsureMailbox(tx, user); err != nil {
+			return nil, false, err
+		}
+		created = true
+	}
+	if user.Disabled() {
+		return nil, false, ErrAccountDisabled
+	}
+	if err := ReconcileIDPGroups(tx, user, claims.Groups); err != nil {
+		return nil, false, err
+	}
+	return user, created, nil
+}
+
+// createUserForIdentity makes an account for somebody the provider vouches
+// for: no password, a username from what the provider called them, made
+// unique if it has to be.
+func createUserForIdentity(tx db.Transaction, claims *IdentityClaims) (*models.User, error) {
+	base := strings.ToLower(strings.TrimSpace(claims.Username))
+	if base == "" && claims.Email != "" {
+		base, _ = mailparse.SplitAddress(strings.ToLower(claims.Email))
+	}
+	base = usernameCharacters.ReplaceAllString(base, "")
+	if base == "" {
+		base = "user"
+	}
+	username := base
+	for attempt := 2; attempt < 1000; attempt++ {
+		existing, err := tx.GetUserByUsername(username)
+		if err != nil {
+			return nil, err
+		}
+		if existing == nil {
+			break
+		}
+		username = fmt.Sprintf("%s%d", base, attempt)
+	}
+	return tx.CreateUser(&models.User{
+		Username: username,
+		Name:     strings.TrimSpace(claims.Name),
+		Email:    strings.TrimSpace(claims.Email),
+	})
+}
+
+// usernameCharacters is what may not be in a username made from a claim.
+var usernameCharacters = regexp.MustCompile(`[^a-z0-9._-]`)
+
+// ReconcileIDPGroups puts the user in every group whose idpGroup the
+// provider claimed and takes them out of every group whose idpGroup it did
+// not. Groups with no idpGroup are never touched: those are managed here.
+func ReconcileIDPGroups(tx db.Transaction, user *models.User, claimed []string) error {
+	groups, err := tx.ListGroups()
+	if err != nil {
+		return err
+	}
+	claimedSet := map[string]bool{}
+	for _, name := range claimed {
+		claimedSet[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	memberships := map[string]bool{}
+	for _, groupId := range user.GroupIDs {
+		memberships[groupId] = true
+	}
+	changed := false
+	for _, group := range groups {
+		if group.IDPGroup == "" {
+			continue
+		}
+		should := claimedSet[strings.ToLower(strings.TrimSpace(group.IDPGroup))]
+		if should != memberships[group.ID] {
+			memberships[group.ID] = should
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	groupIds := make([]string, 0, len(memberships))
+	for groupId, member := range memberships {
+		if member {
+			groupIds = append(groupIds, groupId)
+		}
+	}
+	sort.Strings(groupIds)
+	updated, err := tx.UpdateUser(user.ID, func(current *models.User) error {
+		current.GroupIDs = groupIds
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	*user = *updated
+	return nil
 }

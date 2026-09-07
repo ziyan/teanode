@@ -116,6 +116,7 @@ type Transaction interface {
 	GroupOperation
 	AuditOperation
 	MailboxOperation
+	IdentityOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

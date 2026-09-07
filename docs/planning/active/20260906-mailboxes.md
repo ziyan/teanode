@@ -1523,13 +1523,27 @@ record.
       advertised yet: modseqs are kept and CHANGEDSINCE is honoured, but
       the library's fetch writer does not emit MODSEQ, so the capabilities
       stay off until it does or the server is written from the RFCs.
+- [x] Milestone six (2026-09-06): `internal/sso` runs the OpenID Connect
+      authorization-code flow with PKCE, a nonce, and a signed, expiring
+      state kept in a cookie, over a client that refuses private addresses;
+      `internal/api/v1api/apisso` serves `/api/v1/sso/<id>/start` and
+      `/callback`; `access.SignInWithIdentity` binds `(provider, subject)`
+      to an account in the new `user_identity` table (migration 0017),
+      creates one when the provider may, and reconciles every group with an
+      `idpGroup` against the claimed groups; providers are settings under
+      `sso.providers`, edited on the Server page's "Single sign-on" tab with
+      the secret write-only, and the sign-in page shows a button per
+      provider. Verified on the dev server against Google's discovery
+      document: the start redirects with the right parameters and a forged
+      callback is refused. The round trip through a real provider account
+      remains to be tried on `root@server`.
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
 - [x] Milestone three: reply, forward, drafts (attachment PUT path open).
 - [x] Milestone four: search, filters, rules, contacts.
 - [x] Milestone five: IMAP and submission (CONDSTORE/QRESYNC not advertised).
-- [ ] Milestone six: SSO.
+- [x] Milestone six: SSO (round trip through a real provider still to try).
 - [ ] Milestone seven: the rest.
 
 ## Surprises & Discoveries

@@ -30,6 +30,10 @@ type Configuration struct {
 	// Addresses to listen on
 	Listen Listen `yaml:"listen"`
 
+	// SSO is how people sign in through an identity provider, beside the
+	// password and passkey forms.
+	SSO SSO `yaml:"sso"`
+
 	// Certificates for SMTP STARTTLS and the dashboard
 	TLS TLS `yaml:"tls"`
 
@@ -174,6 +178,44 @@ type Server struct {
 	// mail already in flight, so when moving a server to a new machine this
 	// has to come with it.
 	Secret string `yaml:"secret" secret:"true"`
+}
+
+// SSO configures signing in through identity providers. OpenID Connect
+// only; every provider that matters speaks it.
+type SSO struct {
+	// Providers are the identity providers offered on the sign-in page, one
+	// button each.
+	Providers []SSOProvider `yaml:"providers"`
+}
+
+// SSOProvider is one identity provider.
+type SSOProvider struct {
+	// ID names the provider in the sign-in path and in each person's
+	// identity row: short, lower-case letters and digits, and stable —
+	// renaming a provider orphans every identity under it.
+	ID string `yaml:"id"`
+
+	// Name is what the sign-in button says.
+	Name string `yaml:"name"`
+
+	// Issuer is the OpenID Connect issuer URL, https only; the provider's
+	// configuration is read from <issuer>/.well-known/openid-configuration.
+	Issuer string `yaml:"issuer"`
+
+	// ClientID and ClientSecret are what the provider issued for this
+	// server. The redirect URL to register there is
+	// https://<web host>/api/v1/sso/<id>/callback.
+	ClientID     string `yaml:"clientId"`
+	ClientSecret string `yaml:"clientSecret" secret:"true"`
+
+	// GroupsClaim is the claim carrying the person's group names, which are
+	// matched against each group's idpGroup here. "groups" when empty.
+	GroupsClaim string `yaml:"groupsClaim,omitempty"`
+
+	// CreateUsers lets somebody with no account here get one when they sign
+	// in. Off, and only people who already have an account, and an identity
+	// bound to it, may sign in this way.
+	CreateUsers bool `yaml:"createUsers"`
 }
 
 // Listen holds the addresses the server binds.

@@ -96,3 +96,16 @@ func (self *User) RedactForAudit() any {
 	redacted.PasswordHash = ""
 	return &redacted
 }
+
+// UserIdentity is an account's identity at an identity provider: the
+// provider's name in this server's settings, and the subject the provider
+// calls the person. Looked up on every single sign-on; created on the first.
+type UserIdentity struct {
+	ID         string    `json:"id"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UserID     string    `json:"userId"`
+	Provider   string    `json:"provider"`
+	Subject    string    `json:"subject"`
+	Email      string    `json:"email,omitempty"`
+	LastSeenAt time.Time `json:"lastSeenAt"`
+}

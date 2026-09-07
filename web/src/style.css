@@ -3692,3 +3692,16 @@ a.button.primary:hover {
   margin: 6px 0;
   padding: 0;
 }
+
+/* Sign in through an identity provider: one button per provider, under the
+   password form and the passkey button, the same width as them. */
+.sso-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sso-buttons .button {
+  display: block;
+  text-align: center;
+}

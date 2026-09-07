@@ -30,6 +30,7 @@ const SETTINGS = `
       session { lifetime }
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
       listen { smtpIncoming smtpOutgoing imap imaps http https debug }
+      sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
       identity { name mailServers logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
@@ -50,6 +51,7 @@ export const UPDATE = `
     $session: SessionParametersInput
     $passkey: PasskeyParametersInput
     $listen: ListenParametersInput
+    $sso: SSOParametersInput
     $identity: IdentityParametersInput
     $storage: StorageParametersInput
     $geoip: GeoIPParametersInput
@@ -67,6 +69,7 @@ export const UPDATE = `
       session: $session
       passkey: $passkey
       listen: $listen
+      sso: $sso
       identity: $identity
       storage: $storage
       geoip: $geoip
@@ -82,6 +85,7 @@ export const UPDATE = `
       session { lifetime }
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
       listen { smtpIncoming smtpOutgoing imap imaps http https debug }
+      sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
       identity { name mailServers logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
@@ -194,6 +198,7 @@ type Settings = {
   session: SessionSettings
   passkey: Passkey
   listen: Listen
+  sso: SSOSettings
   identity: Identity
   storage: StorageSettings
   geoip: GeoIP
@@ -216,6 +221,7 @@ export type Section =
   | 'scanning'
   | 'spam'
   | 'sessions'
+  | 'sso'
 
 // The tabs these four are, for the Server page to render along with the rest
 // of its own. Here rather than there because this file is what knows which
@@ -234,6 +240,7 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   // host and port it was the one card on the page that needed reading.
   { id: 'spam', label: 'integrations.tabSpam' },
   { id: 'sessions', label: 'serverSettings.tabSessions' },
+  { id: 'sso', label: 'integrations.tabSso' },
 ]
 
 // IntegrationsSection edits one group of the optional services: how outgoing
@@ -269,6 +276,7 @@ export function IntegrationsSection({ section }: { section: Section }) {
   return (
     <>
 
+      {section === 'sso' && <SSOForm settings={settings.sso} onSaved={reload} />}
       {section === 'sending' && (
         <>
           <RelayForm settings={settings.relay} onSaved={reload} />
@@ -1139,6 +1147,143 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
       )}
 
       <SaveRow busy={busy} saved={saved} problem={problem} />
+    </form>
+  )
+}
+
+// --- single sign-on ---------------------------------------------------------------
+//
+// Identity providers, one row each. The client secret is written but never
+// read back: a blank on save keeps the one stored, and the row says whether
+// there is one.
+
+export type SSOProvider = {
+  id: string
+  name: string
+  issuer: string
+  clientId: string
+  hasClientSecret: boolean
+  groupsClaim?: string
+  createUsers: boolean
+}
+export type SSOSettings = { providers: SSOProvider[] }
+
+type EditedProvider = SSOProvider & { clientSecret: string }
+
+function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => Promise<unknown> | unknown }) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+  const [providers, setProviders] = useState<EditedProvider[]>(() =>
+    settings.providers.map((provider) => ({ ...provider, clientSecret: '' })),
+  )
+  useEffect(() => {
+    setProviders(settings.providers.map((provider) => ({ ...provider, clientSecret: '' })))
+  }, [settings])
+
+  const update = (index: number, change: Partial<EditedProvider>) =>
+    setProviders((previous) => previous.map((provider, at) => (at === index ? { ...provider, ...change } : provider)))
+
+  const origin = window.location.origin
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({
+          sso: {
+            providers: providers.map((provider) => ({
+              id: provider.id.trim(),
+              name: provider.name.trim(),
+              issuer: provider.issuer.trim(),
+              clientId: provider.clientId.trim(),
+              clientSecret: provider.clientSecret || null,
+              groupsClaim: provider.groupsClaim?.trim() || null,
+              createUsers: provider.createUsers,
+            })),
+          },
+        })
+      }}
+    >
+      <h3>{t('integrations.ssoTitle')}</h3>
+      <p className="muted">{t('integrations.ssoHint')}</p>
+      {providers.length === 0 && <p className="muted">{t('integrations.ssoNone')}</p>}
+      {providers.map((provider, index) => (
+        <div className="card sso-provider" key={index}>
+          <label>
+            <span>{t('integrations.ssoId')}</span>
+            <input className="mono" value={provider.id} onChange={(event) => update(index, { id: event.target.value })} placeholder="okta" required />
+          </label>
+          <label>
+            <span>{t('integrations.ssoName')}</span>
+            <input value={provider.name} onChange={(event) => update(index, { name: event.target.value })} required />
+          </label>
+          <label>
+            <span>{t('integrations.ssoIssuer')}</span>
+            <input
+              className="mono"
+              value={provider.issuer}
+              onChange={(event) => update(index, { issuer: event.target.value })}
+              placeholder="https://login.example.net/"
+              required
+            />
+          </label>
+          <label>
+            <span>{t('integrations.ssoClientId')}</span>
+            <input className="mono" value={provider.clientId} onChange={(event) => update(index, { clientId: event.target.value })} required />
+          </label>
+          <label>
+            <span>{t('integrations.ssoClientSecret')}</span>
+            <input
+              className="mono"
+              type="password"
+              autoComplete="new-password"
+              value={provider.clientSecret}
+              onChange={(event) => update(index, { clientSecret: event.target.value })}
+              placeholder={provider.hasClientSecret ? t('integrations.ssoSecretKept') : ''}
+            />
+          </label>
+          <label>
+            <span>{t('integrations.ssoGroupsClaim')}</span>
+            <input
+              className="mono"
+              value={provider.groupsClaim ?? ''}
+              onChange={(event) => update(index, { groupsClaim: event.target.value })}
+              placeholder="groups"
+            />
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={provider.createUsers} onChange={(event) => update(index, { createUsers: event.target.checked })} />
+            {t('integrations.ssoCreateUsers')}
+          </label>
+          <p className="muted field-hint">
+            {t('integrations.ssoRedirect')} <code>{`${origin}/api/v1/sso/${provider.id.trim() || 'id'}/callback`}</code>
+          </p>
+          <div className="row-actions">
+            <button type="button" className="link danger" onClick={() => setProviders((previous) => previous.filter((_, at) => at !== index))}>
+              {t('common.remove')}
+            </button>
+          </div>
+        </div>
+      ))}
+      {problem && <p className="error">{problem}</p>}
+      <div className="page-actions">
+        <button
+          type="button"
+          onClick={() =>
+            setProviders((previous) => [
+              ...previous,
+              { id: '', name: '', issuer: '', clientId: '', clientSecret: '', hasClientSecret: false, groupsClaim: '', createUsers: false },
+            ])
+          }
+        >
+          {t('integrations.ssoAdd')}
+        </button>
+        <button className="primary" type="submit" disabled={busy}>
+          {t('common.save')}
+        </button>
+        {saved && <span className="muted">{t('common.saved')}</span>}
+      </div>
     </form>
   )
 }

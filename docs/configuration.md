@@ -252,6 +252,44 @@ domain for one MX record per name, at preference 10, 20 and so on in the order
 given.  These are names mail arrives at. They are unrelated to tls.hosts,
 which is the names this server holds a certificate for.
 
+
+### `sso`
+
+Signing in through an identity provider, beside the password and passkey
+forms. OpenID Connect only; every provider that matters speaks it. Each
+provider is a button on the sign-in page. The redirect URL to register at
+the provider is `https://<web host>/api/v1/sso/<id>/callback`.
+
+**`providers`** — The identity providers offered, one button each. An empty
+list means no single sign-on.
+
+### `sso.providers[]`
+
+**`id`** — Names the provider in the sign-in path and in each person's
+identity row: lower-case letters, digits and dashes, up to 32, and stable.
+Renaming a provider orphans every identity under it.
+
+**`name`** — What the sign-in button says.
+
+**`issuer`** — The OpenID Connect issuer URL, `https` only. The provider's
+configuration is read from `<issuer>/.well-known/openid-configuration`, and
+must name the same issuer. A private address is refused.
+
+**`clientId`** — The client id the provider issued for this server.
+
+**`clientSecret`** — The client secret that goes with it. A secret; shown
+redacted, kept when a settings update leaves it blank.
+
+**`groupsClaim`** — The claim carrying the person's group names, matched
+against each group's `idpGroup` here. `groups` when empty. A person is put
+in every group naming a claimed name and taken out of every group naming one
+that is no longer claimed; groups without an `idpGroup` are never touched.
+
+**`createUsers`** — Whether somebody with no account here gets one made when
+they sign in: no password, an identity bound to the provider, a Personal
+mailbox, and the groups their claims name. Off, only people whose account
+already has an identity at this provider may sign in through it.
+
 ### `listen`
 
 **`smtpIncoming`** — SMTPIncoming receives mail from the internet. Port 25 in

@@ -91,7 +91,7 @@ export function App() {
     return (
       <div className="auth-page">
         {corner}
-        <LoginPage onLoggedIn={refresh} passkeysEnabled={session.passkeysEnabled} />
+        <LoginPage onLoggedIn={refresh} passkeysEnabled={session.passkeysEnabled} ssoProviders={session.ssoProviders} />
       </div>
     )
   }

@@ -96,5 +96,7 @@ func PublicPaths() []string {
 // The middleware turning it away for having no session made the endpoint
 // unreachable on any server with an account, which is every server.
 func PublicPrefixes() []string {
-	return []string{Prefix + "/send/"}
+	// Sending with an API key carries its own authentication; single
+	// sign-on is how somebody with no session yet gets one.
+	return []string{Prefix + "/send/", Prefix + "/sso/"}
 }

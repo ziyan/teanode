@@ -33,6 +33,7 @@ const (
 	settingGeoIp     = "geoip"
 	settingStorage   = "storage"
 	settingPasskey   = "passkey"
+	settingSSO       = "sso"
 	settingUpgrade   = "upgrade"
 )
 
@@ -50,6 +51,7 @@ func (self *Configuration) sections() map[string]any {
 		settingGeoIp:     &self.GeoIP,
 		settingStorage:   &self.Storage,
 		settingPasskey:   &self.Passkey,
+		settingSSO:       &self.SSO,
 		settingUpgrade:   &self.Upgrade,
 	}
 }
