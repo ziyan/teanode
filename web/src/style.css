@@ -3909,7 +3909,14 @@ a.button.primary:hover {
   opacity: 0.6;
   cursor: pointer;
 }
-.sidebar nav a:hover .sidebar-pin,
+/* Only where a pointer can hover. On a touch screen, something appearing
+   on hover makes iOS treat the first tap as the hover and ask for a second
+   to follow the link; a phone pins from the Folders tab instead. */
+@media (hover: hover) {
+  .sidebar nav a:hover .sidebar-pin {
+    display: inline-flex;
+  }
+}
 .sidebar nav a:focus-within .sidebar-pin {
   display: inline-flex;
 }
@@ -3923,11 +3930,10 @@ a.button.primary:hover {
 .sidebar.collapsed nav a .sidebar-pin {
   display: none;
 }
-@media (max-width: 760px) {
+@media (max-width: 760px) and (hover: hover) {
   /* The overlay shows labels whatever the collapsed flag says, so the pin
-     comes back with them. */
-  .sidebar.collapsed nav a:hover .sidebar-pin,
-  .sidebar.collapsed nav a:focus-within .sidebar-pin {
+     comes back with them, where there is a pointer to hover it. */
+  .sidebar.collapsed nav a:hover .sidebar-pin {
     display: inline-flex;
   }
 }
