@@ -1548,6 +1548,22 @@ record.
       empty envelope sender, through the queue or by reference to a local
       mailbox, and no item in Sent. Verified on the dev server: a message
       from a local colleague was answered once and the second was not.
+- [x] Docs and command line (2026-09-06): getting started walks from
+      claiming the server to a mail program; local development explains the
+      DMARC trap; deployment names the IMAP ports; the security review has
+      SEC-11; the changelog has the release entry; `teanode alias` takes
+      `--kind mailbox --mailbox <id>`, and `teanode api` reaches the rest.
+- [x] From scratch (2026-09-06): `make dev-clean && make dev-up`, claim the
+      server in the browser, add `^ziyan$` of kind mailbox on the Aliases
+      tab, receive from outside, reply from the reading pane, make an app
+      password on Mail programs and sign in over IMAP with it — every step
+      as the getting-started page describes, with no detour.
+- [x] Deployed (2026-09-06): `teanode:mailboxes` built from 442ccf0 on
+      `root@server`; migrations 0014–0017 applied, the existing account
+      became an administrator with a Personal mailbox, no errors in the log,
+      the web UI opens on the mailbox. IMAP is not turned on there: the
+      listen addresses are empty and the security group would need 993/143.
+      The backup and the previous compose file are noted in memory.
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
