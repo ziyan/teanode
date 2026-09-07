@@ -454,10 +454,10 @@ types change. Written out so that "what is added" has one answer:
         ModifiedAt  time.Time `json:"modifiedAt"`
         Name        string    `json:"name"`
         Description string    `json:"description,omitempty"`
-        // IdpGroup is the group's name at the identity provider; SSO adds and
+        // IDPGroup is the group's name at the identity provider; SSO adds and
         // removes members of a group that has one and never touches one that
         // does not.
-        IdpGroup    string    `json:"idpGroup,omitempty"`
+        IDPGroup    string    `json:"idpGroup,omitempty"`
         // UserIDs is the user_group table, read with the group.
         UserIDs     []string  `json:"userIds,omitempty"`
     }
