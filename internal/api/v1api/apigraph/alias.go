@@ -128,6 +128,7 @@ func (self *graph) CreateAlias(ctx context.Context, arguments CreateAliasArgumen
 	if arguments.AliasParameters == nil {
 		return nil, api.ErrInvalidArguments
 	}
+	anchorMailboxPattern(arguments.AliasParameters)
 	if err := validatePattern(arguments.AliasParameters.Pattern); err != nil {
 		return nil, err
 	}
@@ -174,6 +175,7 @@ func (self *graph) UpdateAlias(ctx context.Context, arguments UpdateAliasArgumen
 	if arguments.AliasParameters == nil {
 		return nil, api.ErrInvalidArguments
 	}
+	anchorMailboxPattern(arguments.AliasParameters)
 	if err := validatePattern(arguments.AliasParameters.Pattern); err != nil {
 		return nil, err
 	}
@@ -288,5 +290,18 @@ func applyAliasParameters(alias *models.Alias, parameters *AliasParameters) {
 		alias.Email, alias.Webhook, alias.MailServer = "", "", nil
 	case models.AliasKindNull:
 		alias.Email, alias.Webhook, alias.MailServer, alias.MailboxID = "", "", nil, ""
+	}
+}
+
+// anchorMailboxPattern turns a bare name into the pattern that names exactly
+// it, for an alias that delivers into a mailbox: somebody who types "zhou"
+// means zhou@, and a mailbox's addresses are read back from such patterns.
+// A pattern with anything of a regular expression in it is left alone.
+func anchorMailboxPattern(parameters *AliasParameters) {
+	if parameters == nil || parameters.Kind != string(models.AliasKindMailbox) {
+		return
+	}
+	if local := models.LocalPartOfPattern(parameters.Pattern); local != "" {
+		parameters.Pattern = models.PatternForLocalPart(local)
 	}
 }
