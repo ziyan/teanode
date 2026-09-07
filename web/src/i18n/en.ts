@@ -1253,4 +1253,5 @@ export const en = {
   'domain.deliverInto': 'Mailbox',
   'domain.deliveredInto': 'into the mailbox of',
   'domain.chooseMailbox': 'Choose a mailbox…',
+  'mailbox.noAddressLink': 'Add one on the domain\'s Aliases tab.',
 }

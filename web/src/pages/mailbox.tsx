@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { MailContent, MailboxFolder, MailboxItem, MailboxItemPage, graphql } from '../api'
 import { ErrorMessage, Loading, formatTime } from '../components/common'
@@ -9,6 +9,7 @@ import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
+import { hasAnywhere, useSession } from '../session'
 import { MessageContent } from './mailDetail'
 
 // The mailbox: one folder's messages beside the one being read.
@@ -125,6 +126,9 @@ function Folder({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const mailboxes = useMailboxes()
+  const session = useSession()
+  const addresses = mailboxes.current?.mailbox.addresses ?? []
+  const managesDomains = hasAnywhere(session.permissions, 'domain:manage')
   useBreadcrumbDetail(folderLabel(t, folder))
 
   const [filter, setFilter] = useState<Filter>('all')
@@ -357,7 +361,25 @@ function Folder({
             />
           ))}
           {!loading && items.length === 0 && (
-            <li className="mailbox-placeholder">{applied || filter !== 'all' ? t('mailbox.nothingFound') : t('mailbox.nothing')}</li>
+            <li className="mailbox-placeholder">
+              {applied || filter !== 'all' ? (
+                t('mailbox.nothingFound')
+              ) : folder.kind === 'inbox' && addresses.length === 0 ? (
+                // An Inbox with no address is the first thing a new account
+                // sees, and "nothing here" would leave it wondering why.
+                <>
+                  {t('mailbox.noAddress')}
+                  {managesDomains && (
+                    <>
+                      {' '}
+                      <Link to="/domains">{t('mailbox.noAddressLink')}</Link>
+                    </>
+                  )}
+                </>
+              ) : (
+                t('mailbox.nothing')
+              )}
+            </li>
           )}
         </ul>
 

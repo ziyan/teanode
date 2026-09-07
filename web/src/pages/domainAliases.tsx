@@ -138,7 +138,7 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
               {(mailboxes.data?.ListAllMailboxes ?? []).map((mailbox) => (
                 <option key={mailbox.id} value={mailbox.id}>
                   {mailbox.username}
-                  {mailbox.userName ? ` (${mailbox.userName})` : ''} · {mailbox.name}
+                  {mailbox.userName && mailbox.userName !== mailbox.username ? ` (${mailbox.userName})` : ''} · {mailbox.name}
                 </option>
               ))}
             </select>

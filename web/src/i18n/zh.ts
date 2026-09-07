@@ -1228,4 +1228,5 @@ export const zh: Catalog = {
   'domain.deliverInto': '邮箱',
   'domain.deliveredInto': '投递到邮箱：',
   'domain.chooseMailbox': '选择邮箱…',
+  'mailbox.noAddressLink': '在域名的“别名”标签页添加一个。',
 }

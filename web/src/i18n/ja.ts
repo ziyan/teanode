@@ -1243,4 +1243,5 @@ export const ja: Catalog = {
   'domain.deliverInto': 'メールボックス',
   'domain.deliveredInto': '次のメールボックスへ:',
   'domain.chooseMailbox': 'メールボックスを選択…',
+  'mailbox.noAddressLink': 'ドメインのエイリアスタブで追加できます。',
 }
