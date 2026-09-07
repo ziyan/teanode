@@ -205,6 +205,20 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 			kept++
 			return nil
 		}
+		// Old, but still somebody's: a message in a folder is kept for as
+		// long as the folder holds it, and the row says whether one does.
+		if self.settings.Keep != nil {
+			wanted, err := self.settings.Keep(ctx, strings.TrimSuffix(entry.Name(), ".eml"))
+			if err != nil {
+				log.Warningf("cannot tell whether %s is still wanted, keeping it: %s", path, err)
+				kept++
+				return nil
+			}
+			if wanted {
+				kept++
+				return nil
+			}
+		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			log.Warningf("failed to remove expired message %s: %s", path, err)
 			return nil
@@ -225,7 +239,7 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 	// only alongside a local file would leave another instance's messages
 	// there forever.
 	if self.mirror != nil {
-		mirrorRemoved, err := self.mirror.Sweep(ctx, cutoff)
+		mirrorRemoved, err := self.mirror.Sweep(ctx, cutoff, self.settings.Keep)
 		if err != nil {
 			// Not fatal. The local sweep already ran, and the next one will
 			// try again; a mail server should not stop because an object

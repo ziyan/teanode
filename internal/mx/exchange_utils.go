@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/util/arc"
@@ -146,14 +146,15 @@ func (self *exchange) receivedBy(envelope *mailparse.Envelope) string {
 
 	if envelope != nil {
 		configuration := self.config.Current()
+		domains := self.allDomains()
 		name := ""
 		for _, recipient := range envelope.Recipients {
 			_, recipientDomain := mailparse.SplitAddress(recipient)
-			domain := configuration.FindDomain(recipientDomain)
+			domain := self.domainByName(recipientDomain)
 			if domain == nil {
 				return self.settings.Server
 			}
-			host := configuration.MailHostFor(domain)
+			host := configuration.MailHostFor(domain, domains)
 			if name != "" && !strings.EqualFold(name, host) {
 				return self.settings.Server
 			}
@@ -461,17 +462,37 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, spfErr)
 			return authenticationResults, nil, mailparse.ErrSPFValidationError
 		}
+		// A verification error is not a failed signature. It means the key
+		// could not be fetched or read — a resolver hiccup, a malformed
+		// record at the signer's end — and RFC 6376 §6.1.2 says that makes
+		// the signature unverifiable, not the message rejectable. Refusing
+		// here with a permanent 550 bounced a school's mail sent through
+		// SparkPost, with SPF passing, over a key lookup. Logged, recorded as
+		// no signature verdict, and left to DMARC and the spam filter.
 		if dkimErr != nil {
-			log.Errorf("failed to verify dkim: %s", dkimErr)
-			return authenticationResults, nil, mailparse.ErrDKIMVerificationFailed
+			log.Warningf("could not verify dkim for sender %q: %s", envelope.Sender, dkimErr)
 		}
 		if dmarcErr != nil {
 			log.Errorf("failed to verify dmarc: %s", dmarcErr)
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
 		}
 
+		// A failed alignment is refused only when the sender asked for that.
+		// DMARC's "p=none" asks for reports and no action, and "quarantine"
+		// asks for suspicion rather than refusal: a message under either is
+		// held to the same tests as one from a domain with no policy at all,
+		// with the failure recorded for the spam filter and the mailbox to
+		// act on. Refusing every failure regardless of policy bounced mail
+		// from every domain that had only begun to monitor — which, since
+		// the reserved example domains grew reject policies, was also every
+		// message a developer could send a local server.
+		enforced := dmarcResult
+		if dmarcResult == authres.ResultFail && dmarcPolicy != nil && dmarcPolicy.Policy() != dmarc.PolicyReject {
+			enforced = authres.ResultNone
+		}
+
 		// only error spf or dkim if dmarc didn't pass
-		switch dmarcResult {
+		switch enforced {
 		case authres.ResultPass:
 		case authres.ResultFail:
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
@@ -484,10 +505,8 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 				log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q", envelope.IP, senderDomain, envelope.Sender, spfResult)
 				return authenticationResults, nil, mailparse.ErrSPFValidationFailed
 			}
-			for _, dkimResult := range dkimResults {
-				if dkimResult.Result != dkim.ResultPass {
-					return authenticationResults, nil, mailparse.ErrDKIMVerificationFailed
-				}
+			if err := dkimVerdict(dkimResults, spfResult); err != nil {
+				return authenticationResults, nil, err
 			}
 		}
 
@@ -706,8 +725,8 @@ func (self *exchange) checkIp(ctx context.Context, ip net.IP, timeout time.Durat
 	return ""
 }
 
-func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
-	aliases := self.config.Current().MatchAliases(domain, recipientAlias)
+func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
+	aliases := self.matchingAliases(domain, recipientAlias)
 	if len(aliases) == 0 {
 		return nil, nil
 	}
@@ -722,12 +741,31 @@ func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string,
 		})
 		var deliver bool
 		switch alias.Kind {
-		case config.AliasKindEmail:
+		case models.AliasKindEmail:
 			deliver = alias.Email != ""
-		case config.AliasKindWebhook:
+		case models.AliasKindWebhook:
 			deliver = alias.Webhook != ""
-		case config.AliasKindMailServer:
+		case models.AliasKindMailServer:
 			deliver = alias.MailServer != nil && alias.MailServer.Host != ""
+		case models.AliasKindMailbox:
+			// Placed in the mailbox now, in this transaction; the delivery
+			// row says so and is not queued.
+			mailbox, err := tx.GetMailbox(alias.MailboxID)
+			if err != nil {
+				return nil, err
+			}
+			if mailbox == nil {
+				log.Warningf("alias %q delivers into mailbox %q, which no longer exists", alias.ID, alias.MailboxID)
+				continue
+			}
+			delivery, err := self.deliverToMailbox(tx, mailbox, alias, recipient, mail)
+			if err != nil {
+				return nil, err
+			}
+			if delivery != nil {
+				deliveries = append(deliveries, delivery)
+			}
+			continue
 		}
 		if deliver {
 			deliveries = append(deliveries, &models.Delivery{
@@ -741,4 +779,29 @@ func (self *exchange) matchAliases(domain *config.Domain, recipientAlias string,
 		}
 	}
 	return deliveries, nil
+}
+
+// dkimVerdict decides, for a sender with no DMARC policy, whether the DKIM
+// results alone are grounds to refuse the message.
+//
+// They almost never are. Mail through a forwarder or a relay carries two
+// signatures — the original, broken in transit, and the relay's, intact —
+// and refusing on the first non-passing one bounced ten legitimate messages
+// through Apple's private relay in six days, all with SPF passing and one
+// valid signature each. RFC 6376 §6.3: verifiers should not reject a message
+// solely on a failed signature.
+//
+// So a message is refused here only when it carries signatures, none of them
+// verify, and SPF did not pass either — the one combination where nothing at
+// all vouches for it.
+func dkimVerdict(results []*dkim.Verification, spfResult spf.Result) error {
+	if len(results) == 0 || spfResult == spf.ResultPass {
+		return nil
+	}
+	for _, result := range results {
+		if result.Result == dkim.ResultPass {
+			return nil
+		}
+	}
+	return mailparse.ErrDKIMVerificationFailed
 }

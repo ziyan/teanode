@@ -6,6 +6,75 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-07
+
+### Added
+
+- Mailboxes. Every account has one, the web UI opens on it, and an alias of
+  kind "mailbox" delivers into it by reference: a message is stored once,
+  however many folders hold it, and kept for as long as any does. Folders,
+  flags, search over one folder or the whole mailbox with sender, recipient,
+  subject, date and attachment filters, rules with a dry run, reply, reply
+  all, forward, drafts whose attachments upload once with a progress bar, a
+  signature, and an out-of-office reply with the protections that keep it
+  from answering machines, lists or another mailbox that is also away.
+  Folders nest to any depth, can be renamed and moved, and each kind has its
+  own icon; the Inbox and Starred, every flagged message wherever it sits,
+  stay at the top of the rail, and any other folder can be pinned up beside
+  them. The list shows the sender's name; the reading pane shows the message
+  as a mail program would, with download, headers and the undarkened
+  original behind a menu; attachment names are searchable; contacts, kept
+  from whoever you write to, have a page of their own; and every page fits a
+  phone.
+- IMAP, on port 993 and with STARTTLS on 143, so a mail program reads the
+  same mailbox; and app passwords, one per device, which sign in to IMAP and
+  to submission on port 587 with the mailbox's own addresses.
+- Roles, groups and permissions. The management pages — every message, the
+  queue, reports, domains, the server — are a mode behind "Manage" and show
+  only what the signed-in person may do. Administrator, Operator and Member
+  come seeded and all of it is editable; a group can be tied to a domain so
+  its permissions reach only that far. Every change to a user, group, role,
+  domain, alias, credential or mailbox is in the audit log.
+- Single sign-on through an OpenID Connect provider, with a group's "IdP
+  group" following the directory.
+- `teanode-server user rescue`, which makes an account an administrator when
+  nobody can.
+
+### Changed
+
+- A bare pattern on an alias that delivers into a mailbox is anchored when
+  it is saved, `hello` becoming `^hello$`, because a mailbox's addresses are
+  read back from its patterns. Patterns on other aliases are taken as written.
+- Domains, aliases, credentials and users are rows managed one at a time
+  rather than a configuration document written back whole; the
+  `configuration` table holds settings only.
+- A DMARC failure is refused only when the sender's policy says `reject`;
+  under `none` or `quarantine` the message is accepted, scored, and — in a
+  mailbox — filed in Junk when quarantined. Every reserved example domain
+  publishes `reject` now, which had made a local server refuse every test
+  message.
+- `listen.imap` and `listen.imaps` are settings, editable on the server page,
+  since the environment only describes a first run.
+
+### Fixed
+
+- The SPF line of a message's authentication results said the domain
+  authorized the address whatever the verdict was; it now says what the
+  domain's record actually said: allowed, refused, doubted, silent, absent
+  or unreadable.
+
+## [0.8.1] - 2026-09-07
+
+### Fixed
+
+- Two ways a legitimate message was refused on DKIM grounds with SPF passing.
+  A verification *error* — the signer's key could not be fetched or read —
+  was answered with a permanent 550; it is now recorded and left to DMARC and
+  the spam filter. And with no DMARC policy, any non-passing signature
+  refused the message, which bounced mail through Apple's private relay for
+  carrying a second, broken signature beside a valid one; one valid signature,
+  or SPF passing, is now enough. Eleven legitimate messages in six days.
+
 ## [0.8.0] - 2026-09-06
 
 ### Added
@@ -120,9 +189,9 @@ Notable changes to TeaNode. The format follows
   Nothing was lost and the server was never at risk — the request failed and
   reloading fixed it — but it recurred for as long as the list was open. (#20)
 - Log lines from the outbound SMTP client — everything about delivering a
-  message to another server — were labelled `smtpd`, the name of the listener
+  message to another server — were labeled `smtpd`, the name of the listener
   that receives mail, because the package declared its logger under the wrong
-  name. They are labelled `smtpc` now. If you grep your logs for delivery
+  name. They are labeled `smtpc` now. If you grep your logs for delivery
   problems, that is the word that changed. (#20)
 
 ## [0.4.1] - 2026-09-05
@@ -277,7 +346,7 @@ Notable changes to TeaNode. The format follows
 ### Changed
 
 - **An older binary no longer reverts a newer one's migrations without being
-  asked.** This program undoes migrations it does not recognise, which is how a
+  asked.** This program undoes migrations it does not recognize, which is how a
   deliberate downgrade works — and it cannot tell one from an upgrade that
   crashed on startup, a second instance that never got the upgrade, or somebody
   pulling last week's image to test something. A start that meets a migration
@@ -361,13 +430,13 @@ domains. Almost everything below is a consequence of that.
   forwards one to the other — a container publishing 10587, a firewall taking
   587 — and then the dashboard was handing somebody a number nothing answers
   on. `smtp.submission` sets what to advertise, host and port, and both are
-  editable on the Setup page; leaving them empty keeps the old behaviour of
+  editable on the Setup page; leaving them empty keeps the old behavior of
   following the server.
 - The Setup page no longer describes settings as living in `teanode.yaml` and
   being reloaded with a HUP signal. Neither has been true since configuration
   moved into the database.
 
-- Links in a message can be clicked. The sanitiser had been putting
+- Links in a message can be clicked. The sanitizer had been putting
   `target="_blank"` on every link it kept since it was written, but the frame
   showing the message was sandboxed with `allow-same-origin` alone — and a
   browser silently drops a `_blank` click without `allow-popups`. Nothing
@@ -398,8 +467,8 @@ domains. Almost everything below is a consequence of that.
   for a record on a name nothing pointed at while not checking the names that
   mattered.
 - An AAAA record is marked optional rather than missing. A server reachable
-  over IPv4 alone is correctly configured, and colouring it the same as a
-  missing MX teaches the reader to ignore the colour.
+  over IPv4 alone is correctly configured, and coloring it the same as a
+  missing MX teaches the reader to ignore the color.
 - A catch-all alias can be created again. An empty pattern is a catch-all —
   the configuration layer, the documentation and every existing deployment
   read it that way — but the API refused it as a missing value, while allowing
@@ -410,7 +479,7 @@ domains. Almost everything below is a consequence of that.
   deployment — offered it anyway, and a sender that took the offer failed the
   handshake. Some retry immediately without encryption, so the mail arrived in
   plaintext and nothing recorded that it had.
-- A published DKIM key is recognised when it omits the version tag. RFC 6376
+- A published DKIM key is recognized when it omits the version tag. RFC 6376
   makes `v=` recommended rather than required, defaulting to DKIM1, so a
   record of the form `k=rsa; p=…` is valid and every verifier accepts one.
   The dashboard did not, and reported working keys as needing to be changed —
@@ -526,7 +595,7 @@ domains. Almost everything below is a consequence of that.
   beside it. `default-src 'self'`, with `script-src` naming the hash of the
   one inline script the page ships — computed from what is embedded rather
   than written down, so editing the script cannot leave a stale hash behind.
-  It is the third layer under the mail a stranger sends, after the sanitiser
+  It is the third layer under the mail a stranger sends, after the sanitizer
   and the sandboxed frame, and the one that holds if either has a hole.
 
 - **Remote images in a message are fetched by the server**, once the reader
@@ -683,7 +752,7 @@ domains. Almost everything below is a consequence of that.
 - The dashboard speaks English, Simplified Chinese and Japanese, picked from
   the browser's language and changeable from a control beside the appearance
   one. No i18n library: lookup and substitution is forty lines, and the
-  catalogues are typed against the English one so a missing key does not
+  catalogs are typed against the English one so a missing key does not
   compile. `make check-catalogs` catches what types cannot — a translation that
   dropped a placeholder, or one that was never translated.
 - An appearance setting in the dashboard: auto, light or dark. Auto follows
@@ -739,7 +808,7 @@ domains. Almost everything below is a consequence of that.
   Authentication was a row of tags reading "SPF pass DKIM pass", enough to
   know nothing went wrong and never enough to work out why something did. Each
   check is a row now: the mechanism, the verdict, and what was examined — the
-  key that signed, the address SPF authorised, the policy DMARC found, the
+  key that signed, the address SPF authorized, the policy DMARC found, the
   rules the spam filter matched. The markup behind the rendered view has a tab
   of its own, highlighted.
 
@@ -768,8 +837,8 @@ domains. Almost everything below is a consequence of that.
   replacing it would have given it a key nobody had published. It offers to
   split off instead, and says what that changes.
 
-- **The dashboard follows a quieter design language**: colour only where it
-  means something. The rail is a warm grey against a
+- **The dashboard follows a quieter design language**: color only where it
+  means something. The rail is a warm gray against a
   white page, the row you are on is a raised pill rather than a highlight, and
   what you press is near-black — inverting to near-white on dark rather than
   dimming. Group labels are sentence case rather than small caps, table heads
@@ -851,7 +920,7 @@ domains. Almost everything below is a consequence of that.
 - Logging in, logging out, claiming a new server and changing a password are
   GraphQL operations, not REST endpoints beside it. A browser's credential is
   a cookie, so those resolvers get the response writer; that is a reason to
-  pass one argument, not to run a second protocol. Authorisation was always in
+  pass one argument, not to run a second protocol. Authorization was always in
   the resolvers rather than the routing, and a test now reads the source and
   fails if a new one forgets to check.
 - The command line tool changes configuration through the running server
@@ -883,13 +952,13 @@ domains. Almost everything below is a consequence of that.
   forwards one to the other — a container publishing 10587, a firewall taking
   587 — and then the dashboard was handing somebody a number nothing answers
   on. `smtp.submission` sets what to advertise, host and port, and both are
-  editable on the Setup page; leaving them empty keeps the old behaviour of
+  editable on the Setup page; leaving them empty keeps the old behavior of
   following the server.
 - The Setup page no longer describes settings as living in `teanode.yaml` and
   being reloaded with a HUP signal. Neither has been true since configuration
   moved into the database.
 
-- Links in a message can be clicked. The sanitiser had been putting
+- Links in a message can be clicked. The sanitizer had been putting
   `target="_blank"` on every link it kept since it was written, but the frame
   showing the message was sandboxed with `allow-same-origin` alone — and a
   browser silently drops a `_blank` click without `allow-popups`. Nothing
@@ -909,11 +978,11 @@ domains. Almost everything below is a consequence of that.
   was published as required.
 
 - Mail from anything that composes HTML for a living rendered as a column of
-  fragments. The sanitiser dropped every `<style>` block and `style`
+  fragments. The sanitizer dropped every `<style>` block and `style`
   attribute while keeping the class names that referred to them, so a message
   arrived with its whole skeleton of nested tables and not one rule that made
-  it a layout. CSS is kept and sanitised now; what stops it fetching or
-  scripting is the frame's own policy, not the sanitiser deleting it.
+  it a layout. CSS is kept and sanitized now; what stops it fetching or
+  scripting is the frame's own policy, not the sanitizer deleting it.
 
 - API replies carried no `Cache-Control`, and a 200 without one is
   heuristically cacheable. After the accounts on a development server were
@@ -1000,7 +1069,7 @@ domains. Almost everything below is a consequence of that.
   domain it was found at is recorded beside it.
 - SPF is one of the records a domain is asked for, and is checked. It never
   appeared at all, so a domain sending mail no receiver would accept as
-  authorised looked exactly like one that was set up correctly. It is asked for
+  authorized looked exactly like one that was set up correctly. It is asked for
   at the bounce subdomain rather than at the domain itself, because that is the
   envelope sender on everything this server sends and it is the envelope a
   receiver evaluates — a perfect record at the domain does nothing for it. What

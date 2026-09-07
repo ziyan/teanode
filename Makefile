@@ -161,7 +161,7 @@ watch: ## Rebuild on source change (requires inotifywait)
 		$(MAKE) format build || true; \
 	done
 
-check-catalogs: $(WEB_DIR)/node_modules ## Check the translations against the English catalogue
+check-catalogs: $(WEB_DIR)/node_modules ## Check the translations against the English catalog
 	@cd $(WEB_DIR) && node scripts/check-catalogs.mjs
 
 check-queries: $(WEB_DIR)/node_modules ## Validate the dashboard's GraphQL against a running server

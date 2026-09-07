@@ -593,7 +593,7 @@ resulting messages under Mail.
 - `go test ./internal/mailer` renders a template with a `zh` translation
   under locale `zh-CN` and gets the Chinese subject, and under `fr` gets the
   default.
-- `go test ./internal/api/...` still passes `TestEveryOperationAuthorises`,
+- `go test ./internal/api/...` still passes `TestEveryOperationAuthorizes`,
   which now counts the new resolvers.
 - `node scripts/check-queries.mjs` against the development server reports
   every operation checks out.

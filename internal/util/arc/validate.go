@@ -67,7 +67,7 @@ func Validate(ctx context.Context, headers []string, body []byte, resolver Resol
 	// version launched this many goroutines but read one result fewer, so the
 	// message signature check could be dropped on the floor and a message
 	// whose body had been altered after sealing validated as pass. The channel
-	// is buffered so that cancelling early cannot leave a goroutine blocked on
+	// is buffered so that canceling early cannot leave a goroutine blocked on
 	// a send forever.
 	checks := len(sets) + 1
 	done := make(chan error, checks)

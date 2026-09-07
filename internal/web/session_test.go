@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -33,19 +35,17 @@ var testPasswordHash = func() string {
 // identifierOf is what the credential store keys by. The tests name accounts
 // by username, because that is what a person does; the store stores the
 // identifier, because a username can change.
-func identifierOf(t *testing.T, store config.Store, username string) string {
+func identifierOf(t *testing.T, credentials *memoryStore, username string) string {
 	t.Helper()
 
-	for _, user := range store.Current().Users {
-		if user != nil && user.Username == username {
-			return user.ID
-		}
+	user, err := credentials.GetUserByUsername(username)
+	if err != nil || user == nil {
+		t.Fatalf("no account called %q", username)
 	}
-	t.Fatalf("no account called %q", username)
-	return ""
+	return user.ID
 }
 
-func newStore(t *testing.T, users ...*config.User) config.Store {
+func newStore(t *testing.T) config.Store {
 	t.Helper()
 
 	directory := t.TempDir()
@@ -55,7 +55,6 @@ func newStore(t *testing.T, users ...*config.User) config.Store {
 
 	configuration := config.Example()
 	configuration.Server.DataDirectory = directory
-	configuration.Users = users
 
 	store := config.NewMemoryStore(configuration)
 	t.Cleanup(func() { _ = store.Close() })
@@ -68,14 +67,14 @@ func newStore(t *testing.T, users ...*config.User) config.Store {
 	return store
 }
 
-func newUser(t *testing.T, username, password string) *config.User {
+func newUser(t *testing.T, username, password string) *models.User {
 	t.Helper()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
 		t.Fatalf("failed to hash the password: %s", err)
 	}
-	return &config.User{ID: config.NewID(), Username: username, PasswordHash: string(hash)}
+	return &models.User{ID: config.NewID(), Username: username, PasswordHash: string(hash)}
 }
 
 // login performs a login and returns the session cookie it set.
@@ -99,7 +98,7 @@ func login(t *testing.T, authenticator web.Authenticator, username, password str
 func TestLoginAndAuthenticate(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := web.NewAuthenticator(newStore(t, newUser(t, "admin", "hunter2")), newMemoryStore())
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -129,7 +128,7 @@ func TestLoginAndAuthenticate(t *testing.T) {
 func TestLoginRejectsBadCredentials(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := web.NewAuthenticator(newStore(t, newUser(t, "admin", "hunter2")), newMemoryStore())
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -163,8 +162,8 @@ func TestLoginRejectsBadCredentials(t *testing.T) {
 func TestSessionCannotBeForged(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"), newUser(t, "other", "hunter2"))
-	credentials := newMemoryStore()
+	store := newStore(t)
+	credentials := newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "other", "hunter2"))
 	authenticator, err := web.NewAuthenticator(store, credentials)
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
@@ -177,7 +176,7 @@ func TestSessionCannotBeForged(t *testing.T) {
 
 	// The identifier is the readable half, and is not a secret: it appears in
 	// the log and in the session list. Knowing it must not be enough.
-	sessions, err := credentials.ListSessions(identifierOf(t, store, "admin"), nil)
+	sessions, err := credentials.ListSessions(identifierOf(t, credentials, "admin"), nil)
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("expected one session, got %v (%v)", sessions, err)
 	}
@@ -217,8 +216,8 @@ func TestSessionCannotBeForged(t *testing.T) {
 func TestASessionCookieIsNotAToken(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"))
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -238,8 +237,8 @@ func TestASessionCookieIsNotAToken(t *testing.T) {
 func TestRevokingASessionEndsIt(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"))
-	credentials := newMemoryStore()
+	store := newStore(t)
+	credentials := newMemoryStore(newUser(t, "admin", "hunter2"))
 	authenticator, err := web.NewAuthenticator(store, credentials)
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
@@ -285,8 +284,8 @@ func TestRevokingASessionEndsIt(t *testing.T) {
 func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"), newUser(t, "other", "hunter2"))
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "other", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -316,8 +315,8 @@ func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
 func TestLogoutEndsTheSession(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"))
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -339,7 +338,7 @@ func TestLogoutEndsTheSession(t *testing.T) {
 func TestSessionExpires(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"))
+	store := newStore(t)
 	if err := store.Update(func(configuration *config.Configuration) error {
 		configuration.Session.Lifetime = config.Duration(time.Second)
 		return nil
@@ -347,7 +346,7 @@ func TestSessionExpires(t *testing.T) {
 		t.Fatalf("failed to shorten the session lifetime: %s", err)
 	}
 
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -372,8 +371,9 @@ func TestSessionExpires(t *testing.T) {
 func TestSessionStopsWhenUserRemoved(t *testing.T) {
 	t.Parallel()
 
-	store := newStore(t, newUser(t, "admin", "hunter2"), newUser(t, "leaver", "hunter2"))
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	credentials := newMemoryStore(newUser(t, "admin", "hunter2"), newUser(t, "leaver", "hunter2"))
+	authenticator, err := web.NewAuthenticator(store, credentials)
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -385,12 +385,7 @@ func TestSessionStopsWhenUserRemoved(t *testing.T) {
 		t.Fatal("the session did not authenticate before removal")
 	}
 
-	if err := store.Update(func(configuration *config.Configuration) error {
-		configuration.Users = configuration.Users[:1]
-		return nil
-	}); err != nil {
-		t.Fatalf("failed to remove the user: %s", err)
-	}
+	credentials.removeUser("leaver")
 
 	if _, ok := authenticator.Authenticate(request); ok {
 		t.Error("a removed user's session still authenticated")
@@ -418,7 +413,7 @@ func TestNoUsersConfiguredIsOpen(t *testing.T) {
 func TestLogoutClearsTheCookie(t *testing.T) {
 	t.Parallel()
 
-	authenticator, err := web.NewAuthenticator(newStore(t, newUser(t, "admin", "hunter2")), newMemoryStore())
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -444,7 +439,8 @@ func TestCreateFirstUserClaimsTheServer(t *testing.T) {
 	t.Parallel()
 
 	store := newStore(t)
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	credentials := newMemoryStore()
+	authenticator, err := web.NewAuthenticator(store, credentials)
 	if err != nil {
 		t.Fatalf("failed to create the authenticator: %s", err)
 	}
@@ -453,7 +449,7 @@ func TestCreateFirstUserClaimsTheServer(t *testing.T) {
 		t.Fatal("a fresh server should not require authentication yet")
 	}
 
-	if err := authenticator.CreateFirstUser("ziyan", "a-proper-long-password"); err != nil {
+	if err := authenticator.CreateFirstUser(context.Background(), "ziyan", "a-proper-long-password"); err != nil {
 		t.Fatalf("failed to create the first account: %s", err)
 	}
 
@@ -463,13 +459,18 @@ func TestCreateFirstUserClaimsTheServer(t *testing.T) {
 
 	// The account has to reach the store, or it is lost on restart. That it
 	// survives being written and read back is covered where that actually
-	// happens, in internal/configdb.
-	reloaded := store.Current()
-	if len(reloaded.Users) != 1 || reloaded.Users[0].Username != "ziyan" {
-		t.Fatalf("the account was not stored: %v", reloaded.Users)
+	// happens, in internal/db.
+	stored, err := credentials.GetUserByUsername("ziyan")
+	if err != nil || stored == nil {
+		t.Fatalf("the account was not stored: %v", err)
 	}
-	if reloaded.Users[0].PasswordHash == "a-proper-long-password" {
+	if stored.PasswordHash == "a-proper-long-password" {
 		t.Fatal("the password was stored in the clear")
+	}
+	// And the first person is an administrator: the roles and groups were
+	// seeded around them.
+	if len(credentials.groups) == 0 || len(credentials.groups[0].UserIDs) == 0 {
+		t.Error("claiming the server did not make the first account an administrator")
 	}
 
 	// It has to actually work for logging in.
@@ -481,7 +482,7 @@ func TestCreateFirstUserClaimsTheServer(t *testing.T) {
 	}
 
 	// A second claim must be refused, or anybody could add themselves.
-	if err := authenticator.CreateFirstUser("attacker", "another-long-password"); !errors.Is(err, web.ErrAccountExists) {
+	if err := authenticator.CreateFirstUser(context.Background(), "attacker", "another-long-password"); !errors.Is(err, web.ErrAccountExists) {
 		t.Errorf("a second claim returned %v, want ErrAccountExists", err)
 	}
 }
@@ -502,7 +503,7 @@ func TestCreateFirstUserRejectsUnusableAccounts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create the authenticator: %s", err)
 			}
-			if err := authenticator.CreateFirstUser(test.username, test.password); !errors.Is(err, web.ErrInvalidAccount) {
+			if err := authenticator.CreateFirstUser(context.Background(), test.username, test.password); !errors.Is(err, web.ErrInvalidAccount) {
 				t.Errorf("got %v, want ErrInvalidAccount", err)
 			}
 			if authenticator.Required() {
@@ -529,19 +530,10 @@ func TestBearerTokenAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	if err := authenticator.CreateFirstUser("ziyan", "a-password"); err != nil {
+	if err := authenticator.CreateFirstUser(context.Background(), "ziyan", "a-password"); err != nil {
 		t.Fatalf("CreateFirstUser: %s", err)
 	}
-	if err := store.Update(func(configuration *config.Configuration) error {
-		configuration.Users = append(configuration.Users, &config.User{
-			ID:           config.NewID(),
-			Username:     "temporary",
-			PasswordHash: testPasswordHash,
-		})
-		return nil
-	}); err != nil {
-		t.Fatalf("Update: %s", err)
-	}
+	credentials.addUser(&models.User{Username: "temporary", PasswordHash: testPasswordHash})
 
 	_, ownedSecret, err := authenticator.IssueToken("ziyan", "laptop", 0)
 	if err != nil {
@@ -553,7 +545,7 @@ func TestBearerTokenAuthentication(t *testing.T) {
 	}
 	// Wound back so it is already past, which the store lets a test do and
 	// the API does not.
-	expireNow(t, credentials, identifierOf(t, store, "ziyan"), "old")
+	expireNow(t, credentials, identifierOf(t, credentials, "ziyan"), "old")
 
 	// A token belonging to an account that is later removed has to stop
 	// working, which used to follow from tokens living inside the account and
@@ -632,7 +624,7 @@ func TestBearerTokenDoesNotFallBackToTheSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	if err := authenticator.CreateFirstUser("ziyan", "a-password"); err != nil {
+	if err := authenticator.CreateFirstUser(context.Background(), "ziyan", "a-password"); err != nil {
 		t.Fatalf("CreateFirstUser: %s", err)
 	}
 

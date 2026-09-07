@@ -4,12 +4,17 @@ import { useParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { Tag } from '../components/common'
 import { TrashIcon } from '../components/icons'
+import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
 
+const MAILBOXES = `{ ListAllMailboxes { id name userId username userName } }`
+
+type MailboxSummary = { id: string; name: string; userId: string; username: string; userName?: string }
+
 const CREATE_ALIAS = `
-  mutation ($domainId: String!, $pattern: String!, $kind: String!, $email: String, $webhook: String) {
-    CreateAlias(domainId: $domainId, aliasParameters: { pattern: $pattern, kind: $kind, email: $email, webhook: $webhook }) {
+  mutation ($domainId: String!, $pattern: String!, $kind: String!, $email: String, $webhook: String, $mailboxId: String) {
+    CreateAlias(domainId: $domainId, aliasParameters: { pattern: $pattern, kind: $kind, email: $email, webhook: $webhook, mailboxId: $mailboxId }) {
       id
     }
   }`
@@ -24,6 +29,15 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
 
   const [pattern, setPattern] = useState('')
   const [kind, setKind] = useState('email')
+  const [mailboxId, setMailboxId] = useState('')
+
+  // Whose mailbox an address can deliver into: every mailbox on the server,
+  // with its owner's name, for the picker. Loaded once.
+  const mailboxes = useQuery(() => graphql<{ ListAllMailboxes: MailboxSummary[] }>(MAILBOXES), [], { refresh: false })
+  const mailboxLabel = (id?: string) => {
+    const found = mailboxes.data?.ListAllMailboxes.find((mailbox) => mailbox.id === id)
+    return found ? `${found.username} · ${found.name}` : id ?? ''
+  }
   const [destination, setDestination] = useState('')
 
   return (
@@ -57,6 +71,11 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
                   </span>
                 )}
                 {alias.kind === 'null' && <span className="muted">{t('domain.discarded')}</span>}
+                {alias.kind === 'mailbox' && (
+                  <span>
+                    {t('domain.deliveredInto')} {mailboxLabel(alias.mailboxId)}
+                  </span>
+                )}
               </td>
               <td className="shrink">
                 <button
@@ -85,6 +104,7 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
               kind,
               email: kind === 'email' ? destination : null,
               webhook: kind === 'webhook' ? destination : null,
+              mailboxId: kind === 'mailbox' ? mailboxId : null,
             })
             setPattern('')
             setDestination('')
@@ -104,12 +124,27 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
         <label style={{ margin: 0, maxWidth: 140 }}>
           <span>{t('domain.kind')}</span>
           <select value={kind} onChange={(event) => setKind(event.target.value)}>
+            <option value="mailbox">{t('domain.kindMailbox')}</option>
             <option value="email">{t('domain.kindEmail')}</option>
             <option value="webhook">{t('domain.kindWebhook')}</option>
             <option value="null">{t('domain.kindDiscard')}</option>
           </select>
         </label>
-        {kind !== 'null' && (
+        {kind === 'mailbox' && (
+          <label style={{ margin: 0 }}>
+            <span>{t('domain.deliverInto')}</span>
+            <select value={mailboxId} onChange={(event) => setMailboxId(event.target.value)} required>
+              <option value="">{t('domain.chooseMailbox')}</option>
+              {(mailboxes.data?.ListAllMailboxes ?? []).map((mailbox) => (
+                <option key={mailbox.id} value={mailbox.id}>
+                  {mailbox.username}
+                  {mailbox.userName && mailbox.userName !== mailbox.username ? ` (${mailbox.userName})` : ''} · {mailbox.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {kind !== 'null' && kind !== 'mailbox' && (
           <label style={{ margin: 0 }}>
             <span>{kind === 'email' ? t('domain.forwardTo') : t('domain.postTo')}</span>
             <input value={destination} onChange={(event) => setDestination(event.target.value)} />

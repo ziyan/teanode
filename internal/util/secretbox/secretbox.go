@@ -18,7 +18,7 @@
 // different values and nobody can tell from the outside that two rows hold
 // the same secret.
 //
-// What this is worth is worth being honest about. It is not a defence against
+// What this is worth is worth being honest about. It is not a defense against
 // somebody who has everything: the master secret is itself in the database
 // here, so a full dump discloses both halves. What it does is stop a private
 // key from leaving in a partial one — a copy of a single table, a support

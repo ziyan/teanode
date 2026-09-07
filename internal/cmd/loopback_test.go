@@ -125,9 +125,9 @@ func TestLoopbackGivesUp(t *testing.T) {
 		t.Errorf("a timeout should say what to do instead, got %v", err)
 	}
 
-	cancelled, cancel := context.WithCancel(ctx)
+	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := listener.Wait(cancelled, time.Second); err == nil {
-		t.Error("a cancelled context should end the wait")
+	if _, err := listener.Wait(canceled, time.Second); err == nil {
+		t.Error("a canceled context should end the wait")
 	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 // A field name reaches SQL as an identifier, and an identifier cannot be
-// parameterised. The only defence is that the name has to be one the table
+// parameterised. The only defense is that the name has to be one the table
 // offered, so this checks the gate rather than the escaping — there is no
 // escaping to check.
 func TestFieldNamesCannotCarrySql(t *testing.T) {

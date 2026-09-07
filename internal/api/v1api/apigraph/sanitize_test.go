@@ -218,12 +218,12 @@ func TestSanitizeHTMLHandlesRubbish(t *testing.T) {
 }
 
 // TestSanitizeKeepsStyling covers a message that arrived looking broken: the
-// sanitiser dropped its <style> block and every style attribute while keeping
+// sanitizer dropped its <style> block and every style attribute while keeping
 // the 293 class names that referred to them, so a layout of nested tables
 // rendered as a column of fragments.
 //
 // CSS cannot execute anything, and the frame it renders in has a policy of
-// default-src 'none', so what makes this safe is not the sanitiser refusing
+// default-src 'none', so what makes this safe is not the sanitizer refusing
 // CSS — it is the frame refusing to fetch.
 func TestSanitizeKeepsStyling(t *testing.T) {
 	t.Parallel()
@@ -281,7 +281,7 @@ func TestSanitizeCSSReportsRemoteContent(t *testing.T) {
 		t.Error("a remote background in a style attribute should be reported as remote content")
 	}
 	if _, remote := sanitizeHtml(`<style>.a { background: #fff }</style>`); remote {
-		t.Error("a colour is not remote content")
+		t.Error("a color is not remote content")
 	}
 }
 
@@ -302,7 +302,7 @@ func TestSanitizeCSSPreservesTheSheet(t *testing.T) {
 // deleting the whole stylesheet: a background image is a tracking pixel by
 // another name.
 //
-// It survives sanitising now, and is stopped one layer out instead — reported
+// It survives sanitizing now, and is stopped one layer out instead — reported
 // as remote content so the reader is asked, and refused by the frame's
 // img-src policy until they say yes. The same treatment an <img> gets, rather
 // than a stylesheet thrown away for containing a URL.

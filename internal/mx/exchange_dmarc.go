@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/dmarc"
@@ -83,13 +82,15 @@ func (self *exchange) handleRua(ctx context.Context, tx db.Transaction, envelope
 	}
 
 	var reports []*models.Report
-	configuration := self.config.Current()
-	domains := make(map[string]*config.Domain) // example.com -> configured domain
+	domains := make(map[string]*models.Domain) // example.com -> configured domain
 	for _, feedback := range feedbacks {
 		feedbackDomain := strings.Trim(strings.ToLower(feedback.Domain), ".")
 		domain, ok := domains[feedbackDomain]
 		if !ok {
-			domain = configuration.FindDomain(feedbackDomain)
+			domain, err = tx.GetDomainByName(feedbackDomain)
+			if err != nil {
+				return nil, err
+			}
 			domains[feedbackDomain] = domain
 		}
 		if domain == nil {

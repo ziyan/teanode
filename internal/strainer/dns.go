@@ -235,7 +235,7 @@ func reverseAddress(address netip.Addr) string {
 // zoneSymbol turns a zone into something readable in a symbol name.
 func zoneSymbol(zone string) string {
 	trimmed := strings.TrimSuffix(zone, ".")
-	// The interesting part is the organisation, not the label in front of it
+	// The interesting part is the organization, not the label in front of it
 	// or the public suffix behind: zen.spamhaus.org reads as SPAMHAUS.
 	labels := strings.Split(trimmed, ".")
 	if len(labels) >= 2 {

@@ -43,7 +43,7 @@ var (
 // CertificateRequest is one certificate to obtain and keep renewed.
 type CertificateRequest struct {
 	// Key identifies this certificate in storage and in logs. The caller
-	// chooses it and recognises it when SaveCertificate is called: the
+	// chooses it and recognizes it when SaveCertificate is called: the
 	// domain's identifier for a domain's certificate, and the empty string
 	// for the server's own.
 	Key string

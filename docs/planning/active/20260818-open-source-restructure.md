@@ -98,7 +98,7 @@ You can see it working end to end without owning a domain: milestone acceptance 
   Date/Author: 2026-08-18, Ziyan Zhou.
 
 - Decision: Database migrations restart from `0000_initial.sql`, describing the new reduced schema, and every migration must ship a matching `.reverse.sql`.
-  Rationale: the owner explicitly authorised discarding the existing migration chain. The existing migration runner in `db/database_migrate.go` already *requires* reverse SQL — it reverts unknown migrations recorded in the `migration` table and panics if reverse SQL is missing — so the invariant is pre-existing and must be preserved. Restarting at `0000` means the owner's production database must be migrated by hand once; see `Idempotence and Recovery`.
+  Rationale: the owner explicitly authorized discarding the existing migration chain. The existing migration runner in `db/database_migrate.go` already *requires* reverse SQL — it reverts unknown migrations recorded in the `migration` table and panics if reverse SQL is missing — so the invariant is pre-existing and must be preserved. Restarting at `0000` means the owner's production database must be migrated by hand once; see `Idempotence and Recovery`.
   Date/Author: 2026-08-18, Ziyan Zhou.
 
 - Decision: Certificates are obtained by the built-in ACME client using HTTP-01 by default, with TLS-ALPN-01 available, and the existing Route53 DNS-01 solver retained as an optional provider.
@@ -240,7 +240,7 @@ The owner's other repository, `~/projects/teanode/teanode`, is the model for the
         models/                  shared structs
         mx/                      the mail path
         storage/                 message body storage: filesystem, optional S3
-        util/                    protocol implementations, unchanged in behaviour
+        util/                    protocol implementations, unchanged in behavior
         version/
         web/                     HTTP server, middlewares, session auth
       web/                       frontend source (React, TypeScript, webpack)
@@ -258,7 +258,7 @@ The owner's other repository, `~/projects/teanode/teanode`, is the model for the
 
 ### The configuration file
 
-This is the centrepiece of the change. `internal/config` defines these types; every field is documented in `docs/configuration.md` and in the generated example file. Field names follow the repository convention: acronyms are fully capitalised when the identifier starts with a capital (`TLS`, `ID`, `URL`), lower-camel in YAML keys (`tls`, `id`, `url`).
+This is the centrepiece of the change. `internal/config` defines these types; every field is documented in `docs/configuration.md` and in the generated example file. Field names follow the repository convention: acronyms are fully capitalized when the identifier starts with a capital (`TLS`, `ID`, `URL`), lower-camel in YAML keys (`tls`, `id`, `url`).
 
 An operator's `teanode.yaml` looks like this:
 
@@ -365,7 +365,7 @@ An operator's `teanode.yaml` looks like this:
     storage:
       s3: {enabled: false, bucket: "", region: us-east-1, credentialsFile: ""}
 
-Two invariants that the implementation must honour:
+Two invariants that the implementation must honor:
 
 - Every `domains[].id`, `domains[].aliases[].id` and `domains[].credentials[].id` is a ULID that is generated once and never changes. Stored `mail` and `delivery` rows reference these strings. Editing a pattern must not change an id; deleting an alias leaves historical rows pointing at a now-unknown id, and the dashboard must render that as `(deleted)` rather than failing.
 - The secret used to sign DSN return paths and credential passwords lives in `server.dataDirectory/teanode.secret`, is generated with 32 bytes of crypto/rand on first run if absent, and is never written into `teanode.yaml`. Rotating it invalidates in-flight bounce addresses and all issued SMTP AUTH passwords.
@@ -451,11 +451,11 @@ Unchanged: `gorm.io/gorm`, `gorm.io/driver/postgres`, `github.com/graphql-go/gra
 
 ## Plan of Work
 
-Eleven milestones. Each ends with a working build and a demonstrable behaviour. Commit at the end of each; the whole sequence is squashed into one commit in Milestone 11, so intermediate commit messages are working notes, not published history.
+Eleven milestones. Each ends with a working build and a demonstrable behavior. Commit at the end of each; the whole sequence is squashed into one commit in Milestone 11, so intermediate commit messages are working notes, not published history.
 
 ### Milestone 1 — Root module and `internal/` layout
 
-Scope: move code, delete dead code, keep behaviour. Nothing about configuration or the database changes yet. At the end, `make build` at the repository root produces `build/teanode`, and the binary behaves exactly as `backend/build/teanode` does today except that the node relay is gone.
+Scope: move code, delete dead code, keep behavior. Nothing about configuration or the database changes yet. At the end, `make build` at the repository root produces `build/teanode`, and the binary behaves exactly as `backend/build/teanode` does today except that the node relay is gone.
 
 Work:
 
@@ -508,7 +508,7 @@ Work:
 - `handleIncoming` replaces `tx.GetDomainByDomain` with `configuration.FindDomain(recipientDomain)`, and drops the `VerifyAt`/`VerifiedAt` gate per the decision above — an unconfigured domain still yields `ErrMailBoxUnavailable`, which is the correct SMTP-level answer.
 - `matchAliases` replaces `tx.MatchAliases` with `domain.MatchAliases(localPart)`, using precompiled regular expressions cached in the config snapshot and invalidated through `Subscribe`.
 - `handleOutgoing` replaces `tx.ModifyCredential` with `configuration.FindCredential(envelope.CredentialID)`; the credential's last-used timestamp, which was a database write, becomes a usage counter row instead.
-- `internal/dns` iterates the configured domains rather than querying, and publishes its findings into an in-memory `dns.Status` map keyed by domain id that the API reads. Its "email the owner when a domain breaks" behaviour becomes a log line plus dashboard state; keep the mailer notification but address it to the dashboard users' addresses if any are configured.
+- `internal/dns` iterates the configured domains rather than querying, and publishes its findings into an in-memory `dns.Status` map keyed by domain id that the API reads. Its "email the owner when a domain breaks" behavior becomes a log line plus dashboard state; keep the mailer notification but address it to the dashboard users' addresses if any are configured.
 - `exchange_s3.go` becomes `internal/storage`, filesystem-first: bodies go to `dataDirectory/spool/<id>.eml`, mirrored to S3 only when `storage.s3.enabled`. Delivery retry reads from whichever has it. Spool files are deleted when every delivery for a mail reaches a terminal state, and swept on the existing scavenge loop.
 
 Acceptance: the loopback test. With `smtp.disableSend: true`, `swaks --to hello@example.com --server 127.0.0.1:10025` against a config whose `example.com` alias forwards to `you@example.net` produces a `mail` row, a `delivery` row with the right `alias_id`, and a spool file — with no `domain`, `alias` or `credential` table in the database.
@@ -541,7 +541,7 @@ Work:
 
 - Queries: `domains` (from config, each with live DNS status and usage), `mails` / `mail(id)` with filtering by domain, alias, status, kind and date range plus cursor pagination, `mail(id).content` returning the parsed body parts, `deliveries`, `reports`, `usage`.
 - Mutations, all of which call `config.Store.Update` and therefore rewrite `teanode.yaml`: `createDomain`, `updateDomain`, `deleteDomain`, `createAlias`, `updateAlias`, `deleteAlias`, `createCredential` (returns the generated SMTP username/password exactly once), `deleteCredential`, `updateSettings` for the non-collection sections, and `createDashboardUser` / `deleteDashboardUser`. Plus the operational ones that touch the database: `retryDelivery`, `deleteMail`.
-- A new resolver for reading a stored message: it loads the raw `.eml` from `internal/storage`, parses it with `internal/util/mailparse`, and returns a structure containing the headers worth showing, a text part, a sanitised HTML part, and attachment metadata (filename, content type, size, and a download URL). Sanitisation strips scripts, event handlers, `<base>`, and rewrites remote image URLs to a blocked placeholder unless the viewer clicks "load remote content" — `internal/util/mailparse` plus the already-vendored `github.com/aymerick/douceur` and `github.com/PuerkitoBio/goquery` give the parsing and CSS handling needed.
+- A new resolver for reading a stored message: it loads the raw `.eml` from `internal/storage`, parses it with `internal/util/mailparse`, and returns a structure containing the headers worth showing, a text part, a sanitized HTML part, and attachment metadata (filename, content type, size, and a download URL). Sanitization strips scripts, event handlers, `<base>`, and rewrites remote image URLs to a blocked placeholder unless the viewer clicks "load remote content" — `internal/util/mailparse` plus the already-vendored `github.com/aymerick/douceur` and `github.com/PuerkitoBio/goquery` give the parsing and CSS handling needed.
 - Keep the websocket subscription transport in `graphql_websocket.go` for live updates of the mail list.
 
 Acceptance: `createAlias` through the GraphQL endpoint adds the alias to `teanode.yaml` on disk within the same request, and mail sent to it is forwarded without restarting the process.
@@ -551,7 +551,7 @@ Acceptance: `createAlias` through the GraphQL endpoint adds the alias to `teanod
 Work:
 
 - Rebuild `web/` as a small app: `src/` with `pages/{login,mail,mailDetail,queue,domains,reports,settings}.tsx`, Apollo client, MUI retained, React Router. Delete the article and marketing pages, the i18n translation files if unused by the remaining screens, and the `js-yaml` / `react-remarkable` dependencies.
-- The mail detail page is the point of the rewrite: envelope and authentication summary at the top (SPF/DKIM/DMARC/ARC verdicts as chips, spam score, virus result), then the message rendered — HTML in a `sandbox="allow-same-origin"` iframe with `srcdoc` set to the sanitised HTML, a text tab, an attachments list, and a "view source" tab for the raw `.eml`.
+- The mail detail page is the point of the rewrite: envelope and authentication summary at the top (SPF/DKIM/DMARC/ARC verdicts as chips, spam score, virus result), then the message rendered — HTML in a `sandbox="allow-same-origin"` iframe with `srcdoc` set to the sanitized HTML, a text tab, an attachments list, and a "view source" tab for the raw `.eml`.
 - Settings pages are forms over the config mutations: domains and aliases table with inline editing, credentials with one-time password display, integrations (ClamAV, SpamAssassin, S3, GeoIP, proxy) as toggle-plus-fields, dashboard users.
 - Webpack output goes to `internal/frontend/static/`; `internal/frontend/frontend.go` embeds it with `go:embed static` and serves it: exact-match static assets with long cache headers, everything else falling through to `index.html` so client-side routing works, and `/api/` never reaching it.
 - `make web` builds the frontend, `make build` depends on it, and a committed placeholder `internal/frontend/static/.gitkeep` keeps `go:embed` from failing on a clean checkout — with a build tag or a generated stub file so `go build ./...` works before `npm run build` has ever run.
@@ -566,7 +566,7 @@ Work:
 - `deploy/docker-compose.yml`: teanode plus Postgres, with the data directory and config bind-mounted, host networking for the SMTP ports.
 - `docs/getting-started.md`: the ten-minute path — DNS records to create (MX, the `mail` CNAME, SPF, DKIM from `teanode dkim generate`, DMARC), install, configure, verify. `docs/deployment.md`: systemd and docker, upgrades, backups (`pg_dump` plus the data directory), and the port-25 reality check that most consumer ISPs and several cloud providers block outbound 25.
 - `docs/configuration.md`: every field, its default, and what breaks if it is wrong.
-- `README.md`: what it is, what it is not (no IMAP, no mailboxes), a screenshot, the quick start, and the licence.
+- `README.md`: what it is, what it is not (no IMAP, no mailboxes), a screenshot, the quick start, and the license.
 - Choose and add a `LICENSE`. Recommend MIT unless the owner prefers otherwise — this needs the owner's decision before publication.
 
 Acceptance: on a clean VM, following `docs/getting-started.md` verbatim produces a server that forwards a real message from an external mailbox to a real destination.

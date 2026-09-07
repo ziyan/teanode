@@ -10,7 +10,7 @@ import { zh } from './zh'
 // lines; a library would be more code than the thing it translates, and this
 // server already refuses to ship a megabyte of dependency to list messages.
 //
-// English is the source of truth. The other catalogues are typed against it,
+// English is the source of truth. The other catalogs are typed against it,
 // so removing a key breaks the build and adding one without translating it
 // does too — there is no way to end up with a screen that is silently half
 // translated.
@@ -60,7 +60,7 @@ export function detectLanguage(): Language {
 export type Values = Record<string, string | number>
 
 // translate looks a key up and substitutes {name} placeholders. A missing key
-// cannot happen — the catalogues are typed — but a missing placeholder value
+// cannot happen — the catalogs are typed — but a missing placeholder value
 // can, and leaving the placeholder visible says so louder than an empty gap.
 export function translate(catalog: Catalog, key: Key, values?: Values): string {
   const template = catalog[key]

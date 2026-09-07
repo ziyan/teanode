@@ -262,7 +262,7 @@ it must name the sending domain and nothing else.
 
 From the repository root.
 
-    make lint-ci        # 0 issues, and the three catalogues must agree
+    make lint-ci        # 0 issues, and the three catalogs must agree
     make test           # unit tests
     make test-deployment   # the whole stack in Docker, end to end
 
@@ -374,7 +374,7 @@ In `internal/config`, nothing new: the media host is
 - Decision: no tracking pixel.
   Rationale: the pictures the operator put in the template already do it. A
   transparent dot added to every message is a thing put there for no purpose
-  the reader would recognise, and a message with no picture reports no opens,
+  the reader would recognize, and a message with no picture reports no opens,
   which is a limit worth having rather than a gap worth filling.
   Date/Author: 2026-09-03, this plan.
 
@@ -382,7 +382,7 @@ In `internal/config`, nothing new: the media host is
   Rationale: an SVG is a document that can carry script, and this one would be
   served over HTTPS from the operator's own domain, where a script would run
   with that origin. Refusing one format is cheaper than being sure about
-  sanitising it.
+  sanitizing it.
   Date/Author: 2026-09-03, this plan.
 
 - Decision: the token is random, not a ULID.

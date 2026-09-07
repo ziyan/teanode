@@ -98,7 +98,7 @@ function subscribeSystem(listener: () => void): () => void {
 }
 
 // useResolvedTheme is the theme as rendered: "light" or "dark", never
-// "system". For anything that has to write a colour rather than use a token —
+// "system". For anything that has to write a color rather than use a token —
 // the message frame builds its document as a string and cannot use var().
 export function useResolvedTheme(): 'light' | 'dark' {
   const [theme] = useTheme()

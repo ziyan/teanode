@@ -123,9 +123,14 @@ func TestSeed(t *testing.T) {
 		t.Errorf("wrong identity: %+v", seed.Server)
 	}
 	// TEANODE_SERVER_DOMAIN names a domain to serve rather than a property of
-	// the server, so it turns up in the domain list.
-	if len(seed.Domains) != 1 || seed.Domains[0].Domain != "example.test" {
-		t.Errorf("the seeded domain should be example.test, got %+v", seed.Domains)
+	// the server, so it becomes a row rather than a setting.
+	if loaded.SeedDomain != "example.test" {
+		t.Errorf("the seeded domain should be example.test, got %q", loaded.SeedDomain)
+	}
+	if row, err := loaded.SeedDomainRow(seed); err != nil {
+		t.Errorf("the seeded domain could not be built: %s", err)
+	} else if row == nil || row.Domain != "example.test" || row.Subdomain != "mail" || row.DKIM.PrivateKey == "" {
+		t.Errorf("the seeded domain row is %+v, want example.test under mail with a signing key", row)
 	}
 	if len(seed.TLS.Hosts) != 2 || seed.TLS.Hosts[1] != "mx1.example.test" {
 		t.Errorf("a comma separated list should be split and trimmed, got %v", seed.TLS.Hosts)

@@ -14,7 +14,7 @@ import (
 //
 // The prefix is outside the signature and is stripped before verifying. It is
 // there so that a value pasted into a chat window or committed to a repository
-// can be recognised for what it is — by a person, and by a secret scanner.
+// can be recognized for what it is — by a person, and by a secret scanner.
 const (
 	kindSession   = "session"
 	kindToken     = "token"

@@ -100,7 +100,7 @@ func (self semver) compare(other semver) int {
 // described matches what git describe produces for a commit after a tag:
 // "9-g6a8860b", and "9-g6a8860b-dirty" for a checkout with changes in it.
 //
-// It has to be recognised because it lands in the prerelease field and sorts
+// It has to be recognized because it lands in the prerelease field and sorts
 // below the tag it was built from. Makefile's VERSION is git describe --tags,
 // so every binary built from a checkout that is not exactly on a tag looks,
 // to plain semantic versioning, like a candidate for the release it came

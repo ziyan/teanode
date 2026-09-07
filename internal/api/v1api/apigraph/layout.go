@@ -40,7 +40,7 @@ type ListLayoutsArguments struct {
 }
 
 func (self *graph) ListLayouts(ctx context.Context, arguments ListLayoutsArguments) ([]*models.Layout, error) {
-	if _, err := self.requireDomain(ctx, arguments.DomainID); err != nil {
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID); err != nil {
 		return nil, err
 	}
 
@@ -58,7 +58,7 @@ type GetLayoutArguments struct {
 }
 
 func (self *graph) GetLayout(ctx context.Context, arguments GetLayoutArguments) (*models.Layout, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +71,7 @@ func (self *graph) GetLayout(ctx context.Context, arguments GetLayoutArguments) 
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(layout.DomainID) == nil {
+	if !self.domainStillExists(ctx, layout.DomainID) {
 		return nil, api.ErrNotFound
 	}
 
@@ -140,7 +140,7 @@ type CreateLayoutReturnValue struct {
 }
 
 func (self *graph) CreateLayout(ctx context.Context, arguments CreateLayoutArguments) (*CreateLayoutReturnValue, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ type ModifyLayoutReturnValue struct {
 }
 
 func (self *graph) ModifyLayout(ctx context.Context, arguments ModifyLayoutArguments) (*ModifyLayoutReturnValue, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return nil, err
 	}
 
@@ -191,7 +191,7 @@ func (self *graph) ModifyLayout(ctx context.Context, arguments ModifyLayoutArgum
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(layout.DomainID) == nil {
+	if !self.domainStillExists(ctx, layout.DomainID) {
 		return nil, api.ErrNotFound
 	}
 
@@ -226,7 +226,7 @@ type DeleteLayoutArguments struct {
 }
 
 func (self *graph) DeleteLayout(ctx context.Context, arguments DeleteLayoutArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionDomainManage); err != nil {
 		return err
 	}
 
@@ -239,7 +239,7 @@ func (self *graph) DeleteLayout(ctx context.Context, arguments DeleteLayoutArgum
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(layout.DomainID) == nil {
+	if !self.domainStillExists(ctx, layout.DomainID) {
 		return api.ErrNotFound
 	}
 
@@ -263,7 +263,7 @@ type RenderLayoutArguments struct {
 // RenderLayout previews a layout by itself. Rendered with an empty template
 // inside it, so each block shows whatever the layout put there as a default.
 func (self *graph) RenderLayout(ctx context.Context, arguments RenderLayoutArguments) (*mailer.Rendered, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}

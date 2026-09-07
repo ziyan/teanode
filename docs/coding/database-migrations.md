@@ -18,7 +18,7 @@ reverse file fails immediately and loudly rather than at the worst moment.
 
 The runner records the reverse SQL in the `migration` table when it applies a
 migration. On startup it compares the migrations compiled into the binary
-against the rows in that table. Any row it does not recognise is a migration
+against the rows in that table. Any row it does not recognize is a migration
 from a **newer** binary that is no longer present — which is exactly what a
 rollback looks like — and it reverts that migration using the SQL it stored
 earlier.
@@ -33,7 +33,7 @@ described it is gone.
 Reverting is right for a downgrade somebody chose and wrong for one nobody
 did, and the runner cannot tell them apart. What it can do is stop and ask.
 
-A start that finds migrations it does not recognise refuses: nothing is
+A start that finds migrations it does not recognize refuses: nothing is
 migrated and nothing is opened, and the message names them and says what
 reverting would lose. To go back on purpose, set
 

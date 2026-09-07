@@ -2,8 +2,6 @@ package models
 
 import (
 	"time"
-
-	"github.com/ziyan/teanode/internal/config"
 )
 
 // Layout is a base layout for Template.
@@ -18,8 +16,8 @@ type Layout struct {
 	ModifiedAt time.Time `json:"modifiedAt,omitempty"`
 
 	// Domain that the Layout belongs to
-	DomainID string         `json:"domainId,omitempty"`
-	Domain   *config.Domain `json:"-"`
+	DomainID string  `json:"domainId,omitempty"`
+	Domain   *Domain `json:"-"`
 
 	// Comment about this Layout
 	Comment string `json:"comment,omitempty"`

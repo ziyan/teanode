@@ -37,7 +37,7 @@ type Session struct {
 	// Set rather than deleted, so the list can say so before the row is swept.
 	RevokedAt time.Time `json:"revokedAt,omitempty"`
 
-	// Where it was last used from, so a person can recognise their own
+	// Where it was last used from, so a person can recognize their own
 	IP        string `json:"ip,omitempty"`
 	UserAgent string `json:"userAgent,omitempty"`
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/configdb"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/version"
 )
@@ -26,9 +25,9 @@ import (
 func newConfigImportCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "import",
-		Usage: "load a teanode.yaml into the database",
-		Description: "Reads a configuration file and stores it, so that a deployment which\n" +
-			"kept its configuration in a file can move to keeping it in the database.\n" +
+		Usage: "load a settings file into the database",
+		Description: "Reads a settings file and stores it, so that a deployment which\n" +
+			"kept its settings in a file can move to keeping them in the database.\n" +
 			"Runs the migrations first, so this works against a database that has\n" +
 			"never held a configuration. Refuses one that already has a\n" +
 			"configuration unless --force is given.\n\n" +
@@ -93,15 +92,7 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	var aliases, credentials int
-	for _, domain := range configuration.Domains {
-		aliases += len(domain.Aliases)
-		credentials += len(domain.Credentials)
-	}
-
-	fmt.Printf("read %s\n", filename)
-	fmt.Printf("  %d domains, %d aliases, %d credentials\n", len(configuration.Domains), aliases, credentials)
-	fmt.Printf("  %d operators\n", len(configuration.Users))
+	fmt.Printf("read %s: the settings\n", filename)
 
 	if dryRun {
 		fmt.Printf("\n--dry-run: nothing was written\n")
@@ -124,21 +115,20 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	// A database with a configuration in it is one somebody has already set
-	// up, and overwriting it would take their operators and their signing
-	// keys with it. Checked by reading what is there rather than by opening a
+	// A database with settings in it is one somebody has already set up, and
+	// overwriting them would take the server secret with them — which is
+	// every SMTP password. Checked by the version rather than by opening a
 	// store, because a database that has only just been migrated holds
 	// nothing a store would accept.
-	existing, err := configdb.Load(database)
+	version, err := database.ConfigurationVersion()
 	if err != nil {
 		return err
 	}
-	if len(existing.Domains) > 0 || len(existing.Users) > 0 {
+	if version > 0 {
 		if !command.Bool("force") {
-			return fmt.Errorf("this database already holds %d domains and %d operators; "+
-				"pass --force to replace them", len(existing.Domains), len(existing.Users))
+			return fmt.Errorf("this database already holds settings; pass --force to replace them")
 		}
-		log.Warningf("replacing the %d domains and %d operators already stored", len(existing.Domains), len(existing.Users))
+		log.Warningf("replacing the settings already stored")
 	}
 
 	// The connection is not imported. It came from the file before and comes
@@ -150,14 +140,15 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	}
 	stored.Database = config.Database{}
 
-	if _, err := configdb.Replace(database, stored); err != nil {
+	if _, err := config.Replace(database, stored); err != nil {
 		return err
 	}
 
-	fmt.Printf("\nstored the configuration in the database\n\n")
-	fmt.Printf("Identifiers, signing keys, the server secret and the session key were all\n")
-	fmt.Printf("carried across, so stored mail still resolves, SMTP passwords still work,\n")
-	fmt.Printf("and nobody is signed out.\n\n")
+	fmt.Printf("\nstored the settings in the database\n\n")
+	fmt.Printf("The server secret and the session key were carried across, so SMTP\n")
+	fmt.Printf("passwords still work and nobody is signed out. Domains, aliases,\n")
+	fmt.Printf("credentials and users are rows, not settings: they come from a database\n")
+	fmt.Printf("backup, or are made in the web UI.\n\n")
 	fmt.Printf("Two things did not come from the file, because they are per-instance now:\n\n")
 	fmt.Printf("  %sDATABASE_URL    how to reach this database\n", "TEANODE_")
 	fmt.Printf("  %sINSTANCE_ID     optional; defaults to the host name\n\n", "TEANODE_")

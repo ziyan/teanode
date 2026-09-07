@@ -455,7 +455,7 @@ The full check, which must pass before every commit:
 
     make lint-ci
         ...
-        catalogues agree: 524 keys in en, zh and ja
+        catalogs agree: 524 keys in en, zh and ja
         every configuration field is documented
         0 issues.
 
@@ -553,7 +553,7 @@ and is what `internal/util/autoacme/acme.go` uses.
 In `internal/util/autoacme/autoacme.go`, `Settings` gains:
 
     // Certificates are the certificates to obtain and keep renewed, each
-    // identified by a key the caller chooses and recognises when
+    // identified by a key the caller chooses and recognizes when
     // SaveCertificate is called.
     Certificates []CertificateRequest
 

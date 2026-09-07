@@ -194,7 +194,7 @@ func TestStartedOnlyClearsItsOwn(t *testing.T) {
 	}
 }
 
-// The staged binary recognises itself even when the path it was started from
+// The staged binary recognizes itself even when the path it was started from
 // is not the path it is at.
 //
 // A data directory that is a symlink, or lives under one, is ordinary — and
@@ -218,7 +218,7 @@ func TestRunningLooksAtTheFileNotThePath(t *testing.T) {
 	pretendToBe(t, real)
 
 	if !running(link) {
-		t.Error("the running binary was not recognised through a symlink")
+		t.Error("the running binary was not recognized through a symlink")
 	}
 	if running(filepath.Join(directory, "something-else")) {
 		t.Error("a path that is not this binary was taken for it")

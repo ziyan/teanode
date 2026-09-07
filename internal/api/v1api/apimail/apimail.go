@@ -15,9 +15,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/op/go-logging"
 
+	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/web"
@@ -174,7 +176,14 @@ func (self *mail) rawView(response http.ResponseWriter, request *http.Request) {
 // rather than leaving it assumed, because a server with no accounts is open
 // by design.
 func (self *mail) requireOperator(request *http.Request) error {
-	if len(self.config.Current().Users) > 0 && api.UsernameFromRequest(request) == "" {
+	if api.UsernameFromRequest(request) != "" {
+		return nil
+	}
+	count, err := self.database.CountUsers()
+	if err != nil {
+		return err
+	}
+	if count > 0 {
 		return api.ErrNotLoggedIn
 	}
 	return nil
@@ -184,6 +193,7 @@ func (self *mail) requireOperator(request *http.Request) error {
 func (self *mail) load(request *http.Request, mailId string) ([]string, []byte, error) {
 	var headers []string
 	var body []byte
+	username := api.UsernameFromRequest(request)
 	err := self.database.Transaction(func(tx db.Transaction) error {
 		stored, err := tx.GetMail(mailId, nil)
 		if err != nil {
@@ -192,10 +202,38 @@ func (self *mail) load(request *http.Request, mailId string) ([]string, []byte, 
 		if stored == nil {
 			return api.ErrNotFound
 		}
+		allowed, err := self.canRead(tx, username, stored)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return api.ErrNotFound
+		}
 		headers, body, err = self.storage.Get(request.Context(), stored.ID)
 		return err
 	})
 	return headers, body, err
+}
+
+// canRead is the same answer the GraphQL resolvers give: the operator of the
+// message's domain, or the owner of a mailbox holding it. The console, and a
+// server with no accounts, may read anything.
+func (self *mail) canRead(tx db.Transaction, username string, stored *models.Mail) (bool, error) {
+	if username == "" || username == config.LocalUsername {
+		return true, nil
+	}
+	user, err := tx.GetUserByUsername(username)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+	permissions, err := tx.EffectivePermissions(user.ID)
+	if err != nil {
+		return false, err
+	}
+	return access.CanReadMail(tx, user, permissions, stored)
 }
 
 func (self *mail) fail(response http.ResponseWriter, mailId string, err error) {

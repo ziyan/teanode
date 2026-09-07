@@ -28,7 +28,7 @@ type Profile struct {
 	// Name is how --profile names it; the server's host name by default.
 	Name string `json:"name"`
 
-	// URL of the server, normalised the way the client normalises it.
+	// URL of the server, normalized the way the client normalizes it.
 	URL string `json:"url"`
 
 	// Token sent as "Authorization: Bearer".
@@ -147,7 +147,7 @@ func (self *Profiles) Find(name string) *Profile {
 }
 
 // FindByURL returns the profile for this server, or nil. Compared after
-// normalising, so that "mail.example.com" finds "https://mail.example.com".
+// normalizing, so that "mail.example.com" finds "https://mail.example.com".
 func (self *Profiles) FindByURL(url string) *Profile {
 	if self == nil {
 		return nil

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -282,11 +283,17 @@ func TestApplyRefusesToRunTwice(t *testing.T) {
 	// A release whose download blocks until the test lets it finish, so that
 	// the second call arrives while the first is still going.
 	holding := make(chan struct{})
+	// Closed when the download begins, which is when the first call is
+	// known to hold the lock: it does so from before the download to after
+	// the restart.
+	started := make(chan struct{})
+	var startedOnce sync.Once
 	binary := []byte("the new binary")
 	mux := http.NewServeMux()
 	server := httptest.NewTLSServer(mux)
 	defer server.Close()
 	mux.HandleFunc("/binary", func(writer http.ResponseWriter, _ *http.Request) {
+		startedOnce.Do(func() { close(started) })
 		<-holding
 		_, _ = writer.Write(binary)
 	})
@@ -311,14 +318,15 @@ func TestApplyRefusesToRunTwice(t *testing.T) {
 	}()
 
 	// Wait until the first call is inside the download, which is where it
-	// holds the lock for the longest.
-	deadline := time.Now().Add(5 * time.Second)
-	for manager.applying.TryLock() {
-		manager.applying.Unlock()
-		if time.Now().After(deadline) {
-			t.Fatal("the first upgrade never started")
-		}
-		time.Sleep(5 * time.Millisecond)
+	// holds the lock for the longest. Polling the lock instead was a race
+	// with the scheduler on a loaded machine, and told nothing about why
+	// the first call had ended when it lost.
+	select {
+	case <-started:
+	case err := <-first:
+		t.Fatalf("the first upgrade ended before it began downloading: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the first upgrade never started")
 	}
 
 	if err := manager.Apply(context.Background(), ""); err == nil {

@@ -12,7 +12,7 @@ import (
 )
 
 // LocalTokenPrefix begins a locally minted token. It exists so that a token
-// pasted into a chat window or committed to a repository can be recognised
+// pasted into a chat window or committed to a repository can be recognized
 // for what it is by a secret scanner. See MintLocalToken.
 const LocalTokenPrefix = "tnl_"
 

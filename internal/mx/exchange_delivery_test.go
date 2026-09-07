@@ -3,7 +3,7 @@ package mx
 import (
 	"testing"
 
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // TestSigningDomainIsWhereTheKeyIsPublished pins the d= value used for the ARC
@@ -19,17 +19,17 @@ func TestSigningDomainIsWhereTheKeyIsPublished(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		domain *config.Domain
+		domain *models.Domain
 		want   string
 	}{
 		{
 			name:   "a domain with a mail host still signs as the domain",
-			domain: &config.Domain{Domain: "example.com", Subdomain: "mail"},
+			domain: &models.Domain{Domain: "example.com", Subdomain: "mail"},
 			want:   "example.com",
 		},
 		{
 			name:   "a domain with no subdomain signs as itself",
-			domain: &config.Domain{Domain: "example.com"},
+			domain: &models.Domain{Domain: "example.com"},
 			want:   "example.com",
 		},
 		{
@@ -49,9 +49,9 @@ func TestSigningDomainIsWhereTheKeyIsPublished(t *testing.T) {
 
 	// The point of the whole thing: the name a receiver resolves has to be the
 	// one the operator was told to publish.
-	domain := &config.Domain{Domain: "example.com", Subdomain: "mail", DKIM: config.DomainKey{Selector: "teanode1"}}
-	resolved := config.DomainKeyName(domain.DKIM.Selector, signingDomain(domain))
-	published := config.DomainKeyName(domain.DKIM.Selector, domain.Domain)
+	domain := &models.Domain{Domain: "example.com", Subdomain: "mail", DKIM: models.DomainKey{Selector: "teanode1"}}
+	resolved := models.DomainKeyName(domain.DKIM.Selector, signingDomain(domain))
+	published := models.DomainKeyName(domain.DKIM.Selector, domain.Domain)
 	if resolved != published {
 		t.Errorf("a receiver would look up %q, but the key is published at %q", resolved, published)
 	}

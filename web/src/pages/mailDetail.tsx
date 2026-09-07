@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
@@ -18,6 +19,8 @@ import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 import { useResolvedTheme } from '../components/theme'
+import { MenuButton } from '../components/menuButton'
+import { CloseIcon } from '../components/icons'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -117,32 +120,6 @@ export function MailDetailPage() {
   const label = useEnumLabel()
   const { mailId } = useParams()
   const { data, error, loading } = useQuery(() => graphql<Response>(MAIL, { mailId }), [mailId])
-  const [chosen, setChosen] = useState<Tab | null>(null)
-  const [loadRemote, setLoadRemote] = useState(false)
-
-  // Reading in the dark. The frame's document is built as a string, so the
-  // dashboard's theme has to be resolved here and written in as literals.
-  // "darkened" is the reader's choice to invert a message that paints its
-  // own light ground, remembered per reader rather than per message: whoever
-  // wants dark mail wants it for the next message too.
-  const resolvedTheme = useResolvedTheme()
-  const dark = resolvedTheme === 'dark'
-  const [darkened, setDarkened] = useState(() => {
-    try {
-      return window.localStorage.getItem(DARKENED_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  const [alreadyDark, setAlreadyDark] = useState(false)
-  const chooseDarkened = (next: boolean) => {
-    setDarkened(next)
-    try {
-      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
-    } catch {
-      // A browser that refuses storage still gets the choice for this visit.
-    }
-  }
   const [marked, setMarked] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | null>(null)
@@ -180,13 +157,6 @@ export function MailDetailPage() {
 
   useBreadcrumbDetail(data?.GetMail?.subject || (data ? t('mail.noSubject') : null))
 
-  const content = data?.GetMailContent
-  const document = useMemo(
-    () =>
-      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
-    [content?.html, loadRemote, mailId, dark, darkened],
-  )
-
   if (loading) {
     return <Loading />
   }
@@ -199,13 +169,6 @@ export function MailDetailPage() {
 
   const mail = data.GetMail
   const results = mail.authenticationResults
-
-  // A message with no HTML has no rendered view and no markup behind one, so
-  // those two tabs are not offered rather than offered and disabled — a
-  // control that can never be used is a thing to wonder about. Plain text
-  // opens on its text, which is the whole of what it is.
-  const hasHtml = Boolean(content?.html)
-  const tab = chosen ?? (hasHtml ? 'rendered' : 'text')
 
   return (
     <>
@@ -316,148 +279,341 @@ export function MailDetailPage() {
       </div>
 
       <h3>{t('mailDetail.message')}</h3>
-      {!content?.available ? (
-        <p className="muted">{t('mailDetail.notStored')}</p>
-      ) : (
-        <>
-          <div className="tabs">
-            {hasHtml && (
-              <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
-                {t('mailDetail.rendered')}
-              </button>
-            )}
-            <button
-              className={tab === 'text' ? 'active' : ''}
-              onClick={() => setChosen('text')}
-              disabled={!content.text}
-            >
-              {t('mailDetail.text')}
-            </button>
-            {/* The markup behind the rendered view. What the frame shows has
-                been sanitised and rewritten; when it looks wrong, this is the
-                only way to see what it is actually rendering. */}
-            {hasHtml && (
-              <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
-                {t('mailDetail.html')}
-              </button>
-            )}
-            <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
-              {t('mailDetail.headers')}
-            </button>
-            <button
-              className={tab === 'raw' ? 'active' : ''}
-              onClick={() => setChosen('raw')}
-              disabled={!content.rawHeaders}
-            >
-              {t('mailDetail.rawHeaders')}
-            </button>
-            {/* A real link, so the browser saves it the way it saves anything
-                else, and middle-click and "save as" both work. */}
-            <a className="tab-action" href={`/api/v1/mail/${mail.id}/raw`} download>
-              {t('mailDetail.download')}
-            </a>
-          </div>
+      <MessageContent mailId={mail.id} content={data.GetMailContent} />
+    </>
+  )
+}
 
-          {tab === 'rendered' && content.html && (
-            <>
-              {content.hasRemoteContent && !loadRemote && (
-                <div className="banner">
-                  {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => setLoadRemote(true)}>
-                    {t('mailDetail.loadRemote')}
+// MessageContent is the message itself: rendered, as text, as markup, with
+// its headers, and with its attachments. The audit page shows it under the
+// verdict and the deliveries; the mailbox shows it under the subject line.
+// One component, so that what a message looks like does not depend on which
+// page it is read from.
+export function MessageContent({
+  mailId,
+  content,
+  mode = 'audit',
+  menuContainer,
+}: {
+  mailId: string
+  content?: MailContent | null
+  // The audit page shows every view of a message under a row of tabs. The
+  // mailbox shows the message as a mail program would — rendered, or the
+  // text when there is nothing to render — with the rest behind a menu.
+  mode?: 'audit' | 'mailbox'
+  // Where the mailbox's menu goes when the page has a row of actions for
+  // it to sit in; on its own row above the message otherwise.
+  menuContainer?: HTMLElement | null
+}) {
+  const { t } = useTranslation()
+  const [chosen, setChosen] = useState<Tab | null>(null)
+  const [loadRemote, setLoadRemote] = useState(false)
+  const [showHeaders, setShowHeaders] = useState(false)
+
+  // Reading in the dark. The frame's document is built as a string, so the
+  // web UI's theme has to be resolved here and written in as literals.
+  // "darkened" is the reader's choice to invert a message that paints its
+  // own light ground, remembered per reader rather than per message: whoever
+  // wants dark mail wants it for the next message too.
+  const resolvedTheme = useResolvedTheme()
+  const dark = resolvedTheme === 'dark'
+  // In the mailbox a dark theme means dark mail, every time: the choice to
+  // see a message as sent is for that message and is not remembered. On the
+  // audit page the choice is remembered, since an operator inspecting
+  // messages wants them the same way each time.
+  const [darkened, setDarkened] = useState(() => {
+    if (mode === 'mailbox') {
+      return true
+    }
+    try {
+      return window.localStorage.getItem(DARKENED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [alreadyDark, setAlreadyDark] = useState(false)
+  const chooseDarkened = (next: boolean) => {
+    setDarkened(next)
+    if (mode === 'mailbox') {
+      return
+    }
+    try {
+      window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
+    } catch {
+      // A browser that refuses storage still gets the choice for this visit.
+    }
+  }
+
+  // A new message starts on its own default tab, without remote content.
+  useEffect(() => {
+    setChosen(null)
+    setLoadRemote(false)
+    setShowHeaders(false)
+    if (mode === 'mailbox') {
+      setDarkened(true)
+    }
+  }, [mailId, mode])
+
+  const document = useMemo(
+    () =>
+      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
+    [content?.html, loadRemote, mailId, dark, darkened],
+  )
+
+  // A message with no HTML has no rendered view and no markup behind one, so
+  // those two tabs are not offered rather than offered and disabled — a
+  // control that can never be used is a thing to wonder about. Plain text
+  // opens on its text, which is the whole of what it is.
+  const hasHtml = Boolean(content?.html)
+  const tab = chosen ?? (hasHtml ? 'rendered' : 'text')
+
+  return (
+    <>
+    {!content?.available ? (
+      <p className="muted">{t('mailDetail.notStored')}</p>
+    ) : mode === 'mailbox' ? (
+      <>
+        {/* What a mail program shows, and a menu for what it hides. */}
+        {((menu) => (menuContainer ? createPortal(menu, menuContainer) : <div className="message-menu">{menu}</div>))(
+          <MenuButton
+            className="message-menu-button"
+            label={t('mailDetail.more')}
+            icon={<span aria-hidden="true">…</span>}
+            render={(close) => (
+              <>
+                <a href={`/api/v1/mail/${mailId}/raw`} download role="menuitem" onClick={close}>
+                  {t('mailDetail.download')}
+                </a>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!content.rawHeaders}
+                  onClick={() => {
+                    close()
+                    setShowHeaders((previous) => !previous)
+                  }}
+                >
+                  {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
+                </button>
+                {dark && hasHtml && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={alreadyDark}
+                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                    onClick={() => {
+                      close()
+                      chooseDarkened(!darkened)
+                    }}
+                  >
+                    {darkened ? t('mailDetail.showOriginalTheme') : t('mailDetail.showDarkTheme')}
                   </button>
-                </div>
-              )}
-              {/* Only in the dark theme: in the light one there is nothing
-                  to fix, and the control would be a question nobody asked.
-                  A plain message is already dark from the frame's ground;
-                  this is for one that paints its own, which the inversion
-                  darkens while keeping its pictures the right way round. */}
-              {dark && (
-                <div className="frame-mode">
-                  <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
-                    <button
-                      type="button"
-                      className={darkened ? '' : 'active'}
-                      aria-pressed={!darkened}
-                      onClick={() => chooseDarkened(false)}
-                    >
-                      {t('mailDetail.asSent')}
-                    </button>
-                    <button
-                      type="button"
-                      className={darkened && !alreadyDark ? 'active' : ''}
-                      aria-pressed={darkened && !alreadyDark}
-                      disabled={alreadyDark}
-                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
-                      onClick={() => chooseDarkened(true)}
-                    >
-                      {t('mailDetail.darkened')}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* Rendered in a sandbox that permits no scripts, on top of
-                  the server-side sanitising and a policy of default-src
-                  'none' inside the frame. It is mail from a stranger. */}
-              <MessageFrame
-                document={document}
-                title={t('mailDetail.message')}
-                darkened={dark && darkened}
-                onGroundMeasured={setAlreadyDark}
-              />
-            </>
-          )}
-
-          {tab === 'text' && <pre className="message-text">{content.text}</pre>}
-
-          {/* The sanitised markup, not the original: it is what the frame
-              above is rendering, which is the thing being explained. The
-              untouched original is in the .eml behind Download. */}
-          {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
-
-          {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
-
-          {tab === 'source' && (
+                )}
+              </>
+            )}
+          />,
+        )}
+        {/* The headers above the message, where they are in the message
+            itself, in a box of their own that scrolls rather than pushing
+            the message out of sight. */}
+        {showHeaders && (
+          <div className="message-headers">
+            <div className="message-headers-title">
+              <span>{t('mailDetail.headers')}</span>
+              <button
+                type="button"
+                className="message-headers-close"
+                aria-label={t('mailDetail.hideHeaders')}
+                title={t('mailDetail.hideHeaders')}
+                onClick={() => setShowHeaders(false)}
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+            <pre className="message-text">{content.rawHeaders}</pre>
+          </div>
+        )}
+        {hasHtml ? (
+          <>
+            {content.hasRemoteContent && !loadRemote && (
+              <div className="banner">
+                {t('mailDetail.remoteBlocked')}{' '}
+                <button className="link" onClick={() => setLoadRemote(true)}>
+                  {t('mailDetail.loadRemote')}
+                </button>
+              </div>
+            )}
+            <MessageFrame
+              document={document}
+              title={t('mailDetail.message')}
+              darkened={dark && darkened}
+              onGroundMeasured={setAlreadyDark}
+            />
+          </>
+        ) : (
+          <pre className="message-text">{content.text}</pre>
+        )}
+        {content.attachments?.length ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>{t('mailDetail.attachments')}</h3>
             <table>
               <tbody>
-                {(content.headers ?? []).map((header, index) => (
+                {content.attachments.map((attachment, index) => (
                   <tr key={index}>
-                    <td className="shrink muted">{header.key}</td>
-                    <td className="mono wrap">{header.value}</td>
+                    <td>
+                      <a href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`} download={attachment.filename}>
+                        {attachment.filename}
+                      </a>
+                    </td>
+                    <td className="shrink muted">{attachment.contentType}</td>
+                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : null}
+      </>
+    ) : (
+      <>
+        <div className="tabs">
+          {hasHtml && (
+            <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
+              {t('mailDetail.rendered')}
+            </button>
           )}
+          <button
+            className={tab === 'text' ? 'active' : ''}
+            onClick={() => setChosen('text')}
+            disabled={!content.text}
+          >
+            {t('mailDetail.text')}
+          </button>
+          {/* The markup behind the rendered view. What the frame shows has
+              been sanitized and rewritten; when it looks wrong, this is the
+              only way to see what it is actually rendering. */}
+          {hasHtml && (
+            <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
+              {t('mailDetail.html')}
+            </button>
+          )}
+          <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
+            {t('mailDetail.headers')}
+          </button>
+          <button
+            className={tab === 'raw' ? 'active' : ''}
+            onClick={() => setChosen('raw')}
+            disabled={!content.rawHeaders}
+          >
+            {t('mailDetail.rawHeaders')}
+          </button>
+          {/* A real link, so the browser saves it the way it saves anything
+              else, and middle-click and "save as" both work. */}
+          <a className="tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
+            {t('mailDetail.download')}
+          </a>
+        </div>
 
-          {content.attachments?.length ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>{t('mailDetail.attachments')}</h3>
-              <table>
-                <tbody>
-                  {content.attachments.map((attachment, index) => (
-                    <tr key={index}>
-                      <td>
-                        {/* A real link, so saving it works the way saving
-                            anything else does. */}
-                        <a
-                          href={`/api/v1/mail/${mail.id}/attachment/${attachment.index}`}
-                          download={attachment.filename}
-                        >
-                          {attachment.filename}
-                        </a>
-                      </td>
-                      <td className="shrink muted">{attachment.contentType}</td>
-                      <td className="shrink muted">{formatBytes(attachment.size)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </>
-      )}
+        {tab === 'rendered' && content.html && (
+          <>
+            {content.hasRemoteContent && !loadRemote && (
+              <div className="banner">
+                {t('mailDetail.remoteBlocked')}{' '}
+                <button className="link" onClick={() => setLoadRemote(true)}>
+                  {t('mailDetail.loadRemote')}
+                </button>
+              </div>
+            )}
+            {/* Only in the dark theme: in the light one there is nothing
+                to fix, and the control would be a question nobody asked.
+                A plain message is already dark from the frame's ground;
+                this is for one that paints its own, which the inversion
+                darkens while keeping its pictures the right way round. */}
+            {dark && (
+              <div className="frame-mode">
+                <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
+                  <button
+                    type="button"
+                    className={darkened ? '' : 'active'}
+                    aria-pressed={!darkened}
+                    onClick={() => chooseDarkened(false)}
+                  >
+                    {t('mailDetail.asSent')}
+                  </button>
+                  <button
+                    type="button"
+                    className={darkened && !alreadyDark ? 'active' : ''}
+                    aria-pressed={darkened && !alreadyDark}
+                    disabled={alreadyDark}
+                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                    onClick={() => chooseDarkened(true)}
+                  >
+                    {t('mailDetail.darkened')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Rendered in a sandbox that permits no scripts, on top of
+                the server-side sanitizing and a policy of default-src
+                'none' inside the frame. It is mail from a stranger. */}
+            <MessageFrame
+              document={document}
+              title={t('mailDetail.message')}
+              darkened={dark && darkened}
+              onGroundMeasured={setAlreadyDark}
+            />
+          </>
+        )}
+
+        {tab === 'text' && <pre className="message-text">{content.text}</pre>}
+
+        {/* The sanitized markup, not the original: it is what the frame
+            above is rendering, which is the thing being explained. The
+            untouched original is in the .eml behind Download. */}
+        {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
+
+        {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
+
+        {tab === 'source' && (
+          <table>
+            <tbody>
+              {(content.headers ?? []).map((header, index) => (
+                <tr key={index}>
+                  <td className="shrink muted">{header.key}</td>
+                  <td className="mono wrap">{header.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {content.attachments?.length ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>{t('mailDetail.attachments')}</h3>
+            <table>
+              <tbody>
+                {content.attachments.map((attachment, index) => (
+                  <tr key={index}>
+                    <td>
+                      {/* A real link, so saving it works the way saving
+                          anything else does. */}
+                      <a
+                        href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
+                        download={attachment.filename}
+                      >
+                        {attachment.filename}
+                      </a>
+                    </td>
+                    <td className="shrink muted">{attachment.contentType}</td>
+                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </>
+    )}
     </>
   )
 }
@@ -532,6 +688,28 @@ function Field({ label, mono, children }: { label: string; mono?: boolean; child
 // The previous version was a line of tags reading "SPF pass DKIM pass DMARC
 // pass", which is enough to know nothing went wrong and never enough to work
 // out why something did.
+// The sentence for an SPF result, by what the domain's record said about
+// the address: allowed, refused, doubted, silent, absent, or unreadable.
+function spfDetailKey(result?: string | null): Key {
+  switch ((result ?? '').toLowerCase()) {
+    case 'pass':
+      return 'mailDetail.spfDetailPass'
+    case 'fail':
+      return 'mailDetail.spfDetailFail'
+    case 'softfail':
+      return 'mailDetail.spfDetailSoftfail'
+    case 'neutral':
+      return 'mailDetail.spfDetailNeutral'
+    case 'none':
+      return 'mailDetail.spfDetailNone'
+    case 'temperror':
+    case 'permerror':
+      return 'mailDetail.spfDetailError'
+    default:
+      return 'mailDetail.spfDetail'
+  }
+}
+
 function Authentication({ results }: { results: AuthenticationResults }) {
   const { t } = useTranslation()
   const checks: Check[] = []
@@ -542,8 +720,8 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       verdict: results.spf.result || t('common.none'),
       tone: toneFor(results.spf.result),
       // SPF is a question about one pair: may this address send for this
-      // domain. Saying which pair is most of the answer.
-      detail: t('mailDetail.spfDetail', {
+      // domain. Saying which pair, and what the domain said, is the answer.
+      detail: t(spfDetailKey(results.spf.result), {
         domain: results.spf.domain ?? '—',
         ip: results.spf.ip ?? '—',
       }),
@@ -855,21 +1033,21 @@ function alignmentMode(t: (key: Key) => string, mode: string): string {
   return mode === 's' ? t('mailDetail.alignmentStrict') : t('mailDetail.alignmentRelaxed')
 }
 
-// buildDocument wraps the sanitised HTML in a complete document for the frame.
+// buildDocument wraps the sanitized HTML in a complete document for the frame.
 //
 // The content security policy is the second layer: even if something got past
-// the server-side sanitiser, it cannot execute or call home from here. When
+// the server-side sanitizer, it cannot execute or call home from here. When
 // remote images are not being loaded, img-src is restricted to data URLs so a
 // tracking pixel cannot fire.
 const DARKENED_KEY = 'teanode.mail.darkened'
 
-// buildDocument writes the whole document the frame shows, colours included.
+// buildDocument writes the whole document the frame shows, colors included.
 //
 // The frame cannot read the dashboard's tokens — it is a separate document
-// built from a string — so the two colours are written here as literals,
+// built from a string — so the two colors are written here as literals,
 // taken from the dark palette at the top of style.css so they match rather
 // than approximate. In the dark theme the ground is dark and the text light,
-// which a plain message inherits; a message that sets its own colours keeps
+// which a plain message inherits; a message that sets its own colors keeps
 // them, since a default is exactly what it overrides.
 //
 // "darkened" is the reader's choice to invert the message. The inversion
@@ -900,7 +1078,7 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
-<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
+<style>#teanode-content{overflow-x:auto;overflow-y:hidden}body{margin:0;padding:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
     darkGround ? '#f4f4f5' : '#16161a'
   };background:${darkGround ? '#1a1a1d' : '#fff'};word-wrap:break-word${
     darkGround ? ';color-scheme:dark' : ''

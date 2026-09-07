@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 // A minimal replacement for a data fetching library: run a promise, expose
 // what it returned, and refresh it in the background. Six screens do not need
-// caching, normalisation or subscriptions.
+// caching, normalization or subscriptions.
 
 // How often a list re-reads itself. Long enough not to be chatty, short enough
 // that a message which has arrived is on screen before somebody reaches for a

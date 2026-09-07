@@ -89,7 +89,7 @@ type PasskeyCeremony struct {
 const defaultMaximumPasskeys = 5
 
 func (self *graph) GetPasskeyPolicy(ctx context.Context) (*PasskeyPolicy, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
 	settings := self.config.Current().Passkey
@@ -154,7 +154,7 @@ type FinishPasskeyRegistrationArguments struct {
 	// CeremonyID is what BeginPasskeyRegistration returned
 	CeremonyID string `json:"ceremonyId"`
 
-	// Response is what navigator.credentials.create() produced, serialised
+	// Response is what navigator.credentials.create() produced, serialized
 	Response string `json:"response"`
 
 	// Name is what to call this authenticator, for example "phone"
@@ -249,7 +249,7 @@ type FinishPasskeyAssertionArguments struct {
 	// CeremonyID is what BeginPasskeyAssertion returned
 	CeremonyID string `json:"ceremonyId"`
 
-	// Response is what navigator.credentials.get() produced, serialised
+	// Response is what navigator.credentials.get() produced, serialized
 	Response string `json:"response"`
 }
 
@@ -268,7 +268,7 @@ func (self *graph) FinishPasskeyAssertion(ctx context.Context, arguments FinishP
 	}
 
 	var matched *models.Passkey
-	var owner *config.User
+	var owner *models.User
 
 	// The library hands back the credential's identifier and asks who that
 	// is; everything else — the challenge, the origin, the signature — it
@@ -326,7 +326,7 @@ func (self *graph) FinishPasskeyAssertion(ctx context.Context, arguments FinishP
 		return nil, err
 	}
 	log.Noticef("%s signed in with the passkey %q", owner.Username, matched.Name)
-	return self.signedInAs(owner.Username), nil
+	return self.signedInAs(ctx, owner.Username), nil
 }
 
 type RenamePasskeyArguments struct {
@@ -463,7 +463,7 @@ func (self *graph) webAuthn() (*webauthn.WebAuthn, error) {
 
 // webAuthnUser adapts an account and its credentials to what the library wants.
 type webAuthnUser struct {
-	user     *config.User
+	user     *models.User
 	passkeys []*models.Passkey
 }
 

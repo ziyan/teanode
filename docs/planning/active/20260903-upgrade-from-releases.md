@@ -203,7 +203,7 @@ environment before the database is opened, naming where that directory is.
 
 - **Reverting migrations had to stop being the default.** Three review rounds
   kept finding the same accident under different names, and the third one
-  settled it. A start that meets a migration it does not recognise reverts it,
+  settled it. A start that meets a migration it does not recognize reverts it,
   which is how a downgrade works here and cannot be told apart from an upgrade
   that crashed, a second instance that never got the upgrade, or an operator
   pulling last week's image to test something. Guarding the one case the
@@ -242,7 +242,7 @@ environment before the database is opened, naming where that directory is.
 - **Refusing to run a staged binary is safe for the binary and was not safe
   for the schema.** Everything the exec refuses — a crash-loop marker, a
   checksum that does not match — ends with this older binary carrying on and
-  opening the database, and `Migrate` reverts what it does not recognise. A
+  opening the database, and `Migrate` reverts what it does not recognize. A
   release that migrated and then crashed before serving would therefore have
   its columns dropped by the very guard that was protecting the server from
   it. So a start that has refused a staged upgrade and finds migrations it
@@ -324,7 +324,7 @@ environment before the database is opened, naming where that directory is.
   configuration.** Every other path this server uses is a setting in the
   database. This one cannot be: the staged binary has to be found and run
   before anything opens the database, because this program reverts migrations
-  it does not recognise and an old binary that reached the database first
+  it does not recognize and an old binary that reached the database first
   would revert the new one's schema — and the data in those columns — seconds
   before handing over to it. So `TEANODE_UPGRADE_DIRECTORY`, read from the
   environment, defaulting to `upgrade` under the data directory the

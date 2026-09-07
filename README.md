@@ -204,6 +204,6 @@ Security tab; `SECURITY.md` has the details and says what is in scope.
 `docs/security/security-review.md` records a review of the whole program: what
 was found, what was fixed, and what is still open.
 
-## Licence
+## License
 
 MIT. See `LICENSE`.

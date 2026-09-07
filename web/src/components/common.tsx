@@ -57,7 +57,7 @@ export function CopyIconButton({ value, label }: { value: string; label?: string
   )
 }
 
-// toneFor maps a verdict onto a colour. Everything an authentication check can
+// toneFor maps a verdict onto a color. Everything an authentication check can
 // say ends up here, so a reader can scan a list without reading each word.
 export function toneFor(value?: string): 'good' | 'bad' | 'warn' | undefined {
   switch ((value ?? '').toLowerCase()) {
@@ -140,7 +140,7 @@ export function formatTime(value?: string): string {
 // DomainLink names a domain and goes to it.
 //
 // A domain is a place in this dashboard, and it is named in four lists. Every
-// one of them showed it as grey text, which is exactly what the domain's own
+// one of them showed it as gray text, which is exactly what the domain's own
 // page is one click away from answering.
 //
 // A domain that has since been deleted is still named in the mail it received,
@@ -165,7 +165,7 @@ export function DomainLink({
 //
 // A column showing "rua" or "dsn" is showing an identifier: those are the
 // words the protocol uses, and nobody outside this codebase has to know them.
-// Every one is translated, and anything unrecognised falls through as itself
+// Every one is translated, and anything unrecognized falls through as itself
 // rather than disappearing — a new kind added to the server should show up as
 // a word nobody translated, not as an empty cell.
 const MAIL_KINDS: Record<string, Key> = {

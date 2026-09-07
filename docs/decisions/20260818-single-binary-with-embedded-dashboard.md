@@ -7,7 +7,7 @@
 ## Context
 
 The repository was two projects: `backend/`, a Go module, and `frontend/`, a
-React application whose `npm run deploy` script synchronised the built bundle
+React application whose `npm run deploy` script synchronized the built bundle
 to an S3 bucket. The dashboard was never served by the Go binary at all, so
 running the software meant deploying two things to two places, one of which was
 a specific cloud bucket.
@@ -29,4 +29,4 @@ lives in `internal/` with the entry point at `main.go` and subcommands in
   exists, because `go:embed` requires the directory. A committed stub keeps
   the build working before `npm run build` has ever run.
 - The binary carries the dashboard's weight even on a headless deployment. At a
-  few megabytes that is a fair trade for having one artefact.
+  few megabytes that is a fair trade for having one artifact.

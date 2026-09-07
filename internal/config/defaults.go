@@ -161,31 +161,6 @@ func Example() *Configuration {
 	configuration.Server.Name = "mail.example.com"
 	configuration.TLS.Hosts = []string{"mail.example.com"}
 	configuration.TLS.ACME.Email = "you@example.com"
-	configuration.Domains = []*Domain{
-		{
-			ID:                       NewID(),
-			Domain:                   "example.com",
-			Subdomain:                "mail",
-			Comment:                  "replace with your own domain",
-			SpamFilterScoreThreshold: 5,
-			Aliases: []*Alias{
-				{
-					ID:      NewID(),
-					Pattern: "^hello$",
-					Comment: "hello@example.com goes to your real mailbox",
-					Kind:    AliasKindEmail,
-					Email:   "you@example.net",
-				},
-				{
-					ID:      NewID(),
-					Pattern: "^.*$",
-					Comment: "catch-all; every other address goes here too",
-					Kind:    AliasKindEmail,
-					Email:   "you@example.net",
-				},
-			},
-		},
-	}
 	return configuration
 }
 

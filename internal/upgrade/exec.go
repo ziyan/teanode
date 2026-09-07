@@ -122,7 +122,7 @@ func ExecStagedIfNewer(directory, current string) {
 // the database and then exit.
 //
 // The same because of what reverting means here: this program undoes
-// migrations it does not recognise, so an older binary that reaches the
+// migrations it does not recognize, so an older binary that reaches the
 // database first drops the columns a newer one added. "teanode config init"
 // and "teanode config import" both migrate, and both are run with
 // "docker compose exec" against a container that may have staged an upgrade —
@@ -479,7 +479,7 @@ func sameFile(first, second string) bool {
 // symlinks at startup and the staging directory is not — a data directory that
 // is a symlink, or lives under one, is ordinary — and comparing the two as
 // text answered no every time. What that broke was the marker: the staged
-// binary would run, never be recognised as itself, never clear the marker
+// binary would run, never be recognized as itself, never clear the marker
 // saying it had been tried, and be refused at every start after the first.
 func running(path string) bool {
 	return sameFile(path, executablePath)

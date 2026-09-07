@@ -98,7 +98,7 @@ CREATE TABLE "operator_token" (
 
 CREATE INDEX "operator_token_username" ON "operator_token" ("username");
 
--- Everything that is not a list: server identity, TLS, SMTP behaviour, DNS,
+-- Everything that is not a list: server identity, TLS, SMTP behavior, DNS,
 -- the optional integrations, and the secrets they need. One row per section,
 -- as JSON, because these are read together and never queried by their parts.
 CREATE TABLE "setting" (

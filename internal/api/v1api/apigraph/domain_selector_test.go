@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // The selector is where a domain's key is published. Now that every domain
@@ -14,9 +14,9 @@ import (
 func TestTheSelectorCanBeChanged(t *testing.T) {
 	t.Parallel()
 
-	domain := &config.Domain{
+	domain := &models.Domain{
 		Domain: "example.com",
-		DKIM:   config.DomainKey{Selector: "teanode1", PrivateKey: "unchanged"},
+		DKIM:   models.DomainKey{Selector: "teanode1", PrivateKey: "unchanged"},
 	}
 
 	chosen := "  TeaNode2  "
@@ -39,10 +39,10 @@ func TestTheSelectorCanBeChanged(t *testing.T) {
 func TestTheSelectorIsLeftAloneWhenNotNamed(t *testing.T) {
 	t.Parallel()
 
-	domain := &config.Domain{
+	domain := &models.Domain{
 		Domain:    "example.com",
 		Subdomain: "mail",
-		DKIM:      config.DomainKey{Selector: "chosen", PrivateKey: "unchanged"},
+		DKIM:      models.DomainKey{Selector: "chosen", PrivateKey: "unchanged"},
 	}
 
 	comment := "a note"
@@ -63,7 +63,7 @@ func TestTheSelectorIsLeftAloneWhenNotNamed(t *testing.T) {
 func TestTheMailServerNamesCanBeChosen(t *testing.T) {
 	t.Parallel()
 
-	domain := &config.Domain{Domain: "example.com"}
+	domain := &models.Domain{Domain: "example.com"}
 
 	chosen := []string{" MX1.Example.com ", "mx2.example.com.", "", "  "}
 	applyDomainParameters(domain, &DomainParameters{MailServers: &chosen})

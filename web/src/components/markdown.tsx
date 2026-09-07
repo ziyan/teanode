@@ -3,7 +3,7 @@
 // No library. Release notes here are Keep a Changelog: a "### Fixed" heading,
 // a bullet per change with its continuation lines indented, and `code` and
 // **bold** inside them. That is four rules, and a Markdown package is a
-// dependency, a supply chain and a sanitiser to think about for a string this
+// dependency, a supply chain and a sanitizer to think about for a string this
 // server fetched from its own release list.
 //
 // Deliberately not general. It does not do tables, images, block quotes or

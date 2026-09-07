@@ -2,7 +2,7 @@
 //
 // It is named for the thing that holds the leaves back when you pour. It is
 // not SpamAssassin, is not an implementation of it, and does not claim
-// compatibility with it; it is a different filter with different behaviour,
+// compatibility with it; it is a different filter with different behavior,
 // and the documentation and the dashboard describe it as the built-in filter.
 //
 // Its governing rule is that it recomputes nothing. By the time a message is

@@ -7,7 +7,7 @@ import "time"
 // The private half never leaves the authenticator — the phone, the laptop's
 // secure enclave, the security key on a keyring — so there is no shared secret
 // here to leak, phish or reuse. What is stored is the public half and enough
-// to recognise it again.
+// to recognize it again.
 type Passkey struct {
 	// ID of the Passkey, stable for its lifetime
 	ID string `json:"id,omitempty"`

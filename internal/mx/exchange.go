@@ -44,6 +44,9 @@ type exchange struct {
 	credentialUsagesMap map[string][]models.Usage
 
 	storage storage.Storage
+
+	// directory caches what the domain table is read for per message.
+	directory directory
 }
 
 func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamFilter spamfilter.Filter, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {
@@ -101,7 +104,7 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 		case "ruf":
 			self.logEnvelope(models.MailKindRUF, envelope)
 		}
-	} else if envelope.CredentialID != "" || envelope.DomainID != "" {
+	} else if envelope.CredentialID != "" || envelope.DomainID != "" || envelope.MailboxID != "" {
 		self.logEnvelope(models.MailKindOutgoing, envelope)
 	} else {
 		self.logEnvelope(models.MailKindIncoming, envelope)
@@ -123,7 +126,7 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 		}
 
 		// outgoing
-		if envelope.CredentialID != "" || envelope.DomainID != "" {
+		if envelope.CredentialID != "" || envelope.DomainID != "" || envelope.MailboxID != "" {
 			deliveries, err = self.handleOutgoing(ctx, tx, envelope)
 			return err
 		}
@@ -209,9 +212,7 @@ func (self *exchange) logEnvelope(kind models.MailKind, envelope *mailparse.Enve
 }
 
 func (self *exchange) scavengeOnce(ctx context.Context) error {
-	if err := self.database.Transaction(func(tx db.Transaction) error {
-		return tx.ScavengeMails(nil)
-	}); err != nil {
+	if err := self.scavengeMailOnce(ctx); err != nil {
 		log.Warningf("failed to scavenge mails: %s", err)
 	}
 	if err := self.database.Transaction(func(tx db.Transaction) error {

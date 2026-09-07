@@ -28,6 +28,12 @@ const (
 	// or the image an HTML part refers to with a cid: URL.
 	PathMailAttachment = Prefix + "/mail/{mailId}/attachment/{index}"
 
+	// PathDraftAttachments adds files to a draft, as a multipart body, and
+	// answers with the draft that now holds them; PathNewDraftAttachments
+	// makes the first draft of a message around the files.
+	PathDraftAttachments    = Prefix + "/mailbox/drafts/{itemId}/attachments"
+	PathNewDraftAttachments = Prefix + "/mailbox/{mailboxId}/drafts/attachments"
+
 	// PathMediaUpload accepts a picture to put in a template. An operator's
 	// action, so it is inside the API and behind a session.
 	PathMediaUpload = Prefix + "/media"
@@ -78,8 +84,8 @@ const ()
 //
 // The GraphQL endpoint is on the list, which looks alarming and is not:
 // logging in happens there, so a caller has to be able to reach it before
-// being anybody. Authorisation is the resolvers' job — every one of them
-// refuses a caller who is not an operator, and TestEveryOperationAuthorises
+// being anybody. Authorization is the resolvers' job — every one of them
+// refuses a caller who is not an operator, and TestEveryOperationAuthorizes
 // fails if a new one forgets. The middleware was never the thing keeping the
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.
@@ -96,5 +102,7 @@ func PublicPaths() []string {
 // The middleware turning it away for having no session made the endpoint
 // unreachable on any server with an account, which is every server.
 func PublicPrefixes() []string {
-	return []string{Prefix + "/send/"}
+	// Sending with an API key carries its own authentication; single
+	// sign-on is how somebody with no session yet gets one.
+	return []string{Prefix + "/send/", Prefix + "/sso/"}
 }

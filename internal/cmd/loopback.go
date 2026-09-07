@@ -40,7 +40,7 @@ import (
 // terminal does not hold a port for the afternoon.
 const loginTimeout = 5 * time.Minute
 
-// CommandLinePagePath is where the dashboard's authorisation page lives.
+// CommandLinePagePath is where the dashboard's authorization page lives.
 // Named in both the client and the server, so the two cannot drift.
 const CommandLinePagePath = "/cli"
 
@@ -181,7 +181,7 @@ func (self *loopback) Wait(ctx context.Context, timeout time.Duration) (*loginRe
 		}
 		return &result, nil
 	case <-ctx.Done():
-		return nil, fmt.Errorf("cancelled")
+		return nil, fmt.Errorf("canceled")
 	case <-timer.C:
 		return nil, fmt.Errorf("gave up after %s waiting for the browser; run it again, or pass --token", timeout)
 	}

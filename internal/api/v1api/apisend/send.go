@@ -14,6 +14,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -37,7 +38,14 @@ func (self *send) sendView(response http.ResponseWriter, request *http.Request) 
 		if err != nil {
 			return api.ErrInvalidCredential
 		}
-		_, credential := self.config.Current().FindCredential(credentialId)
+		var credential *models.Credential
+		if err := self.database.Transaction(func(tx db.Transaction) error {
+			var err error
+			credential, err = tx.GetCredential(credentialId)
+			return err
+		}); err != nil {
+			return err
+		}
 		if credential == nil || credential.Disabled || credential.Key != credentialKey {
 			return api.ErrInvalidCredential
 		}

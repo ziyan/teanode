@@ -1,13 +1,13 @@
 // Syntax highlighting for the HTML behind a rendered message.
 //
-// Written here rather than pulled in. A highlighter is a tokeniser and a
+// Written here rather than pulled in. A highlighter is a tokenizer and a
 // stylesheet; the libraries that do this are hundreds of kilobytes because
 // they do it for ninety languages, and this needs one. It also has to run
 // under a content security policy of script-src 'self', so a CDN is not an
 // option even if it were a good idea.
 //
 // Not a parser. It never builds a tree, never validates and never rewrites —
-// it walks the string once and labels runs of it, which is all colouring
+// it walks the string once and labels runs of it, which is all coloring
 // needs. Anything it cannot classify comes out as plain text, so malformed
 // markup degrades to unhighlighted markup rather than to a mess. That matters:
 // this is mail from strangers, and a good deal of it is malformed.
@@ -36,7 +36,7 @@ export function HighlightedHtml({ source }: { source: string }) {
 
 // The scanner. Position-based rather than regular expressions over the whole
 // document: an attribute value can contain a > and a comment can contain
-// anything at all, and a pattern that ignores that colours half a message as
+// anything at all, and a pattern that ignores that colors half a message as
 // one tag.
 function tokenize(source: string): Token[] {
   const tokens: Token[] = []
@@ -79,7 +79,7 @@ function tokenize(source: string): Token[] {
 
     const tag = readTag(source, next)
     if (!tag) {
-      // A bare < in text, which mail is full of. Not a tag, so not coloured.
+      // A bare < in text, which mail is full of. Not a tag, so not colored.
       text += '<'
       index = next + 1
       continue
@@ -176,6 +176,6 @@ function readTag(source: string, start: number): { tokens: Token[]; end: number 
     }
   }
 
-  // Ran off the end inside a tag. Everything read so far still colours.
+  // Ran off the end inside a tag. Everything read so far still colors.
   return { tokens, end: index }
 }

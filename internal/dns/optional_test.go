@@ -4,7 +4,7 @@ import "testing"
 
 // A domain reachable over IPv4 alone is correctly configured. Counting its
 // absent AAAA as a fault paints the page red for something nothing depends on,
-// which teaches the reader to stop reading the colour.
+// which teaches the reader to stop reading the color.
 func TestAnAbsentOptionalRecordDoesNotFailTheSet(t *testing.T) {
 	t.Parallel()
 

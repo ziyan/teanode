@@ -4,24 +4,28 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/util/dsn"
 )
 
 // Describe fills Method and Destination from the alias the delivery was
 // made for, which is configuration rather than a stored column. An external
 // delivery has no alias: it is this server sending to the recipient directly.
-func (self *Delivery) Describe(alias *config.Alias) {
+func (self *Delivery) Describe(alias *Alias) {
 	switch {
 	case self.Kind == DeliveryKindExternal:
 		self.Method, self.Destination = "smtp", self.Recipient
+	case self.Kind == DeliveryKindMailbox:
+		self.Method = "mailbox"
+		if self.Destination == "" {
+			self.Destination = self.Recipient
+		}
 	case alias == nil:
 		return
-	case alias.Kind == config.AliasKindEmail:
+	case alias.Kind == AliasKindEmail:
 		self.Method, self.Destination = "email", alias.Email
-	case alias.Kind == config.AliasKindWebhook:
+	case alias.Kind == AliasKindWebhook:
 		self.Method, self.Destination = "webhook", alias.Webhook
-	case alias.Kind == config.AliasKindMailServer && alias.MailServer != nil:
+	case alias.Kind == AliasKindMailServer && alias.MailServer != nil:
 		self.Method, self.Destination = "mailServer", fmt.Sprintf("%s:%d", alias.MailServer.Host, alias.MailServer.Port)
 	}
 }
@@ -33,6 +37,11 @@ const (
 	DeliveryKindInternal DeliveryKind = "internal"
 	DeliveryKindExternal DeliveryKind = "external"
 	DeliveryKindForward  DeliveryKind = "forward"
+
+	// DeliveryKindMailbox is the message placed in a folder of a mailbox on
+	// this server: one per mailbox the message reached, created in the
+	// receipt transaction, already delivered, like the internal kind.
+	DeliveryKindMailbox DeliveryKind = "mailbox"
 )
 
 func (self DeliveryKind) String() string {
@@ -47,6 +56,8 @@ func GetDeliveryKind(value string) DeliveryKind {
 		return DeliveryKindExternal
 	case "forward":
 		return DeliveryKindForward
+	case "mailbox":
+		return DeliveryKindMailbox
 	}
 	return DeliveryKindUnknown
 }
@@ -108,8 +119,13 @@ type Delivery struct {
 	// Alias that was matched to this delivery. The identifier is stored; the
 	// pointer is resolved from the configuration and is nil once the alias has
 	// been removed, which historical deliveries have to tolerate.
-	AliasID string        `json:"aliasId,omitempty"`
-	Alias   *config.Alias `json:"-"`
+	AliasID string `json:"aliasId,omitempty"`
+	Alias   *Alias `json:"-"`
+
+	// MailboxID and MailboxItemID name the mailbox and the item a delivery
+	// of kind mailbox produced.
+	MailboxID     string `json:"mailboxId,omitempty"`
+	MailboxItemID string `json:"mailboxItemId,omitempty"`
 
 	// Recipient address, indicating the recipient in the Mail being delivered to
 	Recipient string `json:"recipient,omitempty"`

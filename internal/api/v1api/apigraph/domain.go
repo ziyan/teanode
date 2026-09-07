@@ -9,10 +9,12 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/dns"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 type DomainQuery interface {
-	// List every Domain this server accepts mail for
+	// List every Domain the caller may see: the ones they manage, and the
+	// ones whose mail they may audit
 	ListDomains(ctx context.Context) ([]*Domain, error)
 
 	// Get a particular Domain
@@ -31,7 +33,9 @@ type DomainQuery interface {
 }
 
 type DomainMutation interface {
-	// Add a Domain to the configuration, with a signing key generated for it
+	// Add a Domain, with a signing key generated for it. Needs the
+	// domain:manage-all permission: a domain that does not exist yet belongs
+	// to no group.
 	CreateDomain(ctx context.Context, arguments CreateDomainArguments) (*Domain, error)
 
 	// Replace a Domain's signing key. Mail signed with the old key stops
@@ -49,8 +53,8 @@ type DomainMutation interface {
 	CheckDomain(ctx context.Context, arguments CheckDomainArguments) (*Domain, error)
 }
 
-// Domain is a mail domain this server accepts mail for, as the dashboard sees
-// it: the configured settings, plus the live state of its DNS records.
+// Domain is a mail domain this server accepts mail for, as the web UI sees
+// it: the stored settings, plus the live state of its DNS records.
 type Domain struct {
 	// ID of the Domain, stable for its lifetime
 	ID string `json:"id"`
@@ -99,6 +103,10 @@ type Domain struct {
 	// Whether this Domain has a signing key at all. Without one its outgoing
 	// mail is unsigned and receivers may distrust it.
 	HasDKIMKey bool `json:"hasDkimKey"`
+
+	// Whether the caller may change this Domain, as opposed to only reading
+	// its mail. What the web UI shows the settings tab on.
+	Manageable bool `json:"manageable"`
 }
 
 // Alias matches recipient addresses and says where the mail goes.
@@ -112,7 +120,7 @@ type Alias struct {
 	// Note for the operator
 	Comment string `json:"comment,omitempty"`
 
-	// One of null, email, webhook or mailServer
+	// One of null, email, webhook, mailServer or mailbox
 	Kind string `json:"kind"`
 
 	// Destination address, when kind is email
@@ -123,6 +131,9 @@ type Alias struct {
 
 	// Destination server, when kind is mailServer
 	MailServer *MailServer `json:"mailServer,omitempty"`
+
+	// Destination mailbox on this server, when kind is mailbox
+	MailboxID string `json:"mailboxId,omitempty"`
 
 	// Whether this Alias is ignored without being deleted
 	Disabled bool `json:"disabled"`
@@ -153,22 +164,32 @@ type Credential struct {
 }
 
 func (self *graph) ListDomains(ctx context.Context) ([]*Domain, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
 		return nil, err
 	}
-
+	all, err := self.transaction(ctx).ListDomains()
+	if err != nil {
+		return nil, err
+	}
 	configuration := self.config.Current()
 	status := self.verifier.Status()
 
-	domains := make([]*Domain, 0, len(configuration.Domains))
-	for _, domain := range configuration.Domains {
-		domains = append(domains, describeDomain(configuration, domain, status[domain.ID]))
+	domains := make([]*Domain, 0, len(all))
+	for _, domain := range all {
+		manageable := principal.Permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
+		if !manageable && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
+			continue
+		}
+		described := describeDomain(configuration, domain, all, status[domain.ID])
+		described.Manageable = manageable
+		domains = append(domains, described)
 	}
 	return domains, nil
 }
 
 func (self *graph) GetServerAddresses(ctx context.Context) (*dns.ExternalAddresses, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireManagement(ctx); err != nil {
 		return nil, err
 	}
 	addresses := self.verifier.ExternalAddresses(ctx)
@@ -176,7 +197,7 @@ func (self *graph) GetServerAddresses(ctx context.Context) (*dns.ExternalAddress
 }
 
 func (self *graph) GetOutgoingIdentity(ctx context.Context) (*dns.OutgoingIdentity, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireManagement(ctx); err != nil {
 		return nil, err
 	}
 	return self.verifier.OutgoingIdentity(ctx), nil
@@ -188,22 +209,40 @@ type GetDomainArguments struct {
 }
 
 func (self *graph) GetDomain(ctx context.Context, arguments GetDomainArguments) (*Domain, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	principal, err := self.requireSignedIn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return describeDomain(self.config.Current(), domain, self.verifier.StatusFor(domain.ID)), nil
+	manageable := principal.Permissions.HasOverDomain(models.PermissionDomainManage, arguments.DomainID)
+	if !manageable && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, arguments.DomainID) {
+		return nil, api.ErrNotFound
+	}
+	described, err := self.describeDomainById(ctx, arguments.DomainID, self.verifier.StatusFor(arguments.DomainID))
+	if err != nil {
+		return nil, err
+	}
+	described.Manageable = manageable
+	return described, nil
+}
+
+// describeDomainById reads a domain, and every other, and renders it.
+func (self *graph) describeDomainById(ctx context.Context, domainId string, records *dns.RecordSet) (*Domain, error) {
+	domains, err := self.transaction(ctx).ListDomains()
+	if err != nil {
+		return nil, err
+	}
+	for _, domain := range domains {
+		if domain.ID == domainId {
+			return describeDomain(self.config.Current(), domain, domains, records), nil
+		}
+	}
+	return nil, api.ErrNotFound
 }
 
 // DomainParameters are the settings of a Domain that an operator can change.
 //
 // Every field is a pointer, including the domain name, so that a caller can
-// send the one setting it is changing. It was not, and the effect was worse
-// than a clumsy API: the name became a required argument of the schema, so an
-// update carrying anything else was refused before it reached this code. Every
-// partial update the dashboard makes — the mail server names, the signing
-// selector — failed that way, and the failure looked like a save that did
-// nothing.
+// send the one setting it is changing.
 type DomainParameters struct {
 	// The mail domain itself. Required when creating; omit it to leave the
 	// name alone.
@@ -224,8 +263,7 @@ type DomainParameters struct {
 
 	// Name to write into addresses this server puts in mail it sends, such as
 	// the pictures in a template. Empty restores the default, the first mail
-	// host. Has to be under this domain, and to reach this server over HTTPS
-	// with a certificate a mail program accepts.
+	// host. Has to be under this domain.
 	LinkHost *string `json:"linkHost"`
 
 	// Label the signing key is published under, as
@@ -240,7 +278,7 @@ type CreateDomainArguments struct {
 }
 
 func (self *graph) CreateDomain(ctx context.Context, arguments CreateDomainArguments) (*Domain, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionDomainManageAll); err != nil {
 		return nil, err
 	}
 	// Optional in the type, because an update sends only what it changes;
@@ -251,46 +289,53 @@ func (self *graph) CreateDomain(ctx context.Context, arguments CreateDomainArgum
 	}
 
 	name := strings.ToLower(strings.TrimSpace(*arguments.DomainParameters.Domain))
-	created := &config.Domain{
-		// The domain name is the identifier. It is already unique across the
-		// configuration, it never changes for a given domain — renaming one
-		// means deleting it and adding another — and it makes every reference
-		// to it legible: a URL reads /domains/example.com, and a row of stored
-		// mail says which domain it arrived for without a lookup.
+	created := &models.Domain{
+		// The domain name is the identifier. It is already unique, it never
+		// changes for a given domain — renaming one means deleting it and
+		// adding another — and it makes every reference to it legible: a URL
+		// reads /domains/example.com, and a row of stored mail says which
+		// domain it arrived for without a lookup.
 		ID:                       name,
 		Domain:                   name,
 		Subdomain:                "mail",
-		SpamFilterScoreThreshold: defaultSpamFilterScoreThreshold,
+		SpamFilterScoreThreshold: models.DefaultSpamFilterScoreThreshold,
 	}
 	applyDomainParameters(created, arguments.DomainParameters)
 
 	// Every domain gets a signing key the moment it is created. Making this a
 	// separate step people have to know about is how domains end up sending
 	// unsigned mail for months.
-	generated, err := config.GenerateDomainKey(self.config.Current().DKIM.Selector)
+	generated, err := models.GenerateDomainKey(self.config.Current().DKIM.Selector)
 	if err != nil {
 		return nil, err
 	}
+	if created.DKIM.Selector != "" {
+		generated.Selector = created.DKIM.Selector
+	}
 	created.DKIM = generated
 
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		if configuration.FindDomain(created.Domain) != nil {
-			return api.ErrAlreadyExists
-		}
-		configuration.Domains = append(configuration.Domains, created)
-		return nil
-	}); err != nil {
+	stored, err := self.transaction(ctx).CreateDomain(created)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s added domain %q", operatorName(ctx), stored.Domain)
+
+	// Check its records straight away, so the web UI can show what is left
+	// to publish without waiting for the next scheduled check. After the
+	// commit: the check reads the domain table from another transaction.
+	if err := self.transaction(ctx).Commit(); err != nil {
 		return nil, err
 	}
-
-	log.Noticef("%s added domain %q", operatorName(ctx), created.Domain)
-
-	// Check its records straight away, so the dashboard can show what is left
-	// to publish without waiting for the next scheduled check.
-	if _, err := self.verifier.Check(ctx, created.ID); err != nil {
-		log.Warningf("failed to check the records for %q: %s", created.Domain, err)
+	records, err := self.verifier.Check(ctx, stored.ID)
+	if err != nil {
+		log.Warningf("failed to check the records for %q: %s", stored.Domain, err)
 	}
-	return describeDomain(self.config.Current(), created, self.verifier.StatusFor(created.ID)), nil
+	described, err := self.describeDomainById(ctx, stored.ID, records)
+	if err != nil {
+		return nil, err
+	}
+	described.Manageable = true
+	return described, nil
 }
 
 type UpdateDomainArguments struct {
@@ -301,27 +346,30 @@ type UpdateDomainArguments struct {
 }
 
 func (self *graph) UpdateDomain(ctx context.Context, arguments UpdateDomainArguments) (*Domain, error) {
-	if _, err := self.requireDomain(ctx, arguments.DomainID); err != nil {
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID); err != nil {
 		return nil, err
 	}
 	if arguments.DomainParameters == nil {
 		return nil, api.ErrInvalidArguments
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		domain := configuration.FindDomainByID(arguments.DomainID)
-		if domain == nil {
-			return api.ErrNotFound
-		}
-		applyDomainParameters(domain, arguments.DomainParameters)
+	updated, err := self.transaction(ctx).UpdateDomain(arguments.DomainID, func(domain *models.Domain) error {
+		// The name is left alone on purpose: it is the identifier, and stored
+		// mail names it.
+		parameters := *arguments.DomainParameters
+		parameters.Domain = nil
+		applyDomainParameters(domain, &parameters)
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s changed domain %q", operatorName(ctx), updated.Domain)
+	described, err := self.describeDomainById(ctx, updated.ID, self.verifier.StatusFor(updated.ID))
+	if err != nil {
 		return nil, err
 	}
-
-	domain := self.config.Current().FindDomainByID(arguments.DomainID)
-	log.Noticef("%s changed domain %q", operatorName(ctx), domain.Domain)
-	return describeDomain(self.config.Current(), domain, self.verifier.StatusFor(domain.ID)), nil
+	described.Manageable = true
+	return described, nil
 }
 
 type DeleteDomainArguments struct {
@@ -330,29 +378,17 @@ type DeleteDomainArguments struct {
 }
 
 func (self *graph) DeleteDomain(ctx context.Context, arguments DeleteDomainArguments) error {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return err
 	}
-	name := domain.Domain
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		for index, candidate := range configuration.Domains {
-			if candidate.ID != arguments.DomainID {
-				continue
-			}
-			configuration.Domains = append(configuration.Domains[:index], configuration.Domains[index+1:]...)
-			return nil
-		}
-		return api.ErrNotFound
-	}); err != nil {
-		return err
+	if err := self.transaction(ctx).DeleteDomain(domain.ID); err != nil {
+		return translateError(err)
 	}
-
 	// Mail already received for this domain stays in the database and keeps
-	// its identifier. The dashboard renders it as belonging to a deleted
-	// domain rather than losing it.
-	log.Noticef("%s removed domain %q; mail already received for it is kept", operatorName(ctx), name)
+	// its identifier. The web UI renders it as belonging to a deleted domain
+	// rather than losing it.
+	log.Noticef("%s removed domain %q; mail already received for it is kept", operatorName(ctx), domain.Domain)
 	return nil
 }
 
@@ -362,7 +398,7 @@ type CheckDomainArguments struct {
 }
 
 func (self *graph) CheckDomain(ctx context.Context, arguments CheckDomainArguments) (*Domain, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -370,15 +406,15 @@ func (self *graph) CheckDomain(ctx context.Context, arguments CheckDomainArgumen
 	if err != nil {
 		return nil, err
 	}
-	return describeDomain(self.config.Current(), domain, records), nil
+	described, err := self.describeDomainById(ctx, domain.ID, records)
+	if err != nil {
+		return nil, err
+	}
+	described.Manageable = true
+	return described, nil
 }
 
-// defaultSpamFilterScoreThreshold is what a new domain is given. Defined
-// once, in internal/config, because the exchange has to agree with the
-// dashboard about what an unset threshold means.
-const defaultSpamFilterScoreThreshold = config.DefaultSpamFilterScoreThreshold
-
-func applyDomainParameters(domain *config.Domain, parameters *DomainParameters) {
+func applyDomainParameters(domain *models.Domain, parameters *DomainParameters) {
 	if parameters.Domain != nil && strings.TrimSpace(*parameters.Domain) != "" {
 		domain.Domain = strings.ToLower(strings.TrimSpace(*parameters.Domain))
 	}
@@ -404,16 +440,12 @@ func applyDomainParameters(domain *config.Domain, parameters *DomainParameters) 
 		domain.MailServers = hosts
 	}
 	if parameters.LinkHost != nil {
-		// Same shape as a mail server name, and empty restores the default
-		// rather than being an error.
 		domain.LinkHost = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(*parameters.LinkHost), ".")))
 	}
 	if parameters.DKIMSelector != nil {
 		// Lowercased because it is a DNS label and DNS is case-insensitive,
 		// so the record an operator publishes would not match what the panel
-		// asks for if the two were spelled differently. Whether it is usable
-		// as a label at all is the configuration's own check, which runs on
-		// the way in and refuses the change.
+		// asks for if the two were spelled differently.
 		domain.DKIM.Selector = strings.ToLower(strings.TrimSpace(*parameters.DKIMSelector))
 	}
 }
@@ -424,7 +456,7 @@ type RegenerateDomainKeyArguments struct {
 }
 
 func (self *graph) RegenerateDomainKey(ctx context.Context, arguments RegenerateDomainKeyArguments) (*Domain, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -437,51 +469,53 @@ func (self *graph) RegenerateDomainKey(ctx context.Context, arguments Regenerate
 	if selector == "" {
 		selector = self.config.Current().DKIM.Selector
 	}
-	generated, err := config.GenerateDomainKey(selector)
+	generated, err := models.GenerateDomainKey(selector)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		target := configuration.FindDomainByID(arguments.DomainID)
-		if target == nil {
-			return api.ErrNotFound
-		}
-		target.DKIM = generated
+	updated, err := self.transaction(ctx).UpdateDomain(domain.ID, func(domain *models.Domain) error {
+		domain.DKIM = generated
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s replaced the signing key for %q; mail signed with the old key stops verifying once the DNS record is changed", operatorName(ctx), updated.Domain)
+
+	if err := self.transaction(ctx).Commit(); err != nil {
 		return nil, err
 	}
-
-	log.Noticef("%s replaced the signing key for %q; mail signed with the old key stops verifying once the DNS record is changed", operatorName(ctx), domain.Domain)
-
-	updated := self.config.Current().FindDomainByID(arguments.DomainID)
 	records, err := self.verifier.Check(ctx, updated.ID)
 	if err != nil {
 		log.Warningf("failed to check the records for %q: %s", updated.Domain, err)
 	}
-	return describeDomain(self.config.Current(), updated, records), nil
+	described, err := self.describeDomainById(ctx, updated.ID, records)
+	if err != nil {
+		return nil, err
+	}
+	described.Manageable = true
+	return described, nil
 }
 
 // describeDomain renders a domain for the API.
 //
-// The configuration comes with it because one of the answers is not a property
-// of the domain alone: which names its mail arrives at depends on what the
-// domain says and, when it says nothing, on what the server is called.
-func describeDomain(configuration *config.Configuration, domain *config.Domain, records *dns.RecordSet) *Domain {
+// Every domain comes with it because one of the answers is not a property of
+// the domain alone: which names its mail arrives at depends on what the domain
+// says and, when it says nothing, on which domain owns the server's name.
+func describeDomain(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain, records *dns.RecordSet) *Domain {
 	described := &Domain{
-		MailHosts:                configuration.MailHostsFor(domain),
 		ID:                       domain.ID,
 		Domain:                   domain.Domain,
 		Subdomain:                domain.Subdomain,
 		Comment:                  domain.Comment,
-		SpamFilterScoreThreshold: domain.SpamThreshold(),
+		SpamFilterScoreThreshold: domain.SpamFilterScoreThreshold,
 		Aliases:                  make([]*Alias, 0, len(domain.Aliases)),
 		Credentials:              make([]*Credential, 0, len(domain.Credentials)),
 		Records:                  records,
 		MailServers:              domain.MailServers,
+		MailHosts:                configuration.MailHostsFor(domain, domains),
 		LinkHost:                 domain.LinkHost,
-		LinkHostname:             configuration.LinkHostFor(domain),
+		LinkHostname:             configuration.LinkHostFor(domain, domains),
 		DKIMSelector:             domain.DKIM.Selector,
 		HasDKIMKey:               domain.DKIM.PrivateKey != "",
 	}
@@ -494,18 +528,21 @@ func describeDomain(configuration *config.Configuration, domain *config.Domain, 
 	return described
 }
 
-func describeAlias(alias *config.Alias) *Alias {
+func describeAlias(alias *models.Alias) *Alias {
+	if alias == nil {
+		return nil
+	}
 	described := &Alias{
-		ID:       alias.ID,
-		Pattern:  alias.Pattern,
-		Comment:  alias.Comment,
-		Kind:     string(alias.Kind),
-		Email:    alias.Email,
-		Webhook:  alias.Webhook,
-		Disabled: alias.Disabled,
+		ID:        alias.ID,
+		Pattern:   alias.Pattern,
+		Comment:   alias.Comment,
+		Kind:      string(alias.Kind),
+		Email:     alias.Email,
+		Webhook:   alias.Webhook,
+		MailboxID: alias.MailboxID,
+		Disabled:  alias.Disabled,
 	}
 	if alias.MailServer != nil {
-		// The password is deliberately not returned.
 		described.MailServer = &MailServer{
 			Host:     alias.MailServer.Host,
 			Port:     alias.MailServer.Port,
@@ -515,7 +552,10 @@ func describeAlias(alias *config.Alias) *Alias {
 	return described
 }
 
-func describeCredential(credential *config.Credential) *Credential {
+func describeCredential(credential *models.Credential) *Credential {
+	if credential == nil {
+		return nil
+	}
 	return &Credential{
 		ID:       credential.ID,
 		Comment:  credential.Comment,
@@ -524,34 +564,16 @@ func describeCredential(credential *config.Credential) *Credential {
 	}
 }
 
-// validatePattern rejects an alias pattern that would not compile, so the
-// operator hears about it here rather than discovering that an address
-// silently matches nothing.
 // validatePattern checks that an alias pattern is usable.
 //
 // An empty pattern is a catch-all, not a missing value: it takes whatever no
-// other alias matched, which is how config.Alias.IsCatchAll has always read it
-// and what the configuration file documents. Refusing it here contradicted the
-// configuration layer, the documentation, and the file the server was already
-// running — creating one through the API was impossible while the same server
-// held two dozen of them.
-//
-// Updating an alias already allowed it, so the two paths disagreed as well.
+// other alias matched.
 func validatePattern(pattern string) error {
 	if pattern == "" {
 		return nil
 	}
 	if _, err := regexp.Compile(pattern); err != nil {
-		return fmt.Errorf("%w: %s is not a valid regular expression: %s", api.ErrInvalidArguments, pattern, err)
+		return fmt.Errorf("%w: the pattern does not compile: %s", api.ErrInvalidArguments, models.RegexpErrorMessage(err))
 	}
 	return nil
-}
-
-// operatorName is who to name in the log for a change. It is empty when no
-// dashboard users are configured.
-func operatorName(ctx context.Context) string {
-	if username := api.ContextAuthenticatedUsername(ctx); username != "" {
-		return username
-	}
-	return "an unauthenticated operator"
 }

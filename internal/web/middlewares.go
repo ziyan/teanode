@@ -155,7 +155,7 @@ func MakeForwarderMiddleware(forwarderKey string) Middleware {
 // will do with this page, on everything the server answers.
 //
 // The content security policy is the substantial one. The dashboard renders
-// mail written by strangers; the sanitiser and the sandboxed frame are the
+// mail written by strangers; the sanitizer and the sandboxed frame are the
 // first two layers, and this is the third — the one that holds even if the
 // other two have a hole in them.
 //

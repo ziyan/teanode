@@ -304,7 +304,7 @@ func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory 
 	// hours wide would then be hit or missed depending on that phase, and
 	// missing it means automatic upgrades silently never happen. Waking every
 	// few minutes and deciding each time — with the release list asked only
-	// when checkInterval has passed — costs nothing and honours the window.
+	// when checkInterval has passed — costs nothing and honors the window.
 	interval := self.checkInterval
 	if interval > tick {
 		interval = tick
@@ -539,7 +539,7 @@ func (self *manager) Start(expected string) (Status, error) {
 	}
 
 	// Counted, so that Close does not return while this is between chmod and
-	// rename. Cancelling the context stops the download; it does not stop a
+	// rename. Canceling the context stops the download; it does not stop a
 	// swap that has started.
 	self.waitGroup.Add(1)
 	go func() {
@@ -548,7 +548,7 @@ func (self *manager) Start(expected string) (Status, error) {
 		defer deferutil.Recover()
 
 		// The manager's context, not the request's: the request is answered
-		// before this finishes, and its context is cancelled the moment it
+		// before this finishes, and its context is canceled the moment it
 		// is. apply puts the status back if it fails; a success is followed
 		// by the restart, which this process does not return from.
 		if err := self.apply(self.ctx, expected); err != nil {

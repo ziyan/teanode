@@ -77,7 +77,7 @@ About tab renders that list as `server.pendingRestart`. So a setting in one of
 those sections becomes editable without any new machinery: change it, and it
 appears in the pending list by itself.
 
-Translations are three catalogues that must agree — `web/src/i18n/en.ts`,
+Translations are three catalogs that must agree — `web/src/i18n/en.ts`,
 `zh.ts` and `ja.ts` — checked by `make check-catalogs`. A value identical to
 the English fails unless the key is listed in `SAME_ON_PURPOSE` in
 `web/scripts/check-catalogs.mjs`, which is for protocol names and the like.
@@ -173,7 +173,7 @@ something unparsed.
 Add three tabs to `INTEGRATION_SECTIONS` in `web/src/pages/settings/
 integrations.tsx` — `mail`, `resolver`, `sessions` — with a form section each,
 following the shape of the antivirus and relay sections already in that file.
-Add their labels and one hint per field to all three catalogues.
+Add their labels and one hint per field to all three catalogs.
 
 Acceptance. `make test` passes and `cd web && npm run build` compiles. Then,
 against a dev server: `teanode settings get --json` shows the new groups

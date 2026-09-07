@@ -18,7 +18,7 @@ const AllowMigrationRevert = bootstrap.Prefix + "ALLOW_MIGRATION_REVERT"
 // migrate brings the database up to date, and refuses to bring it backwards
 // unless somebody has said to.
 //
-// Migrate reverts every migration it does not recognise. That is how a
+// Migrate reverts every migration it does not recognize. That is how a
 // deliberate downgrade works here — see docs/coding/database-migrations.md —
 // and the trouble is that it cannot tell a deliberate downgrade from an
 // accidental one, while the two are told apart by what happens next: one loses
