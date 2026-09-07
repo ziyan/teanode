@@ -143,9 +143,12 @@ and it is the only thing a role or a domain is attached to: a user in a group
 holds the group's roles over the group's domains. Nothing is attached to a
 user directly. A user's **effective permissions** are the union over every
 group they are in — additive, never subtractive — resolved once per request.
-Some permissions are **server-wide** (users, groups, roles, the queue, the
-server itself) and apply whatever domains a group has; the rest are
-**domain-scoped** and apply only over the group's domains.
+Every permission has a **kind**, declared with it: **server** permissions
+(users, groups, roles, the queue, the server itself) apply whatever domains
+a group has; **domain** permissions apply only over the group's domains; and
+**all-domains** permissions are the same verb over every domain, present and
+future — `domain:manage-all`, `mail:audit-all` — which is how the
+administrators reach a domain created tomorrow without anyone listing it.
 
 **IMAP** is the protocol mail programs read a mailbox with; each folder is an
 IMAP mailbox, each item a message with a **UID** that never changes while it
@@ -174,18 +177,39 @@ ignored rather than fatal:
     type Permission string
 
     const (
-        PermissionMailRead      Permission = "mail:read"      // read one's own mailboxes
-        PermissionMailWrite     Permission = "mail:write"     // flag, move, delete in them
-        PermissionMailSend      Permission = "mail:send"      // send as an address of them
-        PermissionMailboxManage Permission = "mailbox:manage" // folders, rules, addresses of them
-        PermissionMailAudit     Permission = "mail:audit"     // every message of a domain, as the operator sees it today
-        PermissionDomainManage  Permission = "domain:manage"  // domains, aliases, credentials, templates
-        PermissionReportRead    Permission = "report:read"
-        PermissionUserManage    Permission = "user:manage"
-        PermissionGroupManage   Permission = "group:manage"
-        PermissionRoleManage    Permission = "role:manage"
-        PermissionServerManage  Permission = "server:manage"  // settings, upgrades, certificates
+        PermissionMailRead        Permission = "mail:read"         // read one's own mailboxes
+        PermissionMailWrite       Permission = "mail:write"        // flag, move, delete in them
+        PermissionMailSend        Permission = "mail:send"         // send as an address of them
+        PermissionMailboxManage   Permission = "mailbox:manage"    // folders, rules, addresses of them
+        PermissionMailAudit       Permission = "mail:audit"        // every message of the group's domains, as the operator sees it today
+        PermissionMailAuditAll    Permission = "mail:audit-all"    // the same, over every domain
+        PermissionDomainManage    Permission = "domain:manage"     // the group's domains: aliases, credentials, templates
+        PermissionDomainManageAll Permission = "domain:manage-all" // every domain, present and future, and creating new ones
+        PermissionReportRead      Permission = "report:read"
+        PermissionUserManage      Permission = "user:manage"
+        PermissionGroupManage     Permission = "group:manage"
+        PermissionRoleManage      Permission = "role:manage"
+        PermissionServerManage    Permission = "server:manage"     // settings, upgrades, certificates
     )
+
+    // PermissionKind is where a permission applies, declared with the
+    // vocabulary: there is no flag on a group, the permission itself says how
+    // far it reaches.
+    type PermissionKind string
+
+    const (
+        PermissionKindServer     PermissionKind = "server"      // everywhere, whatever domains the group has
+        PermissionKindDomain     PermissionKind = "domain"      // over the group's domains only
+        PermissionKindAllDomains PermissionKind = "all-domains" // over every domain, present and future; group_domain is not consulted
+    )
+
+    // Kind is the permission's reach. A key the code does not know has no kind
+    // and grants nothing.
+    func (self Permission) Kind() PermissionKind
+
+    // Widens is, for an all-domains permission, the domain permission it stands
+    // in for on every domain: "domain:manage-all" widens "domain:manage".
+    func (self Permission) Widens() Permission
 
 Tables:
 
@@ -213,8 +237,6 @@ Tables:
         "description" text         NOT NULL DEFAULT '',
         -- The group's name at the identity provider, when SSO fills it.
         "idp_group"   varchar(256) NOT NULL DEFAULT '',
-        -- The group reaches every domain, present and future; no group_domain rows needed.
-        "all_domains" boolean      NOT NULL DEFAULT false,
         PRIMARY KEY ("id")
     );
     CREATE UNIQUE INDEX "group_name" ON "group" (lower("name"));
@@ -234,9 +256,8 @@ Tables:
         PRIMARY KEY ("group_id", "role_id")
     );
 
-    -- A group's domains: the ones its roles' domain-scoped permissions apply
-    -- to. A group with all_domains set reaches every domain, including ones
-    -- created later, and needs no rows here.
+    -- A group's domains: the ones its roles' domain-kind permissions apply
+    -- to. All-domains permissions do not look here.
     CREATE TABLE "group_domain" (
         "group_id"  varchar(32) NOT NULL REFERENCES "group"("id")  ON DELETE CASCADE,
         "domain_id" varchar(32) NOT NULL REFERENCES "domain"("id") ON DELETE CASCADE,
@@ -252,20 +273,24 @@ There is no built-in flag and nothing a seeded role may not do.
 today; **Member** holds `mail:read`, `mail:write`, `mail:send` and
 `mailbox:manage`, which is what a person with an inbox and nothing else
 needs. The migration creates a group **Administrators**, puts every existing
-user in it, binds Administrator to it and sets `all_domains` — so the day this
-lands, nobody can do less than they could the day before. The one guard that
-remains is not about seeded roles at all: a mutation that would leave no
-enabled user in any group whose roles hold `role:manage` is refused, whichever
-role, group or membership it touches, because the only way back from that
-state is SQL.
+user in it and binds Administrator to it — so the day this lands, nobody can
+do less than they could the day before. There is no guard against an
+administrator editing themselves out: that is an accepted risk. The way back
+is `teanode-server rescue <username>`, run on the host against the database
+with no permission check — whoever holds the database holds everything
+anyway — which puts the user into a group holding every permission,
+recreating Administrators and Administrator if they were deleted.
 
 Effective permissions are computed once per request in the authentication
 layer and carried on the context, as
 `api.ContextEffectivePermissions(ctx)`: the user's groups, each group's roles
-and each group's domains, crossed and unioned. A permission's scope —
-server-wide or domain-scoped — is declared in Go next to its constant, so
-that `user:manage` in a group with one domain still manages every user, and
-`mail:audit` in that group reads only that domain's mail. `requireOperator` is replaced by
+and each group's domains, crossed and unioned by kind: server and
+all-domains permissions land in `Everywhere`, domain permissions in
+`ByDomain` under each of the group's domains. So `user:manage` in a group
+with one domain still manages every user, `mail:audit` in that group reads
+only that domain's mail, and `mail:audit-all` reads all of it.
+`requireDomainPermission(ctx, "domain:manage", id)` passes on either
+`ByDomain[id]["domain:manage"]` or `Everywhere["domain:manage-all"]`. `requireOperator` is replaced by
 `requirePermission(ctx, permission)` and `requireDomainPermission(ctx,
 permission, domainId)`. A resolver that finds the caller lacks permission over
 a row answers **not found**, never "forbidden": "you may not touch this"
@@ -477,11 +502,9 @@ types change. Written out so that "what is added" has one answer:
         UserIDs     []string  `json:"userIds,omitempty"`
         // RoleIDs is the group_role table: what every user in the group may do.
         RoleIDs     []string  `json:"roleIds,omitempty"`
-        // DomainIDs is the group_domain table: where the domain-scoped
-        // permissions of those roles apply. AllDomains makes it every domain,
-        // including ones created after the group.
+        // DomainIDs is the group_domain table: where the domain-kind
+        // permissions of those roles apply.
         DomainIDs   []string  `json:"domainIds,omitempty"`
-        AllDomains  bool      `json:"allDomains"`
     }
     
     // EffectivePermissions is what one request may do, resolved once from the
@@ -489,10 +512,10 @@ types change. Written out so that "what is added" has one answer:
     // group_domain. Carried on the context; never cached across requests on an
     // instance.
     type EffectivePermissions struct {
-        // Everywhere holds the server-wide permissions the caller's groups carry,
-        // and the domain-scoped ones of any group with AllDomains.
+        // Everywhere holds the server and all-domains permissions the
+        // caller's groups carry.
         Everywhere map[Permission]bool            `json:"everywhere"`
-        // ByDomain holds the domain-scoped permissions by domain id, from each
+        // ByDomain holds the domain-kind permissions by domain id, from each
         // group's roles crossed with that group's domains. Additive: two groups
         // that each reach a domain contribute both their roles.
         ByDomain   map[string]map[Permission]bool `json:"byDomain"`
@@ -869,7 +892,8 @@ who used it the day before. The order is the order of dependency.
 
 **One — who may do what.** The access-control tables and the three seeded
 roles; every existing user into Administrators. `requirePermission` in place
-of `requireOperator` across every resolver, with the not-found rule. Effective
+of `requireOperator` across every resolver, with the not-found rule.
+`teanode-server rescue`. Effective
 permissions on the session and in `GetSession`. The Users, Groups and Roles
 pages. The command line's `user` commands grow `group` and `role` siblings.
 Acceptance: a user whose only group carries Member can sign in and sees nothing but an
@@ -974,8 +998,7 @@ Decisions are the repository owner's.
 - Decision: groups and roles are seeded, and all of them are editable; there
   are no built-in restrictions.
   Rationale: a role nobody may edit is a rule the administrator cannot see
-  the reason for. The lock-out worry is handled by the last-administrator
-  guard, which applies to every role equally.
+  the reason for.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: today's views of all mail, the queue and the domains are
@@ -1013,32 +1036,35 @@ Decisions are the repository owner's.
   Rationale: named for what they belong to, like `MailboxAddress`.
   Date/Author: 2026-09-06, Ziyan
 
+- Decision: try `github.com/emersion/go-imap/v2` at its beta first; if it
+  does not work out, write IMAP from the RFCs.
+  Rationale: it is the standard Go implementation; the risk is API churn,
+  confined to `internal/imap`, and the fallback was already accepted.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: no last-administrator guard. Locking oneself out is an accepted
+  risk; `teanode-server rescue` on the host is the way back.
+  Rationale: a guard is one more rule to reason about on every mutation for
+  a state that the host operator can repair in one command.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: shared inboxes are out of scope. This programme is per-user
+  mailboxes only.
+  Rationale: focus. Nothing here forecloses sharing later.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: no `all_domains` flag on a group. Reach is a property of the
+  permission — its kind — and the administrators' role holds the
+  all-domains permissions `domain:manage-all` and `mail:audit-all`.
+  Rationale: a flag on the group and a kind on the permission say the same
+  thing, and the permission is the one that is already declared in Go and
+  already checked on every request.
+  Date/Author: 2026-09-06, Ziyan
+
 ### Recommendations awaiting a decision
 
-- Proposed: try `github.com/emersion/go-imap/v2` at its beta first.
-  Rationale: it is the standard Go implementation. The risk is API churn
-  before a stable release, confined to `internal/imap`. The owner has
-  decided that writing IMAP from the RFCs is acceptable if the library is
-  trouble, so this is a choice of order, not of whether.
-
-- Proposed: the last-administrator guard. Any change to a role, a group's
-  roles or membership, or a user's enabled state that would leave no enabled
-  user in any group whose roles hold `role:manage` is refused.
-  Rationale: it is not a restriction on seeded roles — it applies to every
-  role and group alike — and without it the only recovery is SQL.
-
-- Proposed: shared inboxes are a later milestone, done as sharing — a
-  `user_mailbox` many-to-many letting a user read a mailbox they do not own,
-  with what they may do in it — never as a second kind of owner.
-  Rationale: `support@` read by three people is the first thing a team asks
-  for, and sharing keeps one owner per mailbox while giving it to them.
-
-- Proposed: `all_domains` on a group, rather than every group listing its
-  domains. Administrators gets it in the migration.
-  Rationale: without it, a domain created tomorrow belongs to no group until
-  someone adds it to one, and the person creating it may be the one who then
-  cannot see it. The alternative — creating a domain attaches it to every
-  group of the creator — is implicit and surprising.
+None. Everything proposed so far has been decided; the log above is the
+record.
 
 ## Progress
 
