@@ -1502,12 +1502,33 @@ record.
       `mail` row referenced from Sent and from the Inbox. Still open from
       the plan: the `PUT /api/mail/{draftId}/attachment` upload path (files
       go up base64 inside the save mutation today, once each).
+- [x] Milestone four (2026-09-06): full-text search and unread/flagged
+      filters in the folder list; the rules editor with a dry run against
+      the newest messages of the Inbox; address completion in the compose
+      page from the mailbox's contacts, which the receipt path keeps.
+- [x] Milestone five (2026-09-06): `internal/imap` over `go-imap/v2`
+      beta.8, listening on `listen.imaps` (TLS) and `listen.imap`
+      (STARTTLS, LOGINDISABLED before it): LIST with SPECIAL-USE and
+      LIST-STATUS, SELECT, FETCH with envelopes, body structures and
+      sections, STORE (with `\Deleted` in a new `mailbox_item.deleted`
+      column, migration 0016), EXPUNGE, SEARCH, COPY, MOVE, APPEND (a row
+      and an item, so a program's Sent copy shows in the web UI), CREATE,
+      RENAME and DELETE of the owner's folders, IDLE woken by
+      `LISTEN folder_changed` with a thirty-second poll behind it. App
+      passwords are made and revoked on the Mailbox settings "Mail
+      programs" tab, shown once; `access.AuthenticateAppPassword` signs in
+      IMAP and SMTP submission alike, and a submission is refused unless
+      the sender is one of the mailbox's addresses. Verified with a
+      scripted client on the dev server. CONDSTORE and QRESYNC are not
+      advertised yet: modseqs are kept and CHANGEDSINCE is honoured, but
+      the library's fetch writer does not emit MODSEQ, so the capabilities
+      stay off until it does or the server is written from the RFCs.
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
 - [x] Milestone three: reply, forward, drafts (attachment PUT path open).
-- [ ] Milestone four: search, filters, rules, contacts.
-- [ ] Milestone five: IMAP and submission.
+- [x] Milestone four: search, filters, rules, contacts.
+- [x] Milestone five: IMAP and submission (CONDSTORE/QRESYNC not advertised).
 - [ ] Milestone six: SSO.
 - [ ] Milestone seven: the rest.
 
@@ -1545,6 +1566,17 @@ record.
   full address matched nothing, silently: the message was refused as
   "mailbox unavailable" with no log line naming the alias that did not
   match. Worth a warning at alias creation when the pattern contains "@".
+  Date: 2026-09-06
+- Observation: the environment only describes the first run. Turning IMAP
+  on for an existing server is a settings change, not an environment
+  change, so the listen addresses had to join the settings API and the
+  server settings page before the dev server, seeded days ago, would
+  listen. The same will be true on `root@server`.
+  Date: 2026-09-06
+- Observation: a submission signed in with an app password carries no
+  credential, and `HandleEnvelope` chose the incoming path for it — which
+  then refused the mailbox's own domain on DMARC. The envelope's mailbox
+  is now the third way a message is known to be a submission.
   Date: 2026-09-06
 - Observation: the server already copies a message for a local recipient of
   a submission, which is the one place the "no copies" rule is broken today.

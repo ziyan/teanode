@@ -64,6 +64,10 @@ type Database interface {
 	// spool sweep deciding what it may remove.
 	MailExists(mailId string) (bool, error)
 
+	// ListenFolderChanges delivers the id of each folder any instance
+	// changes, until the context ends.
+	ListenFolderChanges(ctx context.Context) (<-chan string, error)
+
 	// Sessions, API tokens and passkeys are read and written outside a
 	// transaction: every authenticated request looks one up, and wrapping
 	// that in a transaction would buy nothing.

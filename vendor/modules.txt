@@ -154,6 +154,22 @@ github.com/aymerick/douceur/parser
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/emersion/go-imap/v2 v2.0.0-beta.8
+## explicit; go 1.18
+github.com/emersion/go-imap/v2
+github.com/emersion/go-imap/v2/imapserver
+github.com/emersion/go-imap/v2/internal
+github.com/emersion/go-imap/v2/internal/imapnum
+github.com/emersion/go-imap/v2/internal/imapwire
+github.com/emersion/go-imap/v2/internal/utf7
+# github.com/emersion/go-message v0.18.2
+## explicit; go 1.14
+github.com/emersion/go-message
+github.com/emersion/go-message/mail
+github.com/emersion/go-message/textproto
+# github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
+## explicit; go 1.12
+github.com/emersion/go-sasl
 # github.com/felixge/httpsnoop v1.0.4
 ## explicit; go 1.13
 github.com/felixge/httpsnoop

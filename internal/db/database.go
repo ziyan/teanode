@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"fmt"
+	"github.com/lib/pq"
 	"sync"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -34,6 +36,11 @@ type database struct {
 	db       *gorm.DB
 	settings *Settings
 
+	// dsn is kept for the LISTEN connection, which is a connection of its
+	// own rather than one from the pool: a listening connection is held for
+	// as long as the server runs.
+	dsn string
+
 	// sealer encrypts the domain table's secrets. Set once the server
 	// secret has been read from the settings; nil before, which is the
 	// first run's brief window.
@@ -57,7 +64,47 @@ func Open(settings *Settings) (Database, error) {
 	return &database{
 		db:       db,
 		settings: settings,
+		dsn:      dsn,
 	}, nil
+}
+
+// ListenFolderChanges delivers the id of every folder any instance changes,
+// for as long as the context lives. The channel closes when it ends. A
+// listener that lost its connection reconnects on its own; what it missed
+// while away is caught by the next poll, which is why every idler also
+// polls on a clock.
+func (self *database) ListenFolderChanges(ctx context.Context) (<-chan string, error) {
+	listener := pq.NewListener(self.dsn, time.Second, time.Minute, nil)
+	if err := listener.Listen(FolderChangedChannel); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	changes := make(chan string, 64)
+	go func() {
+		defer close(changes)
+		defer func() { _ = listener.Close() }()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case notification, ok := <-listener.Notify:
+				if !ok {
+					return
+				}
+				if notification == nil {
+					// A reconnection; whatever was missed, the polls will find.
+					continue
+				}
+				select {
+				case changes <- notification.Extra:
+				default:
+					// A slow consumer loses a wake-up, not a change: the
+					// change is in the database and the next poll finds it.
+				}
+			}
+		}
+	}()
+	return changes, nil
 }
 
 func (self *database) Close() error {

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
-import { ErrorMessage, Loading } from '../components/common'
+import { ErrorMessage, Loading, formatTime } from '../components/common'
+import { RelativeTime } from '../components/relativeTime'
+import { useQuery } from '../components/useQuery'
 import { ConfirmDialog } from '../components/dialog'
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -19,7 +21,24 @@ const TABS: TabItem[] = [
   { id: 'folders', label: 'mailboxSettings.tabFolders' },
   { id: 'rules', label: 'mailboxSettings.tabRules' },
   { id: 'autoreply', label: 'mailboxSettings.tabAutoReply' },
+  { id: 'devices', label: 'mailboxSettings.tabDevices' },
 ]
+
+const APP_PASSWORDS = `
+  query ($mailboxId: String!) {
+    ListMailboxAppPasswords(mailboxId: $mailboxId) { id name createdAt lastUsedAt }
+    GetMailProgramSettings { imapHost imapPort imapsPort submissionHost submissionPort }
+  }`
+
+const CREATE_APP_PASSWORD = `
+  mutation ($mailboxId: String!, $name: String!) {
+    CreateMailboxAppPassword(mailboxId: $mailboxId, name: $name) { password username appPassword { id name } }
+  }`
+
+const DELETE_APP_PASSWORD = `
+  mutation ($appPasswordId: String!) {
+    DeleteMailboxAppPassword(appPasswordId: $appPasswordId)
+  }`
 
 const UPDATE = `
   mutation ($mailboxId: String!, $name: String, $signatureText: String, $signatureHtml: String, $rules: [MailboxRuleInput!], $autoReply: MailboxAutoReplyInput, $clearAutoReply: Boolean) {
@@ -74,6 +93,7 @@ export function MailboxSettingsPage() {
       {tab === 'folders' && <FoldersTab key={view.mailbox.id} view={view} />}
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}
       {tab === 'autoreply' && <AutoReplyTab key={view.mailbox.id} view={view} />}
+      {tab === 'devices' && <DevicesTab key={view.mailbox.id} view={view} />}
     </>
   )
 }
@@ -798,5 +818,200 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
         {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
       </div>
     </form>
+  )
+}
+
+// --- devices ------------------------------------------------------------------
+//
+// App passwords: one per mail program, named for the device, shown once.
+// Beside them, what to type into the program: the server, the ports, and
+// the address to sign in as.
+
+type AppPassword = { id: string; name: string; createdAt: string; lastUsedAt?: string | null }
+type ServerAddresses = {
+  imapHost: string
+  imapPort: number
+  imapsPort: number
+  submissionHost: string
+  submissionPort: number
+}
+
+function DevicesTab({ view }: { view: MailboxView }) {
+  const { t } = useTranslation()
+  const query = useQuery(
+    () =>
+      graphql<{ ListMailboxAppPasswords: AppPassword[]; GetMailProgramSettings: ServerAddresses }>(APP_PASSWORDS, {
+        mailboxId: view.mailbox.id,
+      }),
+    [view.mailbox.id],
+    { refresh: false },
+  )
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const [created, setCreated] = useState<{ password: string; username: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState<AppPassword | null>(null)
+
+  const create = async () => {
+    setBusy(true)
+    try {
+      const response = await graphql<{
+        CreateMailboxAppPassword: { password: string; username: string; appPassword: { name: string } }
+      }>(CREATE_APP_PASSWORD, { mailboxId: view.mailbox.id, name: name.trim() })
+      setCreated({
+        password: response.CreateMailboxAppPassword.password,
+        username: response.CreateMailboxAppPassword.username,
+        name: response.CreateMailboxAppPassword.appPassword.name,
+      })
+      setName('')
+      setError(null)
+      await query.reload()
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (appPassword: AppPassword) => {
+    setBusy(true)
+    try {
+      await graphql(DELETE_APP_PASSWORD, { appPasswordId: appPassword.id })
+      setDeleting(null)
+      setError(null)
+      await query.reload()
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (query.loading && !query.data) {
+    return <Loading />
+  }
+  const addresses = query.data?.GetMailProgramSettings
+  const appPasswords = query.data?.ListMailboxAppPasswords ?? []
+  const address = view.mailbox.addresses?.[0]?.address
+
+  return (
+    <>
+      {created && (
+        <div className="card">
+          <h3>{t('mailboxSettings.appPasswordCreated', { name: created.name })}</h3>
+          <p className="muted">{t('mailboxSettings.appPasswordOnce')}</p>
+          <table className="detail">
+            <tbody>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.deviceUsername')}</td>
+                <td className="mono">{created.username}</td>
+              </tr>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.devicePassword')}</td>
+                <td className="mono">{created.password}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="page-actions">
+            <button type="button" onClick={() => setCreated(null)}>
+              {t('mailboxSettings.appPasswordDone')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <h3>{t('mailboxSettings.devices')}</h3>
+        <p className="muted field-hint">{t('mailboxSettings.devicesHint')}</p>
+        {appPasswords.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            {t('mailboxSettings.noDevices')}
+          </p>
+        ) : (
+          <table>
+            <tbody>
+              {appPasswords.map((appPassword) => (
+                <tr key={appPassword.id}>
+                  <td>{appPassword.name}</td>
+                  <td className="shrink muted">{formatTime(appPassword.createdAt)}</td>
+                  <td className="shrink muted">
+                    {appPassword.lastUsedAt ? <RelativeTime value={appPassword.lastUsedAt} /> : t('mailboxSettings.neverUsed')}
+                  </td>
+                  <td className="shrink">
+                    <button type="button" className="link danger" onClick={() => setDeleting(appPassword)}>
+                      {t('mailboxSettings.revoke')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <form
+        className="card form-narrow"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void create()
+        }}
+      >
+        <h3>{t('mailboxSettings.newDevice')}</h3>
+        <label>
+          {t('mailboxSettings.deviceName')}
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('mailboxSettings.deviceNameHint')} required />
+        </label>
+        {!address && <p className="muted field-hint">{t('mailbox.noAddress')}</p>}
+        {error ? <ErrorMessage error={error} /> : null}
+        <div className="page-actions">
+          <button className="primary" type="submit" disabled={busy || !name.trim() || !address}>
+            {t('common.create')}
+          </button>
+        </div>
+      </form>
+
+      {addresses && (
+        <div className="card">
+          <h3>{t('mailboxSettings.programSettings')}</h3>
+          <p className="muted field-hint">{t('mailboxSettings.programSettingsHint')}</p>
+          <table className="detail">
+            <tbody>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.incomingServer')}</td>
+                <td className="mono">
+                  {addresses.imapHost} · IMAP · {t('mailboxSettings.portTls', { port: addresses.imapsPort })}
+                  {addresses.imapPort ? ` · ${t('mailboxSettings.portStartTls', { port: addresses.imapPort })}` : ''}
+                </td>
+              </tr>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.outgoingServer')}</td>
+                <td className="mono">
+                  {addresses.submissionHost} · SMTP · {t('mailboxSettings.portStartTls', { port: addresses.submissionPort })}
+                </td>
+              </tr>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.deviceUsername')}</td>
+                <td className="mono">{address ?? '—'}</td>
+              </tr>
+              <tr>
+                <td className="shrink muted">{t('mailboxSettings.devicePassword')}</td>
+                <td>{t('mailboxSettings.devicePasswordHint')}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={t('mailboxSettings.revoke')}
+          body={t('mailboxSettings.revokeConfirm', { name: deleting.name })}
+          confirmLabel={t('mailboxSettings.revoke')}
+          busy={busy}
+          onConfirm={() => remove(deleting)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </>
   )
 }

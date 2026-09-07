@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/imap"
 	"net"
 	"net/http"
 	"os"
@@ -283,6 +284,8 @@ type server struct {
 	listeners struct {
 		smtpIncoming net.Listener
 		smtpOutgoing net.Listener
+		imap         net.Listener
+		imaps        net.Listener
 		http         net.Listener
 		https        net.Listener
 	}
@@ -422,6 +425,8 @@ func (self *server) listen(configuration *config.Configuration) error {
 	}{
 		{"incoming smtp", configuration.Listen.SMTPIncoming, &self.listeners.smtpIncoming},
 		{"outgoing smtp", configuration.Listen.SMTPOutgoing, &self.listeners.smtpOutgoing},
+		{"imap", configuration.Listen.IMAP, &self.listeners.imap},
+		{"imaps", configuration.Listen.IMAPS, &self.listeners.imaps},
 		{"http", configuration.Listen.HTTP, &self.listeners.http},
 		{"https", configuration.Listen.HTTPS, &self.listeners.https},
 	}
@@ -978,6 +983,24 @@ func (self *server) serve(ctx context.Context) error {
 
 	greeting := fmt.Sprintf("%s teanode/%s", configuration.Server.Name, version.Version())
 
+	// A mail program signing in to send: one of the mailbox's addresses and
+	// an app password. The exchange checks the sender against the mailbox's
+	// addresses when the message arrives, so the domain is left to it.
+	authenticateMailbox := func(username, password string) (string, string, bool) {
+		var mailbox *models.Mailbox
+		if err := self.database.Transaction(func(tx db.Transaction) error {
+			var err error
+			mailbox, err = access.AuthenticateAppPassword(tx, username, password)
+			return err
+		}); err != nil {
+			if !errors.Is(err, access.ErrInvalidAppPassword) {
+				log.Errorf("app password sign-in as %q failed: %s", username, err)
+			}
+			return "", "", false
+		}
+		return mailbox.ID, "", true
+	}
+
 	if self.listeners.smtpIncoming != nil {
 		waitGroup.Add(1)
 		go func() {
@@ -1029,11 +1052,47 @@ func (self *server) serve(ctx context.Context) error {
 				TLSConfig:     tlsConfig,
 				Secret:        self.secret,
 
-				AuthLimiter: authLimiter,
+				AuthLimiter:         authLimiter,
+				AuthenticateMailbox: authenticateMailbox,
 			}); err != nil {
 				log.Debugf("outgoing smtp server exited: %s", err)
 			}
 			stopped <- "outgoing smtp"
+		}()
+	}
+
+	// Mail programs. Two listeners for one server: STARTTLS on the plain
+	// port, TLS from the first byte on the other, which is what most
+	// programs try first.
+	imapSettings := &imap.Settings{
+		Database:    self.database,
+		Storage:     self.storage,
+		TLSConfig:   tlsConfig,
+		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
+		AuthLimiter: authLimiter,
+	}
+	if self.listeners.imap != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := imap.Serve(ctx, self.listeners.imap, imapSettings); err != nil {
+				log.Debugf("imap server exited: %s", err)
+			}
+			stopped <- "imap"
+		}()
+	}
+	if self.listeners.imaps != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			implicit := *imapSettings
+			implicit.ImplicitTLS = true
+			if err := imap.Serve(ctx, tls.NewListener(self.listeners.imaps, tlsConfig), &implicit); err != nil {
+				log.Debugf("imaps server exited: %s", err)
+			}
+			stopped <- "imaps"
 		}()
 	}
 

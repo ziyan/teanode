@@ -50,6 +50,12 @@ type Settings struct {
 	// submitting client is authenticated instead.
 	RequireReverseDNS bool
 
+	// AuthenticateMailbox signs a person in with one of their addresses and
+	// an app password, when the login is not a credential. Returns the
+	// mailbox and the domain of the address; ok is false for every way of
+	// being wrong. Nil disables it.
+	AuthenticateMailbox func(username, password string) (mailboxId, domainId string, ok bool)
+
 	// AuthLimiter bounds how often one address may attempt to authenticate.
 	// Nil disables the limit.
 	//
@@ -200,6 +206,8 @@ type session struct {
 	// auth
 	credentialId  string
 	credentialKey string
+	mailboxId     string
+	domainId      string
 
 	// envelope id
 	id string
@@ -409,7 +417,7 @@ func (self *session) handleMail(arguments string) error {
 		return self.writeLines(503, "5.5.1", "Bad sequence of commands")
 	}
 
-	if self.outgoing && self.credentialId == "" {
+	if self.outgoing && self.credentialId == "" && self.mailboxId == "" {
 		return self.writeLines(503, "5.5.1", "Bad sequence of commands")
 	}
 
@@ -526,6 +534,8 @@ func (self *session) handleData() error {
 		Hello:         self.hello,
 		CredentialID:  self.credentialId,
 		CredentialKey: self.credentialKey,
+		MailboxID:     self.mailboxId,
+		DomainID:      self.domainId,
 		Sender:        *self.sender,
 		Recipients:    self.recipients,
 		SpecialPrefix: self.specialPrefix,
@@ -658,6 +668,16 @@ func (self *session) handleAuth(arguments string) error {
 	}
 	credentialId, credentialKey, err := security.DecodeCredential(string(decodedParts[1]), string(decodedParts[2]), self.settings.Secret)
 	if err != nil {
+		// Not a credential. An address and an app password, then, when the
+		// server has mailboxes to check against.
+		if self.settings.AuthenticateMailbox != nil {
+			if mailboxId, domainId, ok := self.settings.AuthenticateMailbox(string(decodedParts[1]), string(decodedParts[2])); ok {
+				self.mailboxId = mailboxId
+				self.domainId = domainId
+				log.Debugf("authenticated as mailbox %q", mailboxId)
+				return self.writeLines(235, "2.7.0", "Authentication succeeded")
+			}
+		}
 		log.Errorf("invalid credential: %s", err)
 		return self.writeLines(454, "4.7.0", "Invalid credentials")
 	}

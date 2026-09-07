@@ -3,6 +3,7 @@ package mx
 import (
 	"context"
 	"fmt"
+	"github.com/ziyan/teanode/internal/access"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -53,14 +54,41 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 			return nil, mailparse.ErrInvalidCredentials
 		}
 		envelope.DomainID = domain.ID
-	} else {
+	} else if envelope.DomainID != "" {
 		domain, err = tx.GetDomain(envelope.DomainID)
+		if err != nil {
+			return nil, err
+		}
+	} else if envelope.MailboxID != "" {
+		// A person's submission names no domain: the sender address does,
+		// and whether it is theirs is checked below.
+		domain, err = tx.GetDomainByName(senderDomain)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if domain == nil || domain.Domain != senderDomain {
 		return nil, mailparse.ErrInvalidCredentials
+	}
+	// A person's submission — from the web UI or with an app password —
+	// may only be sent as one of their mailbox's own addresses, and only if
+	// they may send at all.
+	if envelope.MailboxID != "" {
+		mailbox, err := tx.GetMailbox(envelope.MailboxID)
+		if err != nil {
+			return nil, err
+		}
+		if mailbox == nil {
+			return nil, mailparse.ErrInvalidCredentials
+		}
+		allowed, err := access.MailboxMaySend(tx, mailbox, envelope.Sender)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			log.Warningf("mailbox %q may not send as %q, rejecting", mailbox.ID, envelope.Sender)
+			return nil, mailparse.ErrInvalidCredentials
+		}
 	}
 
 	// add Received header

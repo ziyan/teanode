@@ -185,6 +185,14 @@ type Listen struct {
 	// relaying. Port 587 in production.
 	SMTPOutgoing string `yaml:"smtpOutgoing"`
 
+	// IMAP serves mailboxes to mail programs, with STARTTLS required before
+	// signing in. Port 143 in production.
+	IMAP string `yaml:"imap"`
+
+	// IMAPS serves the same over TLS from the first byte. Port 993 in
+	// production, which is what most mail programs try first.
+	IMAPS string `yaml:"imaps"`
+
 	// HTTP serves the dashboard and answers ACME http-01 challenges. Port 80
 	// must be reachable from the internet when tls.acme.challenge is http-01.
 	HTTP string `yaml:"http"`

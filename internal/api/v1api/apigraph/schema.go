@@ -19,6 +19,8 @@ type Query interface {
 	MailboxQuery
 	MailboxComposeQuery
 	MailboxRulesQuery
+	MailboxAppPasswordQuery
+	MailProgramQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery
@@ -46,6 +48,7 @@ type Mutation interface {
 	GroupMutation
 	MailboxMutation
 	MailboxComposeMutation
+	MailboxAppPasswordMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation

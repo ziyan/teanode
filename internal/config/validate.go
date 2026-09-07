@@ -95,6 +95,8 @@ func (self *Configuration) validateServer(validator *validator) {
 func (self *Configuration) validateListen(validator *validator) {
 	addresses := map[string]string{
 		"listen.smtpIncoming": self.Listen.SMTPIncoming,
+		"listen.imap":         self.Listen.IMAP,
+		"listen.imaps":        self.Listen.IMAPS,
 		"listen.smtpOutgoing": self.Listen.SMTPOutgoing,
 		"listen.http":         self.Listen.HTTP,
 		"listen.https":        self.Listen.HTTPS,

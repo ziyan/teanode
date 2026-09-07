@@ -8,7 +8,12 @@
 package access
 
 import (
+	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/security"
+	"strings"
+	"time"
 
 	"github.com/op/go-logging"
 
@@ -254,6 +259,101 @@ func CanReadMail(tx db.Transaction, user *models.User, permissions *models.Effec
 			return false, err
 		}
 		if folder != nil && owned[folder.MailboxID] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// AuthenticateAppPassword is how a mail program signs in: one of the
+// mailbox's addresses as the login name and an app password of that mailbox.
+// Nothing else opens a mailbox this way — not the account password, not a
+// passkey — and the app password is what picks the mailbox, so a person with
+// two mailboxes sets up two accounts in their program.
+//
+// Returns the mailbox, or ErrInvalidAppPassword for every way of being
+// wrong, so that a guess learns nothing about which part was.
+func AuthenticateAppPassword(tx db.Transaction, username, password string) (*models.Mailbox, error) {
+	address, err := mailparse.ParseAddress(strings.TrimSpace(username))
+	if err != nil {
+		return nil, ErrInvalidAppPassword
+	}
+	localPart, domainName := mailparse.SplitAddress(address)
+	domain, err := tx.GetDomainByName(domainName)
+	if err != nil {
+		return nil, err
+	}
+	if domain == nil {
+		return nil, ErrInvalidAppPassword
+	}
+	var mailboxId string
+	for _, alias := range domain.Aliases {
+		if alias == nil || alias.Disabled || alias.Kind != models.AliasKindMailbox {
+			continue
+		}
+		if models.LocalPartOfPattern(alias.Pattern) == strings.ToLower(localPart) {
+			mailboxId = alias.MailboxID
+			break
+		}
+	}
+	if mailboxId == "" {
+		return nil, ErrInvalidAppPassword
+	}
+	mailbox, err := tx.GetMailbox(mailboxId)
+	if err != nil {
+		return nil, err
+	}
+	if mailbox == nil {
+		return nil, ErrInvalidAppPassword
+	}
+	user, err := tx.GetUser(mailbox.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.Disabled() {
+		return nil, ErrInvalidAppPassword
+	}
+	permissions, err := tx.EffectivePermissions(user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !permissions.Has(models.PermissionMailRead) {
+		return nil, ErrInvalidAppPassword
+	}
+	appPasswords, err := tx.ListAppPasswords(mailbox.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, appPassword := range appPasswords {
+		ok, err := security.VerifyPassword([]byte(appPassword.PasswordHash), password)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			if err := tx.TouchAppPassword(appPassword.ID, time.Now()); err != nil {
+				return nil, err
+			}
+			return mailbox, nil
+		}
+	}
+	return nil, ErrInvalidAppPassword
+}
+
+// ErrInvalidAppPassword is every way an app-password sign-in can be wrong.
+var ErrInvalidAppPassword = errors.New("access: invalid address or app password")
+
+// MailboxMaySend says whether a mailbox's owner may send, and whether the
+// address is one of the mailbox's own.
+func MailboxMaySend(tx db.Transaction, mailbox *models.Mailbox, from string) (bool, error) {
+	permissions, err := tx.EffectivePermissions(mailbox.UserID)
+	if err != nil {
+		return false, err
+	}
+	if !permissions.Has(models.PermissionMailSend) {
+		return false, nil
+	}
+	for _, address := range mailbox.Addresses {
+		if strings.EqualFold(address.Address, from) {
 			return true, nil
 		}
 	}

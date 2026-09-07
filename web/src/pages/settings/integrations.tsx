@@ -29,7 +29,7 @@ const SETTINGS = `
       resolver { nameserver checkInterval externalAddressServices }
       session { lifetime }
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
-      listen { smtpIncoming smtpOutgoing http https debug }
+      listen { smtpIncoming smtpOutgoing imap imaps http https debug }
       identity { name mailServers logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
@@ -81,7 +81,7 @@ export const UPDATE = `
       resolver { nameserver checkInterval externalAddressServices }
       session { lifetime }
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
-      listen { smtpIncoming smtpOutgoing http https debug }
+      listen { smtpIncoming smtpOutgoing imap imaps http https debug }
       identity { name mailServers logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
@@ -151,7 +151,15 @@ export type Passkey = {
   origins?: string[]
   maximumPerUser: number
 }
-export type Listen = { smtpIncoming: string; smtpOutgoing: string; http: string; https: string; debug?: string }
+export type Listen = {
+  smtpIncoming: string
+  smtpOutgoing: string
+  imap?: string
+  imaps?: string
+  http: string
+  https: string
+  debug?: string
+}
 export type Identity = { name: string; mailServers?: string[]; logLevel: string; dataDirectory: string }
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }

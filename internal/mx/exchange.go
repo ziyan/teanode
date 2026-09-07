@@ -104,7 +104,7 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 		case "ruf":
 			self.logEnvelope(models.MailKindRUF, envelope)
 		}
-	} else if envelope.CredentialID != "" || envelope.DomainID != "" {
+	} else if envelope.CredentialID != "" || envelope.DomainID != "" || envelope.MailboxID != "" {
 		self.logEnvelope(models.MailKindOutgoing, envelope)
 	} else {
 		self.logEnvelope(models.MailKindIncoming, envelope)
@@ -126,7 +126,7 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 		}
 
 		// outgoing
-		if envelope.CredentialID != "" || envelope.DomainID != "" {
+		if envelope.CredentialID != "" || envelope.DomainID != "" || envelope.MailboxID != "" {
 			deliveries, err = self.handleOutgoing(ctx, tx, envelope)
 			return err
 		}

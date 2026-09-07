@@ -85,6 +85,8 @@ server says so in its log when it finds them set.
 | `TEANODE_SERVER_MAIL_SERVERS` | `server.mailServers`, comma separated |
 | `TEANODE_LISTEN_SMTP_INCOMING` | `listen.smtpIncoming` |
 | `TEANODE_LISTEN_SMTP_OUTGOING` | `listen.smtpOutgoing` |
+| `TEANODE_LISTEN_IMAP` | `listen.imap` |
+| `TEANODE_LISTEN_IMAPS` | `listen.imaps` |
 | `TEANODE_LISTEN_HTTP` | `listen.http` |
 | `TEANODE_LISTEN_HTTPS` | `listen.https` |
 | `TEANODE_TLS_HOSTS` | `tls.hosts`, comma separated; defaults to the server name |
@@ -257,6 +259,12 @@ production.
 
 **`smtpOutgoing`** — SMTPOutgoing receives authenticated mail from your own
 devices for relaying. Port 587 in production.
+
+**`imap`** — IMAP serves mailboxes to mail programs, with STARTTLS required
+before signing in. Port 143 in production. Empty disables it.
+
+**`imaps`** — IMAPS serves the same over TLS from the first byte. Port 993 in
+production, which is what most mail programs try first. Empty disables it.
 
 **`http`** — HTTP serves the dashboard and answers ACME http-01 challenges.
 Port 80 must be reachable from the internet when tls.acme.challenge is

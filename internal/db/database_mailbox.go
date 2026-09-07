@@ -88,6 +88,12 @@ type ItemOptions struct {
 	// SinceUID lists items with a UID at or above this, for IMAP ranges.
 	SinceUID uint64
 
+	// UIDs lists exactly these, when set: what a FETCH or STORE names.
+	UIDs []uint64
+
+	// Deleted, when set, only items with IMAP's \Deleted in that state.
+	Deleted *bool
+
 	// SinceModSeq lists items changed since this modseq, for CONDSTORE.
 	SinceModSeq uint64
 
@@ -149,6 +155,7 @@ type mailboxItemModel struct {
 	Answered  bool      `gorm:"column:answered"`
 	Forwarded bool      `gorm:"column:forwarded"`
 	Draft     bool      `gorm:"column:draft"`
+	Deleted   bool      `gorm:"column:deleted"`
 	AddedAt   time.Time `gorm:"column:added_at"`
 }
 
@@ -272,6 +279,7 @@ func itemFromModel(model *mailboxItemModel) *models.MailboxItem {
 		Answered:  model.Answered,
 		Forwarded: model.Forwarded,
 		Draft:     model.Draft,
+		Deleted:   model.Deleted,
 		AddedAt:   model.AddedAt.In(time.Local),
 	}
 }
@@ -738,6 +746,9 @@ func applyFlags(model *mailboxItemModel, flags models.MailboxItemFlags) {
 	if flags.Draft != nil {
 		model.Draft = *flags.Draft
 	}
+	if flags.Deleted != nil {
+		model.Deleted = *flags.Deleted
+	}
 }
 
 func (self *transaction) GetItem(itemId string) (*models.MailboxItem, error) {
@@ -767,6 +778,12 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	}
 	if options.SinceUID > 0 {
 		query = query.Where("\"mailbox_item\".\"uid\" >= ?", options.SinceUID)
+	}
+	if options.UIDs != nil {
+		query = query.Where("\"mailbox_item\".\"uid\" IN ?", options.UIDs)
+	}
+	if options.Deleted != nil {
+		query = query.Where("\"mailbox_item\".\"deleted\" = ?", *options.Deleted)
 	}
 	if options.SinceModSeq > 0 {
 		query = query.Where("\"mailbox_item\".\"modseq\" > ?", options.SinceModSeq)
@@ -840,6 +857,9 @@ func (self *transaction) SetItemFlags(itemIds []string, flags models.MailboxItem
 	}
 	if flags.Draft != nil {
 		updates["draft"] = *flags.Draft
+	}
+	if flags.Deleted != nil {
+		updates["deleted"] = *flags.Deleted
 	}
 	if len(updates) == 0 {
 		return 0, nil

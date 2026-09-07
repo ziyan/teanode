@@ -148,6 +148,7 @@ type MailboxItem struct {
 	Answered  bool      `json:"answered"`
 	Forwarded bool      `json:"forwarded"`
 	Draft     bool      `json:"draft"`
+	Deleted   bool      `json:"deleted"` // IMAP's \Deleted, awaiting EXPUNGE
 	AddedAt   time.Time `json:"addedAt"`
 }
 
@@ -159,6 +160,7 @@ type MailboxItemFlags struct {
 	Answered  *bool
 	Forwarded *bool
 	Draft     *bool
+	Deleted   *bool
 }
 
 // MailboxFolderExpunge records a UID that left a folder and the modseq it
