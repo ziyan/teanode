@@ -706,6 +706,12 @@ a.tile:hover strong {
   justify-content: center;
   padding: var(--space-4);
   background: rgb(0 0 0 / 45%);
+  /* A dialog taller than the screen scrolls with the scrim rather than
+     hanging off both ends of it: a group with three lists in it was a
+     dialog whose title was above the window and whose buttons were below,
+     with nothing to scroll. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dialog {
@@ -732,6 +738,14 @@ a.tile:hover strong {
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
+  /* Where the dialog is taller than the screen, Cancel and Save stay on it:
+     they are the way out, and hunting for them by scrolling is not a way
+     out. */
+  position: sticky;
+  bottom: calc(var(--space-4) * -1);
+  padding: var(--space-2) 0;
+  margin-bottom: calc(var(--space-4) * -1);
+  background: var(--background);
 }
 
 /* --- the rail ------------------------------------------------------------- */
@@ -4083,4 +4097,47 @@ a.button.primary:hover {
 .access-group-name:hover,
 .access-group-name.chosen {
   text-decoration: underline;
+}
+
+/* A dialog fits the screen it is on: what does not fit scrolls inside it,
+   and the actions stay at its foot. */
+.dialog {
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  /* A checkbox is not a thumb-sized control: the row around it is. Sizing
+     the box itself to 40px stretched every line of a list of people into
+     its own paragraph, and a group with a dozen members became a dialog
+     nobody could read. */
+  .check-list-item input[type='checkbox'],
+  .check-list-item input[type='radio'] {
+    min-height: 0;
+  }
+  .check-list-item {
+    padding: 8px 0;
+    min-height: 40px;
+  }
+  /* Lists inside a dialog on a phone: tall enough to work in, short enough
+     that three of them do not bury the buttons. */
+  .dialog .check-list {
+    max-height: 40vh;
+  }
+}
+
+/* A list of things to tick, once there are enough of them to search: the
+   search sits under the legend, the rows scroll under it, and what is
+   already chosen is at the top and reads as chosen. */
+.check-list-search {
+  width: 100%;
+  margin: 4px 0 6px;
+}
+.check-list-items {
+  display: flex;
+  flex-direction: column;
+}
+.check-list-item.chosen {
+  color: var(--text);
+  font-weight: 500;
 }

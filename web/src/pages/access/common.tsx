@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { graphql } from '../../api'
 import { Key, useTranslation } from '../../i18n/i18n'
 
@@ -81,6 +83,7 @@ export function CheckList<T extends { id: string }>({
   selected,
   onChange,
   describe,
+  text,
   hint,
   empty,
 }: {
@@ -89,34 +92,66 @@ export function CheckList<T extends { id: string }>({
   selected: string[]
   onChange: (selected: string[]) => void
   describe: (item: T) => React.ReactNode
+  // What a search matches against. Given for the lists that grow — the
+  // people on a server, its domains — and left out for the short ones.
+  text?: (item: T) => string
   hint?: React.ReactNode
   empty?: Key
 }) {
   const { t } = useTranslation()
+  const [query, setQuery] = useState('')
+
+  // A list of a dozen people is a list somebody scrolls past what they came
+  // for. Beyond a handful it gets a search, and what is already chosen is
+  // kept at the top: a group's membership is what you came to read, and
+  // hunting for it among everybody else is the thing this control was
+  // getting wrong.
+  const searchable = Boolean(text) && items.length > 7
+  const wanted = query.trim().toLowerCase()
+  const shown = items.filter((item) => !searchable || !wanted || (text?.(item) ?? '').toLowerCase().includes(wanted))
+  const ordered = [...shown].sort((left, right) => {
+    const chosen = Number(selected.includes(right.id)) - Number(selected.includes(left.id))
+    return chosen
+  })
+
   return (
     <fieldset className="check-list">
-      <legend>{label}</legend>
+      <legend>
+        {label}
+        {selected.length > 0 && <span className="muted"> · {t('access.checkList.selected', { count: selected.length })}</span>}
+      </legend>
       {hint && <p className="muted">{hint}</p>}
+      {searchable && (
+        <input
+          type="search"
+          className="check-list-search"
+          placeholder={t('access.checkList.search')}
+          aria-label={`${label}: ${t('access.checkList.search')}`}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      )}
       {items.length === 0 && empty && <p className="muted">{t(empty)}</p>}
-      {items.map((item) => {
-        const checked = selected.includes(item.id)
-        return (
-          <label key={item.id} className="check-list-item">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(event) =>
-                onChange(
-                  event.target.checked
-                    ? [...selected, item.id]
-                    : selected.filter((candidate) => candidate !== item.id),
-                )
-              }
-            />
-            <span>{describe(item)}</span>
-          </label>
-        )
-      })}
+      {items.length > 0 && ordered.length === 0 && <p className="muted">{t('access.checkList.noMatches')}</p>}
+      <div className="check-list-items">
+        {ordered.map((item) => {
+          const checked = selected.includes(item.id)
+          return (
+            <label key={item.id} className={checked ? 'check-list-item chosen' : 'check-list-item'}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(event) =>
+                  onChange(
+                    event.target.checked ? [...selected, item.id] : selected.filter((candidate) => candidate !== item.id),
+                  )
+                }
+              />
+              <span>{describe(item)}</span>
+            </label>
+          )
+        })}
+      </div>
     </fieldset>
   )
 }

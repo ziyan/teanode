@@ -384,6 +384,7 @@ export function PeopleTab() {
             selected={personDraft.groupIds}
             onChange={(groupIds) => setPersonDraft({ ...personDraft, groupIds })}
             describe={(group) => group.name}
+            text={(group) => group.name}
             empty="access.groups.empty"
           />
           {editingPerson && editingPerson.id !== session.userId && (
@@ -508,6 +509,7 @@ export function PeopleTab() {
             selected={groupDraft.userIds}
             onChange={(userIds) => setGroupDraft({ ...groupDraft, userIds })}
             describe={(user) => (user.name ? `${user.username} (${user.name})` : user.username)}
+            text={(user) => `${user.username} ${user.name ?? ''} ${user.email ?? ''}`}
             empty="access.users.empty"
           />
           {managesGroups && (
@@ -527,6 +529,7 @@ export function PeopleTab() {
                 selected={groupDraft.domainIds}
                 onChange={(domainIds) => setGroupDraft({ ...groupDraft, domainIds })}
                 describe={(domain) => domain.domain}
+                text={(domain) => domain.domain}
                 empty="access.groups.noDomainsYet"
               />
             </>
