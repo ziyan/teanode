@@ -54,6 +54,11 @@ const SAVE = `
     SaveMailboxDraft(mailboxId: $mailboxId, message: $message) { id }
   }`
 
+const CONTACTS = `
+  query ($mailboxId: String!, $prefix: String, $first: Int) {
+    ListMailboxContacts(mailboxId: $mailboxId, prefix: $prefix, first: $first) { address name }
+  }`
+
 const AUTOSAVE_INTERVAL = 30_000
 
 type Editor = 'rich' | 'plain'
@@ -163,6 +168,33 @@ export function MailboxComposePage() {
   const fileInput = useRef<HTMLInputElement>(null)
 
   const addresses = useMemo(() => view?.mailbox.addresses ?? [], [view])
+
+  // Whoever has written to this mailbox, offered as the address is typed.
+  // The last entry of the field is what is being typed; the ones before
+  // the comma are done.
+  const [contacts, setContacts] = useState<{ address: string; name?: string }[]>([])
+  const [typing, setTyping] = useState('')
+  useEffect(() => {
+    if (!view) {
+      return
+    }
+    const prefix = typing.split(/[,;]/).pop()?.trim() ?? ''
+    const timer = window.setTimeout(() => {
+      graphql<{ ListMailboxContacts: { address: string; name?: string }[] }>(CONTACTS, {
+        mailboxId: view.mailbox.id,
+        prefix,
+        first: 10,
+      })
+        .then((response) => setContacts(response.ListMailboxContacts))
+        .catch(() => setContacts([]))
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [view, typing])
+  const completions = (value: string) => {
+    const done = value.split(/[,;]/).slice(0, -1).map((entry) => entry.trim()).filter(Boolean)
+    const before = done.length > 0 ? done.join(', ') + ', ' : ''
+    return contacts.map((contact) => before + (contact.name ? `${contact.name} <${contact.address}>` : contact.address))
+  }
   useEffect(() => {
     if (!from && addresses.length > 0) {
       setFrom(addresses[0].address)
@@ -184,11 +216,12 @@ export function MailboxComposePage() {
           if (cancelled) {
             return
           }
+          const { cc: draftCopies, bcc: draftBlindCopies } = draft
           setFrom(draft.from || addresses[0]?.address || '')
           setTo(draft.to.join(', '))
-          setCc(draft.cc.join(', '))
-          setBcc(draft.bcc.join(', '))
-          setShowCc(draft.cc.length > 0 || draft.bcc.length > 0)
+          setCc(draftCopies.join(', '))
+          setBcc(draftBlindCopies.join(', '))
+          setShowCc(draftCopies.length > 0 || draftBlindCopies.length > 0)
           setSubject(draft.subject)
           if (draft.html) {
             setEditor('rich')
@@ -492,13 +525,20 @@ export function MailboxComposePage() {
         {t('compose.mailbox.to')}
         <input
           value={to}
+          list="compose-contacts-to"
           onChange={(event) => {
             setTo(event.target.value)
+            setTyping(event.target.value)
             touch()
           }}
           placeholder="ada@example.com, Bob <bob@example.org>"
           autoFocus={!replyTo && !forwardOf && !draftOf}
         />
+        <datalist id="compose-contacts-to">
+          {completions(to).map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
       </label>
       {!showCc && (
         <button type="button" className="link" onClick={() => setShowCc(true)}>
@@ -511,21 +551,35 @@ export function MailboxComposePage() {
             {t('compose.mailbox.copy')}
             <input
               value={cc}
+              list="compose-contacts-cc"
               onChange={(event) => {
                 setCc(event.target.value)
+                setTyping(event.target.value)
                 touch()
               }}
             />
+            <datalist id="compose-contacts-cc">
+              {completions(cc).map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </label>
           <label>
             {t('compose.mailbox.blindCopy')}
             <input
               value={bcc}
+              list="compose-contacts-bcc"
               onChange={(event) => {
                 setBcc(event.target.value)
+                setTyping(event.target.value)
                 touch()
               }}
             />
+            <datalist id="compose-contacts-bcc">
+              {completions(bcc).map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </label>
         </>
       )}

@@ -1204,4 +1204,8 @@ export const en = {
   'compose.mailbox.plainText': 'Plain text',
   'compose.mailbox.discardConfirm': 'Discard this draft? What was written is gone.',
   'compose.mailbox.originalGone': 'The message this answers is no longer stored; the reply goes without a quote.',
+  'mailboxSettings.tryRules': 'Try on recent mail',
+  'mailboxSettings.trialTitle': 'What the rules would do',
+  'mailboxSettings.trialHint': 'The newest messages in the Inbox, and which of the rules above would match each. Nothing is moved.',
+  'mailboxSettings.trialNoMatch': 'no rule',
 }

@@ -1179,4 +1179,8 @@ export const zh: Catalog = {
   'compose.mailbox.plainText': '纯文本',
   'compose.mailbox.discardConfirm': '丢弃这份草稿？写的内容将会丢失。',
   'compose.mailbox.originalGone': '所回复的邮件已不再保存，回复中不包含引用。',
+  'mailboxSettings.tryRules': '用最近的邮件试试',
+  'mailboxSettings.trialTitle': '规则会做什么',
+  'mailboxSettings.trialHint': '收件箱里最新的邮件，以及上面哪些规则会匹配每一封。不会实际移动任何邮件。',
+  'mailboxSettings.trialNoMatch': '无匹配',
 }

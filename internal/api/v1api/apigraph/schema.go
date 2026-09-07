@@ -18,6 +18,7 @@ type Query interface {
 	AuditQuery
 	MailboxQuery
 	MailboxComposeQuery
+	MailboxRulesQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery

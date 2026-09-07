@@ -1194,4 +1194,8 @@ export const ja: Catalog = {
   'compose.mailbox.plainText': 'プレーンテキスト',
   'compose.mailbox.discardConfirm': 'この下書きを破棄しますか？書いた内容は失われます。',
   'compose.mailbox.originalGone': '返信先のメッセージはもう保存されていないため、引用なしで返信します。',
+  'mailboxSettings.tryRules': '最近のメールで試す',
+  'mailboxSettings.trialTitle': 'ルールの結果',
+  'mailboxSettings.trialHint': '受信トレイの最新メッセージと、上のルールのどれが一致するか。実際には何も移動しません。',
+  'mailboxSettings.trialNoMatch': '一致なし',
 }

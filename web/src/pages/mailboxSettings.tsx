@@ -38,6 +38,14 @@ const UPDATE_FOLDER = `
     UpdateMailboxFolder(folderId: $folderId, name: $name, parentId: $parentId) { id }
   }`
 
+const TEST_RULES = `
+  query ($mailboxId: String!, $rules: [MailboxRuleInput!]!, $first: Int) {
+    TestMailboxRules(mailboxId: $mailboxId, rules: $rules, first: $first) {
+      matched
+      item { id mail { from sender subject receivedAt } }
+    }
+  }`
+
 const DELETE_FOLDER = `
   mutation ($folderId: String!) {
     DeleteMailboxFolder(folderId: $folderId)
@@ -367,6 +375,29 @@ function RulesTab({ view }: { view: MailboxView }) {
   const [dirty, setDirty] = useState(false)
   const folders = folderRows(view.folders)
 
+  // The dry run: the rules as they are on the page, against the newest
+  // messages in the Inbox, saved or not.
+  type Trial = { matched: number[]; item: { id: string; mail?: { from?: string; sender?: string; subject?: string } | null } }
+  const [trials, setTrials] = useState<Trial[] | null>(null)
+  const [trying, setTrying] = useState(false)
+  const [trialError, setTrialError] = useState<unknown>(null)
+  const tryRules = async () => {
+    setTrying(true)
+    try {
+      const response = await graphql<{ TestMailboxRules: Trial[] }>(TEST_RULES, {
+        mailboxId: view.mailbox.id,
+        rules: cleanRules(rules),
+        first: 20,
+      })
+      setTrials(response.TestMailboxRules)
+      setTrialError(null)
+    } catch (failure) {
+      setTrialError(failure)
+    } finally {
+      setTrying(false)
+    }
+  }
+
   const update = (index: number, change: (rule: MailboxRule) => MailboxRule) => {
     setRules((previous) => previous.map((rule, at) => (at === index ? change(rule) : rule)))
     setDirty(true)
@@ -640,11 +671,45 @@ function RulesTab({ view }: { view: MailboxView }) {
         >
           {t('mailboxSettings.addRule')}
         </button>
+        <button type="button" disabled={trying || rules.length === 0} onClick={() => tryRules()}>
+          {t('mailboxSettings.tryRules')}
+        </button>
         <button className="primary" type="submit" disabled={busy || !dirty}>
           {t('common.save')}
         </button>
         {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
       </div>
+
+      {trialError ? <ErrorMessage error={trialError} /> : null}
+      {trials && (
+        <div className="card">
+          <h3>{t('mailboxSettings.trialTitle')}</h3>
+          <p className="muted field-hint">{t('mailboxSettings.trialHint')}</p>
+          {trials.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              {t('mailbox.nothing')}
+            </p>
+          ) : (
+            <table>
+              <tbody>
+                {trials.map((trial) => (
+                  <tr key={trial.item.id}>
+                    <td className="shrink muted">{trial.item.mail?.from || trial.item.mail?.sender}</td>
+                    <td>{trial.item.mail?.subject || t('mailbox.noSubject')}</td>
+                    <td className="shrink">
+                      {trial.matched.length === 0 ? (
+                        <span className="muted">{t('mailboxSettings.trialNoMatch')}</span>
+                      ) : (
+                        trial.matched.map((index) => rules[index]?.name || `#${index + 1}`).join(', ')
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </form>
   )
 }
