@@ -199,6 +199,7 @@ func TestSettingsMutationNamesRealTypes(t *testing.T) {
 		"storage":      "StorageParametersInput",
 		"geoip":        "GeoIPParametersInput",
 		"upgrade":      "UpgradeParametersInput",
+		"sso":          "SSOParametersInput",
 	}
 
 	for section, name := range written {
