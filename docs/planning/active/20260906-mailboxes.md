@@ -277,9 +277,7 @@ The `user` table gains:
 
     ALTER TABLE "user"
         ADD COLUMN "disabled_at"    timestamptz,                 -- a disabled user cannot sign in, keeps their mail
-        ADD COLUMN "locale"         varchar(16)  NOT NULL DEFAULT '',
-        ADD COLUMN "signature_html" text         NOT NULL DEFAULT '',
-        ADD COLUMN "signature_text" text         NOT NULL DEFAULT '';
+        ADD COLUMN "locale"         varchar(16)  NOT NULL DEFAULT '';
     ALTER TABLE "user" ALTER COLUMN "password_hash" DROP NOT NULL;
 
 A user with no password hash signs in only with a passkey or through SSO.
@@ -294,6 +292,8 @@ is not their mailbox address; a mailbox may have several.
         "modified_at" timestamptz  NOT NULL,
         "user_id"     varchar(32)  NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
         "name"        varchar(128) NOT NULL,   -- "Personal"; a user may have several
+        "signature_html" text      NOT NULL DEFAULT '',
+        "signature_text" text      NOT NULL DEFAULT '',
         PRIMARY KEY ("id")
     );
     CREATE INDEX "mailbox_user" ON "mailbox" ("user_id");
@@ -498,14 +498,18 @@ types change. Written out so that "what is added" has one answer:
         ByDomain   map[string]map[Permission]bool `json:"byDomain"`
     }
     
-    // Mailbox is a container of folders belonging to one user.
+        // Mailbox is a container of folders belonging to one user.
     type Mailbox struct {
-        ID         string    `json:"id"`
-        CreatedAt  time.Time `json:"createdAt"`
-        ModifiedAt time.Time `json:"modifiedAt"`
-        UserID     string    `json:"userId"`
-        Name       string    `json:"name"`
-        Addresses  []*MailboxAddress `json:"addresses,omitempty"`
+        ID            string            `json:"id"`
+        CreatedAt     time.Time         `json:"createdAt"`
+        ModifiedAt    time.Time         `json:"modifiedAt"`
+        UserID        string            `json:"userId"`
+        Name          string            `json:"name"`
+        // The signature the compose page appends when sending from this mailbox;
+        // a user with two mailboxes signs differently from each.
+        SignatureHTML string            `json:"signatureHtml,omitempty"`
+        SignatureText string            `json:"signatureText,omitempty"`
+        Addresses     []*MailboxAddress `json:"addresses,omitempty"`
     }
     
     // MailboxAddress is an address that delivers into a mailbox, and that the
@@ -637,8 +641,6 @@ types change. Written out so that "what is added" has one answer:
         PasswordHash  string     `json:"-"`
         DisabledAt    *time.Time `json:"disabledAt,omitempty"` // cannot sign in; keeps their mail
         Locale        string     `json:"locale,omitempty"`
-        SignatureHTML string     `json:"signatureHtml,omitempty"`
-        SignatureText string     `json:"signatureText,omitempty"`
         // Resolved for GetCurrentUser and GetSession, not stored.
         Permissions   *EffectivePermissions `json:"permissions,omitempty"`
         GroupIDs      []string              `json:"groupIds,omitempty"`
@@ -999,6 +1001,11 @@ Decisions are the repository owner's.
   Rationale: one owner is what every IMAP client, every rule and every "who
   read this" question assumes; a second kind of owner doubled every check
   for a case that can be added later as sharing.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: the signature belongs to the mailbox, not the user.
+  Rationale: a signature goes with what one sends as; a user with two
+  mailboxes signs differently from each.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: the rule types are `MailboxRule`, `MailboxRuleCondition` and
