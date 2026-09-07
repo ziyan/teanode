@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # From go.mod, so the version CI builds with is the version the
           # module declares: they drifted, go.mod went to 1.26 with a
