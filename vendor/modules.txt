@@ -160,22 +160,24 @@ github.com/felixge/httpsnoop
 # github.com/flosch/pongo2/v4 v4.0.2
 ## explicit; go 1.14
 github.com/flosch/pongo2/v4
-# github.com/fxamacker/cbor/v2 v2.9.2
+# github.com/fxamacker/cbor/v2 v2.9.3
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
 # github.com/go-viper/mapstructure/v2 v2.5.0
 ## explicit; go 1.18
 github.com/go-viper/mapstructure/v2
 github.com/go-viper/mapstructure/v2/internal/errors
-# github.com/go-webauthn/webauthn v0.17.4
+# github.com/go-webauthn/webauthn v0.18.0
 ## explicit; go 1.25.0
 github.com/go-webauthn/webauthn/metadata
 github.com/go-webauthn/webauthn/protocol
 github.com/go-webauthn/webauthn/protocol/webauthncbor
 github.com/go-webauthn/webauthn/protocol/webauthncose
 github.com/go-webauthn/webauthn/webauthn
-# github.com/go-webauthn/x v0.2.6
+# github.com/go-webauthn/x v0.3.0
 ## explicit; go 1.25.0
+github.com/go-webauthn/x/crypto/secp256k1
+github.com/go-webauthn/x/crypto/secp256k1/ecdsa
 github.com/go-webauthn/x/encoding/asn1
 github.com/go-webauthn/x/revoke
 # github.com/golang-jwt/jwt/v5 v5.3.1
