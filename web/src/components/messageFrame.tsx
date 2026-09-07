@@ -44,7 +44,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 // A frame shorter than this looks like a mistake rather than a short message,
 // and it is what is shown while the first measurement is still pending.
-const MINIMUM_HEIGHT = 240
+// A line of text with the document's padding around it: a one-line message
+// gets a one-line frame, not a tall box of nothing under it.
+const MINIMUM_HEIGHT = 52
+
+// The padding buildDocument puts around the message, which the wrapper's
+// own height does not include.
+const BODY_PADDING = 14
 
 // darkened inverts the frame from out here rather than from inside its
 // document. A filter on the iframe element is one composited layer the
@@ -87,7 +93,7 @@ export function MessageFrame({
       return
     }
 
-    const measured = Math.max(content.scrollHeight, MINIMUM_HEIGHT)
+    const measured = Math.max(content.scrollHeight + 2 * BODY_PADDING, MINIMUM_HEIGHT)
     const width = element.clientWidth
 
     setHeight((previous) => {

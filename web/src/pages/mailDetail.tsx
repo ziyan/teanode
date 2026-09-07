@@ -400,7 +400,7 @@ export function MessageContent({
                       chooseDarkened(!darkened)
                     }}
                   >
-                    {darkened ? t('mailDetail.asSent') : t('mailDetail.darkened')}
+                    {darkened ? t('mailDetail.showOriginalTheme') : t('mailDetail.showDarkTheme')}
                   </button>
                 )}
               </>
