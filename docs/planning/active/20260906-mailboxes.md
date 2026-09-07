@@ -79,6 +79,49 @@ this plan adds is shared state; nothing lives on one instance's disk, and
 anything one instance must tell another — a new message for a mailbox somebody
 is watching over IMAP — goes through the database.
 
+## Several instances, one mailbox
+
+This server runs as several instances against one PostgreSQL, and this
+programme is judged against that on every milestone. A person's mailbox is
+one thing however many instances serve it; a message arriving at instance A
+is readable over IMAP from instance B a moment later; and no instance holds
+anything in memory that another one would need. Concretely:
+
+- **Every table above is shared state.** Nothing lives in a directory on one
+  instance — no rule files, no index, no session state for IMAP. The
+  precedent is the spam filter's rule sets, which went into the database for
+  exactly this reason.
+- **The bytes of a message live where it arrived.** The spool is a directory
+  on the instance that received the message, mirrored to the object store
+  when one is configured, and `storage.Get` already falls back to the mirror
+  when the local spool has no copy. A mailbox read from any instance
+  therefore **requires the object store in a cluster** — as reading a message
+  in the dashboard from any instance already does. A single instance needs
+  nothing beyond its spool. The deployment guide says so in milestone two.
+- **UIDs and `modseq` are allocated in the database, in the transaction that
+  needs them:** `UPDATE folder SET uid_next = uid_next + 1 … RETURNING`, never
+  a counter in memory. Two instances adding to one folder at once get two
+  different UIDs, and IMAP's promise that they only ever grow holds.
+- **The retention sweep is one instance's job at a time.** It takes a
+  PostgreSQL advisory lock before deciding what is unreferenced; the others
+  skip the tick. Without that, two sweeps racing a new item could each
+  decide the message is unreferenced.
+- **IDLE crosses instances through the database.** The instance that changes
+  a folder issues `NOTIFY` in the same transaction; every instance `LISTEN`s.
+  A client idling on instance B is woken by a message instance A stored.
+- **Effective permissions are computed per request from the database**,
+  never cached across requests on an instance, so a role change made through
+  instance A applies to instance B's next request. If that ever costs too
+  much, the cache is keyed on a version the way the configuration's is — not
+  on time.
+- **The OIDC callback may land on a different instance than the one that
+  started the sign-in.** Everything the callback needs — state, nonce, PKCE
+  verifier, where to return to — travels in a signed, expiring blob, not in
+  an instance's memory.
+- **The rate limiter is per instance**, as it is for SMTP today: an attacker
+  reaching every instance gets that many budgets. Acceptable, and stated,
+  rather than solved with shared counters that would slow every sign-in.
+
 ## Terms
 
 A **mailbox** is a container of folders that belongs to a user or to a group.
@@ -288,8 +331,9 @@ is not their mailbox address; a mailbox may have several.
     CREATE INDEX        "mailbox_item_list" ON "mailbox_item" ("folder_id", "added_at" DESC);
 
 Moving a message between folders is: insert an item in the new folder with
-that folder's next UID, delete the old item, bump both folders' `modseq`, in
-one transaction. That is what IMAP `MOVE` means and it keeps the promise that
+that folder's next UID — taken with `UPDATE … SET uid_next = uid_next + 1
+RETURNING`, so two instances cannot hand out the same one — delete the old
+item, bump both folders' `modseq`, in one transaction. That is what IMAP `MOVE` means and it keeps the promise that
 a UID never changes while the message stays put. Deleting is moving to
 Trash; emptying Trash deletes items. The `mail` row and the stored message
 are touched by neither — retention takes them once nothing holds them.
@@ -407,7 +451,9 @@ references it**. Trash is the exception: an item in Trash older than
 `mailbox.trashRetention` (thirty days by default) is deleted, and then the
 message is unreferenced and goes with everything else. The sweep therefore
 has to consult the database rather than the directory listing, which is a
-change to a component that today knows nothing about the database.
+change to a component that today knows nothing about the database — and it
+runs on one instance at a time, under an advisory lock, since each instance
+can only sweep the spool it holds while the decision belongs to all of them.
 
 ## IMAP
 
@@ -565,6 +611,14 @@ Decisions are the repository owner's.
   Rationale: it is the model the owner asked for, and the smallest one in
   which "some users manage other users" and "this group runs this domain" are
   both expressible without special cases.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: every milestone is judged against several instances sharing one
+  database, and a cluster serving mailboxes requires the object store.
+  Rationale: the server already runs that way, and a mailbox that differed
+  between instances — or a message readable only where it arrived — would be
+  the kind of fault nothing shows. The spool is per instance; the mirror is
+  what makes the bytes reachable from any of them.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: SSO is planned for from the start.
