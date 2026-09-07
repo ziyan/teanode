@@ -58,6 +58,7 @@ export const ja: Catalog = {
   'access.people.inGroup': '{name} のメンバー',
   'access.people.narrowed': '{name} のメンバーを表示しています：{count} 名。',
   'access.people.showEveryone': '全員を表示',
+  'access.people.hidden': 'このサーバーのグループは見られますが、その中のアカウントは見られません。',
   'access.people.noMembers': 'このグループにはまだ誰もいません。グループを編集するか、ユーザーを編集して追加してください。',
   'nav.setup': 'セットアップ',
   'nav.loading': '読み込み中…',

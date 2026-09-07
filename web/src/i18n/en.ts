@@ -58,6 +58,7 @@ export const en = {
   'access.people.inGroup': 'In {name}',
   'access.people.narrowed': 'Showing who is in {name}: {count}.',
   'access.people.showEveryone': 'Show everyone',
+  'access.people.hidden': 'You may see the groups on this server but not the accounts in them.',
   'access.people.noMembers': 'Nobody is in this group yet. Edit the group, or edit somebody and put them in it.',
   'nav.setup': 'Setup',
   'nav.loading': 'loading…',

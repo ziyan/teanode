@@ -743,7 +743,10 @@ a.tile:hover strong {
      out. */
   position: sticky;
   bottom: calc(var(--space-4) * -1);
-  padding: var(--space-2) 0;
+  /* The dialog's own bottom padding, kept: the negative margin below
+     cancels it, and without this the gutter under the buttons would be
+     half what every other dialog has. */
+  padding: var(--space-2) 0 var(--space-4);
   margin-bottom: calc(var(--space-4) * -1);
   background: var(--background);
 }
@@ -3382,7 +3385,11 @@ a.button.primary:hover {
   border-radius: 6px;
   padding: 8px 12px;
   margin: 8px 0;
-  max-height: 16rem;
+}
+/* The rows scroll, not the fieldset: a search box inside a scrolling
+   fieldset scrolls away with what it is searching. */
+.check-list-items {
+  max-height: 14rem;
   overflow-y: auto;
 }
 .check-list legend {
@@ -4103,7 +4110,10 @@ a.button.primary:hover {
    and the actions stay at its foot. */
 .dialog {
   max-height: calc(100dvh - 2 * var(--space-4));
-  overflow-y: auto;
+  /* Sideways is hidden rather than left to resolve to auto, which is what a
+     single overflow-y does and what would make every dialog in the app a
+     horizontal scroller. */
+  overflow: hidden auto;
 }
 
 @media (max-width: 760px) {
@@ -4120,9 +4130,10 @@ a.button.primary:hover {
     min-height: 40px;
   }
   /* Lists inside a dialog on a phone: tall enough to work in, short enough
-     that three of them do not bury the buttons. */
-  .dialog .check-list {
-    max-height: 40vh;
+     that three of them do not bury the buttons. Measured in dvh like the
+     dialog around them, so a retracting toolbar moves both together. */
+  .dialog .check-list-items {
+    max-height: 40dvh;
   }
 }
 

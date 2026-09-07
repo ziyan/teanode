@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { Key, useTranslation } from '../../i18n/i18n'
@@ -101,6 +101,17 @@ export function CheckList<T extends { id: string }>({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
 
+  // What was chosen when this list was opened. The order is settled from it
+  // rather than from what is chosen now, because a row that jumps to the top
+  // the moment it is ticked takes itself out from under the cursor — and
+  // ticking five people in a row would reorder the list five times.
+  const settled = useRef(new Set(selected))
+  const listed = useRef(items)
+  if (listed.current !== items) {
+    listed.current = items
+    settled.current = new Set(selected)
+  }
+
   // A list of a dozen people is a list somebody scrolls past what they came
   // for. Beyond a handful it gets a search, and what is already chosen is
   // kept at the top: a group's membership is what you came to read, and
@@ -109,16 +120,16 @@ export function CheckList<T extends { id: string }>({
   const searchable = Boolean(text) && items.length > 7
   const wanted = query.trim().toLowerCase()
   const shown = items.filter((item) => !searchable || !wanted || (text?.(item) ?? '').toLowerCase().includes(wanted))
-  const ordered = [...shown].sort((left, right) => {
-    const chosen = Number(selected.includes(right.id)) - Number(selected.includes(left.id))
-    return chosen
-  })
+  const ordered = [...shown].sort(
+    (left, right) => Number(settled.current.has(right.id)) - Number(settled.current.has(left.id)),
+  )
+  const chosenHere = items.filter((item) => selected.includes(item.id)).length
 
   return (
     <fieldset className="check-list">
       <legend>
         {label}
-        {selected.length > 0 && <span className="muted"> · {t('access.checkList.selected', { count: selected.length })}</span>}
+        {chosenHere > 0 && <span className="muted"> · {t('access.checkList.selected', { count: chosenHere })}</span>}
       </legend>
       {hint && <p className="muted">{hint}</p>}
       {searchable && (
@@ -129,6 +140,9 @@ export function CheckList<T extends { id: string }>({
           aria-label={`${label}: ${t('access.checkList.search')}`}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          // The list sits inside a form whose button saves. Enter here means
+          // "I have finished typing the search", not "save".
+          onKeyDown={(event) => event.key === 'Enter' && event.preventDefault()}
         />
       )}
       {items.length === 0 && empty && <p className="muted">{t(empty)}</p>}

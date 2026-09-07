@@ -79,6 +79,12 @@ func requireMailbox(ctx context.Context, command *cli.Command, connection *clien
 		return nil, describeError(command, err)
 	}
 	if len(views) == 0 {
+		// The console is not an account, so it owns no mailbox; saying "this
+		// account has no mailbox" there reads as though something is broken.
+		if connection.URL() == "" || strings.HasPrefix(connection.URL(), "http://127.0.0.1") {
+			return nil, fmt.Errorf("a mailbox belongs to an account, and the console is not one; " +
+				"sign in with 'teanode auth login --url https://…' to reach yours")
+		}
 		return nil, fmt.Errorf("this account has no mailbox")
 	}
 	wanted := strings.TrimSpace(command.String("mailbox"))
@@ -130,13 +136,13 @@ func requireFolder(view *client.MailboxView, wanted string) (*client.MailboxFold
 // folderPath is a folder's name with its parents' names before it, so a list
 // of folders reads as a tree without drawing one.
 func folderPath(view *client.MailboxView, folder *client.MailboxFolder) string {
-	byID := map[string]*client.MailboxFolder{}
+	byId := map[string]*client.MailboxFolder{}
 	for _, candidate := range view.Folders {
-		byID[candidate.ID] = candidate
+		byId[candidate.ID] = candidate
 	}
 	parts := []string{folder.Name}
 	for parent := folder.ParentID; parent != ""; {
-		found, ok := byID[parent]
+		found, ok := byId[parent]
 		if !ok || len(parts) > 16 {
 			break
 		}
@@ -434,11 +440,10 @@ func runFolderRename(ctx context.Context, command *cli.Command) error {
 	if wanted == "" || newName == "" {
 		return usage("usage: teanode mailbox folder rename <folder> <new-name>")
 	}
-	connection, view, folder, err := openFolder(ctx, command, wanted)
+	connection, _, folder, err := openFolder(ctx, command, wanted)
 	if err != nil {
 		return err
 	}
-	_ = view
 	updated, err := client.UpdateMailboxFolder(ctx, connection, folder.ID, &newName, nil)
 	if err != nil {
 		return describeError(command, err)
@@ -529,8 +534,19 @@ func runFolderDelete(ctx context.Context, command *cli.Command) error {
 	if folder.Kind != "" {
 		return fmt.Errorf("%s is one of the folders every mailbox has and cannot be removed", folder.Name)
 	}
-	if err := confirm(command, fmt.Sprintf("This removes the folder %s of %s and the %d message(s) in it.",
-		folderPath(view, folder), view.Mailbox.Name, folder.Total)); err != nil {
+	// What goes with it: the folders inside it, however deep, and their
+	// mail. The row's own count is only its own messages, and a folder that
+	// holds nothing directly can still hold thousands.
+	inside, messages := insideFolder(view, folder)
+	what := fmt.Sprintf("the folder %s of %s and the %d message(s) in it",
+		folderPath(view, folder), view.Mailbox.Name, messages)
+	if inside > 0 {
+		what = fmt.Sprintf("the folder %s of %s, the %d folder(s) inside it, and the %d message(s) they hold",
+			folderPath(view, folder), view.Mailbox.Name, inside, messages)
+	}
+	// Said even when nothing asks, so that a script's log records what went.
+	fmt.Printf("removing %s\n", what)
+	if err := confirm(command, fmt.Sprintf("This removes %s. They do not go to Trash.", what)); err != nil {
 		return err
 	}
 	if err := client.DeleteMailboxFolder(ctx, connection, folder.ID); err != nil {
@@ -538,6 +554,25 @@ func runFolderDelete(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("removed %s\n", folder.Name)
 	return nil
+}
+
+// insideFolder is how many folders are inside one, however deep, and how
+// many messages they and it hold between them.
+func insideFolder(view *client.MailboxView, folder *client.MailboxFolder) (folders, messages int) {
+	messages = folder.Total
+	within := map[string]bool{folder.ID: true}
+	// The tree is small and the list is in parent-before-child order, but a
+	// pass per level costs nothing and does not rely on that.
+	for range view.Folders {
+		for _, candidate := range view.Folders {
+			if candidate.ParentID != "" && within[candidate.ParentID] && !within[candidate.ID] {
+				within[candidate.ID] = true
+				folders++
+				messages += candidate.Total
+			}
+		}
+	}
+	return folders, messages
 }
 
 // openFolder is the connection, the mailbox and the folder a folder command
@@ -566,8 +601,12 @@ func newRuleCommand() *cli.Command {
 		Usage: "the rules that file arriving mail",
 		Commands: []*cli.Command{
 			{
-				Name:   "list",
-				Usage:  "list a mailbox's rules, in the order they run",
+				Name:  "list",
+				Usage: "list a mailbox's rules, in the order they run",
+				Description: "A mailbox's rules are stored as one list, so adding, removing or\n" +
+					"turning one on reads the list, changes it, and writes it back. Two of\n" +
+					"these at the same moment, or one of them beside somebody editing the\n" +
+					"rules in the dashboard, keeps only the last to be written.",
 				Flags:  []cli.Flag{JSONFlag(), mailboxFlag()},
 				Action: runRuleList,
 			},
@@ -691,7 +730,17 @@ func parseCondition(specification string) (client.MailboxRuleCondition, error) {
 
 func validateOperator(condition client.MailboxRuleCondition) error {
 	switch condition.Operator {
-	case "contains", "equals", "matches", "above", "below":
+	case "contains", "equals", "matches":
+		// A score is a number, and text operators never match one.
+		if condition.Field == "score" {
+			return fmt.Errorf("a score is compared with above or below, not %q", condition.Operator)
+		}
+		return nil
+	case "above", "below":
+		if condition.Field != "score" {
+			return fmt.Errorf("%q compares numbers, and %s is text: use contains, equals or matches",
+				condition.Operator, condition.Field)
+		}
 		return nil
 	default:
 		return fmt.Errorf("%q is not an operator; use contains, equals, matches, above or below", condition.Operator)
@@ -864,15 +913,23 @@ func changeRules(ctx context.Context, command *cli.Command, name string, change 
 		return nil, err
 	}
 	rules := append([]client.MailboxRule{}, view.Mailbox.Rules...)
-	found := -1
+	found, matches := -1, 0
 	for index := range rules {
 		if strings.EqualFold(rules[index].Name, name) {
-			found = index
-			break
+			matches++
+			if found < 0 {
+				found = index
+			}
 		}
 	}
 	if found < 0 {
 		return nil, fmt.Errorf("no rule called %q in %s", name, view.Mailbox.Name)
+	}
+	if matches > 1 {
+		// The command line refuses to add a second rule of one name, but the
+		// dashboard does not, and changing whichever came first is not an
+		// answer to "which one did you mean".
+		return nil, fmt.Errorf("%s has %d rules called %q; rename one in the dashboard first", view.Mailbox.Name, matches, name)
 	}
 	if err := change(&rules[found]); err != nil {
 		return nil, err
@@ -1025,8 +1082,34 @@ func runRuleApply(ctx context.Context, command *cli.Command) error {
 		}
 		folderId, folderName = folder.ID, folder.Name
 	}
-	if err := confirm(command, fmt.Sprintf("This runs %d rule(s) over the mail already in %s of %s, moving and marking it.",
-		len(view.Mailbox.Rules), folderName, view.Mailbox.Name)); err != nil {
+	// What the rules actually do, rather than a general "moving and
+	// marking": one of them may delete.
+	kinds := map[string]bool{}
+	enabled := 0
+	for _, rule := range view.Mailbox.Rules {
+		if !rule.Enabled {
+			continue
+		}
+		enabled++
+		for _, action := range rule.Actions {
+			kinds[action.Kind] = true
+		}
+	}
+	does := []string{}
+	for _, kind := range []string{"move", "markRead", "flag", "delete"} {
+		if !kinds[kind] {
+			continue
+		}
+		does = append(does, map[string]string{
+			"move": "moving it", "markRead": "marking it read", "flag": "flagging it", "delete": "moving it to Trash",
+		}[kind])
+	}
+	what := strings.Join(does, ", ")
+	if what == "" {
+		what = "changing nothing but what the rules say"
+	}
+	if err := confirm(command, fmt.Sprintf("This runs %d rule(s) over the mail already in %s of %s: %s.",
+		enabled, folderName, view.Mailbox.Name, what)); err != nil {
 		return err
 	}
 	applied, err := client.ApplyMailboxRules(ctx, connection, view.Mailbox.ID, folderId, int(command.Int("first")))
@@ -1047,6 +1130,10 @@ func runRuleApply(ctx context.Context, command *cli.Command) error {
 	if applied.Skipped > 0 {
 		fields = append(fields, [2]string{"not forwarded", itoa(applied.Skipped)},
 			[2]string{"", "old mail is not sent again, so forward actions were left alone"})
+	}
+	if applied.Failed > 0 {
+		fields = append(fields, [2]string{"could not be filed", itoa(applied.Failed)},
+			[2]string{"", "the rest were filed; the server's log says what went wrong"})
 	}
 	return printFields(fields)
 }

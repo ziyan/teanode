@@ -27,7 +27,9 @@ type MailboxRuleApplication struct {
 	// Messages at least one rule matched
 	Matched int `json:"matched"`
 
-	// Actions carried out, by kind
+	// Actions carried out, by kind. A message counts once for each kind,
+	// however many rules asked for it, and marking one that was already
+	// read is not counted at all.
 	Moved   int `json:"moved"`
 	Marked  int `json:"marked"`
 	Flagged int `json:"flagged"`
@@ -36,6 +38,10 @@ type MailboxRuleApplication struct {
 	// Forward actions that matched and were left alone: old mail is not
 	// resent
 	Skipped int `json:"skipped"`
+
+	// Messages that could not be filed: the stored message could not be
+	// read, or a change to it failed. The rest were still filed.
+	Failed int `json:"failed"`
 }
 
 // ApplyMailboxRules runs a mailbox's rules over the mail already in a folder,
@@ -71,6 +77,24 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 	if arguments.First != nil && *arguments.First > 0 {
 		limit = min(*arguments.First, 500)
 	}
+	// Whether anything needs the stored message or the contacts at all: a
+	// rule about the sender or the subject is answered by the row, and
+	// reading every message back from storage to answer it would hold this
+	// transaction open across a network for nothing.
+	needsHeaders, needsContacts := false, false
+	for _, rule := range mailbox.Rules {
+		if !rule.Enabled {
+			continue
+		}
+		for _, condition := range rule.Conditions {
+			switch condition.Field {
+			case "to", "header":
+				needsHeaders = true
+			case "sender-known":
+				needsContacts = true
+			}
+		}
+	}
 	items, err := tx.ListItems(folder.ID, &db.ItemOptions{Limit: limit})
 	if err != nil {
 		return nil, err
@@ -79,43 +103,79 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		return nil, err
 	}
 
-	result := &MailboxRuleApplication{Considered: len(items)}
+	result := &MailboxRuleApplication{}
 	for _, item := range items {
 		if item.Mail == nil {
 			continue
 		}
-		// The rule reads headers the row does not carry, the way it did on
-		// arrival.
-		if headers, _, err := self.storage.Get(ctx, item.Mail.ID); err == nil {
+		result.Considered++
+		// A rule reads headers the row does not carry, the way it did on
+		// arrival. A message that cannot be read is counted rather than
+		// judged against headers it does not have.
+		if needsHeaders {
+			headers, _, err := self.storage.Get(ctx, item.Mail.ID)
+			if err != nil {
+				log.Warningf("the stored message %q of mailbox %q could not be read, so the rules were not run over it: %s",
+					item.Mail.ID, mailbox.ID, err)
+				result.Failed++
+				continue
+			}
 			item.Mail.Headers = headers
 		}
 		senderKnown := false
-		if address, _ := senderAddressOf(item.Mail); address != "" {
-			contact, err := tx.GetContact(mailbox.ID, address)
-			if err != nil {
-				return nil, err
+		if needsContacts {
+			if address, _ := senderAddressOf(item.Mail); address != "" {
+				contact, err := tx.GetContact(mailbox.ID, address)
+				if err != nil {
+					return nil, err
+				}
+				// Known means written to before this message, which is what
+				// arrival means by it: the contact is touched before the
+				// rules run, so its first message counts once already.
+				senderKnown = contact != nil && contact.Count > 1
 			}
-			senderKnown = contact != nil
 		}
 		fired := matchingRules(mailbox.Rules, item.Mail, senderKnown)
 		if len(fired) == 0 {
 			continue
 		}
 		result.Matched++
+		// What this message had done to it, so that two rules moving it
+		// count it once.
+		done := map[string]bool{}
 		current := item
 		for _, index := range fired {
 			for _, action := range mailbox.Rules[index].Actions {
 				if current == nil {
 					break
 				}
-				current, err = self.applyRuleAction(tx, mailbox, action, current, result)
+				next, err := self.applyRuleAction(tx, mailbox, action, current, done)
 				if err != nil {
-					return nil, err
+					// One message that cannot be filed does not undo the
+					// ones already filed, the way arrival keeps going
+					// rather than losing a message to a bad rule.
+					log.Warningf("a rule of mailbox %q could not be applied to %q: %s", mailbox.ID, current.ID, err)
+					result.Failed++
+					break
 				}
+				current = next
 			}
 		}
+		result.Moved += count(done, "move")
+		result.Marked += count(done, "markRead")
+		result.Flagged += count(done, "flag")
+		result.Deleted += count(done, "delete")
+		result.Skipped += count(done, "forward")
 	}
 	return result, nil
+}
+
+// count is one if a message had this done to it.
+func count(done map[string]bool, kind string) int {
+	if done[kind] {
+		return 1
+	}
+	return 0
 }
 
 // matchingRules is which rules fire for a message, in order, stopping after
@@ -136,22 +196,30 @@ func matchingRules(rules []models.MailboxRule, mail *models.Mail, senderKnown bo
 	return fired
 }
 
-// applyRuleAction does what arrival does for one action, counting it, and
-// returns the item where it now is: nil once it is gone.
-func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, action models.MailboxRuleAction, item *models.MailboxItem, result *MailboxRuleApplication) (*models.MailboxItem, error) {
+// applyRuleAction does what arrival does for one action, recording what it
+// did, and returns the item where it now is: nil once it is gone. Nothing is
+// recorded for an action that changed nothing — a message already read, or
+// already in the folder a rule moves it to.
+func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, action models.MailboxRuleAction, item *models.MailboxItem, done map[string]bool) (*models.MailboxItem, error) {
 	yes := true
 	switch action.Kind {
 	case "markRead":
-		if _, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Seen: &yes}); err != nil {
+		changed, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Seen: &yes})
+		if err != nil {
 			return item, err
 		}
-		result.Marked++
+		if changed > 0 {
+			done["markRead"] = true
+		}
 		return item, nil
 	case "flag":
-		if _, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Flagged: &yes}); err != nil {
+		changed, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Flagged: &yes})
+		if err != nil {
 			return item, err
 		}
-		result.Flagged++
+		if changed > 0 {
+			done["flag"] = true
+		}
 		return item, nil
 	case "move":
 		target, err := tx.GetFolder(action.FolderID)
@@ -167,7 +235,7 @@ func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, a
 		if err != nil || len(moved) == 0 {
 			return item, err
 		}
-		result.Moved++
+		done["move"] = true
 		return moved[0], nil
 	case "delete":
 		trash, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindTrash)
@@ -177,7 +245,7 @@ func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, a
 		if trash == nil {
 			_, err := tx.DeleteItems([]string{item.ID})
 			if err == nil {
-				result.Deleted++
+				done["delete"] = true
 			}
 			return nil, err
 		}
@@ -188,10 +256,10 @@ func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, a
 		if err != nil || len(moved) == 0 {
 			return item, err
 		}
-		result.Deleted++
+		done["delete"] = true
 		return moved[0], nil
 	case "forward":
-		result.Skipped++
+		done["forward"] = true
 		return item, nil
 	default:
 		return item, nil

@@ -133,12 +133,22 @@ export function PeopleTab() {
   const chosen = groups.find((group) => group.id === chosenGroupId) ?? null
   const shown = chosen ? users.filter((user) => user.groupIds.includes(chosen.id)) : users
 
+  // Opening a dialog starts with a clean slate: the two sets of dialogs
+  // share one error, and the group's should not open showing the person's.
+  function open(what: () => void) {
+    setProblem(null)
+    what()
+  }
+
   function startAddingPerson() {
-    // A person made while a group is chosen joins it; otherwise they join
-    // Members, so they can read the mailbox they are about to be given.
-    const fallback = groups.find((group) => group.name.toLowerCase() === 'members')
-    const joins = chosen ?? fallback
-    setPersonDraft({ username: '', password: '', name: '', email: '', groupIds: joins ? [joins.id] : [] })
+    // Members always, so they can read the mailbox they are about to be
+    // given, and the group being read as well when the list is narrowed to
+    // one. Narrowing the list to look at it should not quietly take
+    // somebody out of Members.
+    const members = groups.find((group) => group.name.toLowerCase() === 'members')
+    const joins = [members, chosen].filter((group): group is Group => Boolean(group))
+    const groupIds = [...new Set(joins.map((group) => group.id))]
+    setPersonDraft({ username: '', password: '', name: '', email: '', groupIds })
     setAddingPerson(true)
   }
 
@@ -174,7 +184,7 @@ export function PeopleTab() {
           description={chosen ? undefined : t('access.users.intro')}
           action={
             managesUsers ? (
-              <button className="primary" type="button" onClick={startAddingPerson}>
+              <button className="primary" type="button" onClick={() => open(startAddingPerson)}>
                 {t('access.users.new')}
               </button>
             ) : undefined
@@ -188,6 +198,7 @@ export function PeopleTab() {
               <button
                 type="button"
                 className={chosen ? 'access-chip' : 'access-chip chosen'}
+                aria-pressed={!chosen}
                 onClick={() => setChosenGroupId('')}
               >
                 {t('access.people.everyone')}
@@ -197,6 +208,7 @@ export function PeopleTab() {
                   key={group.id}
                   type="button"
                   className={group.id === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
+                  aria-pressed={group.id === chosenGroupId}
                   onClick={() => choose(group.id)}
                 >
                   {group.name}
@@ -213,7 +225,13 @@ export function PeopleTab() {
             </p>
           )}
           {data && shown.length === 0 && (
-            <SettingsEmpty>{chosen ? t('access.people.noMembers') : t('access.users.empty')}</SettingsEmpty>
+            <SettingsEmpty>
+              {!managesUsers
+                ? t('access.people.hidden')
+                : chosen
+                  ? t('access.people.noMembers')
+                  : t('access.users.empty')}
+            </SettingsEmpty>
           )}
 
           {shown.map((user) => (
@@ -247,6 +265,7 @@ export function PeopleTab() {
                           key={groupId}
                           type="button"
                           className={groupId === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
+                          aria-pressed={groupId === chosenGroupId}
                           onClick={() => choose(groupId)}
                         >
                           {groupName(groupId)}
@@ -262,21 +281,23 @@ export function PeopleTab() {
               actions={
                 managesUsers ? (
                   <>
-                    <button className="link" type="button" onClick={() => startEditingPerson(user)}>
+                    <button className="link" type="button" onClick={() => open(() => startEditingPerson(user))}>
                       {t('access.users.edit')}
                     </button>
                     <button
                       className="link"
                       type="button"
-                      onClick={() => {
-                        setNewPassword('')
-                        setPasswordFor(user)
-                      }}
+                      onClick={() =>
+                        open(() => {
+                          setNewPassword('')
+                          setPasswordFor(user)
+                        })
+                      }
                     >
                       {t('access.users.setPassword')}
                     </button>
                     {user.id !== session.userId && (
-                      <button className="link danger" type="button" onClick={() => setDeletingPerson(user)}>
+                      <button className="link danger" type="button" onClick={() => open(() => setDeletingPerson(user))}>
                         {t('common.remove')}
                       </button>
                     )}
@@ -296,10 +317,12 @@ export function PeopleTab() {
               <button
                 className="primary"
                 type="button"
-                onClick={() => {
-                  setGroupDraft(EMPTY_GROUP)
-                  setAddingGroup(true)
-                }}
+                onClick={() =>
+                  open(() => {
+                    setGroupDraft(EMPTY_GROUP)
+                    setAddingGroup(true)
+                  })
+                }
               >
                 {t('access.groups.new')}
               </button>
@@ -315,6 +338,7 @@ export function PeopleTab() {
                 <button
                   type="button"
                   className={group.id === chosenGroupId ? 'access-group-name chosen' : 'access-group-name'}
+                  aria-pressed={group.id === chosenGroupId}
                   onClick={() => choose(group.id)}
                 >
                   {group.name}
@@ -335,11 +359,11 @@ export function PeopleTab() {
               }
               actions={
                 <>
-                  <button className="link" type="button" onClick={() => startEditingGroup(group)}>
+                  <button className="link" type="button" onClick={() => open(() => startEditingGroup(group))}>
                     {t('access.groups.edit')}
                   </button>
                   {managesGroups && (
-                    <button className="link danger" type="button" onClick={() => setDeletingGroup(group)}>
+                    <button className="link danger" type="button" onClick={() => open(() => setDeletingGroup(group))}>
                       {t('common.remove')}
                     </button>
                   )}
@@ -433,11 +457,13 @@ export function PeopleTab() {
                 type="checkbox"
                 checked={Boolean(editingPerson.disabledAt)}
                 onChange={(event) =>
-                  void run(() => graphql(UPDATE_USER, { userId: editingPerson.id, disabled: event.target.checked })).then(() =>
-                    setEditingPerson({
-                      ...editingPerson,
-                      disabledAt: event.target.checked ? new Date().toISOString() : null,
-                    }),
+                  void run(() => graphql(UPDATE_USER, { userId: editingPerson.id, disabled: event.target.checked })).then(
+                    (done) =>
+                      done &&
+                      setEditingPerson({
+                        ...editingPerson,
+                        disabledAt: event.target.checked ? new Date().toISOString() : null,
+                      }),
                   )
                 }
               />
@@ -474,6 +500,7 @@ export function PeopleTab() {
           body={t('access.users.deleteBody')}
           confirmLabel={t('common.remove')}
           busy={busy}
+          error={problem}
           onConfirm={async () => {
             if (await run(() => graphql(DELETE_USER, { userId: deletingPerson.id }))) {
               setDeletingPerson(null)
@@ -583,6 +610,7 @@ export function PeopleTab() {
           body={t('access.groups.deleteBody')}
           confirmLabel={t('common.remove')}
           busy={busy}
+          error={problem}
           onConfirm={async () => {
             if (await run(() => graphql(DELETE_GROUP, { groupId: deletingGroup.id }))) {
               setDeletingGroup(null)

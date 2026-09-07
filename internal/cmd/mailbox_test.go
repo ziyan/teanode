@@ -24,14 +24,14 @@ func TestParseConditionReadsWhatAPersonWrites(test *testing.T) {
 		{"sender-known", client.MailboxRuleCondition{Field: "sender-known"}},
 		{"any", client.MailboxRuleCondition{Field: "any"}},
 	}
-	for _, test_case := range cases {
-		got, err := parseCondition(test_case.written)
+	for _, expectation := range cases {
+		got, err := parseCondition(expectation.written)
 		if err != nil {
-			test.Errorf("parseCondition(%q): %s", test_case.written, err)
+			test.Errorf("parseCondition(%q): %s", expectation.written, err)
 			continue
 		}
-		if got != test_case.want {
-			test.Errorf("parseCondition(%q) = %+v, want %+v", test_case.written, got, test_case.want)
+		if got != expectation.want {
+			test.Errorf("parseCondition(%q) = %+v, want %+v", expectation.written, got, expectation.want)
 		}
 	}
 }

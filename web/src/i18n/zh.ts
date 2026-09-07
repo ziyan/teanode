@@ -58,6 +58,7 @@ export const zh: Catalog = {
   'access.people.inGroup': '{name} 的成员',
   'access.people.narrowed': '正在显示 {name} 的成员：{count} 位。',
   'access.people.showEveryone': '显示全部',
+  'access.people.hidden': '你可以查看此服务器上的组，但不能查看其中的账号。',
   'access.people.noMembers': '此组还没有成员。编辑该组，或编辑某位成员将其加入。',
   'nav.setup': '设置',
   'nav.loading': '加载中…',

@@ -161,6 +161,7 @@ type MailboxRuleApplication struct {
 	Flagged    int `json:"flagged"`
 	Deleted    int `json:"deleted"`
 	Skipped    int `json:"skipped"`
+	Failed     int `json:"failed"`
 }
 
 const mailboxFields = `{
@@ -210,7 +211,7 @@ const (
 	}`
 	DocumentApplyMailboxRules = `mutation ($mailboxId: String!, $folderId: String, $first: Int) {
 		ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first) {
-			considered matched moved marked flagged deleted skipped
+			considered matched moved marked flagged deleted skipped failed
 		}
 	}`
 

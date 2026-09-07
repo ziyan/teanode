@@ -235,13 +235,12 @@ func runGroupList(ctx context.Context, command *cli.Command) error {
 	for _, group := range groups {
 		rows = append(rows, []string{
 			group.Name,
-			itoa(len(group.UserIDs)),
+			truncate(strings.Join(names(users, group.UserIDs), ", "), 28),
 			strings.Join(names(roles, group.RoleIDs), ", "),
 			strings.Join(names(domains, group.DomainIDs), ", "),
 			group.IDPGroup,
 		})
 	}
-	_ = users
 	return printTable([]string{"NAME", "MEMBERS", "ROLES", "DOMAINS", "IDP GROUP"}, rows)
 }
 
