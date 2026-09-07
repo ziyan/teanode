@@ -1591,6 +1591,12 @@ record.
       search panel, compose, the six settings tabs, the rail overlay, the
       aliases tab, users, groups, roles, audit and single sign-on — with
       the two tables that overflowed a phone fixed.
+- [x] The rail after that (2026-09-07): Starred placed after the whole Inbox
+      subtree rather than between the Inbox and its children; an icon per
+      kind of folder; folders moved from the Folders tab; the Inbox and
+      Starred always at the top with any other folder pinnable beside them
+      (`mailbox_folder.pinned_at`, migration 0021, `SetMailboxFolderPinned`);
+      every state checked at desktop and phone widths.
 
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab

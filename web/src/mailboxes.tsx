@@ -22,7 +22,7 @@ const MAILBOXES = `{
       rules { name enabled stop conditions { field header operator value } actions { kind folderId address } }
       autoReply { enabled from until subject text html }
     }
-    folders { id mailboxId parentId name kind unread total }
+    folders { id mailboxId parentId name kind pinnedAt unread total }
     unread
   }
 }`
@@ -171,6 +171,29 @@ export function folderRows(folders: MailboxFolder[]): FolderRow[] {
   }
   walk('', 0)
   return rows
+}
+
+// The rail in two parts. The top is what is always there: the Inbox with
+// its subfolders, then (the caller adds) Starred, then the folders the owner
+// pinned in the order they pinned them. The rest is the tree of everything
+// else, in which a pinned folder still has its place.
+export type RailRows = { inbox: FolderRow[]; pinned: MailboxFolder[]; rest: FolderRow[] }
+
+export function railRows(folders: MailboxFolder[]): RailRows {
+  const rows = folderRows(folders)
+  const inboxAt = rows.findIndex(({ folder }) => folder.kind === 'inbox')
+  let inboxEnd = inboxAt
+  if (inboxAt >= 0) {
+    while (inboxEnd + 1 < rows.length && rows[inboxEnd + 1].depth > rows[inboxAt].depth) {
+      inboxEnd += 1
+    }
+  }
+  const inbox = inboxAt >= 0 ? rows.slice(inboxAt, inboxEnd + 1) : []
+  const rest = inboxAt >= 0 ? [...rows.slice(0, inboxAt), ...rows.slice(inboxEnd + 1)] : rows
+  const pinned = folders
+    .filter((folder) => folder.pinnedAt && folder.kind !== 'inbox')
+    .sort((left, right) => (left.pinnedAt as string).localeCompare(right.pinnedAt as string))
+  return { inbox, pinned, rest }
 }
 
 export function folderOfKind(view: MailboxView | null, kind: string): MailboxFolder | undefined {

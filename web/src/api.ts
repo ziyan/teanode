@@ -580,6 +580,7 @@ export interface MailboxFolder {
   parentId?: string
   name: string
   kind?: string
+  pinnedAt?: string
   unread: number
   total: number
 }

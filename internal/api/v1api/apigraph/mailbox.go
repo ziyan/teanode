@@ -51,6 +51,9 @@ type MailboxMutation interface {
 	// Remove a folder the owner made, and everything in it
 	DeleteMailboxFolder(ctx context.Context, arguments DeleteMailboxFolderArguments) error
 
+	// Pin a folder to the top of the rail beside the Inbox and Starred, or take it down
+	SetMailboxFolderPinned(ctx context.Context, arguments SetMailboxFolderPinnedArguments) (*models.MailboxFolder, error)
+
 	// Change a mailbox's name, signature, rules or out-of-office setting
 	UpdateMailbox(ctx context.Context, arguments UpdateMailboxArguments) (*MailboxView, error)
 }
@@ -489,6 +492,36 @@ func (self *graph) UpdateMailboxFolder(ctx context.Context, arguments UpdateMail
 		}
 		if arguments.ParentID != nil {
 			folder.ParentID = *arguments.ParentID
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return updated, nil
+}
+
+type SetMailboxFolderPinnedArguments struct {
+	FolderID string `json:"folderId"`
+	Pinned   bool   `json:"pinned"`
+}
+
+func (self *graph) SetMailboxFolderPinned(ctx context.Context, arguments SetMailboxFolderPinnedArguments) (*models.MailboxFolder, error) {
+	_, folder, err := self.requireFolder(ctx, models.PermissionMailboxManage, arguments.FolderID)
+	if err != nil {
+		return nil, err
+	}
+	if folder.Kind == models.MailboxFolderKindInbox {
+		// The Inbox is always at the top; there is nothing to pin or unpin.
+		return nil, api.ErrInvalidArguments
+	}
+	updated, err := self.transaction(ctx).UpdateFolder(folder.ID, func(folder *models.MailboxFolder) error {
+		switch {
+		case arguments.Pinned && folder.PinnedAt == nil:
+			now := time.Now()
+			folder.PinnedAt = &now
+		case !arguments.Pinned:
+			folder.PinnedAt = nil
 		}
 		return nil
 	})

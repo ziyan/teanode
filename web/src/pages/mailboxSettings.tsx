@@ -82,6 +82,11 @@ const TEST_RULES = `
     }
   }`
 
+const PIN_FOLDER = `
+  mutation ($folderId: String!, $pinned: Boolean!) {
+    SetMailboxFolderPinned(folderId: $folderId, pinned: $pinned) { id }
+  }`
+
 const DELETE_FOLDER = `
   mutation ($folderId: String!) {
     DeleteMailboxFolder(folderId: $folderId)
@@ -266,7 +271,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
     <>
       <div className="card">
         <h3>{t('mailboxSettings.folders')}</h3>
-        <table>
+        <table className="folders-table">
           <tbody>
             {rows.map(({ folder, depth }) => (
               <tr key={folder.id}>
@@ -329,32 +334,45 @@ function FoldersTab({ view }: { view: MailboxView }) {
                     <td className="shrink muted hide-narrow">{folder.total}</td>
                     <td className="shrink">
                       {/* Only the owner's own folders can be renamed or removed;
-                          the system folders are what the mailbox is. */}
-                      {!folder.kind && (
+                          the system folders are what the mailbox is. Any of
+                          them but the Inbox, which is always at the top, can
+                          be pinned up there beside it. */}
+                      {folder.kind !== 'inbox' && (
                         <div className="row-actions">
                           <button
                             type="button"
                             className="link"
-                            onClick={() => {
-                              setRenaming(folder)
-                              setRenameTo(folder.name)
-                            }}
+                            onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
                           >
-                            {t('common.rename')}
+                            {t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pin')}
                           </button>
-                          <button
-                            type="button"
-                            className="link"
-                            onClick={() => {
-                              setMoving(folder)
-                              setMoveTo(folder.parentId ?? '')
-                            }}
-                          >
-                            {t('common.move')}
-                          </button>
-                          <button type="button" className="link danger" onClick={() => setDeleting(folder)}>
-                            {t('common.delete')}
-                          </button>
+                          {!folder.kind && (
+                            <>
+                              <button
+                                type="button"
+                                className="link"
+                                onClick={() => {
+                                  setRenaming(folder)
+                                  setRenameTo(folder.name)
+                                }}
+                              >
+                                {t('common.rename')}
+                              </button>
+                              <button
+                                type="button"
+                                className="link"
+                                onClick={() => {
+                                  setMoving(folder)
+                                  setMoveTo(folder.parentId ?? '')
+                                }}
+                              >
+                                {t('common.move')}
+                              </button>
+                              <button type="button" className="link danger" onClick={() => setDeleting(folder)}>
+                                {t('common.delete')}
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </td>

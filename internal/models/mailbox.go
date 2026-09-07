@@ -100,6 +100,11 @@ type MailboxFolder struct {
 	Name       string            `json:"name"`
 	Kind       MailboxFolderKind `json:"kind,omitempty"`
 
+	// PinnedAt is when the owner pinned the folder to the top of the rail,
+	// beside the Inbox and Starred; nil for a folder that sits in the tree
+	// only. The pins are shown in the order they were made.
+	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
+
 	// IMAP's contract: UIDs in a folder only grow, and a folder that is
 	// recreated announces itself with a new validity.
 	UIDValidity uint64 `json:"uidValidity"`

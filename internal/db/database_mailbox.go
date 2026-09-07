@@ -150,16 +150,17 @@ type mailboxModel struct {
 func (mailboxModel) TableName() string { return "mailbox" }
 
 type mailboxFolderModel struct {
-	ID          string    `gorm:"column:id;primaryKey"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	ModifiedAt  time.Time `gorm:"column:modified_at"`
-	MailboxID   string    `gorm:"column:mailbox_id"`
-	ParentID    *string   `gorm:"column:parent_id"`
-	Name        string    `gorm:"column:name"`
-	Kind        string    `gorm:"column:kind"`
-	UIDValidity int64     `gorm:"column:uid_validity"`
-	UIDNext     int64     `gorm:"column:uid_next"`
-	ModSeq      int64     `gorm:"column:modseq"`
+	ID          string     `gorm:"column:id;primaryKey"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	ModifiedAt  time.Time  `gorm:"column:modified_at"`
+	MailboxID   string     `gorm:"column:mailbox_id"`
+	ParentID    *string    `gorm:"column:parent_id"`
+	Name        string     `gorm:"column:name"`
+	Kind        string     `gorm:"column:kind"`
+	PinnedAt    *time.Time `gorm:"column:pinned_at"`
+	UIDValidity int64      `gorm:"column:uid_validity"`
+	UIDNext     int64      `gorm:"column:uid_next"`
+	ModSeq      int64      `gorm:"column:modseq"`
 }
 
 func (mailboxFolderModel) TableName() string { return "mailbox_folder" }
@@ -283,6 +284,10 @@ func folderFromModel(model *mailboxFolderModel) *models.MailboxFolder {
 	}
 	if model.ParentID != nil {
 		folder.ParentID = *model.ParentID
+	}
+	if model.PinnedAt != nil {
+		pinnedAt := model.PinnedAt.In(time.Local)
+		folder.PinnedAt = &pinnedAt
 	}
 	return folder
 }
@@ -648,6 +653,11 @@ func (self *transaction) UpdateFolder(folderId string, modify func(*models.Mailb
 		updates["parent_id"] = nil
 	} else {
 		updates["parent_id"] = after.ParentID
+	}
+	if after.PinnedAt == nil {
+		updates["pinned_at"] = nil
+	} else {
+		updates["pinned_at"] = *after.PinnedAt
 	}
 	if err := self.tx.Model(&mailboxFolderModel{}).Where("\"id\" = ?", folderId).Updates(updates).Error; err != nil {
 		if isUniqueViolation(err) {

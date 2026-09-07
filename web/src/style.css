@@ -3900,3 +3900,55 @@ a.button.primary:hover {
     flex-basis: 120px;
   }
 }
+
+/* The pin on a folder row: there on hover or focus, gone otherwise, so the
+   rail stays a list of names. In the pinned area it reads as "unpin". */
+.sidebar-pin {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.sidebar nav a:hover .sidebar-pin,
+.sidebar nav a:focus-within .sidebar-pin {
+  display: inline-flex;
+}
+.sidebar-pin:hover,
+.sidebar-pin.pinned {
+  opacity: 1;
+}
+.sidebar-pin + .sidebar-count {
+  margin-left: 6px;
+}
+.sidebar.collapsed .sidebar-pin {
+  display: none !important;
+}
+/* Four actions on a folder row do not fit beside its name on a phone. There
+   the actions column gives up its one-line width and the actions wrap, two
+   to a line, rather than push the table sideways. */
+@media (max-width: 600px) {
+  .folders-table td.shrink {
+    width: auto;
+    white-space: normal;
+    text-align: right;
+  }
+  .folders-table .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 2px;
+  }
+  .folders-table .row-actions button {
+    white-space: nowrap;
+  }
+}

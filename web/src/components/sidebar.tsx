@@ -10,6 +10,7 @@ import {
   KeyIcon,
   LogoutIcon,
   MailIcon,
+  PinIcon,
   QueueIcon,
   ServerIcon,
   ServiceIcon,
@@ -23,8 +24,14 @@ import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { hasAnywhere, hasPermission, useSession } from '../session'
-import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
+import { folderLabel, railRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from './folderIcon'
+import { MailboxFolder, graphql } from '../api'
+
+const PIN_FOLDER = `
+  mutation ($folderId: String!, $pinned: Boolean!) {
+    SetMailboxFolderPinned(folderId: $folderId, pinned: $pinned) { id }
+  }`
 
 // permission is what a row needs, when it needs one: a domain permission held
 // over at least one domain, or a server permission. A row nothing gates is
@@ -265,51 +272,65 @@ export function Sidebar({
                 )}
               </div>
               {(() => {
-                const rows = folderRows(current.folders)
-                // Starred sits under the Inbox and its subfolders: every
-                // flagged message, wherever it is, the way a mail program
-                // shows them. It goes after the whole Inbox subtree so that
-                // it does not split a parent from its children.
-                const inboxAt = rows.findIndex(({ folder }) => folder.kind === 'inbox')
-                let starredAfter = inboxAt
-                if (inboxAt >= 0) {
-                  const inboxDepth = rows[inboxAt].depth
-                  while (starredAfter + 1 < rows.length && rows[starredAfter + 1].depth > inboxDepth) {
-                    starredAfter += 1
-                  }
+                const { inbox, pinned, rest } = railRows(current.folders)
+                const togglePin = (folder: MailboxFolder, pin: boolean) => {
+                  void graphql(PIN_FOLDER, { folderId: folder.id, pinned: pin }).then(() => mailboxes.refresh(), () => {})
                 }
-                const starredRow = (
-                  <NavLink key="starred" to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
-                    <span className="sidebar-icon">
-                      <FolderKindIcon kind="starred" />
-                    </span>
-                    <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
-                  </NavLink>
-                )
-                return rows.map(({ folder, depth }, index) => {
+                // A row of the tree, or of the pinned area at the top. The
+                // pin appears on hover and does not travel: it changes the
+                // rail rather than where in it you are.
+                const folderRow = (folder: MailboxFolder, depth: number, key: string, pinnable: boolean) => {
                   const label = folderLabel(t, folder)
+                  const isPinned = Boolean(folder.pinnedAt)
                   return (
-                    <React.Fragment key={folder.id}>
-                      <NavLink
-                        to={`/mailbox/${folder.id}`}
-                        className={folder.unread > 0 ? 'unread' : undefined}
-                        data-depth={Math.min(depth, 3)}
-                        title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
-                      >
-                        <span className="sidebar-icon">
-                          <FolderKindIcon kind={folder.kind} />
+                    <NavLink
+                      key={key}
+                      to={`/mailbox/${folder.id}`}
+                      className={folder.unread > 0 ? 'unread' : undefined}
+                      data-depth={Math.min(depth, 3)}
+                      title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
+                    >
+                      <span className="sidebar-icon">
+                        <FolderKindIcon kind={folder.kind} />
+                      </span>
+                      <span className="sidebar-label">{label}</span>
+                      {pinnable && (
+                        <button
+                          type="button"
+                          className={isPinned ? 'sidebar-pin pinned' : 'sidebar-pin'}
+                          title={t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                          aria-label={t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            togglePin(folder, !isPinned)
+                          }}
+                        >
+                          <PinIcon size={14} />
+                        </button>
+                      )}
+                      {folder.unread > 0 && (
+                        <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
+                          {folder.unread}
                         </span>
-                        <span className="sidebar-label">{label}</span>
-                        {folder.unread > 0 && (
-                          <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
-                            {folder.unread}
-                          </span>
-                        )}
-                      </NavLink>
-                      {index === starredAfter && starredRow}
-                    </React.Fragment>
+                      )}
+                    </NavLink>
                   )
-                })
+                }
+                return (
+                  <>
+                    {inbox.map(({ folder, depth }) => folderRow(folder, depth, folder.id, depth > 0))}
+                    <NavLink to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                      <span className="sidebar-icon">
+                        <FolderKindIcon kind="starred" />
+                      </span>
+                      <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
+                    </NavLink>
+                    {pinned.map((folder) => folderRow(folder, 0, `pinned-${folder.id}`, true))}
+                    {pinned.length > 0 && <div className="sidebar-group-label sidebar-label">{t('nav.folders')}</div>}
+                    {rest.map(({ folder, depth }) => folderRow(folder, depth, folder.id, true))}
+                  </>
+                )
               })()}
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
                 <span className="sidebar-icon">
