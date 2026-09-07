@@ -346,5 +346,5 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 	if _, err := tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
 		return err
 	}
-	return tx.SetMailSearch(mail.ID, searchDocument(mail))
+	return tx.SetMailSearch(mail.ID, searchDocument(mail), AttachmentCount(mail))
 }

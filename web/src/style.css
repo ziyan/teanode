@@ -3716,3 +3716,59 @@ a.button.primary:hover {
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* Narrowing a search: the fields under the search box, shown on request. */
+.mailbox-narrowing {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  font-size: 12px;
+}
+.mailbox-narrowing label {
+  margin: 0;
+}
+.mailbox-narrowing label > span {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.mailbox-narrowing input,
+.mailbox-narrowing select {
+  font-size: 12px;
+  width: 100%;
+}
+.mailbox-narrowing .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mailbox-narrowing .check input {
+  width: auto;
+}
+.mailbox-narrowing-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.mailbox-narrowing-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mailbox-narrowing-actions button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.mailbox-row-folder {
+  display: inline-block;
+  font-size: 11px;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--field);
+  color: var(--muted);
+}

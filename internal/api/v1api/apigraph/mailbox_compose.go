@@ -300,7 +300,7 @@ func (self *graph) SaveMailboxDraft(ctx context.Context, arguments SaveMailboxDr
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created)); err != nil {
+	if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created), mx.AttachmentCount(created)); err != nil {
 		return nil, err
 	}
 	if parameters.DraftItemID != "" {

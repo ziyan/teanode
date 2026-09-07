@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
-import { useTranslation } from '../i18n/i18n'
+import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
 import { MessageContent } from './mailDetail'
@@ -24,8 +24,8 @@ import { MessageContent } from './mailDetail'
 const PAGE_SIZE = 50
 
 const ITEMS = `
-  query ($folderId: String!, $unread: Boolean, $flagged: Boolean, $search: String, $first: Int, $after: String) {
-    ListMailboxItems(folderId: $folderId, unread: $unread, flagged: $flagged, search: $search, first: $first, after: $after) {
+  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $after: String, $offset: Int) {
+    ListMailboxItems(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, after: $after, offset: $offset) {
       total
       items {
         id folderId mailId uid seen flagged answered forwarded draft addedAt
@@ -72,6 +72,38 @@ const EMPTY_TRASH = `
   }`
 
 type Filter = 'all' | 'unread' | 'flagged'
+
+// What a search narrows by, beyond the words: where it looks and what it
+// asks of a message. Empty means not asked.
+type Narrowing = {
+  everywhere: boolean
+  from: string
+  to: string
+  subject: string
+  since: string
+  before: string
+  attachment: 'any' | 'with' | 'without'
+}
+
+const NOTHING_NARROWED: Narrowing = { everywhere: false, from: '', to: '', subject: '', since: '', before: '', attachment: 'any' }
+
+function narrowed(value: Narrowing): boolean {
+  return value.from !== '' || value.to !== '' || value.subject !== '' || value.since !== '' || value.before !== '' || value.attachment !== 'any'
+}
+
+// A day typed into a date field, as the moment it starts (or the moment the
+// next day starts, for an end that should include the day itself).
+function dayStart(value: string, plusDays = 0): string | undefined {
+  if (!value) {
+    return undefined
+  }
+  const date = new Date(value + 'T00:00:00')
+  if (Number.isNaN(date.getTime())) {
+    return undefined
+  }
+  date.setDate(date.getDate() + plusDays)
+  return date.toISOString()
+}
 
 export function MailboxPage() {
   const { folderId, itemId } = useParams()
@@ -141,6 +173,10 @@ function Folder({
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
   const [applied, setApplied] = useState('')
+  const [narrowing, setNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
+  const [appliedNarrowing, setAppliedNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
+  const [showNarrowing, setShowNarrowing] = useState(false)
+  const everywhere = appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all')
   const [items, setItems] = useState<MailboxItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -151,20 +187,31 @@ function Folder({
 
   const variables = useMemo(
     () => ({
-      folderId: folder.id,
+      folderId: everywhere ? undefined : folder.id,
+      mailboxId: everywhere ? folder.mailboxId : undefined,
       unread: filter === 'unread' ? true : undefined,
       flagged: filter === 'flagged' ? true : undefined,
       search: applied || undefined,
+      from: appliedNarrowing.from || undefined,
+      to: appliedNarrowing.to || undefined,
+      subject: appliedNarrowing.subject || undefined,
+      since: dayStart(appliedNarrowing.since),
+      before: dayStart(appliedNarrowing.before, 1),
+      hasAttachment: appliedNarrowing.attachment === 'any' ? undefined : appliedNarrowing.attachment === 'with',
       first: PAGE_SIZE,
     }),
-    [folder.id, filter, applied],
+    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere],
   )
 
   const load = useCallback(
-    async (after?: string) => {
+    async (after?: string, offset?: number) => {
       setLoading(true)
       try {
-        const response = await graphql<{ ListMailboxItems: MailboxItemPage }>(ITEMS, { ...variables, after })
+        const response = await graphql<{ ListMailboxItems: MailboxItemPage }>(ITEMS, {
+          ...variables,
+          after: variables.mailboxId ? undefined : after,
+          offset: variables.mailboxId ? offset : undefined,
+        })
         const page = response.ListMailboxItems
         setItems((previous) => (after ? [...previous, ...page.items] : page.items))
         setTotal(page.total)
@@ -255,11 +302,12 @@ function Folder({
           onSubmit={(event) => {
             event.preventDefault()
             setApplied(search.trim())
+            setAppliedNarrowing(narrowing)
           }}
         >
           <input
             type="search"
-            placeholder={t('mailbox.search')}
+            placeholder={narrowing.everywhere ? t('mailbox.searchEverywhere') : t('mailbox.search')}
             aria-label={t('mailbox.search')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -272,7 +320,75 @@ function Folder({
             <button type="button" className={filter === 'flagged' ? 'active' : ''} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}>
               {t('mailbox.flaggedOnly')}
             </button>
+            <button
+              type="button"
+              className={showNarrowing || narrowed(appliedNarrowing) || appliedNarrowing.everywhere ? 'active' : ''}
+              aria-expanded={showNarrowing}
+              onClick={() => setShowNarrowing((previous) => !previous)}
+            >
+              {t('mailbox.narrow')}
+            </button>
           </div>
+          {showNarrowing && (
+            <div className="mailbox-narrowing">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={narrowing.everywhere}
+                  onChange={(event) => setNarrowing({ ...narrowing, everywhere: event.target.checked })}
+                />
+                {t('mailbox.narrowEverywhere')}
+              </label>
+              <label>
+                <span>{t('mailbox.narrowFrom')}</span>
+                <input value={narrowing.from} onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('mailbox.narrowTo')}</span>
+                <input value={narrowing.to} onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('mailbox.narrowSubject')}</span>
+                <input value={narrowing.subject} onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })} />
+              </label>
+              <div className="mailbox-narrowing-row">
+                <label>
+                  <span>{t('mailbox.narrowSince')}</span>
+                  <input type="date" value={narrowing.since} onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })} />
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowBefore')}</span>
+                  <input type="date" value={narrowing.before} onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })} />
+                </label>
+              </div>
+              <label>
+                <span>{t('mailbox.narrowAttachment')}</span>
+                <select
+                  value={narrowing.attachment}
+                  onChange={(event) => setNarrowing({ ...narrowing, attachment: event.target.value as Narrowing['attachment'] })}
+                >
+                  <option value="any">{t('mailbox.narrowAttachmentAny')}</option>
+                  <option value="with">{t('mailbox.narrowAttachmentWith')}</option>
+                  <option value="without">{t('mailbox.narrowAttachmentWithout')}</option>
+                </select>
+              </label>
+              <div className="mailbox-narrowing-actions">
+                <button type="submit" className="primary">
+                  {t('mailbox.narrowApply')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNarrowing(NOTHING_NARROWED)
+                    setAppliedNarrowing(NOTHING_NARROWED)
+                    setShowNarrowing(false)
+                  }}
+                >
+                  {t('mailbox.narrowClear')}
+                </button>
+              </div>
+            </div>
+          )}
         </form>
 
         {/* Acting on a selection. Shown always rather than only once
@@ -348,6 +464,7 @@ function Folder({
             <Row
               key={item.id}
               item={item}
+              folderName={everywhere && item.folderId !== folder.id ? folderLabelOf(folders, item.folderId, t) : undefined}
               active={item.id === itemId}
               selected={selected.has(item.id)}
               onSelect={(on) =>
@@ -370,7 +487,7 @@ function Folder({
           ))}
           {!loading && items.length === 0 && (
             <li className="mailbox-placeholder">
-              {applied || filter !== 'all' ? (
+              {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
                 t('mailbox.nothingFound')
               ) : folder.kind === 'inbox' && addresses.length === 0 ? (
                 // An Inbox with no address is the first thing a new account
@@ -394,7 +511,7 @@ function Folder({
         <div className="mailbox-foot">
           <span>{loading ? t('common.loading') : t('mailbox.count', { shown: items.length, total })}</span>
           {items.length < total && !loading && (
-            <button type="button" className="link" onClick={() => load(items[items.length - 1]?.id)}>
+            <button type="button" className="link" onClick={() => load(items[items.length - 1]?.id, items.length)}>
               {t('mailbox.loadMore')}
             </button>
           )}
@@ -445,8 +562,15 @@ function Folder({
   )
 }
 
+// folderLabelOf is a folder's name by id, for a hit from another folder.
+function folderLabelOf(folders: MailboxFolder[], folderId: string, t: (key: Key) => string): string {
+  const found = folders.find((folder) => folder.id === folderId)
+  return found ? folderLabel(t, found) : ''
+}
+
 function Row({
   item,
+  folderName,
   href,
   active,
   selected,
@@ -455,6 +579,7 @@ function Row({
   onFlag,
 }: {
   item: MailboxItem
+  folderName?: string
   href: string
   active: boolean
   selected: boolean
@@ -499,7 +624,10 @@ function Row({
         }}
       >
         <div className="mailbox-row-from">{mail?.from || mail?.sender || t('mailbox.unknownSender')}</div>
-        <div className="mailbox-row-subject">{mail?.subject || t('mailbox.noSubject')}</div>
+        <div className="mailbox-row-subject">
+          {folderName && <span className="mailbox-row-folder">{folderName}</span>}
+          {mail?.subject || t('mailbox.noSubject')}
+        </div>
       </Link>
       <div className="mailbox-row-when">
         <RelativeTime value={mail?.receivedAt ?? item.addedAt} />

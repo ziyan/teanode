@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -180,8 +181,26 @@ func (self *graph) ListMailboxes(ctx context.Context) ([]*MailboxView, error) {
 }
 
 type ListMailboxItemsArguments struct {
-	// ID of the folder
-	FolderID string `json:"folderId"`
+	// ID of the folder; or empty with a mailbox id, for every folder at once
+	FolderID string `json:"folderId" graphapi:"nullable"`
+
+	// ID of the mailbox, to search all of it
+	MailboxID *string `json:"mailboxId"`
+
+	// Part of the sender, a recipient or the subject, case-insensitively
+	From    *string `json:"from"`
+	To      *string `json:"to"`
+	Subject *string `json:"subject"`
+
+	// Received on or after, and before
+	Since  *time.Time `json:"since"`
+	Before *time.Time `json:"before"`
+
+	// Only with, or only without, an attachment
+	HasAttachment *bool `json:"hasAttachment"`
+
+	// How many to skip, for a page of a search across folders
+	Offset *int `json:"offset"`
 
 	// Only unread, or only flagged, when set
 	Unread  *bool `json:"unread"`
@@ -202,11 +221,41 @@ type MailboxItemPage struct {
 }
 
 func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxItemsArguments) (*MailboxItemPage, error) {
-	_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, arguments.FolderID)
-	if err != nil {
-		return nil, err
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment}
+	folderId := arguments.FolderID
+	if folderId != "" {
+		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)
+		if err != nil {
+			return nil, err
+		}
+		folderId = folder.ID
+	} else if arguments.MailboxID != nil && *arguments.MailboxID != "" {
+		mailbox, err := self.requireMailbox(ctx, models.PermissionMailRead, *arguments.MailboxID)
+		if err != nil {
+			return nil, err
+		}
+		options.MailboxID = mailbox.ID
+	} else {
+		return nil, api.ErrInvalidArguments
 	}
-	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged}
+	if arguments.From != nil {
+		options.From = strings.TrimSpace(*arguments.From)
+	}
+	if arguments.To != nil {
+		options.To = strings.TrimSpace(*arguments.To)
+	}
+	if arguments.Subject != nil {
+		options.Subject = strings.TrimSpace(*arguments.Subject)
+	}
+	if arguments.Since != nil {
+		options.Since = *arguments.Since
+	}
+	if arguments.Before != nil {
+		options.Before = *arguments.Before
+	}
+	if arguments.Offset != nil && *arguments.Offset > 0 {
+		options.Offset = *arguments.Offset
+	}
 	if arguments.Unread != nil {
 		options.Unseen = arguments.Unread
 	}
@@ -220,11 +269,11 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 		options.Cursor = *arguments.After
 	}
 	tx := self.transaction(ctx)
-	items, err := tx.ListItems(folder.ID, options)
+	items, err := tx.ListItems(folderId, options)
 	if err != nil {
 		return nil, err
 	}
-	total, err := tx.CountItems(folder.ID, options)
+	total, err := tx.CountItems(folderId, options)
 	if err != nil {
 		return nil, err
 	}

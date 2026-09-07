@@ -101,6 +101,22 @@ type ItemOptions struct {
 	// Search is a full text query over the messages' search document.
 	Search string
 
+	// MailboxID searches every folder of a mailbox rather than one folder,
+	// when the folder id given is empty.
+	MailboxID string
+
+	// From, To and Subject match a part of the header, case-insensitively.
+	From    string
+	To      string
+	Subject string
+
+	// Since and Before bound when the message was received.
+	Since  time.Time
+	Before time.Time
+
+	// HasAttachment, when set, only messages with or without one.
+	HasAttachment *bool
+
 	// ThreadID lists items whose message is in this conversation.
 	ThreadID string
 
@@ -784,7 +800,12 @@ func (self *transaction) GetItem(itemId string) (*models.MailboxItem, error) {
 }
 
 func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.DB {
-	query := self.tx.Model(&mailboxItemModel{}).Where("\"mailbox_item\".\"folder_id\" = ?", folderId)
+	query := self.tx.Model(&mailboxItemModel{})
+	if folderId != "" || options == nil || options.MailboxID == "" {
+		query = query.Where("\"mailbox_item\".\"folder_id\" = ?", folderId)
+	} else {
+		query = query.Where("\"mailbox_item\".\"folder_id\" IN (SELECT \"id\" FROM \"mailbox_folder\" WHERE \"mailbox_id\" = ?)", options.MailboxID)
+	}
 	if options == nil {
 		return query
 	}
@@ -806,13 +827,37 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	if options.SinceModSeq > 0 {
 		query = query.Where("\"mailbox_item\".\"modseq\" > ?", options.SinceModSeq)
 	}
-	if options.Search != "" || options.ThreadID != "" {
+	needsMail := options.Search != "" || options.ThreadID != "" || options.From != "" || options.To != "" || options.Subject != "" ||
+		!options.Since.IsZero() || !options.Before.IsZero() || options.HasAttachment != nil
+	if needsMail {
 		query = query.Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"")
 		if options.Search != "" {
 			query = query.Where("\"mail\".\"search\" @@ websearch_to_tsquery('simple', ?)", options.Search)
 		}
 		if options.ThreadID != "" {
 			query = query.Where("\"mail\".\"thread_id\" = ?", options.ThreadID)
+		}
+		if options.From != "" {
+			query = query.Where("(\"mail\".\"from\" ILIKE ? OR \"mail\".\"sender\" ILIKE ?)", contains(options.From), contains(options.From))
+		}
+		if options.To != "" {
+			query = query.Where("array_to_string(\"mail\".\"recipients\", ' ') ILIKE ?", contains(options.To))
+		}
+		if options.Subject != "" {
+			query = query.Where("\"mail\".\"subject\" ILIKE ?", contains(options.Subject))
+		}
+		if !options.Since.IsZero() {
+			query = query.Where("\"mail\".\"received_at\" >= ?", options.Since)
+		}
+		if !options.Before.IsZero() {
+			query = query.Where("\"mail\".\"received_at\" < ?", options.Before)
+		}
+		if options.HasAttachment != nil {
+			if *options.HasAttachment {
+				query = query.Where("\"mail\".\"attachment_count\" > 0")
+			} else {
+				query = query.Where("COALESCE(\"mail\".\"attachment_count\", 0) = 0")
+			}
 		}
 	}
 	if options.Cursor != "" {
@@ -823,9 +868,13 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 
 func (self *transaction) ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error) {
 	query := self.itemQuery(folderId, options)
-	if options != nil && options.Ascending {
+	switch {
+	case folderId == "" && options != nil && options.MailboxID != "":
+		// Across folders a UID means nothing; arrival does.
+		query = query.Order("\"mailbox_item\".\"added_at\" DESC, \"mailbox_item\".\"id\" DESC")
+	case options != nil && options.Ascending:
 		query = query.Order("\"mailbox_item\".\"uid\" ASC")
-	} else {
+	default:
 		query = query.Order("\"mailbox_item\".\"uid\" DESC")
 	}
 	if options != nil && options.Limit > 0 {
@@ -1200,4 +1249,11 @@ func truncateRunes(value string, limit int) string {
 		return value
 	}
 	return string(runes[:limit])
+}
+
+// contains is a LIKE pattern for "anywhere in the value", with the value's
+// own wildcards escaped.
+func contains(value string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimSpace(value))
+	return "%" + escaped + "%"
 }

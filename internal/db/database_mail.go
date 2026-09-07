@@ -60,7 +60,7 @@ type MailOperation interface {
 
 	// SetMailSearch writes the search document: subject, sender, recipients
 	// and the message's text, bounded by the caller.
-	SetMailSearch(mailId string, text string) error
+	SetMailSearch(mailId string, text string, attachments int) error
 }
 
 type mailModel struct {
@@ -105,8 +105,9 @@ type mailModel struct {
 	// ThreadID is the conversation; UnreferencedAt the retention clock, null
 	// while a mailbox item holds the message. The search document is written
 	// by SetMailSearch and never read back into the model.
-	ThreadID       string     `gorm:"column:thread_id;size:32"`
-	UnreferencedAt *time.Time `gorm:"column:unreferenced_at"`
+	ThreadID        string     `gorm:"column:thread_id;size:32"`
+	UnreferencedAt  *time.Time `gorm:"column:unreferenced_at"`
+	AttachmentCount *int       `gorm:"column:attachment_count"`
 }
 
 func (self *mailModel) TableName() string {
@@ -115,26 +116,27 @@ func (self *mailModel) TableName() string {
 
 func getMailFromMailModel(model mailModel) *models.Mail {
 	mail := &models.Mail{
-		UnreferencedAt: localTime(model.UnreferencedAt),
-		ID:             model.ID,
-		CreatedAt:      model.CreatedAt.In(time.Local),
-		ModifiedAt:     model.ModifiedAt.In(time.Local),
-		EnvelopeID:     model.EnvelopeID,
-		Hello:          model.Hello,
-		IP:             model.IP,
-		RDNS:           model.RDNS,
-		TLSVersion:     model.TLSVersion,
-		TLSCipherSuite: model.TLSCipherSuite,
-		Sender:         model.Sender,
-		Recipients:     model.Recipients,
-		MessageID:      model.MessageID,
-		From:           model.From,
-		Subject:        model.Subject,
-		Size:           model.Size,
-		Status:         models.GetMailStatus(model.Status),
-		ReceivedAt:     model.ReceivedAt,
-		Kind:           models.GetMailKind(model.Kind),
-		ThreadID:       model.ThreadID,
+		UnreferencedAt:  localTime(model.UnreferencedAt),
+		AttachmentCount: model.AttachmentCount,
+		ID:              model.ID,
+		CreatedAt:       model.CreatedAt.In(time.Local),
+		ModifiedAt:      model.ModifiedAt.In(time.Local),
+		EnvelopeID:      model.EnvelopeID,
+		Hello:           model.Hello,
+		IP:              model.IP,
+		RDNS:            model.RDNS,
+		TLSVersion:      model.TLSVersion,
+		TLSCipherSuite:  model.TLSCipherSuite,
+		Sender:          model.Sender,
+		Recipients:      model.Recipients,
+		MessageID:       model.MessageID,
+		From:            model.From,
+		Subject:         model.Subject,
+		Size:            model.Size,
+		Status:          models.GetMailStatus(model.Status),
+		ReceivedAt:      model.ReceivedAt,
+		Kind:            models.GetMailKind(model.Kind),
+		ThreadID:        model.ThreadID,
 	}
 	if model.DomainID != nil {
 		mail.DomainID = *model.DomainID
@@ -519,8 +521,8 @@ func (self *transaction) FindThreadID(messageIds []string) (string, error) {
 	return threadIds[0], nil
 }
 
-func (self *transaction) SetMailSearch(mailId string, text string) error {
-	return self.tx.Exec(`UPDATE "mail" SET "search" = to_tsvector('simple', ?) WHERE "id" = ?`, text, mailId).Error
+func (self *transaction) SetMailSearch(mailId string, text string, attachments int) error {
+	return self.tx.Exec(`UPDATE "mail" SET "search" = to_tsvector('simple', ?), "attachment_count" = ? WHERE "id" = ?`, text, attachments, mailId).Error
 }
 
 func (self *database) MailExists(mailId string) (bool, error) {

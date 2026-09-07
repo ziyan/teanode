@@ -139,9 +139,14 @@ func threadIDFor(tx db.Transaction, headers []string) (string, error) {
 }
 
 // SearchDocument is the text a folder search runs over: subject, sender,
-// recipients and the readable body.
+// recipients, the readable body and the attachments' names.
 func SearchDocument(mail *models.Mail) string {
 	return searchDocument(mail)
+}
+
+// AttachmentCount is how many attachments a message carries, for the index.
+func AttachmentCount(mail *models.Mail) int {
+	return len(mailparse.AttachmentNames(mail.Headers, mail.Body))
 }
 
 // searchDocument is what full text search runs over: subject, sender,
@@ -184,13 +189,31 @@ func searchDocument(mail *models.Mail) string {
 		builder.WriteString("\n")
 		return nil
 	})
+	// An attachment's name three ways, because the parser reads
+	// "invoice-march.pdf" as one file token and a person types any part of
+	// it: as given, without its extension, and with its punctuation as spaces.
+	for _, name := range mailparse.AttachmentNames(mail.Headers, mail.Body) {
+		builder.WriteString("\n")
+		builder.WriteString(name)
+		if dot := strings.LastIndex(name, "."); dot > 0 {
+			builder.WriteString("\n")
+			builder.WriteString(name[:dot])
+		}
+		builder.WriteString("\n")
+		builder.WriteString(strings.Map(func(character rune) rune {
+			if character == '.' || character == '-' || character == '_' {
+				return ' '
+			}
+			return character
+		}, name))
+	}
 	return builder.String()
 }
 
 // indexMail records what search and threading need once a message is stored:
 // its search document, and the retention clock when nobody holds it.
 func (self *exchange) indexMail(tx db.Transaction, mail *models.Mail, held bool) error {
-	if err := tx.SetMailSearch(mail.ID, searchDocument(mail)); err != nil {
+	if err := tx.SetMailSearch(mail.ID, searchDocument(mail), len(mailparse.AttachmentNames(mail.Headers, mail.Body))); err != nil {
 		return err
 	}
 	if held {

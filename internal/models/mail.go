@@ -147,6 +147,10 @@ type Mail struct {
 	// longer than the retention period, nothing else.
 	UnreferencedAt *time.Time `json:"unreferencedAt,omitempty"`
 
+	// AttachmentCount is how many attachments the message carries, counted
+	// when it was indexed; nil for a message indexed before that was kept.
+	AttachmentCount *int `json:"attachmentCount,omitempty"`
+
 	// Kind gains draft for a message being written.
 
 	// Size of the received Mail

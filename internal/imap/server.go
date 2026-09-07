@@ -590,7 +590,7 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 		if err != nil {
 			return err
 		}
-		if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created)); err != nil {
+		if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created), mx.AttachmentCount(created)); err != nil {
 			return err
 		}
 		data = &goimap.AppendData{UID: goimap.UID(item.UID), UIDValidity: uint32(entry.folder.UIDValidity)}
