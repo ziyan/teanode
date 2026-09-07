@@ -52,6 +52,18 @@ type Message struct {
 
 	// Language the content is in, when known. Written as Content-Language.
 	Language string
+
+	// Headers are further header lines to write as given — In-Reply-To and
+	// References on a reply, Bcc on a draft — after the ones built here.
+	Headers []string
+}
+
+// Composed is a message built but not sent: what a draft stores.
+type Composed struct {
+	ID      string
+	Domain  *models.Domain
+	Headers []string
+	Body    []byte
 }
 
 // Rendered is a template with its variables filled in.
@@ -81,6 +93,10 @@ type Mailer interface {
 	// deliver. The envelope carries where it came from — address, TLS,
 	// credential — and comes back filled in.
 	Send(ctx context.Context, envelope *mailparse.Envelope, message *Message) error
+
+	// Compose builds the message as Send would and returns it instead of
+	// sending it, for a draft that is stored as the message it will become.
+	Compose(ctx context.Context, message *Message) (*Composed, error)
 
 	// SendMail renders a template of the sender's domain in a locale and
 	// sends it to the envelope's recipients.
@@ -279,35 +295,12 @@ func (self *mailer) SendMail(ctx context.Context, envelope *mailparse.Envelope, 
 }
 
 func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, message *Message) error {
-	// Said rather than guessed. This used to fall back to a configured
-	// "primary" domain when the envelope named no sender, which meant a
-	// caller that forgot would send as some arbitrary domain instead of
-	// being told.
-	if message.From == "" {
-		return fmt.Errorf("mailer: the message names no sender")
-	}
-	senderAddress, err := mailparse.ParseAddress(message.From)
+	composed, err := self.Compose(ctx, message)
 	if err != nil {
 		return err
 	}
-	_, domainDomain := mailparse.SplitAddress(senderAddress)
-	var domain *models.Domain
-	var domains []*models.Domain
-	if err := self.database.Transaction(func(tx db.Transaction) error {
-		var err error
-		if domain, err = tx.GetDomainByName(domainDomain); err != nil {
-			return err
-		}
-		domains, err = tx.ListDomains()
-		return err
-	}); err != nil {
-		return err
-	}
-	if domain == nil {
-		return fmt.Errorf("mailer: %q is not a configured domain", domainDomain)
-	}
-	envelope.DomainID = domain.ID
-	envelope.Sender = senderAddress
+	envelope.DomainID = composed.Domain.ID
+	envelope.Sender = message.From
 
 	// Everybody named goes on the envelope; only To and Cc go in the
 	// headers, which is what makes Bcc blind.
@@ -331,6 +324,48 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	}
 	envelope.Recipients = recipients
 
+	// fill the envelope
+	envelope.ID = composed.ID
+	envelope.ReceivedAt = time.Now().In(time.Local)
+	envelope.Size = uint64(len(composed.Body))
+	envelope.Headers = composed.Headers
+	envelope.Body = composed.Body
+	if envelope.IP == nil {
+		envelope.IP = net.IPv4(127, 0, 0, 1)
+	}
+	return self.exchange.HandleEnvelope(ctx, envelope)
+}
+
+func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, error) {
+	// Said rather than guessed. This used to fall back to a configured
+	// "primary" domain when the envelope named no sender, which meant a
+	// caller that forgot would send as some arbitrary domain instead of
+	// being told.
+	if message.From == "" {
+		return nil, fmt.Errorf("mailer: the message names no sender")
+	}
+	senderAddress, err := mailparse.ParseAddress(message.From)
+	if err != nil {
+		return nil, err
+	}
+	message.From = senderAddress
+	_, domainDomain := mailparse.SplitAddress(senderAddress)
+	var domain *models.Domain
+	var domains []*models.Domain
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		if domain, err = tx.GetDomainByName(domainDomain); err != nil {
+			return err
+		}
+		domains, err = tx.ListDomains()
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if domain == nil {
+		return nil, fmt.Errorf("mailer: %q is not a configured domain", domainDomain)
+	}
+
 	// message and envelope id
 	id := security.NewULID()
 
@@ -344,7 +379,7 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	var body bytes.Buffer
 	bodyHeaders, err := mailparse.Compose(&body, []byte(message.Text), []byte(html), message.Attachments)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	from := &mail.Address{Name: message.FromName, Address: senderAddress}
@@ -361,16 +396,7 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	if message.Language != "" {
 		headers = append(headers, mailparse.UnsplitHeader("Content-Language", message.Language))
 	}
+	headers = append(headers, message.Headers...)
 	headers = mailparse.MergeHeaders(headers, bodyHeaders)
-
-	// fill the envelope
-	envelope.ID = id
-	envelope.ReceivedAt = time.Now().In(time.Local)
-	envelope.Size = uint64(body.Len())
-	envelope.Headers = headers
-	envelope.Body = body.Bytes()
-	if envelope.IP == nil {
-		envelope.IP = net.IPv4(127, 0, 0, 1)
-	}
-	return self.exchange.HandleEnvelope(ctx, envelope)
+	return &Composed{ID: id, Domain: domain, Headers: headers, Body: body.Bytes()}, nil
 }

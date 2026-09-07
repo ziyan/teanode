@@ -168,6 +168,14 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	if _, err := tx.CreateMail(mail, nil); err != nil {
 		return nil, err
 	}
+	// A person's submission goes in their Sent folder, by reference, in the
+	// same transaction as the row: there is no moment at which the message
+	// exists and their Sent folder does not know it.
+	if envelope.MailboxID != "" {
+		if err := self.fileInSent(tx, envelope.MailboxID, mail); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -186,7 +194,6 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 
 	// create a delivery for each recipient
 	recipientDomains := make(map[string]*models.Domain) // example.com -> configured domain
-	recipientMails := make(map[string]*models.Mail)     // example.com -> mail model (for lookup cache)
 	var deliveries []*models.Delivery
 	for _, recipient := range envelope.Recipients {
 		recipientAlias, recipientDomainName := mailparse.SplitAddress(recipient)
@@ -223,53 +230,21 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		}
 
 		// create delivery for internal, do not need to queue
-		recipientDelivery, err := tx.CreateDelivery(&models.Delivery{
+		if _, err := tx.CreateDelivery(&models.Delivery{
 			MailID:      mail.ID,
 			Mail:        mail,
 			Recipient:   recipient,
 			Kind:        models.DeliveryKindInternal,
 			Status:      models.DeliveryStatusDelivered,
 			DeliveredAt: &envelope.ReceivedAt,
-		}, nil)
-		if err != nil {
+		}, nil); err != nil {
 			return nil, err
 		}
 
-		// create copy of mail for this recipient domain
-		recipientMail, ok := recipientMails[recipientDomainName]
-		if !ok {
-			m, err := tx.CreateMail(&models.Mail{
-				DomainID:              recipientDomain.ID,
-				Domain:                recipientDomain,
-				DeliveryID:            recipientDelivery.ID,
-				Delivery:              recipientDelivery,
-				EnvelopeID:            mail.EnvelopeID,
-				Hello:                 mail.Hello,
-				IP:                    mail.IP,
-				RDNS:                  mail.RDNS,
-				TLSVersion:            mail.TLSVersion,
-				TLSCipherSuite:        mail.TLSCipherSuite,
-				Location:              mail.Location,
-				Sender:                mail.Sender,
-				Recipients:            mail.Recipients,
-				MessageID:             mail.MessageID,
-				From:                  mail.From,
-				Subject:               mail.Subject,
-				Headers:               mail.Headers,
-				Body:                  mail.Body,
-				Size:                  mail.Size,
-				Status:                mail.Status,
-				AuthenticationResults: mail.AuthenticationResults,
-				ReceivedAt:            mail.ReceivedAt,
-				Kind:                  models.MailKindExchange,
-			}, nil)
-			if err != nil {
-				return nil, err
-			}
-			recipientMails[recipientDomainName] = m
-			recipientMail = m
-		}
-
+		// The recipient's copy used to be a second row of the same bytes,
+		// stored under their domain. It is the same row now: a mailbox at
+		// the recipient's address holds a reference to the message that was
+		// sent, which is what "no copies" means.
 		// track usages
 		self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
 			bytesSent:           envelope.Size,
@@ -281,7 +256,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		})
 
 		// recipient is internal, need to resolve alias
-		matchedDeliveries, err := self.matchAliases(tx, recipientDomain, recipientAlias, recipientMail)
+		matchedDeliveries, err := self.matchAliases(tx, recipientDomain, recipientAlias, mail)
 		if err != nil {
 			return nil, err
 		}
@@ -323,4 +298,19 @@ func (self *exchange) authenticateOutgoing(ctx context.Context, envelope *mailpa
 
 	log.Debugf("took %s to authenticate outgoing mail %q", time.Since(start), envelope.ID)
 	return nil
+}
+
+// fileInSent puts a message a person sent in their Sent folder. A mailbox
+// with no Sent folder is being deleted, and the message goes out regardless.
+func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *models.Mail) error {
+	sent, err := tx.GetFolderByKind(mailboxId, models.MailboxFolderKindSent)
+	if err != nil {
+		return err
+	}
+	if sent == nil {
+		return nil
+	}
+	seen := true
+	_, err = tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen})
+	return err
 }

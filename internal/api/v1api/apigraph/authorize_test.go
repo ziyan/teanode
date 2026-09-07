@@ -38,6 +38,8 @@ var authorizing = map[string]bool{
 	"requireMailbox":      true,
 	"requireFolder":       true,
 	"requireItems":        true,
+	// The mailbox holding a draft, refused unless the caller owns it.
+	"requireDraftOwner": true,
 }
 
 // unauthenticated are the operations that must work before the caller is

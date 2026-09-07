@@ -56,6 +56,7 @@ const DOMAIN_ITEM_PAGES: { prefix: string; label: Key; list: string }[] = [
 const SECTION_PAGES: { path: string; label: Key }[] = [
   { path: '/mail/compose', label: 'nav.compose' },
   { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
+  { path: '/mailbox/compose', label: 'nav.compose' },
 ]
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)

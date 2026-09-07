@@ -1487,10 +1487,25 @@ record.
 
 - [x] (2026-09-06) Design and data model; the reference model's shape studied
       and adapted; milestones ordered by dependency.
+- [x] Milestone three (2026-09-06): reply, reply all and forward from the
+      reading pane; `SendMailboxMessage` sends as one of the mailbox's
+      addresses with In-Reply-To and References, marks the original
+      answered or forwarded, and the exchange files the message in Sent by
+      reference in the transaction that records it; a local recipient gets
+      an item referencing the same row instead of the copy
+      `exchange_outgoing.go` used to make; drafts are complete stored
+      messages of kind `draft` in Drafts, superseded on every save (explicit,
+      on hiding the page, and every half minute while changed) and removed
+      for good when sent or deleted; attachments of a draft or a forwarded
+      message are carried by index so the browser uploads a file once.
+      Verified on the dev server: a reply sent to a local address is one
+      `mail` row referenced from Sent and from the Inbox. Still open from
+      the plan: the `PUT /api/mail/{draftId}/attachment` upload path (files
+      go up base64 inside the save mutation today, once each).
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
-- [ ] Milestone three: reply, forward, drafts.
+- [x] Milestone three: reply, forward, drafts (attachment PUT path open).
 - [ ] Milestone four: search, filters, rules, contacts.
 - [ ] Milestone five: IMAP and submission.
 - [ ] Milestone six: SSO.

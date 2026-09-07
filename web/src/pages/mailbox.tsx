@@ -234,6 +234,11 @@ function Folder({
   return (
     <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
       <div className="mailbox-list">
+        <div className="mailbox-new">
+          <button type="button" className="primary" onClick={() => navigate('/mailbox/compose')}>
+            {t('mailbox.newMessage')}
+          </button>
+        </div>
         <form
           className="mailbox-toolbar"
           onSubmit={(event) => {
@@ -345,7 +350,9 @@ function Folder({
                   return next
                 })
               }
-              onOpen={() => navigate(`/mailbox/${folder.id}/${item.id}`)}
+              onOpen={() =>
+                navigate(item.draft ? `/mailbox/compose?draft=${item.id}` : `/mailbox/${folder.id}/${item.id}`)
+              }
               onFlag={(on) => setFlags([item.id], { flagged: on })}
             />
           ))}
@@ -484,6 +491,7 @@ function Reader({
   onBack: () => void
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const item = useQuery(() => graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId }), [itemId], { refresh: false })
   const mailId = item.data?.GetMailboxItem?.mailId
   const content = useQuery(
@@ -527,6 +535,23 @@ function Reader({
         <button type="button" className="mailbox-back" onClick={onBack}>
           {t('mailbox.backToList')}
         </button>
+        {loaded.draft ? (
+          <button type="button" className="primary" onClick={() => navigate(`/mailbox/compose?draft=${itemId}`)}>
+            {t('mailbox.editDraft')}
+          </button>
+        ) : (
+          <>
+            <button type="button" className="primary" onClick={() => navigate(`/mailbox/compose?reply=${itemId}`)}>
+              {t('mailbox.reply')}
+            </button>
+            <button type="button" onClick={() => navigate(`/mailbox/compose?replyAll=${itemId}`)}>
+              {t('mailbox.replyAll')}
+            </button>
+            <button type="button" onClick={() => navigate(`/mailbox/compose?forward=${itemId}`)}>
+              {t('mailbox.forward')}
+            </button>
+          </>
+        )}
         <button
           type="button"
           disabled={busy}

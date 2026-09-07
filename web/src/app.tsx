@@ -7,6 +7,7 @@ import { MailPage } from './pages/mail'
 import { MailDetailPage } from './pages/mailDetail'
 import { MailboxPage } from './pages/mailbox'
 import { MailboxSettingsPage } from './pages/mailboxSettings'
+import { MailboxComposePage } from './pages/mailboxCompose'
 import { QueuePage } from './pages/queue'
 import { ReportsPage } from './pages/reports'
 import { ReportDetailPage } from './pages/reportDetail'
@@ -177,6 +178,7 @@ export function App() {
                   management page instead. */}
               <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/mail'} replace />} />
               <Route path="/mailbox" element={<MailboxPage />} />
+              <Route path="/mailbox/compose" element={<MailboxComposePage />} />
               <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
               <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
               <Route path="/mailbox/:folderId" element={<MailboxPage />} />

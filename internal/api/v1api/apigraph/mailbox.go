@@ -330,14 +330,23 @@ func (self *graph) DeleteMailboxItems(ctx context.Context, arguments DeleteMailb
 		return 0, err
 	}
 	var toTrash, toRemove []string
+	count := 0
 	for _, item := range items {
+		// A draft is the one message nobody wants back: gone for good, with
+		// its row and its bytes, rather than moved to Trash.
+		if item.Draft {
+			if err := self.removeDraft(ctx, tx, mailbox, item.ID); err != nil {
+				return 0, err
+			}
+			count++
+			continue
+		}
 		if trash == nil || item.FolderID == trash.ID {
 			toRemove = append(toRemove, item.ID)
 		} else {
 			toTrash = append(toTrash, item.ID)
 		}
 	}
-	count := 0
 	if len(toTrash) > 0 {
 		moved, err := tx.MoveItems(toTrash, trash.ID)
 		if err != nil {
