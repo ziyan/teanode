@@ -1564,6 +1564,16 @@ record.
       the web UI opens on the mailbox. IMAP is not turned on there: the
       listen addresses are empty and the security group would need 993/143.
       The backup and the previous compose file are noted in memory.
+- [x] Reviewed (2026-09-06): two reviewers over the whole branch, one on the
+      server and one on the web UI, found twenty-six things; the real ones
+      — a draft removal that could take a shared message with it, a
+      submission that checked the envelope sender and not the From header,
+      a folder that could become its own ancestor, rows that retention
+      would never take, an open redirect through `return`, a draft whose
+      attachment indexes the browser guessed — were fixed in 3ce9830 and
+      the fix deployed to `root@server`. Accepted as is: quoted HTML in a
+      reply carries the sanitised copy's placeholders.
+
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
