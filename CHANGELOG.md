@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-07
+
+### Fixed
+
+- The profile form sits like every other settings form: a heading and an
+  intro line, the width cap on the form inside its card rather than on the
+  card, and a saved notice where the others show one.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added
