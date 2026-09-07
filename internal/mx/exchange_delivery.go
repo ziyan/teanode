@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/net/proxy"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/arc"
@@ -182,7 +181,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 
 	// add headers
 	var deliveryHeaders []string
-	if delivery.Kind == models.DeliveryKindForward && delivery.Alias != nil && delivery.Alias.Kind != config.AliasKindMailServer {
+	if delivery.Kind == models.DeliveryKindForward && delivery.Alias != nil && delivery.Alias.Kind != models.AliasKindMailServer {
 		deliveryHeaders = []string{
 			mailparse.UnsplitHeader("Delivered-To", delivery.Recipient),
 			mailparse.UnsplitHeader("Return-Path", fmt.Sprintf("<%s>", delivery.Mail.Sender)),
@@ -227,7 +226,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 	// unsealed is better than not forwarding it: the receiver simply has less
 	// to go on when the original SPF breaks, which is what ARC exists to
 	// repair.
-	sealSigner, sealSelector, canSeal := self.config.Current().SignerFor(delivery.Mail.Domain)
+	sealSigner, sealSelector, canSeal := self.signerFor(delivery.Mail.Domain)
 	sealDomain := signingDomain(delivery.Mail.Domain)
 
 	// add ARC set
@@ -263,6 +262,18 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 		delivery.Size = size
 		delivery.Status = models.DeliveryStatusDelivered
 	case models.DeliveryKindForward:
+		// A mailbox rule forwards to an address with no alias behind it: the
+		// delivery itself names where.
+		if delivery.Alias == nil && delivery.Method == "email" && delivery.Destination != "" {
+			size, err := self.sendMail(ctxWithTimeout, sender, delivery.Destination, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
+			if err != nil {
+				recordFailure(delivery, err)
+				return err
+			}
+			delivery.Size = size
+			delivery.Status = models.DeliveryStatusDelivered
+			break
+		}
 		// forward mail
 		if delivery.Alias == nil {
 			err := fmt.Errorf("mx: alias missing for delivery %q", delivery.ID)
@@ -271,7 +282,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 			return err
 		}
 		switch delivery.Alias.Kind {
-		case config.AliasKindEmail:
+		case models.AliasKindEmail:
 			if delivery.Alias.Email != "" {
 				// send email
 				size, err := self.sendMail(ctxWithTimeout, sender, delivery.Alias.Email, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
@@ -282,7 +293,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 				delivery.Size = size
 				delivery.Status = models.DeliveryStatusDelivered
 			}
-		case config.AliasKindWebhook:
+		case models.AliasKindWebhook:
 			if delivery.Alias.Webhook != "" {
 				// send webhook
 				size, err := self.sendWebhook(ctxWithTimeout, delivery.Alias.Webhook, sender, delivery.Recipient, mailparse.MergeHeaders(arcHeaders, feedbackHeaders, deliveryHeaders, delivery.Mail.Headers), delivery.Mail.Body)
@@ -293,7 +304,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 				delivery.Size = size
 				delivery.Status = models.DeliveryStatusDelivered
 			}
-		case config.AliasKindMailServer:
+		case models.AliasKindMailServer:
 			if delivery.Alias.MailServer != nil && delivery.Alias.MailServer.Host != "" {
 				// forward mail to specific mail server
 				mailServer := delivery.Alias.MailServer
@@ -527,16 +538,30 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 		// Resolve the domain and alias each row refers to from the
 		// configuration. Either may be absent because the operator has since
 		// removed it; the delivery attempt reports that rather than crashing.
-		configuration := self.config.Current()
+		domains := map[string]*models.Domain{}
 		for _, mail := range mails {
-			if mail != nil {
-				mail.Domain = configuration.FindDomainByID(mail.DomainID)
+			if mail == nil {
+				continue
 			}
+			domain, ok := domains[mail.DomainID]
+			if !ok {
+				domain, err = tx.GetDomain(mail.DomainID)
+				if err != nil {
+					return err
+				}
+				domains[mail.DomainID] = domain
+			}
+			mail.Domain = domain
 		}
 		for _, delivery := range deliveries {
-			if delivery.AliasID != "" {
-				delivery.Alias = configuration.FindAliasByID(delivery.AliasID)
+			if delivery.AliasID == "" {
+				continue
 			}
+			alias, err := tx.GetAlias(delivery.AliasID)
+			if err != nil {
+				return err
+			}
+			delivery.Alias = alias
 		}
 
 		return nil
@@ -585,7 +610,7 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 // and the one outgoing DKIM signs as. Sealing as mail.example.com points them
 // at a name with no key under it, so every seal fails to verify. Nothing here
 // notices, because a seal is only ever checked by somebody else.
-func signingDomain(domain *config.Domain) string {
+func signingDomain(domain *models.Domain) string {
 	if domain == nil {
 		return ""
 	}

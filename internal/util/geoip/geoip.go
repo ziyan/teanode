@@ -100,7 +100,7 @@ func (self *locator) Locate(ip net.IP) *Location {
 
 // nullLocator locates nothing. It stands in when the operator has not
 // supplied a MaxMind database, which is the default: none is bundled because
-// the licence requires each user to accept it themselves.
+// the license requires each user to accept it themselves.
 type nullLocator struct{}
 
 // NewNullLocator returns a Locator that always reports an unknown location.

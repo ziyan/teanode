@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import {
   ChevronRightIcon,
   DomainsIcon,
+  GridIcon,
   RefreshIcon,
   KeyIcon,
   LogoutIcon,
   MailIcon,
+  PinIcon,
   QueueIcon,
   ServerIcon,
   ServiceIcon,
+  SettingsIcon,
   SetupIcon,
   ShieldIcon,
   TerminalIcon,
@@ -20,8 +23,20 @@ import {
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
+import { hasAnywhere, hasPermission, useSession } from '../session'
+import { folderLabel, railRows, useMailboxes } from '../mailboxes'
+import { FolderKindIcon } from './folderIcon'
+import { MailboxFolder, graphql } from '../api'
 
-type Item = { label: Key; to: string; icon: React.ReactNode }
+const PIN_FOLDER = `
+  mutation ($folderId: String!, $pinned: Boolean!) {
+    SetMailboxFolderPinned(folderId: $folderId, pinned: $pinned) { id }
+  }`
+
+// permission is what a row needs, when it needs one: a domain permission held
+// over at least one domain, or a server permission. A row nothing gates is
+// for everyone who is signed in.
+type Item = { label: Key; to: string; icon: React.ReactNode; anyOf?: string[] }
 type Group = { label?: Key; items: Item[] }
 
 // One icon per settings surface that appears in the rail. Here rather than in
@@ -65,19 +80,20 @@ const GROUPS: Group[] = [
   {
     label: 'nav.groupMail',
     items: [
-      { label: 'nav.mail', to: '/mail', icon: <MailIcon /> },
-      { label: 'nav.queue', to: '/queue', icon: <QueueIcon /> },
-      { label: 'nav.reports', to: '/reports', icon: <ShieldIcon /> },
+      { label: 'nav.mail', to: '/mail', icon: <MailIcon />, anyOf: ['mail:audit'] },
+      { label: 'nav.queue', to: '/queue', icon: <QueueIcon />, anyOf: ['queue:manage'] },
+      { label: 'nav.reports', to: '/reports', icon: <ShieldIcon />, anyOf: ['report:read'] },
     ],
   },
   {
     label: 'nav.groupConfiguration',
     items: [
-      { label: 'nav.domains', to: '/domains', icon: <DomainsIcon /> },
+      { label: 'nav.domains', to: '/domains', icon: <DomainsIcon />, anyOf: ['domain:manage'] },
       ...surfacesByCategory('server').map((surface) => ({
         label: surface.label,
         to: surface.path,
         icon: SERVER_ICONS[surface.segment],
+        anyOf: ['server:manage', 'user:manage', 'group:manage', 'role:manage', 'audit:read'],
       })),
     ],
   },
@@ -146,7 +162,35 @@ export function Sidebar({
   // is already about.
   const surface = matchSettingsSurface(location.pathname)
   const inAccount = surface?.category === 'account'
-  const groups = inAccount ? [ACCOUNT_GROUP] : GROUPS
+
+  // The mailbox is where the page opens and where most people stay. The
+  // management pages — every message, the queue, reports, domains, the
+  // server — are a mode entered from the foot of the rail, in parallel with
+  // the account settings, and left by the row at the top of it. Somebody
+  // with nothing to manage never sees that mode at all.
+  const inMailbox = location.pathname === '/mailbox' || location.pathname.startsWith('/mailbox/')
+  const inManagement = !inAccount && !inMailbox
+  const navigate = useNavigate()
+  const mailboxes = useMailboxes()
+
+  // Only the rows the caller may open. What is hidden here is refused by the
+  // server anyway; hiding it is the courtesy of not offering a door that
+  // does not open. A group with no rows left is not drawn at all.
+  const session = useSession()
+  const permitted = (item: Item) =>
+    !item.anyOf ||
+    item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key))
+  const groups = (inAccount ? [ACCOUNT_GROUP] : inMailbox ? [] : GROUPS)
+    .map((group) => ({ ...group, items: group.items.filter(permitted) }))
+    .filter((group) => group.items.length > 0)
+
+  // Where "Manage" goes: the first management row this person may open.
+  const firstManagementRow = GROUPS.flatMap((group) => group.items).find(permitted)
+  // Somebody whose only permission is over their own mailbox has no
+  // management side, and a person with no mailbox at all (the console, or a
+  // group with no mail:read) has no mailbox side.
+  const hasMailbox = Boolean(session.userId) && (!mailboxes.loaded || mailboxes.views.length > 0)
+  const current = mailboxes.current
 
   return (
     <>
@@ -186,21 +230,127 @@ export function Sidebar({
           {/* The way back out. First, and on its own, because it is the one
               row that changes what the rail is showing rather than where in
               it you are. */}
-          {inAccount && (
+          {(inAccount || inManagement) && hasMailbox && (
             <div className="sidebar-group">
-              <Link className="sidebar-back" to="/mail" title={collapsed ? t('nav.backToMail') : undefined}>
+              <Link className="sidebar-back" to="/mailbox" title={collapsed ? t('nav.backToMailbox') : undefined}>
                 <span className="sidebar-icon flip">
                   <ChevronRightIcon size={18} />
                 </span>
-                <span className="sidebar-label">{t('nav.backToMail')}</span>
+                <span className="sidebar-label">{t('nav.backToMailbox')}</span>
               </Link>
+            </div>
+          )}
+
+          {/* The mailbox: which one, when there are several, then its
+              folders with what is unread in each. The tree is here rather
+              than in the page because it is navigation, and the rail is
+              where navigation lives. */}
+          {inMailbox && current && (
+            <div className="sidebar-group">
+              <div className="sidebar-mailbox">
+                {mailboxes.views.length > 1 ? (
+                  <select
+                    aria-label={t('nav.chooseMailbox')}
+                    value={current.mailbox.id}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      mailboxes.setCurrentId(event.target.value)
+                      navigate('/mailbox')
+                    }}
+                  >
+                    {mailboxes.views.map((view) => (
+                      <option key={view.mailbox.id} value={view.mailbox.id}>
+                        {view.mailbox.name}
+                        {view.unread > 0 ? ` (${view.unread})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="sidebar-mailbox-name sidebar-label" title={current.mailbox.name}>
+                    {current.mailbox.name}
+                  </div>
+                )}
+              </div>
+              {(() => {
+                const { inbox, pinned, rest } = railRows(current.folders)
+                const togglePin = (folder: MailboxFolder, pin: boolean) => {
+                  void graphql(PIN_FOLDER, { folderId: folder.id, pinned: pin }).then(() => mailboxes.refresh(), () => {})
+                }
+                // A row of the tree, or of the pinned area at the top. The
+                // pin appears on hover and does not travel: it changes the
+                // rail rather than where in it you are.
+                const folderRow = (folder: MailboxFolder, depth: number, key: string, pinnable: boolean) => {
+                  const label = folderLabel(t, folder)
+                  const isPinned = Boolean(folder.pinnedAt)
+                  return (
+                    <NavLink
+                      key={key}
+                      to={`/mailbox/${folder.id}`}
+                      className={folder.unread > 0 ? 'unread' : undefined}
+                      data-depth={Math.min(depth, 3)}
+                      title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
+                    >
+                      <span className="sidebar-icon">
+                        <FolderKindIcon kind={folder.kind} />
+                      </span>
+                      <span className="sidebar-label">{label}</span>
+                      {pinnable && (
+                        <button
+                          type="button"
+                          className={isPinned ? 'sidebar-pin pinned' : 'sidebar-pin'}
+                          title={t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                          aria-label={`${label}: ${t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            togglePin(folder, !isPinned)
+                          }}
+                        >
+                          <PinIcon size={14} />
+                        </button>
+                      )}
+                      {folder.unread > 0 && (
+                        <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
+                          {folder.unread}
+                        </span>
+                      )}
+                    </NavLink>
+                  )
+                }
+                return (
+                  <>
+                    {inbox.map(({ folder, depth }) => folderRow(folder, depth, folder.id, depth > 0))}
+                    <NavLink to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                      <span className="sidebar-icon">
+                        <FolderKindIcon kind="starred" />
+                      </span>
+                      <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
+                    </NavLink>
+                    {pinned.map((folder) => folderRow(folder, 0, `pinned-${folder.id}`, true))}
+                    {pinned.length > 0 && <div className="sidebar-group-label sidebar-label">{t('nav.folders')}</div>}
+                    {rest.map(({ folder, depth }) => folderRow(folder, depth, folder.id, true))}
+                  </>
+                )
+              })()}
+              <NavLink to="/mailbox/contacts" title={collapsed ? t('nav.contacts') : undefined}>
+                <span className="sidebar-icon">
+                  <UserIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.contacts')}</span>
+              </NavLink>
+              <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
+                <span className="sidebar-icon">
+                  <SettingsIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.mailboxSettings')}</span>
+              </NavLink>
             </div>
           )}
 
           {groups.map((group, index) => (
             <div className="sidebar-group" key={index}>
               {/* Hidden when the rail is collapsed to icons: a label with no
-                  room to be read is a grey smear above the icons. */}
+                  room to be read is a gray smear above the icons. */}
               {group.label && <div className="sidebar-group-label sidebar-label">{t(group.label)}</div>}
               {group.items.map((item) => {
                 const label = t(item.label)
@@ -235,6 +385,24 @@ export function Sidebar({
             when you use it is a trap. */}
         {(onToggle || account) && (
           <div className="sidebar-account">
+            {/* Into management mode. Beside the account menu because the two
+                are the same kind of thing: a mode about something other than
+                the mailbox, entered on purpose and left by the row at the
+                top. Only for somebody who has anything to manage. */}
+            {!inManagement && firstManagementRow && (
+              <button
+                type="button"
+                className="sidebar-collapse"
+                title={t('nav.manageTooltip')}
+                aria-label={t('nav.manage')}
+                onClick={() => navigate(firstManagementRow.to)}
+              >
+                <span className="sidebar-icon">
+                  <GridIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.manage')}</span>
+              </button>
+            )}
             {onToggle && (
               <button
                 type="button"

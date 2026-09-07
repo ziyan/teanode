@@ -116,7 +116,7 @@ export function TemplateEditorPage() {
     if (!request.form) {
       return
     }
-    let cancelled = false
+    let canceled = false
     graphql<{ RenderTemplate: Rendered }>(RENDER, {
       domainId,
       templateParameters: request.form,
@@ -124,18 +124,18 @@ export function TemplateEditorPage() {
       variables: request.samples,
     })
       .then((result) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRendered(result.RenderTemplate)
           setRenderProblem(null)
         }
       })
       .catch((caught) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRenderProblem(caught instanceof Error ? caught.message : String(caught))
         }
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [domainId, request])
 

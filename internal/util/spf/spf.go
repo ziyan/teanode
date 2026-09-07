@@ -104,7 +104,7 @@ type CheckOptions struct {
 // The `helo` domain is used if the sender has no domain part.
 //
 // The `opts` optional parameter can be used to adjust some specific
-// behaviours, such as the maximum number of DNS lookups allowed.
+// behaviors, such as the maximum number of DNS lookups allowed.
 //
 // The function returns a Result, which corresponds with the SPF result for
 // the check as per RFC, as well as an error for debugging purposes. Note that

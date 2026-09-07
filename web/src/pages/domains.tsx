@@ -183,7 +183,7 @@ export function DomainsPage() {
 }
 
 // The value the filter and the sort see: the same three states the tag shows,
-// so narrowing to "not published" is narrowing to what the colour says.
+// so narrowing to "not published" is narrowing to what the color says.
 function describeRecords(entry: Domain, t: ReturnType<typeof useTranslation>['t']): string {
   const records = entry.records?.records ?? []
   if (records.length === 0) {

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/web"
 )
 
@@ -24,8 +24,8 @@ func attemptLogin(t *testing.T, authenticator web.Authenticator, address, passwo
 // serially.
 func TestGuessingIsRefusedAfterTheBurst(t *testing.T) {
 	t.Parallel()
-	store := newStore(t, &config.User{ID: config.NewID(), Username: "ziyan", PasswordHash: testPasswordHash})
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(&models.User{Username: "ziyan", PasswordHash: testPasswordHash}))
 	if err != nil {
 		t.Fatalf("failed to build an authenticator: %s", err)
 	}
@@ -50,8 +50,8 @@ func TestGuessingIsRefusedAfterTheBurst(t *testing.T) {
 // The limit is per address, so one attacker cannot lock out everybody else.
 func TestOneAddressBeingLimitedDoesNotLockOutAnother(t *testing.T) {
 	t.Parallel()
-	store := newStore(t, &config.User{ID: config.NewID(), Username: "ziyan", PasswordHash: testPasswordHash})
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(&models.User{Username: "ziyan", PasswordHash: testPasswordHash}))
 	if err != nil {
 		t.Fatalf("failed to build an authenticator: %s", err)
 	}
@@ -70,8 +70,8 @@ func TestOneAddressBeingLimitedDoesNotLockOutAnother(t *testing.T) {
 // separately and limit nothing.
 func TestThePortIsNotPartOfTheKey(t *testing.T) {
 	t.Parallel()
-	store := newStore(t, &config.User{ID: config.NewID(), Username: "ziyan", PasswordHash: testPasswordHash})
-	authenticator, err := web.NewAuthenticator(store, newMemoryStore())
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(&models.User{Username: "ziyan", PasswordHash: testPasswordHash}))
 	if err != nil {
 		t.Fatalf("failed to build an authenticator: %s", err)
 	}

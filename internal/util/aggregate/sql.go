@@ -143,7 +143,7 @@ func (self Columns) resolve(field string) (string, error) {
 	return column, nil
 }
 
-// escapeLike neutralises the wildcards, so the value is matched literally.
+// escapeLike neutralizes the wildcards, so the value is matched literally.
 func escapeLike(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return replacer.Replace(value)

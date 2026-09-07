@@ -34,7 +34,7 @@ After this change there are two programs:
 
 A person can see it working by building both binaries with `make build`,
 running `build/teanode-server run` against the development database, running
-`build/teanode auth login --url http://127.0.0.1:10081` and authorising in the
+`build/teanode auth login --url http://127.0.0.1:10081` and authorizing in the
 browser, and then running `build/teanode domain list`, which prints a table of
 the configured domains.
 
@@ -321,7 +321,7 @@ prints `teanode-server 0.x`; `build/teanode version` prints `teanode 0.x`;
 `TokenID`, `Username`, `Insecure`), the `Profiles` file (`Active` plus a map
 by name), `LoadProfiles`, `Save` (0700 directory, 0600 file, written through
 `internal/util/atomicfile`), `Active(override)`, and `ProfilesPath`, which
-honours `XDG_CONFIG_HOME` and defaults to `~/.config/teanode/profiles.json`.
+honors `XDG_CONFIG_HOME` and defaults to `~/.config/teanode/profiles.json`.
 
 `internal/cmd/client.go`: `openClient` resolves in this order: `--url` (with
 `--token`, or the token of a saved profile whose URL matches, or an error
@@ -353,7 +353,7 @@ the flow resumes on this page). It reads `port`, `state`, `name` and
 `lifetime` from the query; shows who is signed in and the token name it will
 create (`teanode CLI (<name>)`); on Authorize calls `CreateToken`, posts to
 the loopback, and shows "done, close this tab" or, if the post fails, the
-full command to paste. Strings go in all three catalogues.
+full command to paste. Strings go in all three catalogs.
 
 `internal/web/middlewares.go`: `MakeSecurityHeadersMiddleware` gains a second
 policy whose `connect-src` is `'self' http://127.0.0.1:* http://localhost:*`,
@@ -386,7 +386,7 @@ shrinks to what is left.
 `internal/cmd/` gains `domain.go`, `alias.go`, `server.go`, `settings.go`,
 and `credential.go` and `user.go` grow. Tables come from a small helper in
 `internal/cmd/output.go`: `printTable(headers, rows)` over `text/tabwriter`,
-and `confirm(command, prompt)` honouring `--force`. Domains are named by
+and `confirm(command, prompt)` honoring `--force`. Domains are named by
 their domain name on the command line and resolved to identifiers with the
 existing `requireDomain`. Aliases, credentials and the rest are named by
 identifier, which `list` prints in its first column.
@@ -394,7 +394,7 @@ identifier, which `list` prints in its first column.
 `settings set <section> key=value …` uses `client.Introspect` to find the
 input object for the section (`S3ParametersInput` for `s3`, and so on),
 coerces each value by the field's declared type (reusing the coercion in
-`api.go`, generalised from arguments to input fields), and sends
+`api.go`, generalized from arguments to input fields), and sends
 `UpdateSettings` with that one section. `settings show` prints every section
 as `section.key: value` lines, or JSON.
 
@@ -472,7 +472,7 @@ All commands run from the repository root of the worktree.
 
     make build                       # both binaries
     make test                        # unit tests, PostgreSQL in Docker
-    make lint-ci                     # gofmt, secrets, catalogues, golangci-lint
+    make lint-ci                     # gofmt, secrets, catalogs, golangci-lint
     make web                         # after changing the dashboard
 
 For a live check:
@@ -491,7 +491,7 @@ For a live check:
 Each milestone above states what to run and what to observe. Overall
 acceptance: `make lint-ci` and `make test` pass; `scripts/test-deployment.bash`
 passes with the new client checks; the live check above produces a table of
-domains after a browser authorisation with no environment variables set in
+domains after a browser authorization with no environment variables set in
 the client's shell.
 
 ## Idempotence and Recovery

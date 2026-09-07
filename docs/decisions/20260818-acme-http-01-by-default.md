@@ -22,13 +22,13 @@ start.
   already uses. Needs port 80 reachable.
 - `tls-alpn-01`: answer an `acme-tls/1` handshake with a self-signed challenge
   certificate. Needs port 443, useful where port 80 is blocked.
-- `dns-01`: the previous Route53 behaviour, retained because it is the only way
+- `dns-01`: the previous Route53 behavior, retained because it is the only way
   to obtain a wildcard certificate.
 
 Exactly one solver is constructed, so a server using `http-01` or
 `tls-alpn-01` never builds an AWS client.
 
-`tls.acme.directoryURL` is honoured, so a new deployment can be brought up
+`tls.acme.directoryURL` is honored, so a new deployment can be brought up
 against the Let's Encrypt staging directory without spending production rate
 limits.
 

@@ -28,7 +28,8 @@ const settingsSelection = `{
 	resolver { nameserver checkInterval externalAddressServices }
 	session { lifetime }
 	passkey { enabled relyingPartyId displayName origins maximumPerUser }
-	listen { smtpIncoming smtpOutgoing http https debug }
+	listen { smtpIncoming smtpOutgoing imap imaps http https debug }
+	sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
 	identity { name mailServers logLevel dataDirectory }
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
@@ -69,7 +70,7 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 		$proxy: ProxyParametersInput, $certificates: CertificateParametersInput,
 		$smtp: SMTPParametersInput, $resolver: ResolverParametersInput,
 		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
-		$listen: ListenParametersInput, $identity: IdentityParametersInput,
+		$listen: ListenParametersInput, $sso: SSOParametersInput, $identity: IdentityParametersInput,
 		$storage: StorageParametersInput, $geoip: GeoIPParametersInput,
 		$upgrade: UpgradeParametersInput
 	) {
@@ -77,7 +78,7 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
 			relay: $relay, submission: $submission, proxy: $proxy, certificates: $certificates,
 			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
-			listen: $listen, identity: $identity, storage: $storage, geoip: $geoip,
+			listen: $listen, sso: $sso, identity: $identity, storage: $storage, geoip: $geoip,
 			upgrade: $upgrade
 		) ` + settingsSelection + `
 	}`

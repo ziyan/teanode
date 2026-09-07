@@ -135,7 +135,7 @@ func printFields(fields [][2]string) error {
 // A question is only asked of somebody who can answer it. When standard
 // input is not a terminal — a script, a pipe, an agent — the command refuses
 // at once and says what to pass, rather than printing a prompt nobody sees
-// and failing with "cancelled" after standard input runs dry.
+// and failing with "canceled" after standard input runs dry.
 func confirm(command *cli.Command, warning string) error {
 	if command.Bool("force") {
 		return nil
@@ -147,7 +147,7 @@ func confirm(command *cli.Command, warning string) error {
 	var answer string
 	_, _ = fmt.Scanln(&answer)
 	if answer != "yes" {
-		return fmt.Errorf("cancelled")
+		return fmt.Errorf("canceled")
 	}
 	return nil
 }

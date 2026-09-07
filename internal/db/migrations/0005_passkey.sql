@@ -2,7 +2,7 @@
 --
 -- The private half never leaves the authenticator, so this table holds nothing
 -- that would let anybody sign in — only the public half and enough to
--- recognise the credential when it answers a challenge. A copy of this table
+-- recognize the credential when it answers a challenge. A copy of this table
 -- is not a set of working credentials, which is the whole point of WebAuthn
 -- over a password.
 CREATE TABLE "passkey" (

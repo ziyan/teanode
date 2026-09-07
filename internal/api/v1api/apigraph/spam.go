@@ -29,7 +29,7 @@ type SpamQuery interface {
 // reload showed an unmarked message that the classifier had already learned
 // from — and offered to teach it again.
 func (self *graph) GetSpamTraining(ctx context.Context, arguments ForgetMailArguments) (*models.SpamTraining, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	return self.database.GetSpamTraining(arguments.MailID)
@@ -73,7 +73,7 @@ type MarkMailArguments struct {
 // back what the previous one contributed, so the counts always describe
 // exactly the set of marked messages.
 func (self *graph) MarkMail(ctx context.Context, arguments MarkMailArguments) (*SpamTrainingResult, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	if arguments.Label != models.SpamTrainingLabelSpam && arguments.Label != models.SpamTrainingLabelHam {
@@ -98,7 +98,7 @@ type ForgetMailArguments struct {
 
 // ForgetMail undoes a marking, exactly.
 func (self *graph) ForgetMail(ctx context.Context, arguments ForgetMailArguments) (*SpamTrainingResult, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 

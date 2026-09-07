@@ -12,17 +12,34 @@ import (
 // authorizing are the helpers that establish the caller may do a thing. Every
 // one of them refuses when there is no operator.
 var authorizing = map[string]bool{
-	"requireOperator": true,
-	"requireDomain":   true,
+	"requireSignedIn":         true,
+	"requirePermission":       true,
+	"requireAnyPermission":    true,
+	"requireManagement":       true,
+	"requireDomainPermission": true,
 	// Resolves a domain filter into the domains to query, and refuses a caller
-	// who is not an operator on the way. Checked by reading it, not assumed.
+	// who holds the permission over none of them on the way.
 	"domainsToList": true,
-	// requireOperator, plus the account it resolved to. Anything about a
+
+	// requireSignedIn, plus the account it resolved to. Anything about a
 	// person rather than about the server needs the account itself.
 	"requireAccount": true,
 	// requireAccount, plus the passkey, which it refuses unless it belongs to
 	// that account.
 	"requireOwnPasskey": true,
+	// The row, refused unless the caller may manage its domain.
+	"requireAlias":      true,
+	"requireCredential": true,
+	// Whoever may see the roles or groups.
+	"requireRoleReader":  true,
+	"requireGroupReader": true,
+	// A message the caller may see, and a mailbox, folder or items they own.
+	"requireReadableMail": true,
+	"requireMailbox":      true,
+	"requireFolder":       true,
+	"requireItems":        true,
+	// The mailbox holding a draft, refused unless the caller owns it.
+	"requireDraftOwner": true,
 }
 
 // unauthenticated are the operations that must work before the caller is
@@ -46,19 +63,19 @@ var unauthenticated = map[string]string{
 	"FinishPasskeyAssertion": "exchanges a signed challenge for a session; refuses one that does not verify",
 }
 
-// TestEveryOperationAuthorises is what makes it safe for the GraphQL endpoint
+// TestEveryOperationAuthorizes is what makes it safe for the GraphQL endpoint
 // to be reachable without a session.
 //
-// Authorisation lives in the resolvers, not in the routing, because logging in
+// Authorization lives in the resolvers, not in the routing, because logging in
 // has to happen at the same endpoint as everything else. That is only sound
 // while every resolver actually checks. This reads the source and fails when
 // one does not, so adding an operation that forgets is a failing test rather
 // than a quiet hole through which anybody on the internet reads the mail.
-func TestEveryOperationAuthorises(t *testing.T) {
+func TestEveryOperationAuthorizes(t *testing.T) {
 	t.Parallel()
 
 	// Every .go file in this directory, read directly. ParseDir is deprecated
-	// for not honouring build tags; there are none here, and reading the files
+	// for not honoring build tags; there are none here, and reading the files
 	// is clearer than pulling in the packages loader for one test.
 	names, err := filepath.Glob("*.go")
 	if err != nil {
@@ -91,14 +108,14 @@ func TestEveryOperationAuthorises(t *testing.T) {
 				operation := function.Name.Name
 				if reason, ok := unauthenticated[operation]; ok {
 					if callsAuthorizing(function) && operation != "ChangePassword" {
-						t.Errorf("%s is listed as unauthenticated (%s) but does authorise; "+
+						t.Errorf("%s is listed as unauthenticated (%s) but does authorize; "+
 							"remove it from the list", operation, reason)
 					}
 					continue
 				}
 				if !callsAuthorizing(function) {
-					t.Errorf("%s does not authorise the caller. Every resolver must call "+
-						"requireOperator or requireDomain, because the GraphQL endpoint is "+
+					t.Errorf("%s does not authorize the caller. Every resolver must call "+
+						"one of the require helpers, because the GraphQL endpoint is "+
 						"reachable without a session. If it is genuinely safe to leave open, "+
 						"add it to unauthenticated with the reason.", operation)
 				}

@@ -1,7 +1,7 @@
 name: Major release
 
 # A major release is never automatic. Deciding that a change breaks whoever is
-# running the thing is a judgement, and it is made by a person who then has to
+# running the thing is a judgment, and it is made by a person who then has to
 # type the word.
 
 on:

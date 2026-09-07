@@ -6,7 +6,7 @@ import { RelativeTime, hasTime } from '../../components/relativeTime'
 import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
-import { cancelled, createCredential, isPasskeySupported } from '../../passkeys'
+import { canceled, createCredential, isPasskeySupported } from '../../passkeys'
 import { useTranslation } from '../../i18n/i18n'
 
 const PASSKEYS = `
@@ -56,7 +56,7 @@ export function PasskeysPage() {
       await work()
       await reload()
     } catch (caught) {
-      if (!cancelled(caught)) {
+      if (!canceled(caught)) {
         setProblem(caught instanceof Error ? caught.message : t('passkeys.failed'))
       }
     } finally {

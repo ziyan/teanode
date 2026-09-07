@@ -40,6 +40,12 @@ type Envelope struct {
 	SpecialPrefix string
 	SpecialID     string
 
+	// MailboxID is the mailbox a submission was sent from, when it came
+	// from a person rather than a credential: the web UI's compose page, or
+	// SMTP with an app password. The exchange files the message in that
+	// mailbox's Sent folder in the transaction that records it.
+	MailboxID string
+
 	// whether the connection was tls
 	TLS *tls.ConnectionState
 

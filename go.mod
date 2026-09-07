@@ -11,6 +11,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.67.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.109.1
 	github.com/aymerick/douceur v0.2.0
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-message v0.18.2
 	github.com/flosch/pongo2/v4 v4.0.2
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/gorilla/handlers v1.5.2
@@ -26,6 +29,7 @@ require (
 	github.com/urfave/cli/v3 v3.6.2
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.45.0
 	golang.org/x/tools v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -50,8 +54,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.47.1 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.2.6 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect

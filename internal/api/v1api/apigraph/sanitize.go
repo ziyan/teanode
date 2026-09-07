@@ -42,7 +42,7 @@ var allowedAttributes = map[string]bool{
 	"cellpadding": true, "cellspacing": true, "colspan": true, "rowspan": true,
 	"bgcolor": true, "color": true, "face": true, "size": true, "dir": true,
 	"class": true, "id": true, "target": true, "type": true, "start": true,
-	// Kept, and sanitised below. Removing it while keeping class and id
+	// Kept, and sanitized below. Removing it while keeping class and id
 	// produced the worst of both: a message arrived with its whole skeleton
 	// of nested tables intact and not one rule that made it a layout, so it
 	// rendered as a column of fragments. CSS cannot execute anything, and the
@@ -86,7 +86,7 @@ func sanitizeHtml(input string) (string, bool) {
 		document.Find(name).Remove()
 	}
 
-	// A <style> block stays, with its contents sanitised. Mail from anything
+	// A <style> block stays, with its contents sanitized. Mail from anything
 	// that composes HTML for a living puts its layout here and refers to it
 	// by class; dropping it leaves the classes pointing at nothing.
 	document.Find("style").Each(func(_ int, selection *goquery.Selection) {
@@ -158,7 +158,7 @@ func sanitizeHtml(input string) (string, bool) {
 	})
 
 	// Only the body is rendered, and mail almost always puts its stylesheet in
-	// the head — so a sheet that survived sanitising would be dropped here
+	// the head — so a sheet that survived sanitizing would be dropped here
 	// instead, which is the same broken layout by a different route. Move it
 	// where it will be kept.
 	document.Find("head style").Each(func(_ int, selection *goquery.Selection) {
@@ -211,7 +211,7 @@ func isRemoteUrl(value string) bool {
 //
 // Declaration by declaration rather than by parsing the sheet: a CSS parser is
 // a dependency and a source of its own bugs, and the question here is narrow
-// enough to answer by looking. Anything unrecognised is kept — CSS a browser
+// enough to answer by looking. Anything unrecognized is kept — CSS a browser
 // does not understand is ignored by the browser, so the failure mode of being
 // too permissive about properties is a rule that does nothing.
 func sanitizeCss(input string) (string, bool) {

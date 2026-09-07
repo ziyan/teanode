@@ -3,8 +3,6 @@ package models
 import (
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
-
 	"github.com/ziyan/teanode/internal/util/dmarc"
 	"github.com/ziyan/teanode/internal/util/geoip"
 )
@@ -25,8 +23,8 @@ type Report struct {
 	Mail   *Mail  `json:"-"`
 
 	// Domain that the Report belongs to
-	DomainID string         `json:"domainId,omitempty"`
-	Domain   *config.Domain `json:"-"`
+	DomainID string  `json:"domainId,omitempty"`
+	Domain   *Domain `json:"-"`
 
 	// Report start date
 	BeginAt time.Time `json:"beginAt,omitempty"`

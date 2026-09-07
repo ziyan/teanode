@@ -17,6 +17,8 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/periodic"
 )
 
@@ -61,6 +63,7 @@ type Verifier interface {
 
 type verifier struct {
 	config   config.Store
+	database db.Database
 	settings *Settings
 
 	statusMutex sync.RWMutex
@@ -85,9 +88,10 @@ type verifier struct {
 	client *dns.Client
 }
 
-func Open(configuration config.Store, settings *Settings) (Verifier, error) {
+func Open(configuration config.Store, database db.Database, settings *Settings) (Verifier, error) {
 	self := &verifier{
 		config:   configuration,
+		database: database,
 		settings: settings,
 		status:   make(map[string]*RecordSet),
 		client:   &dns.Client{},
@@ -178,18 +182,34 @@ func (self *verifier) refreshExternalAddresses(ctx context.Context) ExternalAddr
 
 func (self *verifier) CheckAll(ctx context.Context) error {
 	configuration := self.config.Current()
+	domains, err := self.listDomains()
+	if err != nil {
+		return err
+	}
 
-	checked := make(map[string]bool, len(configuration.Domains))
-	for _, domain := range configuration.Domains {
+	checked := make(map[string]bool, len(domains))
+	for _, domain := range domains {
 		if domain == nil || domain.Domain == "" {
 			continue
 		}
 		checked[domain.ID] = true
-		self.check(ctx, configuration, domain)
+		self.check(ctx, configuration, domain, domains)
 	}
 
 	self.forgetUnconfigured(checked)
 	return nil
+}
+
+// listDomains reads every domain, which is what deciding where any one of
+// them publishes its records takes: the server's name is owned by one of them.
+func (self *verifier) listDomains() ([]*models.Domain, error) {
+	var domains []*models.Domain
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domains, err = tx.ListDomains()
+		return err
+	})
+	return domains, err
 }
 
 // forgetUnconfigured drops the status of domains that are no longer
@@ -207,15 +227,24 @@ func (self *verifier) forgetUnconfigured(checked map[string]bool) {
 
 func (self *verifier) Check(ctx context.Context, domainId string) (*RecordSet, error) {
 	configuration := self.config.Current()
-	domain := configuration.FindDomainByID(domainId)
+	domains, err := self.listDomains()
+	if err != nil {
+		return nil, err
+	}
+	var domain *models.Domain
+	for _, candidate := range domains {
+		if candidate.ID == domainId {
+			domain = candidate
+		}
+	}
 	if domain == nil {
 		return nil, nil
 	}
-	return self.check(ctx, configuration, domain), nil
+	return self.check(ctx, configuration, domain, domains), nil
 }
 
-func (self *verifier) check(ctx context.Context, configuration *config.Configuration, domain *config.Domain) *RecordSet {
-	recordSet := self.resolveDomainRecords(ctx, configuration, domain)
+func (self *verifier) check(ctx context.Context, configuration *config.Configuration, domain *models.Domain, domains []*models.Domain) *RecordSet {
+	recordSet := self.resolveDomainRecords(ctx, configuration, domain, domains)
 
 	previous := self.replaceStatus(domain.ID, recordSet)
 

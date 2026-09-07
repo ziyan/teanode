@@ -87,7 +87,7 @@ export function AccountMenu({
 
       {/* Asked rather than done. Signing out is one click away from things
           somebody opened this menu to reach, and getting back in costs a
-          password. It takes nothing away, so it is not coloured as though it
+          password. It takes nothing away, so it is not colored as though it
           did. */}
       {signingOut && (
         <ConfirmDialog

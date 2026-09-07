@@ -158,7 +158,7 @@ export function ComposePage() {
       setRendered(null)
       return
     }
-    let cancelled = false
+    let canceled = false
     graphql<{ RenderTemplate: Rendered }>(RENDER, {
       domainId: request.domainId,
       templateId: request.templateId,
@@ -166,18 +166,18 @@ export function ComposePage() {
       variables: request.values,
     })
       .then((result) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRendered(result.RenderTemplate)
           setRenderProblem(null)
         }
       })
       .catch((caught) => {
-        if (!cancelled) {
+        if (!canceled) {
           setRenderProblem(caught instanceof Error ? caught.message : String(caught))
         }
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [request])
 

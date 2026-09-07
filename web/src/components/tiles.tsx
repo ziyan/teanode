@@ -51,7 +51,7 @@ export function StatTile({
   detail?: React.ReactNode
 
   // The mark in the corner, for a tile that wants attention. This is the one
-  // thing on a tile that is coloured: the number is not, because a count is
+  // thing on a tile that is colored: the number is not, because a count is
   // not a verdict — a rejection count is the count of a thing that happened,
   // and zero of them is not good news.
   icon?: React.ReactNode

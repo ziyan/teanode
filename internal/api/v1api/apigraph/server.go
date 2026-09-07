@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"github.com/ziyan/teanode/internal/models"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -73,7 +74,7 @@ type RestartServerResult struct {
 }
 
 func (self *graph) GetServerStatus(ctx context.Context) (*ServerStatus, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	return self.describeServer(), nil
@@ -97,7 +98,7 @@ func (self *graph) describeServer() *ServerStatus {
 }
 
 func (self *graph) RestartServer(ctx context.Context) (*RestartServerResult, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return nil, err
 	}
 	restarter := self.settings.Restarter

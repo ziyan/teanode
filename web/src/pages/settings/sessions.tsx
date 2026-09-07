@@ -203,7 +203,7 @@ function SessionRow({
   )
 }
 
-// describeAgent shortens a user agent to the part a person recognises.
+// describeAgent shortens a user agent to the part a person recognizes.
 //
 // Not a parser: the string is whatever the client sent, and guessing wrongly
 // is worse than showing less. The full value is on the title attribute.

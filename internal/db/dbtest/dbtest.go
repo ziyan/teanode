@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 
 	"github.com/op/go-logging"
@@ -110,24 +111,55 @@ func RunTransaction(test *testing.T, run func(db.Transaction)) {
 //
 // Sessions, tokens and passkeys all reference an account, and the database
 // enforces it, so a test that stores one needs an account for it to belong to.
-// Through SaveConfiguration because that is the only writer of the table: the
-// accounts are part of the configuration, and a test inserting behind its back
-// would be testing a schema nothing else writes.
 func CreateUser(test *testing.T, database db.Database, username string) string {
 	test.Helper()
 
-	rows, err := database.LoadConfiguration()
-	if err != nil {
-		test.Fatalf("failed to load the configuration: %s", err)
-	}
-	id := security.NewULID()
-	rows.Users = append(rows.Users, &db.UserRow{
-		ID:           id,
-		Username:     username,
-		PasswordHash: "$2a$12$notarealhashbutthecolumnisnotnull.....................",
-	})
-	if _, err := database.SaveConfiguration(rows); err != nil {
+	var id string
+	if err := database.Transaction(func(tx db.Transaction) error {
+		user, err := tx.CreateUser(&models.User{
+			Username:     username,
+			PasswordHash: "$2a$12$notarealhashbutthecolumnisnotnull.....................",
+		})
+		if err != nil {
+			return err
+		}
+		id = user.ID
+		return nil
+	}); err != nil {
 		test.Fatalf("failed to store the account %q: %s", username, err)
 	}
 	return id
+}
+
+// QueryString reads one string cell straight from the database, for a test
+// that has to see what is stored rather than what is read back.
+func QueryString(test *testing.T, database db.Database, query string) string {
+	test.Helper()
+	value, err := database.(interface{ RawQueryString(string) (string, error) }).RawQueryString(query)
+	if err != nil {
+		test.Fatalf("query failed: %s", err)
+	}
+	return value
+}
+
+// RunTransactionOn runs a db.Transaction against a database the test already
+// holds, so several transactions can see each other's commits.
+func RunTransactionOn(test *testing.T, database db.Database, run func(db.Transaction)) {
+	test.Helper()
+
+	if err := database.Transaction(func(tx db.Transaction) error {
+		run(tx)
+		return nil
+	}); err != nil {
+		test.Fatalf("failed to run transaction: %s", err)
+	}
+}
+
+// Exec runs one statement straight against the database, for a test that
+// has to put a row there that nothing else would write.
+func Exec(test *testing.T, database db.Database, statement string) {
+	test.Helper()
+	if err := database.(interface{ RawExec(string) error }).RawExec(statement); err != nil {
+		test.Fatalf("statement failed: %s", err)
+	}
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -50,7 +50,7 @@ type CreatedCredential struct {
 	Username string `json:"username"`
 
 	// SMTP password. Derived from the stored key and the server secret, so it
-	// can be shown again, but the dashboard does not offer that by default.
+	// can be shown again, but the web UI does not offer that by default.
 	Password string `json:"password"`
 }
 
@@ -79,28 +79,25 @@ type GetCredentialSettingsArguments struct {
 }
 
 func (self *graph) GetCredentialSettings(ctx context.Context, arguments GetCredentialSettingsArguments) (*CredentialSettings, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, credential := range domain.Credentials {
-		if credential == nil || credential.ID != arguments.CredentialID {
-			continue
-		}
-		username, password, err := security.EncodeCredential(credential.ID, credential.Key, self.settings.Secret)
-		if err != nil {
-			return nil, err
-		}
-		configuration := self.config.Current()
-		return &CredentialSettings{
-			Host:     configuration.SubmissionHost(),
-			Port:     configuration.SubmissionPort(),
-			Username: username,
-			Password: password,
-		}, nil
+	credential := domain.FindCredential(arguments.CredentialID)
+	if credential == nil {
+		return nil, api.ErrNotFound
 	}
-	return nil, api.ErrNotFound
+	username, password, err := security.EncodeCredential(credential.ID, credential.Key, self.settings.Secret)
+	if err != nil {
+		return nil, err
+	}
+	configuration := self.config.Current()
+	return &CredentialSettings{
+		Host:     configuration.SubmissionHost(),
+		Port:     configuration.SubmissionPort(),
+		Username: username,
+		Password: password,
+	}, nil
 }
 
 type ListCredentialsArguments struct {
@@ -109,11 +106,10 @@ type ListCredentialsArguments struct {
 }
 
 func (self *graph) ListCredentials(ctx context.Context, arguments ListCredentialsArguments) ([]*Credential, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
-
 	credentials := make([]*Credential, 0, len(domain.Credentials))
 	for _, credential := range domain.Credentials {
 		credentials = append(credentials, describeCredential(credential))
@@ -142,40 +138,26 @@ type CreateCredentialArguments struct {
 }
 
 func (self *graph) CreateCredential(ctx context.Context, arguments CreateCredentialArguments) (*CreatedCredential, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
-
-	created := &config.Credential{
-		ID:  config.NewID(),
-		Key: generateCredentialKey(),
-	}
+	created := &models.Credential{DomainID: domain.ID, Key: generateCredentialKey()}
 	if arguments.CredentialParameters != nil {
 		applyCredentialParameters(created, arguments.CredentialParameters)
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		target := configuration.FindDomainByID(arguments.DomainID)
-		if target == nil {
-			return api.ErrNotFound
-		}
-		target.Credentials = append(target.Credentials, created)
-		return nil
-	}); err != nil {
-		return nil, err
+	stored, err := self.transaction(ctx).CreateCredential(created)
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	username, password, err := security.EncodeCredential(created.ID, created.Key, self.settings.Secret)
+	username, password, err := security.EncodeCredential(stored.ID, stored.Key, self.settings.Secret)
 	if err != nil {
 		return nil, err
 	}
-
 	configuration := self.config.Current()
 	log.Noticef("%s created a credential for %q", operatorName(ctx), domain.Domain)
-
 	return &CreatedCredential{
-		Credential: describeCredential(created),
+		Credential: describeCredential(stored),
 		Host:       configuration.SubmissionHost(),
 		Port:       configuration.SubmissionPort(),
 		Username:   username,
@@ -190,30 +172,43 @@ type UpdateCredentialArguments struct {
 	CredentialParameters *CredentialParameters `json:"credentialParameters"`
 }
 
+// requireCredential finds a credential the caller may manage: not found when
+// it does not exist or belongs to a domain they may not touch.
+func (self *graph) requireCredential(ctx context.Context, credentialId string) (*models.Credential, error) {
+	if _, err := self.requireSignedIn(ctx); err != nil {
+		return nil, err
+	}
+	credential, err := self.transaction(ctx).GetCredential(credentialId)
+	if err != nil {
+		return nil, err
+	}
+	if credential == nil {
+		return nil, api.ErrNotFound
+	}
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, credential.DomainID); err != nil {
+		return nil, err
+	}
+	return credential, nil
+}
+
 func (self *graph) UpdateCredential(ctx context.Context, arguments UpdateCredentialArguments) (*Credential, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireCredential(ctx, arguments.CredentialID); err != nil {
 		return nil, err
 	}
 	if arguments.CredentialParameters == nil {
 		return nil, api.ErrInvalidArguments
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		_, credential := configuration.FindCredential(arguments.CredentialID)
-		if credential == nil {
-			return api.ErrNotFound
-		}
+	updated, err := self.transaction(ctx).UpdateCredential(arguments.CredentialID, func(credential *models.Credential) error {
 		// The key is never changed here: the password derives from it, and
 		// rotating it silently would break a client that is still using it.
 		applyCredentialParameters(credential, arguments.CredentialParameters)
 		return nil
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, translateError(err)
 	}
-
-	_, credential := self.config.Current().FindCredential(arguments.CredentialID)
-	log.Noticef("%s changed credential %q", operatorName(ctx), credential.ID)
-	return describeCredential(credential), nil
+	log.Noticef("%s changed credential %q", operatorName(ctx), updated.ID)
+	return describeCredential(updated), nil
 }
 
 type DeleteCredentialArguments struct {
@@ -222,30 +217,18 @@ type DeleteCredentialArguments struct {
 }
 
 func (self *graph) DeleteCredential(ctx context.Context, arguments DeleteCredentialArguments) error {
-	if err := self.requireOperator(ctx); err != nil {
+	credential, err := self.requireCredential(ctx, arguments.CredentialID)
+	if err != nil {
 		return err
 	}
-
-	if err := self.config.Update(func(configuration *config.Configuration) error {
-		for _, domain := range configuration.Domains {
-			for index, credential := range domain.Credentials {
-				if credential.ID != arguments.CredentialID {
-					continue
-				}
-				domain.Credentials = append(domain.Credentials[:index], domain.Credentials[index+1:]...)
-				return nil
-			}
-		}
-		return api.ErrNotFound
-	}); err != nil {
-		return err
+	if err := self.transaction(ctx).DeleteCredential(credential.ID); err != nil {
+		return translateError(err)
 	}
-
-	log.Noticef("%s removed credential %q", operatorName(ctx), arguments.CredentialID)
+	log.Noticef("%s removed credential %q", operatorName(ctx), credential.ID)
 	return nil
 }
 
-func applyCredentialParameters(credential *config.Credential, parameters *CredentialParameters) {
+func applyCredentialParameters(credential *models.Credential, parameters *CredentialParameters) {
 	if parameters.Comment != nil {
 		credential.Comment = *parameters.Comment
 	}

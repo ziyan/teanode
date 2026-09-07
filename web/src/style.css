@@ -1,23 +1,23 @@
 /* One stylesheet, no framework. The dashboard is a handful of tables and
    forms; a component library would be more code than the application.
 
-   THE LOOK: quiet chrome, colour only where it means something.
+   THE LOOK: quiet chrome, color only where it means something.
 
-   Almost nothing here is coloured. The rail is a warm grey against a white
+   Almost nothing here is colored. The rail is a warm gray against a white
    page, the selected row is a raised pill rather than a highlight, and what
-   you press is near-black. Colour is kept for the few things that carry state
+   you press is near-black. Color is kept for the few things that carry state
    — whether a DNS record is published, whether a delivery failed, whether a
    session is the one you are reading this in — so that when something is
-   coloured it is worth looking at.
+   colored it is worth looking at.
 
    It inverts rather than dims for dark. A near-black button on white becomes
    a near-white button on black; the rail stays one step darker than the page
    in both, so the same shape reads the same way round.
 
    The TeaNode mark keeps its green. It is the one piece of brand here, and
-   chrome that competed with it would make it just another coloured thing —
+   chrome that competed with it would make it just another colored thing —
    which is what an accent taken from the logo did: every button, link and
-   active row was the brand colour, so none of them meant anything. */
+   active row was the brand color, so none of them meant anything. */
 
 :root {
   --background: #ffffff;
@@ -41,7 +41,7 @@
   --text: #18181b;
   --muted: #6f6f76;
   /* What you press. Near-black rather than true black, which reads as heavy.
-     This is the accent, and it is deliberately not a colour. */
+     This is the accent, and it is deliberately not a color. */
   --accent: #1f1f22;
   --accent-text: #ffffff;
   --accent-hover: #000000;
@@ -98,7 +98,7 @@
      one; a static panel is an outline and a background, never a shadow.
 
      The one exception is the selected pill in the rail, which lifts by a
-     single pixel — enough to read as raised off the grey without becoming a
+     single pixel — enough to read as raised off the gray without becoming a
      second floating thing. */
   --shadow-floating: 0 8px 28px rgb(0 0 0 / 22%);
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 6%);
@@ -154,7 +154,7 @@
 
 * { box-sizing: border-box; }
 
-/* A scrollbar that does not draw a grey slab down the side of a quiet page. */
+/* A scrollbar that does not draw a gray slab down the side of a quiet page. */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
@@ -181,7 +181,7 @@ body {
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* A link in running text is the text colour, underlined. The accent is what
+/* A link in running text is the text color, underlined. The accent is what
    you press, and painting every link with it turns a page of prose into a
    page of buttons. */
 a { color: var(--text); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
@@ -499,8 +499,8 @@ td a:hover {
 }
 
 /* A group label above a grid or a list. */
-/* The small grey label over a group, in the rail and over a section of
-   settings. Not uppercase: at this size the weight and the colour do the
+/* The small gray label over a group, in the rail and over a section of
+   settings. Not uppercase: at this size the weight and the color do the
    separating, and capitals only make it harder to read. */
 .overline {
   margin: 0 0 var(--space-2);
@@ -514,7 +514,7 @@ td a:hover {
    right. */
 .page-actions {
   display: flex;
-  /* Top, not centre: the heading is above and the action belongs level with
+  /* Top, not center: the heading is above and the action belongs level with
      the first line of the intro, not halfway down a paragraph. */
   align-items: flex-start;
   gap: var(--space-4);
@@ -615,7 +615,7 @@ a.tile:hover {
 
 /* The border, and nothing else. Hover used to recolour the number as well,
    which meant a green "20 accepted" turned near-black under the pointer and a
-   red one turned near-black too — the colour that was carrying the meaning
+   red one turned near-black too — the color that was carrying the meaning
    disappeared exactly when somebody reached for it. */
 a.tile:hover strong {
   color: var(--accent);
@@ -643,12 +643,12 @@ a.tile:hover strong {
   font-variant-numeric: tabular-nums;
 }
 
-/* No colour on the number. It said "this many were accepted" in green and
+/* No color on the number. It said "this many were accepted" in green and
    "this many were rejected" in red, which reads as a verdict on the number —
    but a rejection count is not bad news, it is the count of a thing that
    happened, and zero of them is not good news either. The word beside it says
-   which it is. What is left coloured is the warning mark on a tile that
-   actually wants attention, which is the one place the colour means
+   which it is. What is left colored is the warning mark on a tile that
+   actually wants attention, which is the one place the color means
    something. */
 
 /* The unit belongs to the number but is not part of it, so it stays the
@@ -777,6 +777,9 @@ a.tile:hover strong {
   width: 232px;
   flex: 0 0 232px;
   min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--rail);
   border-right: 1px solid var(--border);
   padding-bottom: var(--space-2);
@@ -784,7 +787,7 @@ a.tile:hover strong {
 }
 
 /* Collapsed, it keeps the icons and drops the words. Wide enough for a
-   comfortable target around a centred icon and nothing more. */
+   comfortable target around a centered icon and nothing more. */
 .sidebar.collapsed {
   width: 60px;
   flex: 0 0 60px;
@@ -841,7 +844,7 @@ a.tile:hover strong {
 .sidebar nav a:hover .sidebar-icon {
   color: var(--text);
 }
-/* The row you are on: a raised pill rather than a wash of colour. It says
+/* The row you are on: a raised pill rather than a wash of color. It says
    "you are here" without spending the one accent the page has on navigation,
    and it still reads as selected when the rail is collapsed to icons. */
 .sidebar nav a.active {
@@ -987,7 +990,7 @@ tr:has(.icon-button) > td {
 /* Alternating rows, lighter than the page rather than darker, so a row can be
    followed across a wide table. */
 /* No zebra stripe. A stripe is a second way of saying what the rules under
-   each row already say, and on a page this quiet it reads as two greys
+   each row already say, and on a page this quiet it reads as two grays
    arguing. Rows are told apart by their height and their rule. */
 
 .table-surface tbody tr:hover > td {
@@ -1082,7 +1085,7 @@ td.truncate {
 }
 /* A table of rules, not a grid of boxes. The head is a quiet label in the
    same case as everything else — uppercase at this size is harder to read and
-   buys nothing that weight and colour do not already give. */
+   buys nothing that weight and color do not already give. */
 th { color: var(--muted); font-weight: 550; font-size: 13px; letter-spacing: 0; }
 tbody tr:hover { background: var(--sidebar-hover); }
 td.shrink { width: 1%; white-space: nowrap; }
@@ -1201,7 +1204,7 @@ td .cell-note {
 
 /* A chip is the size of the word in it. Neutral by default — most of them
    say what something is, not that anything is wrong — and tinted only for the
-   three that carry state. The tint is the colour at low opacity rather than a
+   three that carry state. The tint is the color at low opacity rather than a
    second palette, so it follows the theme without a dark variant of its own. */
 .tag {
   display: inline-block;
@@ -1412,7 +1415,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   min-height: 100vh;
   min-height: 100dvh;
   padding: var(--space-6);
-  /* The rail's grey rather than the page's white, so the card is a card. On
+  /* The rail's gray rather than the page's white, so the card is a card. On
      white it was a white rectangle held together by a hairline, and the eye
      had nothing to land on. */
   background: var(--rail);
@@ -1429,7 +1432,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 
 /* What you have reached, before it asks you for anything. This page has no
    navigation, no heading and nothing else on it, so the mark and the name are
-   the only things that say where you are — centred and given room, rather
+   the only things that say where you are — centered and given room, rather
    than tucked into the corner above the first field. */
 .auth-header {
   text-align: center;
@@ -1534,7 +1537,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 }
 
 /* On a line of its own, and selectable as one thing. Set through the middle
-   of a centred sentence it wrapped in the middle of the command. */
+   of a centered sentence it wrapped in the middle of the command. */
 .auth-command {
   display: block;
   margin-top: var(--space-2);
@@ -1558,7 +1561,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 
 /* --- a suggestion above the page ------------------------------------------
    One row: an icon, a sentence, and the two answers to it. A card rather than
-   a coloured band, and the icon in the accent rather than a warning colour,
+   a colored band, and the icon in the accent rather than a warning color,
    because nothing is wrong: it is an offer, and it should look like one. On
    a phone the answers drop under the sentence rather than squeezing it. */
 .nudge {
@@ -1683,8 +1686,8 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
     display: none;
   }
 }
-/* The indicator is the text colour rather than the accent. Switching a
-   section of the page is not an action to be pressed, and colouring it spends
+/* The indicator is the text color rather than the accent. Switching a
+   section of the page is not an action to be pressed, and coloring it spends
    the one emphasis the page has on something you are already looking at. */
 .tabs button.active { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
 
@@ -1700,7 +1703,7 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  /* The surface colour, not white: the document inside paints its own
+  /* The surface color, not white: the document inside paints its own
      ground, but this shows at the rounded corners, before the document has
      loaded, and wherever a message leaves its body transparent — and in the
      dark theme a white element behind a dark document was a thin bright
@@ -1912,7 +1915,7 @@ pre.message-text {
 */
 
 /* Where the toggle sits when there is no sidebar to put it in: the login and
-   first-run pages, which are a centred card on an empty page. */
+   first-run pages, which are a centered card on an empty page. */
 .page-corner {
   display: flex;
   align-items: center;
@@ -2280,7 +2283,7 @@ body,
 }
 
 /* One line the reader is meant to stop at, rather than the running commentary
-   that .muted carries. Neutral by default; .good and .bad colour the edge for
+   that .muted carries. Neutral by default; .good and .bad color the edge for
    something that went right or something to be careful about. */
 .notice {
   border-left: 3px solid var(--border);
@@ -2345,11 +2348,16 @@ body,
    Groups under their own labels, a foot that stays at the bottom however
    short the list, and the account below everything. */
 
+/* The rail is a column of three parts: the mark, the navigation, the foot.
+   The navigation is the one that can outgrow the window — a mailbox with
+   many folders on a short screen — so it is the one that scrolls, and the
+   foot stays where it is rather than riding up over the rows. */
 .sidebar nav {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
 }
 
 /* The label over a group. Sentence case and quiet: it separates, it is not
@@ -2363,14 +2371,14 @@ body,
 }
 
 /* Collapsed to icons there is no room to read one, and a label with no room
-   is a grey smear above the icons. */
+   is a gray smear above the icons. */
 .sidebar.collapsed .sidebar-group-label {
   display: none;
 }
 
 /* The way back out of settings mode. A row like any other, but it changes
    what the rail is showing rather than where in it you are, so it reads in
-   the muted colour and does not take the selected pill. */
+   the muted color and does not take the selected pill. */
 .sidebar-back {
   display: flex;
   align-items: center;
@@ -2701,7 +2709,7 @@ label.checkbox input {
 }
 
 /* --- highlighted markup ---------------------------------------------------
-   Five colours and no more. A highlighter that gives every token type its own
+   Five colors and no more. A highlighter that gives every token type its own
    hue is a rainbow to read past; what a reader needs here is to tell the
    structure from the content, so the tags recede and the values stand out.
    The palette follows the page's, light and dark, so this looks like the rest
@@ -2869,7 +2877,7 @@ label.checkbox input {
 }
 
 /* The languages a template or layout is written in, beside its name: chips
-   on the name's own line, centred on it. */
+   on the name's own line, centered on it. */
 .languages {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2957,7 +2965,7 @@ a.button.primary:hover {
 }
 
 /* A select draws itself a little taller than an input with the same padding,
-   which put the caption of this field two pixels above its neighbour's. */
+   which put the caption of this field two pixels above its neighbor's. */
 .address-input > input,
 .address-input > select {
   height: 36px;
@@ -3174,7 +3182,7 @@ a.button.primary:hover {
 }
 
 /* The gap below the mark belongs to the row now, or the button beside it would
-   be centred against the mark's margin box and sit a few pixels high. */
+   be centered against the mark's margin box and sit a few pixels high. */
 .sidebar-top .sidebar-brand {
   margin-bottom: 0;
 }
@@ -3273,7 +3281,7 @@ a.button.primary:hover {
    spam filter under a message's verdict; also for choosing how a message is
    rendered in the dark.
 
-   Drawn in the Tag palette — the same tint, text colour and
+   Drawn in the Tag palette — the same tint, text color and
    35% border the verdict tags above it use — so the pressed segment reads as
    "this message is tagged not-spam" rather than as a filled button, and so it
    follows both themes through the same tokens the tags do. A solid red or
@@ -3328,11 +3336,11 @@ a.button.primary:hover {
 /* The reader's choice to darken a message that paints its own light ground.
    The frame element is inverted here, as one composited layer the page owns;
    the message's pictures are inverted back inside the document so they keep
-   their colours. */
+   their colors. */
 .message-frame.darkened {
   filter: invert(1) hue-rotate(180deg);
   /* The filter inverts the element's own border with everything else; a
-     border in the text colour inverts back to roughly the border colour. */
+     border in the text color inverts back to roughly the border color. */
   border-color: var(--text);
 }
 
@@ -3352,4 +3360,672 @@ a.button.primary:hover {
 .delivery-method {
   margin: 0 0 var(--space-2);
   font-size: 13px;
+}
+
+/* Lists of things to tick: users in a group, roles of a group, permissions of a role. */
+.check-list {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.check-list legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.check-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.check-list-item input {
+  margin: 0;
+}
+
+/* The row before and after a change, in the audit log. */
+.audit-diff {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.audit-diff pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  max-height: 20rem;
+  overflow: auto;
+}
+.audit-filter select {
+  width: auto;
+  display: inline-block;
+  margin-left: 6px;
+}
+
+/* --- mailbox ------------------------------------------------------------ */
+
+/* The rail in mailbox mode: which mailbox, then its folders. */
+.sidebar-mailbox {
+  padding: 4px 12px 8px;
+}
+.sidebar-mailbox select {
+  width: 100%;
+  font-size: 13px;
+}
+.sidebar-mailbox-name {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar nav a .sidebar-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.sidebar nav a.unread .sidebar-label {
+  font-weight: 600;
+}
+.sidebar nav a.unread .sidebar-count {
+  color: var(--text);
+  font-weight: 600;
+}
+.sidebar.collapsed .sidebar-count,
+.sidebar.collapsed .sidebar-mailbox {
+  display: none;
+}
+.sidebar nav a[data-depth='1'] {
+  padding-left: 32px;
+}
+.sidebar nav a[data-depth='2'] {
+  padding-left: 48px;
+}
+.sidebar nav a[data-depth='3'] {
+  padding-left: 64px;
+}
+/* Collapsed to icons, the rail has no room for a tree: every icon sits on
+   the same axis. The phone's overlay always shows labels, so it keeps the
+   indent. */
+.sidebar.collapsed nav a[data-depth] {
+  padding-left: 0;
+}
+@media (max-width: 760px) {
+  .sidebar.collapsed nav a[data-depth='1'] {
+    padding-left: 32px;
+  }
+  .sidebar.collapsed nav a[data-depth='2'] {
+    padding-left: 48px;
+  }
+  .sidebar.collapsed nav a[data-depth='3'] {
+    padding-left: 64px;
+  }
+}
+
+/* The mailbox page: the list of a folder beside the message being read.
+   The rail already spent one column on the folders, so the page has two. */
+.mailbox {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 0;
+  min-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.mailbox-list {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mailbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mailbox-toolbar input[type='search'] {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 13px;
+}
+.mailbox-toolbar .segmented button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.mailbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.mailbox-actions button,
+.mailbox-actions select {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.mailbox-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.mailbox-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+}
+.mailbox-row:hover {
+  background: var(--field);
+}
+.mailbox-row.active {
+  background: var(--sidebar-hover);
+}
+.mailbox-row.unread .mailbox-row-from,
+.mailbox-row.unread .mailbox-row-subject {
+  font-weight: 600;
+}
+.mailbox-row-from,
+.mailbox-row-subject {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mailbox-row-subject {
+  color: var(--muted);
+}
+.mailbox-row.unread .mailbox-row-subject {
+  color: var(--text);
+}
+.mailbox-row-when {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mailbox-row input[type='checkbox'] {
+  margin: 3px 0 0;
+}
+.mailbox-star {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mailbox-star.on {
+  color: #d99a1b;
+}
+.mailbox-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.mailbox-pane {
+  padding: 12px 16px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.mailbox-pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.mailbox-pane-head h2 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1 1 100%;
+  text-wrap: balance;
+}
+.mailbox-pane-meta {
+  font-size: 13px;
+  color: var(--muted);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin-bottom: 12px;
+}
+.mailbox-pane-meta dt {
+  margin: 0;
+}
+.mailbox-pane-meta dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.mailbox-pane-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mailbox-pane-actions button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.mailbox-placeholder {
+  color: var(--muted);
+  padding: 40px 16px;
+  text-align: center;
+}
+@media (max-width: 860px) {
+  .mailbox {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mailbox-list {
+    border-right: 0;
+  }
+  .mailbox.reading .mailbox-list {
+    display: none;
+  }
+  .mailbox:not(.reading) .mailbox-pane {
+    display: none;
+  }
+}
+.mailbox-actions select,
+.mailbox-pane-actions select {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* A rule in the mailbox settings: its name and switches on one line, then
+   each condition and each action on a line of its own. */
+.rule h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+}
+.rule-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+.rule-head > input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.rule-head .row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+.rule-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.rule-line select,
+.rule-line input {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.rule-line input[type='text'],
+.rule-line input:not([type]),
+.rule-line input[type='email'] {
+  flex: 1 1 160px;
+}
+.rule .check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+.mailbox-new {
+  padding: 8px 8px 0;
+}
+.mailbox-new button {
+  width: 100%;
+}
+.compose-editor-switch {
+  margin: 12px 0 6px;
+}
+.attachments-kept ul,
+.attachments ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+
+/* Sign in through an identity provider: one button per provider, under the
+   password form and the passkey button, the same width as them. */
+.sso-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sso-buttons .button {
+  display: block;
+  text-align: center;
+}
+.mailbox-row-link {
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+  display: block;
+}
+.mailbox-row-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Narrowing a search: the fields under the search box, shown on request. */
+.mailbox-narrowing {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  font-size: 12px;
+}
+.mailbox-narrowing label {
+  margin: 0;
+}
+.mailbox-narrowing label > span {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.mailbox-narrowing input,
+.mailbox-narrowing select {
+  font-size: 12px;
+  width: 100%;
+}
+.mailbox-narrowing .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mailbox-narrowing .check input {
+  width: auto;
+}
+.mailbox-narrowing-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.mailbox-narrowing-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mailbox-narrowing-actions button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.mailbox-row-folder {
+  display: inline-block;
+  font-size: 11px;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--field);
+  color: var(--muted);
+}
+
+/* Files on their way up, one bar each. */
+.uploads {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.uploads progress {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 6px;
+  margin-top: 2px;
+}
+.uploads li.failed .upload-name {
+  text-decoration: line-through;
+}
+
+/* The mailbox's message menu: a dot-dot-dot at the top right of the message. */
+.message-menu {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.message-menu-button {
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 10px;
+}
+.message-headers {
+  margin: 4px 0 12px;
+  font-size: 12px;
+}
+.message-headers-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.message-headers pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+}
+.contacts-filter {
+  max-width: 320px;
+  margin-bottom: 10px;
+}
+
+/* A row's own actions, side by side with air between them. */
+.row-actions {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* What a mail program is told: long, and better wrapped than clipped. */
+.program-settings td.mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .hide-narrow {
+    display: none;
+  }
+}
+
+.folder-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-name svg {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+/* Renaming or moving a folder happens in its own row: the field, then the
+   buttons, wrapping onto a second line where the row is narrow rather than
+   pushing the table sideways. */
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.inline-form input,
+.inline-form select {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 320px;
+  width: auto;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .inline-form input,
+  .inline-form select {
+    flex-basis: 120px;
+  }
+}
+
+/* The pin on a folder row: shown on hover or focus, invisible otherwise, so
+   the rail stays a list of names. It keeps its place in the row either
+   way, so that hovering moves neither the row's height nor the count
+   beside it. In the pinned area it reads as "unpin". */
+.sidebar-pin {
+  display: inline-flex;
+  visibility: hidden;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+/* Only where a pointer can hover. On a touch screen, something appearing
+   on hover makes iOS treat the first tap as the hover and ask for a second
+   to follow the link; a phone pins from the Folders tab instead. */
+@media (hover: hover) {
+  .sidebar nav a:hover .sidebar-pin {
+    visibility: visible;
+  }
+}
+.sidebar nav a:focus-within .sidebar-pin {
+  visibility: visible;
+}
+.sidebar-pin:hover,
+.sidebar-pin.pinned {
+  opacity: 1;
+}
+.sidebar-pin + .sidebar-count {
+  margin-left: 6px;
+}
+.sidebar.collapsed nav a .sidebar-pin {
+  display: none;
+}
+@media (max-width: 760px) {
+  /* No pointer to hover it with in the overlay, and a phone's buttons are
+     sized for a thumb, which would make the row taller for nothing: a
+     phone pins from the Folders tab. */
+  .sidebar nav a .sidebar-pin {
+    display: none;
+  }
+}
+/* Four actions on a folder row do not fit beside its name on a phone. There
+   the actions column gives up its one-line width and the actions wrap, two
+   to a line, rather than push the table sideways. */
+/* A row's actions as icons with their names in the tooltip: four of them fit
+   beside a folder's name on a phone, where four words did not. */
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-action:hover:not(:disabled),
+.icon-action.pinned {
+  color: var(--text);
+}
+.icon-action:hover:not(:disabled) {
+  background: rgba(127, 127, 127, 0.16);
+}
+.icon-action.danger {
+  color: var(--bad);
+}
+.icon-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.folders-table td {
+  vertical-align: middle;
+}
+.folders-table .row-actions {
+  gap: 2px;
+}
+
+/* The message menu at the end of the reader's action row, and the cross
+   that closes the headers box. */
+.reader-menu-slot {
+  display: inline-flex;
+  margin-left: auto;
+}
+.reader-menu-slot .message-menu-button {
+  font-size: 16px;
+  padding: 4px 10px;
+}
+.message-headers-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.message-headers-close:hover {
+  color: var(--text);
+}
+
+/* A dialog names what it is about, and an address can be longer than a
+   phone is wide: the words break rather than the dialog growing past the
+   screen. */
+.dialog {
+  max-width: min(420px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
 }

@@ -52,7 +52,7 @@ which addresses may send for a domain — a receiver checks.
 This was established by reading the code rather than the documentation, and
 the documentation was wrong. The field's own doc comment in
 `internal/config/config.go` claimed it decides which hosts the server
-recognises as itself for loop detection. It does not.
+recognizes as itself for loop detection. It does not.
 
 `Configuration.PrimaryDomain()` is defined in `internal/config/lookup.go` and
 has exactly three callers:
@@ -62,7 +62,7 @@ through `Configuration.SharesDomainKeyWithPrimary` in
 `internal/config/lookup.go`. When a domain's DKIM key is byte-for-byte the same
 as the primary domain's, the DNS panel asks for a `CNAME` pointing at the
 primary's key record instead of a `TXT` carrying the key. This is the one live
-behaviour.
+behavior.
 
 The second is `cmd/run.go`, which passes it as `mailer.Settings`
 `DefaultSenderDomain`. Read `internal/mailer/mailer.go`: that value is used
@@ -75,7 +75,7 @@ The third is `cmd/run.go` again, passing it as `api.Settings.Domain`. Searching
 `internal/api` for reads of that field finds none: the only fields of that
 struct ever read are `BackendID`, `Restarter` and `Secret`. It is dead.
 
-So: one live behaviour, two dead ones.
+So: one live behavior, two dead ones.
 
 ## What it does not do, despite appearances
 
@@ -128,7 +128,7 @@ list of DNS records a domain needs and checks whether they are published.
 `cmd/run.go` wires everything together at startup.
 `internal/api/v1api/apigraph/settings.go` is the settings the dashboard reads
 and writes. `web/src/pages/setup.tsx` is the Setup page.
-`web/src/i18n/en.ts`, `ja.ts` and `zh.ts` are the three message catalogues,
+`web/src/i18n/en.ts`, `ja.ts` and `zh.ts` are the three message catalogs,
 which must stay in step or the build fails.
 
 ## Milestone one: stop recommending the shared-key CNAME
@@ -158,7 +158,7 @@ Run the tests:
 
 `internal/dns` has a test named `TestSharedDomainKeyTarget` — visible in the
 test output as `PASS internal/dns.TestSharedDomainKeyTarget/same.test`. It
-covers the behaviour being removed, so delete it along with any helper it alone
+covers the behavior being removed, so delete it along with any helper it alone
 uses. Do not delete `TestPublishesDKIMKey` or the tests around
 `_domainkey` naming; those cover the `TXT` record that remains.
 
@@ -207,7 +207,7 @@ one and no domains exist, and derives that domain's `Subdomain` with
 new server started with `TEANODE_SERVER_PRIMARY_DOMAIN=example.com` ends up
 with `example.com` already configured. That convenience should not be lost.
 Rename the environment variable to `TEANODE_SERVER_DOMAIN`, keep the same
-behaviour of creating that one domain on a first run, and make it a seed value
+behavior of creating that one domain on a first run, and make it a seed value
 that is not stored as a setting — it names a domain to create, not a property
 of the server. Update `docs/configuration.md`, where every environment
 variable must be documented or `make lint-ci` fails on `check-config-docs`.
@@ -222,7 +222,7 @@ Then the dashboard. In `web/src/pages/setup.tsx`, delete `UPDATE_PRIMARY`, the
 `Primary` type, the `primary { ... }` selection in the `OVERVIEW` query, the
 `PrimaryDomainCard` component and the place it is rendered. In each of
 `web/src/i18n/en.ts`, `ja.ts` and `zh.ts`, delete every key beginning
-`setup.primary`. The three catalogues are checked against each other by
+`setup.primary`. The three catalogs are checked against each other by
 `make check-catalogs`, which `make lint-ci` runs, so a key removed from one
 must be removed from all three.
 
@@ -232,7 +232,7 @@ Run everything:
     make lint-ci
     make test
 
-Both must be clean. `make lint-ci` runs the secret scanner, the catalogue
+Both must be clean. `make lint-ci` runs the secret scanner, the catalog
 check, the configuration-documentation check and golangci-lint; it prints
 `0 issues.` when it is happy.
 
@@ -444,7 +444,7 @@ protection from a full compromise, it is protection from a partial one, and it
 is the boundary a master secret from outside the database would plug into.
 
 **2026-09-02 — A tagged value rather than a heuristic.** A sealed value is
-stored as `sealed:` followed by base64. The alternative was to recognise
+stored as `sealed:` followed by base64. The alternative was to recognize
 ciphertext by shape, by trying to parse PEM first. Rejected: a reader must be
 able to tell "not encrypted" from "encrypted and I cannot open it" with
 certainty, because guessing wrong in one direction hands out a corrupt key and

@@ -250,9 +250,9 @@ everything else now refuses an anonymous caller whether or not an account
 exists. `teanode user add --offline` writes the configuration file directly and
 is unaffected, which is the path the cutover runbook uses.
 
-`TestEveryOperationAuthorises` already asserted that every resolver
-authorises, and its own comment claimed each one "refuses when there is no
-operator" — which was not true until this change. The behaviour now has a test
+`TestEveryOperationAuthorizes` already asserted that every resolver
+authorizes, and its own comment claimed each one "refuses when there is no
+operator" — which was not true until this change. The behavior now has a test
 of its own beside it.
 
 This was found because a check in the deployment harness asserted an empty
@@ -264,17 +264,72 @@ Authentication runs before routing. Before any account exists the path falls
 through to the dashboard and returns 200 with HTML, which is what made the
 deployment test's failures unreadable.
 
+### SEC-11 — Mailboxes, app passwords, IMAP and single sign-on (Informational)
+
+Added with the mailbox program (`docs/planning/active/20260906-mailboxes.md`)
+and reviewed as it was built rather than after:
+
+- Every mailbox, folder and item operation in the API resolves the row and
+  refuses unless the caller owns the mailbox (`requireMailbox`,
+  `requireFolder`, `requireItems` in `internal/api/v1api/apigraph`); a
+  message's content is readable only by its mailbox's owner or a holder of
+  `mail:audit` over its domain (`access.CanReadMail`). Denial is "not found".
+- App passwords are twenty characters of a 32-letter alphabet, bcrypt-hashed,
+  shown once, revoked singly, and never the account password. IMAP and
+  submission sign-ins go through the same per-address rate limiter as
+  credentials, and every way of being wrong is one answer.
+- IMAP advertises `LOGINDISABLED` until the connection is encrypted; port
+  993 is TLS from the first byte. A submission signed in with an app password
+  is refused unless the sender is one of the mailbox's own addresses.
+- DMARC failures are refused only under a `reject` policy now; `none` and
+  `quarantine` are recorded, a quarantined message lands in Junk, and the
+  spam filter scores the failure. This is looser than before and what the
+  policy asks for.
+- Single sign-on uses the authorization-code flow with PKCE and a nonce, a
+  state signed with the server secret and expiring in ten minutes, an `https`
+  issuer whose discovery document must name itself, and an HTTP client that
+  refuses to connect to a private, loopback or link-local address whatever
+  name resolves to it. The client secret is write-only in the API. The
+  identity provider's groups only ever touch groups that name one.
+- The redirect URL a provider is given is built from `Host` and
+  `X-Forwarded-Proto`, so SEC-7 applies to it too.
+
+- Files for a draft go up as a multipart body to
+  `PUT /api/v1/mailbox/drafts/{itemId}/attachments` or
+  `POST /api/v1/mailbox/{mailboxId}/drafts/attachments`, behind
+  authentication (a session or a bearer token), with the mailbox's
+  ownership checked the way the GraphQL draft resolvers check it. The
+  check runs in a short transaction *before* the body is read, so a
+  stranger's request costs nothing to buffer, and again when the draft is
+  written. The body is capped at the message-size limit by
+  `http.MaxBytesReader` and counted again file by file (413 past it); the
+  files then join the parts the draft already holds, and a total past the
+  limit is refused as invalid (400). With no message-size limit configured
+  the upload is unbounded, as SMTP is. A stale draft id is refused. The
+  reply is the draft as stored, so the page never guesses a part's index.
+- The search filters of `ListMailboxItems` (`from`, `to`, `subject`) reach
+  `ILIKE` as parameters, with the caller's `%`, `_` and `\` escaped first;
+  `since`/`before` are typed, and the page is bounded. `SaveMailboxContact`,
+  `DeleteMailboxContact` and `SetMailboxFolderPinned` go through the same
+  ownership checks as the rest of the mailbox API, and the last refuses the
+  Inbox, which is always at the top.
+
+Open: the IMAP server does not advertise CONDSTORE or QRESYNC yet, so a
+client syncs a large folder the slow way.
+
 ## 5. Controls verified
 
 These were examined and found sound. Where a test now exists, it is named.
 
 ### 5.1 It is not an open relay
 
-Carrying mail to a third party requires `envelope.CredentialID` or
-`envelope.DomainID` to be set (`internal/mx/exchange.go:126`). The SMTP server
-only ever sets `CredentialID`, and only from a completed `AUTH`
-(`internal/util/smtpd/smtpd.go:482`). `DomainID` is reachable only from the
-internal send path.
+Carrying mail to a third party requires `envelope.CredentialID`,
+`envelope.DomainID` or `envelope.MailboxID` to be set
+(`internal/mx/exchange.go`). The SMTP server sets `CredentialID` or
+`MailboxID`, and only from a completed `AUTH`; `DomainID` is reachable only
+from the internal send path. A `MailboxID` submission is further refused
+unless the sender is one of that mailbox's addresses and its owner holds
+`mail:send`.
 
 An unauthenticated message therefore goes to `handleIncoming`, which requires
 the recipient domain to be one the configuration serves and answers
@@ -287,7 +342,7 @@ to one local part sending as another.
 ### 5.2 The aggregation pipeline cannot carry SQL
 
 Field names reach the statement as identifiers, which cannot be
-parameterised, so the only defence is that a name must be one the table
+parameterised, so the only defense is that a name must be one the table
 offered — a map lookup in `Columns.resolve`. Values always go to a
 placeholder. Sort direction is a literal `ASC` or `DESC` chosen by a branch,
 never caller text, and is validated against a closed set besides.
@@ -360,5 +415,5 @@ stripped.
 No fuzzing of the MIME and header parsers, which is where a mail server's
 remaining memory and complexity bugs usually live. No review of the DKIM, ARC
 and SPF implementations against their specifications beyond the existing
-tests. No penetration test against a running instance. No dependency licence
+tests. No penetration test against a running instance. No dependency license
 audit. Each is worth doing before this is recommended to anybody else.

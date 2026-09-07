@@ -36,7 +36,7 @@ type ListDeliveriesArguments struct {
 }
 
 func (self *graph) ListDeliveries(ctx context.Context, arguments ListDeliveriesArguments) ([]*models.Delivery, error) {
-	domain, err := self.requireDomain(ctx, arguments.DomainID)
+	domain, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ type GetDeliveryArguments struct {
 }
 
 func (self *graph) GetDelivery(ctx context.Context, arguments GetDeliveryArguments) (*models.Delivery, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +78,7 @@ func (self *graph) GetDelivery(ctx context.Context, arguments GetDeliveryArgumen
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(mail.DomainID) == nil {
+	if !self.domainStillExists(ctx, mail.DomainID) {
 		return nil, api.ErrNotFound
 	}
 
@@ -91,7 +91,7 @@ type RetryDeliveryArguments struct {
 }
 
 func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArguments) (*models.Delivery, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +113,7 @@ func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArg
 	}
 
 	// the domain has to still be configured
-	if self.config.Current().FindDomainByID(mail.DomainID) == nil {
+	if !self.domainStillExists(ctx, mail.DomainID) {
 		return nil, api.ErrNotFound
 	}
 
@@ -144,7 +144,7 @@ type ListDeliveriesByMailArguments struct {
 }
 
 func (self *graph) ListDeliveriesByMail(ctx context.Context, arguments ListDeliveriesByMailArguments) ([]*models.Delivery, error) {
-	if err := self.requireOperator(ctx); err != nil {
+	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
 		return nil, err
 	}
 
@@ -159,11 +159,14 @@ func (self *graph) ListDeliveriesByMail(ctx context.Context, arguments ListDeliv
 	if err != nil {
 		return nil, err
 	}
-	// The method and the destination are configuration, not columns: they
-	// come from the alias the delivery was made for.
-	configuration := self.config.Current()
+	// The method and the destination are not columns: they come from the
+	// alias the delivery was made for, which may since have been deleted.
 	for _, delivery := range deliveries {
-		delivery.Describe(configuration.FindAliasByID(delivery.AliasID))
+		alias, err := api.ContextTransaction(ctx).GetAlias(delivery.AliasID)
+		if err != nil {
+			return nil, err
+		}
+		delivery.Describe(alias)
 	}
 	return deliveries, nil
 }
@@ -178,7 +181,7 @@ type ListPendingDeliveriesArguments struct {
 // ListPendingDeliveries is the queue view: what has not been delivered yet and
 // why. An operator looking for "is my mail stuck" is looking for this.
 func (self *graph) ListPendingDeliveries(ctx context.Context, arguments ListPendingDeliveriesArguments) ([]*models.Delivery, error) {
-	domainIds, err := self.domainsToList(ctx, arguments.DomainID)
+	domainIds, err := self.domainsToList(ctx, models.PermissionMailAudit, arguments.DomainID)
 	if err != nil {
 		return nil, err
 	}

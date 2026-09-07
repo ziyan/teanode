@@ -75,7 +75,11 @@ func aliasFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "kind",
-			Usage: "email, webhook, mailServer, or null to discard",
+			Usage: "mailbox, email, webhook, mailServer, or null to discard",
+		},
+		&cli.StringFlag{
+			Name:  "mailbox",
+			Usage: "id of the mailbox to deliver into, when the kind is mailbox; \"teanode api call ListAllMailboxes\" lists them",
 		},
 		&cli.StringFlag{
 			Name:  "email",
@@ -122,9 +126,13 @@ func aliasParameters(command *cli.Command) (*client.AliasParameters, error) {
 		Kind:    command.String("kind"),
 	}
 	switch parameters.Kind {
-	case "", "email", "webhook", "mailServer", "null":
+	case "", "mailbox", "email", "webhook", "mailServer", "null":
 	default:
-		return nil, fmt.Errorf("%q is not a kind; use email, webhook, mailServer or null", parameters.Kind)
+		return nil, fmt.Errorf("%q is not a kind; use mailbox, email, webhook, mailServer or null", parameters.Kind)
+	}
+	if command.IsSet("mailbox") {
+		value := command.String("mailbox")
+		parameters.MailboxID = &value
 	}
 	if command.IsSet("comment") {
 		value := command.String("comment")

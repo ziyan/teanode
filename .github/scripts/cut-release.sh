@@ -24,7 +24,7 @@
 #   - "Added" or "Removed" means a new minor version
 #   - anything else means a new patch version
 #   - --major means a new major version, and is never inferred: deciding that a
-#     change breaks whoever is running this is a judgement a person makes
+#     change breaks whoever is running this is a judgment a person makes
 #   - no tags at all means this is the first release, 0.1.0
 #
 # Nothing to release is not a failure. Most pushes are a refactor, a test or a
@@ -123,7 +123,7 @@ collect_from_pull_requests() {
     fi
     labels="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.labels[].name' 2>/dev/null || true)"
     if grep -qxF 'no changelog' <<<"${labels}"; then
-      echo "#${number} is labelled 'no changelog'; skipping it." >&2
+      echo "#${number} is labeled 'no changelog'; skipping it." >&2
       continue
     fi
     printf '%s\n' "${body}" | awk -v number="${number}" -v outdir="${work}/entries" -f "${PARSER}"

@@ -25,7 +25,7 @@ import (
 const (
 	// bayesMaximumTokens bounds how many distinct tokens one message
 	// contributes. A message is untrusted input, and a classifier that
-	// tokenised all of a ten megabyte body would spend the delivery doing it.
+	// tokenized all of a ten megabyte body would spend the delivery doing it.
 	bayesMaximumTokens = 500
 
 	// bayesSignificantTokens is how many of the most opinionated tokens are
@@ -237,7 +237,7 @@ func tokenize(message *spamfilter.Message) []string {
 		}
 	}
 
-	// Bounded before tokenising rather than after: the cost worth avoiding is
+	// Bounded before tokenizing rather than after: the cost worth avoiding is
 	// scanning the whole of a large body, not the tokens it would produce.
 	body := message.Body
 	const bodyLimit = 256 * 1024
@@ -281,7 +281,7 @@ func Learn(database db.SpamOperation, mailId, label string, headers []string, bo
 		} else {
 			delta.HamCount = 1
 		}
-		// Re-labelled: take back what the previous label contributed.
+		// Re-labeled: take back what the previous label contributed.
 		if existing != nil {
 			if existing.Label == models.SpamTrainingLabelSpam {
 				delta.SpamCount--
