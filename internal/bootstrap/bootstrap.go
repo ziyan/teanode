@@ -322,6 +322,14 @@ var seedVariables = []struct {
 		target.Listen.SMTPOutgoing = value
 		return nil
 	}},
+	{"LISTEN_IMAP", func(target *config.Configuration, value string) error {
+		target.Listen.IMAP = value
+		return nil
+	}},
+	{"LISTEN_IMAPS", func(target *config.Configuration, value string) error {
+		target.Listen.IMAPS = value
+		return nil
+	}},
 	{"LISTEN_HTTP", func(target *config.Configuration, value string) error {
 		target.Listen.HTTP = value
 		return nil

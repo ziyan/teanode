@@ -136,9 +136,12 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 %sSERVER_DATA_DIRECTORY=%s
 
 # First run only: the addresses to bind. Port 25 receives mail from the
-# internet, 587 accepts your own devices' mail for relaying.
+# internet, 587 accepts your own devices' mail for relaying, 993 and 143
+# serve mailboxes to mail programs.
 %sLISTEN_SMTP_INCOMING=:25
 %sLISTEN_SMTP_OUTGOING=:587
+%sLISTEN_IMAPS=:993
+%sLISTEN_IMAP=:143
 %sLISTEN_HTTP=:80
 %sLISTEN_HTTPS=:443
 
@@ -177,7 +180,7 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 		bootstrap.Prefix, hostname,
 		bootstrap.Prefix, domain,
 		bootstrap.Prefix, command.String("data-directory"),
-		bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix,
+		bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix,
 		bootstrap.Prefix, hostname,
 		bootstrap.Prefix, bootstrap.Prefix,
 		bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix, bootstrap.Prefix,
