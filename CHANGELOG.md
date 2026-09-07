@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-07
+
 ### Added
 
 - Mailboxes. Every account has one, the web UI opens on it, and an alias of
