@@ -65,7 +65,8 @@ what changes.
 older than `storage.spoolRetention` out of the spool, and the `mail` row
 follows. A mailbox cannot live on a spool that forgets things after thirty
 days. Retention changes meaning in milestone two: a message is kept as long as
-any folder holds it.
+any folder holds it, and for the retention period after the last folder lets
+go.
 
 **The dashboard can already compose and send.** `web/src/pages/compose.tsx`
 and `SendMail` in `internal/api/v1api/apigraph/send.go` write and send a
@@ -189,7 +190,6 @@ Tables:
         "modified_at" timestamptz  NOT NULL,
         "name"        varchar(128) NOT NULL,
         "description" text         NOT NULL DEFAULT '',
-        "builtin"     boolean      NOT NULL DEFAULT false,
         PRIMARY KEY ("id")
     );
     CREATE UNIQUE INDEX "role_name" ON "role" (lower("name"));
@@ -212,11 +212,13 @@ Tables:
     );
     CREATE UNIQUE INDEX "group_name" ON "group" (lower("name"));
 
-    CREATE TABLE "group_member" (
-        "group_id" varchar(32) NOT NULL REFERENCES "group"("id") ON DELETE CASCADE,
+    -- Membership: the many-to-many between users and groups, nothing more.
+    CREATE TABLE "user_group" (
         "user_id"  varchar(32) NOT NULL REFERENCES "user"("id")  ON DELETE CASCADE,
-        PRIMARY KEY ("group_id", "user_id")
+        "group_id" varchar(32) NOT NULL REFERENCES "group"("id") ON DELETE CASCADE,
+        PRIMARY KEY ("user_id", "group_id")
     );
+    CREATE INDEX "user_group_group" ON "user_group" ("group_id");
 
     -- Grants a role to a user or a group, over everything or over one domain.
     CREATE TABLE "role_binding" (
@@ -230,16 +232,19 @@ Tables:
     );
     CREATE INDEX "role_binding_subject" ON "role_binding" ("subject_kind", "subject_id");
 
-Three roles are created by the migration with `builtin = true`, which means
-they can be bound and unbound but not edited or deleted, so that an
-administrator cannot lock everyone out by editing the administrator role:
+Three roles are seeded by the migration and are ordinary rows from then on:
+renamed, edited, deleted, or left alone like any role an administrator makes.
+There is no built-in flag and nothing a seeded role may not do.
 **Administrator** holds every permission; **Operator** holds everything except
 `user:manage`, `group:manage` and `role:manage`, which is what every user is
 today; **Member** holds `mail:read`, `mail:write`, `mail:send` and
 `mailbox:manage`, which is what a person with an inbox and nothing else
 needs. The migration creates a group **Administrators**, puts every existing
 user in it, and binds it to Administrator — so the day this lands, nobody can
-do less than they could the day before.
+do less than they could the day before. The one guard that remains is not
+about seeded roles at all: a mutation that would leave no enabled user
+holding `role:manage` over the whole server is refused, whichever role or
+binding it touches, because the only way back from that state is SQL.
 
 Effective permissions are computed once per request in the authentication
 layer and carried on the context, as
@@ -439,8 +444,6 @@ types change. Written out so that "what is added" has one answer:
         ModifiedAt  time.Time    `json:"modifiedAt"`
         Name        string       `json:"name"`
         Description string       `json:"description,omitempty"`
-        // Builtin roles can be bound and unbound, never edited or deleted.
-        Builtin     bool         `json:"builtin"`
         Permissions []Permission `json:"permissions"`
     }
     
@@ -455,7 +458,8 @@ types change. Written out so that "what is added" has one answer:
         // removes members of a group that has one and never touches one that
         // does not.
         IdpGroup    string    `json:"idpGroup,omitempty"`
-        MemberIDs   []string  `json:"memberIds,omitempty"`
+        // UserIDs is the user_group table, read with the group.
+        UserIDs     []string  `json:"userIds,omitempty"`
     }
     
     // RoleBinding grants a role to a user or a group, over the whole server or
@@ -632,6 +636,11 @@ types change. Written out so that "what is added" has one answer:
         // In-Reply-To and References at receipt; the root message's own id when
         // it starts one. The search document is a database column only.
         ThreadID string `json:"threadId,omitempty"`
+        // UnreferencedAt is when the last mailbox item holding this message went
+        // away — or its arrival, for a message no mailbox took. Nil while any
+        // item references it. Retention prunes what has been unreferenced for
+        // longer than the retention period, nothing else.
+        UnreferencedAt *time.Time `json:"unreferencedAt,omitempty"`
         // Kind gains MailKindDraft for a message being written.
     }
     
@@ -721,11 +730,21 @@ reference.
 Retention changes to match. The sweep in `internal/storage/filesystem.go`
 prunes by file age today, and cannot go on doing that once a folder can hold
 a message for years. It becomes: prune a `mail` row and its stored message
-when it is older than `storage.spoolRetention` **and no `mailbox_item`
-references it**. Trash is the exception: an item in Trash older than
-`mailbox.trashRetention` (thirty days by default) is deleted, and then the
-message is unreferenced and goes with everything else. The sweep therefore
-has to consult the database rather than the directory listing, which is a
+once it has been **unreferenced for longer than `storage.spoolRetention`**.
+The clock is `mail.unreferenced_at`: null while any `mailbox_item` holds the
+message; set, in the same transaction, when the last item is deleted; set on
+arrival for a message no mailbox took, which is every message today, so
+today's behaviour is the degenerate case. Creating an item clears it again.
+A message that sat in a folder for two years and was then deleted is kept
+for a further thirty days, not zero — long enough to notice.
+
+    ALTER TABLE "mail" ADD COLUMN "unreferenced_at" timestamptz;
+    CREATE INDEX "mail_unreferenced" ON "mail" ("unreferenced_at") WHERE "unreferenced_at" IS NOT NULL;
+
+Trash is the exception: an item in Trash older than `mailbox.trashRetention`
+(thirty days by default) is deleted, and then the message is unreferenced
+and goes with everything else. The sweep therefore asks the database which
+messages to drop rather than reading the directory listing, which is a
 change to a component that today knows nothing about the database — and it
 runs on one instance at a time, under an advisory lock, since each instance
 can only sweep the spool it holds while the decision belongs to all of them.
@@ -799,9 +818,14 @@ administering them here, which is the point.
 
 ## The dashboard
 
-A new top-level place in the rail, **Mail**, replacing today's operator list
-for anyone who has a mailbox and keeping today's list, under a different
-name, for those with `mail:audit`. It is a folder tree on the left — every
+A new top-level place in the rail, **Mail**: the mailboxes the user can
+read, and nothing else. Today's pages — every message on a domain, the
+queue, the domains, the server settings — each stay behind the permission
+they name (`mail:audit`, `queue:manage`, `domain:manage`, and so on): the
+rail shows them only to a user who holds it, and the API answers not found
+to one who does not. A normal user signs in to their own mailboxes and those
+of the groups they are in, and sees no sign that the rest exists. The Mail
+page is a folder tree on the left — every
 mailbox the user can read, personal first, then the groups they are in — a
 message list in the middle, and the message on the right, which is the
 existing message page with its authentication panel, spam breakdown and
@@ -828,7 +852,7 @@ is answered on one screen.
 Each is independently shippable and leaves the server working for everyone
 who used it the day before. The order is the order of dependency.
 
-**One — who may do what.** The access-control tables and the three built-in
+**One — who may do what.** The access-control tables and the three seeded
 roles; every existing user into Administrators. `requirePermission` in place
 of `requireOperator` across every resolver, with the not-found rule. Effective
 permissions on the session and in `GetSession`. The Users, Groups and Roles
@@ -915,12 +939,46 @@ Decisions are the repository owner's.
   across live data later.
   Date/Author: 2026-09-06, Ziyan
 
-### Recommendations awaiting a decision
-
-- Proposed: OIDC only; no SAML. SCIM for provisioning as a later milestone.
+- Decision: OIDC only; no SAML. SCIM for provisioning is a later milestone.
   Rationale: the providers that matter all federate over OIDC, and SAML would
   be a second protocol for one job. The gap that actually bites is disabling
   an account when the directory does, and that is SCIM, not SAML.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: retention becomes "unreferenced for longer than the retention
+  period". A message is scavenged only once nothing has held it for that
+  long; `mail.unreferenced_at` is the clock.
+  Rationale: a mailbox cannot live on a spool that forgets things after
+  thirty days, and a message deleted from a folder deserves the same grace
+  a message that never reached one gets today.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: groups and roles are seeded, and all of them are editable; there
+  are no built-in restrictions.
+  Rationale: a role nobody may edit is a rule the administrator cannot see
+  the reason for. The lock-out worry is handled by the last-administrator
+  guard, which applies to every role equally.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: today's views of all mail, the queue and the domains are
+  restricted to roles holding those permissions. A normal user sees only the
+  mailboxes they have access to.
+  Rationale: right for one operator, wrong the moment a second person has an
+  inbox.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: mail programs use per-device app passwords, never the account
+  password when the account has a passkey.
+  Rationale: IMAP clients store what they are given in a keychain on the
+  device, and a per-device secret is the one that can be revoked alone.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: membership is the `user_group` table, a plain many-to-many.
+  Rationale: that is all it is; a name like "member" suggests a row with a
+  life of its own.
+  Date/Author: 2026-09-06, Ziyan
+
+### Recommendations awaiting a decision
 
 - Proposed: try `github.com/emersion/go-imap/v2` at its beta first.
   Rationale: it is the standard Go implementation. The risk is API churn
@@ -928,26 +986,11 @@ Decisions are the repository owner's.
   decided that writing IMAP from the RFCs is acceptable if the library is
   trouble, so this is a choice of order, not of whether.
 
-- Proposed: retention becomes "unreferenced and older than", and the sweep
-  reads the database.
-  Rationale: a mailbox cannot live on a spool that forgets things after
-  thirty days. The cost is that `internal/storage` learns about the database,
-  which it does not today.
-
-- Proposed: the three built-in roles cannot be edited, only bound.
-  Rationale: an administrator who removes `role:manage` from the
-  Administrator role has locked every administrator out, including
-  themselves, with no way back except SQL.
-
-- Proposed: a Member sees only mailboxes they are a member of; the operator's
-  view of every message on a domain becomes the `mail:audit` permission.
-  Rationale: today's dashboard shows everything to everyone, which is right
-  for one operator and wrong the moment a second person has an inbox.
-
-- Proposed: sign-in from mail programs uses app passwords, one per device,
-  and never the account password when the account has a passkey.
-  Rationale: IMAP clients store what they are given in a keychain on the
-  device, and a per-device secret is the one that can be revoked alone.
+- Proposed: the last-administrator guard. Any change to a role, a binding, a
+  group's membership or a user's enabled state that would leave no enabled
+  user holding `role:manage` over the whole server is refused.
+  Rationale: it is not a restriction on seeded roles — it applies to every
+  role and binding alike — and without it the only recovery is SQL.
 
 ## Progress
 
