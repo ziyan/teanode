@@ -408,6 +408,267 @@ saved and when run.
     );
     CREATE UNIQUE INDEX "identity_subject" ON "identity" ("provider", "subject");
 
+### The Go types
+
+Every table above has a domain type in `internal/models`, and four existing
+types change. Written out so that "what is added" has one answer:
+
+    // New types in internal/models. Every one is the domain shape with json tags;
+    // the GORM model beside it in internal/db is the persistence shape.
+    
+    type Permission string
+    
+    const (
+        PermissionMailRead      Permission = "mail:read"
+        PermissionMailWrite     Permission = "mail:write"
+        PermissionMailSend      Permission = "mail:send"
+        PermissionMailboxManage Permission = "mailbox:manage"
+        PermissionMailAudit     Permission = "mail:audit"
+        PermissionDomainManage  Permission = "domain:manage"
+        PermissionReportRead    Permission = "report:read"
+        PermissionUserManage    Permission = "user:manage"
+        PermissionGroupManage   Permission = "group:manage"
+        PermissionRoleManage    Permission = "role:manage"
+        PermissionServerManage  Permission = "server:manage"
+    )
+    
+    // Role is a named set of permissions.
+    type Role struct {
+        ID          string       `json:"id"`
+        CreatedAt   time.Time    `json:"createdAt"`
+        ModifiedAt  time.Time    `json:"modifiedAt"`
+        Name        string       `json:"name"`
+        Description string       `json:"description,omitempty"`
+        // Builtin roles can be bound and unbound, never edited or deleted.
+        Builtin     bool         `json:"builtin"`
+        Permissions []Permission `json:"permissions"`
+    }
+    
+    // Group is a named set of users.
+    type Group struct {
+        ID          string    `json:"id"`
+        CreatedAt   time.Time `json:"createdAt"`
+        ModifiedAt  time.Time `json:"modifiedAt"`
+        Name        string    `json:"name"`
+        Description string    `json:"description,omitempty"`
+        // IdpGroup is the group's name at the identity provider; SSO adds and
+        // removes members of a group that has one and never touches one that
+        // does not.
+        IdpGroup    string    `json:"idpGroup,omitempty"`
+        MemberIDs   []string  `json:"memberIds,omitempty"`
+    }
+    
+    // RoleBinding grants a role to a user or a group, over the whole server or
+    // over one domain.
+    type RoleBinding struct {
+        ID          string      `json:"id"`
+        CreatedAt   time.Time   `json:"createdAt"`
+        RoleID      string      `json:"roleId"`
+        SubjectKind SubjectKind `json:"subjectKind"` // "user" or "group"
+        SubjectID   string      `json:"subjectId"`
+        DomainID    string      `json:"domainId,omitempty"` // "" is the whole server
+    }
+    
+    // EffectivePermissions is what one request may do, resolved once from
+    // every binding that reaches the caller, directly or through a group.
+    // Carried on the context; never cached across requests on an instance.
+    type EffectivePermissions struct {
+        // Everywhere holds the permissions granted with no domain.
+        Everywhere map[Permission]bool            `json:"everywhere"`
+        // ByDomain holds the ones granted over one domain, by domain id.
+        ByDomain   map[string]map[Permission]bool `json:"byDomain"`
+    }
+    
+    // Mailbox is a container of folders belonging to a user or a group.
+    type Mailbox struct {
+        ID         string    `json:"id"`
+        CreatedAt  time.Time `json:"createdAt"`
+        ModifiedAt time.Time `json:"modifiedAt"`
+        OwnerKind  SubjectKind `json:"ownerKind"` // "user" or "group"
+        OwnerID    string    `json:"ownerId"`
+        Name       string    `json:"name"`
+        Addresses  []*MailboxAddress `json:"addresses,omitempty"`
+    }
+    
+    // MailboxAddress is an address that delivers into a mailbox, and that the
+    // mailbox's members may send as.
+    type MailboxAddress struct {
+        MailboxID string `json:"mailboxId"`
+        DomainID  string `json:"domainId"`
+        LocalPart string `json:"localPart"`
+        Primary   bool   `json:"primary"`
+    }
+    
+    type FolderKind string
+    
+    const (
+        FolderKindCustom  FolderKind = ""
+        FolderKindInbox   FolderKind = "inbox"
+        FolderKindSent    FolderKind = "sent"
+        FolderKindDrafts  FolderKind = "drafts"
+        FolderKindArchive FolderKind = "archive"
+        FolderKindJunk    FolderKind = "junk"
+        FolderKindTrash   FolderKind = "trash"
+    )
+    
+    // Folder is a named place in a mailbox, nested as deep as its owner likes.
+    type Folder struct {
+        ID          string     `json:"id"`
+        CreatedAt   time.Time  `json:"createdAt"`
+        ModifiedAt  time.Time  `json:"modifiedAt"`
+        MailboxID   string     `json:"mailboxId"`
+        ParentID    string     `json:"parentId,omitempty"`
+        Name        string     `json:"name"`
+        Kind        FolderKind `json:"kind,omitempty"`
+        // IMAP's contract: UIDs in a folder only grow, and a folder that is
+        // recreated announces itself with a new validity.
+        UIDValidity uint64     `json:"uidValidity"`
+        UIDNext     uint64     `json:"uidNext"`
+        // Grows on every change to the folder's items; what IDLE watches and
+        // what CONDSTORE compares.
+        ModSeq      uint64     `json:"modseq"`
+        // Counted when listed, not stored.
+        Unread      int64      `json:"unread"`
+        Total       int64      `json:"total"`
+    }
+    
+    // MailboxItem is one message in one folder: the possession of it, with its
+    // flags. The message is the existing Mail; this only refers to it.
+    type MailboxItem struct {
+        ID        string    `json:"id"`
+        FolderID  string    `json:"folderId"`
+        MailID    string    `json:"mailId"`
+        Mail      *Mail     `json:"mail,omitempty"` // resolved when listed
+        UID       uint64    `json:"uid"`
+        ModSeq    uint64    `json:"modseq"`
+        Seen      bool      `json:"seen"`
+        Flagged   bool      `json:"flagged"`
+        Answered  bool      `json:"answered"`
+        Forwarded bool      `json:"forwarded"`
+        Draft     bool      `json:"draft"`
+        AddedAt   time.Time `json:"addedAt"`
+    }
+    
+    // MailRule runs when a message reaches a mailbox's Inbox.
+    type MailRule struct {
+        ID         string          `json:"id"`
+        CreatedAt  time.Time       `json:"createdAt"`
+        ModifiedAt time.Time       `json:"modifiedAt"`
+        MailboxID  string          `json:"mailboxId"`
+        Position   int             `json:"position"`
+        Name       string          `json:"name"`
+        Enabled    bool            `json:"enabled"`
+        Conditions []RuleCondition `json:"conditions"` // all must match
+        Actions    []RuleAction    `json:"actions"`    // in order
+        Stop       bool            `json:"stop"`       // no later rule runs after this one matches
+    }
+    
+    // RuleCondition is one test: a field, how to compare, and against what.
+    type RuleCondition struct {
+        Field    string `json:"field"`    // from, to, subject, header, score, sender-known, any
+        Header   string `json:"header,omitempty"`
+        Operator string `json:"operator"` // contains, equals, matches, above, below
+        Value    string `json:"value,omitempty"`
+    }
+    
+    // RuleAction is one thing to do: move somewhere, mark, forward, delete.
+    type RuleAction struct {
+        Kind     string `json:"kind"` // move, markRead, flag, forward, delete
+        FolderID string `json:"folderId,omitempty"`
+        Address  string `json:"address,omitempty"`
+    }
+    
+    // AppPassword is what a mail program signs in with: one per device,
+    // revocable alone. The hash never leaves the server.
+    type AppPassword struct {
+        ID           string     `json:"id"`
+        CreatedAt    time.Time  `json:"createdAt"`
+        UserID       string     `json:"userId"`
+        Name         string     `json:"name"`
+        PasswordHash string     `json:"-"`
+        LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
+    }
+    
+    // Identity is who a user is at an identity provider.
+    type Identity struct {
+        ID          string     `json:"id"`
+        CreatedAt   time.Time  `json:"createdAt"`
+        UserID      string     `json:"userId"`
+        Provider    string     `json:"provider"`
+        Subject     string     `json:"subject"`
+        Email       string     `json:"email,omitempty"`
+        LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
+    }
+    
+    // Contact is an address learned from traffic, for completion and for the
+    // "sender is known" rule condition.
+    type Contact struct {
+        MailboxID  string    `json:"mailboxId"`
+        Address    string    `json:"address"`
+        Name       string    `json:"name,omitempty"`
+        LastSeenAt time.Time `json:"lastSeenAt"`
+        Count      int       `json:"count"`
+    }
+
+    // Existing types that change. Additions only; nothing is renamed or removed.
+    
+    type User struct {
+        // … existing fields …
+        // PasswordHash becomes optional: a user with none signs in only with a
+        // passkey or through an identity provider.
+        PasswordHash  string     `json:"-"`
+        DisabledAt    *time.Time `json:"disabledAt,omitempty"` // cannot sign in; keeps their mail
+        Locale        string     `json:"locale,omitempty"`
+        SignatureHTML string     `json:"signatureHtml,omitempty"`
+        SignatureText string     `json:"signatureText,omitempty"`
+        // Resolved for GetCurrentUser and GetSession, not stored.
+        Permissions   *EffectivePermissions `json:"permissions,omitempty"`
+        GroupIDs      []string              `json:"groupIds,omitempty"`
+    }
+    
+    type Mail struct {
+        // … existing fields …
+        // ThreadID is the conversation this message is part of, derived from
+        // In-Reply-To and References at receipt; the root message's own id when
+        // it starts one. The search document is a database column only.
+        ThreadID string `json:"threadId,omitempty"`
+        // Kind gains MailKindDraft for a message being written.
+    }
+    
+    const MailKindDraft MailKind = "draft"
+    
+    type Delivery struct {
+        // … existing fields …
+        // Kind gains DeliveryKindMailbox: an item placed in a folder. Method
+        // gains "mailbox" and Destination names the mailbox.
+    }
+    
+    const DeliveryKindMailbox DeliveryKind = "mailbox"
+    
+    // In internal/config, an alias gains a kind and a target:
+    type Alias struct {
+        // … existing fields …
+        // Kind gains AliasKindMailbox.
+        MailboxID string `yaml:"mailboxId,omitempty"`
+    }
+    
+    const AliasKindMailbox AliasKind = "mailbox"
+    
+    // And a section for identity providers:
+    type SSO struct {
+        Providers []SSOProvider `yaml:"providers"`
+    }
+    
+    type SSOProvider struct {
+        Name         string   `yaml:"name"`
+        DiscoveryURL string   `yaml:"discoveryUrl"`
+        ClientID     string   `yaml:"clientId"`
+        ClientSecret string   `yaml:"clientSecret" secret:"true"`
+        GroupsClaim  string   `yaml:"groupsClaim,omitempty"` // e.g. "groups"
+        CreateUsers  bool     `yaml:"createUsers"`
+        IssuerHosts  []string `yaml:"issuerHosts,omitempty"`
+    }
+
 ### Contacts
 
     -- Learned from mail sent and received, for address completion when
@@ -487,8 +748,14 @@ every instance `LISTEN`s and wakes the sessions idling on that folder. Nothing
 is held in memory that another instance would need.
 
 The library is `github.com/emersion/go-imap/v2`, the standard Go IMAP
-implementation, vendored like every dependency here. It is at
-`v2.0.0-beta.8`: a beta, and the only serious choice. See the decision below.
+implementation, vendored like every dependency here, at `v2.0.0-beta.8`. It
+is tried first. If its beta API churns, or its backend interfaces fight the
+database-backed model — UIDs allocated in a transaction, `IDLE` woken by
+another instance — then `internal/imap` is written from RFC 9051 and the
+extension RFCs directly, for the subset above and no more. That is a bounded
+job: the server side of IMAP is a well-specified state machine over exactly
+the operations this plan lists, and this server already has its own SMTP
+server and client for the same reason. The owner has said so.
 
 ## Signing in through an identity provider
 
@@ -621,6 +888,13 @@ Decisions are the repository owner's.
   what makes the bytes reachable from any of them.
   Date/Author: 2026-09-06, Ziyan
 
+- Decision: IMAP may be implemented from scratch if using a library proves
+  more trouble than it saves.
+  Rationale: the server side is a bounded, well-specified state machine over
+  the operations this plan lists, and this server already carries its own
+  SMTP implementation for the same reason.
+  Date/Author: 2026-09-06, Ziyan
+
 - Decision: SSO is planned for from the start.
   Rationale: the identity table, the nullable password, the `idp_group`
   column and `disabled_at` cost nothing now and would each be a migration
@@ -634,11 +908,11 @@ Decisions are the repository owner's.
   be a second protocol for one job. The gap that actually bites is disabling
   an account when the directory does, and that is SCIM, not SAML.
 
-- Proposed: vendor `github.com/emersion/go-imap/v2` at its beta.
-  Rationale: it is the standard Go implementation and there is no serious
-  alternative; writing IMAP by hand is months. The risk is API churn before a
-  stable release, confined to `internal/imap`. The alternative is to defer
-  milestone five until it goes stable, with no date for that.
+- Proposed: try `github.com/emersion/go-imap/v2` at its beta first.
+  Rationale: it is the standard Go implementation. The risk is API churn
+  before a stable release, confined to `internal/imap`. The owner has
+  decided that writing IMAP from the RFCs is acceptable if the library is
+  trouble, so this is a choice of order, not of whether.
 
 - Proposed: retention becomes "unreferenced and older than", and the sweep
   reads the database.
