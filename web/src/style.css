@@ -3835,3 +3835,31 @@ a.button.primary:hover {
     display: none;
   }
 }
+
+/* The rail is a column of three parts: the mark, the navigation, the foot.
+   The navigation is the one that can outgrow the window — a mailbox with
+   many folders on a short screen — so it is the one that scrolls, and the
+   foot stays where it is rather than riding up over the rows. */
+.sidebar {
+  overflow: hidden;
+  height: 100vh;
+  height: 100dvh;
+}
+.sidebar nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.sidebar-account {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+/* The star is text where the other icons are drawings; give it the same box
+   so the collapsed rail lines up. */
+.sidebar-star {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

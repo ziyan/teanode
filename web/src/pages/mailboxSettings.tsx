@@ -209,6 +209,9 @@ function GeneralTab({ view }: { view: MailboxView }) {
 
       <div className="card">
         <h3>{t('mailboxSettings.addresses')}</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          {t('mailboxSettings.addressesHint')}
+        </p>
         {mailbox.addresses?.length ? (
           <table>
             <tbody>
@@ -225,7 +228,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
             {t('mailbox.noAddress')}
           </p>
         )}
-        <p className="muted field-hint">{t('mailboxSettings.addressesHint')}</p>
       </div>
     </>
   )
@@ -741,7 +743,9 @@ function RulesTab({ view }: { view: MailboxView }) {
       {trials && (
         <div className="card">
           <h3>{t('mailboxSettings.trialTitle')}</h3>
-          <p className="muted field-hint">{t('mailboxSettings.trialHint')}</p>
+          <p className="muted" style={{ marginTop: 0 }}>
+          {t('mailboxSettings.trialHint')}
+        </p>
           {trials.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>
               {t('mailbox.nothing')}
@@ -959,7 +963,9 @@ function DevicesTab({ view }: { view: MailboxView }) {
 
       <div className="card">
         <h3>{t('mailboxSettings.devices')}</h3>
-        <p className="muted field-hint">{t('mailboxSettings.devicesHint')}</p>
+        <p className="muted" style={{ marginTop: 0 }}>
+          {t('mailboxSettings.devicesHint')}
+        </p>
         {appPasswords.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
             {t('mailboxSettings.noDevices')}
@@ -1010,7 +1016,9 @@ function DevicesTab({ view }: { view: MailboxView }) {
       {addresses && (
         <div className="card">
           <h3>{t('mailboxSettings.programSettings')}</h3>
-          <p className="muted field-hint">{t('mailboxSettings.programSettingsHint')}</p>
+          <p className="muted" style={{ marginTop: 0 }}>
+          {t('mailboxSettings.programSettingsHint')}
+        </p>
           <table className="detail program-settings">
             <tbody>
               <tr>
@@ -1124,7 +1132,9 @@ function ContactsTab({ view }: { view: MailboxView }) {
 
       <div className="card">
         <h3>{t('mailboxSettings.contacts')}</h3>
-        <p className="muted field-hint">{t('mailboxSettings.contactsHint')}</p>
+        <p className="muted" style={{ marginTop: 0 }}>
+          {t('mailboxSettings.contactsHint')}
+        </p>
         <input
           type="search"
           className="contacts-filter"
