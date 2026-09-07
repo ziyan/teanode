@@ -294,9 +294,16 @@ and reviewed as it was built rather than after:
 - The redirect URL a provider is given is built from `Host` and
   `X-Forwarded-Proto`, so SEC-7 applies to it too.
 
+- Files for a draft go up as a multipart body to
+  `PUT /api/v1/mailbox/drafts/{itemId}/attachments` or
+  `POST /api/v1/mailbox/{mailboxId}/drafts/attachments`, behind the session
+  middleware, with the mailbox's ownership checked the way the GraphQL
+  draft resolvers check it, the message-size limit enforced as the body is
+  read (413 past it), and a stale draft id refused. The reply is the draft
+  as stored, so the page never guesses a part's index.
+
 Open: the IMAP server does not advertise CONDSTORE or QRESYNC yet, so a
-client syncs a large folder the slow way; a draft's attachments go up
-base64 inside the save mutation rather than through a `PUT` path.
+client syncs a large folder the slow way.
 
 ## 5. Controls verified
 

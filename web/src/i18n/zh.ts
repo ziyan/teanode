@@ -1249,4 +1249,10 @@ export const zh: Catalog = {
   'mailbox.narrowAttachmentWithout': '无附件',
   'mailbox.narrowApply': '搜索',
   'mailbox.narrowClear': '清除',
+  'compose.mailbox.uploading': '正在上传 {name}',
+  'compose.mailbox.cancelUpload': '取消上传',
+  'compose.mailbox.dismissUpload': '关闭',
+  'mailDetail.more': '更多',
+  'mailDetail.showHeaders': '显示邮件头',
+  'mailDetail.hideHeaders': '隐藏邮件头',
 }

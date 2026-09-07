@@ -8,6 +8,7 @@ import { PaperclipIcon } from '../components/icons'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
+import { UploadHandle, isCancelled, uploadFiles } from '../upload'
 import { folderOfKind, useMailboxes } from '../mailboxes'
 
 // Writing from a mailbox: a new message, a reply, a forward, or a draft
@@ -86,18 +87,6 @@ function splitAddresses(value: string): string[] {
     .filter((entry) => entry !== '')
 }
 
-function readAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error)
-    reader.onload = () => {
-      const result = String(reader.result)
-      resolve(result.slice(result.indexOf(',') + 1))
-    }
-    reader.readAsDataURL(file)
-  })
-}
-
 // The text of an original message, quoted the way mail has always quoted.
 function quoteText(text: string): string {
   return text
@@ -157,7 +146,13 @@ export function MailboxComposePage() {
   const [editor, setEditor] = useState<Editor>('rich')
   const [html, setHtml] = useState('')
   const [text, setText] = useState('')
-  const [files, setFiles] = useState<File[]>([])
+  // Files on their way up: one entry per file of the selection in flight,
+  // with how far along it is. A selection is one request; another one
+  // chosen meanwhile waits its turn, since each rewrites the draft.
+  type Uploading = { file: File; progress: number; error?: string }
+  const [uploading, setUploading] = useState<Uploading[]>([])
+  const queue = useRef<File[][]>([])
+  const inFlight = useRef<UploadHandle | null>(null)
   const [kept, setKept] = useState<Attachment[]>([])
   const [carried, setCarried] = useState<Attachment[]>([])
   const [draftItemId, setDraftItemId] = useState<string | null>(draftOf)
@@ -350,20 +345,13 @@ export function MailboxComposePage() {
       subject,
       htmlContent: editor === 'rich' ? html : '',
       textContent: editor === 'rich' ? htmlToText(html) : text,
-      attachments: await Promise.all(
-        files.map(async (file) => ({
-          filename: file.name,
-          contentType: file.type || null,
-          content: await readAsBase64(file),
-        })),
-      ),
       replyToItemId: replyItemId,
       forwardItemId: forwardItemId,
       forwardAttachments: forwardItemId ? carried.map((attachment) => attachment.index) : [],
       draftItemId: draftItemId,
       keepAttachments: draftItemId ? kept.map((attachment) => attachment.index) : [],
     }),
-    [from, to, cc, bcc, subject, editor, html, text, files, replyItemId, forwardItemId, carried, draftItemId, kept],
+    [from, to, cc, bcc, subject, editor, html, text, replyItemId, forwardItemId, carried, draftItemId, kept],
   )
 
   // The save in flight, so a send can wait for it rather than race it: a
@@ -393,7 +381,6 @@ export function MailboxComposePage() {
       setDraftItemId(draftId)
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
       setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
-      setFiles([])
       setCarried([])
       dirty.current = false
       setSavedAt(new Date())
@@ -406,6 +393,10 @@ export function MailboxComposePage() {
       finish()
     }
   }, [view, saving, sending, sent, from, buildMessage])
+
+  // The draft in hand, for an upload that arrives while a save is running.
+  const latestDraftId = useRef<string | null>(draftItemId)
+  latestDraftId.current = draftItemId
 
   // Save on a clock while something has changed, and when the page is
   // hidden — a tab closed or switched away from.
@@ -439,6 +430,68 @@ export function MailboxComposePage() {
     }
   }, [save])
 
+  // Sending a selection up: to the draft in hand, or making the first draft
+  // around the files when there is none yet. The reply names the draft that
+  // now holds every part, and the kept list is taken from it.
+  const startNextUpload = useCallback(() => {
+    if (inFlight.current || !view) {
+      return
+    }
+    const batch = queue.current.shift()
+    if (!batch) {
+      return
+    }
+    setUploading(batch.map((file) => ({ file, progress: 0 })))
+    const draftId = latestDraftId.current
+    const handle = uploadFiles(
+      draftId ? 'PUT' : 'POST',
+      draftId
+        ? `/api/v1/mailbox/drafts/${encodeURIComponent(draftId)}/attachments`
+        : `/api/v1/mailbox/${encodeURIComponent(view.mailbox.id)}/drafts/attachments`,
+      batch,
+      (progress) => setUploading(batch.map((file, index) => ({ file, progress: progress.files[index] ?? 0 }))),
+    )
+    inFlight.current = handle
+    handle.promise
+      .then((result) => {
+        const reply = result as { itemId: string; attachments: Attachment[] }
+        setDraftItemId(reply.itemId)
+        latestDraftId.current = reply.itemId
+        setKept((reply.attachments ?? []).filter((attachment) => !attachment.inline))
+        setCarried([])
+        setSavedAt(new Date())
+        setUploading([])
+      })
+      .catch((failure) => {
+        if (isCancelled(failure)) {
+          setUploading([])
+          queue.current = []
+          return
+        }
+        setUploading(batch.map((file) => ({ file, progress: 0, error: failure instanceof Error ? failure.message : String(failure) })))
+      })
+      .finally(() => {
+        inFlight.current = null
+        startNextUpload()
+      })
+  }, [view])
+
+  const attach = (chosen: File[]) => {
+    if (chosen.length === 0) {
+      return
+    }
+    // Whatever has been typed goes into the draft the upload rewrites, so
+    // it is saved first when it has changed; the upload waits for it.
+    queue.current.push(chosen)
+    if (dirty.current && !saving) {
+      void save().then(() => startNextUpload())
+    } else if (pendingSave.current) {
+      void pendingSave.current.then(() => startNextUpload())
+    } else {
+      startNextUpload()
+    }
+  }
+
   const send = async () => {
     if (!view) {
       return
@@ -462,6 +515,8 @@ export function MailboxComposePage() {
   }
 
   const discard = async () => {
+    inFlight.current?.cancel()
+    queue.current = []
     if (draftItemId) {
       try {
         await graphql(`mutation ($itemIds: [String!]!) { DeleteMailboxItems(itemIds: $itemIds) }`, {
@@ -519,7 +574,8 @@ export function MailboxComposePage() {
     !sending &&
     !saving &&
     splitAddresses(to).length + splitAddresses(cc).length + splitAddresses(bcc).length > 0 &&
-    (html.trim() !== '' || text.trim() !== '' || files.length + kept.length + carried.length > 0)
+    uploading.length === 0 &&
+    (html.trim() !== '' || text.trim() !== '' || kept.length + carried.length > 0)
 
   return (
     <form
@@ -706,23 +762,32 @@ export function MailboxComposePage() {
             </ul>
           </div>
         )}
-        {files.length > 0 && (
-          <ul>
-            {files.map((file, index) => (
-              <li key={index}>
-                {file.name} <span className="muted">{formatBytes(file.size)}</span>{' '}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => {
-                    setFiles((previous) => previous.filter((_, at) => at !== index))
-                    touch()
-                  }}
-                >
-                  {t('compose.mailbox.remove')}
-                </button>
+        {uploading.length > 0 && (
+          <ul className="uploads">
+            {uploading.map((entry, index) => (
+              <li key={index} className={entry.error ? 'failed' : ''}>
+                <span className="upload-name">{entry.file.name}</span>{' '}
+                <span className="muted">{formatBytes(entry.file.size)}</span>
+                {entry.error ? (
+                  <span className="error"> {entry.error}</span>
+                ) : (
+                  <progress max={1} value={entry.progress} aria-label={t('compose.mailbox.uploading', { name: entry.file.name })} />
+                )}
               </li>
             ))}
+            {uploading.some((entry) => !entry.error) ? (
+              <li>
+                <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
+                  {t('compose.mailbox.cancelUpload')}
+                </button>
+              </li>
+            ) : (
+              <li>
+                <button type="button" className="link" onClick={() => setUploading([])}>
+                  {t('compose.mailbox.dismissUpload')}
+                </button>
+              </li>
+            )}
           </ul>
         )}
         <input
@@ -731,12 +796,11 @@ export function MailboxComposePage() {
           multiple
           hidden
           onChange={(event) => {
-            setFiles((previous) => [...previous, ...Array.from(event.target.files ?? [])])
-            touch()
+            attach(Array.from(event.target.files ?? []))
             event.target.value = ''
           }}
         />
-        <button type="button" className="link" onClick={() => fileInput.current?.click()}>
+        <button type="button" className="link" disabled={!from} onClick={() => fileInput.current?.click()}>
           <PaperclipIcon /> {t('compose.mailbox.attach')}
         </button>
       </div>

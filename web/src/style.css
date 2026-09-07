@@ -3772,3 +3772,40 @@ a.button.primary:hover {
   background: var(--field);
   color: var(--muted);
 }
+
+/* Files on their way up, one bar each. */
+.uploads {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.uploads progress {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 6px;
+  margin-top: 2px;
+}
+.uploads li.failed .upload-name {
+  text-decoration: line-through;
+}
+
+/* The mailbox's message menu: a dot-dot-dot at the top right of the message. */
+.message-menu {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.message-menu-button {
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 10px;
+}
+.message-headers {
+  margin-top: 12px;
+  font-size: 12px;
+}

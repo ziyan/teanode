@@ -3,7 +3,9 @@ package db
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/ziyan/teanode/internal/util/mailparse"
 	"io"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -108,6 +110,7 @@ type mailModel struct {
 	ThreadID        string     `gorm:"column:thread_id;size:32"`
 	UnreferencedAt  *time.Time `gorm:"column:unreferenced_at"`
 	AttachmentCount *int       `gorm:"column:attachment_count"`
+	FromName        string     `gorm:"column:from_name;size:255"`
 }
 
 func (self *mailModel) TableName() string {
@@ -118,6 +121,7 @@ func getMailFromMailModel(model mailModel) *models.Mail {
 	mail := &models.Mail{
 		UnreferencedAt:  localTime(model.UnreferencedAt),
 		AttachmentCount: model.AttachmentCount,
+		FromName:        model.FromName,
 		ID:              model.ID,
 		CreatedAt:       model.CreatedAt.In(time.Local),
 		ModifiedAt:      model.ModifiedAt.In(time.Local),
@@ -229,6 +233,7 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 	}
 	if model.From != mail.From {
 		model.From = mail.From
+		model.FromName = truncateRunes(mail.FromName, 255)
 		dirty = true
 	}
 	if model.Subject != mail.Subject {
@@ -376,6 +381,9 @@ func (self *transaction) CreateMails(mails []*models.Mail, options *Options) ([]
 		if mail.UnreferencedAt == nil {
 			unreferenced := now
 			mail.UnreferencedAt = &unreferenced
+		}
+		if mail.FromName == "" && len(mail.Headers) > 0 {
+			mail.FromName = displayNameOf(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "From")))
 		}
 		newModel := mailModel{
 			ID:         id,
@@ -529,4 +537,14 @@ func (self *database) MailExists(mailId string) (bool, error) {
 	var count int64
 	err := self.db.Model(&mailModel{}).Where("\"id\" = ?", mailId).Count(&count).Error
 	return count > 0, err
+}
+
+// displayNameOf is the name in a From header, or empty when it is only an
+// address.
+func displayNameOf(from string) string {
+	parsed, err := mail.ParseAddress(strings.TrimSpace(from))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Name)
 }

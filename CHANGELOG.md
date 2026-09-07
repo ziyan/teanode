@@ -11,7 +11,9 @@ Notable changes to TeaNode. The format follows
 - Mailboxes. Every account has one, the web UI opens on it, and an alias of
   kind "mailbox" delivers into it by reference: a message is stored once,
   however many folders hold it, and kept for as long as any does. Folders,
-  flags, search, rules with a dry run, reply, reply all, forward, drafts, a
+  flags, search over one folder or the whole mailbox with sender, recipient,
+  subject, date and attachment filters, rules with a dry run, reply, reply
+  all, forward, drafts whose attachments upload once with a progress bar, a
   signature, and an out-of-office reply with the protections that keep it
   from answering machines, lists or another mailbox that is also away.
 - IMAP, on port 993 and with STARTTLS on 143, so a mail program reads the

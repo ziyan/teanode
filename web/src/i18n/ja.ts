@@ -1264,4 +1264,10 @@ export const ja: Catalog = {
   'mailbox.narrowAttachmentWithout': '添付なし',
   'mailbox.narrowApply': '検索',
   'mailbox.narrowClear': 'クリア',
+  'compose.mailbox.uploading': '{name} をアップロード中',
+  'compose.mailbox.cancelUpload': 'アップロードを中止',
+  'compose.mailbox.dismissUpload': '閉じる',
+  'mailDetail.more': 'その他',
+  'mailDetail.showHeaders': 'ヘッダーを表示',
+  'mailDetail.hideHeaders': 'ヘッダーを隠す',
 }

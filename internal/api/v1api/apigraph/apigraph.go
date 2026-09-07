@@ -96,5 +96,9 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathGraphQL).Methods(http.MethodGet).HandlerFunc(self.webSocketView)
 	router.Path(api.PathGraphQL).Methods(http.MethodPost).HandlerFunc(self.graphView)
+	// Files for a draft go up as multipart bodies, not inside a query: a
+	// browser can stream them and show how far along each is.
+	router.Path(api.PathDraftAttachments).Methods(http.MethodPut).HandlerFunc(self.draftAttachmentsView)
+	router.Path(api.PathNewDraftAttachments).Methods(http.MethodPost).HandlerFunc(self.draftAttachmentsView)
 	return nil
 }

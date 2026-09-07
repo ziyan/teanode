@@ -28,6 +28,12 @@ const (
 	// or the image an HTML part refers to with a cid: URL.
 	PathMailAttachment = Prefix + "/mail/{mailId}/attachment/{index}"
 
+	// PathDraftAttachments adds files to a draft, as a multipart body, and
+	// answers with the draft that now holds them; PathNewDraftAttachments
+	// makes the first draft of a message around the files.
+	PathDraftAttachments    = Prefix + "/mailbox/drafts/{itemId}/attachments"
+	PathNewDraftAttachments = Prefix + "/mailbox/{mailboxId}/drafts/attachments"
+
 	// PathMediaUpload accepts a picture to put in a template. An operator's
 	// action, so it is inside the API and behind a session.
 	PathMediaUpload = Prefix + "/media"

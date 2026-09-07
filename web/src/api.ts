@@ -285,6 +285,7 @@ export interface Mail {
   domainId?: string
   sender?: string
   from?: string
+  fromName?: string
   subject?: string
   recipients?: string[]
   status?: string

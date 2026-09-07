@@ -1274,4 +1274,10 @@ export const en = {
   'mailbox.narrowAttachmentWithout': 'Without',
   'mailbox.narrowApply': 'Search',
   'mailbox.narrowClear': 'Clear',
+  'compose.mailbox.uploading': 'Uploading {name}',
+  'compose.mailbox.cancelUpload': 'Cancel upload',
+  'compose.mailbox.dismissUpload': 'Dismiss',
+  'mailDetail.more': 'More',
+  'mailDetail.showHeaders': 'Show headers',
+  'mailDetail.hideHeaders': 'Hide headers',
 }

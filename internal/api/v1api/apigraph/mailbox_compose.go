@@ -60,9 +60,6 @@ type MailboxMessageParameters struct {
 	HTMLContent string `json:"htmlContent" graphapi:"nullable"`
 	TextContent string `json:"textContent" graphapi:"nullable"`
 
-	// Files to attach, sent with this call
-	Attachments []*AttachmentParameters `json:"attachments" graphapi:"nullable"`
-
 	// Item of the message being replied to, if any: sets In-Reply-To and
 	// References, and marks the item answered once sent
 	ReplyToItemID string `json:"replyToItemId" graphapi:"nullable"`
@@ -140,7 +137,7 @@ func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailbox
 	}
 	tx := self.transaction(ctx)
 	parameters := &arguments.Message
-	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, false)
+	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -233,9 +230,14 @@ func (self *graph) SaveMailboxDraft(ctx context.Context, arguments SaveMailboxDr
 	if err != nil {
 		return nil, err
 	}
-	tx := self.transaction(ctx)
-	parameters := &arguments.Message
-	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, true)
+	return self.saveDraft(ctx, self.transaction(ctx), mailbox, &arguments.Message, nil)
+}
+
+// saveDraft stores what is being written as a message in Drafts — the
+// fields given, the parts kept from the draft being continued, and any
+// files just uploaded — and removes the previous save of it.
+func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*models.MailboxItem, error) {
+	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, uploads)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +320,13 @@ func (self *graph) GetMailboxDraft(ctx context.Context, arguments GetMailboxDraf
 	if err != nil {
 		return nil, err
 	}
-	item, stored, err := self.requireOwnItem(ctx, mailbox, arguments.ItemID)
+	return self.readDraft(ctx, mailbox, arguments.ItemID)
+}
+
+// readDraft reads a stored draft back into the fields it was written from,
+// with the parser that reads any message.
+func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemId string) (*MailboxDraft, error) {
+	item, stored, err := self.requireOwnItem(ctx, mailbox, itemId)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +375,7 @@ func (self *graph) GetMailboxDraft(ctx context.Context, arguments GetMailboxDraf
 // from the upload, the draft being continued and the message being
 // forwarded. The signature is the mailbox's, added once, by the page: the
 // server does not append one, so what is saved is what was written.
-func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, draft bool) (*mailer.Message, *models.Domain, error) {
+func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*mailer.Message, *models.Domain, error) {
 	fromAddress, err := mail.ParseAddress(parameters.From)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, parameters.From)
@@ -409,7 +417,7 @@ func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, m
 
 	limit := self.config.Current().SMTP.MaxMessageSize.Bytes()
 	var total uint64
-	attachments := make([]*mailparse.Attachment, 0, len(parameters.Attachments))
+	attachments := make([]*mailparse.Attachment, 0, len(uploads))
 	add := func(attachment *mailparse.Attachment) error {
 		total += uint64(len(attachment.Content))
 		if limit > 0 && total > limit {
@@ -443,18 +451,15 @@ func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, m
 			}
 		}
 	}
-	for _, attachment := range parameters.Attachments {
-		if attachment == nil {
+	// Files just uploaded, through the upload route, come last.
+	for _, upload := range uploads {
+		if upload == nil {
 			continue
 		}
-		if strings.TrimSpace(attachment.Filename) == "" {
+		if strings.TrimSpace(upload.Filename) == "" {
 			return nil, nil, fmt.Errorf("%w: an attachment needs a filename", api.ErrInvalidArguments)
 		}
-		if err := add(&mailparse.Attachment{
-			Filename:    attachment.Filename,
-			ContentType: attachment.ContentType,
-			Content:     attachment.Content,
-		}); err != nil {
+		if err := add(upload); err != nil {
 			return nil, nil, err
 		}
 	}

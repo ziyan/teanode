@@ -1574,6 +1574,14 @@ record.
       the fix deployed to `root@server`. Accepted as is: quoted HTML in a
       reply carries the sanitised copy's placeholders.
 
+- [x] After the review (2026-09-07): search over the whole mailbox with
+      sender, recipient, subject, date and attachment filters, attachment
+      names indexed; the attachment upload routes with per-file progress,
+      replacing base64 in the mutations; the sender's display name kept on
+      the row and shown in the list; the mailbox's reading pane shows the
+      rendered message only, with download and headers behind a menu, and
+      a dark theme always darkens mail with a per-message "as sent".
+
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
@@ -1651,11 +1659,11 @@ directory when single sign-on is used.
 
 What was not built, and why:
 
-- The `PUT /api/mail/{draftId}/attachment` path. A draft's attachments go up
-  base64 inside the save mutation, once each, and are carried by index from
-  then on. The plan's rule that a file crosses the wire once holds; the
-  shape it asked for does not, and it should before a 20 MB attachment is
-  common.
+- The attachment upload path was built after the first review, on the
+  owner's word: one multipart request per selection, to
+  `/api/v1/mailbox/drafts/{itemId}/attachments`, rewriting the draft once
+  with every part, and a bar per file in the browser. The base64 path is
+  gone from the mailbox mutations.
 - CONDSTORE and QRESYNC are kept in the database — modseqs, an expunge log,
   `CHANGEDSINCE` honoured — and not advertised, because the library's fetch
   writer does not emit `MODSEQ`. Turning them on is the next IMAP step,

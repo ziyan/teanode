@@ -151,6 +151,10 @@ type Mail struct {
 	// when it was indexed; nil for a message indexed before that was kept.
 	AttachmentCount *int `json:"attachmentCount,omitempty"`
 
+	// FromName is the display name beside the From address, when the header
+	// carried one.
+	FromName string `json:"fromName,omitempty"`
+
 	// Kind gains draft for a message being written.
 
 	// Size of the received Mail
