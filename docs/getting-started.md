@@ -188,12 +188,30 @@ visitor to the dashboard creates one, as on the first day. Anyone who can
 reach the dashboard can claim it until somebody does, so do not leave it in
 that state.
 
-## 6. Send yourself something
+The account you make this way is an administrator with a mailbox of its own,
+called Personal. The web UI opens on it: the folders in the rail, a
+folder's messages beside the one being read. The management pages — every
+message the server handled, the queue, reports, domains, the server itself —
+are behind **Manage** at the foot of the rail, and **Back to mailbox** at the
+top brings you back.
 
-Send a message to `hello@example.com` from an account elsewhere. Within a few
-seconds it should appear in the dashboard's mail list, showing SPF, DKIM and
-DMARC verdicts for the sender, and a delivery attempt to the address you set
-as `--forward-to`.
+## 6. Give the mailbox an address
+
+A mailbox receives nothing until an address points at it. On the domain's
+**Aliases** tab, add one with the kind **Deliver into a mailbox** and pick
+yours: the pattern `^you$` makes `you@example.com` yours. The same tab is
+where `hello@example.com` forwards elsewhere, so a domain can do both.
+
+## 7. Send yourself something
+
+Send a message to `you@example.com` from an account elsewhere. Within a few
+seconds it is in your Inbox, unread, with the count in the rail and in the
+tab's title. Open it, and **Reply**: the reply leaves from `you@example.com`,
+signed with the domain's key, and a copy sits in Sent.
+
+A message to `hello@example.com` shows up in the management side's mail
+list instead, with SPF, DKIM and DMARC verdicts for the sender and a delivery
+attempt to the address you set as `--forward-to`.
 
 If it does not arrive, the queue page says why. The usual causes, in order of
 how often they are the answer:
@@ -204,14 +222,35 @@ how often they are the answer:
 3. The forwarding destination rejected it, in which case the queue shows the
    remote server's own words.
 
+## 8. Read it in a mail program
+
+Mail programs speak IMAP, which the server serves on port 993 once
+`listen.imaps` is set — the compose file publishes it, and the server
+settings page's **Listeners** tab is where it is turned on for a server that
+predates it. A program signs in with your address and an **app password**:
+make one on **Mailbox settings → Mail programs**, name it for the device, and
+type the password shown into the program. It is shown once. The same tab
+lists what the program will ask for — the incoming server, the outgoing
+server on port 587, and the username — and most programs find those on their
+own from the address.
+
 ## Where to go next
 
 - **More addresses.** Aliases match with a regular expression, so
   `^(sales|support)$` is one alias. An empty pattern is a catch-all that
-  receives whatever nothing else matched.
-- **Sending from your own devices.** Add a credential per device on the
-  domain's settings page; each can be restricted to one sender address. They
-  authenticate on port 587.
+  receives whatever nothing else matched. Several aliases can deliver into
+  one mailbox, and a mailbox can send as any of its addresses.
+- **More people.** **Manage → Server → Users** adds accounts; **Groups** put
+  them in Members, which reads and sends from its own mailboxes, or
+  Administrators, which manages everything. Roles are editable, and a group
+  can be tied to a domain so its permissions reach only that far.
+- **Signing in through your identity provider.** **Server → Single sign-on**
+  takes an OpenID Connect issuer and client; a group's *IdP group* then
+  follows the directory, and people arrive with the roles it says.
+- **Sending from your own devices.** An app password sends as the mailbox's
+  addresses through port 587. A credential — on the domain's settings page,
+  optionally restricted to one sender address — is for programs and scripts
+  that send as the domain rather than as a person.
 - **More domains.** Each gets its own signing key by default. If you would
   rather they all shared one, point `<selector>._domainkey` at the primary
   domain with a CNAME and the dashboard will show you the record to publish.

@@ -124,7 +124,7 @@ so one command serves a person and a script.
 | `alias` | where mail for a domain goes; `alias match` says what an address would hit |
 | `credential` | SMTP credentials for sending through this server |
 | `dkim` | the keys that sign outgoing mail, and the record to publish |
-| `user` | the accounts that administer this server |
+| `user` | the accounts on this server; `user rescue` on `teanode-server` makes one an administrator |
 | `token` | API tokens; `token create --user` on the console issues somebody's first |
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
@@ -136,12 +136,14 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
-| `api` | everything else, straight from the schema |
+| `api` | everything else, straight from the schema: mailboxes, folders, rules, app passwords, groups, roles, the audit log |
 
 Some examples:
 
     teanode domain create example.com
     teanode alias create example.com --pattern '^hello$' --kind email --email me@example.org
+    teanode alias create example.com --pattern '^you$' --kind mailbox --mailbox <mailbox id>
+    teanode api call ListAllMailboxes --select "{ id name username }"
     teanode alias match example.com hello
     teanode settings set antispam enabled=true host=127.0.0.1 port=783
     teanode server status

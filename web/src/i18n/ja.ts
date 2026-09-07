@@ -1239,4 +1239,8 @@ export const ja: Catalog = {
   'integrations.ssoCreateUsers': 'プロバイダーでサインインした人にこちらのアカウントがなければ作成する',
   'integrations.ssoRedirect': 'このリダイレクト URL をプロバイダーに登録してください:',
   'integrations.ssoAdd': 'プロバイダーを追加',
+  'domain.kindMailbox': 'メールボックスに配信',
+  'domain.deliverInto': 'メールボックス',
+  'domain.deliveredInto': '次のメールボックスへ:',
+  'domain.chooseMailbox': 'メールボックスを選択…',
 }

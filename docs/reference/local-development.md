@@ -90,7 +90,19 @@ example.com`, `teanode user list`. From another shell, sign in instead with
 
 Send it a message with `swaks`:
 
-    swaks --to hello@example.com --from someone@example.net --server 127.0.0.1:10025
+    swaks --to hello@example.com --from someone@gmail.com --server 127.0.0.1:10025
+
+The sender has to be at a domain that publishes mail servers and does not
+ask for failures to be refused: every reserved example domain now publishes
+a DMARC policy of `reject`, so a message "from" `someone@example.net` is
+turned away at the door, which is correct and unhelpful. A domain with a
+policy of `none`, such as most webmail providers, is scored and accepted.
+The server also refuses a sender whose domain has no MX record at all.
+
+To receive into a mailbox rather than forward, point an alias of kind
+"mailbox" at yours on the domain's Aliases tab, and send to that address.
+A second local account's mailbox is the easiest way to see a message land
+in both places: send from one to the other with **New message**.
 
 ## Optional services
 

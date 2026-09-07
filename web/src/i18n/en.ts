@@ -1249,4 +1249,8 @@ export const en = {
   'integrations.ssoCreateUsers': 'Create an account for anyone the provider signs in who has none here',
   'integrations.ssoRedirect': 'Register this redirect URL at the provider:',
   'integrations.ssoAdd': 'Add a provider',
+  'domain.kindMailbox': 'Deliver into a mailbox',
+  'domain.deliverInto': 'Mailbox',
+  'domain.deliveredInto': 'into the mailbox of',
+  'domain.chooseMailbox': 'Choose a mailbox…',
 }

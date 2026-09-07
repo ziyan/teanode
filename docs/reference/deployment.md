@@ -70,6 +70,16 @@ internet. Watch it do all that:
 
 You are looking for `teanode is running`.
 
+### Mail programs
+
+The server serves IMAP on 993 (TLS) and 143 (STARTTLS) when
+`TEANODE_LISTEN_IMAPS` and `TEANODE_LISTEN_IMAP` are set — `config env`
+writes them as `:993` and `:143` — and the container shares the host's
+network, so those two ports need opening in the firewall or security group
+beside 25, 587, 80 and 443. A server that was set up before they existed
+turns them on under **Server → Listeners** in the web UI, since the
+environment only describes a first run, and restarts.
+
 ## 4. Claim the dashboard
 
 Open `https://mail.example.com/`. **The first visitor creates the only

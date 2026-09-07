@@ -1224,4 +1224,8 @@ export const zh: Catalog = {
   'integrations.ssoCreateUsers': '为提供方登录但这里没有账号的人创建账号',
   'integrations.ssoRedirect': '在提供方注册此回调 URL：',
   'integrations.ssoAdd': '添加提供方',
+  'domain.kindMailbox': '投递到邮箱',
+  'domain.deliverInto': '邮箱',
+  'domain.deliveredInto': '投递到邮箱：',
+  'domain.chooseMailbox': '选择邮箱…',
 }

@@ -21,6 +21,7 @@ type Query interface {
 	MailboxRulesQuery
 	MailboxAppPasswordQuery
 	MailProgramQuery
+	MailboxDirectoryQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery

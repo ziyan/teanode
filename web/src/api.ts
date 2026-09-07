@@ -236,6 +236,9 @@ export interface Alias {
   webhook?: string
   mailServer?: { host: string; port: number; username?: string }
   disabled: boolean
+
+  // Where an alias of kind "mailbox" delivers.
+  mailboxId?: string
 }
 
 export interface Credential {
