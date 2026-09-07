@@ -21,6 +21,7 @@ import { SetupAccountPage } from './pages/setupAccount'
 import { ChangePasswordPage } from './pages/changePasswordPage'
 import { CommandLinePage } from './pages/cli'
 import { TokensPage } from './pages/settings/tokens'
+import { AccessPage } from './pages/access'
 import { ServerPage } from './pages/server'
 import { SessionsPage } from './pages/settings/sessions'
 import { ProfilePage } from './pages/settings/profile'
@@ -218,6 +219,8 @@ export function App() {
                   one path: what it is, what it talks to, and which version it
                   is running. Three rows made somebody choose between them
                   before knowing which one held the thing they wanted. */}
+              <Route path="/access" element={<AccessPage />} />
+              <Route path="/access/:tab" element={<AccessPage />} />
               <Route path="/server" element={<ServerPage />} />
               <Route path="/server/:tab" element={<ServerPage />} />
 

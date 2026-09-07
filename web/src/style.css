@@ -706,6 +706,12 @@ a.tile:hover strong {
   justify-content: center;
   padding: var(--space-4);
   background: rgb(0 0 0 / 45%);
+  /* A dialog taller than the screen scrolls with the scrim rather than
+     hanging off both ends of it: a group with three lists in it was a
+     dialog whose title was above the window and whose buttons were below,
+     with nothing to scroll. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dialog {
@@ -732,6 +738,17 @@ a.tile:hover strong {
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
+  /* Where the dialog is taller than the screen, Cancel and Save stay on it:
+     they are the way out, and hunting for them by scrolling is not a way
+     out. */
+  position: sticky;
+  bottom: calc(var(--space-4) * -1);
+  /* The dialog's own bottom padding, kept: the negative margin below
+     cancels it, and without this the gutter under the buttons would be
+     half what every other dialog has. */
+  padding: var(--space-2) 0 var(--space-4);
+  margin-bottom: calc(var(--space-4) * -1);
+  background: var(--background);
 }
 
 /* --- the rail ------------------------------------------------------------- */
@@ -3368,7 +3385,11 @@ a.button.primary:hover {
   border-radius: 6px;
   padding: 8px 12px;
   margin: 8px 0;
-  max-height: 16rem;
+}
+/* The rows scroll, not the fieldset: a search box inside a scrolling
+   fieldset scrolls away with what it is searching. */
+.check-list-items {
+  max-height: 14rem;
   overflow-y: auto;
 }
 .check-list legend {
@@ -4028,4 +4049,119 @@ a.button.primary:hover {
 .dialog {
   max-width: min(420px, calc(100vw - 32px));
   overflow-wrap: anywhere;
+}
+
+/* People and their groups, side by side: the accounts on the left, the
+   groups on the right, so who is in what is one page rather than two. On a
+   phone they stack, groups under people. */
+.access-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .access-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.access-filter {
+  margin: 0 0 8px;
+}
+/* A group on a person's row, and a group's own name: both choose that group,
+   and the chosen one is the one that reads as pressed. */
+.access-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0;
+}
+.access-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+.access-chip:hover {
+  color: var(--text);
+}
+.access-chip.chosen {
+  color: var(--text);
+  border-color: var(--text);
+}
+.access-group-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.access-group-name:hover,
+.access-group-name.chosen {
+  text-decoration: underline;
+}
+
+/* A dialog fits the screen it is on: what does not fit scrolls inside it,
+   and the actions stay at its foot. */
+.dialog {
+  max-height: calc(100dvh - 2 * var(--space-4));
+  /* Sideways is hidden rather than left to resolve to auto, which is what a
+     single overflow-y does and what would make every dialog in the app a
+     horizontal scroller. */
+  overflow: hidden auto;
+}
+
+@media (max-width: 760px) {
+  /* A checkbox is not a thumb-sized control: the row around it is. Sizing
+     the box itself to 40px stretched every line of a list of people into
+     its own paragraph, and a group with a dozen members became a dialog
+     nobody could read. */
+  .check-list-item input[type='checkbox'],
+  .check-list-item input[type='radio'] {
+    min-height: 0;
+  }
+  .check-list-item {
+    padding: 8px 0;
+    min-height: 40px;
+  }
+  /* Lists inside a dialog on a phone: tall enough to work in, short enough
+     that three of them do not bury the buttons. Measured in dvh like the
+     dialog around them, so a retracting toolbar moves both together. */
+  .dialog .check-list-items {
+    max-height: 40dvh;
+  }
+}
+
+/* A list of things to tick, once there are enough of them to search: the
+   search sits under the legend, the rows scroll under it, and what is
+   already chosen is at the top and reads as chosen. */
+.check-list-search {
+  width: 100%;
+  margin: 4px 0 6px;
+}
+.check-list-items {
+  display: flex;
+  flex-direction: column;
+}
+.check-list-item.chosen {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* The groups as a row of chips over the people, for the width where the
+   groups themselves are below rather than beside: a filter you have to
+   scroll past what it filters to reach is not one. */
+.access-narrow-filter {
+  display: none;
+  margin-bottom: 8px;
+}
+@media (max-width: 900px) {
+  .access-narrow-filter {
+    display: flex;
+  }
 }

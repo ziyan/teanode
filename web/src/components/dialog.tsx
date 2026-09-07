@@ -87,6 +87,7 @@ export function ConfirmDialog({
   body,
   confirmLabel,
   busy,
+  error,
   destructive = true,
   onConfirm,
   onClose,
@@ -95,6 +96,10 @@ export function ConfirmDialog({
   body?: React.ReactNode
   confirmLabel: string
   busy?: boolean
+  // What went wrong, said here rather than on the page behind: a refused
+  // delete used to leave this dialog silent, with the explanation off-screen
+  // behind the scrim.
+  error?: string | null
   destructive?: boolean
   onConfirm: () => void
   onClose: () => void
@@ -116,6 +121,7 @@ export function ConfirmDialog({
       <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         {typeof body === 'string' ? <p className="muted">{body}</p> : body}
+        {error && <p className="error">{error}</p>}
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>
             {t('common.cancel')}

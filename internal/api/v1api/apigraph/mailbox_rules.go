@@ -171,7 +171,10 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 				if err != nil {
 					return nil, err
 				}
-				senderKnown = contact != nil
+				// Known means written to before this message: the contact
+				// is touched before the rules run on arrival, so the
+				// message being judged counts once already.
+				senderKnown = contact != nil && contact.Count > 1
 			}
 			for index, rule := range arguments.Rules {
 				if !rule.Enabled {

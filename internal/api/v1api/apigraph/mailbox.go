@@ -30,6 +30,9 @@ type MailboxQuery interface {
 }
 
 type MailboxMutation interface {
+	// Run the stored rules over the mail already in a folder, as arrival would have, except that nothing is forwarded
+	ApplyMailboxRules(ctx context.Context, arguments ApplyMailboxRulesArguments) (*MailboxRuleApplication, error)
+
 	// Set flags on items: read, flagged
 	SetMailboxItemFlags(ctx context.Context, arguments SetMailboxItemFlagsArguments) (int, error)
 

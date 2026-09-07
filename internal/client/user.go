@@ -4,12 +4,15 @@ import "context"
 
 // User is an account that may administer a server.
 type User struct {
+	// ID is what other rows hold a user by: a group's membership, an audit
+	// event's actor.
+	ID       string `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 }
 
-const userFields = `{ username name email }`
+const userFields = `{ id username name email }`
 
 // ListUsers returns the accounts configured on the server.
 func ListUsers(ctx context.Context, connection *Client) ([]*User, error) {

@@ -3,10 +3,6 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Tabs } from '../components/tabs'
 import { Key } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
-import { AuditTab } from './access/audit'
-import { GroupsTab } from './access/groups'
-import { RolesTab } from './access/roles'
-import { UsersTab } from './access/users'
 import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
 import { SetupPage } from './setup'
@@ -31,14 +27,11 @@ const SERVER_TABS: Tab[] = [
   { id: 'about', label: 'server.tabAbout' },
 ]
 
-// Who may do what, after what the server is. Each tab is there only for a
-// caller who may open it; the server refuses the rest anyway.
-const ACCESS_TABS: (Tab & { permissions: string[] })[] = [
-  { id: 'users', label: 'server.tabUsers', permissions: ['user:manage'] },
-  { id: 'groups', label: 'server.tabGroups', permissions: ['group:manage', 'user:manage'] },
-  { id: 'roles', label: 'server.tabRoles', permissions: ['role:manage', 'group:manage'] },
-  { id: 'audit', label: 'server.tabAudit', permissions: ['audit:read'] },
-]
+// Who may do what moved out of here to /access, its own row in the rail:
+// the accounts and the groups were four tabs deep in a page about TLS and
+// spam, and they are what an operator reaches for most. Links to the old
+// paths still work, below.
+const ACCESS_TABS = ['users', 'groups', 'roles', 'audit']
 
 export function ServerPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
@@ -48,12 +41,14 @@ export function ServerPage() {
   const navigate = useNavigate()
   const session = useSession()
 
-  const TABS: Tab[] = [
-    ...(hasPermission(session.permissions, 'server:manage') ? SERVER_TABS : []),
-    ...ACCESS_TABS.filter((candidate) => candidate.permissions.some((key) => hasPermission(session.permissions, key))),
-  ]
+  // A link to where the access tabs used to be goes where they are.
+  if (tab && ACCESS_TABS.includes(tab)) {
+    return <Navigate to={`/access/${tab}`} replace />
+  }
+
+  const TABS: Tab[] = hasPermission(session.permissions, 'server:manage') ? SERVER_TABS : []
   if (TABS.length === 0) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/access" replace />
   }
 
   // The certificates tab was called "dns" while the only DNS on this page was
@@ -75,10 +70,6 @@ export function ServerPage() {
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}
-      {tab === 'users' && <UsersTab />}
-      {tab === 'groups' && <GroupsTab />}
-      {tab === 'roles' && <RolesTab />}
-      {tab === 'audit' && <AuditTab />}
       {INTEGRATION_SECTIONS.some((candidate) => candidate.id === tab) && (
         <IntegrationsSection section={tab as Section} />
       )}
