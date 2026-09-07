@@ -430,7 +430,7 @@ saved and when run.
     CREATE TABLE "app_password" (
         "id"            varchar(32)  NOT NULL,
         "created_at"    timestamptz  NOT NULL,
-        "user_id"       varchar(32)  NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "mailbox_id"    varchar(32)  NOT NULL REFERENCES "mailbox"("id") ON DELETE CASCADE,
         "name"          varchar(128) NOT NULL,   -- "phone", "laptop"
         "password_hash" varchar(128) NOT NULL,
         "last_used_at"  timestamptz,
@@ -623,12 +623,15 @@ types change. Written out so that "what is added" has one answer:
         Address  string `json:"address,omitempty"`
     }
     
-    // AppPassword is what a mail program signs in with: one per device,
-    // revocable alone. The hash never leaves the server.
+    // AppPassword is what a mail program signs in with. It belongs to a
+    // mailbox, not a user: a program's "account" is one mailbox, so the login
+    // name is one of the mailbox's addresses and the app password is what says
+    // which mailbox that is. One per device, revocable alone; the hash never
+    // leaves the server.
     type AppPassword struct {
         ID           string     `json:"id"`
         CreatedAt    time.Time  `json:"createdAt"`
-        UserID       string     `json:"userId"`
+        MailboxID    string     `json:"mailboxId"`
         Name         string     `json:"name"`
         PasswordHash string     `json:"-"`
         LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
@@ -796,8 +799,11 @@ client knows which folder is Sent and which is Trash), `CONDSTORE` when
 `modseq` is ready — on port 993 over TLS, and on 143 with `STARTTLS`
 required. It uses the same certificate the HTTPS and SMTP listeners do.
 
-Authentication is username plus an app password, or the account password for
-a user who has one. Passkeys do not apply; SSO users get app passwords. Every
+Authentication is one of the mailbox's addresses as the login name plus an
+app password of that mailbox — and nothing else: not the account password,
+not a passkey. The app password is what picks the mailbox, so a user with
+two mailboxes sets up two accounts in their mail program, which is what the
+program expects anyway. SSO users get app passwords like everyone else. Every
 sign-in goes through the per-address rate limiter the SMTP listener already
 has; there is no lockout, because a lockout is a way for an attacker to shut
 someone out of their mail by guessing wrong on purpose.
@@ -922,7 +928,7 @@ word in a body finds the message.
 
 **Five — reading from anywhere.** App passwords; the IMAP server with `IDLE`
 over `LISTEN`/`NOTIFY`; submission over port 587 with an app password sending
-as any address of the user's mailboxes; the compose file and the docs. This is
+as an address of that mailbox; the compose file and the docs. This is
 the milestone that decides on the beta dependency. Acceptance: a phone's mail
 app reads and flags the inbox, is woken when a message arrives at another
 instance, and a message sent from it appears in the dashboard's Sent folder.
@@ -1008,8 +1014,9 @@ Decisions are the repository owner's.
   inbox.
   Date/Author: 2026-09-06, Ziyan
 
-- Decision: mail programs use per-device app passwords, never the account
-  password when the account has a passkey.
+- Decision: mail programs use per-device app passwords, and an app password
+  belongs to a mailbox, not a user. Nothing else signs in to IMAP or
+  submission: not the account password, not a passkey.
   Rationale: IMAP clients store what they are given in a keychain on the
   device, and a per-device secret is the one that can be revoked alone.
   Date/Author: 2026-09-06, Ziyan
