@@ -28,6 +28,7 @@ import (
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
@@ -172,7 +173,9 @@ type session struct {
 	remote   string
 
 	// Set by Login.
-	mailbox *models.Mailbox
+	mailbox     *models.Mailbox
+	appPassword string
+	checkedAt   time.Time
 
 	// Set by Select.
 	view *view
@@ -190,9 +193,10 @@ func (self *session) Login(username, password string) error {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeLimit, Text: "Too many sign-in attempts; try again later"}
 	}
 	var mailbox *models.Mailbox
+	var appPassword *models.MailboxAppPassword
 	err := self.settings.Database.Transaction(func(tx db.Transaction) error {
 		var err error
-		mailbox, err = access.AuthenticateAppPassword(tx, username, password)
+		mailbox, appPassword, err = access.AuthenticateAppPasswordWithID(tx, username, password)
 		return err
 	})
 	if err != nil {
@@ -204,14 +208,42 @@ func (self *session) Login(username, password string) error {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeServerBug, Text: "Cannot sign in right now"}
 	}
 	self.mailbox = mailbox
+	self.appPassword = appPassword.ID
+	self.checkedAt = time.Now()
 	log.Debugf("imap sign-in as %q into mailbox %q from %s", username, mailbox.ID, self.remote)
+	return nil
+}
+
+// recheckInterval is how often an open session asks whether it may stay
+// open: a revoked app password or a disabled account ends it within this.
+const recheckInterval = 5 * time.Minute
+
+// stillAllowed is the check, made inside a transaction every so often.
+func (self *session) stillAllowed(tx db.Transaction) error {
+	if self.mailbox == nil || time.Since(self.checkedAt) < recheckInterval {
+		return nil
+	}
+	valid, err := access.AppPasswordStillValid(tx, self.appPassword)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		log.Noticef("imap session on mailbox %q ended: its app password or account is gone", self.mailbox.ID)
+		return &goimap.Error{Type: goimap.StatusResponseTypeBye, Code: goimap.ResponseCodeAuthenticationFailed, Text: "This sign-in is no longer valid"}
+	}
+	self.checkedAt = time.Now()
 	return nil
 }
 
 // transaction runs a function in a database transaction and turns its
 // failure into an IMAP NO, logged once.
 func (self *session) transaction(function func(tx db.Transaction) error) error {
-	err := self.settings.Database.Transaction(function)
+	err := self.settings.Database.Transaction(func(tx db.Transaction) error {
+		if err := self.stillAllowed(tx); err != nil {
+			return err
+		}
+		return function(tx)
+	})
 	if err == nil {
 		return nil
 	}
@@ -558,6 +590,9 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 		if err != nil {
 			return err
 		}
+		if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created)); err != nil {
+			return err
+		}
 		data = &goimap.AppendData{UID: goimap.UID(item.UID), UIDValidity: uint32(entry.folder.UIDValidity)}
 		return nil
 	})
@@ -591,6 +626,12 @@ func (self *session) Idle(writer *imapserver.UpdateWriter, stop <-chan struct{})
 		}
 		if err := self.poll(writer, true); err != nil {
 			return err
+		}
+		if self.view == nil {
+			// The folder went away under the session; there is nothing
+			// left to watch.
+			<-stop
+			return nil
 		}
 	}
 }

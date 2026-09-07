@@ -111,7 +111,9 @@ function useTrail(): { label: string; to?: string }[] {
     if (surface) {
       crumbs.push({ label: t(surface.label), to: surface.path })
     }
-    const sectionPage = SECTION_PAGES.find((candidate) => candidate.path === location.pathname)
+    const sectionPage = SECTION_PAGES.find(
+      (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
+    )
     if (sectionPage) {
       crumbs.push({ label: t(sectionPage.label), to: undefined })
     }

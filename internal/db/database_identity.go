@@ -1,10 +1,7 @@
 package db
 
 import (
-	"errors"
 	"time"
-
-	"gorm.io/gorm"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -79,7 +76,7 @@ func (self *transaction) CreateIdentity(identity *models.UserIdentity) (*models.
 		LastSeenAt: now,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
+		if isUniqueViolation(err) {
 			return nil, ErrAlreadyExists
 		}
 		return nil, err

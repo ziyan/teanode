@@ -123,7 +123,14 @@ export function MailboxComposePage() {
   const navigate = useNavigate()
   const [search] = useSearchParams()
   const mailboxes = useMailboxes()
-  const view = mailboxes.current
+  // The mailbox this message belongs to: the one holding the item replied
+  // to, forwarded or continued, when there is one, else the one the rail
+  // shows. A link into another mailbox's message must not be answered from
+  // this one.
+  const [ownerFolderId, setOwnerFolderId] = useState<string | null>(null)
+  const view =
+    (ownerFolderId && mailboxes.views.find((candidate) => candidate.folders.some((folder) => folder.id === ownerFolderId))) ||
+    mailboxes.current
 
   const replyTo = search.get('reply') ?? search.get('replyAll')
   const replyAll = search.has('replyAll')
@@ -189,7 +196,8 @@ export function MailboxComposePage() {
         .catch(() => setContacts([]))
     }, 150)
     return () => window.clearTimeout(timer)
-  }, [view, typing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view?.mailbox.id, typing])
   const completions = (value: string) => {
     const done = value.split(/[,;]/).slice(0, -1).map((entry) => entry.trim()).filter(Boolean)
     const before = done.length > 0 ? done.join(', ') + ', ' : ''
@@ -216,6 +224,8 @@ export function MailboxComposePage() {
           if (cancelled) {
             return
           }
+          const draftItem = (await graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId: draftOf })).GetMailboxItem
+          setOwnerFolderId(draftItem.folderId)
           const { cc: draftCopies, bcc: draftBlindCopies } = draft
           setFrom(draft.from || addresses[0]?.address || '')
           setTo(draft.to.join(', '))
@@ -236,6 +246,7 @@ export function MailboxComposePage() {
         } else if (replyTo || forwardOf) {
           const itemId = (replyTo ?? forwardOf) as string
           const item = (await graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId })).GetMailboxItem
+          setOwnerFolderId(item.folderId)
           const original = item.mail
           const content = original
             ? (await graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId: original.id })).GetMailContent
@@ -355,36 +366,35 @@ export function MailboxComposePage() {
     [from, to, cc, bcc, subject, editor, html, text, files, replyItemId, forwardItemId, carried, draftItemId, kept],
   )
 
+  // The save in flight, so a send can wait for it rather than race it: a
+  // send that overtook an autosave left the message sent and a copy of it
+  // in Drafts.
+  const pendingSave = useRef<Promise<void> | null>(null)
+
   const save = useCallback(async () => {
     if (!view || saving || sending || sent || !from) {
       return
     }
     setSaving(true)
+    let finish: () => void = () => {}
+    pendingSave.current = new Promise<void>((resolve) => {
+      finish = resolve
+    })
     try {
       const message = await buildMessage()
       const response = await graphql<{ SaveMailboxDraft: { id: string } }>(SAVE, {
         mailboxId: view.mailbox.id,
         message,
       })
-      // The files just uploaded are in the draft now; the next save keeps
-      // them by index rather than uploading them again.
-      setDraftItemId(response.SaveMailboxDraft.id)
-      setKept((previous) => [
-        ...previous,
-        ...files.map((file, index) => ({
-          index: previous.length + carried.length + index,
-          filename: file.name,
-          contentType: file.type,
-          size: file.size,
-          inline: false,
-        })),
-      ])
+      // The draft holds every part now — kept, carried and just uploaded —
+      // and the server numbers them, so it is asked rather than guessed:
+      // the text parts come first and the order is its own.
+      const draftId = response.SaveMailboxDraft.id
+      setDraftItemId(draftId)
+      const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
+      setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
       setFiles([])
-      if (forwardItemId && carried.length > 0) {
-        // Carried parts are in the draft too, at the front of its parts.
-        setKept((previous) => [...carried.map((part, index) => ({ ...part, index })), ...previous.map((part) => ({ ...part, index: part.index + carried.length }))])
-        setCarried([])
-      }
+      setCarried([])
       dirty.current = false
       setSavedAt(new Date())
       setProblem(null)
@@ -392,11 +402,25 @@ export function MailboxComposePage() {
       setProblem(failure)
     } finally {
       setSaving(false)
+      pendingSave.current = null
+      finish()
     }
-  }, [view, saving, sending, sent, from, buildMessage, files, carried, forwardItemId])
+  }, [view, saving, sending, sent, from, buildMessage])
 
   // Save on a clock while something has changed, and when the page is
   // hidden — a tab closed or switched away from.
+  const latestSave = useRef(save)
+  latestSave.current = save
+  useEffect(() => {
+    // Leaving the page — a folder in the rail, the back button — is the
+    // most common way to stop writing, and it must not cost what was written.
+    return () => {
+      if (dirty.current) {
+        void latestSave.current()
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (dirty.current) {
@@ -422,6 +446,9 @@ export function MailboxComposePage() {
     setSending(true)
     setProblem(null)
     try {
+      if (pendingSave.current) {
+        await pendingSave.current
+      }
       const message = await buildMessage()
       await graphql(SEND, { mailboxId: view.mailbox.id, message })
       dirty.current = false
@@ -490,6 +517,7 @@ export function MailboxComposePage() {
   const ready =
     from !== '' &&
     !sending &&
+    !saving &&
     splitAddresses(to).length + splitAddresses(cc).length + splitAddresses(bcc).length > 0 &&
     (html.trim() !== '' || text.trim() !== '' || files.length + kept.length + carried.length > 0)
 

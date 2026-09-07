@@ -1176,9 +1176,13 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
   const [providers, setProviders] = useState<EditedProvider[]>(() =>
     settings.providers.map((provider) => ({ ...provider, clientSecret: '' })),
   )
+  // Keyed on what the server said, not on the object it came in: the
+  // settings are polled, and a fresh object with the same contents must not
+  // wipe a provider half typed.
+  const stored = JSON.stringify(settings.providers)
   useEffect(() => {
-    setProviders(settings.providers.map((provider) => ({ ...provider, clientSecret: '' })))
-  }, [settings])
+    setProviders(JSON.parse(stored).map((provider: SSOProvider) => ({ ...provider, clientSecret: '' })))
+  }, [stored])
 
   const update = (index: number, change: Partial<EditedProvider>) =>
     setProviders((previous) => previous.map((provider, at) => (at === index ? { ...provider, ...change } : provider)))

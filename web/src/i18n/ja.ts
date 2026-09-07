@@ -1244,4 +1244,10 @@ export const ja: Catalog = {
   'domain.deliveredInto': '次のメールボックスへ:',
   'domain.chooseMailbox': 'メールボックスを選択…',
   'mailbox.noAddressLink': 'ドメインのエイリアスタブで追加できます。',
+  'login.sso.refused': 'ID プロバイダーがサインインを拒否しました。',
+  'login.sso.state': 'このサインインはここから始まっていないか、時間がかかりすぎました。もう一度お試しください。',
+  'login.sso.verify': 'ID プロバイダーの応答を検証できませんでした。',
+  'login.sso.noAccount': 'あなたのアカウントはここにありません。このサーバーの管理者に問い合わせてください。',
+  'login.sso.disabled': 'このアカウントは無効になっています。',
+  'login.sso.failed': 'サインインを完了できませんでした。',
 }

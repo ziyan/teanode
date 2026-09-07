@@ -93,10 +93,7 @@ func (self *component) start(response http.ResponseWriter, request *http.Request
 	}
 	// Where to land afterwards: a path on this site and nothing else, so
 	// the sign-in cannot be used to send somebody elsewhere.
-	returnTo := request.URL.Query().Get("return")
-	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
-		returnTo = "/"
-	}
+	returnTo := safeReturn(request.URL.Query().Get("return"))
 	authURL, cookie, err := self.service.Begin(request.Context(), *provider, redirectURL(request, provider.ID), returnTo)
 	if err != nil {
 		log.Errorf("cannot start single sign-on with %q: %s", provider.ID, err)
@@ -124,12 +121,12 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 	query := request.URL.Query()
 	if problem := query.Get("error"); problem != "" {
 		log.Noticef("single sign-on with %q refused by the provider: %s %s", provider.ID, problem, query.Get("error_description"))
-		self.fail(response, request, "The identity provider refused the sign-in.")
+		self.fail(response, request, "refused")
 		return
 	}
 	cookie, err := request.Cookie(cookieName)
 	if err != nil {
-		self.fail(response, request, "The sign-in did not start here, or took too long. Try again.")
+		self.fail(response, request, "state")
 		return
 	}
 	// The cookie is spent whatever happens next.
@@ -139,9 +136,9 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 	if err != nil {
 		log.Warningf("single sign-on with %q failed: %s", provider.ID, err)
 		if errors.Is(err, sso.ErrBadState) {
-			self.fail(response, request, "The sign-in did not start here, or took too long. Try again.")
+			self.fail(response, request, "state")
 		} else {
-			self.fail(response, request, "The identity provider's answer could not be verified.")
+			self.fail(response, request, "verify")
 		}
 		return
 	}
@@ -166,18 +163,18 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 		switch {
 		case errors.Is(err, access.ErrNoAccount):
 			log.Noticef("single sign-on with %q by %q: no account here", provider.ID, claims.Subject)
-			self.fail(response, request, "There is no account here for you. Ask whoever manages this server.")
+			self.fail(response, request, "noaccount")
 		case errors.Is(err, access.ErrAccountDisabled):
-			self.fail(response, request, "This account has been disabled.")
+			self.fail(response, request, "disabled")
 		default:
 			log.Errorf("single sign-on with %q failed: %s", provider.ID, err)
-			self.fail(response, request, "The sign-in could not be completed.")
+			self.fail(response, request, "failed")
 		}
 		return
 	}
 	if err := self.authenticator.StartSession(response, request, username); err != nil {
 		log.Errorf("single sign-on with %q signed %q in but no session could be started: %s", provider.ID, username, err)
-		self.fail(response, request, "The sign-in could not be completed.")
+		self.fail(response, request, "failed")
 		return
 	}
 	if created {
@@ -188,9 +185,11 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 	http.Redirect(response, request, returnTo, http.StatusFound)
 }
 
-// fail sends the browser back to the sign-in page with a message it can show.
-func (self *component) fail(response http.ResponseWriter, request *http.Request, message string) {
-	http.Redirect(response, request, "/?sso="+url.QueryEscape(message), http.StatusFound)
+// fail sends the browser back to the sign-in page with a code it turns into
+// a sentence of its own: the address bar is not a place for one anybody
+// could write.
+func (self *component) fail(response http.ResponseWriter, request *http.Request, code string) {
+	http.Redirect(response, request, "/?sso="+url.QueryEscape(code), http.StatusFound)
 }
 
 // remoteAddress is where the request came from, as the audit trail records
@@ -204,4 +203,17 @@ func remoteAddress(request *http.Request) string {
 		return request.RemoteAddr
 	}
 	return host
+}
+
+// safeReturn is a path on this site, or "/": no scheme, no host, and no
+// backslash, which browsers read as a slash and would carry off-site.
+func safeReturn(value string) string {
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsAny(value, "\\\r\n") {
+		return "/"
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil || !strings.HasPrefix(parsed.Path, "/") {
+		return "/"
+	}
+	return value
 }

@@ -81,13 +81,17 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		if mailbox == nil {
 			return nil, mailparse.ErrInvalidCredentials
 		}
-		allowed, err := access.MailboxMaySend(tx, mailbox, envelope.Sender)
-		if err != nil {
-			return nil, err
-		}
-		if !allowed {
-			log.Warningf("mailbox %q may not send as %q, rejecting", mailbox.ID, envelope.Sender)
-			return nil, mailparse.ErrInvalidCredentials
+		// Both the envelope sender and the From header: a program can set
+		// either, and the recipient reads the header.
+		for _, sender := range []string{envelope.Sender, from} {
+			allowed, err := access.MailboxMaySend(tx, mailbox, sender)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				log.Warningf("mailbox %q may not send as %q, rejecting", mailbox.ID, sender)
+				return nil, mailparse.ErrInvalidCredentials
+			}
 		}
 	}
 
@@ -339,6 +343,8 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 		return nil
 	}
 	seen := true
-	_, err = tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen})
-	return err
+	if _, err := tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
+		return err
+	}
+	return tx.SetMailSearch(mail.ID, searchDocument(mail))
 }

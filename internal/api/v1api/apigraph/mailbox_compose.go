@@ -13,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
@@ -299,6 +300,9 @@ func (self *graph) SaveMailboxDraft(ctx context.Context, arguments SaveMailboxDr
 	if err != nil {
 		return nil, translateError(err)
 	}
+	if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created)); err != nil {
+		return nil, err
+	}
 	if parameters.DraftItemID != "" {
 		if err := self.removeDraft(ctx, tx, mailbox, parameters.DraftItemID); err != nil {
 			return nil, err
@@ -570,13 +574,24 @@ func (self *graph) removeDraft(ctx context.Context, tx db.Transaction, mailbox *
 	if _, err := tx.DeleteItems([]string{item.ID}); err != nil {
 		return err
 	}
-	if stored != nil {
-		if err := tx.DeleteMail(stored.ID, nil); err != nil {
-			return err
-		}
-		if err := self.storage.Delete(ctx, stored.ID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-			log.Warningf("failed to remove the bytes of draft %q: %s", stored.ID, err)
-		}
+	// The row and its bytes go only when they are a draft's own: a message
+	// somebody merely flagged \Draft over IMAP is held by other folders and
+	// other people, and retention is its way out.
+	if stored == nil || stored.Kind != models.MailKindDraft {
+		return nil
+	}
+	others, err := tx.ListItemsByMail(stored.ID)
+	if err != nil {
+		return err
+	}
+	if len(others) > 0 {
+		return nil
+	}
+	if err := tx.DeleteMail(stored.ID, nil); err != nil {
+		return err
+	}
+	if err := self.storage.Delete(ctx, stored.ID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		log.Warningf("failed to remove the bytes of draft %q: %s", stored.ID, err)
 	}
 	return nil
 }

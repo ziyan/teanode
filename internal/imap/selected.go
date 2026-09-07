@@ -116,6 +116,16 @@ func (self *view) resolve(numSet goimap.NumSet) []uint64 {
 // --- selecting ----------------------------------------------------------------
 
 func (self *session) loadView(tx db.Transaction, folder *models.MailboxFolder) (*view, error) {
+	// The folder's modseq first, then the items: an item added between the
+	// two is then newer than the modseq the view claims, and the next poll
+	// finds it, rather than older and never found.
+	fresh, err := tx.GetFolder(folder.ID)
+	if err != nil {
+		return nil, err
+	}
+	if fresh == nil {
+		return nil, noSuchFolder()
+	}
 	items, err := tx.ListItems(folder.ID, &db.ItemOptions{Ascending: true})
 	if err != nil {
 		return nil, err
@@ -123,13 +133,6 @@ func (self *session) loadView(tx db.Transaction, folder *models.MailboxFolder) (
 	uids := make([]uint64, 0, len(items))
 	for _, item := range items {
 		uids = append(uids, item.UID)
-	}
-	fresh, err := tx.GetFolder(folder.ID)
-	if err != nil {
-		return nil, err
-	}
-	if fresh == nil {
-		return nil, noSuchFolder()
 	}
 	return &view{folder: fresh, uids: uids, modseq: fresh.ModSeq}, nil
 }

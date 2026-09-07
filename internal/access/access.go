@@ -276,17 +276,25 @@ func CanReadMail(tx db.Transaction, user *models.User, permissions *models.Effec
 // Returns the mailbox, or ErrInvalidAppPassword for every way of being
 // wrong, so that a guess learns nothing about which part was.
 func AuthenticateAppPassword(tx db.Transaction, username, password string) (*models.Mailbox, error) {
+	mailbox, _, err := AuthenticateAppPasswordWithID(tx, username, password)
+	return mailbox, err
+}
+
+// AuthenticateAppPasswordWithID is AuthenticateAppPassword returning the app
+// password that matched too, for a session that wants to check later that
+// it still exists.
+func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string) (*models.Mailbox, *models.MailboxAppPassword, error) {
 	address, err := mailparse.ParseAddress(strings.TrimSpace(username))
 	if err != nil {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	localPart, domainName := mailparse.SplitAddress(address)
 	domain, err := tx.GetDomainByName(domainName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if domain == nil {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	var mailboxId string
 	for _, alias := range domain.Aliases {
@@ -299,46 +307,46 @@ func AuthenticateAppPassword(tx db.Transaction, username, password string) (*mod
 		}
 	}
 	if mailboxId == "" {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	mailbox, err := tx.GetMailbox(mailboxId)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if mailbox == nil {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	user, err := tx.GetUser(mailbox.UserID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if user == nil || user.Disabled() {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	permissions, err := tx.EffectivePermissions(user.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !permissions.Has(models.PermissionMailRead) {
-		return nil, ErrInvalidAppPassword
+		return nil, nil, ErrInvalidAppPassword
 	}
 	appPasswords, err := tx.ListAppPasswords(mailbox.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, appPassword := range appPasswords {
 		ok, err := security.VerifyPassword([]byte(appPassword.PasswordHash), password)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok {
 			if err := tx.TouchAppPassword(appPassword.ID, time.Now()); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			return mailbox, nil
+			return mailbox, appPassword, nil
 		}
 	}
-	return nil, ErrInvalidAppPassword
+	return nil, nil, ErrInvalidAppPassword
 }
 
 // ErrInvalidAppPassword is every way an app-password sign-in can be wrong.
@@ -515,4 +523,27 @@ func ReconcileIDPGroups(tx db.Transaction, user *models.User, claimed []string) 
 	}
 	*user = *updated
 	return nil
+}
+
+// AppPasswordStillValid says whether a session signed in with an app
+// password may go on: the password exists, the mailbox exists, and its
+// owner is enabled and may still read mail.
+func AppPasswordStillValid(tx db.Transaction, appPasswordId string) (bool, error) {
+	appPassword, err := tx.GetAppPassword(appPasswordId)
+	if err != nil || appPassword == nil {
+		return false, err
+	}
+	mailbox, err := tx.GetMailbox(appPassword.MailboxID)
+	if err != nil || mailbox == nil {
+		return false, err
+	}
+	user, err := tx.GetUser(mailbox.UserID)
+	if err != nil || user == nil || user.Disabled() {
+		return false, err
+	}
+	permissions, err := tx.EffectivePermissions(user.ID)
+	if err != nil {
+		return false, err
+	}
+	return permissions.Has(models.PermissionMailRead), nil
 }

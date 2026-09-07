@@ -1254,4 +1254,10 @@ export const en = {
   'domain.deliveredInto': 'into the mailbox of',
   'domain.chooseMailbox': 'Choose a mailbox…',
   'mailbox.noAddressLink': 'Add one on the domain\'s Aliases tab.',
+  'login.sso.refused': 'The identity provider refused the sign-in.',
+  'login.sso.state': 'The sign-in did not start here, or took too long. Try again.',
+  'login.sso.verify': 'The identity provider\'s answer could not be verified.',
+  'login.sso.noAccount': 'There is no account here for you. Ask whoever manages this server.',
+  'login.sso.disabled': 'This account has been disabled.',
+  'login.sso.failed': 'The sign-in could not be completed.',
 }

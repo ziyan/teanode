@@ -4,7 +4,18 @@ import { beginPasskeyAssertion, finishPasskeyAssertion, login } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
 import { KeyIcon } from '../components/icons'
 import { cancelled, getAssertion, isPasskeySupported } from '../passkeys'
-import { useTranslation } from '../i18n/i18n'
+import { Key, useTranslation } from '../i18n/i18n'
+
+// What a failed single sign-on came back with, as a code the server chose:
+// the address bar is not a place to carry a sentence anyone could write.
+const SSO_MESSAGES: Record<string, Key> = {
+  refused: 'login.sso.refused',
+  state: 'login.sso.state',
+  verify: 'login.sso.verify',
+  noaccount: 'login.sso.noAccount',
+  disabled: 'login.sso.disabled',
+  failed: 'login.sso.failed',
+}
 
 export function LoginPage({
   onLoggedIn,
@@ -18,7 +29,8 @@ export function LoginPage({
   const { t } = useTranslation()
   // A single sign-on that failed comes back here with what went wrong in
   // the address bar, since the page it failed on was the provider's.
-  const [ssoMessage] = useState(() => new URLSearchParams(window.location.search).get('sso'))
+  const [ssoCode] = useState(() => new URLSearchParams(window.location.search).get('sso'))
+  const ssoMessage = ssoCode ? t(SSO_MESSAGES[ssoCode] ?? 'login.sso.failed') : null
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)

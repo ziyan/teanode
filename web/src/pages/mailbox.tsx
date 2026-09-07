@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { MailContent, MailboxFolder, MailboxItem, MailboxItemPage, graphql } from '../api'
+import { MailContent, MailboxFolder, MailboxItem, MailboxItemPage, MailboxView, graphql } from '../api'
 import { ErrorMessage, Loading, formatTime } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
@@ -104,13 +104,20 @@ export function MailboxPage() {
     return inbox ? <Navigate to={`/mailbox/${inbox.id}`} replace /> : <p className="muted">{t('common.notFound')}</p>
   }
 
-  // The tree in the rail follows the folder being read, when it belongs to
-  // another mailbox — a link into a folder of the second mailbox should not
-  // leave the rail showing the first.
-  if (mailboxes.current?.mailbox.id !== view.mailbox.id) {
-    mailboxes.setCurrentId(view.mailbox.id)
-  }
+  return <FollowRail view={view} folder={folder} itemId={itemId} />
+}
 
+// FollowRail keeps the tree in the rail on the mailbox being read: a link
+// into a folder of the second mailbox should not leave the rail showing the
+// first. An effect rather than a call during render, which React refuses.
+function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: MailboxFolder; itemId?: string }) {
+  const mailboxes = useMailboxes()
+  const mailboxId = view.mailbox.id
+  useEffect(() => {
+    if (mailboxes.current?.mailbox.id !== mailboxId) {
+      mailboxes.setCurrentId(mailboxId)
+    }
+  }, [mailboxes, mailboxId])
   return <Folder key={folder.id} folder={folder} folders={view.folders} itemId={itemId} />
 }
 
@@ -354,6 +361,7 @@ function Folder({
                   return next
                 })
               }
+              href={item.draft ? `/mailbox/compose?draft=${item.id}` : `/mailbox/${folder.id}/${item.id}`}
               onOpen={() =>
                 navigate(item.draft ? `/mailbox/compose?draft=${item.id}` : `/mailbox/${folder.id}/${item.id}`)
               }
@@ -439,6 +447,7 @@ function Folder({
 
 function Row({
   item,
+  href,
   active,
   selected,
   onSelect,
@@ -446,6 +455,7 @@ function Row({
   onFlag,
 }: {
   item: MailboxItem
+  href: string
   active: boolean
   selected: boolean
   onSelect: (on: boolean) => void
@@ -478,10 +488,19 @@ function Row({
       >
         {item.flagged ? '★' : '☆'}
       </button>
-      <div>
+      {/* A real link, so the keyboard reaches it and a middle click opens
+          it in a tab; the row's own click is for the mouse. */}
+      <Link
+        className="mailbox-row-link"
+        to={href}
+        onClick={(event) => {
+          event.preventDefault()
+          onOpen()
+        }}
+      >
         <div className="mailbox-row-from">{mail?.from || mail?.sender || t('mailbox.unknownSender')}</div>
         <div className="mailbox-row-subject">{mail?.subject || t('mailbox.noSubject')}</div>
-      </div>
+      </Link>
       <div className="mailbox-row-when">
         <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
       </div>

@@ -356,6 +356,18 @@ const ACTION_LABELS: Record<string, Key> = {
   delete: 'mailboxSettings.actionDelete',
 }
 
+// operatorsFor is what a condition's field can be compared with: a score
+// is above or below a number, everything else matches text.
+function operatorsFor(field: string): string[] {
+  if (field === 'score') {
+    return ['above', 'below']
+  }
+  if (field === 'sender-known' || field === 'any') {
+    return ['']
+  }
+  return OPERATORS.filter((operator) => operator !== 'above' && operator !== 'below')
+}
+
 function emptyRule(): MailboxRule {
   return {
     name: '',
@@ -508,7 +520,17 @@ function RulesTab({ view }: { view: MailboxView }) {
                   update(index, (current) => ({
                     ...current,
                     conditions: current.conditions.map((item, at) =>
-                      at === conditionIndex ? { ...item, field: event.target.value } : item,
+                      at === conditionIndex
+                        ? {
+                            ...item,
+                            field: event.target.value,
+                            // A field has its own operators; keep one only if
+                            // the new field can use it.
+                            operator: operatorsFor(event.target.value).includes(item.operator)
+                              ? item.operator
+                              : operatorsFor(event.target.value)[0],
+                          }
+                        : item,
                     ),
                   }))
                 }
@@ -546,9 +568,7 @@ function RulesTab({ view }: { view: MailboxView }) {
                       }))
                     }
                   >
-                    {OPERATORS.filter((operator) =>
-                      condition.field === 'score' ? ['above', 'below'].includes(operator) : !['above', 'below'].includes(operator),
-                    ).map((operator) => (
+                    {operatorsFor(condition.field).map((operator) => (
                       <option key={operator} value={operator}>
                         {t(OPERATOR_LABELS[operator])}
                       </option>

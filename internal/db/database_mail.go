@@ -368,6 +368,13 @@ func (self *transaction) CreateMails(mails []*models.Mail, options *Options) ([]
 	now := time.Now().In(time.Local)
 	for _, mail := range mails {
 		id := security.NewULID()
+		// Unreferenced until something references it: a mailbox item clears
+		// this as it is added, and retention takes everything else — refused
+		// mail, outgoing mail, bounces, reports — once its time is up.
+		if mail.UnreferencedAt == nil {
+			unreferenced := now
+			mail.UnreferencedAt = &unreferenced
+		}
 		newModel := mailModel{
 			ID:         id,
 			CreatedAt:  now,
@@ -465,8 +472,28 @@ func (self *transaction) ScavengeMails(before time.Time, limit int) ([]string, e
 	if len(mailIds) == 0 {
 		return nil, nil
 	}
-	if err := self.tx.Where("\"id\" IN ?", mailIds).Delete(&mailModel{}).Error; err != nil {
-		return nil, err
+	// Rechecked on the way out: an item added between the pluck and the
+	// delete has cleared the timestamp, and that message stays.
+	result := self.tx.Where("\"id\" IN ? AND \"unreferenced_at\" IS NOT NULL AND \"unreferenced_at\" < ?", mailIds, before).Delete(&mailModel{})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected < int64(len(mailIds)) {
+		var remaining []string
+		if err := self.tx.Model(&mailModel{}).Where("\"id\" IN ?", mailIds).Pluck("id", &remaining).Error; err != nil {
+			return nil, err
+		}
+		kept := map[string]bool{}
+		for _, id := range remaining {
+			kept[id] = true
+		}
+		removed := mailIds[:0]
+		for _, id := range mailIds {
+			if !kept[id] {
+				removed = append(removed, id)
+			}
+		}
+		mailIds = removed
 	}
 	return mailIds, nil
 }

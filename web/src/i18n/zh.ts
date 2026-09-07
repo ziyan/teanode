@@ -1229,4 +1229,10 @@ export const zh: Catalog = {
   'domain.deliveredInto': '投递到邮箱：',
   'domain.chooseMailbox': '选择邮箱…',
   'mailbox.noAddressLink': '在域名的“别名”标签页添加一个。',
+  'login.sso.refused': '身份提供方拒绝了此次登录。',
+  'login.sso.state': '此次登录不是从这里开始的，或者耗时过长。请重试。',
+  'login.sso.verify': '无法验证身份提供方的回应。',
+  'login.sso.noAccount': '这里没有你的账号。请联系此服务器的管理者。',
+  'login.sso.disabled': '此账号已被停用。',
+  'login.sso.failed': '登录未能完成。',
 }

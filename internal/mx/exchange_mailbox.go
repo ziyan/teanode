@@ -109,8 +109,13 @@ func senderOf(mail *models.Mail) (string, string) {
 	if err != nil {
 		return strings.ToLower(mail.From), ""
 	}
-	name := strings.TrimSpace(strings.TrimSuffix(from, "<"+address+">"))
-	name = strings.Trim(name, "\" ")
+	name := from
+	if at := strings.LastIndex(name, "<"); at >= 0 {
+		name = name[:at]
+	} else if strings.EqualFold(strings.TrimSpace(name), address) {
+		name = ""
+	}
+	name = strings.Trim(strings.TrimSpace(name), "\" ")
 	return strings.ToLower(address), name
 }
 
@@ -131,6 +136,12 @@ func threadIDFor(tx db.Transaction, headers []string) (string, error) {
 		return "", nil
 	}
 	return tx.FindThreadID(candidates)
+}
+
+// SearchDocument is the text a folder search runs over: subject, sender,
+// recipients and the readable body.
+func SearchDocument(mail *models.Mail) string {
+	return searchDocument(mail)
 }
 
 // searchDocument is what full text search runs over: subject, sender,

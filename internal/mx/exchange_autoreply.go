@@ -53,6 +53,15 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 		log.Debugf("no out-of-office reply from mailbox %q to %q: %s", mailbox.ID, mail.Sender, reason)
 		return
 	}
+	claimed, err := tx.ClaimAutoReply(mailbox.ID, mail.Sender, now, autoReplyQuiet)
+	if err != nil {
+		log.Warningf("cannot claim the out-of-office reply for mailbox %q: %s", mailbox.ID, err)
+		return
+	}
+	if !claimed {
+		log.Debugf("no out-of-office reply from mailbox %q to %q: another instance is sending it", mailbox.ID, mail.Sender)
+		return
+	}
 	if err := self.sendAutoReply(tx, mailbox, alias, recipient, mail, setting, now); err != nil {
 		log.Warningf("failed to send the out-of-office reply from mailbox %q to %q: %s", mailbox.ID, mail.Sender, err)
 	}
@@ -266,9 +275,6 @@ func (self *exchange) sendAutoReply(tx db.Transaction, mailbox *models.Mailbox, 
 		Recipient: to,
 		Kind:      models.DeliveryKindExternal,
 	}}, nil); err != nil {
-		return err
-	}
-	if err := tx.MarkContactAutoReplied(mailbox.ID, strings.ToLower(to), now); err != nil {
 		return err
 	}
 	log.Noticef("mailbox %q sent its out-of-office reply to %q", mailbox.ID, to)

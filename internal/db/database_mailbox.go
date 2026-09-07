@@ -69,6 +69,7 @@ type MailboxOperation interface {
 	ListContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error)
 	GetContact(mailboxId, address string) (*models.MailboxContact, error)
 	MarkContactAutoReplied(mailboxId, address string, at time.Time) error
+	ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error)
 	CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error)
 
 	// App passwords, one per device.
@@ -611,6 +612,17 @@ func (self *transaction) UpdateFolder(folderId string, modify func(*models.Mailb
 		if parent == nil || parent.MailboxID != before.MailboxID || parent.ID == folderId {
 			return nil, ErrNotFound
 		}
+		// Nor under one of its own descendants, which would make a cycle
+		// that a delete would walk for ever.
+		ancestor := parent
+		for depth := 0; ancestor != nil && ancestor.ParentID != "" && depth < 64; depth++ {
+			if ancestor.ParentID == folderId {
+				return nil, ErrInvalidArguments
+			}
+			if ancestor, err = self.GetFolder(ancestor.ParentID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	updates := map[string]any{"modified_at": time.Now(), "name": after.Name}
 	if after.ParentID == "" {
@@ -628,6 +640,12 @@ func (self *transaction) UpdateFolder(folderId string, modify func(*models.Mailb
 }
 
 func (self *transaction) DeleteFolder(folderId string) error {
+	// Locked, so that an item added to it while it goes cannot slip in
+	// after the items were counted and leave its message unreferenced but
+	// unmarked.
+	if err := lockRow(self.tx, &mailboxFolderModel{}, folderId); err != nil {
+		return err
+	}
 	folder, err := self.GetFolder(folderId)
 	if err != nil {
 		return err
@@ -1002,7 +1020,8 @@ func (self *transaction) ScavengeExpunged(before time.Time) (int64, error) {
 // Contacts.
 
 func (self *transaction) TouchContact(mailboxId, address, name string, at time.Time) error {
-	address = strings.ToLower(strings.TrimSpace(address))
+	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
+	name = truncateRunes(strings.TrimSpace(name), 255)
 	if mailboxId == "" || address == "" {
 		return nil
 	}
@@ -1061,6 +1080,23 @@ func (self *transaction) MarkContactAutoReplied(mailboxId, address string, at ti
 	// moment take turns and only one of them sends.
 	return self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count", "auto_replied_at") VALUES (?, ?, '', ?, 0, ?)
 		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "auto_replied_at" = EXCLUDED."auto_replied_at"`, mailboxId, address, at, at).Error
+}
+
+// ClaimAutoReply marks the sender replied to, unless it was within the quiet
+// period already, and says whether the caller won: one statement, so two
+// instances receiving from one sender at the same moment cannot both send.
+func (self *transaction) ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error) {
+	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
+	if err := self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count") VALUES (?, ?, '', ?, 0)
+		ON CONFLICT ("mailbox_id", "address") DO NOTHING`, mailboxId, address, at).Error; err != nil {
+		return false, err
+	}
+	result := self.tx.Exec(`UPDATE "mailbox_contact" SET "auto_replied_at" = ? WHERE "mailbox_id" = ? AND "address" = ?
+		AND ("auto_replied_at" IS NULL OR "auto_replied_at" < ?)`, at, mailboxId, address, at.Add(-quiet))
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 func (self *transaction) CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error) {
@@ -1155,3 +1191,13 @@ func isUniqueViolation(err error) bool {
 }
 
 var _ = security.NewULID
+
+// truncateRunes cuts a string to at most limit runes, for a column that has
+// a width and a sender who does not.
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
+}
