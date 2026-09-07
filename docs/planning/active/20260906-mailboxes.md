@@ -1631,4 +1631,37 @@ record.
 
 ## Outcomes & Retrospective
 
-Not started.
+Built in one branch, one pull request, one day, in the order the milestones
+were laid out, and deployed to the owner's server at the end of it. What
+holds: a message is stored once and referenced from every folder that holds
+it, so the web UI, IMAP and the audit list all read the same row; every
+mailbox operation is refused unless the caller owns the mailbox; a mail
+program signs in with an app password and nothing else; roles follow the
+directory when single sign-on is used.
+
+What was not built, and why:
+
+- The `PUT /api/mail/{draftId}/attachment` path. A draft's attachments go up
+  base64 inside the save mutation, once each, and are carried by index from
+  then on. The plan's rule that a file crosses the wire once holds; the
+  shape it asked for does not, and it should before a 20 MB attachment is
+  common.
+- CONDSTORE and QRESYNC are kept in the database — modseqs, an expunge log,
+  `CHANGEDSINCE` honoured — and not advertised, because the library's fetch
+  writer does not emit `MODSEQ`. Turning them on is the next IMAP step,
+  with the library or without it.
+- A round trip through a real identity provider. The start redirects with
+  the right parameters against Google's discovery document and a forged
+  callback is refused; the owner has to register a client somewhere to see
+  the rest.
+- IMAP on the owner's server, which needs two ports opened in the security
+  group.
+- `teanode group` and `teanode role` as commands of their own; `teanode api`
+  reaches them.
+
+What would be done differently: the configuration rework should have been
+its own pull request. It was the right call and it was most of a day, and
+everything after it sat behind it. The DMARC discovery — every reserved
+example domain publishing `reject` — cost an hour and would have cost
+nothing with a second local mailbox to send from, which is what the
+local-development page now suggests.
