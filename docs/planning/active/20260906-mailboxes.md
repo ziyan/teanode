@@ -377,6 +377,22 @@ is not their mailbox address; a mailbox may have several.
     CREATE INDEX        "mailbox_item_list" ON "mailbox_item" ("folder_id", "added_at" DESC);
     CREATE INDEX        "mailbox_item_unseen" ON "mailbox_item" ("folder_id") WHERE NOT "seen";
 
+    -- The expunge log: which UIDs left a folder, and at what modseq. It is what
+    -- lets a client that last synced at modseq N ask "what vanished since N"
+    -- instead of comparing whole UID lists (IMAP QRESYNC). One row per item
+    -- removed from a folder — deleted, or moved out — written in the same
+    -- transaction; pruned after mailbox.expungeLogRetention, ninety days by
+    -- default. A client older than the log gets the full UID list, which is
+    -- what a client without QRESYNC gets every time.
+    CREATE TABLE "mailbox_folder_expunge" (
+        "folder_id"   varchar(32) NOT NULL REFERENCES "mailbox_folder"("id") ON DELETE CASCADE,
+        "uid"         bigint      NOT NULL,
+        "modseq"      bigint      NOT NULL,   -- the folder's modseq at the removal
+        "expunged_at" timestamptz NOT NULL,
+        PRIMARY KEY ("folder_id", "uid")
+    );
+    CREATE INDEX "mailbox_folder_expunge_modseq" ON "mailbox_folder_expunge" ("folder_id", "modseq");
+
 Moving a message between folders is: insert an item in the new folder with
 that folder's next UID — taken with `UPDATE … SET uid_next = uid_next + 1
 RETURNING`, so two instances cannot hand out the same one — delete the old
@@ -715,6 +731,15 @@ types change. Written out so that "what is added" has one answer:
         AddedAt   time.Time `json:"addedAt"`
     }
     
+    // MailboxFolderExpunge records a UID that left a folder and the modseq it
+    // left at, so a client can be told what vanished since its last sync.
+    type MailboxFolderExpunge struct {
+        FolderID   string    `json:"folderId"`
+        UID        uint64    `json:"uid"`
+        ModSeq     uint64    `json:"modseq"`
+        ExpungedAt time.Time `json:"expungedAt"`
+    }
+    
     // MailboxRule is one entry of Mailbox.Rules, run in array order when a
     // message reaches the Inbox. No id and no row of its own: rules are saved
     // as a whole.
@@ -1026,9 +1051,8 @@ Over IMAP there is nothing to do; the analogue in other servers is Sieve's
 
 `internal/imap` serves IMAP4rev1 with the extensions a modern client expects
 — `IDLE`, `MOVE`, `UIDPLUS`, `LITERAL+`, `NAMESPACE`, `SPECIAL-USE` (so a
-client knows which folder is Sent and which is Trash), `CONDSTORE` when
-`modseq` is ready — on port 993 over TLS, and on 143 with `STARTTLS`
-required. It uses the same certificate the HTTPS and SMTP listeners do.
+client knows which folder is Sent and which is Trash), `CONDSTORE` and
+`QRESYNC` — on port 993 over TLS, and on 143 with `STARTTLS` required. It uses the same certificate the HTTPS and SMTP listeners do.
 
 Authentication is one of the mailbox's addresses as the login name plus an
 app password of that mailbox — and nothing else: not the account password,
@@ -1044,10 +1068,23 @@ The mapping is direct. A mailbox's folders are the IMAP mailbox tree, with
 `uid_validity` and `uid_next` are its own. `FETCH` reads flags from the item
 and the message from `storage.Get`, parsing on demand; `STORE` writes flags
 and bumps `modseq`; `COPY` and `MOVE` create items; `EXPUNGE` deletes items
-flagged deleted; `APPEND` — a client saving its own sent message — stores a
+flagged deleted and writes each UID to the expunge log; `APPEND` — a client saving its own sent message — stores a
 `mail` row of kind outgoing and an item, so a message sent from a phone
 appears in the web UI's Sent folder too. `SEARCH` on headers and flags
 runs as SQL; body search runs over the `search` column.
+
+`CONDSTORE` and `QRESYNC` are what make a large folder cheap to keep in
+sync. Each folder keeps `modseq`, a counter that only goes up; every change
+to an item stamps it with the folder's next value. A client that last
+synced at modseq N asks for what changed since N and gets the handful of
+items that did, not the flags of every message. Removals are the other
+half: `mailbox_folder_expunge` records each UID that left a folder and the
+modseq it left at, so the same client is told what vanished since N —
+`VANISHED (EARLIER)` — instead of fetching the whole UID list to find the
+gaps. Both are rows written in the transaction that made the change, so a
+client asking instance B sees what instance A did. The log is pruned after
+ninety days; a client older than that gets the full list once, which is
+what a client without `QRESYNC` gets every time.
 
 `IDLE` is the one part that is not a query. A client holding a folder open
 must be told when something arrives, and on a server of several instances the
@@ -1354,6 +1391,15 @@ Decisions are the repository owner's.
   mailbox, management about the server.
   Rationale: for everyone but the operator the mailbox is the product, and
   the operator's pages are a mode they enter, not the front door.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: the expunge log is kept, and `QRESYNC` is served alongside
+  `CONDSTORE`.
+  Rationale: `CONDSTORE` tells a client what changed among messages that
+  still exist; without the log it must fetch the whole UID list to learn
+  what was removed, which on a large folder is the cost `CONDSTORE` was
+  there to avoid. One small table, written in the same transaction, pruned
+  after ninety days.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: administrative changes are audited — users, groups, roles,
