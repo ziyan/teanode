@@ -110,7 +110,15 @@ func conditionHoldsWithout(condition models.MailboxRuleCondition, mail *models.M
 	var subject string
 	switch condition.Field {
 	case "from":
+		// The header when the message is in hand, as it is on receipt; the
+		// row's own address when only the row was read, as in a dry run.
 		subject = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "From"))
+		if subject == "" {
+			subject = mail.From
+			if subject == "" {
+				subject = mail.Sender
+			}
+		}
 	case "to":
 		subject = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "To")) + " " +
 			mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "Cc")) + " " + strings.Join(mail.Recipients, " ")

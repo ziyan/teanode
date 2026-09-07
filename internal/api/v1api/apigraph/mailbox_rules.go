@@ -112,10 +112,16 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 	if err := self.attachMails(ctx, items); err != nil {
 		return nil, err
 	}
+	// A rule reads headers the row does not carry — To, Cc, any header a
+	// condition names — so each message is read back from storage, the way
+	// the rule saw it when it arrived.
 	results := make([]*MailboxRuleTest, 0, len(items))
 	for _, item := range items {
 		result := &MailboxRuleTest{Item: item, Matched: []int{}}
 		if item.Mail != nil {
+			if headers, _, err := self.storage.Get(ctx, item.Mail.ID); err == nil {
+				item.Mail.Headers = headers
+			}
 			senderKnown := false
 			if address, _ := senderAddressOf(item.Mail); address != "" {
 				contact, err := tx.GetContact(mailbox.ID, address)
