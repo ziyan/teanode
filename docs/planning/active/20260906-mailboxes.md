@@ -190,6 +190,7 @@ ignored rather than fatal:
         PermissionGroupManage     Permission = "group:manage"
         PermissionRoleManage      Permission = "role:manage"
         PermissionServerManage    Permission = "server:manage"     // settings, upgrades, certificates
+        PermissionAuditRead       Permission = "audit:read"        // the audit log
     )
 
     // PermissionKind is where a permission applies, declared with the
@@ -399,28 +400,19 @@ The `mail` table gains two columns, filled at receipt:
 
 ### Rules
 
-    -- Runs when a message is added to a mailbox's Inbox, in position order,
-    -- and again by hand on a folder when the owner asks.
-    CREATE TABLE "mailbox_rule" (
-        "id"          varchar(32)  NOT NULL,
-        "created_at"  timestamptz  NOT NULL,
-        "modified_at" timestamptz  NOT NULL,
-        "mailbox_id"  varchar(32)  NOT NULL REFERENCES "mailbox"("id") ON DELETE CASCADE,
-        "position"    integer      NOT NULL,
-        "name"        varchar(128) NOT NULL,
-        "enabled"     boolean      NOT NULL DEFAULT true,
-        "conditions"  jsonb        NOT NULL,   -- all of: {field, operator, value}
-        "actions"     jsonb        NOT NULL,   -- in order: move, mark read, flag, forward, delete
-        "stop"        boolean      NOT NULL DEFAULT true,
-        PRIMARY KEY ("id")
-    );
+    -- Rules are few, per-mailbox, and edited as a whole, so they are a column
+    -- on the mailbox rather than a table of their own.
+    ALTER TABLE "mailbox" ADD COLUMN "rules" jsonb NOT NULL DEFAULT '[]';  -- [MailboxRule], run in array order
 
-Conditions match on from, to, subject, a header, the spam score, whether the
-sender is in the owner's contacts, or "everything". Actions move to a folder,
-mark read, flag, forward to an address (a delivery of kind `forward`, so it
-is signed and recorded like any other), or delete. A rule that forwards is
-the one that needs `mail:send` on the mailbox, and is checked for it when
-saved and when run.
+A rule runs when a message is added to a mailbox's Inbox, in the order of
+the array, and again by hand on a folder when the owner asks. Conditions
+match on from, to, subject, a header, the spam score, whether the sender is
+in the owner's contacts, or "everything". Actions move to a folder, mark
+read, flag, forward to an address (a delivery of kind `forward`, so it is
+signed and recorded like any other), or delete. A rule that forwards is the
+one that needs `mail:send` on the mailbox, and is checked for it when saved
+and when run. Saving rules replaces the array: one row write, no positions
+to renumber.
 
 ### Signing in from a mail program, and from an identity provider
 
@@ -452,6 +444,56 @@ saved and when run.
         PRIMARY KEY ("id")
     );
     CREATE UNIQUE INDEX "identity_subject" ON "identity" ("provider", "subject");
+
+### Audit
+
+    -- One row per administrative mutation, written in the same transaction as
+    -- the mutation itself. Per-user private things — folders, items, contacts,
+    -- flags — are not audited; what they hold is the user's own.
+    CREATE TABLE "audit_event" (
+        "id"            varchar(32)  NOT NULL,
+        "created_at"    timestamptz  NOT NULL,
+        "actor_kind"    varchar(8)   NOT NULL,   -- "user", "system" (a sweep, SSO reconciling a group), "rescue" (teanode-server on the host)
+        "actor_user_id" varchar(32),             -- the signed-in user, when actor_kind is "user"; kept after the user is deleted
+        "token_id"      varchar(32),             -- the session or API token that authorised the request; never its secret
+        "source_ip"     varchar(45)  NOT NULL DEFAULT '',
+        "instance"      varchar(64)  NOT NULL DEFAULT '',  -- which instance served the request
+        "resource_type" varchar(32)  NOT NULL,   -- user, group, role, domain, mailbox, mailbox_address, mailbox_app_password, token, passkey, setting
+        "resource_id"   varchar(64)  NOT NULL,
+        "action"        varchar(8)   NOT NULL,   -- "create", "update", "delete"
+        "before"        jsonb,                   -- the row before, redacted; null on create
+        "after"         jsonb,                   -- the row after, redacted; null on delete
+        PRIMARY KEY ("id")
+    );
+    CREATE INDEX "audit_event_resource" ON "audit_event" ("resource_type", "resource_id", "created_at" DESC);
+    CREATE INDEX "audit_event_actor"    ON "audit_event" ("actor_user_id", "created_at" DESC) WHERE "actor_user_id" IS NOT NULL;
+    CREATE INDEX "audit_event_time"     ON "audit_event" ("created_at" DESC);
+
+Every change to something administrative — a user, a group and its users,
+roles and domains, a role and its permissions, a domain, a mailbox and its
+addresses, rules and signature, an app password, a token, a passkey, a
+server setting — writes one `audit_event` row in the transaction that
+makes the change, holding who did it, from where, and the row before and
+after with secrets removed (a password hash, a token's key, an app
+password's hash are never written; models that carry one implement
+`RedactForAudit`). Folders, items, contacts and flags are not audited: they
+are the user's own, and a log of every message read would be surveillance,
+not accountability.
+
+The seam is in `internal/db`: one function every audited write goes
+through — `recordMutation(transaction, resourceType, id, before, after)` —
+so a mutation cannot forget, and a test asserts that each audited model's
+db writer calls it. The actor comes from the request context the
+authentication layer already fills; a sweep or SSO reconciling a group's
+users is `system`; `teanode-server rescue` is `rescue`, so the one write
+that bypasses permissions is the one most visibly recorded. Rows are kept
+for `audit.retention`, a year by default, and swept on one instance at a
+time under the same advisory lock as the other sweeps.
+
+Reading it is `audit:read`, a server-kind permission that Administrator
+holds: a page under Server, filterable by resource, actor and time, showing
+each event as a before-and-after diff, and a "history" tab on every user,
+group, role, domain and mailbox page listing that row's events.
 
 ### The Go types
 
@@ -520,8 +562,70 @@ types change. Written out so that "what is added" has one answer:
         // that each reach a domain contribute both their roles.
         ByDomain   map[string]map[Permission]bool `json:"byDomain"`
     }
+
+    // AuditEvent is one administrative change: who, from where, what row, and
+    // the row before and after with secrets removed. Written in the same
+    // transaction as the change. Not for per-user private things.
+    type AuditEvent struct {
+        ID           string            `json:"id"`
+        CreatedAt    time.Time         `json:"createdAt"`
+        ActorKind    AuditActorKind    `json:"actorKind"`
+        ActorUserID  string            `json:"actorUserId,omitempty"`
+        TokenID      string            `json:"tokenId,omitempty"`
+        SourceIP     string            `json:"sourceIp,omitempty"`
+        Instance     string            `json:"instance,omitempty"`
+        ResourceType AuditResourceType `json:"resourceType"`
+        ResourceID   string            `json:"resourceId"`
+        Action       AuditAction       `json:"action"`
+        Before       json.RawMessage   `json:"before,omitempty"` // nil on create
+        After        json.RawMessage   `json:"after,omitempty"`  // nil on delete
+        // ActorLabel is the actor's username or "system" or "rescue", resolved
+        // when read, never stored.
+        ActorLabel   string            `json:"actorLabel,omitempty"`
+    }
+
+    type AuditActorKind string
+
+    const (
+        AuditActorUser   AuditActorKind = "user"
+        AuditActorSystem AuditActorKind = "system"
+        AuditActorRescue AuditActorKind = "rescue"
+    )
+
+    type AuditAction string
+
+    const (
+        AuditActionCreate AuditAction = "create"
+        AuditActionUpdate AuditAction = "update"
+        AuditActionDelete AuditAction = "delete"
+    )
+
+    // AuditResourceType names what was changed. Adding one here is what makes
+    // a table audited; the test that every writer records its mutation keys
+    // off this list.
+    type AuditResourceType string
+
+    const (
+        AuditResourceUser               AuditResourceType = "user"
+        AuditResourceGroup              AuditResourceType = "group"      // and its users, roles, domains
+        AuditResourceRole               AuditResourceType = "role"       // and its permissions
+        AuditResourceDomain             AuditResourceType = "domain"
+        AuditResourceMailbox            AuditResourceType = "mailbox"    // and its rules, signature
+        AuditResourceMailboxAddress     AuditResourceType = "mailbox_address"
+        AuditResourceMailboxAppPassword AuditResourceType = "mailbox_app_password"
+        AuditResourceToken              AuditResourceType = "token"
+        AuditResourcePasskey            AuditResourceType = "passkey"
+        AuditResourceSetting            AuditResourceType = "setting"
+    )
+
+    // Redactor is implemented by models that carry a secret, so the secret
+    // never reaches the audit row.
+    type Redactor interface {
+        RedactForAudit() any
+    }
     
-        // Mailbox is a container of folders belonging to one user.
+    // Mailbox is a container of folders belonging to one user. Its small
+    // per-mailbox settings — rules, signature — are columns on it.
     type Mailbox struct {
         ID            string            `json:"id"`
         CreatedAt     time.Time         `json:"createdAt"`
@@ -532,6 +636,7 @@ types change. Written out so that "what is added" has one answer:
         // a user with two mailboxes signs differently from each.
         SignatureHTML string            `json:"signatureHtml,omitempty"`
         SignatureText string            `json:"signatureText,omitempty"`
+        Rules         []MailboxRule     `json:"rules"` // jsonb column, run in order
         Addresses     []*MailboxAddress `json:"addresses,omitempty"`
     }
     
@@ -594,18 +699,15 @@ types change. Written out so that "what is added" has one answer:
         AddedAt   time.Time `json:"addedAt"`
     }
     
-    // MailboxRule runs when a message reaches a mailbox's Inbox.
+    // MailboxRule is one entry of Mailbox.Rules, run in array order when a
+    // message reaches the Inbox. No id and no row of its own: rules are saved
+    // as a whole.
     type MailboxRule struct {
-        ID         string          `json:"id"`
-        CreatedAt  time.Time       `json:"createdAt"`
-        ModifiedAt time.Time       `json:"modifiedAt"`
-        MailboxID  string          `json:"mailboxId"`
-        Position   int             `json:"position"`
-        Name       string          `json:"name"`
-        Enabled    bool            `json:"enabled"`
+        Name       string                 `json:"name"`
+        Enabled    bool                   `json:"enabled"`
         Conditions []MailboxRuleCondition `json:"conditions"` // all must match
         Actions    []MailboxRuleAction    `json:"actions"`    // in order
-        Stop       bool            `json:"stop"`       // no later rule runs after this one matches
+        Stop       bool                   `json:"stop"`       // no later rule runs after this one matches
     }
     
     // MailboxRuleCondition is one test: a field, how to compare, and against what.
@@ -899,10 +1001,11 @@ who used it the day before. The order is the order of dependency.
 **One — who may do what.** The access-control tables and the three seeded
 roles; every existing user into Administrators. `requirePermission` in place
 of `requireOperator` across every resolver, with the not-found rule.
-`teanode-server rescue`. Effective
+`teanode-server rescue`. The `audit_event` table and the recording seam,
+so the first role edit is the first row. Effective
 permissions on the session and in `GetSession`. The Users, Groups and Roles
 pages. The command line's `user` commands grow `group` and `role` siblings.
-Acceptance: a user whose only group carries Member can sign in and sees nothing but an
+Acceptance: editing a role writes an audit row naming the editor; a user whose only group carries Member can sign in and sees nothing but an
 empty Mail page; an Operator sees today's dashboard; an Administrator sees
 everything; a Member asking the API for a domain gets not found.
 
@@ -1039,11 +1142,31 @@ Decisions are the repository owner's.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: everything that belongs to a mailbox is named for it. Tables
-  `mailbox_folder`, `mailbox_item`, `mailbox_address`, `mailbox_rule`,
-  `mailbox_contact`, `mailbox_app_password`; types `MailboxFolder`,
-  `MailboxRule`, `MailboxRuleCondition`, `MailboxRuleAction`,
-  `MailboxContact`, `MailboxAppPassword`.
+  `mailbox_folder`, `mailbox_item`, `mailbox_address`, `mailbox_contact`,
+  `mailbox_app_password`; types `MailboxFolder`, `MailboxRule`,
+  `MailboxRuleCondition`, `MailboxRuleAction`, `MailboxContact`,
+  `MailboxAppPassword`.
   Rationale: named for what they belong to, like `MailboxAddress`.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: small per-mailbox settings — rules, the signature — are columns
+  on `mailbox`, jsonb where they are lists. There is no `mailbox_rule`
+  table.
+  Rationale: a mailbox has a handful of rules, edited as a whole; a table
+  with ids and positions is machinery for a list that fits in one row.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: no labels on items. Folders and the flag are enough.
+  Rationale: a second way to sort mail is a second thing to explain, and
+  IMAP clients disagree about how to show keywords.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: administrative changes are audited — users, groups, roles,
+  domains, mailboxes and their addresses, app passwords, tokens, passkeys,
+  settings — with before and after, in the same transaction. Per-user
+  private things — folders, items, contacts, flags — are not.
+  Rationale: "who gave this group that role" must be answerable a year
+  later; "who read this message" must not be recorded.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: try `github.com/emersion/go-imap/v2` at its beta first; if it
