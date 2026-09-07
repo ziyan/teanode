@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
@@ -19,6 +20,7 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 import { useResolvedTheme } from '../components/theme'
 import { MenuButton } from '../components/menuButton'
+import { CloseIcon } from '../components/icons'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -291,6 +293,7 @@ export function MessageContent({
   mailId,
   content,
   mode = 'audit',
+  menuContainer,
 }: {
   mailId: string
   content?: MailContent | null
@@ -298,6 +301,9 @@ export function MessageContent({
   // mailbox shows the message as a mail program would — rendered, or the
   // text when there is nothing to render — with the rest behind a menu.
   mode?: 'audit' | 'mailbox'
+  // Where the mailbox's menu goes when the page has a row of actions for
+  // it to sit in; on its own row above the message otherwise.
+  menuContainer?: HTMLElement | null
 }) {
   const { t } = useTranslation()
   const [chosen, setChosen] = useState<Tab | null>(null)
@@ -368,7 +374,7 @@ export function MessageContent({
     ) : mode === 'mailbox' ? (
       <>
         {/* What a mail program shows, and a menu for what it hides. */}
-        <div className="message-menu">
+        {((menu) => (menuContainer ? createPortal(menu, menuContainer) : <div className="message-menu">{menu}</div>))(
           <MenuButton
             className="message-menu-button"
             label={t('mailDetail.more')}
@@ -405,8 +411,28 @@ export function MessageContent({
                 )}
               </>
             )}
-          />
-        </div>
+          />,
+        )}
+        {/* The headers above the message, where they are in the message
+            itself, in a box of their own that scrolls rather than pushing
+            the message out of sight. */}
+        {showHeaders && (
+          <div className="message-headers">
+            <div className="message-headers-title">
+              <span>{t('mailDetail.headers')}</span>
+              <button
+                type="button"
+                className="message-headers-close"
+                aria-label={t('mailDetail.hideHeaders')}
+                title={t('mailDetail.hideHeaders')}
+                onClick={() => setShowHeaders(false)}
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+            <pre className="message-text">{content.rawHeaders}</pre>
+          </div>
+        )}
         {hasHtml ? (
           <>
             {content.hasRemoteContent && !loadRemote && (
@@ -427,7 +453,6 @@ export function MessageContent({
         ) : (
           <pre className="message-text">{content.text}</pre>
         )}
-        {showHeaders && <pre className="message-text message-headers">{content.rawHeaders}</pre>}
         {content.attachments?.length ? (
           <div className="card" style={{ marginTop: 16 }}>
             <h3>{t('mailDetail.attachments')}</h3>
@@ -1031,7 +1056,7 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${policy}">
-<style>#teanode-content{overflow:hidden}body{margin:0;padding:14px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
+<style>#teanode-content{overflow-x:auto;overflow-y:hidden}body{margin:0;padding:6px 8px;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:${
     darkGround ? '#f4f4f5' : '#16161a'
   };background:${darkGround ? '#1a1a1d' : '#fff'};word-wrap:break-word${
     darkGround ? ';color-scheme:dark' : ''

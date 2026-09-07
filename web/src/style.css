@@ -3823,7 +3823,7 @@ a.button.primary:hover {
 .message-menu {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .message-menu-button {
   font-size: 18px;
@@ -3831,8 +3831,20 @@ a.button.primary:hover {
   padding: 2px 10px;
 }
 .message-headers {
-  margin-top: 12px;
+  margin: 4px 0 12px;
   font-size: 12px;
+}
+.message-headers-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.message-headers pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
 }
 .contacts-filter {
   max-width: 320px;
@@ -3945,19 +3957,67 @@ a.button.primary:hover {
 /* Four actions on a folder row do not fit beside its name on a phone. There
    the actions column gives up its one-line width and the actions wrap, two
    to a line, rather than push the table sideways. */
-@media (max-width: 600px) {
-  .folders-table td.shrink {
-    width: auto;
-    white-space: normal;
-    text-align: right;
-  }
-  .folders-table .row-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    row-gap: 2px;
-  }
-  .folders-table .row-actions button {
-    white-space: nowrap;
-  }
+/* A row's actions as icons with their names in the tooltip: four of them fit
+   beside a folder's name on a phone, where four words did not. */
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-action:hover:not(:disabled),
+.icon-action.pinned {
+  color: var(--text);
+}
+.icon-action:hover:not(:disabled) {
+  background: rgba(127, 127, 127, 0.16);
+}
+.icon-action.danger {
+  color: var(--bad);
+}
+.icon-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.folders-table td {
+  vertical-align: middle;
+}
+.folders-table .row-actions {
+  gap: 2px;
+}
+
+/* The message menu at the end of the reader's action row, and the cross
+   that closes the headers box. */
+.reader-menu-slot {
+  display: inline-flex;
+  margin-left: auto;
+}
+.reader-menu-slot .message-menu-button {
+  font-size: 16px;
+  padding: 4px 10px;
+}
+.message-headers-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.message-headers-close:hover {
+  color: var(--text);
 }

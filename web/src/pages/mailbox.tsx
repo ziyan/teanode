@@ -699,6 +699,9 @@ function Reader({
   onBack: () => void
 }) {
   const { t } = useTranslation()
+  // The action row's slot for the message menu, as an element so the
+  // portal renders once it exists.
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null)
   const navigate = useNavigate()
   const item = useQuery(() => graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId }), [itemId], { refresh: false })
   const mailId = item.data?.GetMailboxItem?.mailId
@@ -803,6 +806,9 @@ function Reader({
         <button type="button" className="danger" disabled={busy} onClick={onDelete}>
           {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
         </button>
+        {/* The message's own menu — download, headers, theme — sits at the
+            end of this row rather than on a row of its own. */}
+        <span className="reader-menu-slot" ref={setMenuSlot} />
       </div>
 
       <div className="mailbox-pane-head">
@@ -827,7 +833,7 @@ function Reader({
         ) : content.error ? (
           <ErrorMessage error={content.error} />
         ) : (
-          <MessageContent mailId={mail.id} content={content.data?.GetMailContent} mode="mailbox" />
+          <MessageContent mailId={mail.id} content={content.data?.GetMailContent} mode="mailbox" menuContainer={menuSlot} />
         )
       ) : null}
     </>

@@ -10,6 +10,7 @@ import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from '../components/folderIcon'
+import { MoveIcon, PencilIcon, PinIcon, TrashIcon } from '../components/icons'
 
 // What a mailbox is set up to do, in four tabs: what it is called and how
 // it signs, its folders, the rules that sort what arrives, and the reply it
@@ -345,35 +346,52 @@ function FoldersTab({ view }: { view: MailboxView }) {
                         <div className="row-actions">
                           <button
                             type="button"
-                            className="link"
+                            className={folder.pinnedAt ? 'icon-action pinned' : 'icon-action'}
+                            title={t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                            aria-label={`${folderLabel(t, folder)}: ${t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
+                            aria-pressed={Boolean(folder.pinnedAt)}
+                            disabled={busy}
                             onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
                           >
-                            {t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pin')}
+                            <PinIcon size={16} />
                           </button>
                           {!folder.kind && (
                             <>
                               <button
                                 type="button"
-                                className="link"
+                                className="icon-action"
+                                title={t('common.rename')}
+                                aria-label={`${folder.name}: ${t('common.rename')}`}
+                                disabled={busy}
                                 onClick={() => {
                                   setRenaming(folder)
                                   setRenameTo(folder.name)
                                 }}
                               >
-                                {t('common.rename')}
+                                <PencilIcon size={16} />
                               </button>
                               <button
                                 type="button"
-                                className="link"
+                                className="icon-action"
+                                title={t('common.move')}
+                                aria-label={`${folder.name}: ${t('common.move')}`}
+                                disabled={busy}
                                 onClick={() => {
                                   setMoving(folder)
                                   setMoveTo(folder.parentId ?? '')
                                 }}
                               >
-                                {t('common.move')}
+                                <MoveIcon size={16} />
                               </button>
-                              <button type="button" className="link danger" onClick={() => setDeleting(folder)}>
-                                {t('common.delete')}
+                              <button
+                                type="button"
+                                className="icon-action danger"
+                                title={t('common.delete')}
+                                aria-label={`${folder.name}: ${t('common.delete')}`}
+                                disabled={busy}
+                                onClick={() => setDeleting(folder)}
+                              >
+                                <TrashIcon size={16} />
                               </button>
                             </>
                           )}

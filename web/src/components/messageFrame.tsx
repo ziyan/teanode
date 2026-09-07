@@ -46,11 +46,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // and it is what is shown while the first measurement is still pending.
 // A line of text with the document's padding around it: a one-line message
 // gets a one-line frame, not a tall box of nothing under it.
-const MINIMUM_HEIGHT = 52
+const MINIMUM_HEIGHT = 36
 
-// The padding buildDocument puts around the message, which the wrapper's
-// own height does not include.
-const BODY_PADDING = 14
+// The padding buildDocument puts above and below the message, which the
+// wrapper's own height does not include.
+const BODY_PADDING = 6
 
 // darkened inverts the frame from out here rather than from inside its
 // document. A filter on the iframe element is one composited layer the
@@ -93,24 +93,28 @@ export function MessageFrame({
       return
     }
 
-    const measured = Math.max(content.scrollHeight + 2 * BODY_PADDING, MINIMUM_HEIGHT)
+    // The wrapper scrolls sideways for a message wider than the frame — a
+    // fixed-width table on a phone — and its scrollbar is part of its
+    // height, which offsetHeight counts and scrollHeight does not.
+    const measured = Math.max(content.scrollHeight, content.offsetHeight) + 2 * BODY_PADDING
+    const wanted = Math.max(measured, MINIMUM_HEIGHT)
     const width = element.clientWidth
 
     setHeight((previous) => {
       // Sub-pixel churn from a reflow is not worth a re-render, and
       // re-rendering on it is the other way this loops.
-      if (Math.abs(previous - measured) <= 1) {
+      if (Math.abs(previous - wanted) <= 1) {
         return previous
       }
       // Only ever taller, unless the frame itself changed width. Content
       // grows as images arrive; it does not legitimately shrink while the
       // frame stays the same size, so a shrink is the signature of a
       // measurement chasing its own tail.
-      if (measured < previous && width === lastWidth.current) {
+      if (wanted < previous && width === lastWidth.current) {
         return previous
       }
       lastWidth.current = width
-      return measured
+      return wanted
     })
   }, [])
 
@@ -150,7 +154,10 @@ export function MessageFrame({
         setAlreadyDark(dark)
         onGroundMeasured?.(dark)
       }
-      observer = new ResizeObserver(measure)
+      // Measured on the next frame, not inside the observer's own
+      // callback: setting the frame's height there reflows the content
+      // the observer is watching, which the browser reports as a loop.
+      observer = new ResizeObserver(() => window.requestAnimationFrame(measure))
       observer.observe(content)
     }
 
