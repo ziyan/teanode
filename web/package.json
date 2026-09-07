@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.69.0",
     "copy-webpack-plugin": "^14.0.0",
@@ -28,8 +28,8 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "ts-loader": "^9.5.2",
-    "typescript": "^5.9.2",
-    "webpack": "^5.110.2",
+    "typescript": "^7.0.2",
+    "webpack": "^5.110.3",
     "webpack-cli": "^7.2.3",
     "webpack-dev-server": "^6.0.0"
   },
