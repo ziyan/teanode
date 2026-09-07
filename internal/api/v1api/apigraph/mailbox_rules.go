@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -12,6 +13,48 @@ import (
 
 // The two things the settings and compose pages ask about a mailbox that are
 // not the mailbox itself: who has written to it, and what its rules would do.
+
+type MailboxContactMutation interface {
+	// Add a contact, or rename one
+	SaveMailboxContact(ctx context.Context, arguments SaveMailboxContactArguments) (*models.MailboxContact, error)
+
+	// Remove a contact; it comes back when that address writes again
+	DeleteMailboxContact(ctx context.Context, arguments DeleteMailboxContactArguments) error
+}
+
+type SaveMailboxContactArguments struct {
+	MailboxID string `json:"mailboxId"`
+	Address   string `json:"address"`
+	Name      string `json:"name" graphapi:"nullable"`
+}
+
+func (self *graph) SaveMailboxContact(ctx context.Context, arguments SaveMailboxContactArguments) (*models.MailboxContact, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if !models.IsEmailAddress(strings.TrimSpace(arguments.Address)) {
+		return nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, arguments.Address)
+	}
+	contact, err := self.transaction(ctx).SaveContact(mailbox.ID, arguments.Address, arguments.Name)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return contact, nil
+}
+
+type DeleteMailboxContactArguments struct {
+	MailboxID string `json:"mailboxId"`
+	Address   string `json:"address"`
+}
+
+func (self *graph) DeleteMailboxContact(ctx context.Context, arguments DeleteMailboxContactArguments) error {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return err
+	}
+	return translateError(self.transaction(ctx).DeleteContact(mailbox.ID, arguments.Address))
+}
 
 type MailboxRulesQuery interface {
 	// People who have written to this mailbox, for completing an address
@@ -28,7 +71,7 @@ type ListMailboxContactsArguments struct {
 	// Beginning of an address or a name; empty lists the most recent
 	Prefix *string `json:"prefix"`
 
-	// How many, at most 50
+	// How many, at most 500
 	First *int `json:"first"`
 }
 
@@ -43,7 +86,7 @@ func (self *graph) ListMailboxContacts(ctx context.Context, arguments ListMailbo
 	}
 	limit := 10
 	if arguments.First != nil && *arguments.First > 0 {
-		limit = min(*arguments.First, 50)
+		limit = min(*arguments.First, 500)
 	}
 	contacts, err := self.transaction(ctx).ListContacts(mailbox.ID, prefix, limit)
 	if err != nil {

@@ -128,6 +128,7 @@ export function useMailboxes(): Mailboxes {
 // The name a folder is shown under. The system folders are translated; a
 // folder the owner made is called what they called it.
 const KIND_LABELS: Record<string, Key> = {
+  starred: 'mailbox.folder.starred',
   inbox: 'mailbox.folder.inbox',
   sent: 'mailbox.folder.sent',
   drafts: 'mailbox.folder.drafts',

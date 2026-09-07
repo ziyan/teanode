@@ -68,6 +68,9 @@ type MailboxOperation interface {
 	TouchContact(mailboxId, address, name string, at time.Time) error
 	ListContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error)
 	GetContact(mailboxId, address string) (*models.MailboxContact, error)
+	// SaveContact adds a contact, or renames one; DeleteContact removes it.
+	SaveContact(mailboxId, address, name string) (*models.MailboxContact, error)
+	DeleteContact(mailboxId, address string) error
 	MarkContactAutoReplied(mailboxId, address string, at time.Time) error
 	ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error)
 	CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error)
@@ -1121,6 +1124,24 @@ func (self *transaction) GetContact(mailboxId, address string) (*models.MailboxC
 		return nil, nil
 	}
 	return contactFromModel(&rows[0]), nil
+}
+
+func (self *transaction) SaveContact(mailboxId, address, name string) (*models.MailboxContact, error) {
+	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
+	name = truncateRunes(strings.TrimSpace(name), 255)
+	if mailboxId == "" || address == "" {
+		return nil, ErrInvalidArguments
+	}
+	if err := self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count") VALUES (?, ?, ?, ?, 0)
+		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "name" = EXCLUDED."name"`, mailboxId, address, name, time.Now()).Error; err != nil {
+		return nil, err
+	}
+	return self.GetContact(mailboxId, address)
+}
+
+func (self *transaction) DeleteContact(mailboxId, address string) error {
+	address = strings.ToLower(strings.TrimSpace(address))
+	return self.tx.Where("\"mailbox_id\" = ? AND \"address\" = ?", mailboxId, address).Delete(&mailboxContactModel{}).Error
 }
 
 func (self *transaction) MarkContactAutoReplied(mailboxId, address string, at time.Time) error {

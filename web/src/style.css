@@ -3809,3 +3809,11 @@ a.button.primary:hover {
   margin-top: 12px;
   font-size: 12px;
 }
+.sidebar-star {
+  font-size: 15px;
+  line-height: 1;
+}
+.contacts-filter {
+  max-width: 320px;
+  margin-bottom: 10px;
+}

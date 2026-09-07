@@ -50,6 +50,7 @@ type Mutation interface {
 	MailboxMutation
 	MailboxComposeMutation
 	MailboxAppPasswordMutation
+	MailboxContactMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation

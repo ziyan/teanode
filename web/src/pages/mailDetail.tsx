@@ -18,6 +18,7 @@ import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 import { useResolvedTheme } from '../components/theme'
+import { MenuButton } from '../components/menuButton'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -286,10 +287,22 @@ export function MailDetailPage() {
 // verdict and the deliveries; the mailbox shows it under the subject line.
 // One component, so that what a message looks like does not depend on which
 // page it is read from.
-export function MessageContent({ mailId, content }: { mailId: string; content?: MailContent | null }) {
+export function MessageContent({
+  mailId,
+  content,
+  mode = 'audit',
+}: {
+  mailId: string
+  content?: MailContent | null
+  // The audit page shows every view of a message under a row of tabs. The
+  // mailbox shows the message as a mail program would — rendered, or the
+  // text when there is nothing to render — with the rest behind a menu.
+  mode?: 'audit' | 'mailbox'
+}) {
   const { t } = useTranslation()
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
+  const [showHeaders, setShowHeaders] = useState(false)
 
   // Reading in the dark. The frame's document is built as a string, so the
   // web UI's theme has to be resolved here and written in as literals.
@@ -298,7 +311,14 @@ export function MessageContent({ mailId, content }: { mailId: string; content?: 
   // wants dark mail wants it for the next message too.
   const resolvedTheme = useResolvedTheme()
   const dark = resolvedTheme === 'dark'
+  // In the mailbox a dark theme means dark mail, every time: the choice to
+  // see a message as sent is for that message and is not remembered. On the
+  // audit page the choice is remembered, since an operator inspecting
+  // messages wants them the same way each time.
   const [darkened, setDarkened] = useState(() => {
+    if (mode === 'mailbox') {
+      return true
+    }
     try {
       return window.localStorage.getItem(DARKENED_KEY) === '1'
     } catch {
@@ -308,6 +328,9 @@ export function MessageContent({ mailId, content }: { mailId: string; content?: 
   const [alreadyDark, setAlreadyDark] = useState(false)
   const chooseDarkened = (next: boolean) => {
     setDarkened(next)
+    if (mode === 'mailbox') {
+      return
+    }
     try {
       window.localStorage.setItem(DARKENED_KEY, next ? '1' : '0')
     } catch {
@@ -319,7 +342,11 @@ export function MessageContent({ mailId, content }: { mailId: string; content?: 
   useEffect(() => {
     setChosen(null)
     setLoadRemote(false)
-  }, [mailId])
+    setShowHeaders(false)
+    if (mode === 'mailbox') {
+      setDarkened(true)
+    }
+  }, [mailId, mode])
 
   const document = useMemo(
     () =>
@@ -338,6 +365,90 @@ export function MessageContent({ mailId, content }: { mailId: string; content?: 
     <>
     {!content?.available ? (
       <p className="muted">{t('mailDetail.notStored')}</p>
+    ) : mode === 'mailbox' ? (
+      <>
+        {/* What a mail program shows, and a menu for what it hides. */}
+        <div className="message-menu">
+          <MenuButton
+            className="message-menu-button"
+            label={t('mailDetail.more')}
+            icon={<span aria-hidden="true">…</span>}
+            render={(close) => (
+              <>
+                <a href={`/api/v1/mail/${mailId}/raw`} download role="menuitem" onClick={close}>
+                  {t('mailDetail.download')}
+                </a>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!content.rawHeaders}
+                  onClick={() => {
+                    close()
+                    setShowHeaders((previous) => !previous)
+                  }}
+                >
+                  {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
+                </button>
+                {dark && hasHtml && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={alreadyDark}
+                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                    onClick={() => {
+                      close()
+                      chooseDarkened(!darkened)
+                    }}
+                  >
+                    {darkened ? t('mailDetail.asSent') : t('mailDetail.darkened')}
+                  </button>
+                )}
+              </>
+            )}
+          />
+        </div>
+        {hasHtml ? (
+          <>
+            {content.hasRemoteContent && !loadRemote && (
+              <div className="banner">
+                {t('mailDetail.remoteBlocked')}{' '}
+                <button className="link" onClick={() => setLoadRemote(true)}>
+                  {t('mailDetail.loadRemote')}
+                </button>
+              </div>
+            )}
+            <MessageFrame
+              document={document}
+              title={t('mailDetail.message')}
+              darkened={dark && darkened}
+              onGroundMeasured={setAlreadyDark}
+            />
+          </>
+        ) : (
+          <pre className="message-text">{content.text}</pre>
+        )}
+        {showHeaders && <pre className="message-text message-headers">{content.rawHeaders}</pre>}
+        {content.attachments?.length ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>{t('mailDetail.attachments')}</h3>
+            <table>
+              <tbody>
+                {content.attachments.map((attachment, index) => (
+                  <tr key={index}>
+                    <td>
+                      <a href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`} download={attachment.filename}>
+                        {attachment.filename}
+                      </a>
+                    </td>
+                    <td className="shrink muted">{attachment.contentType}</td>
+                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </>
     ) : (
       <>
         <div className="tabs">

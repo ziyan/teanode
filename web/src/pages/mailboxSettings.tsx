@@ -22,7 +22,23 @@ const TABS: TabItem[] = [
   { id: 'rules', label: 'mailboxSettings.tabRules' },
   { id: 'autoreply', label: 'mailboxSettings.tabAutoReply' },
   { id: 'devices', label: 'mailboxSettings.tabDevices' },
+  { id: 'contacts', label: 'mailboxSettings.tabContacts' },
 ]
+
+const CONTACTS = `
+  query ($mailboxId: String!, $prefix: String, $first: Int) {
+    ListMailboxContacts(mailboxId: $mailboxId, prefix: $prefix, first: $first) { address name lastSeenAt count }
+  }`
+
+const SAVE_CONTACT = `
+  mutation ($mailboxId: String!, $address: String!, $name: String) {
+    SaveMailboxContact(mailboxId: $mailboxId, address: $address, name: $name) { address name }
+  }`
+
+const DELETE_CONTACT = `
+  mutation ($mailboxId: String!, $address: String!) {
+    DeleteMailboxContact(mailboxId: $mailboxId, address: $address)
+  }`
 
 const APP_PASSWORDS = `
   query ($mailboxId: String!) {
@@ -94,6 +110,7 @@ export function MailboxSettingsPage() {
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}
       {tab === 'autoreply' && <AutoReplyTab key={view.mailbox.id} view={view} />}
       {tab === 'devices' && <DevicesTab key={view.mailbox.id} view={view} />}
+      {tab === 'contacts' && <ContactsTab key={view.mailbox.id} view={view} />}
     </>
   )
 }
@@ -1029,6 +1046,173 @@ function DevicesTab({ view }: { view: MailboxView }) {
           confirmLabel={t('mailboxSettings.revoke')}
           busy={busy}
           onConfirm={() => remove(deleting)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </>
+  )
+}
+
+// --- contacts ------------------------------------------------------------------
+//
+// Whoever has written to the mailbox, and whoever its owner added. Names
+// here are what the compose page completes and what a rule's "sender is a
+// contact" reads.
+
+type Contact = { address: string; name?: string; lastSeenAt: string; count: number }
+
+function ContactsTab({ view }: { view: MailboxView }) {
+  const { t } = useTranslation()
+  const [prefix, setPrefix] = useState('')
+  const query = useQuery(
+    () => graphql<{ ListMailboxContacts: Contact[] }>(CONTACTS, { mailboxId: view.mailbox.id, prefix: prefix || null, first: 500 }),
+    [view.mailbox.id, prefix],
+    { refresh: false },
+  )
+  const [address, setAddress] = useState('')
+  const [name, setName] = useState('')
+  const [editing, setEditing] = useState<Contact | null>(null)
+  const [editName, setEditName] = useState('')
+  const [deleting, setDeleting] = useState<Contact | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true)
+    try {
+      await action()
+      setError(null)
+      await query.reload()
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const contacts = query.data?.ListMailboxContacts ?? []
+
+  return (
+    <>
+      <form
+        className="card form-narrow"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void run(async () => {
+            await graphql(SAVE_CONTACT, { mailboxId: view.mailbox.id, address: address.trim(), name: name.trim() || null })
+            setAddress('')
+            setName('')
+          })
+        }}
+      >
+        <h3>{t('mailboxSettings.newContact')}</h3>
+        <label>
+          {t('mailboxSettings.contactAddress')}
+          <input type="email" value={address} onChange={(event) => setAddress(event.target.value)} required />
+        </label>
+        <label>
+          {t('mailboxSettings.contactName')}
+          <input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        {error ? <ErrorMessage error={error} /> : null}
+        <div className="page-actions">
+          <button className="primary" type="submit" disabled={busy || !address.trim()}>
+            {t('common.create')}
+          </button>
+        </div>
+      </form>
+
+      <div className="card">
+        <h3>{t('mailboxSettings.contacts')}</h3>
+        <p className="muted field-hint">{t('mailboxSettings.contactsHint')}</p>
+        <input
+          type="search"
+          className="contacts-filter"
+          placeholder={t('mailboxSettings.contactsFilter')}
+          aria-label={t('mailboxSettings.contactsFilter')}
+          value={prefix}
+          onChange={(event) => setPrefix(event.target.value)}
+        />
+        {query.loading && !query.data ? (
+          <Loading />
+        ) : contacts.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            {t('mailboxSettings.noContacts')}
+          </p>
+        ) : (
+          <table>
+            <tbody>
+              {contacts.map((contact) => (
+                <tr key={contact.address}>
+                  <td>
+                    {editing?.address === contact.address ? (
+                      <form
+                        className="inline-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void run(async () => {
+                            await graphql(SAVE_CONTACT, { mailboxId: view.mailbox.id, address: contact.address, name: editName.trim() || null })
+                            setEditing(null)
+                          })
+                        }}
+                      >
+                        <input value={editName} onChange={(event) => setEditName(event.target.value)} autoFocus placeholder={t('mailboxSettings.contactName')} />
+                        <button type="submit" className="primary" disabled={busy}>
+                          {t('common.save')}
+                        </button>
+                        <button type="button" onClick={() => setEditing(null)}>
+                          {t('common.cancel')}
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <div>{contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}</div>
+                        <div className="muted mono">{contact.address}</div>
+                      </>
+                    )}
+                  </td>
+                  <td className="shrink muted">{t('mailboxSettings.contactCount', { count: contact.count })}</td>
+                  <td className="shrink muted">
+                    <RelativeTime value={contact.lastSeenAt} />
+                  </td>
+                  <td className="shrink">
+                    {editing?.address !== contact.address && (
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="link"
+                          onClick={() => {
+                            setEditing(contact)
+                            setEditName(contact.name ?? '')
+                          }}
+                        >
+                          {t('common.rename')}
+                        </button>
+                        <button type="button" className="link danger" onClick={() => setDeleting(contact)}>
+                          {t('common.delete')}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {deleting && (
+        <ConfirmDialog
+          title={t('mailboxSettings.deleteContact')}
+          body={t('mailboxSettings.deleteContactConfirm', { address: deleting.address })}
+          confirmLabel={t('common.delete')}
+          busy={busy}
+          onConfirm={() =>
+            run(async () => {
+              await graphql(DELETE_CONTACT, { mailboxId: view.mailbox.id, address: deleting.address })
+              setDeleting(null)
+            })
+          }
           onClose={() => setDeleting(null)}
         />
       )}

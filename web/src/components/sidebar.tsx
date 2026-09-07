@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
@@ -265,9 +265,20 @@ export function Sidebar({
               </div>
               {folderRows(current.folders).map(({ folder, depth }) => {
                 const label = folderLabel(t, folder)
+                // Starred sits under the Inbox: every flagged message,
+                // wherever it is, the way a mail program shows them.
+                const starredRow =
+                  folder.kind === 'inbox' ? (
+                    <NavLink key="starred" to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                      <span className="sidebar-icon sidebar-star" aria-hidden="true">
+                        ★
+                      </span>
+                      <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
+                    </NavLink>
+                  ) : null
                 return (
+                  <React.Fragment key={folder.id}>
                   <NavLink
-                    key={folder.id}
                     to={`/mailbox/${folder.id}`}
                     className={folder.unread > 0 ? 'unread' : undefined}
                     data-depth={Math.min(depth, 3)}
@@ -283,6 +294,8 @@ export function Sidebar({
                       </span>
                     )}
                   </NavLink>
+                  {starredRow}
+                  </React.Fragment>
                 )
               })}
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>

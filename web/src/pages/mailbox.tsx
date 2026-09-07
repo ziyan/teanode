@@ -23,6 +23,13 @@ import { MessageContent } from './mailDetail'
 
 const PAGE_SIZE = 50
 
+// STARRED is the path segment of the view of every flagged message.
+export const STARRED = 'starred'
+
+function starredFolder(view: MailboxView): MailboxFolder {
+  return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: 0, total: 0 }
+}
+
 const ITEMS = `
   query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $after: String, $offset: Int) {
     ListMailboxItems(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, after: $after, offset: $offset) {
@@ -129,6 +136,12 @@ export function MailboxPage() {
     )
   }
 
+  // Starred is every flagged message wherever it sits: a view, not a
+  // folder, drawn as one.
+  if (folderId === STARRED) {
+    return <FollowRail view={view} folder={starredFolder(view)} itemId={itemId} />
+  }
+
   // /mailbox on its own is the inbox of the mailbox last looked at.
   const folder = folderId ? view.folders.find((candidate) => candidate.id === folderId) : undefined
   if (!folder) {
@@ -176,7 +189,8 @@ function Folder({
   const [narrowing, setNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
   const [appliedNarrowing, setAppliedNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
   const [showNarrowing, setShowNarrowing] = useState(false)
-  const everywhere = appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all')
+  const starred = folder.kind === STARRED
+  const everywhere = starred || (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
   const [items, setItems] = useState<MailboxItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -190,7 +204,7 @@ function Folder({
       folderId: everywhere ? undefined : folder.id,
       mailboxId: everywhere ? folder.mailboxId : undefined,
       unread: filter === 'unread' ? true : undefined,
-      flagged: filter === 'flagged' ? true : undefined,
+      flagged: starred || filter === 'flagged' ? true : undefined,
       search: applied || undefined,
       from: appliedNarrowing.from || undefined,
       to: appliedNarrowing.to || undefined,
@@ -200,7 +214,7 @@ function Folder({
       hasAttachment: appliedNarrowing.attachment === 'any' ? undefined : appliedNarrowing.attachment === 'with',
       first: PAGE_SIZE,
     }),
-    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere],
+    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred],
   )
 
   const load = useCallback(
@@ -262,6 +276,13 @@ function Folder({
     act(async () => {
       await graphql(SET_FLAGS, { itemIds, ...flags })
       patch(itemIds, flags)
+      if (starred && flags.flagged === false) {
+        // Unstarred is gone from Starred.
+        remove(itemIds)
+        if (itemIds.includes(itemId ?? '')) {
+          navigate(`/mailbox/${folder.id}`)
+        }
+      }
     })
   const moveTo = (itemIds: string[], target: string) =>
     act(async () => {
@@ -285,6 +306,9 @@ function Folder({
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
+  // In Starred, "delete" means what it means in the message's own folder;
+  // the server decides by the item, so nothing to do here but not to call
+  // it "delete for good".
 
   const toggleAll = () =>
     setSelected((previous) => (previous.size === items.length ? new Set() : new Set(items.map((item) => item.id))))
@@ -317,9 +341,11 @@ function Folder({
             <button type="button" className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter(filter === 'unread' ? 'all' : 'unread')}>
               {t('mailbox.unreadOnly')}
             </button>
-            <button type="button" className={filter === 'flagged' ? 'active' : ''} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}>
-              {t('mailbox.flaggedOnly')}
-            </button>
+            {!starred && (
+              <button type="button" className={filter === 'flagged' ? 'active' : ''} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}>
+                {t('mailbox.flaggedOnly')}
+              </button>
+            )}
             <button
               type="button"
               className={showNarrowing || narrowed(appliedNarrowing) || appliedNarrowing.everywhere ? 'active' : ''}
@@ -489,6 +515,8 @@ function Folder({
             <li className="mailbox-placeholder">
               {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
                 t('mailbox.nothingFound')
+              ) : starred ? (
+                t('mailbox.nothingStarred')
               ) : folder.kind === 'inbox' && addresses.length === 0 ? (
                 // An Inbox with no address is the first thing a new account
                 // sees, and "nothing here" would leave it wondering why.
@@ -788,7 +816,7 @@ function Reader({
         ) : content.error ? (
           <ErrorMessage error={content.error} />
         ) : (
-          <MessageContent mailId={mail.id} content={content.data?.GetMailContent} />
+          <MessageContent mailId={mail.id} content={content.data?.GetMailContent} mode="mailbox" />
         )
       ) : null}
     </>
