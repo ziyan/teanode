@@ -4021,3 +4021,11 @@ a.button.primary:hover {
 .message-headers-close:hover {
   color: var(--text);
 }
+
+/* A dialog names what it is about, and an address can be longer than a
+   phone is wide: the words break rather than the dialog growing past the
+   screen. */
+.dialog {
+  max-width: min(420px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+}

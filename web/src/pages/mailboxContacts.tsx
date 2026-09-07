@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
-import { ConfirmDialog } from '../components/dialog'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
@@ -40,22 +40,28 @@ export function MailboxContactsPage() {
     [mailboxId],
     { refresh: false },
   )
+  // Adding and editing happen in a dialog over the list, the way the other
+  // lists add their rows; deleting asks first.
+  const [adding, setAdding] = useState(false)
   const [address, setAddress] = useState('')
   const [name, setName] = useState('')
   const [editing, setEditing] = useState<Contact | null>(null)
   const [editName, setEditName] = useState('')
   const [deleting, setDeleting] = useState<Contact | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(null)
+  const [problem, setProblem] = useState<string | null>(null)
 
-  const run = async (action: () => Promise<unknown>) => {
+  // Whether it worked, so a dialog closes only on success.
+  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true)
     try {
       await action()
-      setError(null)
+      setProblem(null)
       await query.reload()
+      return true
     } catch (failure) {
-      setError(failure)
+      setProblem(failure instanceof Error ? failure.message : String(failure))
+      return false
     } finally {
       setBusy(false)
     }
@@ -69,29 +75,7 @@ export function MailboxContactsPage() {
         filter: 'text',
         value: (contact) => contact.name ?? '',
         sort: (first, second) => (first.name ?? '').localeCompare(second.name ?? ''),
-        render: (contact) =>
-          editing?.address === contact.address ? (
-            <form
-              className="inline-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void run(async () => {
-                  await graphql(SAVE_CONTACT, { mailboxId, address: contact.address, name: editName.trim() || null })
-                  setEditing(null)
-                })
-              }}
-            >
-              <input value={editName} onChange={(event) => setEditName(event.target.value)} autoFocus placeholder={t('mailboxSettings.contactName')} />
-              <button type="submit" className="primary" disabled={busy}>
-                {t('common.save')}
-              </button>
-              <button type="button" onClick={() => setEditing(null)}>
-                {t('common.cancel')}
-              </button>
-            </form>
-          ) : (
-            contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>
-          ),
+        render: (contact) => contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>,
       },
       {
         key: 'address',
@@ -127,37 +111,37 @@ export function MailboxContactsPage() {
         key: 'actions',
         header: '',
         width: '5rem',
-        render: (contact) =>
-          editing?.address === contact.address ? null : (
-            <div className="row-actions">
-              <button
-                type="button"
-                className="icon-action"
-                title={t('common.rename')}
-                aria-label={`${contact.address}: ${t('common.rename')}`}
-                disabled={busy}
-                onClick={() => {
-                  setEditing(contact)
-                  setEditName(contact.name ?? '')
-                }}
-              >
-                <PencilIcon size={16} />
-              </button>
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('common.delete')}
-                aria-label={`${contact.address}: ${t('common.delete')}`}
-                disabled={busy}
-                onClick={() => setDeleting(contact)}
-              >
-                <TrashIcon size={16} />
-              </button>
-            </div>
-          ),
+        render: (contact) => (
+          <div className="row-actions">
+            <button
+              type="button"
+              className="icon-action"
+              title={t('common.edit')}
+              aria-label={`${contact.address}: ${t('common.edit')}`}
+              disabled={busy}
+              onClick={() => {
+                setEditing(contact)
+                setEditName(contact.name ?? '')
+                setProblem(null)
+              }}
+            >
+              <PencilIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-action danger"
+              title={t('common.delete')}
+              aria-label={`${contact.address}: ${t('common.delete')}`}
+              disabled={busy}
+              onClick={() => setDeleting(contact)}
+            >
+              <TrashIcon size={16} />
+            </button>
+          </div>
+        ),
       },
     ],
-    [t, editing, editName, busy, mailboxId],
+    [t, busy],
   )
 
   if (!mailboxes.loaded) {
@@ -171,33 +155,20 @@ export function MailboxContactsPage() {
   return (
     <>
       <p className="muted">{t('mailboxSettings.contactsHint')}</p>
-      <form
-        className="card form-narrow"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void run(async () => {
-            await graphql(SAVE_CONTACT, { mailboxId, address: address.trim(), name: name.trim() || null })
+      <div className="page-actions">
+        <button
+          className="primary"
+          type="button"
+          onClick={() => {
             setAddress('')
             setName('')
-          })
-        }}
-      >
-        <h3>{t('mailboxSettings.newContact')}</h3>
-        <label>
-          {t('mailboxSettings.contactAddress')}
-          <input type="email" value={address} onChange={(event) => setAddress(event.target.value)} required />
-        </label>
-        <label>
-          {t('mailboxSettings.contactName')}
-          <input value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        {error ? <ErrorMessage error={error} /> : null}
-        <div className="page-actions">
-          <button className="primary" type="submit" disabled={busy || !address.trim()}>
-            {t('common.create')}
-          </button>
-        </div>
-      </form>
+            setProblem(null)
+            setAdding(true)
+          }}
+        >
+          {t('mailboxSettings.newContact')}
+        </button>
+      </div>
 
       {query.error ? <ErrorMessage error={query.error} /> : null}
       <DataTable
@@ -209,6 +180,55 @@ export function MailboxContactsPage() {
         countLabel={(count) => plural(count, { one: 'contacts.countOne', other: 'contacts.count' }, { count })}
       />
 
+      {adding && (
+        <FormDialog
+          title={t('mailboxSettings.newContact')}
+          submitLabel={t('common.create')}
+          busy={busy}
+          error={problem}
+          canSubmit={address.trim().length > 0}
+          onClose={() => setAdding(false)}
+          onSubmit={() =>
+            void run(async () => {
+              await graphql(SAVE_CONTACT, { mailboxId, address: address.trim(), name: name.trim() || null })
+            }).then((done) => done && setAdding(false))
+          }
+        >
+          <label>
+            {t('mailboxSettings.contactAddress')}
+            <input type="email" value={address} onChange={(event) => setAddress(event.target.value)} required />
+          </label>
+          <label>
+            {t('mailboxSettings.contactName')}
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+        </FormDialog>
+      )}
+
+      {editing && (
+        <FormDialog
+          title={t('contacts.edit')}
+          submitLabel={t('common.save')}
+          busy={busy}
+          error={problem}
+          onClose={() => setEditing(null)}
+          onSubmit={() =>
+            void run(async () => {
+              await graphql(SAVE_CONTACT, { mailboxId, address: editing.address, name: editName.trim() || null })
+            }).then((done) => done && setEditing(null))
+          }
+        >
+          <label>
+            {t('mailboxSettings.contactAddress')}
+            <input type="email" value={editing.address} readOnly />
+          </label>
+          <label>
+            {t('mailboxSettings.contactName')}
+            <input value={editName} onChange={(event) => setEditName(event.target.value)} />
+          </label>
+        </FormDialog>
+      )}
+
       {deleting && (
         <ConfirmDialog
           title={t('mailboxSettings.deleteContact')}
@@ -218,8 +238,7 @@ export function MailboxContactsPage() {
           onConfirm={() =>
             run(async () => {
               await graphql(DELETE_CONTACT, { mailboxId, address: deleting.address })
-              setDeleting(null)
-            })
+            }).then((done) => done && setDeleting(null))
           }
           onClose={() => setDeleting(null)}
         />

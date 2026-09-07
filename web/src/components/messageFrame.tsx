@@ -48,10 +48,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // gets a one-line frame, not a tall box of nothing under it.
 const MINIMUM_HEIGHT = 36
 
-// How many times the height may change for one document. Content settles
-// after a handful of reflows; a height still changing after this many is a
-// measurement chasing itself, and it stops here.
-const CHANGE_BUDGET = 40
+// How many times the height may change at one width. Content settles as
+// its images arrive, in as many steps as it has images; a height still
+// changing after this many is a measurement chasing itself, and it stops
+// here. A new width — the window resized, a phone turned — starts over.
+const CHANGE_BUDGET = 200
 
 // darkened inverts the frame from out here rather than from inside its
 // document. A filter on the iframe element is one composited layer the
@@ -76,6 +77,7 @@ export function MessageFrame({
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const changes = useRef(0)
+  const lastWidth = useRef(0)
   const [height, setHeight] = useState(MINIMUM_HEIGHT)
   const [alreadyDark, setAlreadyDark] = useState(false)
   const measuredGround = useRef<string | null>(null)
@@ -98,6 +100,11 @@ export function MessageFrame({
     // fixed-width table on a phone — and its scrollbar is part of its
     // height, which offsetHeight counts and scrollHeight does not.
     const wanted = Math.max(content.scrollHeight, content.offsetHeight, MINIMUM_HEIGHT)
+    const width = element.clientWidth
+    if (width !== lastWidth.current) {
+      lastWidth.current = width
+      changes.current = 0
+    }
 
     setHeight((previous) => {
       // Sub-pixel churn from a reflow is not worth a re-render, and
@@ -120,6 +127,7 @@ export function MessageFrame({
   // this one.
   useEffect(() => {
     changes.current = 0
+    lastWidth.current = 0
     setHeight(MINIMUM_HEIGHT)
     setAlreadyDark(false)
   }, [source])
