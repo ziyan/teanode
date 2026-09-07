@@ -29,7 +29,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          # From go.mod, so the version CI builds with is the version the
+          # module declares: they drifted, go.mod went to 1.26 with a
+          # dependency, and the pin here stayed at 1.25.
+          go-version-file: go.mod
           cache: false # dependencies are vendored
 
       - name: Install govulncheck
