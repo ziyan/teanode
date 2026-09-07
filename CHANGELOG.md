@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-07
+
 ### Added
 
 - The command line reaches the mailbox and access work by name rather than
