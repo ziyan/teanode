@@ -304,8 +304,8 @@ github.com/x448/float16
 # go.uber.org/atomic v1.11.0
 ## explicit; go 1.18
 go.uber.org/atomic
-# golang.org/x/crypto v0.55.0
-## explicit; go 1.25.0
+# golang.org/x/crypto v0.56.0
+## explicit; go 1.26.0
 golang.org/x/crypto/acme
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish
