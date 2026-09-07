@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
@@ -80,6 +80,18 @@ export function PeopleTab() {
   // Which group the people list is narrowed to; empty is everyone.
   const [chosenGroupId, setChosenGroupId] = useState('')
 
+  // Where the people are, so that choosing a group from the list below them
+  // on a phone shows what it did rather than leaving somebody at the bottom
+  // of the page wondering.
+  const people = useRef<HTMLDivElement>(null)
+  const choose = (groupId: string) => {
+    const next = groupId === chosenGroupId ? '' : groupId
+    setChosenGroupId(next)
+    if (next && window.matchMedia('(max-width: 900px)').matches) {
+      people.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
   const [addingPerson, setAddingPerson] = useState(false)
   const [editingPerson, setEditingPerson] = useState<User | null>(null)
   const [personDraft, setPersonDraft] = useState<PersonDraft>({ username: '', password: '', name: '', email: '', groupIds: [] })
@@ -154,9 +166,12 @@ export function PeopleTab() {
       {error ? <ErrorMessage error={error} /> : null}
 
       <div className="access-columns">
+        <div ref={people}>
         <SettingsSection
           title={chosen ? t('access.people.inGroup', { name: chosen.name }) : t('access.people.everyone')}
-          description={t('access.users.intro')}
+          // Narrowed to a group, the line below says which and how many, and
+          // saying "everyone with an account" above it would contradict it.
+          description={chosen ? undefined : t('access.users.intro')}
           action={
             managesUsers ? (
               <button className="primary" type="button" onClick={startAddingPerson}>
@@ -165,6 +180,30 @@ export function PeopleTab() {
             ) : undefined
           }
         >
+          {/* On a phone the groups are below the people rather than beside
+              them, so the way to narrow the list is here too: scrolling past
+              everybody to reach the groups and back again is not a filter. */}
+          {groups.length > 0 && (
+            <div className="access-chips access-narrow-filter">
+              <button
+                type="button"
+                className={chosen ? 'access-chip' : 'access-chip chosen'}
+                onClick={() => setChosenGroupId('')}
+              >
+                {t('access.people.everyone')}
+              </button>
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  className={group.id === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
+                  onClick={() => choose(group.id)}
+                >
+                  {group.name}
+                </button>
+              ))}
+            </div>
+          )}
           {chosen && (
             <p className="muted access-filter">
               {t('access.people.narrowed', { name: chosen.name, count: shown.length })}{' '}
@@ -208,7 +247,7 @@ export function PeopleTab() {
                           key={groupId}
                           type="button"
                           className={groupId === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
-                          onClick={() => setChosenGroupId(groupId === chosenGroupId ? '' : groupId)}
+                          onClick={() => choose(groupId)}
                         >
                           {groupName(groupId)}
                         </button>
@@ -247,6 +286,7 @@ export function PeopleTab() {
             />
           ))}
         </SettingsSection>
+        </div>
 
         <SettingsSection
           title={t('access.people.groups')}
@@ -275,7 +315,7 @@ export function PeopleTab() {
                 <button
                   type="button"
                   className={group.id === chosenGroupId ? 'access-group-name chosen' : 'access-group-name'}
-                  onClick={() => setChosenGroupId(group.id === chosenGroupId ? '' : group.id)}
+                  onClick={() => choose(group.id)}
                 >
                   {group.name}
                 </button>

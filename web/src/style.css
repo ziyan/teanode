@@ -4141,3 +4141,16 @@ a.button.primary:hover {
   color: var(--text);
   font-weight: 500;
 }
+
+/* The groups as a row of chips over the people, for the width where the
+   groups themselves are below rather than beside: a filter you have to
+   scroll past what it filters to reach is not one. */
+.access-narrow-filter {
+  display: none;
+  margin-bottom: 8px;
+}
+@media (max-width: 900px) {
+  .access-narrow-filter {
+    display: flex;
+  }
+}
