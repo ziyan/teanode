@@ -334,7 +334,7 @@ is not their mailbox address; a mailbox may have several.
         PRIMARY KEY ("domain_id", "local_part")
     );
 
-    CREATE TABLE "folder" (
+    CREATE TABLE "mailbox_folder" (
         "id"          varchar(32)  NOT NULL,
         "created_at"  timestamptz  NOT NULL,
         "modified_at" timestamptz  NOT NULL,
@@ -351,15 +351,15 @@ is not their mailbox address; a mailbox may have several.
         "modseq"       bigint      NOT NULL DEFAULT 1,
         PRIMARY KEY ("id")
     );
-    CREATE UNIQUE INDEX "folder_name" ON "folder" ("mailbox_id", COALESCE("parent_id", ''), lower("name"));
-    CREATE UNIQUE INDEX "folder_kind" ON "folder" ("mailbox_id", "kind") WHERE "kind" <> '';
+    CREATE UNIQUE INDEX "mailbox_folder_name" ON "mailbox_folder" ("mailbox_id", COALESCE("parent_id", ''), lower("name"));
+    CREATE UNIQUE INDEX "mailbox_folder_kind" ON "mailbox_folder" ("mailbox_id", "kind") WHERE "kind" <> '';
 
     -- One message in one folder. The message is the existing mail row; this
     -- is the possession of it, with its flags. The same mail can be an item
     -- in many folders of many mailboxes.
     CREATE TABLE "mailbox_item" (
         "id"          varchar(32) NOT NULL,
-        "folder_id"   varchar(32) NOT NULL REFERENCES "folder"("id") ON DELETE CASCADE,
+        "folder_id"   varchar(32) NOT NULL REFERENCES "mailbox_folder"("id") ON DELETE CASCADE,
         "mail_id"     varchar(32) NOT NULL REFERENCES "mail"("id")   ON DELETE CASCADE,
         "uid"         bigint      NOT NULL,
         "modseq"      bigint      NOT NULL,
@@ -427,7 +427,7 @@ saved and when run.
     -- A password a mail program uses; one per device, revocable one at a
     -- time. Passkeys cannot speak IMAP, and the account password should
     -- not sit in a phone's keychain.
-    CREATE TABLE "app_password" (
+    CREATE TABLE "mailbox_app_password" (
         "id"            varchar(32)  NOT NULL,
         "created_at"    timestamptz  NOT NULL,
         "mailbox_id"    varchar(32)  NOT NULL REFERENCES "mailbox"("id") ON DELETE CASCADE,
@@ -544,27 +544,27 @@ types change. Written out so that "what is added" has one answer:
         Primary   bool   `json:"primary"`
     }
     
-    type FolderKind string
+    type MailboxFolderKind string
     
     const (
-        FolderKindCustom  FolderKind = ""
-        FolderKindInbox   FolderKind = "inbox"
-        FolderKindSent    FolderKind = "sent"
-        FolderKindDrafts  FolderKind = "drafts"
-        FolderKindArchive FolderKind = "archive"
-        FolderKindJunk    FolderKind = "junk"
-        FolderKindTrash   FolderKind = "trash"
+        MailboxFolderKindCustom  MailboxFolderKind = ""
+        MailboxFolderKindInbox   MailboxFolderKind = "inbox"
+        MailboxFolderKindSent    MailboxFolderKind = "sent"
+        MailboxFolderKindDrafts  MailboxFolderKind = "drafts"
+        MailboxFolderKindArchive MailboxFolderKind = "archive"
+        MailboxFolderKindJunk    MailboxFolderKind = "junk"
+        MailboxFolderKindTrash   MailboxFolderKind = "trash"
     )
     
-    // Folder is a named place in a mailbox, nested as deep as its owner likes.
-    type Folder struct {
+    // MailboxFolder is a named place in a mailbox, nested as deep as its owner likes.
+    type MailboxFolder struct {
         ID          string     `json:"id"`
         CreatedAt   time.Time  `json:"createdAt"`
         ModifiedAt  time.Time  `json:"modifiedAt"`
         MailboxID   string     `json:"mailboxId"`
         ParentID    string     `json:"parentId,omitempty"`
         Name        string     `json:"name"`
-        Kind        FolderKind `json:"kind,omitempty"`
+        Kind        MailboxFolderKind `json:"kind,omitempty"`
         // IMAP's contract: UIDs in a folder only grow, and a folder that is
         // recreated announces itself with a new validity.
         UIDValidity uint64     `json:"uidValidity"`
@@ -623,12 +623,12 @@ types change. Written out so that "what is added" has one answer:
         Address  string `json:"address,omitempty"`
     }
     
-    // AppPassword is what a mail program signs in with. It belongs to a
+    // MailboxAppPassword is what a mail program signs in with. It belongs to a
     // mailbox, not a user: a program's "account" is one mailbox, so the login
     // name is one of the mailbox's addresses and the app password is what says
     // which mailbox that is. One per device, revocable alone; the hash never
     // leaves the server.
-    type AppPassword struct {
+    type MailboxAppPassword struct {
         ID           string     `json:"id"`
         CreatedAt    time.Time  `json:"createdAt"`
         MailboxID    string     `json:"mailboxId"`
@@ -648,9 +648,9 @@ types change. Written out so that "what is added" has one answer:
         LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
     }
     
-    // Contact is an address learned from traffic, for completion and for the
+    // MailboxContact is an address learned from traffic, for completion and for the
     // "sender is known" rule condition.
-    type Contact struct {
+    type MailboxContact struct {
         MailboxID  string    `json:"mailboxId"`
         Address    string    `json:"address"`
         Name       string    `json:"name,omitempty"`
@@ -738,7 +738,7 @@ types change. Written out so that "what is added" has one answer:
     -- Learned from mail sent and received, for address completion when
     -- composing and for the "sender is known" rule condition. Not an address
     -- book anybody edits; that would be a separate thing.
-    CREATE TABLE "contact" (
+    CREATE TABLE "mailbox_contact" (
         "mailbox_id"   varchar(32)  NOT NULL REFERENCES "mailbox"("id") ON DELETE CASCADE,
         "address"      varchar(320) NOT NULL,
         "name"         varchar(256) NOT NULL DEFAULT '',
@@ -1038,8 +1038,11 @@ Decisions are the repository owner's.
   mailboxes signs differently from each.
   Date/Author: 2026-09-06, Ziyan
 
-- Decision: the rule types are `MailboxRule`, `MailboxRuleCondition` and
-  `MailboxRuleAction`, and the table is `mailbox_rule`.
+- Decision: everything that belongs to a mailbox is named for it. Tables
+  `mailbox_folder`, `mailbox_item`, `mailbox_address`, `mailbox_rule`,
+  `mailbox_contact`, `mailbox_app_password`; types `MailboxFolder`,
+  `MailboxRule`, `MailboxRuleCondition`, `MailboxRuleAction`,
+  `MailboxContact`, `MailboxAppPassword`.
   Rationale: named for what they belong to, like `MailboxAddress`.
   Date/Author: 2026-09-06, Ziyan
 
