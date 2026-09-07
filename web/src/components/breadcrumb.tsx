@@ -24,6 +24,7 @@ type Crumb = { label: Key; to?: string }
 
 const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
+  { prefix: '/access', trail: [{ label: 'nav.access', to: '/access' }] },
   // Every /settings/* page gets its own crumb from SETTINGS_SURFACES below,
   // so there is one entry here rather than one per page.
   //

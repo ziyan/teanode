@@ -10,6 +10,7 @@ import {
   KeyIcon,
   LogoutIcon,
   MailIcon,
+  PeopleIcon,
   PinIcon,
   QueueIcon,
   ServerIcon,
@@ -89,11 +90,17 @@ const GROUPS: Group[] = [
     label: 'nav.groupConfiguration',
     items: [
       { label: 'nav.domains', to: '/domains', icon: <DomainsIcon />, anyOf: ['domain:manage'] },
+      {
+        label: 'nav.access',
+        to: '/access',
+        icon: <PeopleIcon />,
+        anyOf: ['user:manage', 'group:manage', 'role:manage', 'audit:read'],
+      },
       ...surfacesByCategory('server').map((surface) => ({
         label: surface.label,
         to: surface.path,
         icon: SERVER_ICONS[surface.segment],
-        anyOf: ['server:manage', 'user:manage', 'group:manage', 'role:manage', 'audit:read'],
+        anyOf: ['server:manage'],
       })),
     ],
   },

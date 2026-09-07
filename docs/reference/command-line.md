@@ -125,6 +125,10 @@ so one command serves a person and a script.
 | `credential` | SMTP credentials for sending through this server |
 | `dkim` | the keys that sign outgoing mail, and the record to publish |
 | `user` | the accounts on this server; `user rescue` on `teanode-server` makes one an administrator |
+| `group` | who may do what, and over which domains: members, roles, domains |
+| `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
+| `audit` | the log of administrative changes, with filters |
+| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `contact`, `device`, `autoreply`, `programs` |
 | `token` | API tokens; `token create --user` on the console issues somebody's first |
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
@@ -136,9 +140,39 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
-| `api` | everything else, straight from the schema: mailboxes, folders, rules, app passwords, groups, roles, the audit log |
+| `api` | everything else, straight from the schema |
 
-One thing is not in the schema, because it is bytes rather than JSON: the
+### A mailbox from the shell
+
+`teanode mailbox` is the dashboard's mailbox, without the dashboard. Most
+people have one mailbox, so `--mailbox` is needed only when there are
+several, and a folder is named rather than identified:
+
+    teanode mailbox folder create GitHub
+    teanode mailbox rule add GitHub --when from:contains:@github.com --move GitHub --stop
+    teanode mailbox rule apply
+
+A condition is `field:operator:value`, repeatable, and every one must match.
+The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known` and
+`any`; the operators are `contains`, `equals`, `matches` (a regular
+expression), `above` and `below`. A header condition names the header:
+`--when header:List-Id:contains:golang`. The actions are flags: `--move`,
+`--mark-read`, `--flag`, `--forward`, `--delete`, and `--stop` ends the run
+after this rule.
+
+A rule files the mail that arrives after it is written. `rule apply` runs the
+stored rules over what is already in a folder, moving, marking, flagging and
+deleting as arrival would have; forwarding is not repeated, because old mail
+is not sent again. `rule test` says what would happen and changes nothing.
+
+The rest of the group is the rest of the mailbox: `contact list|add|remove`,
+`device list|add|remove` for the app passwords a mail program signs in with,
+`autoreply show|set|off`, and `programs` for the hosts and ports to type into
+one.
+
+### One thing that is not in the schema
+
+Because it is bytes rather than JSON: the
 files of a draft go up as `multipart/form-data`, one `file` part each, to
 `PUT /api/v1/mailbox/drafts/{itemId}/attachments` (or
 `POST /api/v1/mailbox/{mailboxId}/drafts/attachments` for a draft that does

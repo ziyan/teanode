@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The command line reaches the mailbox and access work by name rather than
+  through `teanode api call`: `teanode mailbox` with `folder`, `rule`,
+  `contact`, `device`, `autoreply` and `programs`, and `teanode group`,
+  `teanode role` and `teanode audit`. A rule is written as
+  `--when from:contains:@github.com --move GitHub`, and `mailbox rule apply`
+  runs the stored rules over the mail already in a folder, which nothing
+  could do before: a rule only ever filed what arrived after it.
+- Who may do what has its own place in the rail, beside Domains and Server,
+  rather than four tabs inside the server's own page. The accounts and the
+  groups are one page there: choosing a group narrows the people to its
+  members, and membership is edited from either side.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

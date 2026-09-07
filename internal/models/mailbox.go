@@ -225,16 +225,16 @@ func (self *MailboxRule) Validate() error {
 // MailboxRuleCondition is one test: a field, how to compare, and against what.
 type MailboxRuleCondition struct {
 	Field    string `json:"field"` // from, to, subject, header, score, sender-known, any
-	Header   string `json:"header,omitempty"`
+	Header   string `json:"header,omitempty" graphapi:"nullable"`
 	Operator string `json:"operator"` // contains, equals, matches, above, below
-	Value    string `json:"value,omitempty"`
+	Value    string `json:"value,omitempty" graphapi:"nullable"`
 }
 
 // MailboxRuleAction is one thing to do: move somewhere, mark, forward, delete.
 type MailboxRuleAction struct {
 	Kind     string `json:"kind"` // move, markRead, flag, forward, delete
-	FolderID string `json:"folderId,omitempty"`
-	Address  string `json:"address,omitempty"`
+	FolderID string `json:"folderId,omitempty" graphapi:"nullable"`
+	Address  string `json:"address,omitempty" graphapi:"nullable"`
 }
 
 // MailboxAutoReply is the out-of-office setting: what to send, and when it is
@@ -242,11 +242,11 @@ type MailboxRuleAction struct {
 // protections in the out-of-office path, not by anything here.
 type MailboxAutoReply struct {
 	Enabled bool       `json:"enabled"`
-	From    *time.Time `json:"from,omitempty"`  // in force from; nil is now
-	Until   *time.Time `json:"until,omitempty"` // in force until; nil is until turned off
-	Subject string     `json:"subject"`         // "" means "Auto: " + the original subject
-	Text    string     `json:"text"`
-	HTML    string     `json:"html,omitempty"`
+	From    *time.Time `json:"from,omitempty"`              // in force from; nil is now
+	Until   *time.Time `json:"until,omitempty"`             // in force until; nil is until turned off
+	Subject string     `json:"subject" graphapi:"nullable"` // "" means "Auto: " + the original subject
+	Text    string     `json:"text" graphapi:"nullable"`
+	HTML    string     `json:"html,omitempty" graphapi:"nullable"`
 }
 
 // MailboxContact is an address learned from traffic, for completion and for

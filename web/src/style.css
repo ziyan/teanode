@@ -4029,3 +4029,58 @@ a.button.primary:hover {
   max-width: min(420px, calc(100vw - 32px));
   overflow-wrap: anywhere;
 }
+
+/* People and their groups, side by side: the accounts on the left, the
+   groups on the right, so who is in what is one page rather than two. On a
+   phone they stack, groups under people. */
+.access-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .access-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.access-filter {
+  margin: 0 0 8px;
+}
+/* A group on a person's row, and a group's own name: both choose that group,
+   and the chosen one is the one that reads as pressed. */
+.access-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0;
+}
+.access-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+.access-chip:hover {
+  color: var(--text);
+}
+.access-chip.chosen {
+  color: var(--text);
+  border-color: var(--text);
+}
+.access-group-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.access-group-name:hover,
+.access-group-name.chosen {
+  text-decoration: underline;
+}
