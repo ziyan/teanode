@@ -375,6 +375,7 @@ is not their mailbox address; a mailbox may have several.
     CREATE UNIQUE INDEX "mailbox_item_uid"  ON "mailbox_item" ("folder_id", "uid");
     CREATE INDEX        "mailbox_item_mail" ON "mailbox_item" ("mail_id");
     CREATE INDEX        "mailbox_item_list" ON "mailbox_item" ("folder_id", "added_at" DESC);
+    CREATE INDEX        "mailbox_item_unseen" ON "mailbox_item" ("folder_id") WHERE NOT "seen";
 
 Moving a message between folders is: insert an item in the new folder with
 that folder's next UID — taken with `UPDATE … SET uid_next = uid_next + 1
@@ -625,7 +626,7 @@ types change. Written out so that "what is added" has one answer:
     }
     
     // Mailbox is a container of folders belonging to one user. Its small
-    // per-mailbox settings — rules, signature — are columns on it.
+    // per-mailbox settings — rules, signature, out-of-office — are columns on it.
     type Mailbox struct {
         ID            string            `json:"id"`
         CreatedAt     time.Time         `json:"createdAt"`
@@ -636,8 +637,21 @@ types change. Written out so that "what is added" has one answer:
         // a user with two mailboxes signs differently from each.
         SignatureHTML string            `json:"signatureHtml,omitempty"`
         SignatureText string            `json:"signatureText,omitempty"`
-        Rules         []MailboxRule     `json:"rules"` // jsonb column, run in order
+        Rules         []MailboxRule     `json:"rules"`               // jsonb column, run in order
+        AutoReply     *MailboxAutoReply `json:"autoReply,omitempty"` // jsonb column; nil when never set
         Addresses     []*MailboxAddress `json:"addresses,omitempty"`
+    }
+
+    // MailboxAutoReply is the out-of-office setting: what to send, and when it
+    // is in force. Whether to send it to a given message is decided by the
+    // protections in "Out of office", not by anything here.
+    type MailboxAutoReply struct {
+        Enabled bool       `json:"enabled"`
+        From    *time.Time `json:"from,omitempty"`  // in force from; nil is now
+        Until   *time.Time `json:"until,omitempty"` // in force until; nil is until turned off
+        Subject string     `json:"subject"`         // "" means "Auto: " + the original subject
+        Text    string     `json:"text"`
+        HTML    string     `json:"html,omitempty"`
     }
     
     // MailboxAddress is an address that delivers into a mailbox, and that the
@@ -680,6 +694,8 @@ types change. Written out so that "what is added" has one answer:
         // Counted when listed, not stored.
         Unread      int64      `json:"unread"`
         Total       int64      `json:"total"`
+        // Unread is resolved when the tree is listed, never stored.
+        Unread      int        `json:"unread"`
     }
     
     // MailboxItem is one message in one folder: the possession of it, with its
@@ -758,6 +774,7 @@ types change. Written out so that "what is added" has one answer:
         Name       string    `json:"name,omitempty"`
         LastSeenAt time.Time `json:"lastSeenAt"`
         Count      int       `json:"count"`
+        AutoRepliedAt *time.Time `json:"autoRepliedAt,omitempty"`
     }
 
     // Existing types that change. Additions only; nothing is renamed or removed.
@@ -846,6 +863,7 @@ types change. Written out so that "what is added" has one answer:
         "name"         varchar(256) NOT NULL DEFAULT '',
         "last_seen_at" timestamptz  NOT NULL,
         "count"        integer      NOT NULL DEFAULT 1,
+        "auto_replied_at" timestamptz,             -- when the out-of-office last answered this address
         PRIMARY KEY ("mailbox_id", "address")
     );
 
@@ -949,6 +967,61 @@ cannot be sent cannot be saved either.
 one item in one Drafts folder, so a draft is the one kind of message that
 is never a shared row.
 
+## Out of office
+
+An out-of-office reply is the one thing a mailbox sends without a person
+pressing send, so the whole design is about when *not* to send it. The
+setting is a jsonb column on the mailbox, `autoreply`, holding a
+`MailboxAutoReply`: enabled, in force from and until, subject, body. The
+decision is made in the receipt transaction, on the instance that received
+the message, after the mailbox's rules have run.
+
+    ALTER TABLE "mailbox"         ADD COLUMN "autoreply"       jsonb;
+    ALTER TABLE "mailbox_contact" ADD COLUMN "auto_replied_at" timestamptz;
+
+A reply is sent only when every one of these holds — RFC 3834 with the
+lessons of every autoresponder loop since:
+
+- The message reached the mailbox's **Inbox** and is still there: not filed
+  elsewhere or deleted by a rule, not classified as spam, not in Junk.
+- The **envelope sender is not empty**. `MAIL FROM:<>` is a bounce or
+  another machine's automatic reply, and answering it is how loops start.
+- No **`Auto-Submitted`** header with a value other than `no`; no
+  **`Precedence`** of `bulk`, `list` or `junk`; no **`List-Id`**,
+  `List-Post` or `List-Unsubscribe` header. Mailing lists and notification
+  senders are never answered.
+- One of the mailbox's **own addresses is in `To` or `Cc`** — not reached
+  through `Bcc`, a wildcard alias or a forward — so a reply goes only to
+  people who wrote to this person on purpose.
+- The sender is **not one of the mailbox's own addresses**, and is not
+  another mailbox on this server that also has an out-of-office on — the
+  two-colleagues-on-holiday loop, refused locally rather than detected after
+  the fact.
+- The sender has **not been replied to in the last seven days**:
+  `mailbox_contact.auto_replied_at`, keyed by mailbox and address, set in
+  the same transaction as the decision, so two instances receiving from
+  the same sender at the same moment take the row lock in turn and only
+  one of them sends.
+- The mailbox has sent **fewer than fifty automatic replies in the last
+  hour**. A last defence, counted from the same column, against something
+  none of the above caught.
+
+The reply itself is built so that it cannot start a loop even if the other
+side has none of these protections: sent from the mailbox address that was
+written to, to the **envelope sender** (the `Return-Path`, not the `From`),
+with **`Auto-Submitted: auto-replied`**, `In-Reply-To` and `References`
+set, the subject as configured or `Auto: ` and the original, and — the
+part that matters most — with an **empty envelope sender**, `MAIL FROM:<>`,
+so that it can neither bounce back nor be answered by another responder
+that follows the rules. It is a `mail` row of kind outgoing sent through
+the ordinary queue, DKIM-signed like anything else, but it gets **no item
+in Sent**: forty automatic replies in a Sent folder are noise. The mailbox
+settings page shows who has been replied to, from the contact column, and
+a person with `mail:audit` sees the rows themselves.
+
+Over IMAP there is nothing to do; the analogue in other servers is Sieve's
+`vacation`, which this plan does not implement.
+
 ## IMAP
 
 `internal/imap` serves IMAP4rev1 with the extensions a modern client expects
@@ -1043,6 +1116,19 @@ folder as a `mail` row of kind draft and reopen from there — see Drafts
 above for what a save is, and how attachments cross the wire once. A message opened
 is marked read after a moment, not on arrival.
 
+**Unread counts.** Every folder in the tree shows its unread count, the Mail
+entry in the rail shows the sum over the Inboxes of the user's mailboxes,
+and the browser tab title carries it — "(3) Mail". The count is never
+stored: a counter column drifts the first time two instances move the same
+item, and a stored number that is sometimes wrong is worse than none. It is
+`count(*)` over `mailbox_item` where not seen, grouped by folder, on a
+partial index that holds only unseen rows, so it costs what it should —
+proportional to the unread, not the mailbox. It is resolved on
+`MailboxFolder.Unread` when the tree is listed, and refreshes the way the
+rest of the dashboard already does: on the interval the query hook keeps,
+and at once when the tab becomes visible again. No push channel in this
+programme; when IMAP `IDLE` exists the same notification could drive one.
+
 Mailbox settings: folders, rules with a live "which of the last hundred
 messages would this match", addresses, signature, app passwords. Under
 Server, three pages for whoever holds the permissions: Users, Groups, Roles.
@@ -1069,7 +1155,7 @@ everything; a Member asking the API for a domain gets not found.
 **Two — mail that lives here.** Mailboxes, folders, items, threads; the
 `mailbox` alias kind and delivery by reference; the retention change; the
 Mail page with folder tree, list, message, flags, move, archive, trash, empty
-trash. Acceptance: a message to a mailbox address appears in the inbox, one
+trash; unread counts in the tree, the rail and the tab title. Acceptance: a message to a mailbox address appears in the inbox, one
 `mail` row however many mailboxes it reached, survives the spool retention
 while it sits there, and is gone from the spool a day after the last folder
 let go of it.
@@ -1099,10 +1185,18 @@ who exists only in the provider signs in for the first time, has a mailbox,
 and holds the roles their provider groups map to; removing them from a
 provider group and signing in again removes the role.
 
-**Seven — the rest of a mailbox.** Out-of-office replies, with the loop and
-list protections that need; per-mailbox quotas; unread counts in the rail;
-notifications; SCIM provisioning; JMAP if a client ever asks for it. Each is
-its own small plan when it is wanted.
+**Seven — out of office.** The `autoreply` setting, the decision in the
+receipt transaction with every protection listed above, the reply with an
+empty envelope sender and `Auto-Submitted`, the seven-day and hourly
+limits on the contact column, and the settings page with the list of who
+has been answered. Acceptance: a message from a person gets one reply and a
+second message from them within the week gets none; a message from a list,
+a bounce, or another mailbox on this server with its own out-of-office on
+gets none; the reply sent has an empty `Return-Path`.
+
+**Not in this programme**, by decision: per-mailbox quotas, notifications
+outside the dashboard, SCIM provisioning, and JMAP. Each is its own small
+plan if it is ever wanted; nothing here makes any of them harder.
 
 ## Decision Log
 
@@ -1225,6 +1319,15 @@ Decisions are the repository owner's.
   and copied part-to-part between saves, never re-sent from the browser.
   Rationale: one representation and one parser, and the same behaviour a
   mail program has over IMAP, so the two never disagree about a draft.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: out-of-office replies are built, with the full set of loop and
+  list protections; unread counts in the tree, the rail and the tab title
+  are built. Per-mailbox quotas, notifications, SCIM provisioning and JMAP
+  are not in this programme.
+  Rationale: the first two are what every person with an inbox reaches for
+  in the first week; the rest are asked for by an organisation, later, if
+  at all.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: administrative changes are audited — users, groups, roles,
