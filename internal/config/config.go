@@ -164,6 +164,20 @@ type Server struct {
 	// is the names this server holds a certificate for.
 	MailServers []string `yaml:"mailServers,omitempty"`
 
+	// ExternalAddresses are the addresses mail reaches this server at, when
+	// they are not the address the server discovers for itself: a relay in
+	// front of it, a tunnel from an elsewhere, a load balancer.
+	//
+	// The DNS advice checks each MX host's A record against the address the
+	// server sees from outside, because for a server that faces the internet
+	// that is the one value an operator cannot look up. A server reached
+	// through something else fails that check for ever, on a record that is
+	// right: listing those addresses here makes them count as correct.
+	//
+	// Names as well as addresses are accepted, and are resolved when the
+	// advice is worked out, so a forwarder whose address moves stays right.
+	ExternalAddresses []string `yaml:"externalAddresses,omitempty"`
+
 	// LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL.
 	LogLevel string `yaml:"logLevel"`
 

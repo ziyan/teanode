@@ -252,6 +252,17 @@ domain for one MX record per name, at preference 10, 20 and so on in the order
 given.  These are names mail arrives at. They are unrelated to tls.hosts,
 which is the names this server holds a certificate for.
 
+**`externalAddresses`** — ExternalAddresses are the addresses mail reaches
+this server at, when they are not the address the server discovers for
+itself: a relay in front of it, a tunnel from an elsewhere, a load balancer.
+The DNS advice checks each MX host's A record against the address the server
+sees from outside, because for a server that faces the internet that is the
+one value an operator cannot look up; a server reached through something else
+fails that check for ever, on a record that is right. Listing those addresses
+here makes them count as correct. Names as well as addresses are accepted,
+and a name is resolved when the advice is worked out, so a forwarder whose
+address moves stays right.
+
 
 ### `sso`
 

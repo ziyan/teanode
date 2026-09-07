@@ -30,7 +30,7 @@ const settingsSelection = `{
 	passkey { enabled relyingPartyId displayName origins maximumPerUser }
 	listen { smtpIncoming smtpOutgoing imap imaps http https debug }
 	sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
-	identity { name mailServers logLevel dataDirectory }
+	identity { name mailServers externalAddresses logLevel dataDirectory }
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
 }`

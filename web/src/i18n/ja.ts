@@ -719,6 +719,8 @@ export const ja: Catalog = {
   'serverSettings.serverNameHint':
     'SMTP の挨拶で名乗る名前で、自分の証明書もここから導かれます。この機械に解決しない名前は、送ったメールを他のサーバーに疑わせます。',
   'serverSettings.serverMailServers': 'メールサーバー名',
+  'serverSettings.externalAddresses': 'ほかに到達するアドレス',
+  'serverSettings.externalAddressesHint': 'このサーバー自身のアドレスではなく、メールが実際に届くアドレス。前段のリレー、トンネル、ロードバランサーなど。これらを指すメールサーバー名は正しく、変更の必要はありません。カンマ区切り。名前も指定でき、判定時に解決されます。',
   'serverSettings.serverMailServersHint':
     'カンマ区切り。ドメインが自分の「設定」タブで指定しない限り、すべてのドメインの MX レコードが指すホストです。変えると各ドメインが公開すべきレコードも変わります。',
   'serverSettings.logLevel': 'ログレベル',

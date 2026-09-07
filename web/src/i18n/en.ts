@@ -727,6 +727,8 @@ export const en = {
   'serverSettings.serverNameHint':
     'The name this server gives in its SMTP banner and derives its own certificate from. A name that does not resolve to this machine makes other servers suspicious of your mail.',
   'serverSettings.serverMailServers': 'Mail server names',
+  'serverSettings.externalAddresses': 'Also reached at',
+  'serverSettings.externalAddressesHint': 'Addresses mail reaches this server at when they are not its own: a relay in front of it, a tunnel, a load balancer. A mail server name pointing at one of these is right rather than a record to change. Comma separated; names are allowed and are resolved when the advice is worked out.',
   'serverSettings.serverMailServersHint':
     'Comma separated. The hosts every domain’s MX records name, unless that domain names its own on its Settings tab. Changing this changes the records every domain has to publish.',
   'serverSettings.logLevel': 'Log level',

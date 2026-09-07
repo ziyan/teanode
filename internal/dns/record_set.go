@@ -201,7 +201,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 			continue
 		}
 		recordSet.Records = append(recordSet.Records,
-			self.serverAddressRecords(ctx, strings.TrimSuffix(host.Name, "."), external)...)
+			self.serverAddressRecords(ctx, strings.TrimSuffix(host.Name, "."), external, configuration.Server.ExternalAddresses)...)
 	}
 
 	// MX: without at least one of these, no mail arrives at all.
@@ -485,9 +485,28 @@ func publishesDkimKey(record string) bool {
 // answer alone — the address on its interface is usually private — and it is
 // the single thing an operator most needs told, because it is the one value
 // they cannot look up anywhere.
-func (self *verifier) serverAddressRecords(ctx context.Context, host string, external ExternalAddresses) []*Record {
+func (self *verifier) serverAddressRecords(ctx context.Context, host string, external ExternalAddresses, fronted []string) []*Record {
 	name := dnsName(host)
 	published, _ := self.resolveAddresses(ctx, host)
+
+	// The addresses the operator says also reach this server: a relay, a
+	// tunnel, a load balancer. Given as addresses or as names, and a name is
+	// resolved here so that a forwarder which moves stays right.
+	declared := map[string]bool{}
+	for _, entry := range fronted {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if net.ParseIP(entry) != nil {
+			declared[entry] = true
+			continue
+		}
+		addresses, _ := self.resolveAddresses(ctx, entry)
+		for _, address := range addresses {
+			declared[address] = true
+		}
+	}
 
 	var records []*Record
 	for _, family := range []struct {
@@ -517,15 +536,10 @@ func (self *verifier) serverAddressRecords(ctx context.Context, host string, ext
 		if record.Optional {
 			record.Purpose = "lets senders reach this server over IPv6, which is worth having and not required"
 		}
-		for _, value := range published {
-			if !family.matches(value) {
-				continue
-			}
-			record.Found = append(record.Found, value)
-			if value == family.expected {
-				record.Verified = true
-			}
+		if len(declared) > 0 {
+			record.Purpose += ", here or at one of the addresses configured as reaching it"
 		}
+		record.Found, record.Verified, record.Expected = judgeAddresses(published, family.expected, declared, family.matches)
 		records = append(records, record)
 	}
 
@@ -542,6 +556,34 @@ func (self *verifier) serverAddressRecords(ctx context.Context, host string, ext
 		})
 	}
 	return records
+}
+
+// judgeAddresses reads what a name publishes against what this server is
+// reached at: the address it discovered for itself, and the addresses the
+// operator declared as reaching it — a relay, a tunnel, a load balancer.
+//
+// A declared address that is published is what the row then asks for.
+// Telling an operator to change a correct record to this server's own
+// address would break the forwarding that is carrying their mail, and the
+// row would say "change" for ever on a record nobody should touch.
+func judgeAddresses(published []string, discovered string, declared map[string]bool, matches func(string) bool) (found []string, verified bool, wanted string) {
+	wanted = discovered
+	for _, value := range published {
+		if !matches(value) {
+			continue
+		}
+		found = append(found, value)
+		if value == discovered {
+			verified = true
+			wanted = value
+			continue
+		}
+		if declared[value] && !verified {
+			verified = true
+			wanted = value
+		}
+	}
+	return found, verified, wanted
 }
 
 // reportAddress is where a domain's DMARC aggregate reports are sent.

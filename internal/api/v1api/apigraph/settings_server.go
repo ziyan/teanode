@@ -117,6 +117,11 @@ type IdentitySettings struct {
 	// own.
 	MailServers []string `json:"mailServers,omitempty"`
 
+	// The addresses that reach this server besides the one it discovers: a
+	// relay, a tunnel, a load balancer. An MX host pointing at one of these
+	// is right rather than a record to change.
+	ExternalAddresses []string `json:"externalAddresses,omitempty"`
+
 	// How much is logged: debug, info, notice, warning, error.
 	LogLevel string `json:"logLevel"`
 
@@ -195,9 +200,10 @@ type ListenParameters struct {
 // IdentityParameters are what an operator can change about the server itself.
 // dataDirectory is deliberately absent: see IdentitySettings.
 type IdentityParameters struct {
-	Name        *string   `json:"name"`
-	MailServers *[]string `json:"mailServers"`
-	LogLevel    *string   `json:"logLevel"`
+	Name              *string   `json:"name"`
+	MailServers       *[]string `json:"mailServers"`
+	ExternalAddresses *[]string `json:"externalAddresses"`
+	LogLevel          *string   `json:"logLevel"`
 }
 
 // StorageParameters are the on-disk storage settings an operator can change.
@@ -250,10 +256,11 @@ func describeServerSettings(configuration *config.Configuration, settings *Setti
 		Debug:        configuration.Listen.Debug,
 	}
 	settings.Identity = &IdentitySettings{
-		Name:          configuration.Server.Name,
-		MailServers:   configuration.Server.MailServers,
-		LogLevel:      configuration.Server.LogLevel,
-		DataDirectory: configuration.Server.DataDirectory,
+		Name:              configuration.Server.Name,
+		MailServers:       configuration.Server.MailServers,
+		ExternalAddresses: configuration.Server.ExternalAddresses,
+		LogLevel:          configuration.Server.LogLevel,
+		DataDirectory:     configuration.Server.DataDirectory,
 	}
 	settings.Storage = &StorageSettings{
 		Directory:      configuration.Storage.Directory,
@@ -321,6 +328,7 @@ func applyServerSettings(configuration *config.Configuration, arguments UpdateSe
 	if parameters := arguments.Identity; parameters != nil {
 		applyString(&configuration.Server.Name, parameters.Name)
 		applyStrings(&configuration.Server.MailServers, parameters.MailServers)
+		applyStrings(&configuration.Server.ExternalAddresses, parameters.ExternalAddresses)
 		applyString(&configuration.Server.LogLevel, parameters.LogLevel)
 	}
 

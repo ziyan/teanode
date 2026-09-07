@@ -10,6 +10,15 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- A server reached through something in front of it — a relay, a tunnel, a
+  load balancer — can say so, under Server → Identity or as
+  `server.externalAddresses`. The DNS advice then reads a mail server name
+  pointing at one of those addresses as right, rather than asking for ever
+  that it be changed to the address the server sees for itself, which would
+  have stopped the mail.
+
+### Added
+
 - The command line reaches the mailbox and access work by name rather than
   through `teanode api call`: `teanode mailbox` with `folder`, `rule`,
   `contact`, `device`, `autoreply` and `programs`, and `teanode group`,

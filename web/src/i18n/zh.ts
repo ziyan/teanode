@@ -705,6 +705,8 @@ export const zh: Catalog = {
   'serverSettings.serverNameHint':
     '本服务器在 SMTP 欢迎语中给出的名字，也是它自己证书的来源。如果这个名字解析不到本机，别的服务器会对你发出的邮件起疑。',
   'serverSettings.serverMailServers': '邮件服务器名',
+  'serverSettings.externalAddresses': '其他可达地址',
+  'serverSettings.externalAddressesHint': '当邮件不是通过本机地址到达时所经过的地址：前置转发、隧道或负载均衡。指向这些地址的邮件服务器名称是正确的，无需修改记录。以逗号分隔；也可填写域名，检查时会解析。',
   'serverSettings.serverMailServersHint':
     '逗号分隔。除非某个域在自己的“设置”标签页里另行指定，否则所有域的 MX 记录都指向这些主机。改动它会改变每个域需要发布的记录。',
   'serverSettings.logLevel': '日志级别',
