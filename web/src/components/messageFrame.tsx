@@ -54,6 +54,11 @@ const MINIMUM_HEIGHT = 36
 // here. A new width — the window resized, a phone turned — starts over.
 const CHANGE_BUDGET = 200
 
+// How often the content is measured between events, in milliseconds. A
+// read of two element sizes, cheap enough to keep up for as long as the
+// message is open.
+const POLL_INTERVAL = 500
+
 // darkened inverts the frame from out here rather than from inside its
 // document. A filter on the iframe element is one composited layer the
 // parent owns; the same filter on a large div inside the document made the
@@ -141,10 +146,17 @@ export function MessageFrame({
     // The content settles after load rather than at it: images arrive and
     // tables reflow. Watching the body is more reliable than measuring once
     // and hoping.
-    let observer: ResizeObserver | undefined
+    // What tells the frame to measure again. A ResizeObserver cannot: the
+    // frame is sandboxed without scripts, so no observer is ever delivered
+    // in its window, and one made here never sees an element of another
+    // document. So: every image that arrives, every resize of the page (a
+    // phone turned), and a clock, since a table finds its width a moment
+    // after load with no event to say so.
+    let inner: Document | null = null
+    const schedule = () => window.requestAnimationFrame(measure)
     const onLoad = () => {
       measure()
-      const inner = element.contentDocument
+      inner = element.contentDocument
       if (!inner?.documentElement) {
         return
       }
@@ -160,17 +172,10 @@ export function MessageFrame({
         setAlreadyDark(dark)
         onGroundMeasured?.(dark)
       }
-      // The observer belongs to the frame's own window: one made here
-      // watches an element in another document and is never told of its
-      // changes, which left a newsletter at the height of its first,
-      // narrowest layout. Measured on the next frame rather than inside
-      // the callback, since setting the height reflows what is watched,
-      // which the browser would otherwise report as a loop.
-      const Observer = inner.defaultView?.ResizeObserver ?? ResizeObserver
-      observer = new Observer(() => window.requestAnimationFrame(measure))
-      observer.observe(content)
-      observer.observe(inner.body)
+      inner.addEventListener('load', schedule, true)
     }
+    const timer = window.setInterval(measure, POLL_INTERVAL)
+    window.addEventListener('resize', schedule)
 
     element.addEventListener('load', onLoad)
     // Already loaded, if React reused the element for a new message.
@@ -180,7 +185,9 @@ export function MessageFrame({
 
     return () => {
       element.removeEventListener('load', onLoad)
-      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+      window.clearInterval(timer)
+      inner?.removeEventListener('load', schedule, true)
     }
   }, [measure, source])
 
