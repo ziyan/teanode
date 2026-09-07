@@ -263,41 +263,53 @@ export function Sidebar({
                   </div>
                 )}
               </div>
-              {folderRows(current.folders).map(({ folder, depth }) => {
-                const label = folderLabel(t, folder)
-                // Starred sits under the Inbox: every flagged message,
-                // wherever it is, the way a mail program shows them.
-                const starredRow =
-                  folder.kind === 'inbox' ? (
-                    <NavLink key="starred" to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
-                      <span className="sidebar-icon sidebar-star" aria-hidden="true">
-                        ★
-                      </span>
-                      <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
-                    </NavLink>
-                  ) : null
-                return (
-                  <React.Fragment key={folder.id}>
-                  <NavLink
-                    to={`/mailbox/${folder.id}`}
-                    className={folder.unread > 0 ? 'unread' : undefined}
-                    data-depth={Math.min(depth, 3)}
-                    title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
-                  >
-                    <span className="sidebar-icon">
-                      <MailIcon />
+              {(() => {
+                const rows = folderRows(current.folders)
+                // Starred sits under the Inbox and its subfolders: every
+                // flagged message, wherever it is, the way a mail program
+                // shows them. It goes after the whole Inbox subtree so that
+                // it does not split a parent from its children.
+                const inboxAt = rows.findIndex(({ folder }) => folder.kind === 'inbox')
+                let starredAfter = inboxAt
+                if (inboxAt >= 0) {
+                  const inboxDepth = rows[inboxAt].depth
+                  while (starredAfter + 1 < rows.length && rows[starredAfter + 1].depth > inboxDepth) {
+                    starredAfter += 1
+                  }
+                }
+                const starredRow = (
+                  <NavLink key="starred" to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                    <span className="sidebar-icon sidebar-star" aria-hidden="true">
+                      ★
                     </span>
-                    <span className="sidebar-label">{label}</span>
-                    {folder.unread > 0 && (
-                      <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
-                        {folder.unread}
-                      </span>
-                    )}
+                    <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
                   </NavLink>
-                  {starredRow}
-                  </React.Fragment>
                 )
-              })}
+                return rows.map(({ folder, depth }, index) => {
+                  const label = folderLabel(t, folder)
+                  return (
+                    <React.Fragment key={folder.id}>
+                      <NavLink
+                        to={`/mailbox/${folder.id}`}
+                        className={folder.unread > 0 ? 'unread' : undefined}
+                        data-depth={Math.min(depth, 3)}
+                        title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
+                      >
+                        <span className="sidebar-icon">
+                          <MailIcon />
+                        </span>
+                        <span className="sidebar-label">{label}</span>
+                        {folder.unread > 0 && (
+                          <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
+                            {folder.unread}
+                          </span>
+                        )}
+                      </NavLink>
+                      {index === starredAfter && starredRow}
+                    </React.Fragment>
+                  )
+                })
+              })()}
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
                 <span className="sidebar-icon">
                   <SettingsIcon />
