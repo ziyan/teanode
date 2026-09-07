@@ -137,10 +137,14 @@ here is one `mail` row and two items — and moving it is changing which folder
 the item is in.
 
 A **permission** is a named thing somebody may do, written `resource:verb`. A
-**role** is a named set of permissions. A **group** is a named set of users. A
-**binding** grants a role to a user or a group, over the whole server or over
-one domain. A user's **effective permissions** are the union of every binding
-that reaches them, directly or through a group, resolved once per request.
+**role** is a named set of permissions. A **group** is a named set of users,
+and it is the only thing a role or a domain is attached to: a user in a group
+holds the group's roles over the group's domains. Nothing is attached to a
+user directly. A user's **effective permissions** are the union over every
+group they are in — additive, never subtractive — resolved once per request.
+Some permissions are **server-wide** (users, groups, roles, the queue, the
+server itself) and apply whatever domains a group has; the rest are
+**domain-scoped** and apply only over the group's domains.
 
 **IMAP** is the protocol mail programs read a mailbox with; each folder is an
 IMAP mailbox, each item a message with a **UID** that never changes while it
@@ -208,6 +212,8 @@ Tables:
         "description" text         NOT NULL DEFAULT '',
         -- The group's name at the identity provider, when SSO fills it.
         "idp_group"   varchar(256) NOT NULL DEFAULT '',
+        -- The group reaches every domain, present and future; no group_domain rows needed.
+        "all_domains" boolean      NOT NULL DEFAULT false,
         PRIMARY KEY ("id")
     );
     CREATE UNIQUE INDEX "group_name" ON "group" (lower("name"));
@@ -220,17 +226,22 @@ Tables:
     );
     CREATE INDEX "user_group_group" ON "user_group" ("group_id");
 
-    -- Grants a role to a user or a group, over everything or over one domain.
-    CREATE TABLE "role_binding" (
-        "id"           varchar(32) NOT NULL,
-        "created_at"   timestamptz NOT NULL,
-        "role_id"      varchar(32) NOT NULL REFERENCES "role"("id") ON DELETE CASCADE,
-        "subject_kind" varchar(8)  NOT NULL,          -- "user" or "group"
-        "subject_id"   varchar(32) NOT NULL,
-        "domain_id"    varchar(32) NOT NULL DEFAULT '', -- '' means the whole server
-        PRIMARY KEY ("id")
+    -- A group's roles: every user in the group holds them.
+    CREATE TABLE "group_role" (
+        "group_id" varchar(32) NOT NULL REFERENCES "group"("id") ON DELETE CASCADE,
+        "role_id"  varchar(32) NOT NULL REFERENCES "role"("id")  ON DELETE CASCADE,
+        PRIMARY KEY ("group_id", "role_id")
     );
-    CREATE INDEX "role_binding_subject" ON "role_binding" ("subject_kind", "subject_id");
+
+    -- A group's domains: the ones its roles' domain-scoped permissions apply
+    -- to. A group with all_domains set reaches every domain, including ones
+    -- created later, and needs no rows here.
+    CREATE TABLE "group_domain" (
+        "group_id"  varchar(32) NOT NULL REFERENCES "group"("id")  ON DELETE CASCADE,
+        "domain_id" varchar(32) NOT NULL REFERENCES "domain"("id") ON DELETE CASCADE,
+        PRIMARY KEY ("group_id", "domain_id")
+    );
+    CREATE INDEX "group_domain_domain" ON "group_domain" ("domain_id");
 
 Three roles are seeded by the migration and are ordinary rows from then on:
 renamed, edited, deleted, or left alone like any role an administrator makes.
@@ -240,16 +251,20 @@ There is no built-in flag and nothing a seeded role may not do.
 today; **Member** holds `mail:read`, `mail:write`, `mail:send` and
 `mailbox:manage`, which is what a person with an inbox and nothing else
 needs. The migration creates a group **Administrators**, puts every existing
-user in it, and binds it to Administrator — so the day this lands, nobody can
-do less than they could the day before. The one guard that remains is not
-about seeded roles at all: a mutation that would leave no enabled user
-holding `role:manage` over the whole server is refused, whichever role or
-binding it touches, because the only way back from that state is SQL.
+user in it, binds Administrator to it and sets `all_domains` — so the day this
+lands, nobody can do less than they could the day before. The one guard that
+remains is not about seeded roles at all: a mutation that would leave no
+enabled user in any group whose roles hold `role:manage` is refused, whichever
+role, group or membership it touches, because the only way back from that
+state is SQL.
 
 Effective permissions are computed once per request in the authentication
 layer and carried on the context, as
-`api.ContextEffectivePermissions(ctx)`: a set keyed by permission, each with
-the domains it holds for (or "all"). `requireOperator` is replaced by
+`api.ContextEffectivePermissions(ctx)`: the user's groups, each group's roles
+and each group's domains, crossed and unioned. A permission's scope —
+server-wide or domain-scoped — is declared in Go next to its constant, so
+that `user:manage` in a group with one domain still manages every user, and
+`mail:audit` in that group reads only that domain's mail. `requireOperator` is replaced by
 `requirePermission(ctx, permission)` and `requireDomainPermission(ctx,
 permission, domainId)`. A resolver that finds the caller lacks permission over
 a row answers **not found**, never "forbidden": "you may not touch this"
@@ -460,26 +475,26 @@ types change. Written out so that "what is added" has one answer:
         IDPGroup    string    `json:"idpGroup,omitempty"`
         // UserIDs is the user_group table, read with the group.
         UserIDs     []string  `json:"userIds,omitempty"`
+        // RoleIDs is the group_role table: what every user in the group may do.
+        RoleIDs     []string  `json:"roleIds,omitempty"`
+        // DomainIDs is the group_domain table: where the domain-scoped
+        // permissions of those roles apply. AllDomains makes it every domain,
+        // including ones created after the group.
+        DomainIDs   []string  `json:"domainIds,omitempty"`
+        AllDomains  bool      `json:"allDomains"`
     }
     
-    // RoleBinding grants a role to a user or a group, over the whole server or
-    // over one domain.
-    type RoleBinding struct {
-        ID          string      `json:"id"`
-        CreatedAt   time.Time   `json:"createdAt"`
-        RoleID      string      `json:"roleId"`
-        SubjectKind SubjectKind `json:"subjectKind"` // "user" or "group"
-        SubjectID   string      `json:"subjectId"`
-        DomainID    string      `json:"domainId,omitempty"` // "" is the whole server
-    }
-    
-    // EffectivePermissions is what one request may do, resolved once from
-    // every binding that reaches the caller, directly or through a group.
-    // Carried on the context; never cached across requests on an instance.
+    // EffectivePermissions is what one request may do, resolved once from the
+    // caller's groups: user_group × group_role × role_permission, scoped by
+    // group_domain. Carried on the context; never cached across requests on an
+    // instance.
     type EffectivePermissions struct {
-        // Everywhere holds the permissions granted with no domain.
+        // Everywhere holds the server-wide permissions the caller's groups carry,
+        // and the domain-scoped ones of any group with AllDomains.
         Everywhere map[Permission]bool            `json:"everywhere"`
-        // ByDomain holds the ones granted over one domain, by domain id.
+        // ByDomain holds the domain-scoped permissions by domain id, from each
+        // group's roles crossed with that group's domains. Additive: two groups
+        // that each reach a domain contribute both their roles.
         ByDomain   map[string]map[Permission]bool `json:"byDomain"`
     }
     
@@ -843,9 +858,10 @@ is marked read after a moment, not on arrival.
 
 Mailbox settings: folders, rules with a live "which of the last hundred
 messages would this match", addresses, signature, app passwords. Under
-Server, three pages for whoever holds the permissions: Users, Groups, Roles —
-each a list with the bindings shown inline, so "why can this person do this"
-is answered on one screen.
+Server, three pages for whoever holds the permissions: Users, Groups, Roles.
+A group's page is the one that matters: its users, its roles, its domains,
+so "why can this person do this" is answered by the groups they are in, on
+one screen.
 
 ## Milestones
 
@@ -857,7 +873,7 @@ roles; every existing user into Administrators. `requirePermission` in place
 of `requireOperator` across every resolver, with the not-found rule. Effective
 permissions on the session and in `GetSession`. The Users, Groups and Roles
 pages. The command line's `user` commands grow `group` and `role` siblings.
-Acceptance: a user bound only to Member can sign in and sees nothing but an
+Acceptance: a user whose only group carries Member can sign in and sees nothing but an
 empty Mail page; an Operator sees today's dashboard; an Administrator sees
 everything; a Member asking the API for a domain gets not found.
 
@@ -911,11 +927,14 @@ Decisions are the repository owner's.
   question with several answers.
   Date/Author: 2026-09-06, Ziyan
 
-- Decision: the access model is groups, roles, permissions and users, with
-  roles bound to users or groups over the whole server or one domain.
-  Rationale: it is the model the owner asked for, and the smallest one in
-  which "some users manage other users" and "this group runs this domain" are
-  both expressible without special cases.
+- Decision: the access model is groups, roles, permissions and users. Roles
+  and domains attach only to groups (`group_role`, `group_domain`); a user in
+  a group holds the group's roles over the group's domains, additively across
+  groups. Nothing attaches to a user directly.
+  Rationale: one shape for every grant. "Some users manage other users" is a
+  group with a role that carries `user:manage`; "this team runs this domain"
+  is a group with that domain and an Operator role. No bindings, no subject
+  kinds, no per-user exceptions to audit.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: every milestone is judged against several instances sharing one
@@ -986,11 +1005,18 @@ Decisions are the repository owner's.
   decided that writing IMAP from the RFCs is acceptable if the library is
   trouble, so this is a choice of order, not of whether.
 
-- Proposed: the last-administrator guard. Any change to a role, a binding, a
-  group's membership or a user's enabled state that would leave no enabled
-  user holding `role:manage` over the whole server is refused.
+- Proposed: the last-administrator guard. Any change to a role, a group's
+  roles or membership, or a user's enabled state that would leave no enabled
+  user in any group whose roles hold `role:manage` is refused.
   Rationale: it is not a restriction on seeded roles — it applies to every
-  role and binding alike — and without it the only recovery is SQL.
+  role and group alike — and without it the only recovery is SQL.
+
+- Proposed: `all_domains` on a group, rather than every group listing its
+  domains. Administrators gets it in the migration.
+  Rationale: without it, a domain created tomorrow belongs to no group until
+  someone adds it to one, and the person creating it may be the one who then
+  cannot see it. The alternative — creating a domain attaches it to every
+  group of the creator — is implicit and surprising.
 
 ## Progress
 
