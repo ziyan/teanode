@@ -125,10 +125,11 @@ anything in memory that another one would need. Concretely:
 
 ## Terms
 
-A **mailbox** is a container of folders that belongs to a user or to a group.
-A person has one by default; a group can have one, which is how a shared inbox
-works. An **address** is what delivers into a mailbox: `support@example.com`
-delivers into the support group's mailbox. A **folder** is a named place inside
+A **mailbox** is a container of folders that belongs to one user. A person
+gets one when their account is made and may have more. An **address** is
+what delivers into a mailbox: `support@example.com` delivers into whichever
+mailbox claims it. A shared inbox — several people reading one mailbox — is
+not in this plan (see the open decisions). A **folder** is a named place inside
 a mailbox, nested as deep as its owner likes; Inbox, Sent, Drafts, Archive,
 Junk and Trash are folders with a fixed kind. A **mailbox item** is one
 message in one folder, with its flags: read or unread, flagged, answered. The
@@ -173,7 +174,7 @@ ignored rather than fatal:
     type Permission string
 
     const (
-        PermissionMailRead      Permission = "mail:read"      // read the mailboxes one is a member of
+        PermissionMailRead      Permission = "mail:read"      // read one's own mailboxes
         PermissionMailWrite     Permission = "mail:write"     // flag, move, delete in them
         PermissionMailSend      Permission = "mail:send"      // send as an address of them
         PermissionMailboxManage Permission = "mailbox:manage" // folders, rules, addresses of them
@@ -291,12 +292,11 @@ is not their mailbox address; a mailbox may have several.
         "id"          varchar(32)  NOT NULL,
         "created_at"  timestamptz  NOT NULL,
         "modified_at" timestamptz  NOT NULL,
-        "owner_kind"  varchar(8)   NOT NULL,   -- "user" or "group"
-        "owner_id"    varchar(32)  NOT NULL,
-        "name"        varchar(128) NOT NULL,   -- "Personal", or the group's name
+        "user_id"     varchar(32)  NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "name"        varchar(128) NOT NULL,   -- "Personal"; a user may have several
         PRIMARY KEY ("id")
     );
-    CREATE INDEX "mailbox_owner" ON "mailbox" ("owner_kind", "owner_id");
+    CREATE INDEX "mailbox_user" ON "mailbox" ("user_id");
 
     -- Which addresses deliver into a mailbox. A domain's alias of kind
     -- "mailbox" points here; this table is what the alias resolves to and
@@ -376,7 +376,7 @@ The `mail` table gains two columns, filled at receipt:
 
     -- Runs when a message is added to a mailbox's Inbox, in position order,
     -- and again by hand on a folder when the owner asks.
-    CREATE TABLE "mail_rule" (
+    CREATE TABLE "mailbox_rule" (
         "id"          varchar(32)  NOT NULL,
         "created_at"  timestamptz  NOT NULL,
         "modified_at" timestamptz  NOT NULL,
@@ -498,13 +498,12 @@ types change. Written out so that "what is added" has one answer:
         ByDomain   map[string]map[Permission]bool `json:"byDomain"`
     }
     
-    // Mailbox is a container of folders belonging to a user or a group.
+    // Mailbox is a container of folders belonging to one user.
     type Mailbox struct {
         ID         string    `json:"id"`
         CreatedAt  time.Time `json:"createdAt"`
         ModifiedAt time.Time `json:"modifiedAt"`
-        OwnerKind  SubjectKind `json:"ownerKind"` // "user" or "group"
-        OwnerID    string    `json:"ownerId"`
+        UserID     string    `json:"userId"`
         Name       string    `json:"name"`
         Addresses  []*MailboxAddress `json:"addresses,omitempty"`
     }
@@ -568,8 +567,8 @@ types change. Written out so that "what is added" has one answer:
         AddedAt   time.Time `json:"addedAt"`
     }
     
-    // MailRule runs when a message reaches a mailbox's Inbox.
-    type MailRule struct {
+    // MailboxRule runs when a message reaches a mailbox's Inbox.
+    type MailboxRule struct {
         ID         string          `json:"id"`
         CreatedAt  time.Time       `json:"createdAt"`
         ModifiedAt time.Time       `json:"modifiedAt"`
@@ -577,21 +576,21 @@ types change. Written out so that "what is added" has one answer:
         Position   int             `json:"position"`
         Name       string          `json:"name"`
         Enabled    bool            `json:"enabled"`
-        Conditions []RuleCondition `json:"conditions"` // all must match
-        Actions    []RuleAction    `json:"actions"`    // in order
+        Conditions []MailboxRuleCondition `json:"conditions"` // all must match
+        Actions    []MailboxRuleAction    `json:"actions"`    // in order
         Stop       bool            `json:"stop"`       // no later rule runs after this one matches
     }
     
-    // RuleCondition is one test: a field, how to compare, and against what.
-    type RuleCondition struct {
+    // MailboxRuleCondition is one test: a field, how to compare, and against what.
+    type MailboxRuleCondition struct {
         Field    string `json:"field"`    // from, to, subject, header, score, sender-known, any
         Header   string `json:"header,omitempty"`
         Operator string `json:"operator"` // contains, equals, matches, above, below
         Value    string `json:"value,omitempty"`
     }
     
-    // RuleAction is one thing to do: move somewhere, mark, forward, delete.
-    type RuleAction struct {
+    // MailboxRuleAction is one thing to do: move somewhere, mark, forward, delete.
+    type MailboxRuleAction struct {
         Kind     string `json:"kind"` // move, markRead, flag, forward, delete
         FolderID string `json:"folderId,omitempty"`
         Address  string `json:"address,omitempty"`
@@ -838,11 +837,9 @@ read, and nothing else. Today's pages — every message on a domain, the
 queue, the domains, the server settings — each stay behind the permission
 they name (`mail:audit`, `queue:manage`, `domain:manage`, and so on): the
 rail shows them only to a user who holds it, and the API answers not found
-to one who does not. A normal user signs in to their own mailboxes and those
-of the groups they are in, and sees no sign that the rest exists. The Mail
-page is a folder tree on the left — every
-mailbox the user can read, personal first, then the groups they are in — a
-message list in the middle, and the message on the right, which is the
+to one who does not. A normal user signs in to their own mailboxes and sees
+no sign that the rest exists. The Mail page is a folder tree on the left —
+every mailbox the user owns — a message list in the middle, and the message on the right, which is the
 existing message page with its authentication panel, spam breakdown and
 rendered frame. The list is the existing `DataTable`, remembering its place
 as it now does, with unread rows bold, a flag column, and a search box that
@@ -997,6 +994,18 @@ Decisions are the repository owner's.
   life of its own.
   Date/Author: 2026-09-06, Ziyan
 
+- Decision: a mailbox belongs to one user — `mailbox.user_id`, nothing else.
+  No group ownership, no owner kind.
+  Rationale: one owner is what every IMAP client, every rule and every "who
+  read this" question assumes; a second kind of owner doubled every check
+  for a case that can be added later as sharing.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: the rule types are `MailboxRule`, `MailboxRuleCondition` and
+  `MailboxRuleAction`, and the table is `mailbox_rule`.
+  Rationale: named for what they belong to, like `MailboxAddress`.
+  Date/Author: 2026-09-06, Ziyan
+
 ### Recommendations awaiting a decision
 
 - Proposed: try `github.com/emersion/go-imap/v2` at its beta first.
@@ -1010,6 +1019,12 @@ Decisions are the repository owner's.
   user in any group whose roles hold `role:manage` is refused.
   Rationale: it is not a restriction on seeded roles — it applies to every
   role and group alike — and without it the only recovery is SQL.
+
+- Proposed: shared inboxes are a later milestone, done as sharing — a
+  `user_mailbox` many-to-many letting a user read a mailbox they do not own,
+  with what they may do in it — never as a second kind of owner.
+  Rationale: `support@` read by three people is the first thing a team asks
+  for, and sharing keeps one owner per mailbox while giving it to them.
 
 - Proposed: `all_domains` on a group, rather than every group listing its
   domains. Administrators gets it in the migration.
