@@ -118,7 +118,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages permissions { everywhere byDomain { domainId permissions } } }'
+  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

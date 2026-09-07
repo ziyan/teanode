@@ -1537,6 +1537,17 @@ record.
       document: the start redirects with the right parameters and a forged
       callback is refused. The round trip through a real provider account
       remains to be tried on `root@server`.
+- [x] Milestone seven, out of office (2026-09-06): `exchange_autoreply.go`
+      decides in the receipt transaction, after the rules: still in the
+      Inbox and not suspicious, a non-empty envelope sender, no
+      Auto-Submitted/Precedence/List-* headers, one of the mailbox's
+      addresses in To or Cc, not from itself or from another mailbox here
+      that is also away, not replied to in seven days, fewer than fifty an
+      hour. The reply is from the address written to, to the envelope
+      sender, `Auto-Submitted: auto-replied`, threaded, DKIM-signed, with an
+      empty envelope sender, through the queue or by reference to a local
+      mailbox, and no item in Sent. Verified on the dev server: a message
+      from a local colleague was answered once and the second was not.
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).
@@ -1544,7 +1555,7 @@ record.
 - [x] Milestone four: search, filters, rules, contacts.
 - [x] Milestone five: IMAP and submission (CONDSTORE/QRESYNC not advertised).
 - [x] Milestone six: SSO (round trip through a real provider still to try).
-- [ ] Milestone seven: the rest.
+- [x] Milestone seven: out of office (docs, command line, deployment still open).
 
 ## Surprises & Discoveries
 

@@ -80,6 +80,9 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	if err := self.runRules(tx, mailbox, target, item, mail); err != nil {
 		log.Warningf("the rules of mailbox %q failed on message %q: %s", mailbox.ID, mail.ID, err)
 	}
+	// And the out-of-office reply, decided after the rules have had their
+	// say about where the message ended up.
+	self.maybeAutoReply(tx, mailbox, alias, recipient, item, mail)
 	return delivery, nil
 }
 
