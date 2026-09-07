@@ -3809,10 +3809,6 @@ a.button.primary:hover {
   margin-top: 12px;
   font-size: 12px;
 }
-.sidebar-star {
-  font-size: 15px;
-  line-height: 1;
-}
 .contacts-filter {
   max-width: 320px;
   margin-bottom: 10px;
@@ -3854,12 +3850,12 @@ a.button.primary:hover {
   flex: 0 0 auto;
   margin-top: 0;
 }
-/* The star is text where the other icons are drawings; give it the same box
-   so the collapsed rail lines up. */
-.sidebar-star {
-  width: 18px;
-  height: 18px;
+.folder-name {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+}
+.folder-name svg {
+  flex: 0 0 auto;
+  opacity: 0.7;
 }

@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../components/dialog'
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
+import { FolderKindIcon } from '../components/folderIcon'
 
 // What a mailbox is set up to do, in four tabs: what it is called and how
 // it signs, its folders, the rules that sort what arrives, and the reply it
@@ -269,7 +270,10 @@ function FoldersTab({ view }: { view: MailboxView }) {
                       </button>
                     </form>
                   ) : (
-                    folderLabel(t, folder)
+                    <span className="folder-name">
+                      <FolderKindIcon kind={folder.kind} size={16} />
+                      {folderLabel(t, folder)}
+                    </span>
                   )}
                 </td>
                 <td className="shrink muted">{folder.total}</td>
