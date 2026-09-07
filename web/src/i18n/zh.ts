@@ -974,8 +974,6 @@ export const zh: Catalog = {
   'cli.delivered': '完成。令牌已交给命令行，可以关闭此标签页了。',
   'cli.manualTitle': '令牌无法自动交付',
   'cli.manualBody': '浏览器无法连接到打开此页面的终端。请把下面的命令粘贴到终端中。令牌只在这里显示。',
-  'server.tabUsers': '用户',
-  'server.tabGroups': '群组',
   'server.tabRoles': '角色',
   'server.tabAudit': '审计',
   'access.users.intro': '此服务器上的所有账号。除非另行指定，新用户会被加入"Members"群组，以便读取分配给他们的邮箱。',

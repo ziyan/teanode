@@ -999,8 +999,6 @@ export const en = {
   'cli.delivered': 'Done. The token has been handed to the command line, and you can close this tab.',
   'cli.manualTitle': 'The token could not be handed over',
   'cli.manualBody': 'The browser could not reach the terminal that opened this page. Paste this command into it instead. The token is shown only here.',
-  'server.tabUsers': 'Users',
-  'server.tabGroups': 'Groups',
   'server.tabRoles': 'Roles',
   'server.tabAudit': 'Audit',
   'access.users.intro': 'Everyone with an account on this server. A person is put into Members unless told otherwise, so they can read the mailbox they are given.',

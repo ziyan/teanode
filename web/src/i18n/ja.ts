@@ -989,8 +989,6 @@ export const ja: Catalog = {
   'cli.delivered': '完了しました。トークンはコマンドラインに渡されました。このタブは閉じて構いません。',
   'cli.manualTitle': 'トークンを渡せませんでした',
   'cli.manualBody': 'ブラウザはこのページを開いたターミナルに接続できませんでした。代わりに次のコマンドをターミナルに貼り付けてください。トークンはここにしか表示されません。',
-  'server.tabUsers': 'ユーザー',
-  'server.tabGroups': 'グループ',
   'server.tabRoles': 'ロール',
   'server.tabAudit': '監査',
   'access.users.intro': 'このサーバーのすべてのアカウント。指定がなければ Members グループに入り、割り当てられたメールボックスを読めるようになります。',

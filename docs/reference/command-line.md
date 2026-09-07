@@ -156,7 +156,8 @@ A condition is `field:operator:value`, repeatable, and every one must match.
 The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known` and
 `any`; the operators are `contains`, `equals`, `matches` (a regular
 expression), `above` and `below`. A header condition names the header:
-`--when header:List-Id:contains:golang`. The actions are flags: `--move`,
+`--when header:List-Id:contains:golang`. Two of the fields ask nothing of a
+value and are written alone: `--when sender-known` and `--when any`. The actions are flags: `--move`,
 `--mark-read`, `--flag`, `--forward`, `--delete`, and `--stop` ends the run
 after this rule.
 
@@ -165,10 +166,15 @@ stored rules over what is already in a folder, moving, marking, flagging and
 deleting as arrival would have; forwarding is not repeated, because old mail
 is not sent again. `rule test` says what would happen and changes nothing.
 
-The rest of the group is the rest of the mailbox: `contact list|add|remove`,
-`device list|add|remove` for the app passwords a mail program signs in with,
-`autoreply show|set|off`, and `programs` for the hosts and ports to type into
-one.
+The rest of the group is the rest of the mailbox. `mailbox list` names the
+mailboxes you can open, and `--all` every mailbox on the server with its
+owner; `show` and `update` read and change a mailbox's name and signature.
+`folder list|create|rename|move|pin|unpin|delete` is the tree in the rail.
+`rule list|add|remove|enable|disable|test|apply` is the filing.
+`contact list|add|remove` is the addresses it has learned,
+`device list|add|remove` the app passwords a mail program signs in with,
+`autoreply show|set|off` the out-of-office reply, and `programs` the hosts
+and ports to type into a mail program.
 
 ### One thing that is not in the schema
 
@@ -184,7 +190,7 @@ Some examples:
     teanode domain create example.com
     teanode alias create example.com --pattern '^hello$' --kind email --email me@example.org
     teanode alias create example.com --pattern '^you$' --kind mailbox --mailbox <mailbox id>
-    teanode api call ListAllMailboxes --select "{ id name username }"
+    teanode api call ListMailboxItems folderId=01... first=10
     teanode alias match example.com hello
     teanode settings set antispam enabled=true host=127.0.0.1 port=783
     teanode server status

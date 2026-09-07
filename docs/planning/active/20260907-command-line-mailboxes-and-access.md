@@ -18,7 +18,7 @@ sent as an empty string.
 
 After this plan, the same person types:
 
-    teanode folder create GitHub
+    teanode mailbox folder create GitHub
     teanode mailbox rule add GitHub --when from:contains:@github.com --move GitHub --stop
     teanode mailbox rule apply
 
@@ -87,9 +87,10 @@ actions exactly as arrival does, and skips forward, which would resend old
 mail; the reply says how many messages matched and were changed. It needs
 `mail:write`, and `mail:send` is not consulted because nothing is sent.
 
-Input fields of a rule that the web form always sends as empty strings —
-`header`, `value`, `folderId`, `address` — become nullable in the schema, so
-that `teanode api call` and any other client may omit them.
+Input fields the web form always sends as empty strings become nullable in
+the schema, so that `teanode api call` and any other client may omit them:
+a rule's `header`, `value`, `folderId` and `address`, and an out-of-office
+reply's `subject`, `text` and `html`.
 
 Groups and roles are named by id or name. `group add` and `group remove` take
 `--user`, `--role` and `--domain`, repeatable, and change membership one step

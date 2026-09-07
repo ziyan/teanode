@@ -35,8 +35,11 @@ func NewGroupCommand() *cli.Command {
 				Action:    runGroupShow,
 			},
 			{
-				Name:      "create",
-				Aliases:   []string{"add"},
+				Name: "create",
+				// No "add" alias here: this group has an add of its own,
+				// which puts people into a group that exists, and an alias
+				// would shadow it — the library takes the first name that
+				// matches.
 				Usage:     "add a group",
 				ArgsUsage: "<name>",
 				Description: "  teanode group create Support --role Operator --domain example.com --user ada\n\n" +

@@ -247,10 +247,12 @@ own from the address.
   `^(sales|support)$` is one alias. An empty pattern is a catch-all that
   receives whatever nothing else matched. Several aliases can deliver into
   one mailbox, and a mailbox can send as any of its addresses.
-- **More people.** **Manage → Server → Users** adds accounts; **Groups** put
-  them in Members, which reads and sends from its own mailboxes, or
-  Administrators, which manages everything. Roles are editable, and a group
-  can be tied to a domain so its permissions reach only that far.
+- **More people.** **Manage → People and access** adds accounts and the
+  groups they are in, on one page: choosing a group narrows the list to its
+  members. A person joins Members, which reads and sends from its own
+  mailboxes, or Administrators, which manages everything. Roles are
+  editable, and a group can be tied to a domain so its permissions reach
+  only that far.
 - **Signing in through your identity provider.** **Server → Single sign-on**
   takes an OpenID Connect issuer and client; a group's *IdP group* then
   follows the directory, and people arrive with the roles it says.

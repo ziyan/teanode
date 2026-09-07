@@ -307,6 +307,15 @@ and reviewed as it was built rather than after:
   limit is refused as invalid (400). With no message-size limit configured
   the upload is unbounded, as SMTP is. A stale draft id is refused. The
   reply is the draft as stored, so the page never guesses a part's index.
+- `ApplyMailboxRules` runs a mailbox's stored rules over a folder that is
+  already filed, the way arrival runs them over a new message. It resolves
+  the mailbox through `requireMailbox` with `mail:write` and the folder
+  through `requireFolder`, and refuses a folder of another mailbox as not
+  found. The page is bounded at 500 messages; a `move` to a folder that is
+  gone or belongs elsewhere does nothing; `delete` moves to Trash rather
+  than erasing; and `forward` is counted and skipped, so the mutation
+  cannot resend old mail to an address a rule names. `mail:send` is
+  deliberately not consulted, because nothing leaves the server.
 - The search filters of `ListMailboxItems` (`from`, `to`, `subject`) reach
   `ILIKE` as parameters, with the caller's `%`, `_` and `\` escaped first;
   `since`/`before` are typed, and the page is bounded. `SaveMailboxContact`,
@@ -399,8 +408,6 @@ stripped.
   trusted.
 - **DNS is trusted.** SPF, DKIM and DMARC verification believe the resolver.
   DNSSEC is not validated.
-- **No audit log.** There is no record of who changed what in the
-  configuration.
 
 ## 7. What to do next
 
@@ -408,8 +415,6 @@ stripped.
    at all (SEC-7).
 2. Re-run `govulncheck` on a schedule. It found forty-three things nobody had
    looked for; it will find more.
-3. Give the configuration an audit log. Nothing records who changed what.
-
 ## 8. What this review did not do
 
 No fuzzing of the MIME and header parsers, which is where a mail server's
