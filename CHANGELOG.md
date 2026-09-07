@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-07
+
 ### Fixed
 
 - Two ways a legitimate message was refused on DKIM grounds with SPF passing.
