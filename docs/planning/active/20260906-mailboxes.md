@@ -14,7 +14,7 @@ Nothing here is implemented yet.
 
 Today this server receives mail and *hands it on*: every message is forwarded
 to an address, relayed to another server, or posted to a webhook, and the
-dashboard is an operator's window onto what passed through. Nobody *reads
+web UI is an operator's window onto what passed through. Nobody *reads
 their mail here*. There is one kind of account — an operator who can do
 everything — and the mail a message became is a delivery record, not a thing
 in anyone's possession.
@@ -30,8 +30,8 @@ carry which permissions — over the whole server, or over one domain.
 
 You can see it working like this: create a domain, give a user an address on
 it, send that address a message from outside. It appears in their inbox in the
-dashboard and in their mail app over IMAP, unread, in a thread with anything
-it replied to. They reply from the dashboard; the reply is in their Sent
+web UI and in their mail app over IMAP, unread, in a thread with anything
+it replied to. They reply from the web UI; the reply is in their Sent
 folder, in the same thread, and the recipient receives it DKIM-signed. A rule
 they wrote files the next newsletter into a folder before they see it.
 
@@ -68,7 +68,7 @@ days. Retention changes meaning in milestone two: a message is kept as long as
 any folder holds it, and for the retention period after the last folder lets
 go.
 
-**The dashboard can already compose and send.** `web/src/pages/compose.tsx`
+**The web UI can already compose and send.** `web/src/pages/compose.tsx`
 and `SendMail` in `internal/api/v1api/apigraph/send.go` write and send a
 message with attachments, and the result is a `mail` row of kind outgoing.
 Reply, reply to all and forward are that page with the recipients, subject,
@@ -97,7 +97,7 @@ anything in memory that another one would need. Concretely:
   when one is configured, and `storage.Get` already falls back to the mirror
   when the local spool has no copy. A mailbox read from any instance
   therefore **requires the object store in a cluster** — as reading a message
-  in the dashboard from any instance already does. A single instance needs
+  in the web UI from any instance already does. A single instance needs
   nothing beyond its spool. The deployment guide says so in milestone two.
 - **UIDs and `modseq` are allocated in the database, in the transaction that
   needs them:** `UPDATE folder SET uid_next = uid_next + 1 … RETURNING`, never
@@ -295,7 +295,7 @@ only that domain's mail, and `mail:audit-all` reads all of it.
 `requirePermission(ctx, permission)` and `requireDomainPermission(ctx,
 permission, domainId)`. A resolver that finds the caller lacks permission over
 a row answers **not found**, never "forbidden": "you may not touch this"
-confirms the row exists, which is itself a leak. The dashboard is told the
+confirms the row exists, which is itself a leak. The web UI is told the
 caller's effective permissions in `GetSession` and hides what they cannot do;
 that is a courtesy, and every mutation is checked again on the server.
 
@@ -882,7 +882,7 @@ Then the mailbox's rules run, in order, against the new item. A rule that
 moves it moves the item; one that forwards creates a `forward` delivery like
 any alias would.
 
-A submission from a user of this server — from the dashboard, or over SMTP
+A submission from a user of this server — from the web UI, or over SMTP
 with an app password — is a `mail` row of kind outgoing, as today, plus an
 item in the sender's Sent folder referencing it. A recipient at a local
 address gets an item in their Inbox referencing the *same* row: the copy that
@@ -930,7 +930,7 @@ transaction — a superseded draft is the one message nobody wants back, so
 it does not get the retention grace; its bytes go with the next sweep on
 the instance holding them. This is exactly what a mail program does over
 IMAP when it saves a draft: `APPEND` the new one to Drafts, delete the old
-one. So the dashboard and Thunderbird do the same thing to the same folder
+one. So the web UI and Thunderbird do the same thing to the same folder
 and neither can confuse the other. Sending removes the draft's item and row
 and creates an ordinary outgoing message with an item in Sent.
 
@@ -1046,7 +1046,7 @@ and the message from `storage.Get`, parsing on demand; `STORE` writes flags
 and bumps `modseq`; `COPY` and `MOVE` create items; `EXPUNGE` deletes items
 flagged deleted; `APPEND` — a client saving its own sent message — stores a
 `mail` row of kind outgoing and an item, so a message sent from a phone
-appears in the dashboard's Sent folder too. `SEARCH` on headers and flags
+appears in the web UI's Sent folder too. `SEARCH` on headers and flags
 runs as SQL; body search runs over the `search` column.
 
 `IDLE` is the one part that is not a query. A client holding a folder open
@@ -1080,7 +1080,7 @@ a name, the discovery URL, client id and secret, the claim that carries group
 names, and whether a user who arrives with no account is created. Sign-in is
 the authorisation-code flow with PKCE, a signed and expiring `state`, an
 allowlist of issuer hosts, and a guard against redirecting or fetching to a
-private address. The dashboard's sign-in page shows a button per provider
+private address. The web UI's sign-in page shows a button per provider
 beside the password and passkey forms.
 
 On return, the identity is looked up by `(provider, subject)`. Found: that
@@ -1092,20 +1092,16 @@ one that is no longer claimed. Groups without an `idp_group` are never
 touched by SSO. Roles therefore follow the directory without anybody
 administering them here, which is the point.
 
-## The dashboard
+## The web UI
 
-A new top-level place in the rail, **Mail**: the mailboxes the user can
-read, and nothing else. Today's pages — every message on a domain, the
-queue, the domains, the server settings — each stay behind the permission
-they name (`mail:audit`, `queue:manage`, `domain:manage`, and so on): the
-rail shows them only to a user who holds it, and the API answers not found
-to one who does not. A normal user signs in to their own mailboxes and sees
-no sign that the rest exists. The Mail page is a folder tree on the left —
-every mailbox the user owns — a message list in the middle, and the message on the right, which is the
-existing message page with its authentication panel, spam breakdown and
-rendered frame. The list is the existing `DataTable`, remembering its place
-as it now does, with unread rows bold, a flag column, and a search box that
-runs the full text search.
+Signing in lands in the mailbox, not on a dashboard of the server. The
+folder tree is on the left, the message list in the middle, and the message
+on the right — the existing message page with its authentication panel,
+spam breakdown and rendered frame. A user with several mailboxes switches
+between them at the head of the folder tree, and the one last used is
+remembered in the browser. The list is the existing `DataTable`,
+remembering its place as it now does, with unread rows bold, a flag column,
+and a search box that runs the full text search.
 
 Selecting rows offers mark read or unread, flag, archive, move to a folder,
 delete; the same on one message. Reply, reply to all and forward open the
@@ -1113,28 +1109,47 @@ compose page with recipients, subject, quoted body and threading headers
 filled in and, for forward, the attachments carried over; sending adds the
 reply to Sent and marks the original answered. Drafts save to the Drafts
 folder as a `mail` row of kind draft and reopen from there — see Drafts
-above for what a save is, and how attachments cross the wire once. A message opened
-is marked read after a moment, not on arrival.
+above for what a save is, and how attachments cross the wire once. A
+message opened is marked read after a moment, not on arrival.
 
-**Unread counts.** Every folder in the tree shows its unread count, the Mail
-entry in the rail shows the sum over the Inboxes of the user's mailboxes,
-and the browser tab title carries it — "(3) Mail". The count is never
-stored: a counter column drifts the first time two instances move the same
-item, and a stored number that is sometimes wrong is worse than none. It is
-`count(*)` over `mailbox_item` where not seen, grouped by folder, on a
-partial index that holds only unseen rows, so it costs what it should —
-proportional to the unread, not the mailbox. It is resolved on
-`MailboxFolder.Unread` when the tree is listed, and refreshes the way the
-rest of the dashboard already does: on the interval the query hook keeps,
-and at once when the tab becomes visible again. No push channel in this
-programme; when IMAP `IDLE` exists the same notification could drive one.
+**Unread counts.** Every folder in the tree shows its unread count, the
+mailbox switcher shows each mailbox's, and the browser tab title carries
+the current mailbox's — "(3) Inbox". The count is never stored: a counter
+column drifts the first time two instances move the same item, and a
+stored number that is sometimes wrong is worse than none. It is `count(*)`
+over `mailbox_item` where not seen, grouped by folder, on a partial index
+that holds only unseen rows, so it costs what it should — proportional to
+the unread, not the mailbox. It is resolved on `MailboxFolder.Unread` when
+the tree is listed, and refreshes the way the rest of the web UI already
+does: on the interval the query hook keeps, and at once when the tab
+becomes visible again. No push channel in this programme; when IMAP `IDLE`
+exists the same notification could drive one.
 
-Mailbox settings: folders, rules with a live "which of the last hundred
-messages would this match", addresses, signature, app passwords. Under
-Server, three pages for whoever holds the permissions: Users, Groups, Roles.
-A group's page is the one that matters: its users, its roles, its domains,
-so "why can this person do this" is answered by the groups they are in, on
-one screen.
+**Three places for settings, and a sidebar with two modes.** Settings are
+split by what they are about, not by who may see them:
+
+- The **account menu**, top right, is the one that exists today and is
+  about the person: profile, password, passkeys, tokens, sessions, sign
+  out. Nothing in it is about any mailbox.
+- **Mailbox settings**, from the gear beside the mailbox switcher, are
+  about one mailbox: folders, rules with a live "which of the last hundred
+  messages would this match", addresses, signature, app passwords, out of
+  office. A user with two mailboxes has two of these.
+- The **management menu**, beside the account menu, is about the server,
+  and exists only for a user who holds at least one management permission.
+  Choosing it switches the sidebar from the folder tree to management mode:
+  today's rail — Mail (every message, `mail:audit`), Queue, Reports,
+  Domains, Server — with each entry present only when the user holds its
+  permission, and "Back to mail" at the top. Today's pages move here
+  unchanged; the URLs stay. Under Server: settings, Users, Groups, Roles,
+  Audit. A group's page is the one that matters — its users, its roles,
+  its domains — so "why can this person do this" is answered by the groups
+  they are in, on one screen.
+
+A user with no management permission never sees the management menu, and
+the API answers not found to anything behind it. The web UI is told the
+caller's effective permissions in `GetSession` and hides what they cannot
+do; that is a courtesy, and every mutation is checked again on the server.
 
 ## Milestones
 
@@ -1149,7 +1164,7 @@ so the first role edit is the first row. Effective
 permissions on the session and in `GetSession`. The Users, Groups and Roles
 pages. The command line's `user` commands grow `group` and `role` siblings.
 Acceptance: editing a role writes an audit row naming the editor; a user whose only group carries Member can sign in and sees nothing but an
-empty Mail page; an Operator sees today's dashboard; an Administrator sees
+empty Mail page; an Operator sees today's web UI; an Administrator sees
 everything; a Member asking the API for a domain gets not found.
 
 **Two — mail that lives here.** Mailboxes, folders, items, threads; the
@@ -1162,7 +1177,7 @@ let go of it.
 
 **Three — writing back.** Reply, reply to all, forward, drafts, Sent by
 reference, the answered flag, threading headers, and the local-recipient copy
-replaced by a reference. Acceptance: a reply from the dashboard arrives at an
+replaced by a reference. Acceptance: a reply from the web UI arrives at an
 external recipient DKIM-signed with `In-Reply-To` and `References` set, sits
 in Sent, and the original shows answered.
 
@@ -1177,7 +1192,7 @@ over `LISTEN`/`NOTIFY`; submission over port 587 with an app password sending
 as an address of that mailbox; the compose file and the docs. This is
 the milestone that decides on the beta dependency. Acceptance: a phone's mail
 app reads and flags the inbox, is woken when a message arrives at another
-instance, and a message sent from it appears in the dashboard's Sent folder.
+instance, and a message sent from it appears in the web UI's Sent folder.
 
 **Six — the organisation's identity.** OIDC sign-in with the flow above,
 identity rows, just-in-time users, group reconciliation. Acceptance: a user
@@ -1195,7 +1210,7 @@ a bounce, or another mailbox on this server with its own out-of-office on
 gets none; the reply sent has an empty `Return-Path`.
 
 **Not in this programme**, by decision: per-mailbox quotas, notifications
-outside the dashboard, SCIM provisioning, and JMAP. Each is its own small
+outside the web UI, SCIM provisioning, and JMAP. Each is its own small
 plan if it is ever wanted; nothing here makes any of them harder.
 
 ## Decision Log
@@ -1328,6 +1343,17 @@ Decisions are the repository owner's.
   Rationale: the first two are what every person with an inbox reaches for
   in the first week; the rest are asked for by an organisation, later, if
   at all.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: the mailbox is the home of the web UI. Signing in lands in it;
+  a user with several mailboxes switches at the head of the folder tree.
+  Today's pages — mail, queue, reports, domains, server — become a
+  management mode of the sidebar, reached from a management menu beside the
+  account menu and shown only to those with a management permission.
+  Account settings are about the person, mailbox settings about one
+  mailbox, management about the server.
+  Rationale: for everyone but the operator the mailbox is the product, and
+  the operator's pages are a mode they enter, not the front door.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: administrative changes are audited — users, groups, roles,
