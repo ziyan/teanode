@@ -1267,6 +1267,7 @@ export const ja: Catalog = {
   'mailbox.narrowClear': 'クリア',
   'compose.mailbox.uploading': '{name} をアップロード中',
   'compose.mailbox.cancelUpload': 'アップロードを中止',
+  'compose.mailbox.tooLarge': 'これらのファイルは合計 {size} で、メールの上限（{limit}）を超えています。',
   'compose.mailbox.dismissUpload': '閉じる',
   'mailDetail.more': 'その他',
   'mailDetail.showHeaders': 'ヘッダーを表示',

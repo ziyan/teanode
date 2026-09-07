@@ -1499,9 +1499,9 @@ record.
       for good when sent or deleted; attachments of a draft or a forwarded
       message are carried by index so the browser uploads a file once.
       Verified on the dev server: a reply sent to a local address is one
-      `mail` row referenced from Sent and from the Inbox. Still open from
-      the plan: the `PUT /api/mail/{draftId}/attachment` upload path (files
-      go up base64 inside the save mutation today, once each).
+      `mail` row referenced from Sent and from the Inbox. The upload path
+      the plan named came later, as `PUT /api/v1/mailbox/drafts/{itemId}/attachments`;
+      see the 2026-09-07 entry below.
 - [x] Milestone four (2026-09-06): full-text search and unread/flagged
       filters in the folder list; the rules editor with a dry run against
       the newest messages of the Inbox; address completion in the compose
@@ -1597,11 +1597,28 @@ record.
       Starred always at the top with any other folder pinnable beside them
       (`mailbox_folder.pinned_at`, migration 0021, `SetMailboxFolderPinned`);
       every state checked at desktop and phone widths.
+- [x] A second review (2026-09-07), three readers over the server, the web
+      UI and the documents. Fixed: the PUT upload route asked for `mail:read`
+      where it rewrites the draft, and took any item id (now `mail:write`
+      and drafts only, checked before a byte of the body is read, the body
+      capped with `MaxBytesReader`); a save and an upload could each replace
+      the draft the other was writing to (they take turns now, and Send
+      waits for both); a failed rename, move or delete closed its form as
+      if it had worked; a selection larger than a message may be is refused
+      on the page, with the limit now in the mailbox view; the search
+      document's attachment names are bounded; a UID cursor is ignored
+      across folders; a folder chain too deep to check for a cycle is
+      refused; a contact's address is bounded; offset paging drops an
+      overlap; the sender's name is its own change. Documents brought back
+      in line: the security review (SEC-11), the command line's reach, the
+      alias anchoring, the changelog, the migration comment. Tests added
+      for the upload limit, LIKE escaping and attachment names.
 
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
-      still needs the mailbox picker; `teanode api` reaches everything).
-- [x] Milestone three: reply, forward, drafts (attachment PUT path open).
+      still needs the mailbox picker; `teanode api` reaches everything in
+      the schema, and the two multipart upload routes are a `curl -F` away).
+- [x] Milestone three: reply, forward, drafts.
 - [x] Milestone four: search, filters, rules, contacts.
 - [x] Milestone five: IMAP and submission (CONDSTORE/QRESYNC not advertised).
 - [x] Milestone six: SSO (round trip through a real provider still to try).

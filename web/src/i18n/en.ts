@@ -1277,6 +1277,7 @@ export const en = {
   'mailbox.narrowClear': 'Clear',
   'compose.mailbox.uploading': 'Uploading {name}',
   'compose.mailbox.cancelUpload': 'Cancel upload',
+  'compose.mailbox.tooLarge': 'Those files come to {size}, more than a message may be ({limit}).',
   'compose.mailbox.dismissUpload': 'Dismiss',
   'mailDetail.more': 'More',
   'mailDetail.showHeaders': 'Show headers',

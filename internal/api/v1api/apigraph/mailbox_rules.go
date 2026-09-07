@@ -33,7 +33,7 @@ func (self *graph) SaveMailboxContact(ctx context.Context, arguments SaveMailbox
 	if err != nil {
 		return nil, err
 	}
-	if !models.IsEmailAddress(strings.TrimSpace(arguments.Address)) {
+	if address := strings.TrimSpace(arguments.Address); len(address) > 320 || !models.IsEmailAddress(address) {
 		return nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, arguments.Address)
 	}
 	contact, err := self.transaction(ctx).SaveContact(mailbox.ID, arguments.Address, arguments.Name)

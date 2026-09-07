@@ -615,7 +615,10 @@ it.
 **`pattern`** — Pattern is a Go regular expression matched against the local
 part of the recipient address, the part before the "@", without regard to
 case. Anchor it: "^hello$" matches only hello@, while "hello" also matches
-say-hello-now@.  An empty pattern makes this a catch-all. Catch-alls are a
+say-hello-now@. An alias that delivers into a mailbox is anchored for you
+when made through the web UI or the API, "hello" becoming "^hello$", because
+a mailbox's addresses are read back from its patterns; a file imported with
+`config import` is taken as written. An empty pattern makes this a catch-all. Catch-alls are a
 fallback: they receive mail only for addresses that no pattern matched, so
 adding one does not duplicate mail that already has somewhere to go.
 

@@ -98,7 +98,8 @@ versioned packages and `internal/web` can all import it.
 **`internal/api/v1api`** — version 1, mounted at `/api/v1`. A composition of
 three parts:
 
-    apigraph/   the GraphQL endpoint, which is the whole management API.
+    apigraph/   the GraphQL endpoint, which is the whole management API,
+                and the two multipart routes that put files on a draft.
                 Generated from Go types by reflection in internal/util/graphapi.
                 Queries read the database; mutations that change configuration
                 go through config.Store and end up in the configuration

@@ -316,7 +316,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 // GetMailboxDraft reads a stored draft back into the fields it was written
 // from, with the parser that reads any message.
 func (self *graph) GetMailboxDraft(ctx context.Context, arguments GetMailboxDraftArguments) (*MailboxDraft, error) {
-	mailbox, err := self.requireDraftOwner(ctx, arguments.ItemID)
+	mailbox, err := self.requireDraftOwner(ctx, models.PermissionMailRead, arguments.ItemID)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +421,7 @@ func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, m
 	add := func(attachment *mailparse.Attachment) error {
 		total += uint64(len(attachment.Content))
 		if limit > 0 && total > limit {
-			return fmt.Errorf("%w: the attachments come to more than the %d bytes a message may be", api.ErrInvalidArguments, limit)
+			return fmt.Errorf("%w: the attachments come to more than the %d bytes a message may be: %w", api.ErrInvalidArguments, limit, errTooLarge)
 		}
 		attachments = append(attachments, attachment)
 		return nil
@@ -531,9 +531,11 @@ func (self *graph) requireOwnItem(ctx context.Context, mailbox *models.Mailbox, 
 	return item, stored, nil
 }
 
-// requireDraftOwner is the mailbox holding a draft item, for the caller.
-func (self *graph) requireDraftOwner(ctx context.Context, itemId string) (*models.Mailbox, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionMailRead)
+// requireDraftOwner is the mailbox holding a draft item, for a caller with
+// the permission: reading it to open it, writing it to rewrite it. An item
+// that is not a draft is not found, whatever it is.
+func (self *graph) requireDraftOwner(ctx context.Context, permission models.Permission, itemId string) (*models.Mailbox, error) {
+	principal, err := self.requirePermission(ctx, permission)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +544,7 @@ func (self *graph) requireDraftOwner(ctx context.Context, itemId string) (*model
 	if err != nil {
 		return nil, err
 	}
-	if item == nil {
+	if item == nil || !item.Draft {
 		return nil, api.ErrNotFound
 	}
 	folder, err := tx.GetFolder(item.FolderID)

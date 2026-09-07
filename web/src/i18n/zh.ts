@@ -1252,6 +1252,7 @@ export const zh: Catalog = {
   'mailbox.narrowClear': '清除',
   'compose.mailbox.uploading': '正在上传 {name}',
   'compose.mailbox.cancelUpload': '取消上传',
+  'compose.mailbox.tooLarge': '这些文件共 {size}，超过了一封邮件的上限（{limit}）。',
   'compose.mailbox.dismissUpload': '关闭',
   'mailDetail.more': '更多',
   'mailDetail.showHeaders': '显示邮件头',

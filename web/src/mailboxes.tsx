@@ -24,6 +24,7 @@ const MAILBOXES = `{
     }
     folders { id mailboxId parentId name kind pinnedAt unread total }
     unread
+    maxMessageSize
   }
 }`
 
@@ -192,7 +193,7 @@ export function railRows(folders: MailboxFolder[]): RailRows {
   const rest = inboxAt >= 0 ? [...rows.slice(0, inboxAt), ...rows.slice(inboxEnd + 1)] : rows
   const pinned = folders
     .filter((folder) => folder.pinnedAt && folder.kind !== 'inbox')
-    .sort((left, right) => (left.pinnedAt as string).localeCompare(right.pinnedAt as string))
+    .sort((left, right) => Date.parse(left.pinnedAt as string) - Date.parse(right.pinnedAt as string))
   return { inbox, pinned, rest }
 }
 

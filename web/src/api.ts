@@ -590,6 +590,8 @@ export interface MailboxView {
   mailbox: Mailbox
   folders: MailboxFolder[]
   unread: number
+  // The most a message may be, in bytes; zero when there is no limit.
+  maxMessageSize?: number
 }
 
 export interface MailboxItem {

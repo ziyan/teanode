@@ -777,6 +777,9 @@ a.tile:hover strong {
   width: 232px;
   flex: 0 0 232px;
   min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--rail);
   border-right: 1px solid var(--border);
   padding-bottom: var(--space-2);
@@ -2345,11 +2348,16 @@ body,
    Groups under their own labels, a foot that stays at the bottom however
    short the list, and the account below everything. */
 
+/* The rail is a column of three parts: the mark, the navigation, the foot.
+   The navigation is the one that can outgrow the window — a mailbox with
+   many folders on a short screen — so it is the one that scrolls, and the
+   foot stays where it is rather than riding up over the rows. */
 .sidebar nav {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
 }
 
 /* The label over a group. Sentence case and quiet: it separates, it is not
@@ -3849,24 +3857,6 @@ a.button.primary:hover {
   }
 }
 
-/* The rail is a column of three parts: the mark, the navigation, the foot.
-   The navigation is the one that can outgrow the window — a mailbox with
-   many folders on a short screen — so it is the one that scrolls, and the
-   foot stays where it is rather than riding up over the rows. */
-.sidebar {
-  overflow: hidden;
-  height: 100vh;
-  height: 100dvh;
-}
-.sidebar nav {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-}
-.sidebar-account {
-  flex: 0 0 auto;
-  margin-top: 0;
-}
 .folder-name {
   display: inline-flex;
   align-items: center;
@@ -3930,8 +3920,16 @@ a.button.primary:hover {
 .sidebar-pin + .sidebar-count {
   margin-left: 6px;
 }
-.sidebar.collapsed .sidebar-pin {
-  display: none !important;
+.sidebar.collapsed nav a .sidebar-pin {
+  display: none;
+}
+@media (max-width: 760px) {
+  /* The overlay shows labels whatever the collapsed flag says, so the pin
+     comes back with them. */
+  .sidebar.collapsed nav a:hover .sidebar-pin,
+  .sidebar.collapsed nav a:focus-within .sidebar-pin {
+    display: inline-flex;
+  }
 }
 /* Four actions on a folder row do not fit beside its name on a phone. There
    the actions column gives up its one-line width and the actions wrap, two

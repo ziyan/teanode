@@ -151,6 +151,8 @@ export function MailboxComposePage() {
   // chosen meanwhile waits its turn, since each rewrites the draft.
   type Uploading = { file: File; progress: number; error?: string }
   const [uploading, setUploading] = useState<Uploading[]>([])
+  // Selections waiting their turn behind the upload in flight.
+  const [queued, setQueued] = useState(0)
   const queue = useRef<File[][]>([])
   const inFlight = useRef<UploadHandle | null>(null)
   const [kept, setKept] = useState<Attachment[]>([])
@@ -369,6 +371,11 @@ export function MailboxComposePage() {
       finish = resolve
     })
     try {
+      // An upload rewrites the draft too, and each replaces the draft the
+      // other would write to; the two take turns.
+      while (inFlight.current) {
+        await inFlight.current.promise.catch(() => {})
+      }
       const message = await buildMessage()
       const response = await graphql<{ SaveMailboxDraft: { id: string } }>(SAVE, {
         mailboxId: view.mailbox.id,
@@ -379,6 +386,7 @@ export function MailboxComposePage() {
       // the text parts come first and the order is its own.
       const draftId = response.SaveMailboxDraft.id
       setDraftItemId(draftId)
+      latestDraftId.current = draftId
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
       setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
       setCarried([])
@@ -437,7 +445,13 @@ export function MailboxComposePage() {
     if (inFlight.current || !view) {
       return
     }
+    if (pendingSave.current) {
+      // A save rewrites the draft too; the upload goes after it.
+      void pendingSave.current.then(() => startNextUpload())
+      return
+    }
     const batch = queue.current.shift()
+    setQueued(queue.current.length)
     if (!batch) {
       return
     }
@@ -466,6 +480,7 @@ export function MailboxComposePage() {
         if (isCancelled(failure)) {
           setUploading([])
           queue.current = []
+          setQueued(0)
           return
         }
         setUploading(batch.map((file) => ({ file, progress: 0, error: failure instanceof Error ? failure.message : String(failure) })))
@@ -480,13 +495,20 @@ export function MailboxComposePage() {
     if (chosen.length === 0) {
       return
     }
+    // A selection larger than a message may be is refused here, with the
+    // reason, rather than sent up to be refused at the end.
+    const limit = view?.maxMessageSize ?? 0
+    const size = chosen.reduce((sum, file) => sum + file.size, 0)
+    if (limit > 0 && size > limit) {
+      setProblem(new Error(t('compose.mailbox.tooLarge', { size: formatBytes(size), limit: formatBytes(limit) })))
+      return
+    }
     // Whatever has been typed goes into the draft the upload rewrites, so
     // it is saved first when it has changed; the upload waits for it.
     queue.current.push(chosen)
+    setQueued(queue.current.length)
     if (dirty.current && !saving) {
       void save().then(() => startNextUpload())
-    } else if (pendingSave.current) {
-      void pendingSave.current.then(() => startNextUpload())
     } else {
       startNextUpload()
     }
@@ -499,8 +521,10 @@ export function MailboxComposePage() {
     setSending(true)
     setProblem(null)
     try {
-      if (pendingSave.current) {
+      // What is still being saved or uploaded belongs to the message.
+      while (pendingSave.current || inFlight.current) {
         await pendingSave.current
+        await inFlight.current?.promise.catch(() => {})
       }
       const message = await buildMessage()
       await graphql(SEND, { mailboxId: view.mailbox.id, message })
@@ -517,6 +541,7 @@ export function MailboxComposePage() {
   const discard = async () => {
     inFlight.current?.cancel()
     queue.current = []
+    setQueued(0)
     if (draftItemId) {
       try {
         await graphql(`mutation ($itemIds: [String!]!) { DeleteMailboxItems(itemIds: $itemIds) }`, {
@@ -575,6 +600,7 @@ export function MailboxComposePage() {
     !saving &&
     splitAddresses(to).length + splitAddresses(cc).length + splitAddresses(bcc).length > 0 &&
     uploading.length === 0 &&
+    queued === 0 &&
     (html.trim() !== '' || text.trim() !== '' || kept.length + carried.length > 0)
 
   return (
@@ -775,12 +801,18 @@ export function MailboxComposePage() {
                 )}
               </li>
             ))}
+            {/* Cancelling is for while the bytes are still going up. Once
+                they have all arrived the server is writing the draft, and
+                an abort then would leave a draft the page knows nothing
+                about. */}
             {uploading.some((entry) => !entry.error) ? (
-              <li>
-                <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
-                  {t('compose.mailbox.cancelUpload')}
-                </button>
-              </li>
+              uploading.some((entry) => entry.progress < 1) && (
+                <li>
+                  <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
+                    {t('compose.mailbox.cancelUpload')}
+                  </button>
+                </li>
+              )
             ) : (
               <li>
                 <button type="button" className="link" onClick={() => setUploading([])}>

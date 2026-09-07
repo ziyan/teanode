@@ -296,11 +296,23 @@ and reviewed as it was built rather than after:
 
 - Files for a draft go up as a multipart body to
   `PUT /api/v1/mailbox/drafts/{itemId}/attachments` or
-  `POST /api/v1/mailbox/{mailboxId}/drafts/attachments`, behind the session
-  middleware, with the mailbox's ownership checked the way the GraphQL
-  draft resolvers check it, the message-size limit enforced as the body is
-  read (413 past it), and a stale draft id refused. The reply is the draft
-  as stored, so the page never guesses a part's index.
+  `POST /api/v1/mailbox/{mailboxId}/drafts/attachments`, behind
+  authentication (a session or a bearer token), with the mailbox's
+  ownership checked the way the GraphQL draft resolvers check it. The
+  check runs in a short transaction *before* the body is read, so a
+  stranger's request costs nothing to buffer, and again when the draft is
+  written. The body is capped at the message-size limit by
+  `http.MaxBytesReader` and counted again file by file (413 past it); the
+  files then join the parts the draft already holds, and a total past the
+  limit is refused as invalid (400). With no message-size limit configured
+  the upload is unbounded, as SMTP is. A stale draft id is refused. The
+  reply is the draft as stored, so the page never guesses a part's index.
+- The search filters of `ListMailboxItems` (`from`, `to`, `subject`) reach
+  `ILIKE` as parameters, with the caller's `%`, `_` and `\` escaped first;
+  `since`/`before` are typed, and the page is bounded. `SaveMailboxContact`,
+  `DeleteMailboxContact` and `SetMailboxFolderPinned` go through the same
+  ownership checks as the rest of the mailbox API, and the last refuses the
+  Inbox, which is always at the top.
 
 Open: the IMAP server does not advertise CONDSTORE or QRESYNC yet, so a
 client syncs a large folder the slow way.

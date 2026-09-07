@@ -17,8 +17,13 @@ Notable changes to TeaNode. The format follows
   signature, and an out-of-office reply with the protections that keep it
   from answering machines, lists or another mailbox that is also away.
   Folders nest to any depth, can be renamed and moved, and each kind has its
-  own icon; the Inbox and Starred sit at the top of the rail, and any other
-  folder can be pinned up beside them.
+  own icon; the Inbox and Starred, every flagged message wherever it sits,
+  stay at the top of the rail, and any other folder can be pinned up beside
+  them. The list shows the sender's name; the reading pane shows the message
+  as a mail program would, with download, headers and the undarkened
+  original behind a menu; attachment names are searchable; contacts, kept
+  from whoever you write to, have a tab of their own; and every page fits a
+  phone.
 - IMAP, on port 993 and with STARTTLS on 143, so a mail program reads the
   same mailbox; and app passwords, one per device, which sign in to IMAP and
   to submission on port 587 with the mailbox's own addresses.
@@ -35,6 +40,9 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A bare pattern on an alias that delivers into a mailbox is anchored when
+  it is saved, `hello` becoming `^hello$`, because a mailbox's addresses are
+  read back from its patterns. Patterns on other aliases are taken as written.
 - Domains, aliases, credentials and users are rows managed one at a time
   rather than a configuration document written back whole; the
   `configuration` table holds settings only.

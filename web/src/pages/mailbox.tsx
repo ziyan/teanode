@@ -227,7 +227,16 @@ function Folder({
           offset: variables.mailboxId ? offset : undefined,
         })
         const page = response.ListMailboxItems
-        setItems((previous) => (after ? [...previous, ...page.items] : page.items))
+        setItems((previous) => {
+          if (!after) {
+            return page.items
+          }
+          // Paged by offset across the mailbox, a message starred or
+          // arrived since the last page shifts the rest down one: the
+          // overlap is dropped rather than shown twice.
+          const shown = new Set(previous.map((item) => item.id))
+          return [...previous, ...page.items.filter((item) => !shown.has(item.id))]
+        })
         setTotal(page.total)
         setError(null)
       } catch (failure) {
@@ -647,6 +656,7 @@ function Row({
         to={href}
         onClick={(event) => {
           event.preventDefault()
+          event.stopPropagation()
           onOpen()
         }}
       >

@@ -24,6 +24,9 @@ import (
 // of a newsletter.
 const searchDocumentLimit = 64 * 1024
 
+// searchDocumentNames bounds how many attachment names join it.
+const searchDocumentNames = 200
+
 // deliverToMailbox places a message in a mailbox's Inbox and records the
 // delivery, already delivered: there is nothing to queue.
 func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbox, alias *models.Alias, recipient string, mail *models.Mail) (*models.Delivery, error) {
@@ -141,7 +144,7 @@ func threadIDFor(tx db.Transaction, headers []string) (string, error) {
 // SearchDocument is the text a folder search runs over: subject, sender,
 // recipients, the readable body and the attachments' names.
 func SearchDocument(mail *models.Mail) string {
-	return searchDocument(mail)
+	return searchDocument(mail, mailparse.AttachmentNames(mail.Headers, mail.Body))
 }
 
 // AttachmentCount is how many attachments a message carries, for the index.
@@ -151,7 +154,7 @@ func AttachmentCount(mail *models.Mail) int {
 
 // searchDocument is what full text search runs over: subject, sender,
 // recipients, and the message's text, bounded.
-func searchDocument(mail *models.Mail) string {
+func searchDocument(mail *models.Mail, names []string) string {
 	var builder strings.Builder
 	builder.WriteString(mail.Subject)
 	builder.WriteString("\n")
@@ -192,7 +195,13 @@ func searchDocument(mail *models.Mail) string {
 	// An attachment's name three ways, because the parser reads
 	// "invoice-march.pdf" as one file token and a person types any part of
 	// it: as given, without its extension, and with its punctuation as spaces.
-	for _, name := range mailparse.AttachmentNames(mail.Headers, mail.Body) {
+	// Bounded like the text is: a message of thousands of named parts
+	// would otherwise make a document PostgreSQL refuses to index.
+	for index, name := range names {
+		if index >= searchDocumentNames || remaining <= 0 {
+			break
+		}
+		remaining -= len(name) * 3
 		builder.WriteString("\n")
 		builder.WriteString(name)
 		if dot := strings.LastIndex(name, "."); dot > 0 {
@@ -213,7 +222,8 @@ func searchDocument(mail *models.Mail) string {
 // indexMail records what search and threading need once a message is stored:
 // its search document, and the retention clock when nobody holds it.
 func (self *exchange) indexMail(tx db.Transaction, mail *models.Mail, held bool) error {
-	if err := tx.SetMailSearch(mail.ID, searchDocument(mail), len(mailparse.AttachmentNames(mail.Headers, mail.Body))); err != nil {
+	names := mailparse.AttachmentNames(mail.Headers, mail.Body)
+	if err := tx.SetMailSearch(mail.ID, searchDocument(mail, names), len(names)); err != nil {
 		return err
 	}
 	if held {

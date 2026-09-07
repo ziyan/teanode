@@ -233,7 +233,10 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 	}
 	if model.From != mail.From {
 		model.From = mail.From
-		model.FromName = truncateRunes(mail.FromName, 255)
+		dirty = true
+	}
+	if fromName := truncateRunes(mail.FromName, 255); model.FromName != fromName {
+		model.FromName = fromName
 		dirty = true
 	}
 	if model.Subject != mail.Subject {

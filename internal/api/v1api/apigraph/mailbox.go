@@ -65,6 +65,11 @@ type MailboxView struct {
 
 	// Unread is the Inbox's unread count, for the switcher and the tab title.
 	Unread int64 `json:"unread"`
+
+	// MaxMessageSize is the most a message may be, in bytes, so the compose
+	// page can refuse a selection of files before uploading it; zero when
+	// there is no limit.
+	MaxMessageSize uint64 `json:"maxMessageSize"`
 }
 
 // requireMailbox finds a mailbox the caller owns and holds the permission
@@ -151,7 +156,7 @@ func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox)
 	if err != nil {
 		return nil, err
 	}
-	view := &MailboxView{Mailbox: mailbox, Folders: folders}
+	view := &MailboxView{Mailbox: mailbox, Folders: folders, MaxMessageSize: self.config.Current().SMTP.MaxMessageSize.Bytes()}
 	for _, folder := range folders {
 		if folder.Kind == models.MailboxFolderKindInbox {
 			view.Unread = folder.Unread
@@ -268,7 +273,9 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	if arguments.First != nil && *arguments.First > 0 {
 		options.Limit = min(*arguments.First, 200)
 	}
-	if arguments.After != nil {
+	if arguments.After != nil && folderId != "" {
+		// A UID cursor is a folder's; across the mailbox the page is by
+		// offset, and a cursor sent anyway is ignored rather than obeyed.
 		options.Cursor = *arguments.After
 	}
 	tx := self.transaction(ctx)

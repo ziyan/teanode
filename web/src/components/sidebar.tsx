@@ -299,7 +299,7 @@ export function Sidebar({
                           type="button"
                           className={isPinned ? 'sidebar-pin pinned' : 'sidebar-pin'}
                           title={t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}
-                          aria-label={t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                          aria-label={`${label}: ${t(isPinned ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
                           onClick={(event) => {
                             event.preventDefault()
                             event.stopPropagation()

@@ -195,6 +195,13 @@ message the server handled, the queue, reports, domains, the server itself —
 are behind **Manage** at the foot of the rail, and **Back to mailbox** at the
 top brings you back.
 
+The Inbox and **Starred**, every flagged message wherever it sits, stay at
+the top of the rail; hover any other folder for a pin that puts it up beside
+them. The search box looks in the open folder, or in the whole mailbox with
+sender, recipient, subject, date and attachment filters behind **More**.
+Contacts, kept from whoever you write to, live on a tab of Mailbox settings
+next to the folders and rules.
+
 ## 6. Give the mailbox an address
 
 A mailbox receives nothing until an address points at it. On the domain's
@@ -256,7 +263,7 @@ own from the address.
   domain with a CNAME and the dashboard will show you the record to publish.
 - **[configuration.md](configuration.md)** documents every field.
 - **[reference/command-line.md](reference/command-line.md)** covers the CLI,
-  which reaches the whole API and is the better tool for anything repetitive.
+  which reaches the whole schema and is the better tool for anything repetitive.
 - **[reference/deployment.md](reference/deployment.md)** is this same server
   run from the compose file, with upgrades, backups and what to do when it
   will not start.

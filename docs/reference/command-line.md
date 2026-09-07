@@ -138,6 +138,13 @@ so one command serves a person and a script.
 | `layout` | the frames templates are rendered inside |
 | `api` | everything else, straight from the schema: mailboxes, folders, rules, app passwords, groups, roles, the audit log |
 
+One thing is not in the schema, because it is bytes rather than JSON: the
+files of a draft go up as `multipart/form-data`, one `file` part each, to
+`PUT /api/v1/mailbox/drafts/{itemId}/attachments` (or
+`POST /api/v1/mailbox/{mailboxId}/drafts/attachments` for a draft that does
+not exist yet), with the same bearer token. `curl -F file=@report.pdf` does
+it; the reply is the draft as stored, with every part's index.
+
 Some examples:
 
     teanode domain create example.com
@@ -200,8 +207,8 @@ read from the terminal without echoing, for a secret.
 ### Reaching the whole API
 
 The groups above cover what the server offers today. `teanode api` covers
-every operation, including any added since, because it works off the schema
-the server reports rather than a hand written list:
+every operation in the schema, including any added since, because it works
+off the schema the server reports rather than a hand written list:
 
     teanode api list                    # every operation
     teanode api list domain             # the ones about domains

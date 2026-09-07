@@ -183,27 +183,27 @@ func TestFlagsMoveTheModSeq(t *testing.T) {
 
 // Pinning is a timestamp, so the rail can show the pins in the order they
 // were made, and unpinning clears it.
-func TestFolderPinsKeepTheirOrder(t *testing.T) {
-	database, closeDatabase := dbtest.AcquireDatabase(t)
+func TestFolderPinsKeepTheirOrder(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
 
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		user, err := tx.CreateUser(&models.User{Username: "pinner"})
 		if err != nil {
-			t.Fatalf("CreateUser: %s", err)
+			test.Fatalf("CreateUser: %s", err)
 		}
 		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"})
 		if err != nil {
-			t.Fatalf("CreateMailbox: %s", err)
+			test.Fatalf("CreateMailbox: %s", err)
 		}
 		var folders []*models.MailboxFolder
 		for _, name := range []string{"Work", "Family"} {
 			folder, err := tx.CreateFolder(&models.MailboxFolder{MailboxID: mailbox.ID, Name: name, Kind: models.MailboxFolderKindCustom})
 			if err != nil {
-				t.Fatalf("CreateFolder: %s", err)
+				test.Fatalf("CreateFolder: %s", err)
 			}
 			if folder.PinnedAt != nil {
-				t.Errorf("a new folder is pinned: %+v", folder)
+				test.Errorf("a new folder is pinned: %+v", folder)
 			}
 			folders = append(folders, folder)
 		}
@@ -212,7 +212,7 @@ func TestFolderPinsKeepTheirOrder(t *testing.T) {
 				folder.PinnedAt = &at
 				return nil
 			}); err != nil {
-				t.Fatalf("UpdateFolder: %s", err)
+				test.Fatalf("UpdateFolder: %s", err)
 			}
 		}
 		later := time.Now().Add(-time.Minute)
@@ -222,7 +222,7 @@ func TestFolderPinsKeepTheirOrder(t *testing.T) {
 
 		listed, err := tx.ListFolders(mailbox.ID)
 		if err != nil {
-			t.Fatalf("ListFolders: %s", err)
+			test.Fatalf("ListFolders: %s", err)
 		}
 		pinned := map[string]time.Time{}
 		for _, folder := range listed {
@@ -231,18 +231,18 @@ func TestFolderPinsKeepTheirOrder(t *testing.T) {
 			}
 		}
 		if len(pinned) != 2 || !pinned["Family"].Before(pinned["Work"]) {
-			t.Errorf("pins read back as %v, want Family before Work", pinned)
+			test.Errorf("pins read back as %v, want Family before Work", pinned)
 		}
 
 		if _, err := tx.UpdateFolder(folders[0].ID, func(folder *models.MailboxFolder) error {
 			folder.PinnedAt = nil
 			return nil
 		}); err != nil {
-			t.Fatalf("UpdateFolder: %s", err)
+			test.Fatalf("UpdateFolder: %s", err)
 		}
 		unpinned, err := tx.GetFolder(folders[0].ID)
 		if err != nil || unpinned == nil || unpinned.PinnedAt != nil {
-			t.Errorf("an unpinned folder still carries a pin: %+v, %v", unpinned, err)
+			test.Errorf("an unpinned folder still carries a pin: %+v, %v", unpinned, err)
 		}
 	})
 }

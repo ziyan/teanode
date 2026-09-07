@@ -127,7 +127,8 @@ function useSave() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [saved, setSaved] = useState(false)
-  const save = async (mutation: string, variables: Record<string, unknown>) => {
+  // Whether it worked, so a form closes only on success.
+  const save = async (mutation: string, variables: Record<string, unknown>): Promise<boolean> => {
     setBusy(true)
     setSaved(false)
     try {
@@ -135,8 +136,10 @@ function useSave() {
       await mailboxes.refresh()
       setError(null)
       setSaved(true)
+      return true
     } catch (failure) {
       setError(failure)
+      return false
     } finally {
       setBusy(false)
     }
@@ -271,6 +274,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
     <>
       <div className="card">
         <h3>{t('mailboxSettings.folders')}</h3>
+        {error ? <ErrorMessage error={error} /> : null}
         <table className="folders-table">
           <tbody>
             {rows.map(({ folder, depth }) => (
@@ -285,7 +289,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
                         className="inline-form"
                         onSubmit={(event) => {
                           event.preventDefault()
-                          void save(UPDATE_FOLDER, { folderId: folder.id, name: renameTo.trim() }).then(() => setRenaming(null))
+                          void save(UPDATE_FOLDER, { folderId: folder.id, name: renameTo.trim() }).then((done) => done && setRenaming(null))
                         }}
                       >
                         <input value={renameTo} onChange={(event) => setRenameTo(event.target.value)} autoFocus required />
@@ -301,7 +305,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
                         className="inline-form"
                         onSubmit={(event) => {
                           event.preventDefault()
-                          void save(UPDATE_FOLDER, { folderId: folder.id, parentId: moveTo }).then(() => setMoving(null))
+                          void save(UPDATE_FOLDER, { folderId: folder.id, parentId: moveTo }).then((done) => done && setMoving(null))
                         }}
                       >
                         <select value={moveTo} onChange={(event) => setMoveTo(event.target.value)} autoFocus>
@@ -388,8 +392,8 @@ function FoldersTab({ view }: { view: MailboxView }) {
         className="card form-narrow"
         onSubmit={(event) => {
           event.preventDefault()
-          void save(CREATE_FOLDER, { mailboxId: view.mailbox.id, name: name.trim(), parentId: parentId || undefined }).then(() =>
-            setName(''),
+          void save(CREATE_FOLDER, { mailboxId: view.mailbox.id, name: name.trim(), parentId: parentId || undefined }).then(
+            (done) => done && setName(''),
           )
         }}
       >
@@ -423,7 +427,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
           body={t('mailboxSettings.deleteFolderConfirm', { name: deleting.name, count: deleting.total })}
           confirmLabel={t('common.delete')}
           busy={busy}
-          onConfirm={() => save(DELETE_FOLDER, { folderId: deleting.id }).then(() => setDeleting(null))}
+          onConfirm={() => save(DELETE_FOLDER, { folderId: deleting.id }).then((done) => done && setDeleting(null))}
           onClose={() => setDeleting(null)}
         />
       )}
@@ -556,7 +560,7 @@ function RulesTab({ view }: { view: MailboxView }) {
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        void save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(rules) }).then(() => setDirty(false))
+        void save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(rules) }).then((done) => done && setDirty(false))
       }}
     >
       <p className="muted">{t('mailboxSettings.rulesHint')}</p>

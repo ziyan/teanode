@@ -639,8 +639,9 @@ func (self *transaction) UpdateFolder(folderId string, modify func(*models.Mailb
 		// Nor under one of its own descendants, which would make a cycle
 		// that a delete would walk for ever.
 		ancestor := parent
-		for depth := 0; ancestor != nil && ancestor.ParentID != "" && depth < 64; depth++ {
-			if ancestor.ParentID == folderId {
+		for depth := 0; ancestor != nil && ancestor.ParentID != ""; depth++ {
+			if ancestor.ParentID == folderId || depth >= 64 {
+				// A cycle, or a chain too deep to be sure there is none.
 				return nil, ErrInvalidArguments
 			}
 			if ancestor, err = self.GetFolder(ancestor.ParentID); err != nil {

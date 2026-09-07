@@ -48,25 +48,55 @@ func (self *graph) draftAttachmentsView(response http.ResponseWriter, request *h
 		return
 	}
 
-	// The files, read before the transaction so that a slow upload holds
-	// no database connection. Bounded by the message-size limit: a file
-	// that could not be sent cannot be attached either.
-	limit := self.config.Current().SMTP.MaxMessageSize.Bytes()
-	uploads, err := readUploads(request, limit)
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, errTooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		writeJSON(response, status, map[string]string{"error": err.Error()})
-		return
-	}
-
 	variables := mux.Vars(request)
 	ctx := request.Context()
 	ctx = api.ContextWithRequest(ctx, request)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
 	ctx = db.ContextWithAuditPrincipal(ctx, auditPrincipal(request, user))
+
+	// Whose draft this is, settled in a transaction of its own before a
+	// byte of the body is read: a stranger's upload costs nothing to
+	// buffer. The check is made again when the draft is written, since
+	// the draft may go away in between.
+	err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		ctx := api.ContextWithTransaction(ctx, tx)
+		principal, err := self.resolvePrincipal(tx, username, user)
+		if err != nil {
+			return err
+		}
+		ctx = api.ContextWithPrincipal(ctx, principal)
+		if itemId := variables["itemId"]; itemId != "" {
+			_, err = self.requireDraftOwner(ctx, models.PermissionMailWrite, itemId)
+		} else {
+			_, err = self.requireMailbox(ctx, models.PermissionMailWrite, variables["mailboxId"])
+		}
+		return err
+	})
+	if err != nil {
+		writeUploadError(response, username, err)
+		return
+	}
+
+	// The files, read outside any transaction so that a slow upload holds
+	// no database connection. Bounded by the message-size limit, on the
+	// whole body and again file by file: a file that could not be sent
+	// cannot be attached either. The files are held in memory from here
+	// until the draft is written, encoded once more on the way, which is
+	// a few times the limit per request; the limit is what bounds it.
+	limit := self.config.Current().SMTP.MaxMessageSize.Bytes()
+	if limit > 0 {
+		request.Body = http.MaxBytesReader(response, request.Body, int64(limit)+multipartOverhead)
+	}
+	uploads, err := readUploads(request, limit)
+	if err != nil {
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.Is(err, errTooLarge) || errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(response, status, map[string]string{"error": err.Error()})
+		return
+	}
 
 	var result *DraftUploadResult
 	err = self.database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -82,7 +112,7 @@ func (self *graph) draftAttachmentsView(response http.ResponseWriter, request *h
 		if itemId := variables["itemId"]; itemId != "" {
 			// Continuing a draft: its fields and every part it holds, then
 			// the new files after them.
-			mailbox, err = self.requireDraftOwner(ctx, itemId)
+			mailbox, err = self.requireDraftOwner(ctx, models.PermissionMailWrite, itemId)
 			if err != nil {
 				return err
 			}
@@ -137,18 +167,30 @@ func (self *graph) draftAttachmentsView(response http.ResponseWriter, request *h
 		return nil
 	})
 	if err != nil {
-		switch {
-		case errors.Is(err, api.ErrNotFound):
-			writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such draft"})
-		case errors.Is(err, api.ErrInvalidArguments):
-			writeJSON(response, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		default:
-			log.Errorf("attaching files to a draft for %q failed: %s", username, err)
-			writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "the files could not be attached"})
-		}
+		writeUploadError(response, username, err)
 		return
 	}
 	writeJSON(response, http.StatusOK, result)
+}
+
+// multipartOverhead is room, beyond the files themselves, for the
+// boundaries and headers of a multipart body of any sensible number of
+// parts.
+const multipartOverhead = 64 * 1024
+
+// writeUploadError answers for what went wrong short of reading the files.
+func writeUploadError(response http.ResponseWriter, username string, err error) {
+	switch {
+	case errors.Is(err, errTooLarge):
+		writeJSON(response, http.StatusRequestEntityTooLarge, map[string]string{"error": err.Error()})
+	case errors.Is(err, api.ErrNotFound):
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such draft or mailbox"})
+	case errors.Is(err, api.ErrInvalidArguments):
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	default:
+		log.Errorf("attaching files to a draft for %q failed: %s", username, err)
+		writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "the files could not be attached"})
+	}
 }
 
 var errTooLarge = errors.New("the files come to more than a message may be")
