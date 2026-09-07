@@ -1582,6 +1582,16 @@ record.
       rendered message only, with download and headers behind a menu, and
       a dark theme always darkens mail with a per-message "as sent".
 
+- [x] On the owner's asks after the review (2026-09-07): contacts kept on
+      their own tab; a Starred view across every folder, each hit naming
+      its folder as search hits do; the reading pane showing the rendered
+      message only with the rest behind a menu, dark mail in a dark theme;
+      the sender's name in the list; a mobile audit of every new and
+      touched page at 390 pixels — the list, the reader and its menu, the
+      search panel, compose, the six settings tabs, the rail overlay, the
+      aliases tab, users, groups, roles, audit and single sign-on — with
+      the two tables that overflowed a phone fixed.
+
 - [x] Milestone one: access control (docs and command line still open).
 - [x] Milestone two: mailboxes and delivery by reference (domain Aliases tab
       still needs the mailbox picker; `teanode api` reaches everything).

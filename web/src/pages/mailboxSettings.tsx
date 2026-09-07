@@ -970,7 +970,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
               {appPasswords.map((appPassword) => (
                 <tr key={appPassword.id}>
                   <td>{appPassword.name}</td>
-                  <td className="shrink muted">{formatTime(appPassword.createdAt)}</td>
+                  <td className="shrink muted hide-narrow">{formatTime(appPassword.createdAt)}</td>
                   <td className="shrink muted">
                     {appPassword.lastUsedAt ? <RelativeTime value={appPassword.lastUsedAt} /> : t('mailboxSettings.neverUsed')}
                   </td>
@@ -1011,7 +1011,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
         <div className="card">
           <h3>{t('mailboxSettings.programSettings')}</h3>
           <p className="muted field-hint">{t('mailboxSettings.programSettingsHint')}</p>
-          <table className="detail">
+          <table className="detail program-settings">
             <tbody>
               <tr>
                 <td className="shrink muted">{t('mailboxSettings.incomingServer')}</td>
@@ -1171,8 +1171,8 @@ function ContactsTab({ view }: { view: MailboxView }) {
                       </>
                     )}
                   </td>
-                  <td className="shrink muted">{plural(contact.count, { one: 'mailboxSettings.contactCountOne', other: 'mailboxSettings.contactCount' }, { count: contact.count })}</td>
-                  <td className="shrink muted">
+                  <td className="shrink muted hide-narrow">{plural(contact.count, { one: 'mailboxSettings.contactCountOne', other: 'mailboxSettings.contactCount' }, { count: contact.count })}</td>
+                  <td className="shrink muted hide-narrow">
                     <RelativeTime value={contact.lastSeenAt} />
                   </td>
                   <td className="shrink">

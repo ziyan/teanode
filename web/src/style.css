@@ -3824,3 +3824,14 @@ a.button.primary:hover {
   gap: 10px;
   align-items: center;
 }
+
+/* What a mail program is told: long, and better wrapped than clipped. */
+.program-settings td.mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .hide-narrow {
+    display: none;
+  }
+}

@@ -473,7 +473,6 @@ function Folder({
             </>
           ) : (
             <>
-              <span className="muted">{t('mailbox.count', { shown: items.length, total })}</span>
               {inTrash && total > 0 && (
                 <button type="button" className="danger" disabled={busy} onClick={() => setEmptying(true)}>
                   {t('mailbox.emptyTrash')}
@@ -651,7 +650,9 @@ function Row({
           onOpen()
         }}
       >
-        <div className="mailbox-row-from">{mail?.from || mail?.sender || t('mailbox.unknownSender')}</div>
+        <div className="mailbox-row-from" title={mail?.from || mail?.sender}>
+          {mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')}
+        </div>
         <div className="mailbox-row-subject">
           {folderName && <span className="mailbox-row-folder">{folderName}</span>}
           {mail?.subject || t('mailbox.noSubject')}
@@ -800,7 +801,7 @@ function Reader({
       {mail ? (
         <dl className="mailbox-pane-meta">
           <dt>{t('mailbox.from')}</dt>
-          <dd>{mail.from || mail.sender || t('mailbox.unknownSender')}</dd>
+          <dd>{mail.fromName ? `${mail.fromName} <${mail.from || mail.sender}>` : mail.from || mail.sender || t('mailbox.unknownSender')}</dd>
           <dt>{t('mailbox.to')}</dt>
           <dd>{(mail.recipients ?? []).join(', ')}</dd>
           <dt>{t('mail.received')}</dt>
