@@ -893,6 +893,62 @@ change to a component that today knows nothing about the database — and it
 runs on one instance at a time, under an advisory lock, since each instance
 can only sweep the spool it holds while the decision belongs to all of them.
 
+## Drafts
+
+A draft is not a separate kind of thing. It is a message, held the way every
+message is held, in three places by reference: the bytes in storage — the
+spool and the mirror — as a complete RFC 5322 message, exactly like an
+outgoing message before it is sent; a `mail` row of kind `draft`; and a
+`mailbox_item` in the mailbox's Drafts folder with the `draft` flag set,
+which is what IMAP calls `\Draft`. There is no structured draft — no JSON
+of to, subject and body. The compose page reopens a draft by parsing the
+stored message with the parser that renders any message. One
+representation, one parser.
+
+**Saving again is a new message, not an edit in place.** Stored messages
+are immutable and stay so. Each save writes new bytes, a new `mail` row and
+a new item, and deletes the previous draft's item and row in the same
+transaction — a superseded draft is the one message nobody wants back, so
+it does not get the retention grace; its bytes go with the next sweep on
+the instance holding them. This is exactly what a mail program does over
+IMAP when it saves a draft: `APPEND` the new one to Drafts, delete the old
+one. So the dashboard and Thunderbird do the same thing to the same folder
+and neither can confuse the other. Sending removes the draft's item and row
+and creates an ordinary outgoing message with an item in Sent.
+
+**Attachments are the thing to watch.** A complete message per save is fine
+for text and wrong for a draft carrying a 20 MB file: forty saves over an
+afternoon must not be 800 MB written and 800 MB sent up from the browser.
+Three rules keep it honest:
+
+- *The browser uploads a file once.* Attachments are added to a draft
+  through their own upload path — a `PUT` of the bytes to
+  `/api/mail/{draftId}/attachment`, the sibling of the download path that
+  exists today — not as base64 inside a GraphQL mutation, which is how the
+  compose page sends them now and which turns 20 MB into a 27 MB JSON
+  string. A save sends the text fields and the list of parts to keep, by
+  index; the server assembles the new message from the new text and the
+  previous draft's parts. The file crosses the wire once, when it is chosen.
+- *A save without a change in attachments copies parts, not files.* The
+  server builds the new message by streaming the kept parts out of the
+  previous stored message into the new one; nothing is decoded and
+  re-encoded, and the browser is not involved.
+- *Save on intent, not on keystroke.* The page saves on an explicit save,
+  when the tab loses focus, and on a timer of half a minute. A draft
+  written over an afternoon is a few dozen rows, each superseded and gone.
+
+The storage cost that remains — one complete copy of the attachments per
+save, briefly — is accepted; the alternative, storing attachments as
+separate objects and assembling the message at send time, would make a
+draft the one kind of message with a second representation, and every
+reader of it, IMAP included, would have to know. A draft is subject to the
+same size limit as a message being sent, checked at save, so a draft that
+cannot be sent cannot be saved either.
+
+**Nothing is shared.** A mailbox has one owner and a draft is referenced by
+one item in one Drafts folder, so a draft is the one kind of message that
+is never a shared row.
+
 ## IMAP
 
 `internal/imap` serves IMAP4rev1 with the extensions a modern client expects
@@ -983,7 +1039,8 @@ delete; the same on one message. Reply, reply to all and forward open the
 compose page with recipients, subject, quoted body and threading headers
 filled in and, for forward, the attachments carried over; sending adds the
 reply to Sent and marks the original answered. Drafts save to the Drafts
-folder as a `mail` row of kind draft and reopen from there. A message opened
+folder as a `mail` row of kind draft and reopen from there — see Drafts
+above for what a save is, and how attachments cross the wire once. A message opened
 is marked read after a moment, not on arrival.
 
 Mailbox settings: folders, rules with a live "which of the last hundred
@@ -1159,6 +1216,15 @@ Decisions are the repository owner's.
 - Decision: no labels on items. Folders and the flag are enough.
   Rationale: a second way to sort mail is a second thing to explain, and
   IMAP clients disagree about how to show keywords.
+  Date/Author: 2026-09-06, Ziyan
+
+- Decision: a draft is a complete stored message — bytes, a `mail` row of
+  kind draft, an item in Drafts — and every save is a new message that
+  supersedes and deletes the previous one, with no retention grace. No
+  structured draft. Attachments are uploaded once through their own path
+  and copied part-to-part between saves, never re-sent from the browser.
+  Rationale: one representation and one parser, and the same behaviour a
+  mail program has over IMAP, so the two never disagree about a draft.
   Date/Author: 2026-09-06, Ziyan
 
 - Decision: administrative changes are audited — users, groups, roles,
