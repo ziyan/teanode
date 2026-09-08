@@ -99,6 +99,11 @@ const DELETE = `
     DeleteMailboxItems(itemIds: $itemIds)
   }`
 
+const REPORT_JUNK = `
+  mutation ($itemIds: [String!]!, $notJunk: Boolean) {
+    ReportMailboxJunk(itemIds: $itemIds, notJunk: $notJunk)
+  }`
+
 const EMPTY_TRASH = `
   mutation ($mailboxId: String!) {
     EmptyMailboxTrash(mailboxId: $mailboxId)
@@ -374,6 +379,17 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
         navigate(`/mailbox/${folder.id}`)
       }
     })
+  // Junk is a move and a lesson at once. Moving without teaching leaves the
+  // next one from the same sender in the Inbox; teaching without moving
+  // leaves the reader looking at what they have just called junk.
+  const reportJunk = (itemIds: string[], notJunk: boolean) =>
+    act(async () => {
+      await graphql(REPORT_JUNK, { itemIds, notJunk })
+      remove(itemIds)
+      if (itemIds.includes(itemId ?? '')) {
+        navigate(`/mailbox/${folder.id}`)
+      }
+    })
   const deleteItems = (itemIds: string[]) =>
     act(async () => {
       await graphql(DELETE, { itemIds })
@@ -396,6 +412,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
+  const inJunk = folder.kind === 'junk'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
   // In Starred, "delete" means what it means in the message's own folder;
   // the server decides by the item, so nothing to do here but not to call
@@ -574,6 +591,9 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                   {t('mailbox.archive')}
                 </button>
               )}
+              <button type="button" disabled={busy} onClick={() => reportJunk(chosenIds, inJunk)}>
+                {inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+              </button>
               <select
                 aria-label={t('mailbox.moveTo')}
                 value=""
@@ -689,6 +709,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
             onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
             onMove={(itemIds, target) => moveTo(itemIds, target)}
+            onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
             onBack={() => navigate(`/mailbox/${folder.id}`)}
           />
@@ -830,6 +851,7 @@ function Reader({
   onSeen,
   onFlag,
   onMove,
+  onJunk,
   onDelete,
   onBack,
 }: {
@@ -841,6 +863,7 @@ function Reader({
   onSeen: (itemIds: string[], seen: boolean) => void
   onFlag: (itemIds: string[], flagged: boolean) => void
   onMove: (itemIds: string[], folderId: string) => void
+  onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
   onBack: () => void
 }) {
@@ -1021,6 +1044,9 @@ function Reader({
             {t('mailbox.archive')}
           </button>
         )}
+        <button type="button" disabled={busy} onClick={() => onJunk(acting, folder.kind === 'junk')}>
+          {folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+        </button>
         <select
           aria-label={t('mailbox.moveTo')}
           value=""
@@ -1168,6 +1194,10 @@ function ThreadMessage({
           )}
           {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
           <span className="mailbox-message-when">
+            {/* Whether the message is really from who it says: the one thing
+                about it worth seeing without asking. Everything else the
+                checks found is behind "show details" in the menu. */}
+            <VerdictMark mail={mail} />
             <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
           </span>
         </button>
@@ -1178,20 +1208,6 @@ function ThreadMessage({
         <div className="mailbox-message-body">
           {mail ? (
             <>
-              {/* Who it went to, and everything else a click away. Four
-                  labelled rows of From, To, Received and Authentication were
-                  above every message in the conversation, saying at length
-                  what the line above already says and pushing the message
-                  itself down the page. */}
-              <div className="message-addressing">
-                <span className="message-addressing-to">
-                  {t('mailbox.toShort', { recipients: (mail.recipients ?? []).join(', ') })}
-                </span>
-                {/* The one thing here worth seeing without asking: whether
-                    the message is really from who it says. */}
-                <VerdictMark mail={mail} />
-              </div>
-
               {details && (
                 <dl className="mailbox-pane-meta">
                   <dt>{t('mailbox.from')}</dt>

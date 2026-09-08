@@ -17,6 +17,14 @@ Notable changes to TeaNode. The format follows
   may read one: where it came from, every delivery attempt, and the raw
   source.
 
+### Added
+
+- Report junk moves a conversation to Junk and teaches the spam filter what it
+  is, in one action, from the reader or over what is selected in the list.
+  Moving without teaching leaves the next one from the same sender in the
+  Inbox; teaching without moving leaves you looking at what you have just
+  called junk. In Junk the button reads Not junk and does the opposite.
+
 ### Fixed
 
 - A reply saved as a draft belongs to the conversation it answers. The headers

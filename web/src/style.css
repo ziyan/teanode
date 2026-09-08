@@ -3592,7 +3592,14 @@ a.button.primary:hover {
   color: var(--muted);
 }
 
+/* The time a message arrived, and beside it whether it is really from who it
+   says. Who it was addressed to is not here: for a mailbox with one address
+   that is a line saying what the reader already knows, above every message
+   they open. It is in the menu with the rest of the details. */
 .mailbox-message-when {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   flex: 0 0 auto;
   margin-left: auto;
   font-size: 12px;
@@ -3607,27 +3614,6 @@ a.button.primary:hover {
 
 .mailbox-message-body .mailbox-pane-meta {
   margin-top: 12px;
-}
-
-/* Who the message was addressed to, and whether it is really from who it
-   says: one muted line under the sender, which is what a mail program shows.
-   The rest — the full addresses, when it arrived, what each check found — is
-   in the message's own menu, a click away rather than four labelled rows
-   above every message in the conversation. */
-.message-addressing {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-top: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.message-addressing-to {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* An open message is the one being read; the closed ones around it are a

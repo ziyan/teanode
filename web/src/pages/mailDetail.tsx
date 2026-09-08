@@ -404,6 +404,10 @@ export function MessageContent({
                       {t('mailDetail.trace')}
                     </Link>
                   )}
+                  {/* Details first, then the headers underneath them: the
+                      details are what somebody wants nine times in ten, and
+                      the headers are the whole of it. */}
+                  {menuExtra?.(close)}
                   <button
                     type="button"
                     role="menuitem"
@@ -415,7 +419,6 @@ export function MessageContent({
                   >
                     {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
                   </button>
-                  {menuExtra?.(close)}
                   {dark && hasHtml && (
                     <button
                       type="button"
