@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
@@ -108,20 +107,4 @@ func (self ed25519Verifier) Verify(hash crypto.Hash, digest, signature []byte) e
 		return fmt.Errorf("mailparse: invalid dd25519 signature")
 	}
 	return nil
-}
-
-func GenerateKeyPair() ([]byte, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return nil, "", err
-	}
-	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, "", err
-	}
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(privateKey.Public())
-	if err != nil {
-		return nil, "", err
-	}
-	return privateKeyBytes, EncodeBase64String(publicKeyBytes), nil
 }
