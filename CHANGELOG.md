@@ -19,6 +19,11 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- Tooltips are the dashboard's own rather than the browser's. A native title
+  waits about a second, is drawn in the operating system's colors, and cannot
+  wrap — a timestamp with a zone name in it came out as one long line in a
+  font nobody chose. Every relative time and every icon-only row action uses
+  the new one.
 - Report junk moves a conversation to Junk and teaches the spam filter what it
   is, in one action, from the reader or over what is selected in the list.
   Moving without teaching leaves the next one from the same sender in the
@@ -35,6 +40,16 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- Every date and time the dashboard writes out names its time zone. One
+  without a zone is ambiguous the moment it is read anywhere but the machine
+  that rendered it, and these are pasted into tickets and compared against
+  logs from a server in another country.
+- People, groups and roles carry their actions as icons rather than as a
+  column of underlined words beside every name. A list of names had more text
+  in its actions than in the names.
+- A message's body is padded on every side. Whatever came first in it — the
+  details, or the notice about blocked images — sat against the border, since
+  the line that used to be there carried the padding.
 - A conversation says when it holds an unsent message, and shows it — folded,
   since a draft is something to go back to rather than something to read.
   Clicking it, or Edit draft, opens what was written where it was written.

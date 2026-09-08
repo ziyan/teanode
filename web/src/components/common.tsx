@@ -278,6 +278,12 @@ export function formatBytes(size?: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// A moment, written out, with the zone it is in.
+//
+// The zone is not decoration. A timestamp without one is ambiguous the moment
+// it is read anywhere but the machine that rendered it — and these are read
+// in support threads, pasted into tickets and compared against logs from a
+// server in another country.
 export function formatTime(value?: string): string {
   if (!value) {
     return '—'
@@ -286,7 +292,7 @@ export function formatTime(value?: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value
   }
-  return parsed.toLocaleString()
+  return parsed.toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
 // DomainLink names a domain and goes to it.

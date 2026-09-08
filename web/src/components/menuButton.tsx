@@ -122,13 +122,7 @@ export function MenuButton({
       </button>
       {open &&
         createPortal(
-          <div
-            className="menu"
-            id={id}
-            role="menu"
-            ref={menu}
-            style={position}
-          >
+          <div className="menu" id={id} role="menu" ref={menu} style={position}>
             {render(() => setOpen(false))}
           </div>,
           document.body,

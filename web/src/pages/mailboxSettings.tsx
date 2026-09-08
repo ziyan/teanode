@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
+import { Tooltip } from '../components/tooltip'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -354,39 +355,42 @@ function FoldersTab({ view }: { view: MailboxView }) {
                       be pinned up there beside it. */}
                   {folder.kind !== 'inbox' && (
                     <div className="row-actions">
-                      <button
-                        type="button"
-                        className={folder.pinnedAt ? 'icon-action pinned' : 'icon-action'}
-                        title={t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}
-                        aria-label={`${folderLabel(t, folder)}: ${t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
-                        aria-pressed={Boolean(folder.pinnedAt)}
-                        disabled={busy}
-                        onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
-                      >
-                        {folder.pinnedAt ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
-                      </button>
+                      <Tooltip label={t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}>
+                        <button
+                          type="button"
+                          className={folder.pinnedAt ? 'icon-action pinned' : 'icon-action'}
+                          aria-label={`${folderLabel(t, folder)}: ${t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
+                          aria-pressed={Boolean(folder.pinnedAt)}
+                          disabled={busy}
+                          onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
+                        >
+                          {folder.pinnedAt ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
+                        </button>
+                      </Tooltip>
                       {!folder.kind && (
                         <>
-                          <button
-                            type="button"
-                            className="icon-action"
-                            title={t('common.edit')}
-                            aria-label={`${folder.name}: ${t('common.edit')}`}
-                            disabled={busy}
-                            onClick={() => open(folder)}
-                          >
-                            <PencilIcon size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-action danger"
-                            title={t('common.delete')}
-                            aria-label={`${folder.name}: ${t('common.delete')}`}
-                            disabled={busy}
-                            onClick={() => setDeleting(folder)}
-                          >
-                            <TrashIcon size={16} />
-                          </button>
+                          <Tooltip label={t('common.edit')}>
+                            <button
+                              type="button"
+                              className="icon-action"
+                              aria-label={`${folder.name}: ${t('common.edit')}`}
+                              disabled={busy}
+                              onClick={() => open(folder)}
+                            >
+                              <PencilIcon size={16} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label={t('common.delete')}>
+                            <button
+                              type="button"
+                              className="icon-action danger"
+                              aria-label={`${folder.name}: ${t('common.delete')}`}
+                              disabled={busy}
+                              onClick={() => setDeleting(folder)}
+                            >
+                              <TrashIcon size={16} />
+                            </button>
+                          </Tooltip>
                         </>
                       )}
                     </div>
@@ -664,63 +668,68 @@ function RulesTab({ view }: { view: MailboxView }) {
               }
               actions={
                 <div className="row-actions">
-                  <button
-                    type="button"
-                    className="icon-action"
-                    title={t(entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable')}
-                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t(
-                      entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable',
-                    )}`}
-                    aria-pressed={entry.enabled}
-                    disabled={busy}
-                    onClick={() =>
-                      void commit(
-                        rules.map((item, index) => (index === at ? { ...item, enabled: !item.enabled } : item)),
-                      )
-                    }
-                  >
-                    {entry.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    title={t('mailboxSettings.moveUp')}
-                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveUp')}`}
-                    disabled={busy || at === 0}
-                    onClick={() => move(at, -1)}
-                  >
-                    <ArrowUpIcon size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    title={t('mailboxSettings.moveDown')}
-                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveDown')}`}
-                    disabled={busy || at === rules.length - 1}
-                    onClick={() => move(at, 1)}
-                  >
-                    <ArrowDownIcon size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    title={t('common.edit')}
-                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.edit')}`}
-                    disabled={busy}
-                    onClick={() => setEditing({ at, rule: entry })}
-                  >
-                    <PencilIcon size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-action danger"
-                    title={t('common.remove')}
-                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.remove')}`}
-                    disabled={busy}
-                    onClick={() => setDeleting({ at, rule: entry })}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
+                  <Tooltip label={t(entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t(
+                        entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable',
+                      )}`}
+                      aria-pressed={entry.enabled}
+                      disabled={busy}
+                      onClick={() =>
+                        void commit(
+                          rules.map((item, index) => (index === at ? { ...item, enabled: !item.enabled } : item)),
+                        )
+                      }
+                    >
+                      {entry.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('mailboxSettings.moveUp')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveUp')}`}
+                      disabled={busy || at === 0}
+                      onClick={() => move(at, -1)}
+                    >
+                      <ArrowUpIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('mailboxSettings.moveDown')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveDown')}`}
+                      disabled={busy || at === rules.length - 1}
+                      onClick={() => move(at, 1)}
+                    >
+                      <ArrowDownIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.edit')}`}
+                      disabled={busy}
+                      onClick={() => setEditing({ at, rule: entry })}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('common.remove')}>
+                    <button
+                      type="button"
+                      className="icon-action danger"
+                      aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.remove')}`}
+                      disabled={busy}
+                      onClick={() => setDeleting({ at, rule: entry })}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
                 </div>
               }
             />
@@ -874,21 +883,22 @@ function RulesTab({ view }: { view: MailboxView }) {
                   />
                 </>
               )}
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('common.remove')}
-                aria-label={t('common.remove')}
-                disabled={rule.conditions.length === 1}
-                onClick={() =>
-                  change((current) => ({
-                    ...current,
-                    conditions: current.conditions.filter((_, at) => at !== conditionIndex),
-                  }))
-                }
-              >
-                <TrashIcon size={16} />
-              </button>
+              <Tooltip label={t('common.remove')}>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={t('common.remove')}
+                  disabled={rule.conditions.length === 1}
+                  onClick={() =>
+                    change((current) => ({
+                      ...current,
+                      conditions: current.conditions.filter((_, at) => at !== conditionIndex),
+                    }))
+                  }
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
             </div>
           ))}
           <button
@@ -964,21 +974,22 @@ function RulesTab({ view }: { view: MailboxView }) {
                   }
                 />
               )}
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('common.remove')}
-                aria-label={t('common.remove')}
-                disabled={rule.actions.length === 1}
-                onClick={() =>
-                  change((current) => ({
-                    ...current,
-                    actions: current.actions.filter((_, at) => at !== actionIndex),
-                  }))
-                }
-              >
-                <TrashIcon size={16} />
-              </button>
+              <Tooltip label={t('common.remove')}>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={t('common.remove')}
+                  disabled={rule.actions.length === 1}
+                  onClick={() =>
+                    change((current) => ({
+                      ...current,
+                      actions: current.actions.filter((_, at) => at !== actionIndex),
+                    }))
+                  }
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
             </div>
           ))}
           <button

@@ -50,10 +50,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
   return nodes
 }
 
-type Block =
-  | { kind: 'heading'; text: string }
-  | { kind: 'list'; items: string[] }
-  | { kind: 'paragraph'; text: string }
+type Block = { kind: 'heading'; text: string } | { kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string }
 
 // parse groups the lines into blocks. A bullet continues across the indented
 // lines under it, which is how a changelog wraps a long entry, and how the

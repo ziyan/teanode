@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { Tooltip } from '../components/tooltip'
 import { TrashIcon } from '../components/icons'
 import { SecretDialog, SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useTranslation } from '../i18n/i18n'
@@ -66,15 +67,16 @@ export function DomainCredentialsTab({ domain, run }: DomainTabProps) {
                   <td className="mono muted">{credential.id}</td>
                   <td className="shrink">
                     <div className="row-actions">
-                      <button
-                        type="button"
-                        className="icon-action danger"
-                        aria-label={`${credential.comment || credential.id}: ${t('common.remove')}`}
-                        title={t('common.remove')}
-                        onClick={() => setDeleting(credential)}
-                      >
-                        <TrashIcon size={16} />
-                      </button>
+                      <Tooltip label={t('common.remove')}>
+                        <button
+                          type="button"
+                          className="icon-action danger"
+                          aria-label={`${credential.comment || credential.id}: ${t('common.remove')}`}
+                          onClick={() => setDeleting(credential)}
+                        >
+                          <TrashIcon size={16} />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>

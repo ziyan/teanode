@@ -137,8 +137,8 @@ export function DataTable<Row>({
   // list, so nobody wonders why they are looking at a subset. Otherwise the
   // fields stay out of the way: a row of empty inputs under every header is
   // the widest thing on the page and is used on a fraction of visits.
-  const [filtersOpen, setFiltersOpen] = useState(
-    () => Object.values(initialFilters ?? {}).some((filter) => filter.length > 0),
+  const [filtersOpen, setFiltersOpen] = useState(() =>
+    Object.values(initialFilters ?? {}).some((filter) => filter.length > 0),
   )
   const [pageSize, setPageSize] = useState(
     PAGE_SIZES.includes(remembered.current.pageSize ?? 0) ? (remembered.current.pageSize as number) : 50,
@@ -276,10 +276,7 @@ export function DataTable<Row>({
                       onClick={() => setOrder(nextSort(order, column.key))}
                     >
                       {column.header}
-                      <SortIcon
-                        size={13}
-                        direction={order?.key === column.key ? order.direction : undefined}
-                      />
+                      <SortIcon size={13} direction={order?.key === column.key ? order.direction : undefined} />
                     </button>
                   ) : (
                     column.header
@@ -306,43 +303,43 @@ export function DataTable<Row>({
             {visible.map((row) => {
               const href = rowLink?.(row)
               return (
-              <tr
-                key={rowKey(row)}
-                className={href ? 'linked' : undefined}
-                onClick={
-                  href
-                    ? (event) => {
-                        // A click that landed on something of its own — the
-                        // subject link, a button, a text selection someone is
-                        // dragging out — belongs to that thing, not the row.
-                        if (
-                          event.defaultPrevented ||
-                          (event.target as HTMLElement).closest('a, button, input, select, textarea, label') ||
-                          window.getSelection()?.toString()
-                        ) {
-                          return
+                <tr
+                  key={rowKey(row)}
+                  className={href ? 'linked' : undefined}
+                  onClick={
+                    href
+                      ? (event) => {
+                          // A click that landed on something of its own — the
+                          // subject link, a button, a text selection someone is
+                          // dragging out — belongs to that thing, not the row.
+                          if (
+                            event.defaultPrevented ||
+                            (event.target as HTMLElement).closest('a, button, input, select, textarea, label') ||
+                            window.getSelection()?.toString()
+                          ) {
+                            return
+                          }
+                          if (event.metaKey || event.ctrlKey) {
+                            window.open(href, '_blank', 'noopener')
+                            return
+                          }
+                          navigate(href)
                         }
-                        if (event.metaKey || event.ctrlKey) {
-                          window.open(href, '_blank', 'noopener')
-                          return
-                        }
-                        navigate(href)
-                      }
-                    : undefined
-                }
-              >
-                {columns.map((column) => (
-                  <td
-                    key={column.key}
-                    className={[column.optional ? 'optional' : '', column.truncate ? 'truncate' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                    title={column.truncate ? column.value?.(row) : undefined}
-                  >
-                    {column.render ? column.render(row) : column.value?.(row)}
-                  </td>
-                ))}
-              </tr>
+                      : undefined
+                  }
+                >
+                  {columns.map((column) => (
+                    <td
+                      key={column.key}
+                      className={[column.optional ? 'optional' : '', column.truncate ? 'truncate' : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                      title={column.truncate ? column.value?.(row) : undefined}
+                    >
+                      {column.render ? column.render(row) : column.value?.(row)}
+                    </td>
+                  ))}
+                </tr>
               )
             })}
           </tbody>
@@ -441,12 +438,14 @@ function ColumnFilter<Row>({
     // that domain has received nothing, which is often the thing being
     // checked.
     if (column.options) {
-      return column.options
-        .map((option) => ({ ...option, count: option.count ?? counts.get(option.value) ?? 0 }))
-        // Busiest first, like the derived options. A list of twenty domains
-        // in alphabetical order buries the one with four hundred messages
-        // under six that have none.
-        .sort((first, second) => second.count - first.count || first.label.localeCompare(second.label))
+      return (
+        column.options
+          .map((option) => ({ ...option, count: option.count ?? counts.get(option.value) ?? 0 }))
+          // Busiest first, like the derived options. A list of twenty domains
+          // in alphabetical order buries the one with four hundred messages
+          // under six that have none.
+          .sort((first, second) => second.count - first.count || first.label.localeCompare(second.label))
+      )
     }
 
     return [...counts.entries()]
@@ -475,7 +474,6 @@ function ColumnFilter<Row>({
   }
   return null
 }
-
 
 // nextSort cycles a column: ascending, descending, then back to the table's
 // own order. The third state matters — without it there is no way to undo a

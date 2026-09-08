@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { Domain, Layout, Template, graphql } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
+import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
@@ -158,15 +159,16 @@ export function TemplatesTab() {
                   {t('templates.send')}
                 </Link>
                 <div className="row-actions">
-                  <button
-                    className="icon-action danger"
-                    type="button"
-                    aria-label={`${template.name}: ${t('common.remove')}`}
-                    title={t('common.remove')}
-                    onClick={() => setRemovingTemplate(template)}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
+                  <Tooltip label={t('common.remove')}>
+                    <button
+                      className="icon-action danger"
+                      type="button"
+                      aria-label={`${template.name}: ${t('common.remove')}`}
+                      onClick={() => setRemovingTemplate(template)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
                 </div>
               </>
             }
@@ -207,15 +209,16 @@ export function TemplatesTab() {
             }
             actions={
               <div className="row-actions">
-                <button
-                  className="icon-action danger"
-                  type="button"
-                  aria-label={`${describeLayout(layout, t)}: ${t('common.remove')}`}
-                  title={t('common.remove')}
-                  onClick={() => setRemovingLayout(layout)}
-                >
-                  <TrashIcon size={16} />
-                </button>
+                <Tooltip label={t('common.remove')}>
+                  <button
+                    className="icon-action danger"
+                    type="button"
+                    aria-label={`${describeLayout(layout, t)}: ${t('common.remove')}`}
+                    onClick={() => setRemovingLayout(layout)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               </div>
             }
           />

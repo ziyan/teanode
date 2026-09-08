@@ -2,12 +2,22 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
+import { PencilIcon, TrashIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
-import { CheckList, PermissionDescription, ROLE_FIELDS, Role, listPermissions, listRoles, usePermissionLabel } from './common'
+import {
+  CheckList,
+  PermissionDescription,
+  ROLE_FIELDS,
+  Role,
+  listPermissions,
+  listRoles,
+  usePermissionLabel,
+} from './common'
 
 const CREATE = `
   mutation ($name: String!, $description: String, $permissions: [String!]) {
@@ -23,7 +33,10 @@ const DELETE = `mutation ($roleId: String!) { DeleteRole(roleId: $roleId) }`
 
 type Draft = { name: string; description: string; permissions: string[] }
 
-const KINDS: { id: PermissionDescription['kind']; label: 'access.roles.kindServer' | 'access.roles.kindDomain' | 'access.roles.kindAllDomains' }[] = [
+const KINDS: {
+  id: PermissionDescription['kind']
+  label: 'access.roles.kindServer' | 'access.roles.kindDomain' | 'access.roles.kindAllDomains'
+}[] = [
   { id: 'server', label: 'access.roles.kindServer' },
   { id: 'domain', label: 'access.roles.kindDomain' },
   { id: 'all-domains', label: 'access.roles.kindAllDomains' },
@@ -108,21 +121,35 @@ export function RolesTab() {
             }
             actions={
               manages ? (
-                <>
-                  <button
-                    className="link"
-                    type="button"
-                    onClick={() => {
-                      setDraft({ name: role.name, description: role.description ?? '', permissions: role.permissions })
-                      setEditing(role)
-                    }}
-                  >
-                    {t('access.roles.edit')}
-                  </button>
-                  <button className="link danger" type="button" onClick={() => setDeleting(role)}>
-                    {t('common.remove')}
-                  </button>
-                </>
+                <div className="row-actions">
+                  <Tooltip label={t('access.roles.edit')}>
+                    <button
+                      className="icon-action"
+                      type="button"
+                      aria-label={`${role.name}: ${t('access.roles.edit')}`}
+                      onClick={() => {
+                        setDraft({
+                          name: role.name,
+                          description: role.description ?? '',
+                          permissions: role.permissions,
+                        })
+                        setEditing(role)
+                      }}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('common.remove')}>
+                    <button
+                      className="icon-action danger"
+                      type="button"
+                      aria-label={`${role.name}: ${t('common.remove')}`}
+                      onClick={() => setDeleting(role)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
               ) : undefined
             }
           />
@@ -141,7 +168,11 @@ export function RolesTab() {
             setEditing(null)
           }}
           onSubmit={async () => {
-            const variables = { name: draft.name.trim(), description: draft.description, permissions: draft.permissions }
+            const variables = {
+              name: draft.name.trim(),
+              description: draft.description,
+              permissions: draft.permissions,
+            }
             const ok = editing
               ? await run(() => graphql(UPDATE, { roleId: editing.id, ...variables }))
               : await run(() => graphql(CREATE, variables))
@@ -153,7 +184,11 @@ export function RolesTab() {
         >
           <label>
             {t('access.roles.name')}
-            <input autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+            <input
+              autoFocus
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
           </label>
           <label>
             {t('access.roles.description')}
@@ -166,7 +201,9 @@ export function RolesTab() {
             <CheckList
               key={kind.id}
               label={t(kind.label)}
-              items={permissions.filter((permission) => permission.kind === kind.id).map((permission) => ({ ...permission, id: permission.key }))}
+              items={permissions
+                .filter((permission) => permission.kind === kind.id)
+                .map((permission) => ({ ...permission, id: permission.key }))}
               selected={draft.permissions}
               onChange={(selected) =>
                 setDraft({

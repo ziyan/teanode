@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { KeyIcon, PencilIcon, TrashIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
@@ -47,7 +49,14 @@ const UPDATE_GROUP = `
 const DELETE_GROUP = `mutation ($groupId: String!) { DeleteGroup(groupId: $groupId) }`
 
 type PersonDraft = { username: string; password: string; name: string; email: string; groupIds: string[] }
-type GroupDraft = { name: string; description: string; idpGroup: string; userIds: string[]; roleIds: string[]; domainIds: string[] }
+type GroupDraft = {
+  name: string
+  description: string
+  idpGroup: string
+  userIds: string[]
+  roleIds: string[]
+  domainIds: string[]
+}
 
 const EMPTY_GROUP: GroupDraft = { name: '', description: '', idpGroup: '', userIds: [], roleIds: [], domainIds: [] }
 
@@ -94,7 +103,13 @@ export function PeopleTab() {
 
   const [addingPerson, setAddingPerson] = useState(false)
   const [editingPerson, setEditingPerson] = useState<User | null>(null)
-  const [personDraft, setPersonDraft] = useState<PersonDraft>({ username: '', password: '', name: '', email: '', groupIds: [] })
+  const [personDraft, setPersonDraft] = useState<PersonDraft>({
+    username: '',
+    password: '',
+    name: '',
+    email: '',
+    groupIds: [],
+  })
   const [passwordFor, setPasswordFor] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [deletingPerson, setDeletingPerson] = useState<User | null>(null)
@@ -153,7 +168,13 @@ export function PeopleTab() {
   }
 
   function startEditingPerson(user: User) {
-    setPersonDraft({ username: user.username, password: '', name: user.name ?? '', email: user.email ?? '', groupIds: user.groupIds })
+    setPersonDraft({
+      username: user.username,
+      password: '',
+      name: user.name ?? '',
+      email: user.email ?? '',
+      groupIds: user.groupIds,
+    })
     setEditingPerson(user)
   }
 
@@ -177,136 +198,153 @@ export function PeopleTab() {
 
       <div className="access-columns">
         <div ref={people}>
-        <SettingsSection
-          title={chosen ? t('access.people.inGroup', { name: chosen.name }) : t('access.people.everyone')}
-          // Narrowed to a group, the line below says which and how many, and
-          // saying "everyone with an account" above it would contradict it.
-          description={chosen ? undefined : t('access.users.intro')}
-          action={
-            managesUsers ? (
-              <button className="primary" type="button" onClick={() => open(startAddingPerson)}>
-                {t('access.users.new')}
-              </button>
-            ) : undefined
-          }
-        >
-          {/* On a phone the groups are below the people rather than beside
+          <SettingsSection
+            title={chosen ? t('access.people.inGroup', { name: chosen.name }) : t('access.people.everyone')}
+            // Narrowed to a group, the line below says which and how many, and
+            // saying "everyone with an account" above it would contradict it.
+            description={chosen ? undefined : t('access.users.intro')}
+            action={
+              managesUsers ? (
+                <button className="primary" type="button" onClick={() => open(startAddingPerson)}>
+                  {t('access.users.new')}
+                </button>
+              ) : undefined
+            }
+          >
+            {/* On a phone the groups are below the people rather than beside
               them, so the way to narrow the list is here too: scrolling past
               everybody to reach the groups and back again is not a filter. */}
-          {groups.length > 0 && (
-            <div className="access-chips access-narrow-filter">
-              <button
-                type="button"
-                className={chosen ? 'access-chip' : 'access-chip chosen'}
-                aria-pressed={!chosen}
-                onClick={() => setChosenGroupId('')}
-              >
-                {t('access.people.everyone')}
-              </button>
-              {groups.map((group) => (
+            {groups.length > 0 && (
+              <div className="access-chips access-narrow-filter">
                 <button
-                  key={group.id}
                   type="button"
-                  className={group.id === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
-                  aria-pressed={group.id === chosenGroupId}
-                  onClick={() => choose(group.id)}
+                  className={chosen ? 'access-chip' : 'access-chip chosen'}
+                  aria-pressed={!chosen}
+                  onClick={() => setChosenGroupId('')}
                 >
-                  {group.name}
+                  {t('access.people.everyone')}
                 </button>
-              ))}
-            </div>
-          )}
-          {chosen && (
-            <p className="muted access-filter">
-              {t('access.people.narrowed', { name: chosen.name, count: shown.length })}{' '}
-              <button className="link" type="button" onClick={() => setChosenGroupId('')}>
-                {t('access.people.showEveryone')}
-              </button>
-            </p>
-          )}
-          {data && shown.length === 0 && (
-            <SettingsEmpty>
-              {!managesUsers
-                ? t('access.people.hidden')
-                : chosen
-                  ? t('access.people.noMembers')
-                  : t('access.users.empty')}
-            </SettingsEmpty>
-          )}
+                {groups.map((group) => (
+                  <button
+                    key={group.id}
+                    type="button"
+                    className={group.id === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
+                    aria-pressed={group.id === chosenGroupId}
+                    onClick={() => choose(group.id)}
+                  >
+                    {group.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {chosen && (
+              <p className="muted access-filter">
+                {t('access.people.narrowed', { name: chosen.name, count: shown.length })}{' '}
+                <button className="link" type="button" onClick={() => setChosenGroupId('')}>
+                  {t('access.people.showEveryone')}
+                </button>
+              </p>
+            )}
+            {data && shown.length === 0 && (
+              <SettingsEmpty>
+                {!managesUsers
+                  ? t('access.people.hidden')
+                  : chosen
+                    ? t('access.people.noMembers')
+                    : t('access.users.empty')}
+              </SettingsEmpty>
+            )}
 
-          {shown.map((user) => (
-            <SettingsRow
-              key={user.id}
-              title={
-                <>
-                  {user.username}
-                  {user.id === session.userId ? <span className="muted"> · {t('access.users.you')}</span> : null}
-                </>
-              }
-              badge={
-                user.disabledAt ? (
-                  <Tag value={t('access.users.disabled')} tone="bad" />
-                ) : !user.hasPassword ? (
-                  <Tag value={t('access.users.noPassword')} tone="warn" />
-                ) : undefined
-              }
-              subtitle={
-                <>
-                  <div>
-                    {user.name || t('common.none')}
-                    {user.email ? ` · ${user.email}` : ''}
-                  </div>
-                  <div className="access-chips">
-                    {user.groupIds.length > 0 ? (
-                      user.groupIds.map((groupId) => (
-                        // A person's group is a way into that group: it
-                        // narrows the list to everybody else in it.
-                        <button
-                          key={groupId}
-                          type="button"
-                          className={groupId === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
-                          aria-pressed={groupId === chosenGroupId}
-                          onClick={() => choose(groupId)}
-                        >
-                          {groupName(groupId)}
-                        </button>
-                      ))
-                    ) : (
-                      <span className="muted">{t('access.users.noGroups')}</span>
-                    )}
-                  </div>
-                  <div className="muted">{t('access.users.created', { time: formatTime(user.createdAt) })}</div>
-                </>
-              }
-              actions={
-                managesUsers ? (
+            {shown.map((user) => (
+              <SettingsRow
+                key={user.id}
+                title={
                   <>
-                    <button className="link" type="button" onClick={() => open(() => startEditingPerson(user))}>
-                      {t('access.users.edit')}
-                    </button>
-                    <button
-                      className="link"
-                      type="button"
-                      onClick={() =>
-                        open(() => {
-                          setNewPassword('')
-                          setPasswordFor(user)
-                        })
-                      }
-                    >
-                      {t('access.users.setPassword')}
-                    </button>
-                    {user.id !== session.userId && (
-                      <button className="link danger" type="button" onClick={() => open(() => setDeletingPerson(user))}>
-                        {t('common.remove')}
-                      </button>
-                    )}
+                    {user.username}
+                    {user.id === session.userId ? <span className="muted"> · {t('access.users.you')}</span> : null}
                   </>
-                ) : undefined
-              }
-            />
-          ))}
-        </SettingsSection>
+                }
+                badge={
+                  user.disabledAt ? (
+                    <Tag value={t('access.users.disabled')} tone="bad" />
+                  ) : !user.hasPassword ? (
+                    <Tag value={t('access.users.noPassword')} tone="warn" />
+                  ) : undefined
+                }
+                subtitle={
+                  <>
+                    <div>
+                      {user.name || t('common.none')}
+                      {user.email ? ` · ${user.email}` : ''}
+                    </div>
+                    <div className="access-chips">
+                      {user.groupIds.length > 0 ? (
+                        user.groupIds.map((groupId) => (
+                          // A person's group is a way into that group: it
+                          // narrows the list to everybody else in it.
+                          <button
+                            key={groupId}
+                            type="button"
+                            className={groupId === chosenGroupId ? 'access-chip chosen' : 'access-chip'}
+                            aria-pressed={groupId === chosenGroupId}
+                            onClick={() => choose(groupId)}
+                          >
+                            {groupName(groupId)}
+                          </button>
+                        ))
+                      ) : (
+                        <span className="muted">{t('access.users.noGroups')}</span>
+                      )}
+                    </div>
+                    <div className="muted">{t('access.users.created', { time: formatTime(user.createdAt) })}</div>
+                  </>
+                }
+                actions={
+                  managesUsers ? (
+                    <div className="row-actions">
+                      <Tooltip label={t('access.users.edit')}>
+                        <button
+                          className="icon-action"
+                          type="button"
+                          aria-label={`${user.username}: ${t('access.users.edit')}`}
+                          onClick={() => open(() => startEditingPerson(user))}
+                        >
+                          <PencilIcon size={16} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={t('access.users.setPassword')}>
+                        <button
+                          className="icon-action"
+                          type="button"
+                          aria-label={`${user.username}: ${t('access.users.setPassword')}`}
+                          onClick={() =>
+                            open(() => {
+                              setNewPassword('')
+                              setPasswordFor(user)
+                            })
+                          }
+                        >
+                          <KeyIcon size={16} />
+                        </button>
+                      </Tooltip>
+                      {user.id !== session.userId && (
+                        <Tooltip label={t('common.remove')}>
+                          <button
+                            className="icon-action danger"
+                            type="button"
+                            aria-label={`${user.username}: ${t('common.remove')}`}
+                            onClick={() => open(() => setDeletingPerson(user))}
+                          >
+                            <TrashIcon size={16} />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
+                  ) : undefined
+                }
+              />
+            ))}
+          </SettingsSection>
         </div>
 
         <SettingsSection
@@ -352,22 +390,38 @@ export function PeopleTab() {
                     {' · '}
                     {group.roleIds.length > 0 ? group.roleIds.map(roleName).join(', ') : t('access.groups.noRoles')}
                     {' · '}
-                    {group.domainIds.length > 0 ? group.domainIds.map(domainName).join(', ') : t('access.groups.noDomains')}
+                    {group.domainIds.length > 0
+                      ? group.domainIds.map(domainName).join(', ')
+                      : t('access.groups.noDomains')}
                     {group.idpGroup ? ` · ${t('access.groups.idpGroup')}: ${group.idpGroup}` : ''}
                   </div>
                 </>
               }
               actions={
-                <>
-                  <button className="link" type="button" onClick={() => open(() => startEditingGroup(group))}>
-                    {t('access.groups.edit')}
-                  </button>
-                  {managesGroups && (
-                    <button className="link danger" type="button" onClick={() => open(() => setDeletingGroup(group))}>
-                      {t('common.remove')}
+                <div className="row-actions">
+                  <Tooltip label={t('access.groups.edit')}>
+                    <button
+                      className="icon-action"
+                      type="button"
+                      aria-label={`${group.name}: ${t('access.groups.edit')}`}
+                      onClick={() => open(() => startEditingGroup(group))}
+                    >
+                      <PencilIcon size={16} />
                     </button>
+                  </Tooltip>
+                  {managesGroups && (
+                    <Tooltip label={t('common.remove')}>
+                      <button
+                        className="icon-action danger"
+                        type="button"
+                        aria-label={`${group.name}: ${t('common.remove')}`}
+                        onClick={() => open(() => setDeletingGroup(group))}
+                      >
+                        <TrashIcon size={16} />
+                      </button>
+                    </Tooltip>
                   )}
-                </>
+                </div>
               }
             />
           ))}
@@ -376,7 +430,9 @@ export function PeopleTab() {
 
       {(addingPerson || editingPerson) && (
         <FormDialog
-          title={editingPerson ? t('access.users.editTitle', { username: editingPerson.username }) : t('access.users.new')}
+          title={
+            editingPerson ? t('access.users.editTitle', { username: editingPerson.username }) : t('access.users.new')
+          }
           submitLabel={editingPerson ? t('common.save') : t('common.create')}
           busy={busy}
           error={problem}
@@ -432,7 +488,10 @@ export function PeopleTab() {
           )}
           <label>
             {t('access.users.name')}
-            <input value={personDraft.name} onChange={(event) => setPersonDraft({ ...personDraft, name: event.target.value })} />
+            <input
+              value={personDraft.name}
+              onChange={(event) => setPersonDraft({ ...personDraft, name: event.target.value })}
+            />
           </label>
           <label>
             {t('access.users.email')}
@@ -457,7 +516,9 @@ export function PeopleTab() {
                 type="checkbox"
                 checked={Boolean(editingPerson.disabledAt)}
                 onChange={(event) =>
-                  void run(() => graphql(UPDATE_USER, { userId: editingPerson.id, disabled: event.target.checked })).then(
+                  void run(() =>
+                    graphql(UPDATE_USER, { userId: editingPerson.id, disabled: event.target.checked }),
+                  ).then(
                     (done) =>
                       done &&
                       setEditingPerson({
@@ -489,7 +550,12 @@ export function PeopleTab() {
         >
           <label>
             {t('access.users.newPassword')}
-            <input autoFocus type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            <input
+              autoFocus
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
           </label>
         </FormDialog>
       )}

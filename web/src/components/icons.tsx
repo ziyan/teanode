@@ -299,6 +299,16 @@ export function ShieldIcon(props: IconProps) {
   )
 }
 
+// A chevron pointing down: what opens a thing in place, and turns to point up
+// when it is open.
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  )
+}
+
 export function ChevronRightIcon(props: IconProps) {
   return (
     <Icon {...props}>

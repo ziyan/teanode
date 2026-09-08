@@ -39,9 +39,7 @@ export function ChangePassword({ username }: { username: string }) {
   return (
     <form className="card" onSubmit={submit}>
       <h3>{t('password.title')}</h3>
-      <p className="muted">
-        {t('password.signedInAs', { username })}
-      </p>
+      <p className="muted">{t('password.signedInAs', { username })}</p>
 
       <label>
         <span>{t('password.current')}</span>

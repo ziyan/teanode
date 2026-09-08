@@ -157,7 +157,9 @@ export function CheckList<T extends { id: string }>({
                 checked={checked}
                 onChange={(event) =>
                   onChange(
-                    event.target.checked ? [...selected, item.id] : selected.filter((candidate) => candidate !== item.id),
+                    event.target.checked
+                      ? [...selected, item.id]
+                      : selected.filter((candidate) => candidate !== item.id),
                   )
                 }
               />

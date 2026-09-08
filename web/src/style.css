@@ -3456,6 +3456,41 @@ a.button.primary:hover {
   flex: 1 1 100%;
   text-wrap: balance;
 }
+/* --- tooltips ----------------------------------------------------------------
+   The dashboard's own, rather than the browser's. A native title waits about
+   a second, is drawn in the operating system's colors, and cannot wrap — a
+   timestamp with a zone name comes out as one long line in a font nobody
+   chose. Rendered into the body and positioned from the anchor's box, so a
+   row inside a scrolling list does not clip it. */
+.tooltip-anchor {
+  display: contents;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* Under the thing it describes, for something near the top of the window
+   where there is no room above it. */
+.tooltip.below {
+  transform: translate(-50%, 0);
+}
+
 /* --- a conversation ---------------------------------------------------------
    The messages of one conversation, newest first. A message that has been
    read is a line; opening it puts the message under that line, so the line
@@ -3607,13 +3642,19 @@ a.button.primary:hover {
   white-space: nowrap;
 }
 
+/* Padded on every side. It had no padding at the top because the line saying
+   who the message was addressed to carried its own, and when that line went
+   whatever came first — the details, or the notice about remote images — sat
+   against the border. */
 .mailbox-message-body {
-  padding: 0 12px 12px;
+  padding: 12px;
   border-top: 1px solid var(--border);
 }
 
-.mailbox-message-body .mailbox-pane-meta {
-  margin-top: 12px;
+/* The first thing in the body is spaced by the padding above it, so it does
+   not add its own on top. */
+.mailbox-message-body > :first-child {
+  margin-top: 0;
 }
 
 /* An open message is the one being read; the closed ones around it are a

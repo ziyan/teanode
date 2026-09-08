@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { ChevronDownIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -30,7 +32,21 @@ type AuditEvent = {
 
 const PAGE = 50
 
-const RESOURCE_TYPES = ['', 'user', 'group', 'role', 'domain', 'alias', 'credential', 'mailbox', 'mailbox_address', 'mailbox_app_password', 'token', 'passkey', 'configuration']
+const RESOURCE_TYPES = [
+  '',
+  'user',
+  'group',
+  'role',
+  'domain',
+  'alias',
+  'credential',
+  'mailbox',
+  'mailbox_address',
+  'mailbox_app_password',
+  'token',
+  'passkey',
+  'configuration',
+]
 
 // AuditTab is the log of administrative changes, newest first: who, what,
 // and the row before and after.
@@ -79,7 +95,12 @@ export function AuditTab() {
               {event.resourceType} <span className="mono muted">{event.resourceId}</span>
             </>
           }
-          badge={<Tag value={event.action} tone={event.action === 'delete' ? 'bad' : event.action === 'create' ? 'good' : undefined} />}
+          badge={
+            <Tag
+              value={event.action}
+              tone={event.action === 'delete' ? 'bad' : event.action === 'create' ? 'good' : undefined}
+            />
+          }
           subtitle={
             <>
               <div>
@@ -106,9 +127,19 @@ export function AuditTab() {
             </>
           }
           actions={
-            <button className="link" type="button" onClick={() => setOpen(open === event.id ? null : event.id)}>
-              {open === event.id ? t('access.audit.hide') : t('access.audit.show')}
-            </button>
+            <div className="row-actions">
+              <Tooltip label={open === event.id ? t('access.audit.hide') : t('access.audit.show')}>
+                <button
+                  className="icon-action"
+                  type="button"
+                  aria-expanded={open === event.id}
+                  aria-label={open === event.id ? t('access.audit.hide') : t('access.audit.show')}
+                  onClick={() => setOpen(open === event.id ? null : event.id)}
+                >
+                  <ChevronDownIcon size={16} />
+                </button>
+              </Tooltip>
+            </div>
           }
         />
       ))}

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 
 import { Alias, graphql } from '../api'
 import { Tag } from '../components/common'
+import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
@@ -100,15 +101,16 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
                   </td>
                   <td className="shrink">
                     <div className="row-actions">
-                      <button
-                        type="button"
-                        className="icon-action danger"
-                        aria-label={`${aliasName(alias)}: ${t('common.remove')}`}
-                        title={t('common.remove')}
-                        onClick={() => setDeleting(alias)}
-                      >
-                        <TrashIcon size={16} />
-                      </button>
+                      <Tooltip label={t('common.remove')}>
+                        <button
+                          type="button"
+                          className="icon-action danger"
+                          aria-label={`${aliasName(alias)}: ${t('common.remove')}`}
+                          onClick={() => setDeleting(alias)}
+                        >
+                          <TrashIcon size={16} />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
