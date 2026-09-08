@@ -3219,10 +3219,10 @@ a.button.primary:hover {
   max-height: 20rem;
   overflow: auto;
 }
-.audit-filter select {
-  width: auto;
-  display: inline-block;
-  margin-left: 6px;
+.audit-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* --- mailbox ------------------------------------------------------------ */
@@ -3456,6 +3456,76 @@ a.button.primary:hover {
   flex: 1 1 100%;
   text-wrap: balance;
 }
+/* --- our own dropdown --------------------------------------------------------
+   A native select's list is drawn by the operating system, in the operating
+   system's colors: on a dark page it opens as a white rectangle. Where a
+   control is part of the furniture rather than part of a form to fill in,
+   that is worth drawing ourselves. */
+.select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select:hover {
+  border-color: var(--muted);
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-list {
+  position: fixed;
+  z-index: 60;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.select-list button {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The row under the pointer and the row the keyboard is on are the same
+   thing, so they look the same. */
+.select-list button.active {
+  background: var(--background);
+}
+
+.select-list button[aria-selected='true'] {
+  font-weight: 600;
+}
+
 /* --- tooltips ----------------------------------------------------------------
    The dashboard's own, rather than the browser's. A native title waits about
    a second, is drawn in the operating system's colors, and cannot wrap — a

@@ -4,6 +4,7 @@ import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { ChevronDownIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
+import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -71,16 +72,16 @@ export function AuditTab() {
   return (
     <SettingsSection description={t('access.audit.intro')}>
       <p className="audit-filter">
-        <label>
-          {t('access.audit.filter')}{' '}
-          <select value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
-            {RESOURCE_TYPES.map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate === '' ? t('access.audit.everything') : candidate}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="muted">{t('access.audit.filter')}</span>
+        <Select
+          label={t('access.audit.filter')}
+          value={resourceType}
+          onChange={setResourceType}
+          options={RESOURCE_TYPES.map((candidate) => ({
+            value: candidate,
+            label: candidate === '' ? t('access.audit.everything') : candidate,
+          }))}
+        />
       </p>
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
