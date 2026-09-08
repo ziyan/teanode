@@ -972,7 +972,7 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 	order := itemOrder(folderId, options, "mailbox_item")
 	inner = inner.
 		Select("DISTINCT ON (\"mail\".\"thread_id\") \"mail\".\"thread_id\" AS thread_id, \"mailbox_item\".\"id\" AS item_id, " +
-			"\"mailbox_item\".\"uid\" AS uid, \"mailbox_item\".\"added_at\" AS added_at").
+			"\"mailbox_item\".\"id\" AS id, \"mailbox_item\".\"uid\" AS uid, \"mailbox_item\".\"added_at\" AS added_at").
 		Order("\"mail\".\"thread_id\", " + order)
 
 	// The conversations themselves, newest first, from the newest item of
@@ -1049,14 +1049,14 @@ func (self *transaction) CountThreads(folderId string, options *ItemOptions) (in
 
 // threadCount is the aggregate over one conversation within a folder.
 type threadCount struct {
-	ThreadID     string `gorm:"column:thread_id"`
-	Count        int    `gorm:"column:count"`
-	Unread       int    `gorm:"column:unread"`
-	Flagged      bool   `gorm:"column:flagged"`
-	Participants []string
-	ItemIDs      []string
-	Names        string `gorm:"column:names"`
-	Items        string `gorm:"column:items"`
+	ThreadID     string   `gorm:"column:thread_id"`
+	Count        int      `gorm:"column:count"`
+	Unread       int      `gorm:"column:unread"`
+	Flagged      bool     `gorm:"column:flagged"`
+	Names        string   `gorm:"column:names"`
+	Items        string   `gorm:"column:items"`
+	Participants []string `gorm:"-"`
+	ItemIDs      []string `gorm:"-"`
 }
 
 // threadCounts counts each conversation's messages in the folder, and gathers
@@ -1071,8 +1071,11 @@ func (self *transaction) threadCounts(folderId string, options *ItemOptions, thr
 	}
 	query := self.threadQuery(folderId, scope).
 		Where("\"mail\".\"thread_id\" IN ?", threadIds).
-		Select("\"mail\".\"thread_id\" AS thread_id, COUNT(*) AS count, " +
-			"COUNT(*) FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread, " +
+		// By message rather than by item: the same message filed in two
+		// folders is one message of the conversation, and a conversation read
+		// across the whole mailbox would otherwise say two.
+		Select("\"mail\".\"thread_id\" AS thread_id, COUNT(DISTINCT \"mailbox_item\".\"mail_id\") AS count, " +
+			"COUNT(DISTINCT \"mailbox_item\".\"mail_id\") FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread, " +
 			"BOOL_OR(\"mailbox_item\".\"flagged\") AS flagged, " +
 			"STRING_AGG(COALESCE(NULLIF(\"mail\".\"from_name\", ''), \"mail\".\"from\"), CHR(10) ORDER BY \"mail\".\"received_at\") AS names, " +
 			"STRING_AGG(\"mailbox_item\".\"id\", CHR(10) ORDER BY \"mail\".\"received_at\") AS items").
