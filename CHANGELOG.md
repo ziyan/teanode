@@ -82,6 +82,12 @@ Notable changes to TeaNode. The format follows
 - A row of a tick list with two lines in it — a permission and its key, a
   role and what it is for — was squeezed to the height of one and drawn over
   the row below it.
+- A session, an API token and a passkey record who used them rather than what
+  forwarded the request, the same way the audit log now does. Behind a CDN the
+  list of sessions said every one of them was used from one address in another
+  country. The limit on how often a password may be tried counts against the
+  client too: shared across everybody behind a proxy, one person guessing
+  passwords used up the allowance for the rest.
 - The audit log records who asked, not who forwarded. Behind a CDN every row
   read as one address in another country, because the address a request
   arrives from is the proxy's. The forwarded-for header says who the client

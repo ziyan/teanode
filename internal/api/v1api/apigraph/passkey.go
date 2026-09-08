@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"strings"
 	"time"
 
@@ -310,10 +309,8 @@ func (self *graph) FinishPasskeyAssertion(ctx context.Context, arguments FinishP
 	request := api.ContextRequest(ctx)
 	ip, userAgent := "", ""
 	if request != nil {
-		ip, userAgent = request.RemoteAddr, request.UserAgent()
-		if host, _, err := net.SplitHostPort(ip); err == nil {
-			ip = host
-		}
+		// Who asked rather than who forwarded, the same as a session's.
+		ip, userAgent = self.remoteAddress(request), request.UserAgent()
 	}
 	if err := self.database.RecordPasskeyUse(matched.ID, int64(credential.Authenticator.SignCount),
 		credential.Flags.BackupState, time.Now(), ip, userAgent); err != nil {

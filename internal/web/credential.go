@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"github.com/ziyan/teanode/internal/api"
 	"net/http"
 	"strings"
 
@@ -73,7 +74,7 @@ func hashKey(key string) string {
 
 // requestOrigin describes where a request came from, for the list a person
 // reads when deciding whether a session is theirs.
-func requestOrigin(request *http.Request) (ip, userAgent string) {
+func requestOrigin(request *http.Request, trustedProxies []string) (ip, userAgent string) {
 	if request == nil {
 		return "", ""
 	}
@@ -81,7 +82,9 @@ func requestOrigin(request *http.Request) (ip, userAgent string) {
 	if len(agent) > maxUserAgent {
 		agent = agent[:maxUserAgent]
 	}
-	return remoteAddress(request), agent
+	// Who asked, not who forwarded: behind a CDN the list of sessions said
+	// every one of them was used from one address in another country.
+	return api.RemoteAddress(request, trustedProxies), agent
 }
 
 // maxUserAgent bounds what is stored. The column is text, but a header is
