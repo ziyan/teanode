@@ -86,6 +86,13 @@ Notable changes to TeaNode. The format follows
   that arrived from outside had one; a message you sent, a draft, and a
   message a mail program appended over IMAP were all stored with no
   conversation, so a reply stood apart from what it answered.
+- A message is decoded from the character set it says it is written in.
+  Bodies were handed to the browser as they arrived, so a Japanese newsletter
+  in ISO-2022-JP was a page of escape sequences, a Chinese one in GB2312 was
+  nonsense, and a French one in Windows-1252 had a replacement character where
+  every accent had been. Subjects were already decoded, because a header
+  carries its character set in each encoded word while a body carries it once
+  in the Content-Type — which nothing was reading.
 - A message's own menu — download, headers, theme — sits at the end of the
   line that names the message rather than on a row of its own above it. In a
   conversation that was one row holding one button for every message in it.

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/net/html/charset"
+	"golang.org/x/text/transform"
 )
 
 func MergeHeaders(headers ...[]string) []string {
@@ -206,4 +207,36 @@ func DecodeHeaderValue(value string) string {
 
 func EncodeHeaderValue(value string) string {
 	return mime.BEncoding.Encode("UTF-8", value)
+}
+
+// DecodeCharset converts a body part to UTF-8 from whatever its Content-Type
+// said it was written in.
+//
+// A header says what it is in each encoded word, so a subject decodes itself;
+// a body says it once, in the charset parameter, and the bytes are otherwise
+// indistinguishable from UTF-8 that happens to be full of escape sequences.
+// Japanese mail is routinely ISO-2022-JP, Chinese mail GB2312 or Big5, and a
+// good deal of European mail is still Windows-1252 — none of which is
+// readable if the bytes are handed to a browser as they are.
+//
+// An unknown or unreadable charset returns the bytes untouched: showing what
+// arrived is more useful than showing nothing, and for a mislabelled message
+// that is usually the right guess anyway.
+func DecodeCharset(content []byte, label string) []byte {
+	label = strings.TrimSpace(label)
+	switch strings.ToLower(label) {
+	case "", "utf-8", "utf8", "us-ascii", "ascii":
+		return content
+	}
+	encoding, _ := charset.Lookup(label)
+	if encoding == nil {
+		log.Warningf("a message part says it is %q, which is not a charset this knows; showing it as it arrived", label)
+		return content
+	}
+	decoded, _, err := transform.Bytes(encoding.NewDecoder(), content)
+	if err != nil {
+		log.Warningf("a message part says it is %q but does not decode as it: %s", label, err)
+		return content
+	}
+	return decoded
 }

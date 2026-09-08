@@ -3483,6 +3483,38 @@ a.button.primary:hover {
   margin: 0;
 }
 
+/* The menu on a message's line is a row action, not a control on a form. A
+   bordered, filled button on a line 41px tall reads as a slab — and on a
+   phone, where every button is 40px tall so a thumb can reach it, it is very
+   nearly the whole line. Sized and drawn like the icon buttons it sits among
+   instead, with the thumb's worth of room kept as the hit area. */
+.mailbox-message-menu .message-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.mailbox-message-menu .message-menu-button:hover {
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--text);
+}
+
+@media (max-width: 600px) {
+  .mailbox-message-menu .message-menu-button {
+    width: 34px;
+    height: 34px;
+  }
+}
+
 .mailbox-message.unread .mailbox-message-who {
   font-weight: 600;
 }
