@@ -29,6 +29,11 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The Server page marks the tab that holds the reason for the dot in the
+  rail. The rail said "there is something here" and the page it opened said
+  nothing about which of its seven tabs meant it.
+- The buttons under the release notes have room above them. They sat against
+  the last line of the changelog, reading as part of it.
 - A tooltip no longer appears after a tap. A tap emulates a hover and focuses
   what it touched, so the box arrived a third of a second after the button had
   done its job — over the menu that had just opened, describing the button
@@ -103,6 +108,9 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- What an audit row changed is a table: a column of fields, what each was, and
+  what it is. As cards across the width, five fields came out in five places
+  and the eye had to find each one before it could read it.
 - The mailbox picker in the rail and the rows-per-page control under a table
   are the dashboard's own dropdown. A native select opens its list in the
   operating system's colors, which on a dark rail is a white rectangle.

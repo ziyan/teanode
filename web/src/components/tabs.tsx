@@ -12,7 +12,17 @@ import { Tooltip } from './tooltip'
 
 // A tab can be unavailable — the compose page's template tab when the domain
 // has no templates — and then it says why rather than only refusing.
-export type TabItem = { id: string; label: Key; disabled?: boolean; title?: string }
+export type TabItem = {
+  id: string
+  label: Key
+  disabled?: boolean
+  title?: string
+  // Something on this tab wants attention — an upgrade waiting to be applied.
+  // The rail shows a dot on the page; the page shows one on the tab, so that
+  // arriving from the first dot does not end in a page of tabs and no reason.
+  marked?: boolean
+  markedLabel?: string
+}
 
 export function Tabs({
   items,
@@ -88,6 +98,11 @@ export function Tabs({
             onClick={() => onSelect(item.id)}
           >
             {t(item.label)}
+            {item.marked && (
+              <span className="tab-dot">
+                <span className="visually-hidden">{item.markedLabel ?? ''}</span>
+              </span>
+            )}
           </button>
         </Tooltip>
       ))}

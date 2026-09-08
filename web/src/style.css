@@ -483,6 +483,13 @@ td a:hover {
   justify-content: flex-end;
 }
 
+/* Room above it when it follows something. At the top of a page this row is
+   the heading's own line and needs none; under the release notes it had none
+   either, and Check now sat against the last line of the changelog. */
+.page-actions:not(:first-child) {
+  margin-top: var(--space-4);
+}
+
 .page-actions button {
   display: inline-flex;
   align-items: center;
@@ -3048,13 +3055,26 @@ a.button.primary:hover {
 
 /* A dot on the one row that has something waiting on it. It says "look here"
    and nothing else, which is all a rail should say. */
-.sidebar-dot {
+.sidebar-dot,
+.tab-dot {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   margin-left: auto;
   border-radius: 50%;
   background: var(--warn);
+}
+
+/* The same dot on the tab that holds the reason for it. A dot in the rail
+   takes somebody to a page of tabs, and without it here the page they land on
+   says nothing about why they came. */
+/* Inline-block, because width and height do nothing to an inline box: a tab
+   is a line of text rather than a flex row, and the dot came out as nothing
+   at all — no width, and the height of a line. */
+.tab-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
 }
 
 /* Collapsed, the dot moves onto the icon rather than disappearing: the reason
@@ -3318,11 +3338,50 @@ label.check-list-item {
 }
 
 /* The row before and after a change, in the audit log. */
+/* What a change was, as a table: the field, what it was, what it is. Cards
+   across the width put five fields in five places and left the eye to find
+   each one before it could read it. */
 .audit-diff {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
   margin-top: 8px;
+  overflow-x: auto;
+}
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.audit-table th,
+.audit-table td {
+  padding: 4px 10px 4px 0;
+  text-align: left;
+  vertical-align: top;
+  /* An identifier is one long word and would otherwise decide the width of
+     the column it is in. */
+  overflow-wrap: anywhere;
+}
+.audit-table thead th {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.audit-table tbody th {
+  width: 1%;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.audit-table tbody tr + tr th,
+.audit-table tbody tr + tr td {
+  border-top: 1px solid var(--border);
+}
+/* What it was reads as what it was: struck through and muted, so the column
+   that matters is the one on the right. */
+.audit-table .audit-before {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 .audit-diff pre {
   white-space: pre-wrap;

@@ -155,28 +155,37 @@ export function AuditTab() {
                 {event.sourceIp ? ` · ${event.sourceIp}` : ''}
                 {event.instance ? ` · ${event.instance}` : ''}
               </div>
-              {open === event.id && (
-                <dl className="audit-diff">
-                  {changedFields(event.before, event.after).map((field) => (
-                    <div key={field} className="audit-change">
-                      <dt>{field}</dt>
-                      <dd>
-                        {/* Only what changed, and only its two sides. The
-                            whole of both rows was thirty fields of which two
-                            differed, left for the reader to compare by eye. */}
-                        <span className="audit-before">{describe(event.before?.[field], t('access.audit.unset'))}</span>
-                        <span className="audit-arrow" aria-hidden="true">
-                          →
-                        </span>
-                        <span className="audit-after">{describe(event.after?.[field], t('access.audit.unset'))}</span>
-                      </dd>
-                    </div>
-                  ))}
-                  {changedFields(event.before, event.after).length === 0 && (
-                    <p className="muted">{t('access.audit.noChange')}</p>
-                  )}
-                </dl>
-              )}
+              {open === event.id &&
+                (changedFields(event.before, event.after).length === 0 ? (
+                  <p className="muted">{t('access.audit.noChange')}</p>
+                ) : (
+                  /* A table, because it is one: a column of fields and a
+                     column for each side of the change. Laid out as cards
+                     across the width, five fields came out in five places
+                     and the eye had to find each one before it could read
+                     it. Scrolls sideways on a phone rather than folding a
+                     row of three columns into six lines. */
+                  <div className="audit-diff">
+                    <table className="audit-table">
+                      <thead>
+                        <tr>
+                          <th>{t('access.audit.field')}</th>
+                          <th>{t('access.audit.before')}</th>
+                          <th>{t('access.audit.after')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {changedFields(event.before, event.after).map((field) => (
+                          <tr key={field}>
+                            <th scope="row">{field}</th>
+                            <td className="audit-before">{describe(event.before?.[field], t('access.audit.unset'))}</td>
+                            <td>{describe(event.after?.[field], t('access.audit.unset'))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
             </>
           }
           actions={
