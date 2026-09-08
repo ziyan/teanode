@@ -13,6 +13,21 @@ import {
   graphql,
 } from '../api'
 import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  FlagIcon,
+  ForwardIcon,
+  JunkIcon,
+  MailIcon,
+  MailOpenIcon,
+  MoveIcon,
+  ReplyAllIcon,
+  ReplyIcon,
+  TrashIcon,
+} from '../components/icons'
+import { MenuButton } from '../components/menuButton'
+import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
@@ -156,6 +171,81 @@ function dayStart(value: string, plusDays = 0): string | undefined {
   }
   date.setDate(date.getDate() + plusDays)
   return date.toISOString()
+}
+
+// A toolbar button: an icon, its name in a tooltip, and nothing else on the
+// screen. A mail toolbar is nine verbs, and nine words of them wrapped onto a
+// second line on anything narrower than a laptop.
+function IconAction({
+  label,
+  icon,
+  onClick,
+  disabled,
+  className,
+  // The state the action would undo — a flagged conversation, so the flag is
+  // drawn as set rather than as something to do.
+  active,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  active?: boolean
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className={['icon-button', className, active ? 'active' : ''].filter(Boolean).join(' ')}
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {icon}
+      </button>
+    </Tooltip>
+  )
+}
+
+// Where to move what is selected: the folders, in a menu the button opens.
+// A native select in a row of icons is a box with a word and an arrow in it,
+// which is the one control on the row that says what it is twice.
+function MoveToMenu({
+  targets,
+  onMove,
+  disabled,
+}: {
+  targets: { folder: MailboxFolder; depth: number }[]
+  onMove: (folderId: string) => void
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <MenuButton
+      label={t('mailbox.moveTo')}
+      className="icon-button"
+      icon={<MoveIcon size={16} />}
+      render={(close) =>
+        targets.map(({ folder: candidate, depth }) => (
+          <button
+            key={candidate.id}
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            style={{ paddingLeft: `${12 + depth * 12}px` }}
+            onClick={() => {
+              close()
+              onMove(candidate.id)
+            }}
+          >
+            {folderLabel(t, candidate)}
+          </button>
+        ))
+      }
+    />
+  )
 }
 
 export function MailboxPage() {
@@ -568,48 +658,63 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
           {chosen.length > 0 ? (
             <>
               <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
+              {/* Icons, with their names in the tooltip. Eight words across
+                  the top of a list wrapped onto two lines on anything
+                  narrower than a laptop, and every one of them is a verb a
+                  mail program already has a picture for. */}
               {chosen.some((thread) => thread.unread > 0) ? (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { seen: true })}>
-                  {t('mailbox.markRead')}
-                </button>
+                <IconAction
+                  label={t('mailbox.markRead')}
+                  icon={<MailOpenIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { seen: true })}
+                />
               ) : (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { seen: false })}>
-                  {t('mailbox.markUnread')}
-                </button>
+                <IconAction
+                  label={t('mailbox.markUnread')}
+                  icon={<MailIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { seen: false })}
+                />
               )}
               {chosen.some((item) => !item.flagged) ? (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { flagged: true })}>
-                  {t('mailbox.flag')}
-                </button>
+                <IconAction
+                  label={t('mailbox.flag')}
+                  icon={<FlagIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { flagged: true })}
+                />
               ) : (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { flagged: false })}>
-                  {t('mailbox.unflag')}
-                </button>
+                <IconAction
+                  label={t('mailbox.unflag')}
+                  icon={<FlagIcon size={16} />}
+                  active
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { flagged: false })}
+                />
               )}
               {archive && folder.id !== archive.id && (
-                <button type="button" disabled={busy} onClick={() => moveTo(chosenIds, archive.id)}>
-                  {t('mailbox.archive')}
-                </button>
+                <IconAction
+                  label={t('mailbox.archive')}
+                  icon={<ArchiveIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => moveTo(chosenIds, archive.id)}
+                />
               )}
-              <button type="button" disabled={busy} onClick={() => reportJunk(chosenIds, inJunk)}>
-                {inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
-              </button>
-              <select
-                aria-label={t('mailbox.moveTo')}
-                value=""
+              <IconAction
+                label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+                icon={<JunkIcon size={16} />}
                 disabled={busy}
-                onChange={(event) => event.target.value && moveTo(chosenIds, event.target.value)}
-              >
-                <option value="">{t('mailbox.moveTo')}</option>
-                {targets.map(({ folder: candidate, depth }) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {'  '.repeat(depth) + folderLabel(t, candidate)}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="danger" disabled={busy} onClick={() => deleteItems(chosenIds)}>
-                {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
-              </button>
+                onClick={() => reportJunk(chosenIds, inJunk)}
+              />
+              <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => moveTo(chosenIds, folderId)} />
+              <IconAction
+                label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+                icon={<TrashIcon size={16} />}
+                className="danger"
+                disabled={busy}
+                onClick={() => deleteItems(chosenIds)}
+              />
             </>
           ) : (
             <>
@@ -970,9 +1075,7 @@ function Reader({
   return (
     <>
       <div className="mailbox-pane-actions">
-        <button type="button" className="mailbox-back" onClick={onBack}>
-          {t('mailbox.backToList')}
-        </button>
+        <IconAction label={t('mailbox.backToList')} icon={<ArrowLeftIcon size={16} />} onClick={onBack} />
         {draft && (
           <button
             type="button"
@@ -989,32 +1092,29 @@ function Reader({
                 forward would either throw away what was typed or leave a
                 second draft of it behind, and neither is what the click
                 meant: close it, and the draft is kept. */}
-            <button
-              type="button"
-              className={draft ? '' : 'primary'}
+            <IconAction
+              label={t('mailbox.reply')}
+              icon={<ReplyIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
-            >
-              {t('mailbox.reply')}
-            </button>
-            <button
-              type="button"
+            />
+            <IconAction
+              label={t('mailbox.replyAll')}
+              icon={<ReplyAllIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
-            >
-              {t('mailbox.replyAll')}
-            </button>
-            <button
-              type="button"
+            />
+            <IconAction
+              label={t('mailbox.forward')}
+              icon={<ForwardIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
-            >
-              {t('mailbox.forward')}
-            </button>
+            />
           </>
         )}
-        <button
-          type="button"
+        <IconAction
+          label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
+          icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
           disabled={busy}
           onClick={() => {
             // Anything unread and the button says "Mark read", so that is
@@ -1023,11 +1123,11 @@ function Reader({
             setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
             onSeen(acting, seen)
           }}
-        >
-          {anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
-        </button>
-        <button
-          type="button"
+        />
+        <IconAction
+          label={anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
+          icon={<FlagIcon size={16} />}
+          active={anyFlagged}
           disabled={busy}
           onClick={() => {
             const next = !anyFlagged
@@ -1036,33 +1136,29 @@ function Reader({
             setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
             onFlag(acting, next)
           }}
-        >
-          {anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
-        </button>
+        />
         {archive && folder.id !== archive.id && (
-          <button type="button" disabled={busy} onClick={() => onMove(acting, archive.id)}>
-            {t('mailbox.archive')}
-          </button>
+          <IconAction
+            label={t('mailbox.archive')}
+            icon={<ArchiveIcon size={16} />}
+            disabled={busy}
+            onClick={() => onMove(acting, archive.id)}
+          />
         )}
-        <button type="button" disabled={busy} onClick={() => onJunk(acting, folder.kind === 'junk')}>
-          {folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
-        </button>
-        <select
-          aria-label={t('mailbox.moveTo')}
-          value=""
+        <IconAction
+          label={folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+          icon={<JunkIcon size={16} />}
           disabled={busy}
-          onChange={(event) => event.target.value && onMove(acting, event.target.value)}
-        >
-          <option value="">{t('mailbox.moveTo')}</option>
-          {targets.map(({ folder: candidate, depth }) => (
-            <option key={candidate.id} value={candidate.id}>
-              {'  '.repeat(depth) + folderLabel(t, candidate)}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="danger" disabled={busy} onClick={() => onDelete(acting)}>
-          {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
-        </button>
+          onClick={() => onJunk(acting, folder.kind === 'junk')}
+        />
+        <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
+        <IconAction
+          label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+          icon={<TrashIcon size={16} />}
+          className="danger"
+          disabled={busy}
+          onClick={() => onDelete(acting)}
+        />
       </div>
 
       <div className="mailbox-pane-head">

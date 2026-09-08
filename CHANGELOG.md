@@ -65,6 +65,13 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- The mailbox's two toolbars are icons with their names in the tooltip. Nine
+  verbs across the top of a conversation — back, reply, reply to all, forward,
+  mark unread, flag, archive, report junk, move, delete — wrapped onto a
+  second line on anything narrower than a laptop, and every one of them is
+  something a mail program already has a picture for. Move to is a menu the
+  button opens, rather than a dropdown that had to be read before it could be
+  used.
 - A message's headers are a list of names and values, with a button that
   copies the block exactly as it arrived. Read as it came off the wire, a
   Received: is four folded lines of one header and the reader has to find
