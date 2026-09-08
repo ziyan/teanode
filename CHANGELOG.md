@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-08
+
 ### Added
 
 - Subscriptions: the mailing lists a mailbox receives, on a page of their own,
