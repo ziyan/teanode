@@ -63,6 +63,16 @@ type MailOperation interface {
 	// SetMailSearch writes the search document: subject, sender, recipients
 	// and the message's text, bounded by the caller.
 	SetMailSearch(mailId string, text string, attachments int) error
+
+	// ListMailNeedingList is mail a mailbox holds whose list headers have not
+	// been read yet, newest first. Mail stored before this server knew what a
+	// subscription was: the headers are in object storage, so the caller
+	// fetches them and hands back what they said.
+	ListMailNeedingList(limit int) ([]string, error)
+
+	// SetMailList records what a message said about its list, and that it was
+	// asked. An empty key is an answer: most mail belongs to no list.
+	SetMailList(mailId string, info mailparse.ListInfo) error
 }
 
 type mailModel struct {
@@ -584,6 +594,35 @@ func (self *transaction) FindThreadID(messageIds []string) (string, error) {
 
 func (self *transaction) SetMailSearch(mailId string, text string, attachments int) error {
 	return self.tx.Exec(`UPDATE "mail" SET "search" = to_tsvector('simple', ?), "attachment_count" = ? WHERE "id" = ?`, text, attachments, mailId).Error
+}
+
+// ListMailNeedingList is mail a mailbox holds whose list headers have not been
+// read. Restricted to mail a mailbox holds, because that is the only mail a
+// subscription list is built from — refused mail, outgoing mail and reports
+// are not somebody's newsletters, and reading every one of them back out of
+// storage would be a great deal of work for nothing.
+func (self *transaction) ListMailNeedingList(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var ids []string
+	err := self.tx.Model(&mailModel{}).
+		Where("NOT \"list_checked\"").
+		Where("EXISTS (SELECT 1 FROM \"mailbox_item\" WHERE \"mailbox_item\".\"mail_id\" = \"mail\".\"id\")").
+		Order("\"received_at\" DESC").
+		Limit(limit).
+		Pluck("\"id\"", &ids).Error
+	return ids, err
+}
+
+func (self *transaction) SetMailList(mailId string, info mailparse.ListInfo) error {
+	return self.tx.Model(&mailModel{}).Where("\"id\" = ?", mailId).Updates(map[string]any{
+		"list_key":         truncateRunes(info.Key, 998),
+		"list_name":        truncateRunes(info.Name, 255),
+		"list_unsubscribe": truncateRunes(strings.Join(info.Unsubscribe, ", "), 2000),
+		"list_one_click":   info.OneClick,
+		"list_checked":     true,
+	}).Error
 }
 
 func (self *database) MailExists(mailId string) (bool, error) {

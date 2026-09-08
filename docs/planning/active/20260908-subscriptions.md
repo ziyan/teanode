@@ -46,7 +46,12 @@ and the sender appears as a row with a working unsubscribe button.
       `mail`; extraction in `CreateMails`. Verified on the dev server: a
       message with `List-Id` records `weekly.news.example.com`, one with only
       `List-Unsubscribe` records `offers@shop.example.com`.
-- [ ] Milestone 2 — fill in the mail already in the mailbox.
+- [x] (2026-09-08 18:35Z) Milestone 2 — fill in the mail already in the
+      mailbox. `ListMailNeedingList` and `SetMailList` in
+      `internal/db/database_mail.go`, the batch loop in
+      `internal/cmd/server/listbackfill.go`, started every two minutes beside
+      the session scavenger. On the dev database one pass examined the 12
+      messages stored before this and left nothing unchecked.
 - [ ] Milestone 3 — list the subscriptions over the API.
 - [ ] Milestone 4 — the Subscriptions page, and reading one like a conversation.
 - [ ] Milestone 5 — unsubscribing, all three ways.
