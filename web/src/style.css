@@ -4247,19 +4247,98 @@ label.check-list-item {
   color: var(--text);
   border-color: var(--text);
 }
+
+/* The groups tab: the groups to choose from, who is in the one chosen, and
+   what it carries — three panels side by side, because they are one subject
+   read together. Every one of them used to be inside a dialog. */
+.access-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr) minmax(0, 320px);
+  gap: var(--space-4);
+  align-items: start;
+}
+/* The panels are narrower than a page, and a heading beside the one button
+   that adds to it has to be able to fall onto its own line. */
+.access-groups .settings-section-head {
+  flex-wrap: wrap;
+}
+.access-group-picker {
+  display: none;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+.access-group-picker .select {
+  flex: 1 1 auto;
+}
+
+/* Narrower than three: what a group carries goes under it, full width, and
+   the list of groups keeps its column. */
+@media (max-width: 1200px) {
+  .access-groups {
+    grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  }
+  .access-group-attached {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-3);
+    align-items: start;
+  }
+}
+@media (max-width: 900px) {
+  .access-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* One column: a list of groups above a list of members above two more
+     lists is a page of scrolling to reach what was chosen, so the choice
+     becomes a dropdown and the list of them goes away. */
+  .access-group-picker {
+    display: flex;
+  }
+  .access-groups > .settings-section:first-of-type {
+    display: none;
+  }
+}
+/* A group in the list, and the actions on the one being read. */
+.access-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.access-group-row:last-child {
+  border-bottom: 0;
+}
 .access-group-name {
+  flex: 1 1 auto;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
 }
 .access-group-name:hover,
-.access-group-name.chosen {
+.access-group-row.chosen .access-group-name {
   text-decoration: underline;
 }
+/* What a role is for, under its name: the difference between Operator and
+   Manager is the sentence, not the word. */
+.access-role-description {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-small);
+  line-height: 1.35;
+}
+.access-idp-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+}
+
 
 /* A dialog fits the screen it is on: what does not fit scrolls inside it,
    and the actions stay at its foot. */

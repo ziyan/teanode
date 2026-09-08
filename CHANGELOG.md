@@ -58,6 +58,14 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- Users and groups are their own tabs, and a group is managed on the page
+  rather than in a dialog. Everything a group is — who is in it, the roles it
+  holds, the domains those roles apply over — was three lists inside a box
+  covering the page, so reading who was in a group meant opening it, reading,
+  and closing it again. They are three panels beside each other now: the
+  groups, the members of the one being read, and what it carries. Ticking a
+  role or taking somebody out saves as it is done. A person's groups are
+  shown on the users tab as chips that lead to the group.
 - Every date and time the dashboard writes out names its time zone. One
   without a zone is ambiguous the moment it is read anywhere but the machine
   that rendered it, and these are pasted into tickets and compared against

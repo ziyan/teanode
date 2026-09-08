@@ -4,8 +4,9 @@ import { Tabs } from '../components/tabs'
 import { Key } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
 import { AuditTab } from './access/audit'
-import { PeopleTab } from './access/people'
+import { GroupsTab } from './access/groups'
 import { RolesTab } from './access/roles'
+import { UsersTab } from './access/users'
 
 // Who may do what on this server: the accounts, the groups they are in, the
 // roles a group holds, and the log of every administrative change.
@@ -18,14 +19,15 @@ import { RolesTab } from './access/roles'
 type Tab = { id: string; label: Key; permissions: string[] }
 
 const TABS: Tab[] = [
-  { id: 'people', label: 'access.people.tab', permissions: ['user:manage', 'group:manage'] },
+  { id: 'users', label: 'access.users.tab', permissions: ['user:manage', 'group:manage'] },
+  { id: 'groups', label: 'access.groups.tab', permissions: ['user:manage', 'group:manage'] },
   { id: 'roles', label: 'server.tabRoles', permissions: ['role:manage', 'group:manage'] },
   { id: 'audit', label: 'server.tabAudit', permissions: ['audit:read'] },
 ]
 
-// Where the two tabs that became one used to be, so a link to either still
+// Where the one tab that became two used to be, so a link to it still
 // arrives somewhere.
-const MOVED: Record<string, string> = { users: 'people', groups: 'people' }
+const MOVED: Record<string, string> = { people: 'users' }
 
 export function AccessPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
@@ -49,7 +51,8 @@ export function AccessPage() {
     <>
       <Tabs items={permitted} active={tab} onSelect={(id) => navigate(`/access/${id}`)} />
 
-      {tab === 'people' && <PeopleTab />}
+      {tab === 'users' && <UsersTab />}
+      {tab === 'groups' && <GroupsTab />}
       {tab === 'roles' && <RolesTab />}
       {tab === 'audit' && <AuditTab />}
     </>
