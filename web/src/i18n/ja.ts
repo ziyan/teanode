@@ -1121,6 +1121,8 @@ export const ja: Catalog = {
   'mailbox.loadMore': 'さらに表示',
   'mailbox.count': '{total} 件中 {shown} 件',
   'mailbox.threadCount': 'メッセージ {count} 件',
+  'mailbox.closeReply': '閉じる',
+  'mailbox.threadTruncated': 'このスレッドは新しい {count} 件のみ表示しています。',
   'mailbox.selected': '{count} 件選択中',
   'mailbox.none': 'メールボックスはまだありません',
   'mailbox.noneHint': 'メールを読める権限のあるアカウントにはメールボックスが作成されます。このサーバーの管理者にグループの確認を依頼してください。',

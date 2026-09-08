@@ -449,7 +449,17 @@ type MailboxThreadView struct {
 
 	// Items are its messages, newest first, each with the folder it is in.
 	Items []*MailboxThreadItem `json:"items"`
+
+	// Truncated says the conversation has more messages than were returned,
+	// so that a reader showing it can say so rather than quietly leaving
+	// the oldest out.
+	Truncated bool `json:"truncated"`
 }
+
+// threadLimit is how many messages of one conversation are returned. Long
+// enough that no ordinary conversation reaches it, and bounded because the
+// whole of it is rendered at once.
+const threadLimit = 200
 
 // MailboxThreadItem is one message of a conversation, and where it is filed.
 type MailboxThreadItem struct {
@@ -491,7 +501,16 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 		threadId = mails[0].ID
 	}
 
-	found, err := tx.ListItems("", &db.ItemOptions{MailboxID: mailbox.ID, ThreadID: threadId, Limit: 200})
+	// By when each message was written, not by when its item was filed:
+	// moving a message to another folder makes a new item with a new
+	// added_at, and a conversation ordered that way puts whatever was last
+	// archived at the top of it.
+	found, err := tx.ListItems("", &db.ItemOptions{
+		MailboxID:  mailbox.ID,
+		ThreadID:   threadId,
+		ByReceived: true,
+		Limit:      threadLimit,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -538,12 +557,22 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 		view.Items = append(view.Items, entry)
 	}
 
-	// The subject of the message that started it, which is the one the
-	// answers all carry with a Re: in front.
-	oldest := found[len(found)-1]
-	if oldest.Mail != nil {
-		view.Subject = threadSubject(oldest.Mail.Subject)
+	// The subject of the message that started the conversation, which is the
+	// one the answers all carry with a Re: in front. Its id is the
+	// conversation's id, so it is found by name rather than by position —
+	// a very long conversation returns only its newest messages, and the
+	// oldest of those is somebody's reply.
+	named := view.Items[len(view.Items)-1]
+	for _, entry := range view.Items {
+		if entry.Item.MailID == threadId {
+			named = entry
+			break
+		}
 	}
+	if named.Item.Mail != nil {
+		view.Subject = threadSubject(named.Item.Mail.Subject)
+	}
+	view.Truncated = len(found) >= threadLimit
 	return view, nil
 }
 

@@ -63,6 +63,11 @@ type MailboxOperation interface {
 	// says who may read it.
 	ListItemsByMail(mailId string) ([]*models.MailboxItem, error)
 
+	// MailIsInMailbox says whether a message is already filed in a mailbox,
+	// anywhere but its Sent and Drafts folders. Asked on every delivery, so
+	// it is one existence query rather than a list of everything.
+	MailIsInMailbox(mailId, mailboxId string) (bool, error)
+
 	// ListExpunged is what vanished from a folder since a modseq.
 	ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error)
 
@@ -138,6 +143,13 @@ type ItemOptions struct {
 	// Ascending lists oldest first, which is UID order; the default is
 	// newest first, which is what a list shows.
 	Ascending bool
+
+	// ByReceived orders by when the message was written rather than by when
+	// the item was added to its folder. A conversation is read in the order
+	// it was said, and moving a message to another folder makes a new item
+	// with a new added_at — so without this, archiving the first message of
+	// a conversation moves it to the top of it.
+	ByReceived bool
 }
 
 type mailboxModel struct {
@@ -899,6 +911,13 @@ func needsMailJoin(options *ItemOptions) bool {
 // was added, since a UID from another folder is a different number line.
 func itemOrder(folderId string, options *ItemOptions, table string) string {
 	switch {
+	case options != nil && options.ByReceived:
+		// The message's own time, which is the same whichever folder its
+		// item happens to be in and whenever it was put there.
+		if options.Ascending {
+			return `"mail"."received_at" ASC, "` + table + `"."id" ASC`
+		}
+		return `"mail"."received_at" DESC, "` + table + `"."id" DESC`
 	case folderId == "" && options != nil && options.MailboxID != "":
 		return `"` + table + `"."added_at" DESC, "` + table + `"."id" DESC`
 	case options != nil && options.Ascending:
@@ -1234,6 +1253,21 @@ func (self *transaction) markUnreferenced(mailIds []string) error {
 		return nil
 	}
 	return self.tx.Exec(`UPDATE "mail" SET "unreferenced_at" = now() WHERE "id" IN ? AND "unreferenced_at" IS NULL AND NOT EXISTS (SELECT 1 FROM "mailbox_item" WHERE "mailbox_item"."mail_id" = "mail"."id")`, mailIds).Error
+}
+
+// MailIsInMailbox answers "has this mailbox already got this message" for
+// the delivery path, where two aliases of a domain can point at one mailbox.
+//
+// Sent and Drafts do not count. A message you address to yourself is in your
+// Sent folder before it is delivered, and it should still arrive.
+func (self *transaction) MailIsInMailbox(mailId, mailboxId string) (bool, error) {
+	var count int64
+	err := self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Where("\"mailbox_item\".\"mail_id\" = ? AND \"mailbox_folder\".\"mailbox_id\" = ? AND \"mailbox_folder\".\"kind\" NOT IN ?",
+			mailId, mailboxId, []string{string(models.MailboxFolderKindSent), string(models.MailboxFolderKindDrafts)}).
+		Limit(1).Count(&count).Error
+	return count > 0, err
 }
 
 func (self *transaction) ListItemsByMail(mailId string) ([]*models.MailboxItem, error) {

@@ -86,6 +86,17 @@ Notable changes to TeaNode. The format follows
   that arrived from outside had one; a message you sent, a draft, and a
   message a mail program appended over IMAP were all stored with no
   conversation, so a reply stood apart from what it answered.
+- Archiving or deleting a conversation from Starred, or from a search across
+  the mailbox, acted on every message of it wherever it was filed — including
+  your own replies in Sent and an unsent draft. From a list that is not a
+  folder, the row now stands for the message it shows.
+- Opening a conversation from the Inbox no longer marks read the messages of
+  it that are sitting in Junk or another folder.
+- Marking a whole conversation unread left it looking read, because the two
+  halves of the toggle were swapped.
+- A conversation is ordered by when each message was written rather than by
+  when its item was filed, so archiving the first message of a conversation
+  no longer moves it to the top and renames the conversation after a reply.
 - The IMAP settings — the host and ports a mail program is told to connect to
   for reading mail — were not among the sections written to the database, so
   they reset to the ports the process happens to bind every time the server

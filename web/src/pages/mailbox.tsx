@@ -58,7 +58,7 @@ const THREADS = `
 const THREAD = `
   query ($itemId: String!) {
     GetMailboxThread(itemId: $itemId) {
-      threadId subject
+      threadId subject truncated
       items {
         folderId folderName folderKind
         item {
@@ -308,6 +308,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       }),
     )
   const remove = (itemIds: string[]) => {
+    let gone = 0
     setThreads((previous) =>
       previous
         .map((thread) => {
@@ -319,13 +320,14 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             // The message the row showed is gone. Rather than guess which of
             // the rest to show, the row goes and the next load brings it back
             // if the conversation still has messages here.
+            gone += 1
             return null
           }
           return { ...thread, itemIds: left, count: Math.max(1, thread.count - (thread.itemIds.length - left.length)) }
         })
         .filter((thread): thread is MailboxThread => thread !== null),
     )
-    setTotal((previous) => Math.max(0, previous - 1))
+    setTotal((previous) => Math.max(0, previous - gone))
     setSelected((previous) => {
       const next = new Set(previous)
       itemIds.forEach((id) => next.delete(id))
@@ -377,8 +379,15 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
 
   // A chosen conversation is all of its messages in this folder: starring,
   // moving or deleting one means the conversation, which is what the row is.
+  //
+  // Except where the list is not a folder. Starred and a search across the
+  // mailbox gather a conversation's messages from everywhere it has any —
+  // Sent, Drafts, Trash — and acting on all of those from a starred row
+  // would archive your own replies and delete an unsent draft. There the row
+  // stands for the message it shows, which is what it stood for before
+  // conversations existed.
   const chosen = threads.filter((thread) => selected.has(thread.threadId))
-  const chosenIds = chosen.flatMap((thread) => thread.itemIds)
+  const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
@@ -624,7 +633,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                     : `/mailbox/${folder.id}/${thread.item.id}`,
                 )
               }
-              onFlag={(on) => setFlags(thread.itemIds, { flagged: on })}
+              onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
             />
           ))}
           {!loading && threads.length === 0 && (
@@ -831,14 +840,18 @@ function Reader({
   // anything unread, and the one that was clicked — and then it is the
   // reader's, so opening and closing sticks while they are on the page.
   const [open, setOpen] = useState<Set<string> | null>(null)
-  // What has been marked read here, so that the answer does not flicker back
-  // when the query refreshes.
-  const [read, setRead] = useState<Set<string>>(() => new Set())
+  // What has been marked read or unread here, so that neither flickers back
+  // to what the query returned. Absent means "as it arrived".
+  const [marks, setMarks] = useState<Record<string, boolean>>({})
   const [flags, setFlagState] = useState<Record<string, boolean>>({})
   // What is being written, if anything: which message it answers and how.
   // Above the newest message rather than below the whole conversation,
   // because that is where the answer will be once it is sent.
   const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward'; itemId: string } | null>(null)
+  // The draft what is being written has been saved as. Closing the composer
+  // saves what was typed, so reopening it — Reply, then Reply to all — has to
+  // continue that draft rather than start a second one of the same reply.
+  const [draftId, setDraftId] = useState<string | null>(null)
 
   const view = thread.data?.GetMailboxThread
   const entries = view?.items ?? []
@@ -859,12 +872,19 @@ function Reader({
     setOpen(wanted)
     // Opening a conversation reads what it opens. Once: the reader can mark
     // one unread again afterwards and it stays that way.
-    const unread = view.items
-      .filter((entry) => wanted.has(entry.item.id) && !entry.item.seen)
+    //
+    // Only what is in the folder being read, or the message that was asked
+    // for. Opening a conversation from the Inbox should not clear the unread
+    // mark on a message of it sitting in Junk.
+    const opening = view.items
+      .filter(
+        (entry) =>
+          wanted.has(entry.item.id) && !entry.item.seen && (entry.folderId === folder.id || entry.item.id === itemId),
+      )
       .map((entry) => entry.item.id)
-    if (unread.length > 0) {
-      setRead((previous) => new Set([...previous, ...unread]))
-      onSeen(unread, true)
+    if (opening.length > 0) {
+      setMarks((previous) => ({ ...previous, ...Object.fromEntries(opening.map((id) => [id, true])) }))
+      onSeen(opening, true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
@@ -881,15 +901,16 @@ function Reader({
 
   const newest = entries[0]
   const opened = open ?? new Set([newest.item.id])
-  const itemIds = entries.map((entry) => entry.item.id)
   // What the actions act on: the conversation's messages in the folder being
   // read, since that is the row the reader came from. A message of it that
   // lives in Sent is not archived by archiving the conversation.
-  const here = entries
-    .filter((entry) => entry.folderId === folder.id || folder.id === STARRED)
-    .map((entry) => entry.item.id)
-  const acting = here.length > 0 ? here : [newest.item.id]
-  const anyUnread = entries.some((entry) => !entry.item.seen && !read.has(entry.item.id))
+  const here = entries.filter((entry) => entry.folderId === folder.id).map((entry) => entry.item.id)
+  // Read from Starred or from a search, there is no folder to scope to, so
+  // the actions act on the message that was opened — not on every message of
+  // the conversation wherever it happens to be filed.
+  const acting = here.length > 0 ? here : [itemId]
+  const seenOf = (entry: MailboxThreadItem) => marks[entry.item.id] ?? entry.item.seen
+  const anyUnread = entries.some((entry) => !seenOf(entry))
   const anyFlagged = entries.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
   const inTrash = folder.kind === 'trash'
   const toggle = (id: string) =>
@@ -919,17 +940,30 @@ function Reader({
           </button>
         ) : (
           <>
+            {/* One answer at a time. Swapping a half-written reply for a
+                forward would either throw away what was typed or leave a
+                second draft of it behind, and neither is what the click
+                meant: close it, and the draft is kept. */}
             <button
               type="button"
               className="primary"
+              disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
             >
               {t('mailbox.reply')}
             </button>
-            <button type="button" onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}>
+            <button
+              type="button"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
+            >
               {t('mailbox.replyAll')}
             </button>
-            <button type="button" onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}>
+            <button
+              type="button"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
+            >
               {t('mailbox.forward')}
             </button>
           </>
@@ -938,13 +972,11 @@ function Reader({
           type="button"
           disabled={busy}
           onClick={() => {
-            const next = !anyUnread
-            setRead((previous) => {
-              const marked = new Set(previous)
-              itemIds.forEach((id) => (next ? marked.add(id) : marked.delete(id)))
-              return marked
-            })
-            onSeen(itemIds, !next ? true : false)
+            // Anything unread and the button says "Mark read", so that is
+            // what it does; everything read and it marks unread.
+            const seen = anyUnread
+            setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
+            onSeen(acting, seen)
           }}
         >
           {anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
@@ -954,11 +986,9 @@ function Reader({
           disabled={busy}
           onClick={() => {
             const next = !anyFlagged
-            setFlagState((previous) => {
-              const marked = { ...previous }
-              itemIds.forEach((id) => (marked[id] = next))
-              return marked
-            })
+            // The same messages the server is told about, so the star does
+            // not show the answer to a question that was never asked.
+            setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
             onFlag(acting, next)
           }}
         >
@@ -990,22 +1020,41 @@ function Reader({
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>
         {entries.length > 1 && (
-          <p className="muted mailbox-thread-count">{t('mailbox.threadCount', { count: entries.length })}</p>
+          <p className="muted mailbox-thread-count">
+            {t('mailbox.threadCount', { count: entries.length })}
+            {/* A conversation longer than the server returns is shown from
+                its newest end; saying so is the difference between a long
+                conversation and a conversation that lost its beginning. */}
+            {view.truncated ? ` · ${t('mailbox.threadTruncated', { count: entries.length })}` : ''}
+          </p>
         )}
       </div>
 
       {writing && (
         <div className="mailbox-thread-compose">
+          <div className="page-actions page-actions-end">
+            {/* Closing is not discarding: what was typed is saved as a draft
+                on the way out, and picking Reply again continues it. */}
+            <button type="button" onClick={() => setWriting(null)}>
+              {t('mailbox.closeReply')}
+            </button>
+          </div>
           <MailboxComposer
             key={`${writing.kind}-${writing.itemId}`}
             replyTo={writing.kind === 'forward' ? null : writing.itemId}
             replyAll={writing.kind === 'replyAll'}
             forwardOf={writing.kind === 'forward' ? writing.itemId : null}
+            draftOf={draftId}
+            onDraft={setDraftId}
             onSent={() => {
               setWriting(null)
+              setDraftId(null)
               void thread.reload()
             }}
-            onCancel={() => setWriting(null)}
+            onCancel={() => {
+              setWriting(null)
+              setDraftId(null)
+            }}
           />
         </div>
       )}
@@ -1016,13 +1065,13 @@ function Reader({
             key={entry.item.id}
             entry={entry}
             folderId={folder.id}
-            seen={entry.item.seen || read.has(entry.item.id)}
+            seen={seenOf(entry)}
             open={opened.has(entry.item.id)}
             onToggle={() => {
               const opening = !opened.has(entry.item.id)
               toggle(entry.item.id)
-              if (opening && !entry.item.seen && !read.has(entry.item.id)) {
-                setRead((previous) => new Set([...previous, entry.item.id]))
+              if (opening && !seenOf(entry)) {
+                setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
                 onSeen([entry.item.id], true)
               }
             }}

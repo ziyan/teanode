@@ -151,6 +151,7 @@ export function MailboxComposer({
   initialTo = '',
   onSent,
   onCancel,
+  onDraft,
 }: {
   replyTo?: string | null
   replyAll?: boolean
@@ -162,6 +163,13 @@ export function MailboxComposer({
   onSent?: () => void
   // Offered as a way out when there is somewhere to go back to.
   onCancel?: () => void
+  // Told the id of the draft this has been saved as, each time it is saved.
+  //
+  // A conversation that closes and reopens the composer — Reply, then Reply
+  // to all — unmounts it, and the unmount saves what was typed. Without this
+  // the new composer would know nothing of that draft and its first save
+  // would write a second one, leaving two drafts of the same reply.
+  onDraft?: (itemId: string) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -430,6 +438,9 @@ export function MailboxComposer({
       const draftId = response.SaveMailboxDraft.id
       setDraftItemId(draftId)
       latestDraftId.current = draftId
+      if (onDraft) {
+        onDraft(draftId)
+      }
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
       setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
       setCarried([])

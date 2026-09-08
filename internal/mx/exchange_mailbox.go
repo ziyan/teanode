@@ -57,29 +57,16 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	// matches both for that address, and delivering twice puts the message in
 	// the Inbox twice — which is what a person sees, and which no
 	// configuration of aliases should be able to cause.
-	existing, err := tx.ListItemsByMail(mail.ID)
+	//
+	// One existence query, because this is the SMTP path: every message
+	// delivered anywhere asks it.
+	already, err := tx.MailIsInMailbox(mail.ID, mailbox.ID)
 	if err != nil {
 		return nil, err
 	}
-	folders, err := tx.ListFolders(mailbox.ID)
-	if err != nil {
-		return nil, err
-	}
-	// Sent and Drafts do not count. A message addressed to yourself is in
-	// Sent already, and it should still arrive in the Inbox — that is the
-	// whole of what sending yourself a note means.
-	here := make(map[string]bool, len(folders))
-	for _, folder := range folders {
-		if folder.Kind == models.MailboxFolderKindSent || folder.Kind == models.MailboxFolderKindDrafts {
-			continue
-		}
-		here[folder.ID] = true
-	}
-	for _, item := range existing {
-		if here[item.FolderID] {
-			log.Debugf("message %q is already in mailbox %q, not delivering it again", mail.ID, mailbox.ID)
-			return nil, nil
-		}
+	if already {
+		log.Noticef("message %q is already in mailbox %q, not delivering it again", mail.ID, mailbox.ID)
+		return nil, nil
 	}
 
 	item, err := tx.AddItem(target.ID, mail.ID, models.MailboxItemFlags{})

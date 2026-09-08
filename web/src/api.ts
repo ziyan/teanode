@@ -649,4 +649,5 @@ export interface MailboxThreadView {
   threadId: string
   subject: string
   items: MailboxThreadItem[]
+  truncated: boolean
 }

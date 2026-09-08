@@ -1132,6 +1132,8 @@ export const en = {
   'mailbox.loadMore': 'Show more',
   'mailbox.count': '{shown} of {total}',
   'mailbox.threadCount': '{count} messages',
+  'mailbox.closeReply': 'Close',
+  'mailbox.threadTruncated': 'Only the newest {count} messages of this conversation are shown.',
   'mailbox.selected': '{count} selected',
   'mailbox.none': 'No mailbox yet',
   'mailbox.noneHint': 'A mailbox is created for every account that may read mail. Ask whoever manages this server to check your groups.',
