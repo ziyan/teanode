@@ -58,10 +58,20 @@ and the sender appears as a row with a working unsubscribe button.
       `0025_mailbox_subscription`, and `ListMailboxSubscriptions` /
       `GetMailboxSubscription` on the graph. Answered over the dev server with
       three lists, their counts and their unsubscribe addresses.
-- [ ] Milestone 4 — the Subscriptions page, and reading one like a conversation.
-- [ ] Milestone 5 — unsubscribing, all three ways.
-- [ ] Milestone 6 — the unsubscribe button on a message.
+- [x] (2026-09-08 20:10Z) Milestone 4 — the Subscriptions page, and reading
+      one like a conversation. `web/src/pages/mailboxSubscriptions.tsx`, the
+      route, the rail entry, and `ReadMailboxSubscription` returning the same
+      view a conversation does so `ThreadMessage` renders both.
+- [x] (2026-09-08 20:25Z) Milestone 5 — unsubscribing, all three ways.
+      `internal/util/safefetch` extracted from the image proxy first, then
+      `UnsubscribeMailboxSubscription`. Proved end to end on the dev server:
+      the POST left the machine and the row read "Asking to leave failed: the
+      sender answered 404 Not Found".
+- [x] (2026-09-08 20:35Z) Milestone 6 — the unsubscribe button on a
+      message. In the conversation's toolbar, only when the message named a
+      list, behind a confirmation that says what will be sent.
 - [ ] Milestone 7 — documentation, changelog, and the deployment check.
+- [ ] Milestone 8 — the sender's logo, from BIMI.
 
 ## Surprises & Discoveries
 
@@ -136,6 +146,15 @@ and the sender appears as a row with a working unsubscribe button.
   RFC 8058's one-click POST is specified for the mail system to perform. It
   also means the request is subject to the same SSRF guards as every other
   outbound fetch.
+  Date/Author: 2026-09-08, this plan.
+
+- Decision: BIMI logos are shown only for mail that passed DMARC, and no claim
+  of verification is made.
+  Rationale: the logo is a brand mark, and showing one for mail that did not
+  prove it came from that domain is a phishing aid rather than a feature.
+  Verifying the certificate in `a=` — a Verified Mark Certificate — needs a
+  trust list and certificate parsing that this milestone does not do, so the
+  interface must not use the word "verified".
   Date/Author: 2026-09-08, this plan.
 
 - Decision: mail in Trash and in Junk is not counted as a subscription.
@@ -623,6 +642,82 @@ the development server the way the other work in this repository is deployed:
 docker load`, then `docker compose up -d --force-recreate teanode` in
 `/opt/teanode`. Watch the log line that names the version and confirm the
 migrations applied.
+
+### Milestone 8 — the sender's logo, from BIMI
+
+At the end of this milestone a subscription row, and the line naming who a
+message is from, carries the sender's logo where the sender publishes one, and
+a coloured monogram of the sender's initial where they do not.
+
+**What BIMI is, in plain language.** Brand Indicators for Message
+Identification is a way for a sending domain to publish a logo in DNS so that
+a mail program can show it beside the messages that domain sends. The domain
+publishes a TXT record at `default._bimi.<domain>` that looks like:
+
+    v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem
+
+`l=` is the logo, `a=` is a certificate that vouches for it, and either may be
+empty. A message may name a different selector than `default` by carrying a
+header:
+
+    BIMI-Selector: v=BIMI1; s=winter
+
+in which case the record to read is `winter._bimi.<domain>`.
+
+**Why it is safe to show, and when.** The whole point of BIMI is that the logo
+is only shown for mail that provably came from that domain. The condition is
+that the message passed DMARC — which this server already evaluates and stores
+in `mail.authentication_results` — and, in the specification, that the domain's
+DMARC policy is enforcing (`p=quarantine` or `p=reject`) rather than `p=none`.
+Without that condition a logo is worse than no logo: anybody could publish a
+BIMI record on a lookalike domain and borrow a bank's mark. So the rule here
+is: show a logo only when DMARC passed and was aligned, and never otherwise.
+
+The `a=` certificate is a Verified Mark Certificate, which is a certificate
+issued after somebody checked that the sender owns the trademark. Verifying one
+properly means validating a chain against a list of issuers and pulling the
+logo out of an extension inside the certificate. That is a substantial piece of
+work and this milestone does not do it: the logo from `l=` is shown when DMARC
+passed, and whether a certificate vouched for it is not claimed anywhere in the
+interface. Say so in the changelog, because "verified" is the word BIMI's
+marketing uses and this will not have earned it.
+
+**What the logo file is.** SVG Tiny Portable/Secure: a restricted SVG with no
+scripts, no external references, no animation and no embedded raster images.
+Restricted precisely because it is going to be rendered inside a mail program.
+Nothing enforces that but the sender's word, so it is treated here as hostile
+markup either way.
+
+**How to show it without leaking the reader.** Fetching the logo from the
+sender's server when a message is opened tells the sender that this address
+read this message at this moment — which is what the remote image proxy in
+`internal/api/v1api/apimail/remote.go` exists to prevent. The logo is therefore
+fetched by the server, through `internal/util/safefetch`, and cached; the
+dashboard only ever asks this server for it. And it is served with a content
+type of `image/svg+xml` from a URL the page loads as an `<img>` source, never
+inlined into the page's own document: an `<img>` cannot run script from its
+source, where an inlined `<svg>` element can.
+
+**The work.** Add a resolver call beside the DMARC one in
+`internal/dns/record_set.go` that reads the BIMI record for a domain and
+selector. Add a small cache — a table `bimi_logo` keyed by domain and selector,
+holding the fetched bytes, the content type, when it was fetched and when it
+last failed — because a newsletter from one sender is fifty rows in a list and
+fifty lookups otherwise. Fetch at most once a day per domain, and never on the
+path of rendering a page: a row with no logo yet shows the monogram and the
+logo appears on the next visit.
+
+Add an endpoint on the mail API, beside the image proxy, that serves the
+cached bytes for a domain. In the dashboard add a `SenderLogo` component that
+shows the image when there is one and a monogram otherwise — the first letter
+of the sender's name on a colour derived from the address, which is what the
+account button in the rail already does and should be shared with it.
+
+Acceptance: a subscription from a domain that publishes BIMI shows its logo; a
+subscription from one that does not shows a monogram; the network tab shows
+requests only to this server. Prove the DMARC condition by sending a message
+that fails DMARC from a domain that does publish a record, and observing the
+monogram.
 
 ## Validation
 

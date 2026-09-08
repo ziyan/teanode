@@ -46,6 +46,9 @@ type MailboxQuery interface {
 }
 
 type MailboxMutation interface {
+	// Ask a mailing list to stop writing, the way that list said to ask
+	UnsubscribeMailboxSubscription(ctx context.Context, arguments UnsubscribeMailboxSubscriptionArguments) (*models.MailboxSubscription, error)
+
 	// Run the stored rules over the mail already in a folder, as arrival would have, except that nothing is forwarded
 	ApplyMailboxRules(ctx context.Context, arguments ApplyMailboxRulesArguments) (*MailboxRuleApplication, error)
 

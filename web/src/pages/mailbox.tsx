@@ -6,6 +6,7 @@ import {
   MailboxFolder,
   MailboxItem,
   MailboxThread,
+  Mail,
   MailboxThreadItem,
   MailboxThreadPage,
   MailboxThreadView,
@@ -16,6 +17,7 @@ import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../co
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  CloseIcon,
   FlagIcon,
   ForwardIcon,
   JunkIcon,
@@ -83,11 +85,17 @@ const THREAD = `
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
+            listKey listName listOneClick
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
       }
     }
+  }`
+
+const UNSUBSCRIBE = `
+  mutation ($mailboxId: String!, $key: String!) {
+    UnsubscribeMailboxSubscription(mailboxId: $mailboxId, key: $key) { key failed error }
   }`
 
 const CONTENT = `
@@ -995,6 +1003,11 @@ function Reader({
   // saves what was typed, so reopening it — Reply, then Reply to all — has to
   // continue that draft rather than start a second one of the same reply.
   const [draftId, setDraftId] = useState<string | null>(null)
+  // The list this conversation came from, while its way out is being asked
+  // about: leaving one is asked before it is done, because it tells the
+  // sender a person reads this address and cannot be taken back.
+  const [leaving, setLeaving] = useState<Mail | null>(null)
+  const [leaveFailed, setLeaveFailed] = useState<string | null>(null)
 
   const view = thread.data?.GetMailboxThread
   const entries = view?.items ?? []
@@ -1151,6 +1164,17 @@ function Reader({
           disabled={busy}
           onClick={() => onJunk(acting, folder.kind === 'junk')}
         />
+        {/* A newsletter says how to leave it in its headers, so the way out
+            is here rather than in the small print at the bottom of the
+            message. Only when the message named one. */}
+        {newest.item.mail?.listKey && (
+          <IconAction
+            label={t('subscriptions.leave')}
+            icon={<CloseIcon size={16} />}
+            disabled={busy}
+            onClick={() => setLeaving(newest.item.mail ?? null)}
+          />
+        )}
         <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
         <IconAction
           label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
@@ -1160,6 +1184,33 @@ function Reader({
           onClick={() => onDelete(acting)}
         />
       </div>
+
+      {leaving && (
+        <ConfirmDialog
+          title={t('subscriptions.leaveTitle', { name: leaving.listName || leaving.from || '' })}
+          body={t(`subscriptions.leaveBody.${leaving.listOneClick ? 'oneClick' : 'mail'}`)}
+          confirmLabel={t('subscriptions.leave')}
+          busy={busy}
+          error={leaveFailed}
+          onConfirm={async () => {
+            const key = leaving.listKey
+            if (!key) {
+              return
+            }
+            setLeaveFailed(null)
+            try {
+              await graphql(UNSUBSCRIBE, { mailboxId: folder.mailboxId, key })
+              setLeaving(null)
+            } catch (caught) {
+              setLeaveFailed(caught instanceof Error ? caught.message : t('domain.failed'))
+            }
+          }}
+          onClose={() => {
+            setLeaving(null)
+            setLeaveFailed(null)
+          }}
+        />
+      )}
 
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>
@@ -1239,7 +1290,9 @@ function Reader({
 // ThreadMessage is one message of a conversation: a line when it is closed,
 // the message itself when it is open. Its body is fetched only once it is
 // opened, so a conversation of twenty costs one request rather than twenty.
-function ThreadMessage({
+// Exported so that a mailing list is read the way a conversation is: the same
+// component, the same collapsed line for what has been read, the same menu.
+export function ThreadMessage({
   entry,
   folderId,
   seen,

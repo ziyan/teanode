@@ -2,12 +2,18 @@ package apigraph
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 
-	"github.com/ziyan/teanode/internal/db"
-
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // Subscriptions: the mailing lists a mailbox receives, and leaving them.
@@ -140,4 +146,158 @@ func (self *graph) GetMailboxSubscription(ctx context.Context,
 		return nil, api.ErrNotFound
 	}
 	return subscription, nil
+}
+
+type UnsubscribeMailboxSubscriptionArguments struct {
+	// MailboxID of the mailbox the list writes to
+	MailboxID string `json:"mailboxId"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it
+	Key string `json:"key"`
+}
+
+// UnsubscribeMailboxSubscription asks a sender to stop, the way that sender
+// said to ask.
+//
+// Three ways, in the order they are worth trying. A sender that promised
+// RFC 8058 gets one POST, made here rather than by the browser: a request from
+// the browser hands the sender the reader's address and the fact that this
+// message was open at this moment, which is what the image proxy exists to
+// prevent. A sender that named an address gets a message from this mailbox. A
+// sender that offers only a page is handed back for a person to open, because
+// a page that wants a human cannot be pressed by a server.
+//
+// Nothing here happens on its own. An unsubscribe request tells the sender
+// that a person reads this address, which is a thing to hand over on purpose.
+func (self *graph) UnsubscribeMailboxSubscription(ctx context.Context,
+	arguments UnsubscribeMailboxSubscriptionArguments) (*models.MailboxSubscription, error) {
+	// Sending is what this does, whichever of the three it turns out to be —
+	// a POST to a stranger is no less outward than an email.
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	subscription, err := tx.GetSubscription(mailbox.ID, arguments.Key)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil {
+		return nil, api.ErrNotFound
+	}
+
+	info := mailparse.ListInfo{Unsubscribe: subscription.Unsubscribe, OneClick: subscription.OneClick}
+	method, failure := self.leaveList(ctx, mailbox, subscription, info)
+	reason := ""
+	if failure != nil {
+		reason = failure.Error()
+	}
+	if err := tx.RecordUnsubscribe(mailbox.ID, subscription.Key, method, failure != nil, reason); err != nil {
+		return nil, err
+	}
+	log.Noticef("%s asked to leave the list %q by %s", operatorName(ctx), subscription.Key, method)
+
+	return tx.GetSubscription(mailbox.ID, subscription.Key)
+}
+
+// leaveList does the asking and says how it was asked and what went wrong.
+// A failure is recorded rather than returned as an error: "we tried and the
+// sender answered 500" is something the row should say, and something a
+// second attempt should be offered for.
+func (self *graph) leaveList(ctx context.Context, mailbox *models.Mailbox,
+	subscription *models.MailboxSubscription, info mailparse.ListInfo) (string, error) {
+	if address := info.HTTPSUnsubscribe(); address != "" && info.OneClick {
+		return models.UnsubscribeOneClick, postOneClick(ctx, address)
+	}
+	if address := info.MailUnsubscribe(); address != "" {
+		return models.UnsubscribeMail, self.mailUnsubscribe(ctx, mailbox, address)
+	}
+	if info.WebUnsubscribe() != "" {
+		// Recorded, not done: the page is opened by the person who asked.
+		return models.UnsubscribeLink, nil
+	}
+	return models.UnsubscribeLink, fmt.Errorf("%w: this list named no way to leave it", api.ErrInvalidArguments)
+}
+
+// postOneClick is the request RFC 8058 describes: a POST carrying exactly
+// List-Unsubscribe=One-Click, with no credentials and nothing else to it.
+func postOneClick(ctx context.Context, address string) error {
+	target, err := safefetch.ParseTarget(address)
+	if err != nil {
+		return err
+	}
+	if target.Scheme != "https" {
+		return errors.New("one-click unsubscribe is only followed over https")
+	}
+	timed, cancel := context.WithTimeout(ctx, safefetch.Timeout)
+	defer cancel()
+
+	body := strings.NewReader("List-Unsubscribe=One-Click")
+	request, err := http.NewRequestWithContext(timed, http.MethodPost, target.String(), body)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := safefetch.Client().Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Debugf("failed to close the unsubscribe response: %s", err)
+		}
+	}()
+	// Read a little and discard it: the answer is the status, and a sender
+	// that replies with a gigabyte should not be able to spend this server's
+	// memory saying nothing.
+	_, _ = io.CopyN(io.Discard, response.Body, 64<<10)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("the sender answered %s", response.Status)
+	}
+	return nil
+}
+
+// mailUnsubscribe writes to the address the sender named, from this mailbox,
+// with the subject and body the address asked for.
+func (self *graph) mailUnsubscribe(ctx context.Context, mailbox *models.Mailbox, address string) error {
+	target, err := url.Parse(address)
+	if err != nil {
+		return err
+	}
+	to := strings.TrimSpace(target.Opaque)
+	if to == "" {
+		to = strings.TrimSpace(target.Path)
+	}
+	if to == "" {
+		return errors.New("the address to leave by is empty")
+	}
+	query := target.Query()
+	subject := strings.TrimSpace(query.Get("subject"))
+	if subject == "" {
+		// What senders that read these look for, and harmless to one that
+		// only reads the address.
+		subject = "unsubscribe"
+	}
+	text := strings.TrimSpace(query.Get("body"))
+	if text == "" {
+		text = "unsubscribe"
+	}
+	from := ""
+	if len(mailbox.Addresses) > 0 {
+		from = mailbox.Addresses[0].Address
+	}
+	if from == "" {
+		return errors.New("this mailbox has no address to write from")
+	}
+
+	_, err = self.SendMailboxMessage(ctx, SendMailboxMessageArguments{
+		MailboxID: mailbox.ID,
+		Message: MailboxMessageParameters{
+			From:        from,
+			To:          []string{to},
+			Subject:     subject,
+			TextContent: text,
+		},
+	})
+	return err
 }

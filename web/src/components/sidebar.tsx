@@ -18,6 +18,7 @@ import {
   SetupIcon,
   ShieldIcon,
   TerminalIcon,
+  ListIcon,
   UserIcon,
 } from './icons'
 import { Logo } from './logo'
@@ -334,6 +335,12 @@ export function Sidebar({
                   <UserIcon />
                 </span>
                 <span className="sidebar-label">{t('nav.contacts')}</span>
+              </NavLink>
+              <NavLink to="/mailbox/subscriptions" title={collapsed ? t('nav.subscriptions') : undefined}>
+                <span className="sidebar-icon">
+                  <ListIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.subscriptions')}</span>
               </NavLink>
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
                 <span className="sidebar-icon">

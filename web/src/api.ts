@@ -292,6 +292,11 @@ export interface Mail {
   from?: string
   fromName?: string
   subject?: string
+  // The mailing list this message came from, when it named one: what the
+  // subscriptions page groups by, and what the button that leaves it needs.
+  listKey?: string
+  listName?: string
+  listOneClick?: boolean
   recipients?: string[]
   status?: string
   kind?: string

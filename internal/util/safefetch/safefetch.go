@@ -1,16 +1,5 @@
-package safefetch
-
-import (
-	"errors"
-	"net"
-	"net/http"
-	"net/url"
-	"syscall"
-	"time"
-)
-
-// Fetching something a stranger named.
-
+// Package safefetch fetches something a stranger named, without letting them
+// choose where this server connects to.
 //
 // A URL out of a message is written by whoever sent the message, and this
 // server sits inside a network that person cannot reach. Server-side request
@@ -26,6 +15,16 @@ import (
 //
 // Used by the remote image proxy and by the one-click unsubscribe request:
 // both take an address out of somebody else's mail and go to it.
+package safefetch
+
+import (
+	"errors"
+	"net"
+	"net/http"
+	"net/url"
+	"syscall"
+	"time"
+)
 
 const (
 	// A fetch that has not answered by now is not going to.

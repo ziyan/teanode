@@ -8,6 +8,7 @@ import { MailDetailPage } from './pages/mailDetail'
 import { MailboxPage } from './pages/mailbox'
 import { MailboxSettingsPage } from './pages/mailboxSettings'
 import { MailboxContactsPage } from './pages/mailboxContacts'
+import { MailboxSubscriptionsPage } from './pages/mailboxSubscriptions'
 import { MailboxComposePage } from './pages/mailboxCompose'
 import { QueuePage } from './pages/queue'
 import { ReportsPage } from './pages/reports'
@@ -184,6 +185,7 @@ export function App() {
                   <Route path="/mailbox" element={<MailboxPage />} />
                   <Route path="/mailbox/compose" element={<MailboxComposePage />} />
                   <Route path="/mailbox/contacts" element={<MailboxContactsPage />} />
+                  <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
                   <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/:folderId" element={<MailboxPage />} />
