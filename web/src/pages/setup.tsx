@@ -70,36 +70,6 @@ export function SetupPage() {
     return <ErrorMessage error={error} />
   }
 
-  const domains = data?.ListDomains ?? []
-  const withAliases = domains.filter((domain) => domain.aliases.length > 0)
-  const published = domains.filter((domain) => {
-    const records = domain.records?.records ?? []
-    return records.length > 0 && records.every((record) => record.verified)
-  })
-
-  const steps = [
-    {
-      done: domains.length > 0,
-      title: t('setup.step1'),
-      detail: <Trans k="setup.step1Detail" nodes={{ link: <Link to="/domains">{t('nav.domains')}</Link> }} />,
-    },
-    {
-      done: withAliases.length > 0,
-      title: t('setup.step2'),
-      detail: t('setup.step2Detail'),
-    },
-    {
-      done: domains.length > 0 && published.length === domains.length,
-      title: t('setup.step3'),
-      detail: t('setup.step3Detail'),
-    },
-    {
-      done: false,
-      title: t('setup.step4'),
-      detail: t('setup.step4Detail'),
-    },
-  ]
-
   return (
     <>
       <p className="muted">
@@ -119,25 +89,6 @@ export function SetupPage() {
       {data?.GetSettings?.submission && (
         <SubmissionCard submission={data.GetSettings.submission} onSaved={reload} />
       )}
-
-      <h3>{t('setup.stepsTitle')}</h3>
-      {steps.map((step, index) => (
-        <div className="card" key={index}>
-          <div className="row">
-            <div>
-              <h3 style={{ margin: 0 }}>
-                {index + 1}. {step.title}
-              </h3>
-              <p className="muted" style={{ marginBottom: 0 }}>
-                {step.detail}
-              </p>
-            </div>
-            <div className="shrink">
-              <Tag value={step.done ? t('common.done') : t('common.toDo')} tone={step.done ? 'good' : undefined} />
-            </div>
-          </div>
-        </div>
-      ))}
     </>
   )
 }

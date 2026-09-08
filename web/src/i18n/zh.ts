@@ -394,16 +394,6 @@ export const zh: Catalog = {
     '两项都留空则跟随服务器：使用它自己的名称和监听端口。当有别的东西把不同端口转发过来时才需要填写 —— 比如容器映射的端口，或防火墙上的 587。',
   'setup.submissionSaved': '已保存。之后显示的凭据会使用这个地址。',
   'setup.submissionFailed': '未能保存。',
-  'setup.stepsTitle': '让邮件跑起来',
-  'setup.step1': '添加域名',
-  'setup.step1Detail': '在{link}中告诉服务器要为哪些域名接收邮件。',
-  'setup.step2': '设置邮件的去向',
-  'setup.step2Detail': '为每个域名至少添加一个别名。没有别名，发往该域名的邮件会被拒收。',
-  'setup.step3': '发布 DNS 记录',
-  'setup.step3Detail':
-    '每个域名的页面都会列出需要创建的记录，并显示是否已经生效。其中 MX 记录决定邮件能否送达。',
-  'setup.step4': '给自己发一封邮件',
-  'setup.step4Detail': 'MX 记录生效后，发往你域名的邮件应该会在一分钟内出现在“邮件”中。',
 
   'common.cancel': '取消',
   'common.create': '创建',

@@ -403,17 +403,6 @@ export const en = {
     'Leave both empty to follow the server: its own name, and the port it listens on. Set them when something forwards a different port to it — a container publishing one, or a firewall taking 587.',
   'setup.submissionSaved': 'Saved. Credentials shown from now on will say this.',
   'setup.submissionFailed': 'That could not be saved.',
-  'setup.stepsTitle': 'Getting mail flowing',
-  'setup.step1': 'Add a domain',
-  'setup.step1Detail': 'Tell the server which domains it accepts mail for, under {link}.',
-  'setup.step2': 'Say where mail should go',
-  'setup.step2Detail': 'Add at least one alias to each domain. Without one, mail for it is refused.',
-  'setup.step3': 'Publish the DNS records',
-  'setup.step3Detail':
-    'Each domain page lists exactly what to create and shows whether it has taken effect. The MX record is the one that decides whether mail arrives at all.',
-  'setup.step4': 'Send yourself a message',
-  'setup.step4Detail':
-    'Once the MX record is live, mail to your domain should appear under Mail within a minute.',
 
   'common.cancel': 'Cancel',
   'common.create': 'Create',

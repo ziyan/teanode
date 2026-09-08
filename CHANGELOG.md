@@ -17,6 +17,12 @@ Notable changes to TeaNode. The format follows
   that it be changed to the address the server sees for itself, which would
   have stopped the mail.
 
+### Changed
+
+- The Setup page drops its "Getting mail flowing" checklist. Three of its
+  four steps were already answered by the pages they pointed at, and the
+  fourth could never be ticked.
+
 ### Added
 
 - The command line reaches the mailbox and access work by name rather than
