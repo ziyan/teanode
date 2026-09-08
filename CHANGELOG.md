@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-09-08
+
+### Fixed
+
+- A message sent from a mail program showed twice in Sent: once filed by the server when it accepted the message, once uploaded by the program afterwards. The program's copy is now recognised as the message the folder already holds. Copies made before this release remain and can be deleted. (#56)
+- The size recorded for a message uploaded over IMAP counted the body alone. (#56)
+
 ## [0.12.1] - 2026-09-08
 
 ### Fixed
