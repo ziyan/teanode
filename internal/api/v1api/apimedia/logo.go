@@ -68,6 +68,20 @@ func (self *media) logoUploadView(response http.ResponseWriter, request *http.Re
 		return
 	}
 
+	// The same answer the resolvers give. Publishing a mark decides what the
+	// world sees beside this domain's mail, and replaces the file the last
+	// one was — so it asks for the permission that removing it asks for,
+	// rather than settling for a session, which would let anybody with a
+	// mailbox here overwrite any domain's brand.
+	if allowed, err := self.canManageDomain(api.UsernameFromRequest(request), domain); err != nil {
+		log.Errorf("failed to resolve permissions for %q: %s", domain.Domain, err)
+		http.Error(response, "cannot read the domain", http.StatusInternalServerError)
+		return
+	} else if !allowed {
+		http.Error(response, "not allowed to manage this domain", http.StatusForbidden)
+		return
+	}
+
 	file, header, err := request.FormFile("file")
 	if err != nil {
 		http.Error(response, "no file", http.StatusBadRequest)
@@ -132,6 +146,29 @@ func (self *media) logoUploadView(response http.ResponseWriter, request *http.Re
 		"title":    publication.Title,
 		"url":      api.BimiLogoPath(publication.FileID),
 	})
+}
+
+// canManageDomain says whether this operator may change what the domain
+// publishes. The console, and a server with no accounts configured yet, may
+// do anything; anybody else needs domain:manage over this domain.
+func (self *media) canManageDomain(username string, domain *models.Domain) (bool, error) {
+	if username == "" || username == config.LocalUsername {
+		return true, nil
+	}
+	allowed := false
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		user, err := tx.GetUserByUsername(username)
+		if err != nil || user == nil {
+			return err
+		}
+		permissions, err := tx.EffectivePermissions(user.ID)
+		if err != nil {
+			return err
+		}
+		allowed = permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
+		return nil
+	})
+	return allowed, err
 }
 
 // domainLogoView serves the same file to the dashboard, so the operator can

@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/client"
 )
 
@@ -482,6 +483,12 @@ func runDomainLogoPublish(ctx context.Context, command *cli.Command) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	// Said here rather than sent and refused: the limit is small, and a file
+	// far over it is a file somebody meant to shrink first.
+	if len(content) > bimi.MaximumLogoSize {
+		return fmt.Errorf("%s is %d bytes; a mark has to be under %d, and is a few paths rather than a picture",
+			filepath.Base(path), len(content), bimi.MaximumLogoSize)
 	}
 
 	connection, err := openClient(command)

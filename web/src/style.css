@@ -465,6 +465,10 @@ td a:hover {
   align-items: flex-start;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+  /* Two buttons in a card on a phone come to 348px of the 350 there are, and
+     that is with the shortest of the three catalogues. A row that cannot fit
+     wraps rather than running off the side. */
+  flex-wrap: wrap;
 }
 
 /* The text beside the action takes the room; the action does not. Excluding

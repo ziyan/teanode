@@ -186,23 +186,32 @@ func (self *graph) ListDomains(ctx context.Context) ([]*Domain, error) {
 	}
 	configuration := self.config.Current()
 	status := self.verifier.Status()
-	logos := map[string]*db.BimiPublication{}
-	for _, domain := range all {
-		publication, err := self.transaction(ctx).GetBimiPublication(domain.ID)
-		if err != nil {
-			return nil, err
-		}
-		logos[domain.ID] = publication
-	}
 
-	domains := make([]*Domain, 0, len(all))
+	// Which rows the caller may see, decided before anything is read for
+	// them: a lookup per domain was a query per row, and it ran for the
+	// domains this caller is not allowed to know about as well.
+	visible := make([]*models.Domain, 0, len(all))
+	manageable := map[string]bool{}
+	identifiers := make([]string, 0, len(all))
 	for _, domain := range all {
-		manageable := principal.Permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
-		if !manageable && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
+		manages := principal.Permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
+		if !manages && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
 			continue
 		}
+		visible = append(visible, domain)
+		manageable[domain.ID] = manages
+		identifiers = append(identifiers, domain.ID)
+	}
+
+	logos, err := self.transaction(ctx).ListBimiPublications(identifiers)
+	if err != nil {
+		return nil, err
+	}
+
+	domains := make([]*Domain, 0, len(visible))
+	for _, domain := range visible {
 		described := describeDomain(configuration, domain, all, status[domain.ID], logos[domain.ID])
-		described.Manageable = manageable
+		described.Manageable = manageable[domain.ID]
 		domains = append(domains, described)
 	}
 	return domains, nil
@@ -438,12 +447,10 @@ func (self *graph) DeleteDomainLogo(ctx context.Context, arguments DeleteDomainL
 		return err
 	}
 
-	fileId := ""
-	if err := self.database.Transaction(func(tx db.Transaction) error {
-		removed, err := tx.DeleteBimiPublication(domain.ID)
-		fileId = removed
-		return err
-	}); err != nil {
+	// The request's own transaction, as every other mutation here uses: a
+	// second one alongside it would commit on its own schedule.
+	fileId, err := self.transaction(ctx).DeleteBimiPublication(domain.ID)
+	if err != nil {
 		return translateError(err)
 	}
 	if fileId == "" {

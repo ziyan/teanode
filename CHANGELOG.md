@@ -6,8 +6,6 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-09-08
-
 ### Added
 
 - Help publishing your own logo, on a domain's page. TeaNode shows the mark
@@ -46,6 +44,26 @@ Notable changes to TeaNode. The format follows
 - `teanode token revoke --user`, which `create` and `list` already took. Without
   it the server's own console could issue tokens and list them but never revoke
   one — which is exactly where somebody who has lost their token is standing.
+
+### Fixed
+
+- Publishing a picture or a logo for a domain now asks for `domain:manage`
+  over that domain, as every other operation on a domain does. Both uploads
+  asked only that the caller was signed in, so anybody with a mailbox on the
+  server could have replaced any domain's published mark, or added a picture
+  to any domain's store to be served from that domain's name. The routes that
+  serve bytes are unchanged: what they serve is public either way. A test now
+  reads this package's own source and fails when a route that changes
+  something asks for no more than a session — the GraphQL side has had that
+  guarantee for a while, and these routes were the blind spot in it.
+
+- Listing domains asked the database once per domain for its logo, and asked
+  it for domains the caller is not allowed to see. One query now, for the
+  domains that survive the permission filter.
+
+## [0.14.0] - 2026-09-08
+
+### Added
 
 - Subscriptions: the mailing lists a mailbox receives, on a page of their own,
   with the way out of each. Most of what arrives in a mailbox is not a letter,

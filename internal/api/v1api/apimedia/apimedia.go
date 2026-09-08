@@ -152,6 +152,20 @@ func (self *media) uploadView(response http.ResponseWriter, request *http.Reques
 		return
 	}
 
+	// A picture is stored against a domain and shown in that domain's
+	// templates, and every template operation asks for domain:manage. This
+	// asked only for a session, so anybody with a mailbox here could add a
+	// picture to any domain's store and have it served from that domain's
+	// name over HTTPS.
+	if allowed, err := self.canManageDomain(api.UsernameFromRequest(request), domain); err != nil {
+		log.Errorf("failed to resolve permissions for %q: %s", domain.Domain, err)
+		http.Error(response, "cannot read the domain", http.StatusInternalServerError)
+		return
+	} else if !allowed {
+		http.Error(response, "not allowed to manage this domain", http.StatusForbidden)
+		return
+	}
+
 	file, header, err := request.FormFile("file")
 	if err != nil {
 		http.Error(response, "no file", http.StatusBadRequest)

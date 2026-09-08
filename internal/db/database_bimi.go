@@ -29,6 +29,11 @@ type BimiQuery interface {
 	// what the background job works through.
 	ListSenderDomainsWithoutLogo(before time.Time, limit int) ([]string, error)
 
+	// ListBimiPublications is the logos published for several domains at
+	// once, keyed by domain. For a listing, which would otherwise ask once
+	// per row.
+	ListBimiPublications(domainIds []string) (map[string]*BimiPublication, error)
+
 	// GetBimiPublication is the logo this server publishes for one of its own
 	// domains, or nil when it publishes none.
 	GetBimiPublication(domainId string) (*BimiPublication, error)
@@ -93,6 +98,21 @@ func (self *transaction) SaveBimiPublication(publication *BimiPublication) error
 		Columns:   []clause.Column{{Name: "domain_id"}},
 		UpdateAll: true,
 	}).Create(publication).Error
+}
+
+func (self *transaction) ListBimiPublications(domainIds []string) (map[string]*BimiPublication, error) {
+	publications := map[string]*BimiPublication{}
+	if len(domainIds) == 0 {
+		return publications, nil
+	}
+	var rows []BimiPublication
+	if err := self.tx.Where("\"domain_id\" IN ?", domainIds).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		publications[rows[index].DomainID] = &rows[index]
+	}
+	return publications, nil
 }
 
 func (self *transaction) DeleteBimiPublication(domainId string) (string, error) {
