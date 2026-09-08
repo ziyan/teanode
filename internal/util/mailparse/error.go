@@ -40,6 +40,7 @@ var (
 	ErrDKIMVerificationFailed  = newError(550, "5.7.20", "DKIM verification failed")
 	ErrSPFValidationFailed     = newError(550, "5.7.23", "SPF validation failed")
 	ErrSPFValidationError      = newError(550, "5.7.24", "SPF validation error")
+	ErrSPFTemporaryError       = newError(451, "4.4.3", "SPF temporary error, try again later")
 	ErrInvalidFromHeader       = newError(550, "5.7.26", "Invalid From header")
 	ErrInvalidContentType      = newError(550, "5.7.26", "Invalid content type")
 	ErrInvalidTransferEncoding = newError(550, "5.7.26", "Invalid transfer encoding")

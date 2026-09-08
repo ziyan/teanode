@@ -457,10 +457,15 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			log.Debugf("found dmarc record for %q at %q: %v, spfPassedAndAligned = %v, dkimPassedAndAligned = %v", fromDomain, dmarcPolicy.Domain, dmarcRecord, spfPassedAndAligned, dkimPassedAndAligned)
 		}
 
-		// check for errors
+		// An SPF error is what the evaluator found on the way to its result
+		// — a record that would not parse, a lookup that failed, the lookup
+		// limit — and the result already says what to make of it. Refusing
+		// here, before DMARC had been consulted, bounced Amazon's order
+		// confirmations: two aligned signatures, DMARC passing, and SPF
+		// "permerror" because this host's resolver mangles the sixty-record
+		// TXT answer for the retailer's apex domain that its record includes.
 		if spfErr != nil {
-			log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, spfErr)
-			return authenticationResults, nil, mailparse.ErrSPFValidationError
+			log.Warningf("spf check for ip %q, domain %q, sender %q, gave %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, spfErr)
 		}
 		// A verification error is not a failed signature. It means the key
 		// could not be fetched or read — a resolver hiccup, a malformed
@@ -477,37 +482,9 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
 		}
 
-		// A failed alignment is refused only when the sender asked for that.
-		// DMARC's "p=none" asks for reports and no action, and "quarantine"
-		// asks for suspicion rather than refusal: a message under either is
-		// held to the same tests as one from a domain with no policy at all,
-		// with the failure recorded for the spam filter and the mailbox to
-		// act on. Refusing every failure regardless of policy bounced mail
-		// from every domain that had only begun to monitor — which, since
-		// the reserved example domains grew reject policies, was also every
-		// message a developer could send a local server.
-		enforced := dmarcResult
-		if dmarcResult == authres.ResultFail && dmarcPolicy != nil && dmarcPolicy.Policy() != dmarc.PolicyReject {
-			enforced = authres.ResultNone
-		}
-
-		// only error spf or dkim if dmarc didn't pass
-		switch enforced {
-		case authres.ResultPass:
-		case authres.ResultFail:
-			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
-		case authres.ResultNone:
-			switch spfResult {
-			case spf.ResultTempError, spf.ResultPermError:
-				log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q", envelope.IP, senderDomain, envelope.Sender, spfResult)
-				return authenticationResults, nil, mailparse.ErrSPFValidationError
-			case spf.ResultFail:
-				log.Errorf("spf check for ip %q, domain %q, sender %q, failed with result %q", envelope.IP, senderDomain, envelope.Sender, spfResult)
-				return authenticationResults, nil, mailparse.ErrSPFValidationFailed
-			}
-			if err := dkimVerdict(dkimResults, spfResult); err != nil {
-				return authenticationResults, nil, err
-			}
+		if err := authenticationVerdict(spfResult, dkimResults, dmarcResult, dmarcPolicy); err != nil {
+			log.Errorf("refusing mail from ip %q, domain %q, sender %q: spf %q, dmarc %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, dmarcResult, err)
+			return authenticationResults, nil, err
 		}
 
 		// construct results
@@ -794,6 +771,46 @@ func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, rec
 // So a message is refused here only when it carries signatures, none of them
 // verify, and SPF did not pass either — the one combination where nothing at
 // all vouches for it.
+// authenticationVerdict is whether a message is refused on what SPF, DKIM and
+// DMARC said, and with which reply.
+//
+// A failed alignment is refused only when the sender asked for that. DMARC's
+// "p=none" asks for reports and no action, and "quarantine" asks for
+// suspicion rather than refusal: a message under either is held to the same
+// tests as one from a domain with no policy at all, with the failure recorded
+// for the spam filter and the mailbox to act on. Refusing every failure
+// regardless of policy bounced mail from every domain that had only begun to
+// monitor — which, since the reserved example domains grew reject policies,
+// was also every message a developer could send a local server.
+//
+// When DMARC passed, SPF and DKIM are not asked again: the sender's own
+// policy is satisfied, whatever either check said on its own. Otherwise SPF
+// "fail" is refused, SPF "temperror" is refused temporarily so the sender
+// tries again once the lookup works, and SPF "permerror" — a record that
+// will not evaluate, or a lookup this host could not complete — counts for
+// nothing, as RFC 7208 section 8.7 allows, leaving the message to what DKIM
+// says. Refusing it outright turned a broken record, or a broken resolver,
+// into a bounce of mail the signatures vouched for.
+func authenticationVerdict(spfResult spf.Result, dkimResults []*dkim.Verification, dmarcResult authres.ResultValue, dmarcPolicy *dmarc.Discovery) error {
+	enforced := dmarcResult
+	if dmarcResult == authres.ResultFail && dmarcPolicy.Policy() != dmarc.PolicyReject {
+		enforced = authres.ResultNone
+	}
+	switch enforced {
+	case authres.ResultPass:
+		return nil
+	case authres.ResultFail:
+		return mailparse.ErrDMARCAlignmentFailed
+	}
+	switch spfResult {
+	case spf.ResultTempError:
+		return mailparse.ErrSPFTemporaryError
+	case spf.ResultFail:
+		return mailparse.ErrSPFValidationFailed
+	}
+	return dkimVerdict(dkimResults, spfResult)
+}
+
 func dkimVerdict(results []*dkim.Verification, spfResult spf.Result) error {
 	if len(results) == 0 || spfResult == spf.ResultPass {
 		return nil
