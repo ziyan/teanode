@@ -254,8 +254,12 @@ export function Sidebar({
               where navigation lives. */}
           {inMailbox && current && (
             <div className="sidebar-group">
-              <div className="sidebar-mailbox">
-                {mailboxes.views.length > 1 ? (
+              {/* Only when there is a choice to make. One mailbox named at
+                  the top of its own rail is a heading that says nothing: the
+                  rows under it are that mailbox's folders and there is
+                  nothing else they could be. */}
+              {mailboxes.views.length > 1 && (
+                <div className="sidebar-mailbox">
                   <select
                     aria-label={t('nav.chooseMailbox')}
                     value={current.mailbox.id}
@@ -272,16 +276,15 @@ export function Sidebar({
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <div className="sidebar-mailbox-name sidebar-label" title={current.mailbox.name}>
-                    {current.mailbox.name}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
               {(() => {
                 const { inbox, pinned, rest } = railRows(current.folders)
                 const togglePin = (folder: MailboxFolder, pin: boolean) => {
-                  void graphql(PIN_FOLDER, { folderId: folder.id, pinned: pin }).then(() => mailboxes.refresh(), () => {})
+                  void graphql(PIN_FOLDER, { folderId: folder.id, pinned: pin }).then(
+                    () => mailboxes.refresh(),
+                    () => {},
+                  )
                 }
                 // A row of the tree, or of the pinned area at the top. The
                 // pin appears on hover and does not travel: it changes the
@@ -334,11 +337,21 @@ export function Sidebar({
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
                     </NavLink>
                     {pinned.map((folder) => folderRow(folder, 0, `pinned-${folder.id}`, true))}
+                    {/* What is always at the top — the inbox, what is
+                        starred, and whatever has been pinned up there — ends
+                        here, and the mailbox's own folders start. The rule is
+                        drawn whether or not anything is pinned, so the rail
+                        does not change shape the first time somebody pins
+                        something. */}
+                    <div className="sidebar-divider" />
                     {pinned.length > 0 && <div className="sidebar-group-label sidebar-label">{t('nav.folders')}</div>}
                     {rest.map(({ folder, depth }) => folderRow(folder, depth, folder.id, true))}
                   </>
                 )
               })()}
+              {/* The folders end here; what is below is about the mailbox
+                  rather than in it. */}
+              <div className="sidebar-divider" />
               <NavLink to="/mailbox/contacts" title={collapsed ? t('nav.contacts') : undefined}>
                 <span className="sidebar-icon">
                   <UserIcon />

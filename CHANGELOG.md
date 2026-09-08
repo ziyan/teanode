@@ -35,6 +35,18 @@ Notable changes to TeaNode. The format follows
   list uses, and the tab has a heading like the tabs beside it.
 - "Out of office" is "Auto reply", which is what it is when it is used to say
   a reply comes from somewhere else.
+- The rail draws a rule under what is pinned to the top and another above
+  Contacts, so the inbox, the folders, and what is about the mailbox rather
+  than in it read as three lists instead of one long one. The rule under the
+  pinned area is drawn whether or not anything is pinned, so the rail does not
+  change shape the first time somebody pins a folder.
+- Hovering a folder in the rail replaces its unread count with the pin instead
+  of putting the pin beside it. The pin now sits at the same place on every
+  row, rather than at a distance that depended on whether that folder had
+  unread mail and whether the number had one digit or two.
+- The rail names the mailbox only when there is more than one to choose
+  between. One mailbox named above its own folders was a heading that said
+  nothing.
 
 ### Fixed
 

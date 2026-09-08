@@ -782,6 +782,16 @@ a.tile:hover strong {
   border-top: 1px solid var(--border);
 }
 
+/* A rule inside a group, where two groups would be too much: the rail's one
+   group of mailbox rows has three parts to it — what is always at the top,
+   the folders, and what is about the mailbox rather than in it. Inset from
+   the edges so it reads as a seam in a list rather than the end of the rail. */
+.sidebar-divider {
+  height: 0;
+  margin: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
 .sidebar-icon {
   display: flex;
   align-items: center;
@@ -3196,14 +3206,6 @@ a.button.primary:hover {
   width: 100%;
   font-size: 13px;
 }
-.sidebar-mailbox-name {
-  font-weight: 600;
-  font-size: 13px;
-  padding: 6px 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .sidebar nav a .sidebar-count {
   margin-left: auto;
   font-size: 11px;
@@ -3707,21 +3709,32 @@ a.button.primary:hover {
 }
 /* Only where a pointer can hover. On a touch screen, something appearing
    on hover makes iOS treat the first tap as the hover and ask for a second
-   to follow the link; a phone pins from the Folders tab instead. */
+   to follow the link; a phone pins from the Folders tab instead.
+
+   The pin takes the count's place rather than sitting beside it. Two things
+   at the end of a short row put the pin at a different distance from the
+   edge on every folder, depending on whether that folder has unread mail and
+   whether the number is one digit or two — so the target moved as the pointer
+   travelled down the list. The count is what the row says at rest and the pin
+   is what it offers while the pointer is on it; they are never both needed. */
 @media (hover: hover) {
   .sidebar nav a:hover .sidebar-pin {
     visibility: visible;
+  }
+
+  .sidebar:not(.collapsed) nav a:hover .sidebar-pin + .sidebar-count {
+    display: none;
   }
 }
 .sidebar nav a:focus-within .sidebar-pin {
   visibility: visible;
 }
+.sidebar:not(.collapsed) nav a:focus-within .sidebar-pin + .sidebar-count {
+  display: none;
+}
 .sidebar-pin:hover,
 .sidebar-pin.pinned {
   opacity: 1;
-}
-.sidebar-pin + .sidebar-count {
-  margin-left: 6px;
 }
 .sidebar.collapsed nav a .sidebar-pin {
   display: none;
