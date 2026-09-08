@@ -12,7 +12,7 @@ import {
   MailboxView,
   graphql,
 } from '../api'
-import { ErrorMessage, Loading, formatTime } from '../components/common'
+import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
@@ -49,7 +49,10 @@ const THREADS = `
         threadId count unread flagged participants itemIds
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
-          mail { id from fromName sender subject recipients receivedAt size kind status }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
         }
       }
     }
@@ -63,7 +66,10 @@ const THREAD = `
         folderId folderName folderKind
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
-          mail { id from fromName sender subject recipients receivedAt size kind status messageId }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status messageId
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
         }
       }
     }
@@ -794,6 +800,10 @@ function Row({
         </div>
       </Link>
       <div className="mailbox-row-when">
+        {/* What the checks said, in the width of a character: the answer to
+            "is this really from who it says" belongs where the message is
+            listed, not only on the audit page. */}
+        <VerdictMark mail={mail} />
         <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
       </div>
     </li>
@@ -1114,6 +1124,7 @@ function ThreadMessage({
     { refresh: false },
   )
   const who = mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
+  const verdict = verdictOf(mail, t)
 
   return (
     <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
@@ -1154,6 +1165,14 @@ function ThreadMessage({
                 <dd>{(mail.recipients ?? []).join(', ')}</dd>
                 <dt>{t('mail.received')}</dt>
                 <dd>{formatTime(mail.receivedAt)}</dd>
+                {verdict && (
+                  <>
+                    <dt>{t('mailDetail.authentication')}</dt>
+                    <dd className={verdict.tone ? `verdict-detail ${verdict.tone}` : 'verdict-detail'}>
+                      {verdict.detail}
+                    </dd>
+                  </>
+                )}
               </dl>
               {content.loading && !content.data ? (
                 <Loading />

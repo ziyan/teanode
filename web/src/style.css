@@ -2860,6 +2860,18 @@ a.button.primary:hover {
   word-wrap: break-word;
 }
 
+/* The quoted message a reply carries, folded away while the answer is being
+   written. Hidden rather than removed: it is still in the document and still
+   in what is sent — what is being written is the answer, and the thing it
+   answers is a click away and, in a conversation, on the screen already. */
+.richtext-editor.quoted-hidden .teanode-quote {
+  display: none;
+}
+
+.compose-quoted {
+  margin: -4px 0 12px;
+}
+
 .richtext-editor:empty::before {
   content: attr(data-placeholder);
   color: var(--muted);
@@ -3356,9 +3368,49 @@ a.button.primary:hover {
   color: var(--text);
 }
 .mailbox-row-when {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* What a message's checks said, in the width of one character. A list of
+   fifty cannot spend a line each on SPF, DKIM, DMARC and a spam score, and
+   one that said nothing at all for a message that failed them would be worse
+   than one that never mentioned them. The whole of it is in the tooltip. */
+.verdict-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.verdict-mark.good {
+  color: var(--good);
+  opacity: 0.5;
+}
+
+/* Not subtle, these two. A message that failed its checks is the one thing
+   in a list of names worth interrupting for. */
+.verdict-mark.warn {
+  color: var(--warn);
+  opacity: 1;
+}
+
+.verdict-mark.bad {
+  color: var(--bad);
+  opacity: 1;
+}
+
+/* The same answer in words, on the message itself, where there is room. */
+.verdict-detail.warn {
+  color: var(--warn);
+}
+
+.verdict-detail.bad {
+  color: var(--bad);
 }
 .mailbox-row input[type='checkbox'] {
   margin: 3px 0 0;

@@ -20,10 +20,15 @@ export function RichTextEditor({
   onChange,
   placeholder,
   domainId,
+  hideQuoted,
 }: {
   value: string
   onChange: (html: string) => void
   placeholder?: string
+  // Fold away the quoted message a reply carries. It stays in the document,
+  // and so in what is sent — it is hidden, not removed, because what is being
+  // written is the answer and the quote is the thing being answered.
+  hideQuoted?: boolean
   // The domain a picture uploaded here belongs to. Without one the button is
   // not shown: a picture has to belong to a domain, because it is served from
   // that domain's own name and may only appear in its templates.
@@ -197,7 +202,7 @@ export function RichTextEditor({
       </div>
       <div
         ref={editor}
-        className="richtext-editor"
+        className={hideQuoted ? 'richtext-editor quoted-hidden' : 'richtext-editor'}
         contentEditable
         suppressContentEditableWarning
         data-placeholder={placeholder}

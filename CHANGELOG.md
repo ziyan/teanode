@@ -6,6 +6,27 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- What a message's checks said is in the mailbox, not only on the audit page:
+  a shield beside the time in the list, colored by whether the sending domain
+  authorized the server, whether the signature held, whether the domain's own
+  policy was satisfied and what the spam filter scored it, with all of that in
+  its tooltip — and the same in words on the message itself.
+- A message carries a link to its audit page, in its own menu, for anyone who
+  may read one: where it came from, every delivery attempt, and the raw
+  source.
+
+### Changed
+
+- The quoted message a reply or a forward carries is folded away while the
+  answer is being written, with a link to unfold it. It is hidden rather than
+  removed, so it is still in what is sent — but what is being written is the
+  answer, and in a conversation the thing it answers is on the screen already.
+- Copy and blind copy are fields on the compose form like any other. They were
+  behind a "Cc / Bcc" link, which made two ordinary boxes into something to go
+  looking for and put a link where the form's rhythm wanted a label.
+
 ## [0.12.3] - 2026-09-08
 
 ### Fixed
