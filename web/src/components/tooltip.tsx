@@ -112,9 +112,26 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
         // Described rather than labelled: the tooltip adds to what the
         // element says, it does not replace it.
         aria-describedby={position ? id : undefined}
-        onMouseEnter={silent ? undefined : show}
-        onMouseLeave={hide}
-        onFocus={silent ? undefined : place}
+        // Pointer rather than mouse, so a finger can be told from a mouse.
+        // A tap emulates a hover, and the tooltip arrived a third of a second
+        // after the button had done its job — a box over the menu that had
+        // just opened, describing the button underneath it.
+        onPointerEnter={(event) => {
+          if (!silent && event.pointerType !== 'touch') {
+            show()
+          }
+        }}
+        onPointerLeave={hide}
+        // Pressing it is an answer: whatever the button does is what was
+        // wanted, and the tooltip has nothing left to say.
+        onPointerDown={hide}
+        onFocus={(event) => {
+          // Only focus that came from the keyboard. A tap focuses the button
+          // too, which is the other half of the same problem.
+          if (!silent && (event.target as HTMLElement).matches?.(':focus-visible')) {
+            place()
+          }
+        }}
         onBlur={hide}
       >
         {children}

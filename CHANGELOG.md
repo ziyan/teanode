@@ -29,6 +29,14 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A tooltip no longer appears after a tap. A tap emulates a hover and focuses
+  what it touched, so the box arrived a third of a second after the button had
+  done its job — over the menu that had just opened, describing the button
+  underneath it. Tooltips are for a pointer and for keyboard focus.
+- On a phone an action stays on the right when it drops below what it acts
+  on. Stacked to the left, an action that is one icon — the plus that adds a
+  member, the cross that takes one out — was a mark alone on a line, reading
+  as something the heading had said rather than as a button.
 - The mailbox's rows of actions are one line that scrolls sideways on a
   phone. Ten icons need four hundred pixels and a phone has three hundred and
   ninety, so they wrapped, and the second row pushed the message down and left

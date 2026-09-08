@@ -2379,18 +2379,26 @@ body,
 }
 
 @media (max-width: 600px) {
-  /* Stacked. The action is as wide as its words, and beside it on a phone the
-     description is left a column four words across with a tall empty space
-     under the button — the heading of a section should not be the widest
-     thing in it.
+  /* The action drops below what it acts on rather than sitting beside it: an
+     action as wide as its words leaves the description a column four words
+     across, and a subtitle wrapping to four lines next to two buttons has a
+     lot of nothing under them.
 
-     The row goes the same way: what the actions act on takes the line, and
-     the actions take the next one. Half a row each meant a subtitle wrapping
-     to four lines next to two buttons and a lot of nothing under them. */
+     It stays on the right when it drops, which is where it was. Stacked to
+     the left, an action that is one icon — a plus, a cross — was a mark alone
+     on a line under a heading, and read as something the heading had said
+     rather than a button. */
   .settings-section-head {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
     gap: var(--space-3);
+  }
+
+  .settings-section-head > div:first-child {
+    min-width: 60%;
+  }
+
+  .settings-section-head > *:not(:first-child) {
+    margin-left: auto;
   }
 
   .settings-row-body {
@@ -2399,6 +2407,7 @@ body,
 
   .settings-row-actions {
     width: 100%;
+    justify-content: flex-end;
   }
 }
 
