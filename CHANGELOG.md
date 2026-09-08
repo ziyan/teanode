@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-08
+
 ### Added
 
 - Help publishing your own logo, on a domain's page. TeaNode shows the mark
