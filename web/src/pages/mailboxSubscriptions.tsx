@@ -3,14 +3,22 @@ import { useCallback, useState } from 'react'
 import { MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
-import { ArrowLeftIcon, CloseIcon } from '../components/icons'
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  BellOffIcon,
+  JunkIcon,
+  MailIcon,
+  MailOpenIcon,
+  TrashIcon,
+} from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
-import { useMailboxes } from '../mailboxes'
-import { ThreadMessage } from './mailbox'
+import { folderOfKind, folderRows, useMailboxes } from '../mailboxes'
+import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMessage } from './mailbox'
 
 const SUBSCRIPTIONS = `
   query ($mailboxId: String!) {
@@ -174,50 +182,35 @@ export function MailboxSubscriptionsPage() {
                 onClick={() => setReadingKey(subscription.key)}
               >
                 <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
-                <button
-                  type="button"
-                  className="subscription-row-link"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setReadingKey(subscription.key)
-                  }}
-                >
-                  <span className="subscription-row-name">{subscription.name}</span>
-                  <span className="subscription-row-meta">
-                    {subscription.from}
-                    {' · '}
-                    {plural(
-                      subscription.count,
-                      { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
-                      { count: subscription.count },
-                    )}
-                    {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
-                  </span>
-                  {subscription.requestedAt ? (
-                    <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
-                      {subscription.failed
-                        ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
-                        : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}
+                <Tooltip label={subscription.from}>
+                  <button
+                    type="button"
+                    className="subscription-row-link"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setReadingKey(subscription.key)
+                    }}
+                  >
+                    <span className="subscription-row-name">{subscription.name}</span>
+                    <span className="subscription-row-meta">
+                      {plural(
+                        subscription.count,
+                        { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
+                        { count: subscription.count },
+                      )}
+                      {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
                     </span>
-                  ) : null}
-                </button>
+                    {subscription.requestedAt ? (
+                      <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
+                        {subscription.failed
+                          ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
+                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}
+                      </span>
+                    ) : null}
+                  </button>
+                </Tooltip>
                 <div className="subscription-row-when">
                   <RelativeTime value={subscription.lastAt} />
-                  <Tooltip label={leaveLabel(t, subscription)}>
-                    <button
-                      className="icon-action danger"
-                      type="button"
-                      disabled={busy || unsubscribeKind(subscription) === 'none'}
-                      aria-label={`${subscription.name}: ${leaveLabel(t, subscription)}`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setProblem(null)
-                        setLeaving(subscription)
-                      }}
-                    >
-                      <CloseIcon size={15} />
-                    </button>
-                  </Tooltip>
                 </div>
               </li>
             ))}
@@ -235,6 +228,7 @@ export function MailboxSubscriptionsPage() {
                 setProblem(null)
                 setLeaving(reading)
               }}
+              onChanged={() => void query.reload()}
             />
           ) : (
             <p className="mailbox-placeholder">{t('subscriptions.choose')}</p>
@@ -257,14 +251,6 @@ export function MailboxSubscriptionsPage() {
   )
 }
 
-// What the button will do, said before it does it.
-function leaveLabel(
-  t: (key: 'subscriptions.leave' | 'subscriptions.leaveNoWay') => string,
-  subscription: Subscription,
-) {
-  return unsubscribeKind(subscription) === 'none' ? t('subscriptions.leaveNoWay') : t('subscriptions.leave')
-}
-
 // The server's word for how it was left, guarded: a row written by a newer
 // server than this page knows about should not read as a missing translation.
 function unsubscribeMethod(method?: string): 'oneClick' | 'mail' | 'link' {
@@ -278,19 +264,52 @@ function SubscriptionReader({
   subscription,
   onBack,
   onLeave,
+  onChanged,
 }: {
   mailboxId: string
   subscription: Subscription
   onBack: () => void
   onLeave: () => void
+  // Something was moved, deleted or marked: the list beside this shows counts
+  // and has to be told.
+  onChanged: () => void
 }) {
   const { t } = useTranslation()
+  const mailboxes = useMailboxes()
+  const folders = mailboxes.current?.folders ?? []
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [emptying, setEmptying] = useState(false)
   const query = useQuery(
     () => graphql<{ ReadMailboxSubscription: MailboxThreadView }>(READ, { mailboxId, key: subscription.key }),
     [mailboxId, subscription.key],
     { refresh: false },
   )
   const thread = query.data?.ReadMailboxSubscription
+  // What the actions act on: every message of this list the mailbox holds,
+  // which is what somebody means by "archive this newsletter". Drafts are
+  // left out — a message being written is not part of what was sent to you.
+  const acting = (thread?.items ?? []).filter((entry) => !entry.item.draft).map((entry) => entry.item.id)
+  const anyUnread = (thread?.items ?? []).some((entry) => !entry.item.seen)
+  // Where it can be moved to: every folder, since a list's mail is not read
+  // from one in particular.
+  const targets = folderRows(folders)
+  const inJunk = (thread?.items ?? []).every((entry) => entry.folderKind === 'junk')
+  const archive = folderOfKind(mailboxes.current, 'archive')
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await action()
+      await query.reload()
+      onChanged()
+    } catch (caught) {
+      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
   // Which messages are open, and which have been read since the page loaded:
   // the same two things a conversation tracks, for the same reasons.
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -307,37 +326,78 @@ function SubscriptionReader({
 
   return (
     <>
+      {/* The same actions a conversation has, over everything this list has
+          sent: what somebody wants of a newsletter is usually all of it at
+          once — archive the lot, move the lot, or throw the lot away. */}
       <div className="mailbox-pane-actions">
         {/* Back is for the width where the list is not beside this one. */}
-        <Tooltip label={t('subscriptions.back')}>
-          <button
-            className="icon-button mailbox-back"
-            type="button"
-            aria-label={t('subscriptions.back')}
-            onClick={onBack}
-          >
-            <ArrowLeftIcon size={16} />
-          </button>
-        </Tooltip>
-        <Tooltip label={t('subscriptions.leave')}>
-          <button
-            className="icon-button danger"
-            type="button"
-            aria-label={`${subscription.name}: ${t('subscriptions.leave')}`}
-            disabled={unsubscribeKind(subscription) === 'none'}
-            onClick={onLeave}
-          >
-            <CloseIcon size={16} />
-          </button>
-        </Tooltip>
+        <IconAction label={t('subscriptions.back')} icon={<ArrowLeftIcon size={16} />} onClick={onBack} />
+        <IconAction
+          label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
+          icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
+          disabled={busy || acting.length === 0}
+          onClick={() => void run(() => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }))}
+        />
+        {archive && (
+          <IconAction
+            label={t('mailbox.archive')}
+            icon={<ArchiveIcon size={16} />}
+            disabled={busy || acting.length === 0}
+            onClick={() => void run(() => graphql(MOVE, { itemIds: acting, folderId: archive.id }))}
+          />
+        )}
+        <IconAction
+          label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+          icon={<JunkIcon size={16} />}
+          disabled={busy || acting.length === 0}
+          onClick={() => void run(() => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }))}
+        />
+        <MoveToMenu
+          targets={targets}
+          disabled={busy || acting.length === 0}
+          onMove={(folderId) => void run(() => graphql(MOVE, { itemIds: acting, folderId }))}
+        />
+        <IconAction
+          label={t('mailbox.delete')}
+          icon={<TrashIcon size={16} />}
+          className="danger"
+          disabled={busy || acting.length === 0}
+          onClick={() => setEmptying(true)}
+        />
+        <IconAction
+          label={t('subscriptions.leave')}
+          icon={<BellOffIcon size={16} />}
+          disabled={unsubscribeKind(subscription) === 'none'}
+          onClick={onLeave}
+        />
       </div>
 
+      <ErrorMessage error={problem} />
+
+      {/* Asked first: this is every message of the list at once, and the
+          count is the point of the question. */}
+      {emptying && (
+        <ConfirmDialog
+          title={t('subscriptions.deleteTitle', { name: subscription.name })}
+          body={t('subscriptions.deleteBody', { count: acting.length })}
+          confirmLabel={t('mailbox.delete')}
+          busy={busy}
+          error={problem}
+          onConfirm={async () => {
+            await run(() => graphql(DELETE, { itemIds: acting }))
+            setEmptying(false)
+          }}
+          onClose={() => setEmptying(false)}
+        />
+      )}
+
       <div className="mailbox-pane-head">
-        <h2 className="sender-row">
-          <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} />
-          {subscription.name}
-        </h2>
-        <p className="muted">{subscription.from}</p>
+        <Tooltip label={subscription.from}>
+          <h2 className="sender-row">
+            <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} />
+            {subscription.name}
+          </h2>
+        </Tooltip>
       </div>
 
       {query.loading && !query.data && <Loading />}

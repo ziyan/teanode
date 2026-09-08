@@ -108,22 +108,22 @@ const CONTENT = `
     }
   }`
 
-const SET_FLAGS = `
+export const SET_FLAGS = `
   mutation ($itemIds: [String!]!, $seen: Boolean, $flagged: Boolean) {
     SetMailboxItemFlags(itemIds: $itemIds, seen: $seen, flagged: $flagged)
   }`
 
-const MOVE = `
+export const MOVE = `
   mutation ($itemIds: [String!]!, $folderId: String!) {
     MoveMailboxItems(itemIds: $itemIds, folderId: $folderId) { id folderId }
   }`
 
-const DELETE = `
+export const DELETE = `
   mutation ($itemIds: [String!]!) {
     DeleteMailboxItems(itemIds: $itemIds)
   }`
 
-const REPORT_JUNK = `
+export const REPORT_JUNK = `
   mutation ($itemIds: [String!]!, $notJunk: Boolean) {
     ReportMailboxJunk(itemIds: $itemIds, notJunk: $notJunk)
   }`
@@ -185,7 +185,8 @@ function dayStart(value: string, plusDays = 0): string | undefined {
 // A toolbar button: an icon, its name in a tooltip, and nothing else on the
 // screen. A mail toolbar is nine verbs, and nine words of them wrapped onto a
 // second line on anything narrower than a laptop.
-function IconAction({
+// Shared for the same reason: a toolbar of these is what both readers are.
+export function IconAction({
   label,
   icon,
   onClick,
@@ -221,7 +222,9 @@ function IconAction({
 // Where to move what is selected: the folders, in a menu the button opens.
 // A native select in a row of icons is a box with a word and an arrow in it,
 // which is the one control on the row that says what it is twice.
-function MoveToMenu({
+// Shared with the subscriptions page, which moves a whole list's mail the
+// same way a conversation is moved.
+export function MoveToMenu({
   targets,
   onMove,
   disabled,

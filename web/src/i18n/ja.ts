@@ -1105,6 +1105,8 @@ export const ja: Catalog = {
   'subscriptions.intro': 'このメールボックスが受け取っているメーリングリスト。新しい順です。フィルターが振り分けたものと捨てたものは数えません。',
   'subscriptions.empty': 'このメールボックスに届いたメーリングリストはありません。',
   'subscriptions.choose': '購読を選ぶと、届いたメールが読めます。',
+  'subscriptions.deleteTitle': '{name} からのメールをすべて削除しますか？',
+  'subscriptions.deleteBody': 'メール {count} 通をゴミ箱に移します。購読をやめることとは別で、これでは解除されません。',
   'subscriptions.messageCountOne': 'メール {count} 通',
   'subscriptions.messageCountOther': 'メール {count} 通',
   'subscriptions.unread': '未読 {count} 通',

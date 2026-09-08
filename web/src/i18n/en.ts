@@ -1116,6 +1116,8 @@ export const en = {
   'subscriptions.intro': 'The mailing lists this mailbox receives, newest first. What a filter caught and what you threw away are not counted.',
   'subscriptions.empty': 'No mailing lists have written to this mailbox.',
   'subscriptions.choose': 'Choose a subscription to read what it has sent.',
+  'subscriptions.deleteTitle': 'Delete every message from {name}?',
+  'subscriptions.deleteBody': 'This moves {count} messages to Trash. Leaving the list is a separate thing, and this does not do it.',
   'subscriptions.messageCountOne': '{count} message',
   'subscriptions.messageCountOther': '{count} messages',
   'subscriptions.unread': '{count} unread',

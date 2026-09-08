@@ -1092,6 +1092,8 @@ export const zh: Catalog = {
   'subscriptions.intro': '此邮箱收到的邮件列表，最新的在前。被过滤器拦下的和已丢弃的不计入其中。',
   'subscriptions.empty': '还没有邮件列表向此邮箱投递。',
   'subscriptions.choose': '选择一个订阅，查看它发来的邮件。',
+  'subscriptions.deleteTitle': '删除来自 {name} 的所有邮件？',
+  'subscriptions.deleteBody': '这会把 {count} 封邮件移入回收站。退订是另一回事，此操作不会退订。',
   'subscriptions.messageCountOne': '{count} 封邮件',
   'subscriptions.messageCountOther': '{count} 封邮件',
   'subscriptions.unread': '{count} 封未读',
