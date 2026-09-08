@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-08
+
 ### Added
 
 - Mail reads as conversations. A folder lists one row per conversation, with
