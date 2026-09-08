@@ -6,6 +6,26 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A server reached through something in front of it — a relay, a tunnel, a
+  load balancer — can say so, under Server → Identity or as
+  `server.externalAddresses`. The DNS advice then reads a mail server name
+  pointing at one of those addresses as right, rather than asking for ever
+  that it be changed to the address the server sees for itself, which would
+  have stopped the mail.
+- What a mail program is told to connect to for reading mail is settable, as
+  the address for sending already was: an `imap` section with a host and the
+  two ports, on the Setup page beside the sending one. A server behind a
+  gateway listens on 10993 and is reached on 993, and the page used to hand
+  somebody the port the process happens to bind.
+
+### Changed
+
+- The Setup page drops its "Getting mail flowing" checklist. Three of its
+  four steps were already answered by the pages they pointed at, and the
+  fourth could never be ticked.
+
 ## [0.10.0] - 2026-09-07
 
 ### Added

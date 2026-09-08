@@ -31,7 +31,7 @@ const SETTINGS = `
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
       listen { smtpIncoming smtpOutgoing imap imaps http https debug }
       sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
-      identity { name mailServers logLevel dataDirectory }
+      identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
     }
@@ -86,7 +86,7 @@ export const UPDATE = `
       passkey { enabled relyingPartyId displayName origins maximumPerUser }
       listen { smtpIncoming smtpOutgoing imap imaps http https debug }
       sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
-      identity { name mailServers logLevel dataDirectory }
+      identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
     }
@@ -164,7 +164,13 @@ export type Listen = {
   https: string
   debug?: string
 }
-export type Identity = { name: string; mailServers?: string[]; logLevel: string; dataDirectory: string }
+export type Identity = {
+  name: string
+  mailServers?: string[]
+  externalAddresses?: string[]
+  logLevel: string
+  dataDirectory: string
+}
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }
 

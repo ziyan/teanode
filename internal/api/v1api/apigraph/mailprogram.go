@@ -35,9 +35,9 @@ func (self *graph) GetMailProgramSettings(ctx context.Context) (*MailProgramSett
 	}
 	configuration := self.config.Current()
 	return &MailProgramSettings{
-		IMAPHost:       configuration.SubmissionHost(),
-		IMAPPort:       portOf(configuration.Listen.IMAP, 0),
-		IMAPSPort:      portOf(configuration.Listen.IMAPS, 0),
+		IMAPHost:       configuration.IMAPHost(),
+		IMAPPort:       portOf(":"+configuration.IMAPPort(), 0),
+		IMAPSPort:      portOf(":"+configuration.IMAPTLSPort(), 0),
 		SubmissionHost: configuration.SubmissionHost(),
 		SubmissionPort: portOf(":"+configuration.SubmissionPort(), 587),
 	}, nil

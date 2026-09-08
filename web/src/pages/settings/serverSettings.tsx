@@ -481,11 +481,13 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
 
   const [name, setName] = useState(settings.name)
   const [mailServers, setMailServers] = useState(fromList(settings.mailServers))
+  const [externalAddresses, setExternalAddresses] = useState(fromList(settings.externalAddresses))
   const [logLevel, setLogLevel] = useState(settings.logLevel)
 
   useEffect(() => {
     setName(settings.name)
     setMailServers(fromList(settings.mailServers))
+    setExternalAddresses(fromList(settings.externalAddresses))
     setLogLevel(settings.logLevel)
   }, [settings])
 
@@ -494,7 +496,14 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ identity: { name, mailServers: toList(mailServers), logLevel } })
+        void save({
+          identity: {
+            name,
+            mailServers: toList(mailServers),
+            externalAddresses: toList(externalAddresses),
+            logLevel,
+          },
+        })
       }}
     >
       <h3>{t('serverSettings.identityTitle')}</h3>
@@ -514,6 +523,16 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
           <input className="mono" value={mailServers} onChange={(event) => setMailServers(event.target.value)} />
         </label>
         <p className="muted field-hint">{t('serverSettings.serverMailServersHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.externalAddresses')}</span>
+          <input
+            className="mono"
+            value={externalAddresses}
+            onChange={(event) => setExternalAddresses(event.target.value)}
+          />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.externalAddressesHint')}</p>
 
         <label>
           <span>{t('serverSettings.logLevel')}</span>

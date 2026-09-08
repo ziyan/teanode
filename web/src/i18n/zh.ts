@@ -385,6 +385,16 @@ export const zh: Catalog = {
   'setup.noIPv6': '没有 IPv6，因此只需发布 A 记录。部分大型服务商更倾向 IPv6，但都不强制要求。',
   'setup.primaryFailed': '无法保存。',
 
+  'setup.imapTitle': '在邮件客户端中收信',
+  'setup.imapIntro': '在邮件客户端中填写的服务器地址。除非前面有转发不同端口的设备，否则跟随服务器本身。',
+  'setup.imapTls': '从第一个字节起使用 TLS',
+  'setup.imapStartTls': '明文连接，登录前转为 TLS',
+  'setup.imapHost': '主机',
+  'setup.imapPort': 'STARTTLS 端口',
+  'setup.imapTlsPort': 'TLS 端口',
+  'setup.imapHelp': '留空则使用服务器名称和监听端口。当路由器或容器在外部使用常规端口并转发到这里的其他端口时，请填写。',
+  'setup.imapSaved': '已保存。以后会这样告知邮件客户端。',
+  'setup.imapFailed': '无法保存邮件客户端设置。',
   'setup.submissionTitle': '告诉邮件客户端的地址',
   'setup.submissionIntro': '手机或邮件程序通过本服务器发信时应连接的地址，也就是凭据对话框里显示的内容。',
   'setup.submissionStartTls': '使用 STARTTLS',
@@ -394,16 +404,6 @@ export const zh: Catalog = {
     '两项都留空则跟随服务器：使用它自己的名称和监听端口。当有别的东西把不同端口转发过来时才需要填写 —— 比如容器映射的端口，或防火墙上的 587。',
   'setup.submissionSaved': '已保存。之后显示的凭据会使用这个地址。',
   'setup.submissionFailed': '未能保存。',
-  'setup.stepsTitle': '让邮件跑起来',
-  'setup.step1': '添加域名',
-  'setup.step1Detail': '在{link}中告诉服务器要为哪些域名接收邮件。',
-  'setup.step2': '设置邮件的去向',
-  'setup.step2Detail': '为每个域名至少添加一个别名。没有别名，发往该域名的邮件会被拒收。',
-  'setup.step3': '发布 DNS 记录',
-  'setup.step3Detail':
-    '每个域名的页面都会列出需要创建的记录，并显示是否已经生效。其中 MX 记录决定邮件能否送达。',
-  'setup.step4': '给自己发一封邮件',
-  'setup.step4Detail': 'MX 记录生效后，发往你域名的邮件应该会在一分钟内出现在“邮件”中。',
 
   'common.cancel': '取消',
   'common.create': '创建',
@@ -705,6 +705,8 @@ export const zh: Catalog = {
   'serverSettings.serverNameHint':
     '本服务器在 SMTP 欢迎语中给出的名字，也是它自己证书的来源。如果这个名字解析不到本机，别的服务器会对你发出的邮件起疑。',
   'serverSettings.serverMailServers': '邮件服务器名',
+  'serverSettings.externalAddresses': '其他可达地址',
+  'serverSettings.externalAddressesHint': '当邮件不是通过本机地址到达时所经过的地址：前置转发、隧道或负载均衡。指向这些地址的邮件服务器名称是正确的，无需修改记录。以逗号分隔；也可填写域名，检查时会解析。',
   'serverSettings.serverMailServersHint':
     '逗号分隔。除非某个域在自己的“设置”标签页里另行指定，否则所有域的 MX 记录都指向这些主机。改动它会改变每个域需要发布的记录。',
   'serverSettings.logLevel': '日志级别',

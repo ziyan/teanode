@@ -18,7 +18,10 @@ const OVERVIEW = `
       address via reverseName forwardAddresses confirmed
       helloName helloAddresses helloMatches unknown
     }
-    GetSettings { submission { host port effectiveHost effectivePort } }
+    GetSettings {
+      submission { host port effectiveHost effectivePort }
+      imap { host port tlsPort effectiveHost effectivePort effectiveTlsPort }
+    }
   }`
 
 const UPDATE_SUBMISSION = `
@@ -26,6 +29,11 @@ const UPDATE_SUBMISSION = `
     UpdateSettings(submission: $submission) {
       submission { host port effectiveHost effectivePort }
     }
+  }`
+
+const UPDATE_IMAP = `
+  mutation ($imap: IMAPParametersInput!) {
+    UpdateSettings(imap: $imap) { imap { host port tlsPort effectiveHost effectivePort effectiveTlsPort } }
   }`
 
 type OutgoingIdentity = {
@@ -38,6 +46,15 @@ type OutgoingIdentity = {
   helloAddresses?: string[]
   helloMatches: boolean
   unknown?: string
+}
+
+type IMAPAccess = {
+  host?: string
+  port?: number
+  tlsPort?: number
+  effectiveHost: string
+  effectivePort: string
+  effectiveTlsPort: string
 }
 
 type Submission = {
@@ -58,7 +75,7 @@ export function SetupPage() {
         ListDomains: Domain[]
         GetServerAddresses: ServerAddresses
         GetOutgoingIdentity: OutgoingIdentity
-        GetSettings: { submission: Submission }
+        GetSettings: { submission: Submission; imap: IMAPAccess }
       }>(OVERVIEW),
     [],
   )
@@ -69,36 +86,6 @@ export function SetupPage() {
   if (error) {
     return <ErrorMessage error={error} />
   }
-
-  const domains = data?.ListDomains ?? []
-  const withAliases = domains.filter((domain) => domain.aliases.length > 0)
-  const published = domains.filter((domain) => {
-    const records = domain.records?.records ?? []
-    return records.length > 0 && records.every((record) => record.verified)
-  })
-
-  const steps = [
-    {
-      done: domains.length > 0,
-      title: t('setup.step1'),
-      detail: <Trans k="setup.step1Detail" nodes={{ link: <Link to="/domains">{t('nav.domains')}</Link> }} />,
-    },
-    {
-      done: withAliases.length > 0,
-      title: t('setup.step2'),
-      detail: t('setup.step2Detail'),
-    },
-    {
-      done: domains.length > 0 && published.length === domains.length,
-      title: t('setup.step3'),
-      detail: t('setup.step3Detail'),
-    },
-    {
-      done: false,
-      title: t('setup.step4'),
-      detail: t('setup.step4Detail'),
-    },
-  ]
 
   return (
     <>
@@ -119,25 +106,7 @@ export function SetupPage() {
       {data?.GetSettings?.submission && (
         <SubmissionCard submission={data.GetSettings.submission} onSaved={reload} />
       )}
-
-      <h3>{t('setup.stepsTitle')}</h3>
-      {steps.map((step, index) => (
-        <div className="card" key={index}>
-          <div className="row">
-            <div>
-              <h3 style={{ margin: 0 }}>
-                {index + 1}. {step.title}
-              </h3>
-              <p className="muted" style={{ marginBottom: 0 }}>
-                {step.detail}
-              </p>
-            </div>
-            <div className="shrink">
-              <Tag value={step.done ? t('common.done') : t('common.toDo')} tone={step.done ? 'good' : undefined} />
-            </div>
-          </div>
-        </div>
-      ))}
+      {data?.GetSettings?.imap && <MailProgramCard imap={data.GetSettings.imap} onSaved={reload} />}
     </>
   )
 }
@@ -286,6 +255,100 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
         </p>
       )}
     </div>
+  )
+}
+
+// MailProgramCard is the address a mail program is told to use for reading,
+// the other half of what somebody types into their phone. It is wrong in the
+// same way and for the same reason as the one below: this server listens on
+// 10993 and a mail program connects to 993, and reporting what it binds hands
+// somebody a number nothing answers on.
+function MailProgramCard({ imap, onSaved }: { imap: IMAPAccess; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const [host, setHost] = useState(imap.host ?? '')
+  const [port, setPort] = useState(imap.port ? String(imap.port) : '')
+  const [tlsPort, setTlsPort] = useState(imap.tlsPort ? String(imap.tlsPort) : '')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  useEffect(() => {
+    setHost(imap.host ?? '')
+    setPort(imap.port ? String(imap.port) : '')
+    setTlsPort(imap.tlsPort ? String(imap.tlsPort) : '')
+    setSaved(false)
+  }, [imap])
+
+  // Nothing is listening, so there is nothing to tell anybody.
+  if (!imap.effectivePort && !imap.effectiveTlsPort) {
+    return null
+  }
+
+  return (
+    <form
+      className="card"
+      onSubmit={async (event) => {
+        event.preventDefault()
+        setBusy(true)
+        setProblem(null)
+        setSaved(false)
+        try {
+          await graphql(UPDATE_IMAP, {
+            imap: { host, port: Number(port) || 0, tlsPort: Number(tlsPort) || 0 },
+          })
+          setSaved(true)
+          onSaved()
+        } catch (caught) {
+          setProblem(caught instanceof Error ? caught.message : t('setup.imapFailed'))
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <h3>{t('setup.imapTitle')}</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {t('setup.imapIntro')}
+      </p>
+
+      <p>
+        <span className="mono">
+          {imap.effectiveHost} : {imap.effectiveTlsPort || imap.effectivePort}
+        </span>{' '}
+        <span className="muted">{imap.effectiveTlsPort ? t('setup.imapTls') : t('setup.imapStartTls')}</span>
+      </p>
+
+      <div className="row">
+        <label>
+          <span>{t('setup.imapHost')}</span>
+          <input value={host} placeholder={imap.effectiveHost} onChange={(event) => setHost(event.target.value)} />
+        </label>
+        <label className="shrink">
+          <span>{t('setup.imapTlsPort')}</span>
+          <input
+            value={tlsPort}
+            inputMode="numeric"
+            placeholder={imap.effectiveTlsPort || '993'}
+            onChange={(event) => setTlsPort(event.target.value.replace(/[^0-9]/g, ''))}
+          />
+        </label>
+        <label className="shrink">
+          <span>{t('setup.imapPort')}</span>
+          <input
+            value={port}
+            inputMode="numeric"
+            placeholder={imap.effectivePort || '143'}
+            onChange={(event) => setPort(event.target.value.replace(/[^0-9]/g, ''))}
+          />
+        </label>
+      </div>
+      <p className="muted">{t('setup.imapHelp')}</p>
+
+      {problem && <p className="error">{problem}</p>}
+      {saved && <p className="notice good">{t('setup.imapSaved')}</p>}
+      <button className="primary" type="submit" disabled={busy}>
+        {busy ? t('integrations.saving') : t('common.save')}
+      </button>
+    </form>
   )
 }
 

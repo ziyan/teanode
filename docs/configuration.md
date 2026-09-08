@@ -252,6 +252,17 @@ domain for one MX record per name, at preference 10, 20 and so on in the order
 given.  These are names mail arrives at. They are unrelated to tls.hosts,
 which is the names this server holds a certificate for.
 
+**`externalAddresses`** — ExternalAddresses are the addresses mail reaches
+this server at, when they are not the address the server discovers for
+itself: a relay in front of it, a tunnel from an elsewhere, a load balancer.
+The DNS advice checks each MX host's A record against the address the server
+sees from outside, because for a server that faces the internet that is the
+one value an operator cannot look up; a server reached through something else
+fails that check for ever, on a record that is right. Listing those addresses
+here makes them count as correct. Names as well as addresses are accepted,
+and a name is resolved when the advice is worked out, so a forwarder whose
+address moves stays right.
+
 
 ### `sso`
 
@@ -312,6 +323,27 @@ http-01.
 
 **`debug`** — Debug, when set, serves Go pprof endpoints. Bind it to localhost
 only.
+
+### `imap`
+
+What a mail program is told to connect to for reading mail, which is what the
+mail program page in a mailbox's settings shows.
+
+Normally it follows the server — `server.name`, and the ports in
+`listen.imap` and `listen.imaps` — and all three can be left empty. Set them
+when something in front forwards a different port: a container publishing
+10993, or a router taking 993 on the outside. Without it the page hands
+somebody the port the process happens to bind, which is not the one their mail
+program can reach. It is `smtp.submission` for reading rather than sending,
+and like it changes nothing about what the server does. Only what it says.
+
+**`host`** — What to connect to. Empty means `server.name`.
+
+**`port`** — The port for the connection that starts plain and turns to TLS.
+Empty means the port in `listen.imap`.
+
+**`tlsPort`** — The port for the connection that is TLS from the first byte,
+which is what most mail programs try. Empty means the port in `listen.imaps`.
 
 ### `tls`
 

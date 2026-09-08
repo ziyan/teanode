@@ -391,6 +391,16 @@ export const ja: Catalog = {
     'IPv6 がないので A レコードだけ公開してください。IPv6 を好む大手事業者もありますが、必須としているところはありません。',
   'setup.primaryFailed': '保存できませんでした。',
 
+  'setup.imapTitle': 'メールソフトで受信する',
+  'setup.imapIntro': 'メールソフトに入力する接続先。前段で別のポートに転送していない限り、サーバー自身の設定に従います。',
+  'setup.imapTls': '最初から TLS',
+  'setup.imapStartTls': '平文で接続し、ログイン前に TLS へ',
+  'setup.imapHost': 'ホスト',
+  'setup.imapPort': 'STARTTLS ポート',
+  'setup.imapTlsPort': 'TLS ポート',
+  'setup.imapHelp': '空欄ならサーバー名と待ち受けポートに従います。ルーターやコンテナが外側で通常のポートを受け、ここでは別のポートへ転送している場合に入力してください。',
+  'setup.imapSaved': '保存しました。以後メールソフトにはこの値を案内します。',
+  'setup.imapFailed': 'メールソフトの設定を保存できませんでした。',
   'setup.submissionTitle': 'メールクライアントに伝える宛先',
   'setup.submissionIntro':
     'スマートフォンやメールソフトがこのサーバー経由で送信するときに接続する宛先です。認証情報のダイアログに表示されるものと同じです。',
@@ -401,18 +411,6 @@ export const ja: Catalog = {
     '両方とも空にすると、サーバー自身の名前と待ち受けポートに従います。別のポートが転送されている場合だけ設定してください。コンテナが公開しているポートや、ファイアウォールの 587 などです。',
   'setup.submissionSaved': '保存しました。以降に表示される認証情報はこの宛先になります。',
   'setup.submissionFailed': '保存できませんでした。',
-  'setup.stepsTitle': 'メールを流すまで',
-  'setup.step1': 'ドメインを追加する',
-  'setup.step1Detail': 'どのドメイン宛のメールを受け取るかを、{link}でサーバーに伝えます。',
-  'setup.step2': 'メールの行き先を決める',
-  'setup.step2Detail':
-    '各ドメインに少なくとも一つエイリアスを追加してください。ないと、そのドメイン宛のメールは拒否されます。',
-  'setup.step3': 'DNS レコードを公開する',
-  'setup.step3Detail':
-    '各ドメインのページに、作成すべきレコードと、それが反映されたかどうかが表示されます。メールが届くかどうかを決めるのは MX レコードです。',
-  'setup.step4': '自分宛にメールを送る',
-  'setup.step4Detail':
-    'MX レコードが有効になれば、あなたのドメイン宛のメールは一分ほどで「メール」に現れるはずです。',
 
   'common.cancel': 'キャンセル',
   'common.create': '作成',
@@ -719,6 +717,8 @@ export const ja: Catalog = {
   'serverSettings.serverNameHint':
     'SMTP の挨拶で名乗る名前で、自分の証明書もここから導かれます。この機械に解決しない名前は、送ったメールを他のサーバーに疑わせます。',
   'serverSettings.serverMailServers': 'メールサーバー名',
+  'serverSettings.externalAddresses': 'ほかに到達するアドレス',
+  'serverSettings.externalAddressesHint': 'このサーバー自身のアドレスではなく、メールが実際に届くアドレス。前段のリレー、トンネル、ロードバランサーなど。これらを指すメールサーバー名は正しく、変更の必要はありません。カンマ区切り。名前も指定でき、判定時に解決されます。',
   'serverSettings.serverMailServersHint':
     'カンマ区切り。ドメインが自分の「設定」タブで指定しない限り、すべてのドメインの MX レコードが指すホストです。変えると各ドメインが公開すべきレコードも変わります。',
   'serverSettings.logLevel': 'ログレベル',

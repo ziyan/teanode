@@ -188,6 +188,7 @@ func TestSettingsMutationNamesRealTypes(t *testing.T) {
 		"antispam":     "AntispamParametersInput",
 		"relay":        "RelayParametersInput",
 		"submission":   "SubmissionParametersInput",
+		"imap":         "IMAPParametersInput",
 		"proxy":        "ProxyParametersInput",
 		"certificates": "CertificateParametersInput",
 		"smtp":         "SMTPParametersInput",

@@ -162,6 +162,37 @@ func (self *Configuration) SubmissionPort() string {
 	return portOf(self.Listen.SMTPOutgoing)
 }
 
+// IMAPHost is the host a mail program should be told to connect to for
+// reading mail. The configured one when there is one, and otherwise this
+// server's own name.
+func (self *Configuration) IMAPHost() string {
+	if host := strings.TrimSpace(self.IMAP.Host); host != "" {
+		return host
+	}
+	return self.Server.Name
+}
+
+// IMAPPort is the port a mail program should be told to connect to for the
+// connection that starts plain and turns to TLS, and IMAPTLSPort for the one
+// that is TLS from the first byte.
+//
+// The configured ones when there are any, and otherwise the ports this
+// server listens on — which are wrong exactly when something in front
+// forwards different ones, which is what the settings are for.
+func (self *Configuration) IMAPPort() string {
+	if port := self.IMAP.Port; port != 0 {
+		return strconv.Itoa(int(port))
+	}
+	return portOf(self.Listen.IMAP)
+}
+
+func (self *Configuration) IMAPTLSPort() string {
+	if port := self.IMAP.TLSPort; port != 0 {
+		return strconv.Itoa(int(port))
+	}
+	return portOf(self.Listen.IMAPS)
+}
+
 // portOf extracts the port from a listen address such as ":587" or
 // "127.0.0.1:10587".
 func portOf(address string) string {

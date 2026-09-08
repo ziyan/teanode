@@ -30,6 +30,10 @@ type Configuration struct {
 	// Addresses to listen on
 	Listen Listen `yaml:"listen"`
 
+	// What a mail program is told to connect to for reading mail, when that
+	// is not what this server listens on
+	IMAP IMAPAccess `yaml:"imap"`
+
 	// SSO is how people sign in through an identity provider, beside the
 	// password and passkey forms.
 	SSO SSO `yaml:"sso"`
@@ -163,6 +167,20 @@ type Server struct {
 	// These are names mail arrives at. They are unrelated to tls.hosts, which
 	// is the names this server holds a certificate for.
 	MailServers []string `yaml:"mailServers,omitempty"`
+
+	// ExternalAddresses are the addresses mail reaches this server at, when
+	// they are not the address the server discovers for itself: a relay in
+	// front of it, a tunnel from an elsewhere, a load balancer.
+	//
+	// The DNS advice checks each MX host's A record against the address the
+	// server sees from outside, because for a server that faces the internet
+	// that is the one value an operator cannot look up. A server reached
+	// through something else fails that check for ever, on a record that is
+	// right: listing those addresses here makes them count as correct.
+	//
+	// Names as well as addresses are accepted, and are resolved when the
+	// advice is worked out, so a forwarder whose address moves stays right.
+	ExternalAddresses []string `yaml:"externalAddresses,omitempty"`
 
 	// LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL.
 	LogLevel string `yaml:"logLevel"`
@@ -448,6 +466,27 @@ type Submission struct {
 
 	// Port to connect to. Zero means the port in listen.smtpOutgoing.
 	Port uint16 `yaml:"port,omitempty"`
+}
+
+// IMAPAccess is what a mail program should be told to connect to for reading
+// mail, when that is not what this server listens on.
+//
+// A deployment behind a gateway listens on a high port and is reached on the
+// usual one: this server hears IMAP on 10993 and a mail program connects to
+// 993. Reporting the port it listens on then tells everybody the wrong
+// number, which is what this exists to correct — the same reason
+// smtp.submission exists for sending.
+type IMAPAccess struct {
+	// Host a mail program connects to. Empty means server.name.
+	Host string `yaml:"host,omitempty"`
+
+	// Port for the connection that starts plain and turns to TLS. Zero means
+	// the port in listen.imap.
+	Port uint16 `yaml:"port,omitempty"`
+
+	// TLSPort for the connection that is TLS from the first byte, which is
+	// what most mail programs try. Zero means the port in listen.imaps.
+	TLSPort uint16 `yaml:"tlsPort,omitempty"`
 }
 
 // Relay is a mail server that outgoing mail is handed to, instead of being

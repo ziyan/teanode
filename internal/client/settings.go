@@ -22,6 +22,7 @@ const settingsSelection = `{
 	antispam { enabled engine effectiveEngine host port signalsEnabled dnsEnabled bayesEnabled rulesEnabled bayesMinimumMessages bayesLearnedSpam bayesLearnedHam }
 	relay { enabled host port security username hasPassword }
 	submission { host port effectiveHost effectivePort }
+	imap { host port tlsPort effectiveHost effectivePort effectiveTlsPort }
 	proxy { socks5 }
 	certificates { perDomain hosts acmeEnabled acmeEmail acmeDirectoryUrl acmeChallenge certificateFile privateKeyFile }
 	smtp { maxMessageSize maxRecipientsIncoming maxRecipientsOutgoing greylistDelay authRateLimit authRateBurst trustedSenders }
@@ -30,7 +31,7 @@ const settingsSelection = `{
 	passkey { enabled relyingPartyId displayName origins maximumPerUser }
 	listen { smtpIncoming smtpOutgoing imap imaps http https debug }
 	sso { providers { id name issuer clientId hasClientSecret groupsClaim createUsers } }
-	identity { name mailServers logLevel dataDirectory }
+	identity { name mailServers externalAddresses logLevel dataDirectory }
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
 }`
@@ -66,7 +67,7 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 	query := `mutation (
 		$s3: S3ParametersInput, $route53: Route53ParametersInput,
 		$antivirus: ServiceParametersInput, $antispam: AntispamParametersInput,
-		$relay: RelayParametersInput, $submission: SubmissionParametersInput,
+		$relay: RelayParametersInput, $submission: SubmissionParametersInput, $imap: IMAPParametersInput,
 		$proxy: ProxyParametersInput, $certificates: CertificateParametersInput,
 		$smtp: SMTPParametersInput, $resolver: ResolverParametersInput,
 		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
@@ -76,7 +77,7 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 	) {
 		UpdateSettings(
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
-			relay: $relay, submission: $submission, proxy: $proxy, certificates: $certificates,
+			relay: $relay, submission: $submission, imap: $imap, proxy: $proxy, certificates: $certificates,
 			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
 			listen: $listen, sso: $sso, identity: $identity, storage: $storage, geoip: $geoip,
 			upgrade: $upgrade

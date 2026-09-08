@@ -393,6 +393,16 @@ export const en = {
     'No IPv6, so publish only an A record. Some large providers prefer IPv6 but none require it.',
   'setup.primaryFailed': 'That could not be saved.',
 
+  'setup.imapTitle': 'Reading mail in a mail program',
+  'setup.imapIntro': 'What to type into a mail program to read this server\u2019s mailboxes. It follows the server unless something in front forwards a different port.',
+  'setup.imapTls': 'with TLS from the first byte',
+  'setup.imapStartTls': 'plain, turning to TLS before signing in',
+  'setup.imapHost': 'Host',
+  'setup.imapPort': 'STARTTLS port',
+  'setup.imapTlsPort': 'TLS port',
+  'setup.imapHelp': 'Leave these empty to follow the server name and the ports it listens on. Fill them in when a router or a container takes the usual port on the outside and forwards it to a different one here.',
+  'setup.imapSaved': 'Saved. A mail program is told this from now on.',
+  'setup.imapFailed': 'The mail program settings could not be saved.',
   'setup.submissionTitle': 'What to tell a mail client',
   'setup.submissionIntro':
     'The address a phone or a mail program should connect to when sending through this server. It is what the credential dialog shows.',
@@ -403,17 +413,6 @@ export const en = {
     'Leave both empty to follow the server: its own name, and the port it listens on. Set them when something forwards a different port to it — a container publishing one, or a firewall taking 587.',
   'setup.submissionSaved': 'Saved. Credentials shown from now on will say this.',
   'setup.submissionFailed': 'That could not be saved.',
-  'setup.stepsTitle': 'Getting mail flowing',
-  'setup.step1': 'Add a domain',
-  'setup.step1Detail': 'Tell the server which domains it accepts mail for, under {link}.',
-  'setup.step2': 'Say where mail should go',
-  'setup.step2Detail': 'Add at least one alias to each domain. Without one, mail for it is refused.',
-  'setup.step3': 'Publish the DNS records',
-  'setup.step3Detail':
-    'Each domain page lists exactly what to create and shows whether it has taken effect. The MX record is the one that decides whether mail arrives at all.',
-  'setup.step4': 'Send yourself a message',
-  'setup.step4Detail':
-    'Once the MX record is live, mail to your domain should appear under Mail within a minute.',
 
   'common.cancel': 'Cancel',
   'common.create': 'Create',
@@ -727,6 +726,8 @@ export const en = {
   'serverSettings.serverNameHint':
     'The name this server gives in its SMTP banner and derives its own certificate from. A name that does not resolve to this machine makes other servers suspicious of your mail.',
   'serverSettings.serverMailServers': 'Mail server names',
+  'serverSettings.externalAddresses': 'Also reached at',
+  'serverSettings.externalAddressesHint': 'Addresses mail reaches this server at when they are not its own: a relay in front of it, a tunnel, a load balancer. A mail server name pointing at one of these is right rather than a record to change. Comma separated; names are allowed and are resolved when the advice is worked out.',
   'serverSettings.serverMailServersHint':
     'Comma separated. The hosts every domain’s MX records name, unless that domain names its own on its Settings tab. Changing this changes the records every domain has to publish.',
   'serverSettings.logLevel': 'Log level',
