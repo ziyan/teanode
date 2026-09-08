@@ -14,7 +14,7 @@ const DOMAINS = `
       id domain subdomain comment
       aliases { id }
       credentials { id }
-      records { records { type verified } }
+      records { records { type verified optional } }
     }
   }`
 
@@ -73,10 +73,14 @@ export function DomainsPage() {
         value: (entry) => describeRecords(entry, t),
         render: (entry) => {
           const records = entry.records?.records ?? []
-          const missing = records.filter((record) => !record.verified).length
           if (records.length === 0) {
             return <Tag value={t('domains.notChecked')} />
           }
+          // Optional records are not counted. A domain that has published
+          // everything its mail needs is not missing anything, and a BIMI row
+          // nobody has uploaded a logo for was making every domain on this
+          // list wear a warning about something no mail depends on.
+          const missing = records.filter((record) => !record.verified && !record.optional).length
           return missing === 0 ? (
             <Tag value={t('domains.allPublished')} tone="good" />
           ) : (
@@ -185,5 +189,7 @@ function describeRecords(entry: Domain, t: ReturnType<typeof useTranslation>['t'
   if (records.length === 0) {
     return t('domains.notChecked')
   }
-  return records.every((record) => record.verified) ? t('domains.allPublished') : t('domains.notPublished')
+  return records.every((record) => record.verified || record.optional)
+    ? t('domains.allPublished')
+    : t('domains.notPublished')
 }

@@ -57,12 +57,45 @@ const (
 	// address in the message.
 	PathMailRemote = Prefix + "/mail/{mailId}/remote"
 
+	// PathBimiLogoUpload accepts the logo a domain will publish for its own
+	// mail. An operator's action, so it is inside the API and behind a
+	// session.
+	PathBimiLogoUpload = Prefix + "/domains/{domainId}/logo"
+
+	// PathDomainLogo serves the same file to the dashboard, which shows the
+	// operator what they published. Inside the API and behind a session,
+	// because it is the dashboard asking rather than a receiver.
+	PathDomainLogo = Prefix + "/domains/{domainId}/logo.svg"
+
+	// PathBimiLogo serves that logo. Outside the API prefix and outside the
+	// session check, because what fetches it is a receiving mail system
+	// following a DNS record — it has no session and never will.
+	PathBimiLogo = "/.well-known/bimi/{fileId}.svg"
+
 	// PathSenderLogo serves the logo a sending domain publishes for its mail,
 	// as this server fetched and cached it. Fetched here rather than by the
 	// browser, so that showing one does not tell the sender which address
 	// opened which message at what moment.
 	PathSenderLogo = Prefix + "/logo/{domain}"
 )
+
+// BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where
+// a logo is sent, which is a multipart request and so has no place in the
+// schema.
+func BimiLogoUploadPath(domainId string) string {
+	return Prefix + "/domains/" + url.PathEscape(domainId) + "/logo"
+}
+
+// DomainLogoPath is PathDomainLogo with its parameter filled in.
+func DomainLogoPath(domainId string) string {
+	return Prefix + "/domains/" + url.PathEscape(domainId) + "/logo.svg"
+}
+
+// BimiLogoPath is PathBimiLogo with its parameter filled in. The address goes
+// in a DNS record, so it has to keep meaning the same thing.
+func BimiLogoPath(fileId string) string {
+	return "/.well-known/bimi/" + fileId + ".svg"
+}
 
 // SenderLogoPath is PathSenderLogo with its parameter filled in.
 func SenderLogoPath(domain string) string {

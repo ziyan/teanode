@@ -30,6 +30,17 @@ type Settings struct {
 
 	// CheckInterval is how often every configured domain is re-checked.
 	CheckInterval time.Duration
+
+	// PublishedLogo reads a logo this server hosts, by the name in its
+	// address. Given as a function so this package needs to know nothing
+	// about where files are kept — the same shape the message store's own
+	// retention check is given in.
+	//
+	// It exists so that checking a BIMI record naming a file on this server
+	// does not go out to the network for it: that fetch is guarded against
+	// addresses that are not public, and a great many of these servers answer
+	// to a name that resolves inside somebody's own network.
+	PublishedLogo func(ctx context.Context, fileId string) ([]byte, error)
 }
 
 type Verifier interface {

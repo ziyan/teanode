@@ -42,9 +42,10 @@ const DOMAIN = `
   query ($domainId: String!) {
     GetDomain(domainId: $domainId) {
       id domain subdomain comment spamFilterScoreThreshold mailServers mailHosts linkHost linkHostname dkimSelector hasDkimKey
+      logo { filename title url publicUrl uploadedAt }
       aliases { id pattern comment kind email webhook mailboxId disabled mailServer { host port username } }
       credentials { id comment alias disabled }
-      records { checkedAt error records { type name expected priority optional found verified purpose } }
+      records { checkedAt error records { type name expected priority optional found verified purpose blocked } }
     }
   }`
 

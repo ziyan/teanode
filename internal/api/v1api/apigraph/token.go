@@ -171,6 +171,11 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 type DeleteTokenArguments struct {
 	// ID of the Token to revoke
 	TokenID string `json:"tokenId"`
+
+	// Whose token. Only the console may name somebody else; see owner. Without
+	// it the console could issue tokens and list them but never revoke one,
+	// which is where somebody who has lost theirs is standing.
+	Username *string `json:"username" graphapi:"nullable"`
 }
 
 func (self *graph) DeleteToken(ctx context.Context, arguments DeleteTokenArguments) error {
@@ -178,7 +183,7 @@ func (self *graph) DeleteToken(ctx context.Context, arguments DeleteTokenArgumen
 		return err
 	}
 
-	username, err := self.owner(ctx, nil)
+	username, err := self.owner(ctx, arguments.Username)
 	if err != nil {
 		return err
 	}

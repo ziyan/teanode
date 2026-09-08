@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
-import { CopyIconButton, Tag } from '../components/common'
+import { CopyIconButton, ErrorMessage, Tag } from '../components/common'
+import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
 import { ConfirmDialog } from '../components/dialog'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
 import { Tooltip } from '../components/tooltip'
 
 const CHECK = `mutation ($domainId: String!) { CheckDomain(domainId: $domainId) { id } }`
+const DELETE_LOGO = `mutation ($domainId: String!) { DeleteDomainLogo(domainId: $domainId) }`
 const UPDATE_MAIL_SERVERS = `
   mutation ($domainId: String!, $mailServers: [String]) {
     UpdateDomain(domainId: $domainId, domainParameters: { mailServers: $mailServers }) {
@@ -84,15 +87,28 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
                       took four lines of the table to say it. What somebody
                       does with this value is paste it into a zone, which is
                       what the button is for; hovering says the rest. */}
-                  <div className="value-row">
-                    {/* An MX value is the preference and the host together,
-                        so it can be copied into a zone as it stands. */}
-                    <Tooltip label={expectedValue(record)}>
-                      <span className="value-clamp">{expectedValue(record)}</span>
-                    </Tooltip>
-                    <CopyIconButton value={expectedValue(record)} />
-                  </div>
+                  {expectedValue(record) === '' ? (
+                    /* Nothing to publish yet: an optional record whose value
+                       waits on something the operator has not done. A value
+                       here would be a made-up one, and the button beside it
+                       copies. */
+                    <span className="muted">{t('domain.nothingToPublish')}</span>
+                  ) : (
+                    <div className="value-row">
+                      {/* An MX value is the preference and the host together,
+                          so it can be copied into a zone as it stands. */}
+                      <Tooltip label={expectedValue(record)}>
+                        <span className="value-clamp">{expectedValue(record)}</span>
+                      </Tooltip>
+                      <CopyIconButton value={expectedValue(record)} />
+                    </div>
+                  )}
                   {!record.verified && <div className="muted cell-note">{record.purpose}</div>}
+                  {/* What is stopping it, when something is. Said whether or
+                      not the record is published: publishing one and waiting
+                      to see what happens is how somebody spends a week
+                      finding this out. */}
+                  {record.blocked && <div className="cell-note warn">{record.blocked}</div>}
                 </td>
                 <td className="mono wrap">
                   {record.verified ? (
@@ -121,6 +137,8 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
           <button onClick={() => void run(() => graphql(CHECK, { domainId }))}>{t('domain.checkAgain')}</button>
         </p>
       </div>
+
+      <DomainLogoCard domain={domain} domainId={domainId ?? ''} run={run} />
 
       <div className="card">
         <h3>{t('domain.mailServersTitle')}</h3>
@@ -293,5 +311,151 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         />
       )}
     </>
+  )
+}
+
+// The mark this server publishes for the domain, which is what the BIMI
+// record above points at.
+//
+// Hosting it here is the point of the card. A BIMI record names an address
+// over HTTPS, and somebody running a mail server and no web server has
+// nowhere to put a file — so the record the page offers names one this server
+// serves, and uploading is the whole of that step.
+//
+// The file is checked before it is stored, against the profile a mark has to
+// satisfy. A receiver that dislikes a file says nothing to anybody: the mark
+// never appears and the sender never learns why. So the message here names
+// what is wrong with it.
+function DomainLogoCard({
+  domain,
+  domainId,
+  run,
+}: {
+  domain: DomainTabProps['domain']
+  domainId: string
+  run: DomainTabProps['run']
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [refused, setRefused] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
+  const logo = domain.logo
+
+  const upload = async (file: File) => {
+    setBusy(true)
+    setRefused(null)
+    try {
+      const form = new FormData()
+      form.append('file', file, file.name)
+      const answer = await fetch(`/api/v1/domains/${encodeURIComponent(domainId)}/logo`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      })
+      const body = await answer.json().catch(() => null)
+      if (!answer.ok) {
+        setRefused(body?.error ?? t('domain.logoRefused'))
+        return
+      }
+      // The records are computed on a schedule, so the row above would go on
+      // saying there is no logo until the next sweep. Ask for a check now, so
+      // the value to copy is the one that was just uploaded.
+      await run(() => graphql(CHECK, { domainId }))
+    } catch (caught) {
+      setRefused(caught instanceof Error ? caught.message : t('domain.logoRefused'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>{t('domain.logoTitle')}</h3>
+      <p className="muted">{t('domain.logoIntro')}</p>
+
+      {logo ? (
+        <div className="domain-logo">
+          {/* Drawn at both the sizes a reader sees it: beside a row of a
+              list, and beside the message itself. */}
+          {/* The file this server publishes, drawn from where it publishes
+              it — not from the cache of marks fetched from other people's
+              domains, which is what a sending domain's name would read. */}
+          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={40} />
+          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={20} />
+          <div className="domain-logo-about">
+            <div>{logo.filename}</div>
+            {/* Said, because two drawings of the same mark side by side
+                otherwise read as a mistake rather than as the point. */}
+            <div className="muted">{t('domain.logoSizes')}</div>
+            <div className="muted">
+              {t('domain.logoTitleIs', { title: logo.title })} {t('domain.logoUploaded')}{' '}
+              <RelativeTime value={logo.uploadedAt} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="muted">{t('domain.logoNone')}</p>
+      )}
+
+      <ErrorMessage error={refused} />
+
+      <p className="muted">{t('domain.logoRules')}</p>
+
+      <div className="page-actions">
+        <input
+          ref={picker}
+          type="file"
+          accept="image/svg+xml,.svg"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) {
+              void upload(file)
+            }
+          }}
+        />
+        <button disabled={busy} onClick={() => picker.current?.click()}>
+          {logo ? t('domain.logoReplace') : t('domain.logoUpload')}
+        </button>
+        {/* The way back. Without it a mark could be replaced but never taken
+            down, and a domain that stops using one would go on serving it. */}
+        {logo ? (
+          <button className="danger" disabled={busy} onClick={() => setRemoving(true)}>
+            {t('domain.logoRemove')}
+          </button>
+        ) : null}
+      </div>
+
+      {/* Said before anybody starts, not after, and set apart rather than
+          left as the fourth sentence of a grey paragraph. The difference
+          between "this works" and "this works everywhere except the two
+          receivers that matter most to you" is a certificate costing about a
+          thousand dollars a year, and learning that after commissioning
+          artwork is learning it too late. */}
+      <p className="notice domain-logo-note">
+        <strong>{t('domain.logoCertificateTitle')}</strong> {t('domain.logoCertificate')}
+      </p>
+
+      {removing && (
+        <ConfirmDialog
+          title={t('domain.logoRemoveTitle')}
+          body={t('domain.logoRemoveConfirm')}
+          confirmLabel={t('domain.logoRemove')}
+          onConfirm={() => {
+            setRemoving(false)
+            void run(async () => {
+              await graphql(DELETE_LOGO, { domainId })
+              // The row above names the file by address, so it has to be
+              // asked again or it goes on offering a record for a mark that
+              // is no longer served.
+              await graphql(CHECK, { domainId })
+            })
+          }}
+          onClose={() => setRemoving(false)}
+        />
+      )}
+    </div>
   )
 }

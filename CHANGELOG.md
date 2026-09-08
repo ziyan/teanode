@@ -6,6 +6,73 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Help publishing your own logo, on a domain's page. TeaNode shows the mark
+  other domains publish for their mail; this is the other side of it. The DNS
+  tab has a BIMI row that says what to publish and, when something is stopping
+  it, what — most often that the domain's DMARC policy is none, which is the
+  policy this same page recommends starting with, so every domain begins
+  unable to use one and nothing said so. Upload an SVG and this server hosts
+  it, so a domain with no web server has somewhere to put the file; the record
+  the page offers names that address. The file is checked first against the
+  restricted profile a mark has to satisfy — no script, no animation, nothing
+  fetched from elsewhere, square — and refused with the element that is wrong,
+  because a receiver refuses the same file silently and the sender never
+  learns why. The row then verifies the whole chain rather than the record's
+  existence: the logo is read, and checked as a receiver would check it.
+
+  It also says, before anybody starts, that Gmail and Yahoo show a mark only
+  for senders holding a Verified Mark Certificate — issued against a
+  registered trademark, renewed yearly, on the order of a thousand dollars —
+  and that other receivers show one without. Nothing here issues one, and
+  nothing here says "verified".
+
+- A published logo can be withdrawn, from the dashboard or the command line.
+  `DeleteBimiPublication` was written and never called, so a mark could be
+  replaced but never taken down: an operator who published the wrong artwork,
+  or who stopped using a domain, had no way out but an edit to the database
+  while the record went on naming a file this server went on serving.
+
+- `teanode domain logo show|publish|remove` and `teanode mailbox subscription
+  list|show|mail|unsubscribe`, so this week's two features are reachable from
+  the command line as commands rather than only through `teanode api call`.
+  Publishing a logo sends a file, which nothing in the command line did
+  before. `teanode domain check` now also prints what would stop a published
+  record having any effect, which until now only the dashboard said.
+
+- `teanode token revoke --user`, which `create` and `list` already took. Without
+  it the server's own console could issue tokens and list them but never revoke
+  one — which is exactly where somebody who has lost their token is standing.
+
+### Fixed
+
+- Publishing a picture or a logo for a domain now asks for `domain:manage`
+  over that domain, as every other operation on a domain does. Both uploads
+  asked only that the caller was signed in, so anybody with a mailbox on the
+  server could have replaced any domain's published mark, or added a picture
+  to any domain's store to be served from that domain's name. The routes that
+  serve bytes are unchanged: what they serve is public either way. A test now
+  reads this package's own source and fails when a route that changes
+  something asks for no more than a session — the GraphQL side has had that
+  guarantee for a while, and these routes were the blind spot in it.
+
+- Listing domains asked the database once per domain for its logo, and asked
+  it for domains the caller is not allowed to see. One query now, for the
+  domains that survive the permission filter.
+
+- The address a BIMI record names is the one the domain already publishes its
+  pictures under, rather than the name of the node answering. Those are often
+  different — a server called mx1.example.com serves mail.example.com — and a
+  record in DNS has to keep meaning the same thing after that machine is
+  replaced. A logo published at the old address is still read from storage
+  rather than fetched, so a record written before this keeps verifying.
+
+- A domain with everything published no longer reads as one record short
+  because nobody has uploaded a logo. The domain list and a domain's overview
+  counted optional records as missing; the BIMI row made that visible on every
+  domain at once, but an AAAA record has always counted the same way.
+
 ## [0.14.0] - 2026-09-08
 
 ### Added

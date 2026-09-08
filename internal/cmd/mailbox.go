@@ -23,7 +23,7 @@ import (
 func NewMailboxCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "mailbox",
-		Usage: "mailboxes: folders, rules, contacts, devices, out of office",
+		Usage: "mailboxes: folders, rules, contacts, subscriptions, devices, out of office",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
@@ -53,6 +53,7 @@ func NewMailboxCommand() *cli.Command {
 			newContactCommand(),
 			newDeviceCommand(),
 			newAutoReplyCommand(),
+			newSubscriptionCommand(),
 			{
 				Name:   "programs",
 				Usage:  "the hosts and ports a mail program connects to",
@@ -1536,4 +1537,251 @@ func readValueOrStandardInput(value string) (string, error) {
 // itoa is strconv.Itoa under a shorter name, for table cells.
 func itoa(value int) string {
 	return strconv.Itoa(value)
+}
+
+// newSubscriptionCommand is the mailing lists a mailbox receives, and leaving
+// them.
+//
+// A subscription is not a stored thing but a grouping of stored things: every
+// message that named the same list. So there is nothing to create or rename
+// here — only what arrived, and the one thing a person wants to do about it.
+func newSubscriptionCommand() *cli.Command {
+	return &cli.Command{
+		Name:    "subscription",
+		Aliases: []string{"subscriptions"},
+		Usage:   "the mailing lists this mailbox receives, and leaving them",
+		Commands: []*cli.Command{
+			{
+				Name:  "list",
+				Usage: "list the subscriptions, the busiest first",
+				Flags: []cli.Flag{
+					JSONFlag(), mailboxFlag(),
+					&cli.IntFlag{Name: "first", Value: 50, Usage: "how many at most"},
+					&cli.IntFlag{Name: "offset", Usage: "skip this many"},
+				},
+				Action: runSubscriptionList,
+			},
+			{
+				Name:      "show",
+				Usage:     "one subscription: how much of it there is, and how it can be left",
+				ArgsUsage: "<key>",
+				Flags:     []cli.Flag{JSONFlag(), mailboxFlag()},
+				Action:    runSubscriptionShow,
+			},
+			{
+				Name:      "mail",
+				Usage:     "its messages, newest first, the way the dashboard groups them",
+				ArgsUsage: "<key>",
+				Flags:     []cli.Flag{JSONFlag(), mailboxFlag()},
+				Action:    runSubscriptionMail,
+			},
+			{
+				Name:      "unsubscribe",
+				Usage:     "ask to leave, by whichever way the sender offered",
+				ArgsUsage: "<key>",
+				Flags:     []cli.Flag{JSONFlag(), mailboxFlag()},
+				Action:    runSubscriptionUnsubscribe,
+			},
+		},
+	}
+}
+
+func runSubscriptionList(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	view, err := requireMailbox(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	page, err := client.ListMailboxSubscriptions(ctx, connection, view.Mailbox.ID,
+		int(command.Int("first")), int(command.Int("offset")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(page)
+	}
+	if page == nil || len(page.Subscriptions) == 0 {
+		fmt.Println("no subscriptions; mail that names a list is what makes one")
+		return nil
+	}
+	rows := make([][]string, 0, len(page.Subscriptions))
+	for _, subscription := range page.Subscriptions {
+		rows = append(rows, []string{
+			subscription.Name,
+			subscription.From,
+			itoa(subscription.Count),
+			itoa(subscription.Unread),
+			formatTime(&subscription.LastAt),
+			describeUnsubscribeState(subscription),
+			subscription.Key,
+		})
+	}
+	return printTable([]string{"NAME", "FROM", "MAIL", "UNREAD", "NEWEST", "STATE", "KEY"}, rows)
+}
+
+func runSubscriptionShow(ctx context.Context, command *cli.Command) error {
+	key := command.Args().First()
+	if key == "" {
+		return usage("which subscription? usage: teanode mailbox subscription show <key>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	view, err := requireMailbox(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	subscription, err := client.GetMailboxSubscription(ctx, connection, view.Mailbox.ID, key)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(subscription)
+	}
+	if subscription == nil {
+		return describeNotFound(command, client.ErrNotFound, "subscription "+key)
+	}
+	fields := [][2]string{
+		{"name", subscription.Name},
+		{"from", subscription.From},
+		{"mail", itoa(subscription.Count)},
+		{"unread", itoa(subscription.Unread)},
+		{"newest", formatTime(&subscription.LastAt)},
+		{"state", describeUnsubscribeState(subscription)},
+		{"key", subscription.Key},
+	}
+	if subscription.OneClick {
+		fields = append(fields, [2]string{"one click", "yes; one request is enough, and the sender undertook to honour it"})
+	}
+	for index, address := range subscription.Unsubscribe {
+		name := "leave by"
+		if index > 0 {
+			// A continuation of the line above, which is what an empty name
+			// means here.
+			name = ""
+		}
+		fields = append(fields, [2]string{name, address})
+	}
+	if subscription.Error != "" {
+		fields = append(fields, [2]string{"error", subscription.Error})
+	}
+	return printFields(fields)
+}
+
+func runSubscriptionMail(ctx context.Context, command *cli.Command) error {
+	key := command.Args().First()
+	if key == "" {
+		return usage("which subscription? usage: teanode mailbox subscription mail <key>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	view, err := requireMailbox(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	thread, err := client.ReadMailboxSubscription(ctx, connection, view.Mailbox.ID, key)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(thread)
+	}
+	if thread == nil || len(thread.Items) == 0 {
+		fmt.Println("no mail from this subscription is in the mailbox")
+		return nil
+	}
+	rows := make([][]string, 0, len(thread.Items))
+	for _, entry := range thread.Items {
+		if entry.Item == nil || entry.Item.Mail == nil {
+			continue
+		}
+		state := "read"
+		if !entry.Item.Seen {
+			state = "unread"
+		}
+		rows = append(rows, []string{
+			formatTime(entry.Item.Mail.ReceivedAt),
+			entry.Item.Mail.Subject,
+			entry.FolderName,
+			state,
+			entry.Item.ID,
+		})
+	}
+	if err := printTable([]string{"RECEIVED", "SUBJECT", "FOLDER", "", "ID"}, rows); err != nil {
+		return err
+	}
+	if thread.Truncated {
+		fmt.Println("\nthere is more than this; the oldest are not listed")
+	}
+	return nil
+}
+
+func runSubscriptionUnsubscribe(ctx context.Context, command *cli.Command) error {
+	key := command.Args().First()
+	if key == "" {
+		return usage("which subscription? usage: teanode mailbox subscription unsubscribe <key>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	view, err := requireMailbox(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	subscription, err := client.UnsubscribeMailboxSubscription(ctx, connection, view.Mailbox.ID, key)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(subscription)
+	}
+	if subscription == nil {
+		return describeNotFound(command, client.ErrNotFound, "subscription "+key)
+	}
+
+	// What happened, in the sender's terms rather than ours: leaving is a
+	// request made to somebody else, and only one of the three ways finishes
+	// here.
+	switch {
+	case subscription.Failed:
+		fmt.Printf("could not leave %s: %s\n", subscription.Name, subscription.Error)
+	case subscription.Method == "link":
+		fmt.Printf("%s asks a person to leave through a page, so nothing was sent:\n", subscription.Name)
+		for _, address := range subscription.Unsubscribe {
+			fmt.Printf("  %s\n", address)
+		}
+	case subscription.Method == "oneClick":
+		fmt.Printf("asked %s to stop, with the one-click request it offered\n", subscription.Name)
+	case subscription.Method == "mail":
+		fmt.Printf("sent %s the message it named to leave by\n", subscription.Name)
+	default:
+		fmt.Printf("asked %s to stop\n", subscription.Name)
+	}
+	fmt.Println("mail already in the mailbox stays; what stops is what has not been sent yet")
+	return nil
+}
+
+// describeUnsubscribeState says where leaving got to, for a column that has
+// to hold it in one word or two.
+func describeUnsubscribeState(subscription *client.MailboxSubscription) string {
+	switch {
+	case subscription.Failed:
+		return "failed"
+	case subscription.RequestedAt != nil && subscription.Method == "link":
+		return "opened"
+	case subscription.RequestedAt != nil:
+		return "asked to leave"
+	case subscription.OneClick:
+		return "one click"
+	case len(subscription.Unsubscribe) > 0:
+		return "can leave"
+	}
+	return "no way offered"
 }

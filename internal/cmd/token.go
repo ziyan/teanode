@@ -60,7 +60,13 @@ func NewTokenCommand() *cli.Command {
 				Name:      "revoke",
 				Usage:     "revoke a token",
 				ArgsUsage: "<id>",
-				Action:    runTokenRevoke,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "user",
+						Usage: "whose token; required on the server's own console, where the caller is not an account",
+					},
+				},
+				Action: runTokenRevoke,
 			},
 		},
 	}
@@ -150,7 +156,11 @@ func runTokenRevoke(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := client.DeleteToken(ctx, connection, id); err != nil {
+	username, err := tokenOwner(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	if err := client.DeleteToken(ctx, connection, id, username); err != nil {
 		return describeNotFound(command, err, "token "+id+" belonging to this account")
 	}
 	fmt.Printf("revoked %s\n", id)

@@ -120,7 +120,7 @@ so one command serves a person and a script.
 | Group | What it covers |
 | --- | --- |
 | `auth` | signing in, and the saved profiles |
-| `domain` | the domains this server accepts mail for, and their DNS records |
+| `domain` | the domains this server accepts mail for, their DNS records, and the `logo` they publish |
 | `alias` | where mail for a domain goes; `alias match` says what an address would hit |
 | `credential` | SMTP credentials for sending through this server |
 | `dkim` | the keys that sign outgoing mail, and the record to publish |
@@ -128,7 +128,7 @@ so one command serves a person and a script.
 | `group` | who may do what, and over which domains: members, roles, domains |
 | `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
 | `audit` | the log of administrative changes, with filters |
-| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `contact`, `device`, `autoreply`, `programs` |
+| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `contact`, `subscription`, `device`, `autoreply`, `programs` |
 | `token` | API tokens; `token create --user` on the console issues somebody's first |
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
@@ -172,18 +172,58 @@ owner; `show` and `update` read and change a mailbox's name and signature.
 `folder list|create|rename|move|pin|unpin|delete` is the tree in the rail.
 `rule list|add|remove|enable|disable|test|apply` is the filing.
 `contact list|add|remove` is the addresses it has learned,
+`subscription list|show|mail|unsubscribe` the mailing lists it receives,
 `device list|add|remove` the app passwords a mail program signs in with,
 `autoreply show|set|off` the out-of-office reply, and `programs` the hosts
 and ports to type into a mail program.
 
-### One thing that is not in the schema
+A subscription is not a stored thing but a grouping of stored things: every
+message that named the same list, keyed by the identifier the list publishes
+for itself or the address it sends from. So there is nothing to create, and
+the key is what `subscription list` prints:
 
-Because it is bytes rather than JSON: the
+    teanode mailbox subscription list
+    teanode mailbox subscription mail <key>
+    teanode mailbox subscription unsubscribe <key>
+
+Leaving is a request made to somebody else, and only one of the three ways
+finishes at the command line: a one-click request is sent, a message is sent
+to the address the sender named, and a sender offering only a page has the
+page printed for a person to open. Mail already in the mailbox stays either
+way; what stops is what has not been sent yet.
+
+### The mark a domain publishes
+
+`teanode domain logo show|publish|remove` is the BIMI logo this server hosts
+for one of its own domains:
+
+    teanode domain logo publish example.com mark.svg
+    teanode domain check example.com          # prints the record to publish
+    teanode domain logo remove example.com
+
+The file is checked before it is stored, against the restricted profile a
+mark has to satisfy — no script, no animation, nothing fetched from
+elsewhere, square — and a refusal names the rule that refused it, because a
+receiver refuses the same file silently and the sender never learns why.
+`domain check` prints the record to publish once there is a logo to point at,
+and says underneath when something would stop a published record having any
+effect, most often a DMARC policy of none.
+
+Removing stops serving the file. Take the record down as well, or receivers
+keep fetching an address that answers nothing.
+
+### Two things that are not in the schema
+
+Because they are bytes rather than JSON. The
 files of a draft go up as `multipart/form-data`, one `file` part each, to
 `PUT /api/v1/mailbox/drafts/{itemId}/attachments` (or
 `POST /api/v1/mailbox/{mailboxId}/drafts/attachments` for a draft that does
 not exist yet), with the same bearer token. `curl -F file=@report.pdf` does
 it; the reply is the draft as stored, with every part's index.
+
+A domain's logo is the other: `POST /api/v1/domains/{domainId}/logo` with a
+`file` part, which is what `domain logo publish` sends. Reading and removing
+one are ordinary operations in the schema; only sending it is not.
 
 Some examples:
 

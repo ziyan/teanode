@@ -274,7 +274,7 @@ func revokeReplacedToken(ctx context.Context, command *cli.Command, existing, re
 	if err != nil {
 		return
 	}
-	if err := client.DeleteToken(ctx, connection, existing.TokenID); err != nil {
+	if err := client.DeleteToken(ctx, connection, existing.TokenID, ""); err != nil {
 		fmt.Printf("The previous token %s could not be revoked (%s); revoke it with 'teanode token revoke %s' if it is still listed.\n",
 			existing.TokenID, err, existing.TokenID)
 		return
@@ -342,7 +342,7 @@ func runAuthLogout(ctx context.Context, command *cli.Command) error {
 		if err != nil {
 			return err
 		}
-		if err := client.DeleteToken(ctx, connection, profile.TokenID); err != nil {
+		if err := client.DeleteToken(ctx, connection, profile.TokenID, ""); err != nil {
 			// Forgetting the profile is still the right thing to do; a
 			// token that could not be revoked is named so it can be revoked
 			// from the dashboard.

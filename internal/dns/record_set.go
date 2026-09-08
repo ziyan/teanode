@@ -2,15 +2,22 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -111,6 +118,12 @@ type Record struct {
 
 	// Purpose says, in one sentence, what breaks without this record.
 	Purpose string `json:"purpose"`
+
+	// Blocked says what has to be true elsewhere before this record can do
+	// anything, when it is not. A published BIMI record is ignored by every
+	// receiver while the domain's DMARC policy is none, and publishing one
+	// and waiting is how somebody spends a week finding that out.
+	Blocked string `json:"blocked,omitempty"`
 }
 
 // RecordSet is every record one domain needs, and whether mail can flow.
@@ -399,8 +412,268 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	}
 	recordSet.Records = append(recordSet.Records, dmarc)
 
+	// The name a receiver will fetch the mark from: the domain's own, which is
+	// the one it publishes pictures under, rather than whatever this node
+	// happens to be called.
+	recordSet.Records = append(recordSet.Records,
+		self.checkBimi(ctx, domain, dmarc, configuration.LinkHostFor(domain, domains)))
+
 	log.Debugf("took %s to check the records for %q", time.Since(start), domain.Domain)
 	return recordSet
+}
+
+// checkBimi is the logo this domain publishes for its own mail, if it wants
+// one.
+//
+// Optional, and deliberately so: most domains will never publish a mark, and
+// coloring a missing one the same red as a missing MX is how a page teaches
+// its reader to ignore the color.
+//
+// The prerequisite is the point of the row. A BIMI record is ignored by every
+// receiver while the domain's DMARC policy is none — which is the policy this
+// page recommends starting with, so every domain here begins unable to use
+// one. Publishing the record and waiting to see what happens is how somebody
+// spends a week finding that out.
+func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmarc *Record, host string) *Record {
+	name := dnsName(bimi.DefaultSelector + "._bimi." + domain.Domain)
+	record := &Record{
+		Type:     "TXT",
+		Name:     name,
+		Optional: true,
+		Purpose:  "shows your own logo beside your mail, at receivers that support it",
+	}
+
+	// A value only when there is one to publish. A record with a made-up
+	// address in it is worse than no record offered: the button beside it
+	// copies, and what it would copy is broken.
+	if logo := self.publishedLogo(domain, host); logo != "" {
+		record.Expected = "v=BIMI1; l=" + logo
+	}
+
+	// One thing to do next, and the one that has to happen first. Both can be
+	// true at once, and a row saying two things is a row somebody reads
+	// neither of.
+	switch policy := dmarcPolicy(dmarc.Found); {
+	case policy != "quarantine" && policy != "reject":
+		record.Blocked = "your DMARC policy is " + describePolicy(policy) +
+			"; no receiver shows a logo until it is quarantine or reject"
+	case record.Expected == "":
+		// Said without pointing anywhere: the dashboard shows this above the
+		// card that takes a file, and the command line shows it under a
+		// table, so "below" is true in one place and meaningless in the
+		// other.
+		record.Blocked = "no logo has been uploaded for this domain yet; upload one and this row will show the record to publish"
+	}
+	records, err := self.resolveTxt(ctx, name)
+	if err != nil {
+		return record
+	}
+	record.Found = records
+	published := ""
+	for _, candidate := range records {
+		if parsed, ok := bimi.Parse(candidate); ok {
+			published = parsed.Logo
+			break
+		}
+	}
+	// Nothing published, or a record naming no logo: the row already says
+	// what to publish, and there is nothing to fetch.
+	if published == "" {
+		return record
+	}
+	// A record naming a file nobody can fetch is the failure this row exists
+	// to catch: everything looks published and no mark ever appears. Which of
+	// the three things went wrong is said, because they need different
+	// answers — a wrong address, a server that refuses, or a file the
+	// receiver would reject.
+	if err := self.checkPublishedLogo(ctx, domain, published, host); err != nil {
+		record.Blocked = err.Error()
+		return record
+	}
+	record.Verified = true
+	return record
+}
+
+// checkPublishedLogo reads the file a record names and checks it is a mark.
+//
+// A logo this server hosts is read out of storage rather than fetched over
+// the network. Not as an optimisation: the fetch would go through the guard
+// that refuses anything but a public address, and a great many of these
+// servers answer to a name that resolves to an address on somebody's own
+// network. Fetching our own file would then fail with "not a public address"
+// and tell the operator their correct record is wrong.
+func (self *verifier) checkPublishedLogo(ctx context.Context, domain *models.Domain, address, host string) error {
+	if fileId := self.ownLogoID(address, host); fileId != "" {
+		content, err := self.readOwnLogo(ctx, domain, fileId)
+		if err != nil {
+			return err
+		}
+		if _, err := bimi.ValidateLogo(content); err != nil {
+			return fmt.Errorf("the published logo would be refused: %s", err)
+		}
+		return nil
+	}
+	return self.fetchPublishedLogo(ctx, address)
+}
+
+// ownLogoID is the file this server serves, when the address is one of ours,
+// and empty when it names somebody else's server.
+func (self *verifier) ownLogoID(address, host string) string {
+	// Whichever name the record was written with. A domain that published its
+	// mark under one name and later moved to another still has the old
+	// address in DNS, and reading that file from storage is right for the
+	// same reason it was right before: this server has the bytes, and
+	// fetching its own address is what the guard refuses.
+	for _, name := range self.ownLogoHosts(host) {
+		prefix := "https://" + name + "/.well-known/bimi/"
+		if strings.HasPrefix(address, prefix) {
+			return strings.TrimSuffix(strings.TrimPrefix(address, prefix), ".svg")
+		}
+	}
+	return ""
+}
+
+// ownLogoHosts are the names this server answers a logo address on: the one a
+// record would be written with today, and the server's own, which is what
+// earlier records were written with.
+func (self *verifier) ownLogoHosts(host string) []string {
+	names := make([]string, 0, 2)
+	if host != "" {
+		names = append(names, host)
+	}
+	if name := self.config.Current().Server.Name; name != "" && name != host {
+		names = append(names, name)
+	}
+	return names
+}
+
+// readOwnLogo reads it out of storage, and says the two things that can be
+// wrong: the record names a file that was replaced, or the bytes are gone.
+func (self *verifier) readOwnLogo(ctx context.Context, domain *models.Domain, fileId string) ([]byte, error) {
+	var publication *db.BimiPublication
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.GetBimiPublication(domain.ID)
+		publication = found
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if publication == nil || publication.FileID != fileId {
+		return nil, errors.New("the record names a logo this server no longer publishes; copy the value above again")
+	}
+	if self.settings.PublishedLogo == nil {
+		return nil, errors.New("this server cannot read the logo it publishes")
+	}
+	content, err := self.settings.PublishedLogo(ctx, publication.FileID)
+	if err != nil {
+		return nil, fmt.Errorf("the published logo could not be read: %s", err)
+	}
+	return content, nil
+}
+
+// fetchPublishedLogo gets the file a record names and checks it is a mark.
+//
+// Through the same guard every other fetch of an address out of somebody
+// else's data goes through: the address is in DNS, which is not this server's
+// to trust, and a record naming something inside this network would otherwise
+// be a way to ask this server to fetch it.
+func (self *verifier) fetchPublishedLogo(ctx context.Context, address string) error {
+	target, err := safefetch.ParseTarget(address)
+	if err != nil {
+		return fmt.Errorf("the logo address is not one this will fetch: %s", err)
+	}
+	if target.Scheme != "https" {
+		return errors.New("the logo is published over http; a mark has to be served over https")
+	}
+	timed, cancel := context.WithTimeout(ctx, safefetch.Timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(timed, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return err
+	}
+	response, err := safefetch.Client().Do(request)
+	if err != nil {
+		return fmt.Errorf("the logo could not be fetched: %s", err)
+	}
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Debugf("failed to close the logo response: %s", err)
+		}
+	}()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("the logo address answered %s", response.Status)
+	}
+	content, err := io.ReadAll(io.LimitReader(response.Body, bimi.MaximumLogoSize+1))
+	if err != nil {
+		return fmt.Errorf("the logo could not be read: %s", err)
+	}
+	if _, err := bimi.ValidateLogo(content); err != nil {
+		return fmt.Errorf("the published logo would be refused: %s", err)
+	}
+	return nil
+}
+
+// publishedLogo is the address of the logo uploaded for this domain, or empty
+// when none has been.
+//
+// The address is on this server rather than on the domain, which is allowed
+// and is the point: a BIMI record may name any HTTPS address, and somebody
+// running a mail server and no web server has nowhere else to put a file.
+//
+// The name is the one this domain already publishes pictures under, not the
+// name of the node answering. Those are often different: a server called
+// mx1.example.com serves mail.example.com, and mx1 is a name for one machine
+// in a pair while the record in DNS has to keep meaning the same thing after
+// that machine is replaced.
+func (self *verifier) publishedLogo(domain *models.Domain, host string) string {
+	// A verifier can be built to answer questions about names alone, with no
+	// database behind it; the record set is then everything but this row's
+	// value.
+	if self.database == nil {
+		return ""
+	}
+
+	var publication *db.BimiPublication
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		found, err := tx.GetBimiPublication(domain.ID)
+		publication = found
+		return err
+	}); err != nil {
+		log.Errorf("failed to read the published logo of %q: %s", domain.Domain, err)
+	}
+	if publication == nil {
+		return ""
+	}
+	if host == "" {
+		host = self.config.Current().Server.Name
+	}
+	return "https://" + host + api.BimiLogoPath(publication.FileID)
+}
+
+// dmarcPolicy reads the p tag out of whichever of a name's TXT records is the
+// DMARC one.
+func dmarcPolicy(records []string) string {
+	for _, record := range records {
+		if !strings.HasPrefix(strings.TrimSpace(record), "v=DMARC1") {
+			continue
+		}
+		for _, part := range strings.Split(record, ";") {
+			key, value, found := strings.Cut(part, "=")
+			if found && strings.EqualFold(strings.TrimSpace(key), "p") {
+				return strings.ToLower(strings.TrimSpace(value))
+			}
+		}
+	}
+	return ""
+}
+
+// describePolicy names a policy for a sentence, including the case where
+// there is no record at all.
+func describePolicy(policy string) string {
+	if policy == "" {
+		return "not published"
+	}
+	return policy
 }
 
 // dnsName returns a fully qualified name, with the trailing dot that DNS

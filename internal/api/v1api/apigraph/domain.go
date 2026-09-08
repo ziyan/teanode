@@ -2,14 +2,18 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 type DomainQuery interface {
@@ -51,6 +55,10 @@ type DomainMutation interface {
 	// Check a Domain's DNS records now rather than waiting for the next
 	// scheduled check
 	CheckDomain(ctx context.Context, arguments CheckDomainArguments) (*Domain, error)
+
+	// Stop publishing a Domain's logo, removing the file this server serves
+	// for it. The BIMI record naming it should come down too.
+	DeleteDomainLogo(ctx context.Context, arguments DeleteDomainLogoArguments) error
 }
 
 // Domain is a mail domain this server accepts mail for, as the web UI sees
@@ -103,6 +111,10 @@ type Domain struct {
 	// Whether this Domain has a signing key at all. Without one its outgoing
 	// mail is unsigned and receivers may distrust it.
 	HasDKIMKey bool `json:"hasDkimKey"`
+
+	// Logo is the mark this server publishes for this domain, when one has
+	// been uploaded. What the BIMI record above points at.
+	Logo *DomainLogo `json:"logo,omitempty"`
 
 	// Whether the caller may change this Domain, as opposed to only reading
 	// its mail. What the web UI shows the settings tab on.
@@ -175,14 +187,31 @@ func (self *graph) ListDomains(ctx context.Context) ([]*Domain, error) {
 	configuration := self.config.Current()
 	status := self.verifier.Status()
 
-	domains := make([]*Domain, 0, len(all))
+	// Which rows the caller may see, decided before anything is read for
+	// them: a lookup per domain was a query per row, and it ran for the
+	// domains this caller is not allowed to know about as well.
+	visible := make([]*models.Domain, 0, len(all))
+	manageable := map[string]bool{}
+	identifiers := make([]string, 0, len(all))
 	for _, domain := range all {
-		manageable := principal.Permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
-		if !manageable && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
+		manages := principal.Permissions.HasOverDomain(models.PermissionDomainManage, domain.ID)
+		if !manages && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
 			continue
 		}
-		described := describeDomain(configuration, domain, all, status[domain.ID])
-		described.Manageable = manageable
+		visible = append(visible, domain)
+		manageable[domain.ID] = manages
+		identifiers = append(identifiers, domain.ID)
+	}
+
+	logos, err := self.transaction(ctx).ListBimiPublications(identifiers)
+	if err != nil {
+		return nil, err
+	}
+
+	domains := make([]*Domain, 0, len(visible))
+	for _, domain := range visible {
+		described := describeDomain(configuration, domain, all, status[domain.ID], logos[domain.ID])
+		described.Manageable = manageable[domain.ID]
 		domains = append(domains, described)
 	}
 	return domains, nil
@@ -233,7 +262,11 @@ func (self *graph) describeDomainById(ctx context.Context, domainId string, reco
 	}
 	for _, domain := range domains {
 		if domain.ID == domainId {
-			return describeDomain(self.config.Current(), domain, domains, records), nil
+			publication, err := self.transaction(ctx).GetBimiPublication(domain.ID)
+			if err != nil {
+				return nil, err
+			}
+			return describeDomain(self.config.Current(), domain, domains, records, publication), nil
 		}
 	}
 	return nil, api.ErrNotFound
@@ -392,6 +425,50 @@ func (self *graph) DeleteDomain(ctx context.Context, arguments DeleteDomainArgum
 	return nil
 }
 
+type DeleteDomainLogoArguments struct {
+	// ID of the Domain to stop publishing a logo for
+	DomainID string `json:"domainId"`
+}
+
+// DeleteDomainLogo stops publishing a domain's mark.
+//
+// The counterpart of the upload, and the reason this exists rather than only
+// a replacement: an operator who published the wrong artwork, or who has
+// stopped using the domain, needs a way to take it down. Without one the
+// record keeps naming a file this server keeps serving, and the only way out
+// is an edit to the database.
+//
+// The row goes first and the bytes after, which is the upload's order
+// reversed and for the upload's reason: a row pointing at bytes that are gone
+// answers 404 for ever, while bytes with no row cost only the space.
+func (self *graph) DeleteDomainLogo(ctx context.Context, arguments DeleteDomainLogoArguments) error {
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
+	if err != nil {
+		return err
+	}
+
+	// The request's own transaction, as every other mutation here uses: a
+	// second one alongside it would commit on its own schedule.
+	fileId, err := self.transaction(ctx).DeleteBimiPublication(domain.ID)
+	if err != nil {
+		return translateError(err)
+	}
+	if fileId == "" {
+		return fmt.Errorf("%w: this domain publishes no logo", api.ErrNotFound)
+	}
+
+	// A failure here leaves bytes nothing points at, which is why it is
+	// logged rather than returned: the publication is already gone, and the
+	// operator asked for it to stop being published, not for a tidy disk.
+	if err := self.storage.DeleteFile(ctx, fileId); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		log.Warningf("failed to remove the withdrawn logo %s of %q: %s", fileId, domain.Domain, err)
+	}
+
+	log.Noticef("%s withdrew the logo of %q; the BIMI record naming it should come down too",
+		operatorName(ctx), domain.Domain)
+	return nil
+}
+
 type CheckDomainArguments struct {
 	// ID of the Domain to check
 	DomainID string `json:"domainId"`
@@ -497,12 +574,51 @@ func (self *graph) RegenerateDomainKey(ctx context.Context, arguments Regenerate
 	return described, nil
 }
 
+// DomainLogo is the mark this server publishes for a domain: what was
+// uploaded, and where a receiver following the BIMI record will find it.
+type DomainLogo struct {
+	// Filename the operator uploaded it as, so a list of them reads as their
+	// own files rather than as identifiers.
+	Filename string `json:"filename"`
+
+	// Title is the one inside the file, which is what a screen reader says in
+	// place of the mark.
+	Title string `json:"title"`
+
+	// URL is where the dashboard reads it, which is inside the API: the page
+	// showing it is the operator's own.
+	URL string `json:"url"`
+
+	// PublicURL is where a receiver following the DNS record finds it. The
+	// record itself carries the whole address; this is the path of it.
+	PublicURL string `json:"publicUrl"`
+
+	// UploadedAt is when it was published.
+	UploadedAt time.Time `json:"uploadedAt"`
+}
+
+// describeLogo renders the publication, or nothing when the domain publishes
+// no mark.
+func describeLogo(publication *db.BimiPublication) *DomainLogo {
+	if publication == nil {
+		return nil
+	}
+	return &DomainLogo{
+		Filename:   publication.Filename,
+		Title:      publication.Title,
+		URL:        api.DomainLogoPath(publication.DomainID),
+		PublicURL:  api.BimiLogoPath(publication.FileID),
+		UploadedAt: publication.ModifiedAt,
+	}
+}
+
 // describeDomain renders a domain for the API.
 //
 // Every domain comes with it because one of the answers is not a property of
 // the domain alone: which names its mail arrives at depends on what the domain
 // says and, when it says nothing, on which domain owns the server's name.
-func describeDomain(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain, records *dns.RecordSet) *Domain {
+func describeDomain(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain,
+	records *dns.RecordSet, publication *db.BimiPublication) *Domain {
 	described := &Domain{
 		ID:                       domain.ID,
 		Domain:                   domain.Domain,
@@ -518,6 +634,7 @@ func describeDomain(configuration *config.Configuration, domain *models.Domain, 
 		LinkHostname:             configuration.LinkHostFor(domain, domains),
 		DKIMSelector:             domain.DKIM.Selector,
 		HasDKIMKey:               domain.DKIM.PrivateKey != "",
+		Logo:                     describeLogo(publication),
 	}
 	for _, alias := range domain.Aliases {
 		described.Aliases = append(described.Aliases, describeAlias(alias))

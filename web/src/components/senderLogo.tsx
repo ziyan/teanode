@@ -13,23 +13,32 @@ import { useState } from 'react'
 // first letter of the name, on a colour derived from it. That is stable — the
 // same sender is the same colour on every visit — without storing anything.
 
-export function SenderLogo({ name, logoDomain, size = 32 }: { name: string; logoDomain?: string; size?: number }) {
+export function SenderLogo({
+  name,
+  logoDomain,
+  src,
+  size = 32,
+}: {
+  name: string
+  // The sending domain whose published mark this server has fetched and
+  // cached, for mail that arrived.
+  logoDomain?: string
+  // Or an address to draw directly, for a mark this server publishes itself
+  // and therefore has no cache entry for.
+  src?: string
+  size?: number
+}) {
   // A logo that fails to load falls back to the monogram rather than leaving
   // a broken image: what is cached may have been removed since.
   const [broken, setBroken] = useState(false)
   const letter = firstLetter(name)
   const style = { width: `${size}px`, height: `${size}px` }
+  const address = src ?? (logoDomain ? `/api/v1/logo/${encodeURIComponent(logoDomain)}` : '')
 
-  if (logoDomain && !broken) {
+  if (address && !broken) {
     return (
       <span className="sender-logo" style={style}>
-        <img
-          src={`/api/v1/logo/${encodeURIComponent(logoDomain)}`}
-          alt=""
-          width={size}
-          height={size}
-          onError={() => setBroken(true)}
-        />
+        <img src={address} alt="" width={size} height={size} onError={() => setBroken(true)} />
       </span>
     )
   }

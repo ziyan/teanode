@@ -465,6 +465,10 @@ td a:hover {
   align-items: flex-start;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+  /* Two buttons in a card on a phone come to 348px of the 350 there are, and
+     that is with the shortest of the three catalogues. A row that cannot fit
+     wraps rather than running off the side. */
+  flex-wrap: wrap;
 }
 
 /* The text beside the action takes the room; the action does not. Excluding
@@ -1200,6 +1204,13 @@ td p.muted {
    hundred characters a line — the case that made this necessary is the advice
    under a failing check, which is the most important text on the page and was
    the hardest to read. The table itself is unaffected. */
+/* What is stopping a record from doing anything, as distinct from what the
+   record is for: the colour of a caution rather than of an aside, because it
+   is the sentence that saves the week. */
+td .cell-note.warn {
+  color: var(--warn);
+}
+
 td .cell-note {
   display: block;
   /* A sentence breaks at its spaces. It sits inside a cell that may allow
@@ -4488,6 +4499,28 @@ label.check-list-item {
   height: 100%;
   object-fit: contain;
 }
+/* The mark a domain publishes, beside what is known about it. */
+.domain-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.domain-logo-about {
+  min-width: 0;
+  font-size: 13px;
+}
+
+/* The exemption above frees a notice from the measure because a notice
+   usually sits among full-width rows, where a capped one reads as a mistake.
+   This card has no rows: it is prose, a button, and this. Left full width it
+   is the one thing on the card running to 1060px while every passage around
+   it stops at 617, which reads as the mistake instead. Two class names so it
+   outweighs that exemption by specificity rather than by !important. */
+p.notice.domain-logo-note {
+  max-width: var(--measure);
+}
+
 /* A name with its mark beside it, on one line. */
 .sender-row {
   display: inline-flex;
