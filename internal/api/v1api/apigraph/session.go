@@ -218,7 +218,7 @@ func (self *graph) CreateFirstAccount(ctx context.Context, arguments CreateFirst
 
 	// Recorded as coming from where it came from: the first arrival is
 	// nobody yet, and the address is what the audit row can say.
-	claim := db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorSystem, SourceIP: remoteAddress(api.ContextRequest(ctx))})
+	claim := db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorSystem, SourceIP: self.remoteAddress(api.ContextRequest(ctx))})
 	if err := self.authenticator.CreateFirstUser(claim, arguments.Username, arguments.Password); err != nil {
 		if errors.Is(err, web.ErrInvalidAccount) || errors.Is(err, web.ErrAccountExists) {
 			return nil, err

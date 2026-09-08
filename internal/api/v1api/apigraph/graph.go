@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime"
-	"net"
 	"net/http"
 
 	"github.com/graphql-go/graphql"
@@ -55,7 +54,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	// Logging in and out set a cookie, which is a response header.
 	ctx = api.ContextWithResponse(ctx, response)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
-	ctx = db.ContextWithAuditPrincipal(ctx, auditPrincipal(request, user))
+	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
 
 	var result *graphql.Result
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -115,21 +114,15 @@ func (self *graph) resolvePrincipal(tx db.Transaction, username string, user *mo
 }
 
 // auditPrincipal is who the audit rows this request writes will name.
-func auditPrincipal(request *http.Request, user *models.User) db.AuditPrincipal {
-	principal := db.AuditPrincipal{ActorKind: models.AuditActorUser, SourceIP: remoteAddress(request)}
+func (self *graph) auditPrincipal(request *http.Request, user *models.User) db.AuditPrincipal {
+	principal := db.AuditPrincipal{ActorKind: models.AuditActorUser, SourceIP: self.remoteAddress(request)}
 	if user != nil {
 		principal.UserID = user.ID
 	}
 	return principal
 }
 
-// remoteAddress is who asked, without the port.
-func remoteAddress(request *http.Request) string {
-	if request == nil {
-		return ""
-	}
-	if host, _, err := net.SplitHostPort(request.RemoteAddr); err == nil {
-		return host
-	}
-	return request.RemoteAddr
+// remoteAddress is who asked, through whatever is in front of this server.
+func (self *graph) remoteAddress(request *http.Request) string {
+	return api.RemoteAddress(request, self.config.Current().Server.TrustedProxies)
 }

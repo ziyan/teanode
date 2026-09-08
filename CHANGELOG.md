@@ -16,9 +16,6 @@ Notable changes to TeaNode. The format follows
 - A message carries a link to its audit page, in its own menu, for anyone who
   may read one: where it came from, every delivery attempt, and the raw
   source.
-
-### Added
-
 - Tooltips are the dashboard's own rather than the browser's. A native title
   waits about a second, is drawn in the operating system's colors, and cannot
   wrap — a timestamp with a zone name in it came out as one long line in a
@@ -32,6 +29,23 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The audit log records who asked, not who forwarded. Behind a CDN every row
+  read as one address in another country, because the address a request
+  arrives from is the proxy's. The forwarded-for header says who the client
+  is, and is now read — but only when the connection itself came from an
+  address listed in the new `server.trustedProxies`, since anybody who can
+  reach the server directly can otherwise write their own address into the
+  audit trail. Single sign-on was already reading that header without asking,
+  and no longer does.
+- An audit row says what the thing is called and links to it: the alias
+  `sales@example.com` on its domain's page rather than an identifier, the
+  group, the role, the person, the mailbox, the app password. Something since
+  deleted is named from the row's own snapshot, which is the case that most
+  needed it.
+- An audit row of a change shows the fields that changed, each with what it
+  was and what it is. A mailbox's rules came out as a list of several thousand
+  numbers, since the snapshot is JSON and the API had been describing it as an
+  array of bytes.
 - A reply saved as a draft belongs to the conversation it answers. The headers
   that say what a message answers were written when one was sent and not when
   one was saved, so a half-written reply left the thread it was written in the

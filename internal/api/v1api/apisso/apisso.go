@@ -6,7 +6,6 @@ package apisso
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -145,7 +144,7 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 
 	var username string
 	var created bool
-	err = self.database.TransactionContext(db.ContextWithAuditPrincipal(request.Context(), db.AuditPrincipal{ActorKind: models.AuditActorSystem, SourceIP: remoteAddress(request)}), func(tx db.Transaction) error {
+	err = self.database.TransactionContext(db.ContextWithAuditPrincipal(request.Context(), db.AuditPrincipal{ActorKind: models.AuditActorSystem, SourceIP: self.remoteAddress(request)}), func(tx db.Transaction) error {
 		user, made, err := access.SignInWithIdentity(tx, provider.ID, &access.IdentityClaims{
 			Subject:  claims.Subject,
 			Email:    claims.Email,
@@ -193,16 +192,15 @@ func (self *component) fail(response http.ResponseWriter, request *http.Request,
 }
 
 // remoteAddress is where the request came from, as the audit trail records
-// it: the proxy's idea when there is one, else the connection's.
-func remoteAddress(request *http.Request) string {
-	if forwarded := strings.TrimSpace(strings.Split(request.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
-		return forwarded
-	}
-	host, _, err := net.SplitHostPort(request.RemoteAddr)
-	if err != nil {
-		return request.RemoteAddr
-	}
-	return host
+// it.
+//
+// It used to take X-Forwarded-For whenever the header was there, which
+// anybody who could reach this server directly could write — an audit row
+// saying a sign-in came from wherever the person signing in preferred. It
+// goes through the shared reader now, which reads the header only from a
+// proxy the operator has listed.
+func (self *component) remoteAddress(request *http.Request) string {
+	return api.RemoteAddress(request, self.configuration.Current().Server.TrustedProxies)
 }
 
 // safeReturn is a path on this site, or "/": no scheme, no host, and no

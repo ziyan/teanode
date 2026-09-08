@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
@@ -13,7 +14,10 @@ const EVENTS = `
   query ($resourceType: String, $first: Int, $offset: Int) {
     ListAuditEvents(resourceType: $resourceType, first: $first, offset: $offset) {
       total
-      events { id createdAt actorKind actorLabel sourceIp instance resourceType resourceId action before after }
+      events {
+        id createdAt actorKind actorLabel sourceIp instance
+        resourceType resourceId resourceLabel resourceLink action before after
+      }
     }
   }`
 
@@ -26,9 +30,36 @@ type AuditEvent = {
   instance?: string
   resourceType: string
   resourceId: string
+  // What the thing is called, and where it is, resolved by the server: an id
+  // says who changed what and nothing about which one.
+  resourceLabel?: string
+  resourceLink?: string
   action: 'create' | 'update' | 'delete'
-  before?: unknown
-  after?: unknown
+  before?: Record<string, unknown> | null
+  after?: Record<string, unknown> | null
+}
+
+// changedFields is what actually differs between the two sides of an update,
+// which is nearly always two or three of thirty. Printing both rows in full
+// left the reader to diff them by eye.
+function changedFields(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+): string[] {
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])
+  return [...keys].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key])).sort()
+}
+
+// A value as a line of text. Objects and lists are printed as JSON, because
+// that is what they are; a missing value says so rather than showing nothing.
+function describe(value: unknown, missing: string): string {
+  if (value === undefined || value === null || value === '') {
+    return missing
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  return JSON.stringify(value)
 }
 
 const PAGE = 50
@@ -93,7 +124,22 @@ export function AuditTab() {
           title={
             <>
               {event.actorLabel || event.actorKind} <span className="muted">{t(`access.audit.${event.action}`)}</span>{' '}
-              {event.resourceType} <span className="mono muted">{event.resourceId}</span>
+              {event.resourceType}{' '}
+              {/* What the thing is called, and a way to it. The id is what
+                  the row stores and the one thing nobody can read, so it is
+                  the fallback rather than the answer — and it is still on the
+                  page for anybody who wants to search for it. */}
+              {event.resourceLabel ? (
+                <Tooltip label={event.resourceId}>
+                  {event.resourceLink ? (
+                    <Link to={event.resourceLink}>{event.resourceLabel}</Link>
+                  ) : (
+                    <span>{event.resourceLabel}</span>
+                  )}
+                </Tooltip>
+              ) : (
+                <span className="mono muted">{event.resourceId}</span>
+              )}
             </>
           }
           badge={
@@ -110,20 +156,26 @@ export function AuditTab() {
                 {event.instance ? ` · ${event.instance}` : ''}
               </div>
               {open === event.id && (
-                <div className="audit-diff">
-                  {event.before !== undefined && event.before !== null && (
-                    <div>
-                      <div className="muted">{t('access.audit.before')}</div>
-                      <pre>{JSON.stringify(event.before, null, 2)}</pre>
+                <dl className="audit-diff">
+                  {changedFields(event.before, event.after).map((field) => (
+                    <div key={field} className="audit-change">
+                      <dt>{field}</dt>
+                      <dd>
+                        {/* Only what changed, and only its two sides. The
+                            whole of both rows was thirty fields of which two
+                            differed, left for the reader to compare by eye. */}
+                        <span className="audit-before">{describe(event.before?.[field], t('access.audit.unset'))}</span>
+                        <span className="audit-arrow" aria-hidden="true">
+                          →
+                        </span>
+                        <span className="audit-after">{describe(event.after?.[field], t('access.audit.unset'))}</span>
+                      </dd>
                     </div>
+                  ))}
+                  {changedFields(event.before, event.after).length === 0 && (
+                    <p className="muted">{t('access.audit.noChange')}</p>
                   )}
-                  {event.after !== undefined && event.after !== null && (
-                    <div>
-                      <div className="muted">{t('access.audit.after')}</div>
-                      <pre>{JSON.stringify(event.after, null, 2)}</pre>
-                    </div>
-                  )}
-                </div>
+                </dl>
               )}
             </>
           }
