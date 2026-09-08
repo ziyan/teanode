@@ -1137,9 +1137,14 @@ function restoreRemoteImages(html: string, mailId: string): string {
   )
 }
 
-// The source came out of an HTML attribute the server wrote, so an ampersand
-// in a query string arrives as &amp;. Putting that through the proxy verbatim
-// would fetch a different address than the message named.
+// The source came out of an HTML attribute the server wrote, so it arrives
+// escaped. Undoing that exactly is what makes the proxy fetch the address the
+// message named rather than a neighbouring one.
+//
+// These six are what x/net/html's escaper emits, which is what goquery renders
+// the sanitized message with. It writes &#34; and &#39; rather than &quot; and
+// &apos;, so a &quot; replacement here would never have fired: a message can
+// only reach us with &#34; in it, which nothing was undoing.
 //
 // The ampersand is decoded last, and the order is the whole correctness of
 // this. It is the one entity that can spell another: a sender writing
@@ -1151,7 +1156,8 @@ function decodeEntities(value: string): string {
   return value
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#13;/g, '\r')
     .replace(/&amp;/g, '&')
 }
