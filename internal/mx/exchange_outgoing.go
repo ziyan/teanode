@@ -352,6 +352,15 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 	if sent == nil {
 		return nil
 	}
+	// The mail program's own copy may have been uploaded first.
+	copied, err := FindSentCopy(tx, sent, mail.MessageID)
+	if err != nil {
+		return err
+	}
+	if copied != nil {
+		log.Noticef("message %q is already in the Sent folder of mailbox %q as item %q, not filing it again", mail.ID, mailboxId, copied.ID)
+		return nil
+	}
 	seen := true
 	if _, err := tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
 		return err

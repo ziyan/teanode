@@ -106,6 +106,24 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	return delivery, nil
 }
 
+// FindSentCopy is the item a Sent folder already holds for a message, by
+// Message-ID, or nil.
+//
+// A message a person sends reaches their Sent folder twice: this server
+// files it there when it accepts the submission, and the mail program then
+// uploads its own copy over IMAP, because a program cannot know that the
+// server has filed it. The two arrive tens of milliseconds apart, in either
+// order, and are the same message under one Message-ID. Whichever comes
+// second finds the first here and leaves it at that. Only Sent: a program
+// uploads a draft again on purpose, and there the newer copy is the one
+// wanted.
+func FindSentCopy(tx db.Transaction, folder *models.MailboxFolder, messageId string) (*models.MailboxItem, error) {
+	if folder == nil || folder.Kind != models.MailboxFolderKindSent || strings.TrimSpace(messageId) == "" {
+		return nil, nil
+	}
+	return tx.FindItemByMessageID(folder.ID, strings.TrimSpace(messageId))
+}
+
 // isSuspicious is whether a message belongs in Junk rather than the Inbox:
 // the spam filter failed it, or it failed DMARC under a quarantine policy.
 func isSuspicious(mail *models.Mail) bool {

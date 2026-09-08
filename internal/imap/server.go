@@ -579,6 +579,17 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 		}
 		flags := flagsFromList(options.Flags)
 		mail := mailFromMessage(self.mailbox, headers, body, flags, options.Time)
+		// A program uploading its copy of what it just sent, which the
+		// server filed when it accepted the submission. The copy it already
+		// has is the answer, under the UID the program is waiting for.
+		copied, err := mx.FindSentCopy(tx, entry.folder, mail.MessageID)
+		if err != nil {
+			return err
+		}
+		if copied != nil {
+			data = &goimap.AppendData{UID: goimap.UID(copied.UID), UIDValidity: uint32(entry.folder.UIDValidity)}
+			return nil
+		}
 		// A program that keeps its own copy of what it sent appends it here,
 		// and that copy answers something. Without a conversation it reads as
 		// a message nobody replied to, beside the one it is the reply to.
