@@ -30,6 +30,10 @@ type Configuration struct {
 	// Addresses to listen on
 	Listen Listen `yaml:"listen"`
 
+	// What a mail program is told to connect to for reading mail, when that
+	// is not what this server listens on
+	IMAP IMAPAccess `yaml:"imap"`
+
 	// SSO is how people sign in through an identity provider, beside the
 	// password and passkey forms.
 	SSO SSO `yaml:"sso"`
@@ -462,6 +466,27 @@ type Submission struct {
 
 	// Port to connect to. Zero means the port in listen.smtpOutgoing.
 	Port uint16 `yaml:"port,omitempty"`
+}
+
+// IMAPAccess is what a mail program should be told to connect to for reading
+// mail, when that is not what this server listens on.
+//
+// A deployment behind a gateway listens on a high port and is reached on the
+// usual one: this server hears IMAP on 10993 and a mail program connects to
+// 993. Reporting the port it listens on then tells everybody the wrong
+// number, which is what this exists to correct — the same reason
+// smtp.submission exists for sending.
+type IMAPAccess struct {
+	// Host a mail program connects to. Empty means server.name.
+	Host string `yaml:"host,omitempty"`
+
+	// Port for the connection that starts plain and turns to TLS. Zero means
+	// the port in listen.imap.
+	Port uint16 `yaml:"port,omitempty"`
+
+	// TLSPort for the connection that is TLS from the first byte, which is
+	// what most mail programs try. Zero means the port in listen.imaps.
+	TLSPort uint16 `yaml:"tlsPort,omitempty"`
 }
 
 // Relay is a mail server that outgoing mail is handed to, instead of being

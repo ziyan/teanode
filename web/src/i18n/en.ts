@@ -393,6 +393,16 @@ export const en = {
     'No IPv6, so publish only an A record. Some large providers prefer IPv6 but none require it.',
   'setup.primaryFailed': 'That could not be saved.',
 
+  'setup.imapTitle': 'Reading mail in a mail program',
+  'setup.imapIntro': 'What to type into a mail program to read this server\u2019s mailboxes. It follows the server unless something in front forwards a different port.',
+  'setup.imapTls': 'with TLS from the first byte',
+  'setup.imapStartTls': 'plain, turning to TLS before signing in',
+  'setup.imapHost': 'Host',
+  'setup.imapPort': 'STARTTLS port',
+  'setup.imapTlsPort': 'TLS port',
+  'setup.imapHelp': 'Leave these empty to follow the server name and the ports it listens on. Fill them in when a router or a container takes the usual port on the outside and forwards it to a different one here.',
+  'setup.imapSaved': 'Saved. A mail program is told this from now on.',
+  'setup.imapFailed': 'The mail program settings could not be saved.',
   'setup.submissionTitle': 'What to tell a mail client',
   'setup.submissionIntro':
     'The address a phone or a mail program should connect to when sending through this server. It is what the credential dialog shows.',

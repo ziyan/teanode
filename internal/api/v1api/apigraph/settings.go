@@ -46,6 +46,7 @@ type Settings struct {
 
 	// What a mail client is told to connect to
 	Submission *SubmissionSettings `json:"submission"`
+	IMAP       *IMAPSettings       `json:"imap"`
 	SSO        *SSOSettings        `json:"sso"`
 
 	// How outgoing mail leaves this machine, when not directly
@@ -108,6 +109,23 @@ type SubmissionSettings struct {
 	// in from the server name and the listen address
 	EffectiveHost string `json:"effectiveHost"`
 	EffectivePort string `json:"effectivePort"`
+}
+
+// IMAPSettings is what a mail program should be told to connect to for
+// reading mail, which is not what this server listens on when something in
+// front of it forwards a different port.
+type IMAPSettings struct {
+	// What is configured, empty and zero when it is left to follow the
+	// server and its listen addresses
+	Host    string `json:"host,omitempty"`
+	Port    int    `json:"port,omitempty"`
+	TLSPort int    `json:"tlsPort,omitempty"`
+
+	// What a mail program is actually told, once the blanks above are
+	// filled in
+	EffectiveHost    string `json:"effectiveHost"`
+	EffectivePort    string `json:"effectivePort"`
+	EffectiveTLSPort string `json:"effectiveTlsPort"`
 }
 
 // RelaySettings is the smarthost outgoing mail goes through.
@@ -302,6 +320,14 @@ func describeSettings(configuration *config.Configuration) *Settings {
 			EffectiveHost: configuration.SubmissionHost(),
 			EffectivePort: configuration.SubmissionPort(),
 		},
+		IMAP: &IMAPSettings{
+			Host:             configuration.IMAP.Host,
+			Port:             int(configuration.IMAP.Port),
+			TLSPort:          int(configuration.IMAP.TLSPort),
+			EffectiveHost:    configuration.IMAPHost(),
+			EffectivePort:    configuration.IMAPPort(),
+			EffectiveTLSPort: configuration.IMAPTLSPort(),
+		},
 		Relay: &RelaySettings{
 			Enabled:     relay.Enabled,
 			Host:        relay.Host,
@@ -394,6 +420,15 @@ type SubmissionParameters struct {
 	Port *int    `json:"port"`
 }
 
+// IMAPParameters are the advertised mail program settings an operator can
+// change: what to tell a mail program, when a gateway in front forwards a
+// port this server does not listen on.
+type IMAPParameters struct {
+	Host    *string `json:"host"`
+	Port    *int    `json:"port"`
+	TLSPort *int    `json:"tlsPort"`
+}
+
 // CertificateParameters are the certificate settings an operator can change.
 //
 // Hosts was readable and not writable, which made the one field somebody
@@ -456,6 +491,7 @@ type UpdateSettingsArguments struct {
 	Antispam   *AntispamParameters   `json:"antispam"`
 	Relay      *RelayParameters      `json:"relay"`
 	Submission *SubmissionParameters `json:"submission"`
+	IMAP       *IMAPParameters       `json:"imap"`
 	SSO        *SSOParameters        `json:"sso"`
 	Proxy      *ProxyParameters      `json:"proxy"`
 	Upgrade    *UpgradeParameters    `json:"upgrade"`
@@ -558,6 +594,15 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 			applyString(&configuration.SMTP.Submission.Host, parameters.Host)
 			if parameters.Port != nil {
 				configuration.SMTP.Submission.Port = uint16(*parameters.Port)
+			}
+		}
+		if parameters := arguments.IMAP; parameters != nil {
+			applyString(&configuration.IMAP.Host, parameters.Host)
+			if parameters.Port != nil {
+				configuration.IMAP.Port = uint16(*parameters.Port)
+			}
+			if parameters.TLSPort != nil {
+				configuration.IMAP.TLSPort = uint16(*parameters.TLSPort)
 			}
 		}
 		if parameters := arguments.Relay; parameters != nil {

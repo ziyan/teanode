@@ -324,6 +324,27 @@ http-01.
 **`debug`** — Debug, when set, serves Go pprof endpoints. Bind it to localhost
 only.
 
+### `imap`
+
+What a mail program is told to connect to for reading mail, which is what the
+mail program page in a mailbox's settings shows.
+
+Normally it follows the server — `server.name`, and the ports in
+`listen.imap` and `listen.imaps` — and all three can be left empty. Set them
+when something in front forwards a different port: a container publishing
+10993, or a router taking 993 on the outside. Without it the page hands
+somebody the port the process happens to bind, which is not the one their mail
+program can reach. It is `smtp.submission` for reading rather than sending,
+and like it changes nothing about what the server does. Only what it says.
+
+**`host`** — What to connect to. Empty means `server.name`.
+
+**`port`** — The port for the connection that starts plain and turns to TLS.
+Empty means the port in `listen.imap`.
+
+**`tlsPort`** — The port for the connection that is TLS from the first byte,
+which is what most mail programs try. Empty means the port in `listen.imaps`.
+
 ### `tls`
 
 **`hosts`** — Hosts to obtain certificates for. The first is the primary name.

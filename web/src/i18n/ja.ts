@@ -391,6 +391,16 @@ export const ja: Catalog = {
     'IPv6 がないので A レコードだけ公開してください。IPv6 を好む大手事業者もありますが、必須としているところはありません。',
   'setup.primaryFailed': '保存できませんでした。',
 
+  'setup.imapTitle': 'メールソフトで受信する',
+  'setup.imapIntro': 'メールソフトに入力する接続先。前段で別のポートに転送していない限り、サーバー自身の設定に従います。',
+  'setup.imapTls': '最初から TLS',
+  'setup.imapStartTls': '平文で接続し、ログイン前に TLS へ',
+  'setup.imapHost': 'ホスト',
+  'setup.imapPort': 'STARTTLS ポート',
+  'setup.imapTlsPort': 'TLS ポート',
+  'setup.imapHelp': '空欄ならサーバー名と待ち受けポートに従います。ルーターやコンテナが外側で通常のポートを受け、ここでは別のポートへ転送している場合に入力してください。',
+  'setup.imapSaved': '保存しました。以後メールソフトにはこの値を案内します。',
+  'setup.imapFailed': 'メールソフトの設定を保存できませんでした。',
   'setup.submissionTitle': 'メールクライアントに伝える宛先',
   'setup.submissionIntro':
     'スマートフォンやメールソフトがこのサーバー経由で送信するときに接続する宛先です。認証情報のダイアログに表示されるものと同じです。',
