@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-08
+
+### Fixed
+
+- A message delivered into a mailbox was shown as a delivery still being retried, with no error, until the retry schedule ran out and marked it dropped. The message was in the mailbox the whole time; only the record was wrong. Existing rows in that state are corrected at their next scheduled retry after upgrading. (#55)
+
 ## [0.12.0] - 2026-09-08
 
 ### Added
