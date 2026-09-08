@@ -40,10 +40,10 @@ Notable changes to TeaNode. The format follows
   than in it read as three lists instead of one long one. The rule under the
   pinned area is drawn whether or not anything is pinned, so the rail does not
   change shape the first time somebody pins a folder.
-- Hovering a folder in the rail replaces its unread count with the pin instead
-  of putting the pin beside it. The pin now sits at the same place on every
-  row, rather than at a distance that depended on whether that folder had
-  unread mail and whether the number had one digit or two.
+- Pinning is done on the Folders tab, beside renaming and removing, and the
+  rail has no pin on its rows. A control that appeared only under the pointer,
+  on a row whose whole job is to be clicked, was a second thing to aim at on
+  every row and a thing a phone could not reach at all.
 - The rail names the mailbox only when there is more than one to choose
   between. One mailbox named above its own folders was a heading that said
   nothing. The "Folders" heading over the list goes for the same reason: the
