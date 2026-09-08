@@ -4,24 +4,31 @@
 
 <h1 align="center">TeaNode</h1>
 
-<p align="center">A mail server for your own domains, in one binary.</p>
+<p align="center">A mail server for your own domains, in one executable.</p>
+
+<p align="center">
+  <a href="https://teanode.com">teanode.com</a> ·
+  <a href="https://teanode.com/doc/quick-start">Quick start</a> ·
+  <a href="https://teanode.com/doc/introduction">Documentation</a>
+</p>
 
 It receives mail over SMTP, checks that it is genuine (SPF, DKIM, DMARC, ARC),
-optionally scans it for viruses and spam, and forwards it wherever you say — to
-your real mailbox, to a webhook, or to another mail server. It also relays
-outbound mail from your own devices, signed with your domain's key so it
-arrives rather than landing in spam.
+scores it for spam and optionally scans it for viruses, and then either files
+it in a mailbox here or hands it on — to an inbox you already read, to a
+webhook, or to another mail server. It also relays outbound mail from your own
+devices, signed with your domain's key so it arrives rather than landing in
+spam.
 
-It is deliberately **not** a mailbox server. There is no IMAP and no inbox.
-Keep reading mail wherever you read it now; TeaNode owns the domain, the
-authentication and the routing.
+A mailbox is read in the dashboard or in any mail program over IMAP. An address
+that should not have a mailbox forwards instead, and one domain can do both.
 
 ```mermaid
 flowchart LR
-    A["hello@example.com"] --> T
-    B["billing@example.com"] --> T
+    A["you@example.com"] --> T
+    B["hello@example.com"] --> T
     C["anything else@example.com"] --> T
     T["TeaNode<br/>SPF · DKIM · DMARC · ARC"]
+    T --> M["a mailbox here,<br/>and over IMAP"]
     T --> D["you@example.net"]
     T --> E["an HTTP endpoint"]
     T --> F["another mail server"]
@@ -37,15 +44,24 @@ built in rather than bolted on.
 
 ## What it looks like
 
-The dashboard is compiled into the binary; there is nothing else to deploy.
+The dashboard is compiled into the binary; there is nothing else to deploy. It
+opens on your mailbox, and the pages that run the server are a mode behind
+**Manage**, which shows only what your permissions allow.
 
-![The mail list, filtered to one domain](docs/images/mail-list.jpg)
+![A mailbox, with a message open](docs/images/mailbox.jpg)
 
-Every message this server has handled, what it decided about each one, and —
-for mail sent from a template — whether the recipient's mail program fetched
-the pictures in it. Clicking a row shows the authentication verdicts with the
-evidence behind them, every delivery attempt and why any of them failed, and
-the message itself with scripts stripped.
+Folders nest, search covers one folder or the whole mailbox, and a message is
+shown the way a mail program would show it.
+
+Behind **Manage** is the server: every message it has handled with what it
+decided about each one, the queue, DMARC reports, the domains, and who may do
+what.
+
+![People, groups and roles](docs/images/access.jpg)
+
+A group is the only thing a role or a domain is attached to. Tie one to a
+domain and its permissions reach that far and no further; give it the name of a
+group in your identity provider and its membership follows the directory.
 
 ## Getting started
 
@@ -77,20 +93,32 @@ server, then:
 The dashboard is on the same host. It lists exactly which DNS records are still
 missing, so you can see what is left rather than guessing. `teanode` is the
 command line client for the same API: sign in from a laptop with
-`teanode auth login --url https://mail.example.com`, and `teanode domain
-list`, `teanode mail list` and the rest work from there.
+`teanode auth login --url https://mail.example.com`, and `teanode domain list`,
+`teanode mailbox folder list`, `teanode group list` and the rest work from
+there. A profile can be read-only, which is what to hand a script or an agent
+that should look but not touch.
+
+The first person to open the dashboard creates the account, which is an
+administrator with a mailbox of its own. Point an address at that mailbox with
+an alias of kind `mailbox`, make an app password under **Mailbox settings →
+Mail programs**, and a mail program reads it over IMAP.
 
 Or skip the binaries and run the compose file, which is how this is meant to
-run in production: `docs/reference/deployment.md`.
+run in production: [the quick start](https://teanode.com/doc/quick-start) is
+four commands.
 
-`docs/getting-started.md` has the full walk-through, including the DNS records
-and the reality that many providers block outbound port 25.
+[Getting started](https://teanode.com/doc/getting-started) has the full
+walk-through, including the DNS records and the reality that many providers
+block outbound port 25. Every document here is on
+[teanode.com](https://teanode.com/doc/introduction) as well, rendered and
+translated.
 
 ## What you need
 
 - A domain, and the ability to edit its DNS
-- A host with a stable address, reachable on ports 25, 80, 443 and 587
-- PostgreSQL, for the configuration and the mail it has handled
+- A host with a stable address, reachable on ports 25, 80, 443 and 587, and on
+  993 if mail programs are to read the mailboxes
+- PostgreSQL, for the settings, the mailboxes and the mail it has handled
 
 Nothing else. No AWS account. Certificates are obtained
 automatically over HTTP-01, so there is no DNS API to configure. An
@@ -98,6 +126,19 @@ S3-compatible object store is optional, and only worth having if you run more
 than one instance: it is what lets them share the stored messages.
 
 ## What it does
+
+**Mailboxes.** Every account has one. Folders nest to any depth and can be
+renamed, moved and pinned; search covers one folder or the whole mailbox, with
+sender, recipient, subject, date and attachment filters; rules file mail as it
+arrives, and can be run over mail already filed. There are drafts whose
+attachments upload once, a signature, contacts kept from whoever you write to,
+and an out-of-office reply that knows not to answer machines, mailing lists or
+another mailbox that is also away. A message is stored once however many
+folders hold it, and kept for as long as one of them does.
+
+**IMAP.** Port 993, and STARTTLS on 143, so a mail program reads the same
+mailbox. Each device gets an app password of its own, which signs in to IMAP
+and sends through the submission port as any of the mailbox's addresses.
 
 **Authenticates everything.** SPF, DKIM, DMARC and ARC on the way in, with the
 results shown per message. Your outbound mail is DKIM signed, and forwarded
@@ -122,9 +163,23 @@ recipient's mail program fetched them.
 **Reports on your domains.** Incoming DMARC aggregate reports are parsed and
 kept, which is how you find out somebody is forging your domain.
 
-**Optional extras, all off by default.** ClamAV, SpamAssassin, GeoIP, an S3
-mirror of stored messages, an outbound SOCKS5 proxy for hosts whose address has
-a poor reputation, and DNS-01 certificates if you need a wildcard.
+**People, groups and roles.** Permissions decide what each person sees:
+Administrator, Operator and Member come seeded and all of it is editable, and a
+group can be tied to a domain so its permissions reach only that far. Single
+sign-on through an OpenID Connect provider follows a group in your own
+directory. Every change to a user, group, role, domain, alias, credential or
+mailbox is in the audit log.
+
+**Scores spam without a second program.** The filter inside the server reads
+what it already established about a message — the authentication results, the
+sending host's confirmed reverse DNS name, the name it gave in HELO — consults
+public block lists over ordinary DNS, and applies a classifier trained on the
+mail you mark in the dashboard. An external SpamAssassin daemon is still
+supported for deployments that want one.
+
+**Optional extras, all off by default.** ClamAV, GeoIP, an S3 mirror of stored
+messages, an outbound SOCKS5 proxy for hosts whose address has a poor
+reputation, and DNS-01 certificates if you need a wildcard.
 
 ## How a message gets through it
 
@@ -138,10 +193,12 @@ flowchart TD
     route -->|"an authenticated credential"| outbound["Sign with the domain's key<br/>and relay it"]
     route -->|"anything else"| inbound["Inbound mail"]
 
-    inbound --> checks["SPF · DKIM · DMARC · ARC<br/>optional virus and spam scan"]
+    inbound --> checks["SPF · DKIM · DMARC · ARC<br/>spam scoring, optional virus scan"]
     checks --> stored["Recorded, with what<br/>each check decided"]
     stored --> aliases["Match the local part against<br/>this domain's aliases"]
-    aliases --> delivery["One delivery per match:<br/>mailbox, webhook, or relay"]
+    aliases --> delivery["One delivery per match"]
+    delivery --> mailbox["A mailbox here:<br/>a reference to the stored<br/>message, filed by its rules"]
+    delivery --> away["Elsewhere: an address,<br/>a webhook, another server"]
 ```
 
 Every arrow above is a place the dashboard can show you what happened, which is
@@ -149,28 +206,21 @@ the point of recording it.
 
 ## Configuration
 
-Configuration lives in the database, so several instances share one answer and
-a change made in the dashboard reaches all of them. The environment says only
-where that database is; everything else is stored.
+Everything lives in the database, so several instances share one answer and a
+change made in the dashboard reaches all of them. The environment says only how
+to reach that database and which instance this process is.
 
-    domains:
-      - id: 01K2ZQ7B8MPJ3F9XV4T6WYNRC0
-        domain: example.com
-        subdomain: mail
-        aliases:
-          - id: 01K2ZQ7B8N6H4K2QDX8ZR5VTAE
-            pattern: ^hello$
-            kind: email
-            email: you@example.net
-          - id: 01K2ZQ7B8PA1M7CJW3YFB9SDQK
-            pattern: ""            # catch-all
-            kind: email
-            email: everything@example.net
+Domains, aliases, credentials and accounts are rows, managed one at a time:
 
-That is what `teanode-server config show` prints and what `teanode-server config import`
-reads, so a whole server can be described in a file, put under version control
-and loaded — but the running server's answer is the database. Every field is
-documented in `docs/configuration.md`.
+    teanode domain create example.com
+    teanode alias create example.com --pattern '^you$' --kind mailbox --mailbox <mailbox id>
+    teanode alias create example.com --pattern '^hello$' --kind email --email you@example.net
+
+The settings — the listeners, TLS, the spam filter, single sign-on and the rest
+— are one document, which `teanode-server config show` prints and
+`teanode-server config import` reads, so a server's settings can be put under
+version control and loaded. Every field is documented in
+[Configuration](https://teanode.com/doc/configuration).
 
 ## Running it
 

@@ -85,6 +85,10 @@ readonly ALLOWED_HOSTS=(
   .example.org
   .example.edu
 
+  # The project's own site, which the README and the documents link to. It is
+  # published on purpose, which is the opposite of a private reference.
+  .teanode.com
+
   # Where the project lives, and what it is written in. The raw host is where
   # the deployment guide fetches the compose file from.
   .github.com
