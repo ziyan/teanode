@@ -155,6 +155,19 @@ type Mail struct {
 	// carried one.
 	FromName string `json:"fromName,omitempty"`
 
+	// What the message said about the mailing list it came from, read out of
+	// its headers when it was stored: the headers themselves live in object
+	// storage, and a page listing subscriptions cannot open every message to
+	// build itself. ListKey identifies the subscription — the list's own
+	// identifier when it publishes one, the sending address otherwise — and
+	// is empty for ordinary mail. ListChecked says the headers have been read,
+	// whatever they turned out to say.
+	ListKey         string `json:"listKey,omitempty"`
+	ListName        string `json:"listName,omitempty"`
+	ListUnsubscribe string `json:"listUnsubscribe,omitempty"`
+	ListOneClick    bool   `json:"listOneClick,omitempty"`
+	ListChecked     bool   `json:"listChecked,omitempty"`
+
 	// Kind gains draft for a message being written.
 
 	// Size of the received Mail

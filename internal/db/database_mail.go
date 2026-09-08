@@ -111,6 +111,15 @@ type mailModel struct {
 	UnreferencedAt  *time.Time `gorm:"column:unreferenced_at"`
 	AttachmentCount *int       `gorm:"column:attachment_count"`
 	FromName        string     `gorm:"column:from_name;size:255"`
+
+	// The mailing list this message came from, if any. Written when the
+	// message is stored, because the headers it is read from are in object
+	// storage rather than here.
+	ListKey         string `gorm:"column:list_key;type:text"`
+	ListName        string `gorm:"column:list_name;type:text"`
+	ListUnsubscribe string `gorm:"column:list_unsubscribe;type:text"`
+	ListOneClick    bool   `gorm:"column:list_one_click"`
+	ListChecked     bool   `gorm:"column:list_checked"`
 }
 
 func (self *mailModel) TableName() string {
@@ -122,6 +131,11 @@ func getMailFromMailModel(model mailModel) *models.Mail {
 		UnreferencedAt:  localTime(model.UnreferencedAt),
 		AttachmentCount: model.AttachmentCount,
 		FromName:        model.FromName,
+		ListKey:         model.ListKey,
+		ListName:        model.ListName,
+		ListUnsubscribe: model.ListUnsubscribe,
+		ListOneClick:    model.ListOneClick,
+		ListChecked:     model.ListChecked,
 		ID:              model.ID,
 		CreatedAt:       model.CreatedAt.In(time.Local),
 		ModifiedAt:      model.ModifiedAt.In(time.Local),
@@ -237,6 +251,26 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 	}
 	if fromName := truncateRunes(mail.FromName, 255); model.FromName != fromName {
 		model.FromName = fromName
+		dirty = true
+	}
+	if model.ListKey != mail.ListKey {
+		model.ListKey = mail.ListKey
+		dirty = true
+	}
+	if model.ListName != mail.ListName {
+		model.ListName = mail.ListName
+		dirty = true
+	}
+	if model.ListUnsubscribe != mail.ListUnsubscribe {
+		model.ListUnsubscribe = mail.ListUnsubscribe
+		dirty = true
+	}
+	if model.ListOneClick != mail.ListOneClick {
+		model.ListOneClick = mail.ListOneClick
+		dirty = true
+	}
+	if model.ListChecked != mail.ListChecked {
+		model.ListChecked = mail.ListChecked
 		dirty = true
 	}
 	if model.Subject != mail.Subject {
@@ -396,6 +430,14 @@ func (self *transaction) CreateMails(mails []*models.Mail, options *Options) ([]
 		if mail.ThreadID == "" {
 			mail.ThreadID = id
 		}
+		// What the message says about the mailing list it came from. Read
+		// here rather than at each of the six places that store a message,
+		// for the same reason the conversation is: the headers are only in
+		// hand at this moment, and a message stored without this is a message
+		// the subscriptions page will never know about.
+		if !mail.ListChecked && len(mail.Headers) > 0 {
+			applyListInfo(mail)
+		}
 		newModel := mailModel{
 			ID:         id,
 			CreatedAt:  now,
@@ -552,6 +594,18 @@ func (self *database) MailExists(mailId string) (bool, error) {
 
 // displayNameOf is the name in a From header, or empty when it is only an
 // address.
+// applyListInfo records what a message said about its list, and that it has
+// been asked at all: most mail says nothing, and an empty answer has to be
+// distinguishable from an unread question.
+func applyListInfo(mail *models.Mail) {
+	info := mailparse.ParseList(mail.Headers, mailparse.FindHeaderValue(mail.Headers, "From"))
+	mail.ListKey = truncateRunes(info.Key, 998)
+	mail.ListName = truncateRunes(info.Name, 255)
+	mail.ListUnsubscribe = truncateRunes(strings.Join(info.Unsubscribe, ", "), 2000)
+	mail.ListOneClick = info.OneClick
+	mail.ListChecked = true
+}
+
 func displayNameOf(from string) string {
 	parsed, err := mail.ParseAddress(strings.TrimSpace(from))
 	if err != nil {
