@@ -46,6 +46,10 @@ Notable changes to TeaNode. The format follows
   was and what it is. A mailbox's rules came out as a list of several thousand
   numbers, since the snapshot is JSON and the API had been describing it as an
   array of bytes.
+- A person created while there is no Members group joins no group at all,
+  which is no permissions at all — they can sign in and read nothing. The
+  server says so in the log, and the page no longer promises a group that is
+  not there.
 - A reply saved as a draft belongs to the conversation it answers. The headers
   that say what a message answers were written when one was sent and not when
   one was saved, so a half-written reply left the thread it was written in the
@@ -78,6 +82,11 @@ Notable changes to TeaNode. The format follows
   answer is being written, with a link to unfold it. It is hidden rather than
   removed, so it is still in what is sent — but what is being written is the
   answer, and in a conversation the thing it answers is on the screen already.
+- Lists of things to tick — a group's people, its roles, its domains — are
+  panels with a heading and a rule, and their rows are rows. Each one carried
+  the bottom margin of a form field and was drawn in the muted color of a
+  field's helper text, so a group of three roles was a dialog of paragraphs
+  that read as disabled.
 - Copy and blind copy are fields on the compose form like any other. They were
   behind a "Cc / Bcc" link, which made two ordinary boxes into something to go
   looking for and put a link where the form's rhythm wanted a label.

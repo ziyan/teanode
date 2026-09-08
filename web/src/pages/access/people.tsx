@@ -148,6 +148,12 @@ export function PeopleTab() {
   const chosen = groups.find((group) => group.id === chosenGroupId) ?? null
   const shown = chosen ? users.filter((user) => user.groupIds.includes(chosen.id)) : users
 
+  // The group a new person joins by default — when it is still there. It can
+  // be renamed or deleted like any other, and nothing puts it back, so this
+  // page must not promise it either way: without it an account joins no
+  // group, which is no permissions at all.
+  const members = groups.find((group) => group.name.toLowerCase() === 'members')
+
   // Opening a dialog starts with a clean slate: the two sets of dialogs
   // share one error, and the group's should not open showing the person's.
   function open(what: () => void) {
@@ -160,7 +166,6 @@ export function PeopleTab() {
     // given, and the group being read as well when the list is narrowed to
     // one. Narrowing the list to look at it should not quietly take
     // somebody out of Members.
-    const members = groups.find((group) => group.name.toLowerCase() === 'members')
     const joins = [members, chosen].filter((group): group is Group => Boolean(group))
     const groupIds = [...new Set(joins.map((group) => group.id))]
     setPersonDraft({ username: '', password: '', name: '', email: '', groupIds })
@@ -202,7 +207,7 @@ export function PeopleTab() {
             title={chosen ? t('access.people.inGroup', { name: chosen.name }) : t('access.people.everyone')}
             // Narrowed to a group, the line below says which and how many, and
             // saying "everyone with an account" above it would contradict it.
-            description={chosen ? undefined : t('access.users.intro')}
+            description={chosen ? undefined : members ? t('access.users.intro') : t('access.users.introNoMembers')}
             action={
               managesUsers ? (
                 <button className="primary" type="button" onClick={() => open(startAddingPerson)}>

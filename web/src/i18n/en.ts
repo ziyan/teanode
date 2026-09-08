@@ -1011,6 +1011,8 @@ export const en = {
   'server.tabRoles': 'Roles',
   'server.tabAudit': 'Audit',
   'access.users.intro': 'Everyone with an account on this server. A person is put into Members unless told otherwise, so they can read the mailbox they are given.',
+  'access.users.introNoMembers':
+    'Everyone with an account on this server. There is no Members group, so choose the groups a new person joins — an account in no group can sign in and read nothing.',
   'access.users.new': 'New user',
   'access.users.empty': 'No accounts yet.',
   'access.users.username': 'Username',

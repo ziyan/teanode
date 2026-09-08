@@ -1000,6 +1000,8 @@ export const ja: Catalog = {
   'server.tabRoles': 'ロール',
   'server.tabAudit': '監査',
   'access.users.intro': 'このサーバーのすべてのアカウント。指定がなければ Members グループに入り、割り当てられたメールボックスを読めるようになります。',
+  'access.users.introNoMembers':
+    'このサーバーのすべてのアカウント。Members グループが存在しないため、新しい人が入るグループを選んでください。どのグループにも属さないアカウントはサインインできても何も読めません。',
   'access.users.new': '新しいユーザー',
   'access.users.empty': 'アカウントはまだありません。',
   'access.users.username': 'ユーザー名',

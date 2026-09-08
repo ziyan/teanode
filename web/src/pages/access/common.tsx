@@ -129,7 +129,7 @@ export function CheckList<T extends { id: string }>({
     <fieldset className="check-list">
       <legend>
         {label}
-        {chosenHere > 0 && <span className="muted"> · {t('access.checkList.selected', { count: chosenHere })}</span>}
+        {chosenHere > 0 && <span className="muted">{t('access.checkList.selected', { count: chosenHere })}</span>}
       </legend>
       {hint && <p className="muted">{hint}</p>}
       {searchable && (

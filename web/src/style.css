@@ -3177,32 +3177,87 @@ a.button.primary:hover {
   font-size: 13px;
 }
 
-/* Lists of things to tick: users in a group, roles of a group, permissions of a role. */
+/* Lists of things to tick: users in a group, roles of a group, permissions of
+   a role. A panel with a header and a ruled-off list of rows, rather than a
+   box with a label wedged into its top border. */
 .check-list {
   border: 1px solid var(--border, #ddd);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin: 8px 0;
+  border-radius: 8px;
+  padding: 0;
+  /* The same step as between the fields above it, so a dialog of labels and
+     lists has one rhythm rather than two. */
+  margin: 0 0 var(--space-3);
+}
+/* The header, and the one way a legend can be one: floated to the full width
+   it lays out as an ordinary block at the top of the fieldset, so it can have
+   a rule under it instead of sitting in a notch in the border. */
+.check-list legend {
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border, #ddd);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* How many are ticked, read as a count beside the heading rather than as more
+   heading. */
+.check-list legend .muted {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* Everything under a floated header has to clear it. */
+.check-list > p,
+.check-list-search,
+.check-list-items {
+  clear: both;
+}
+.check-list > p {
+  margin: 0;
+  padding: 10px 12px 0;
+  font-size: 13px;
 }
 /* The rows scroll, not the fieldset: a search box inside a scrolling
    fieldset scrolls away with what it is searching. */
 .check-list-items {
   max-height: 14rem;
   overflow-y: auto;
+  padding: 6px 12px 8px;
 }
-.check-list legend {
-  font-weight: 600;
-  padding: 0 4px;
-}
-.check-list-item {
+/* A row of the list, not a field of a form. It has to say so, because the
+   dialog styles every label as a field: a bottom margin meant for a labelled
+   input, and a small muted block for its text. Left alone the rows sat a
+   third of an inch apart in a colour that read as disabled. */
+label.check-list-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 0;
+  gap: 10px;
+  /* Beats .dialog label, which is a class and a type and would otherwise
+     win: the row is not a field and must not carry a field's margin. */
+  margin: 0;
+  padding: 5px 0;
+  min-height: 30px;
   cursor: pointer;
+}
+.check-list-item > span {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.4;
 }
 .check-list-item input {
   margin: 0;
+}
+.check-list-item input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
 }
 
 /* The row before and after a change, in the audit log. */
@@ -4225,9 +4280,13 @@ a.button.primary:hover {
   .check-list-item input[type='radio'] {
     min-height: 0;
   }
-  .check-list-item {
+  label.check-list-item {
     padding: 8px 0;
     min-height: 40px;
+  }
+  .check-list-item input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
   }
   /* Lists inside a dialog on a phone: tall enough to work in, short enough
      that three of them do not bury the buttons. Measured in dvh like the
@@ -4241,15 +4300,14 @@ a.button.primary:hover {
    search sits under the legend, the rows scroll under it, and what is
    already chosen is at the top and reads as chosen. */
 .check-list-search {
-  width: 100%;
-  margin: 4px 0 6px;
+  width: calc(100% - 24px);
+  margin: 10px 12px 0;
 }
 .check-list-items {
   display: flex;
   flex-direction: column;
 }
 .check-list-item.chosen {
-  color: var(--text);
   font-weight: 500;
 }
 

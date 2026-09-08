@@ -987,6 +987,8 @@ export const zh: Catalog = {
   'server.tabRoles': '角色',
   'server.tabAudit': '审计',
   'access.users.intro': '此服务器上的所有账号。除非另行指定，新用户会被加入"Members"群组，以便读取分配给他们的邮箱。',
+  'access.users.introNoMembers':
+    '此服务器上的所有账号。当前没有“Members”群组，请为新用户选择所属群组——不属于任何群组的账号虽能登录，但什么也读不到。',
   'access.users.new': '新建用户',
   'access.users.empty': '还没有账号。',
   'access.users.username': '用户名',
