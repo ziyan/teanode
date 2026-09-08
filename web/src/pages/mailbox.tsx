@@ -1103,6 +1103,10 @@ function ThreadMessage({
   const { t } = useTranslation()
   const item = entry.item
   const mail = item.mail
+  // Where the message's own menu — download, headers, theme — goes: the end
+  // of the line that names the message, not a row of its own above it. A
+  // conversation of six would otherwise carry six rows holding one button.
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null)
   const content = useQuery(
     () =>
       open && mail ? graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId: mail.id }) : Promise.resolve(null),
@@ -1113,22 +1117,27 @@ function ThreadMessage({
 
   return (
     <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
-      {/* The whole line opens and closes it, so there is nothing to aim at. */}
-      <button type="button" className="mailbox-message-head" aria-expanded={open} onClick={onToggle}>
-        <span className="mailbox-message-who" title={mail?.from || mail?.sender}>
-          {who}
-        </span>
-        {/* Where it is, when that is not where the conversation is being
-            read: your own answer is in Sent, and saying so is the difference
-            between a conversation and a list. */}
-        {entry.folderId !== folderId && entry.folderName && (
-          <span className="mailbox-row-folder">{entry.folderName}</span>
-        )}
-        {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
-        <span className="mailbox-message-when">
-          <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
-        </span>
-      </button>
+      <div className="mailbox-message-head">
+        {/* The whole line opens and closes it, so there is nothing to aim
+            at — except the menu at its end, which is a button of its own and
+            so sits outside this one rather than inside it. */}
+        <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
+          <span className="mailbox-message-who" title={mail?.from || mail?.sender}>
+            {who}
+          </span>
+          {/* Where it is, when that is not where the conversation is being
+              read: your own answer is in Sent, and saying so is the difference
+              between a conversation and a list. */}
+          {entry.folderId !== folderId && entry.folderName && (
+            <span className="mailbox-row-folder">{entry.folderName}</span>
+          )}
+          {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
+          <span className="mailbox-message-when">
+            <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+          </span>
+        </button>
+        {open && <span className="mailbox-message-menu" ref={setMenuSlot} />}
+      </div>
 
       {open && (
         <div className="mailbox-message-body">
@@ -1151,7 +1160,12 @@ function ThreadMessage({
               ) : content.error ? (
                 <ErrorMessage error={content.error} />
               ) : (
-                <MessageContent mailId={mail.id} content={content.data?.GetMailContent} mode="mailbox" />
+                <MessageContent
+                  mailId={mail.id}
+                  content={content.data?.GetMailContent}
+                  mode="mailbox"
+                  menuContainer={menuSlot}
+                />
               )}
             </>
           ) : (

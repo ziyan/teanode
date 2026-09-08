@@ -3440,14 +3440,25 @@ a.button.primary:hover {
   overflow: hidden;
 }
 
+/* The line that names a message: the part that opens and closes it, and at
+   its end the message's own menu, which is a button and so cannot be inside
+   another one. */
+.mailbox-message-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+
 /* The whole line opens and closes the message, so there is nothing to aim
    at. A button rather than a div, so the keyboard reaches it and a screen
    reader is told what it does. */
-.mailbox-message-head {
+.mailbox-message-summary {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: 10px 12px;
   border: 0;
@@ -3459,8 +3470,17 @@ a.button.primary:hover {
   cursor: pointer;
 }
 
-.mailbox-message-head:hover {
+.mailbox-message-summary:hover {
   background: var(--background);
+}
+
+/* The menu keeps its size while the summary beside it takes the room. */
+.mailbox-message-menu {
+  flex: 0 0 auto;
+}
+
+.mailbox-message-menu .message-menu {
+  margin: 0;
 }
 
 .mailbox-message.unread .mailbox-message-who {
@@ -3514,7 +3534,7 @@ a.button.primary:hover {
 @media (max-width: 600px) {
   /* Three things on one line do not fit. The time keeps its place at the end
      and the subject wraps under the name. */
-  .mailbox-message-head {
+  .mailbox-message-summary {
     flex-wrap: wrap;
   }
 

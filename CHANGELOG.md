@@ -86,6 +86,9 @@ Notable changes to TeaNode. The format follows
   that arrived from outside had one; a message you sent, a draft, and a
   message a mail program appended over IMAP were all stored with no
   conversation, so a reply stood apart from what it answered.
+- A message's own menu — download, headers, theme — sits at the end of the
+  line that names the message rather than on a row of its own above it. In a
+  conversation that was one row holding one button for every message in it.
 - Archiving or deleting a conversation from Starred, or from a search across
   the mailbox, acted on every message of it wherever it was filed — including
   your own replies in Sent and an unsent draft. From a list that is not a
