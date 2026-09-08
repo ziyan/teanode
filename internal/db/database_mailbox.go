@@ -1020,12 +1020,13 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 		if item == nil {
 			continue
 		}
-		thread := &models.MailboxThread{ThreadID: row.ThreadID, Item: item, Count: 1}
+		thread := &models.MailboxThread{ThreadID: row.ThreadID, Item: item, Count: 1, ItemIDs: []string{item.ID}}
 		if count := counts[row.ThreadID]; count != nil {
 			thread.Count = count.Count
 			thread.Unread = count.Unread
 			thread.Flagged = count.Flagged
 			thread.Participants = count.Participants
+			thread.ItemIDs = count.ItemIDs
 		}
 		threads = append(threads, thread)
 	}
@@ -1053,7 +1054,9 @@ type threadCount struct {
 	Unread       int    `gorm:"column:unread"`
 	Flagged      bool   `gorm:"column:flagged"`
 	Participants []string
+	ItemIDs      []string
 	Names        string `gorm:"column:names"`
+	Items        string `gorm:"column:items"`
 }
 
 // threadCounts counts each conversation's messages in the folder, and gathers
@@ -1071,7 +1074,8 @@ func (self *transaction) threadCounts(folderId string, options *ItemOptions, thr
 		Select("\"mail\".\"thread_id\" AS thread_id, COUNT(*) AS count, " +
 			"COUNT(*) FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread, " +
 			"BOOL_OR(\"mailbox_item\".\"flagged\") AS flagged, " +
-			"STRING_AGG(COALESCE(NULLIF(\"mail\".\"from_name\", ''), \"mail\".\"from\"), CHR(10) ORDER BY \"mail\".\"received_at\") AS names").
+			"STRING_AGG(COALESCE(NULLIF(\"mail\".\"from_name\", ''), \"mail\".\"from\"), CHR(10) ORDER BY \"mail\".\"received_at\") AS names, " +
+			"STRING_AGG(\"mailbox_item\".\"id\", CHR(10) ORDER BY \"mail\".\"received_at\") AS items").
 		Group("\"mail\".\"thread_id\"")
 	var rows []threadCount
 	if err := query.Find(&rows).Error; err != nil {
@@ -1085,6 +1089,11 @@ func (self *transaction) threadCounts(folderId string, options *ItemOptions, thr
 			if name = strings.TrimSpace(name); name != "" && !seen[name] {
 				seen[name] = true
 				row.Participants = append(row.Participants, name)
+			}
+		}
+		for _, itemId := range strings.Split(row.Items, "\n") {
+			if itemId = strings.TrimSpace(itemId); itemId != "" {
+				row.ItemIDs = append(row.ItemIDs, itemId)
 			}
 		}
 		counts[row.ThreadID] = row

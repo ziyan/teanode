@@ -3404,6 +3404,130 @@ a.button.primary:hover {
   flex: 1 1 100%;
   text-wrap: balance;
 }
+/* --- a conversation ---------------------------------------------------------
+   The messages of one conversation, newest first. A message that has been
+   read is a line; opening it puts the message under that line, so the line
+   stays where it was and the reader's place does not move. */
+.mailbox-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mailbox-thread-count {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* The answer being written sits above the newest message, which is where it
+   will be once it is sent. Its own card, so it reads as a thing being made
+   rather than as another message of the conversation. */
+.mailbox-thread-compose {
+  margin-bottom: 12px;
+}
+
+.mailbox-thread-compose .compose {
+  margin-bottom: 0;
+}
+
+.mailbox-message {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* The whole line opens and closes the message, so there is nothing to aim
+   at. A button rather than a div, so the keyboard reaches it and a screen
+   reader is told what it does. */
+.mailbox-message-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailbox-message-head:hover {
+  background: var(--background);
+}
+
+.mailbox-message.unread .mailbox-message-who {
+  font-weight: 600;
+}
+
+.mailbox-message-who {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+/* The subject stands in for the message while it is closed, and gives way to
+   the message itself when it opens. */
+.mailbox-message-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mailbox-message-when {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mailbox-message-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mailbox-message-body .mailbox-pane-meta {
+  margin-top: 12px;
+}
+
+/* An open message is the one being read; the closed ones around it are a
+   list, and should not compete with it. */
+.mailbox-message.open > .mailbox-message-head {
+  background: var(--background);
+}
+
+@media (max-width: 600px) {
+  /* Three things on one line do not fit. The time keeps its place at the end
+     and the subject wraps under the name. */
+  .mailbox-message-head {
+    flex-wrap: wrap;
+  }
+
+  .mailbox-message-who {
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .mailbox-message-subject {
+    flex-basis: 100%;
+  }
+}
+
 .mailbox-pane-meta {
   font-size: 13px;
   color: var(--muted);
@@ -3587,6 +3711,20 @@ a.button.primary:hover {
   font-size: 12px;
   padding: 4px 10px;
 }
+/* How many messages the conversation holds, beside who wrote them. A number
+   rather than a word: the row is already carrying a name, a subject and a
+   time, and "3 messages" would crowd all three out on a phone. */
+.mailbox-row-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .mailbox-row-folder {
   display: inline-block;
   font-size: 11px;

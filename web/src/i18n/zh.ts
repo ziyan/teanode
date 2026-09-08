@@ -1107,6 +1107,7 @@ export const zh: Catalog = {
   'mailbox.nothingFound': '没有匹配的邮件。',
   'mailbox.loadMore': '显示更多',
   'mailbox.count': '{shown} / {total}',
+  'mailbox.threadCount': '{count} 封邮件',
   'mailbox.selected': '已选择 {count} 封',
   'mailbox.none': '还没有邮箱',
   'mailbox.noneHint': '每个可以读取邮件的账号都会创建一个邮箱。请让此服务器的管理员检查你所在的群组。',

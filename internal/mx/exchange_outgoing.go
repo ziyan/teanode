@@ -143,7 +143,7 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	// same question asked of an arriving message. Without it a reply sent
 	// from the dashboard or a mail program lands in Sent outside the thread
 	// it belongs to, and the thread reads as though nobody answered.
-	threadId, err := threadIDFor(tx, envelope.Headers)
+	threadId, err := ThreadIDFor(tx, envelope.Headers)
 	if err != nil {
 		return nil, err
 	}
@@ -209,17 +209,6 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	// save mail and commit
 	if _, err := tx.CreateMail(mail, nil); err != nil {
 		return nil, err
-	}
-	if mail.ThreadID == "" {
-		// It starts a conversation of its own. The id is known only after the
-		// row exists, so this is a second write rather than a field.
-		mail.ThreadID = mail.ID
-		if _, err := tx.ModifyMail(mail.ID, func(mail *models.Mail) error {
-			mail.ThreadID = mail.ID
-			return nil
-		}, nil); err != nil {
-			return nil, err
-		}
 	}
 	// A person's submission goes in their Sent folder, by reference, in the
 	// same transaction as the row: there is no moment at which the message

@@ -186,6 +186,11 @@ type MailboxThread struct {
 	// Participants are the people who have written, oldest first, by the name
 	// they wrote under or their address when they gave none.
 	Participants []string `json:"participants"`
+
+	// ItemIDs is every message of the conversation in this folder, so that
+	// starring, moving or deleting the row acts on the conversation rather
+	// than on the one message the row happens to show.
+	ItemIDs []string `json:"itemIds"`
 }
 
 // MailboxItemFlags is what STORE and the web UI change on an item. Nil

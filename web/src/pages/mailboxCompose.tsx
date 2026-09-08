@@ -108,25 +108,15 @@ function forwardSubject(subject: string): string {
   return /^\s*fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`
 }
 
+// MailboxComposePage is the composer as a page of its own, at
+// /mailbox/compose, with what it is answering named in the address bar.
 export function MailboxComposePage() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [search] = useSearchParams()
-  const mailboxes = useMailboxes()
-  // The mailbox this message belongs to: the one holding the item replied
-  // to, forwarded or continued, when there is one, else the one the rail
-  // shows. A link into another mailbox's message must not be answered from
-  // this one.
-  const [ownerFolderId, setOwnerFolderId] = useState<string | null>(null)
-  const view =
-    (ownerFolderId && mailboxes.views.find((candidate) => candidate.folders.some((folder) => folder.id === ownerFolderId))) ||
-    mailboxes.current
 
   const replyTo = search.get('reply') ?? search.get('replyAll')
-  const replyAll = search.has('replyAll')
   const forwardOf = search.get('forward')
   const draftOf = search.get('draft')
-  const initialTo = search.get('to') ?? ''
 
   useBreadcrumbDetail(
     draftOf
@@ -137,6 +127,54 @@ export function MailboxComposePage() {
           ? t('compose.mailbox.forwardTitle')
           : t('compose.mailbox.title'),
   )
+
+  return (
+    <MailboxComposer
+      replyTo={replyTo}
+      replyAll={search.has('replyAll')}
+      forwardOf={forwardOf}
+      draftOf={draftOf}
+      initialTo={search.get('to') ?? ''}
+    />
+  )
+}
+
+// MailboxComposer is writing a message: a new one, a reply, a forward, or a
+// draft picked up again. It is a component rather than a page because it is
+// used twice — on its own page, and at the top of a conversation, where a
+// reply is written where the conversation is being read.
+export function MailboxComposer({
+  replyTo,
+  replyAll,
+  forwardOf,
+  draftOf,
+  initialTo = '',
+  onSent,
+  onCancel,
+}: {
+  replyTo?: string | null
+  replyAll?: boolean
+  forwardOf?: string | null
+  draftOf?: string | null
+  initialTo?: string
+  // Told when the message has gone, so a conversation can show it. Without
+  // one the composer says so itself, which is what the page does.
+  onSent?: () => void
+  // Offered as a way out when there is somewhere to go back to.
+  onCancel?: () => void
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const mailboxes = useMailboxes()
+  // The mailbox this message belongs to: the one holding the item replied
+  // to, forwarded or continued, when there is one, else the one the rail
+  // shows. A link into another mailbox's message must not be answered from
+  // this one.
+  const [ownerFolderId, setOwnerFolderId] = useState<string | null>(null)
+  const view =
+    (ownerFolderId &&
+      mailboxes.views.find((candidate) => candidate.folders.some((folder) => folder.id === ownerFolderId))) ||
+    mailboxes.current
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState(initialTo)
@@ -158,9 +196,9 @@ export function MailboxComposePage() {
   const inFlight = useRef<UploadHandle | null>(null)
   const [kept, setKept] = useState<Attachment[]>([])
   const [carried, setCarried] = useState<Attachment[]>([])
-  const [draftItemId, setDraftItemId] = useState<string | null>(draftOf)
-  const [replyItemId, setReplyItemId] = useState<string | null>(replyTo)
-  const [forwardItemId, setForwardItemId] = useState<string | null>(forwardOf)
+  const [draftItemId, setDraftItemId] = useState<string | null>(draftOf ?? null)
+  const [replyItemId, setReplyItemId] = useState<string | null>(replyTo ?? null)
+  const [forwardItemId, setForwardItemId] = useState<string | null>(forwardOf ?? null)
   const [loading, setLoading] = useState(Boolean(replyTo || forwardOf || draftOf))
   const [loadError, setLoadError] = useState<unknown>(null)
   const [problem, setProblem] = useState<unknown>(null)
@@ -197,7 +235,11 @@ export function MailboxComposePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.mailbox.id, typing])
   const completions = (value: string) => {
-    const done = value.split(/[,;]/).slice(0, -1).map((entry) => entry.trim()).filter(Boolean)
+    const done = value
+      .split(/[,;]/)
+      .slice(0, -1)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
     const before = done.length > 0 ? done.join(', ') + ', ' : ''
     return contacts.map((contact) => before + (contact.name ? `${contact.name} <${contact.address}>` : contact.address))
   }
@@ -273,9 +315,7 @@ export function MailboxComposePage() {
             }
             setSubject(replySubject(original?.subject ?? ''))
             const attribution = t('compose.mailbox.quotedOn', { date: when, from: originalFrom })
-            setHtml(
-              `<p><br></p><p>${escapeHtml(attribution)}</p><blockquote>${originalHtml}</blockquote>`,
-            )
+            setHtml(`<p><br></p><p>${escapeHtml(attribution)}</p><blockquote>${originalHtml}</blockquote>`)
             setText(`\n\n${attribution}\n${quoteText(originalText)}`)
           } else {
             setSubject(forwardSubject(original?.subject ?? ''))
@@ -325,8 +365,10 @@ export function MailboxComposePage() {
       return
     }
     signed.current = true
-    const signatureHtml = view.mailbox.signatureHtml || (view.mailbox.signatureText ? textToHtml(view.mailbox.signatureText) : '')
-    const signatureText = view.mailbox.signatureText || (view.mailbox.signatureHtml ? htmlToText(view.mailbox.signatureHtml) : '')
+    const signatureHtml =
+      view.mailbox.signatureHtml || (view.mailbox.signatureText ? textToHtml(view.mailbox.signatureText) : '')
+    const signatureText =
+      view.mailbox.signatureText || (view.mailbox.signatureHtml ? htmlToText(view.mailbox.signatureHtml) : '')
     if (signatureHtml) {
       setHtml((previous) => `<p><br></p><p>-- <br>${signatureHtml}</p>${previous}`)
     }
@@ -484,7 +526,13 @@ export function MailboxComposePage() {
           setQueued(0)
           return
         }
-        setUploading(batch.map((file) => ({ file, progress: 0, error: failure instanceof Error ? failure.message : String(failure) })))
+        setUploading(
+          batch.map((file) => ({
+            file,
+            progress: 0,
+            error: failure instanceof Error ? failure.message : String(failure),
+          })),
+        )
       })
       .finally(() => {
         inFlight.current = null
@@ -532,6 +580,9 @@ export function MailboxComposePage() {
       dirty.current = false
       setSent(true)
       void mailboxes.refresh()
+      if (onSent) {
+        onSent()
+      }
     } catch (failure) {
       setProblem(failure)
     } finally {
@@ -545,9 +596,16 @@ export function MailboxComposePage() {
     setQueued(0)
     if (draftItemId) {
       try {
-        await graphql(`mutation ($itemIds: [String!]!) { DeleteMailboxItems(itemIds: $itemIds) }`, {
-          itemIds: [draftItemId],
-        })
+        await graphql(
+          `
+            mutation ($itemIds: [String!]!) {
+              DeleteMailboxItems(itemIds: $itemIds)
+            }
+          `,
+          {
+            itemIds: [draftItemId],
+          },
+        )
       } catch (failure) {
         setProblem(failure)
         setDiscarding(false)
@@ -556,6 +614,10 @@ export function MailboxComposePage() {
     }
     dirty.current = false
     void mailboxes.refresh()
+    if (onCancel) {
+      onCancel()
+      return
+    }
     navigate('/mailbox')
   }
 
@@ -577,12 +639,21 @@ export function MailboxComposePage() {
   }
 
   const sentFolder = folderOfKind(view, 'sent')
+  if (sent && onSent) {
+    // Whoever asked for it is showing it now — at the top of the
+    // conversation it belongs to — so there is nothing to say here.
+    return null
+  }
   if (sent) {
     return (
       <div className="card">
         <h3>{t('compose.mailbox.sent')}</h3>
         <p className="muted">
-          {sentFolder ? <Link to={`/mailbox/${sentFolder.id}`}>{t('compose.mailbox.sentHint')}</Link> : t('compose.mailbox.sentHint')}
+          {sentFolder ? (
+            <Link to={`/mailbox/${sentFolder.id}`}>{t('compose.mailbox.sentHint')}</Link>
+          ) : (
+            t('compose.mailbox.sentHint')
+          )}
         </p>
         <div className="page-actions">
           <Link className="button" to="/mailbox">
@@ -796,7 +867,11 @@ export function MailboxComposePage() {
                 {entry.error ? (
                   <span className="error"> {entry.error}</span>
                 ) : (
-                  <progress max={1} value={entry.progress} aria-label={t('compose.mailbox.uploading', { name: entry.file.name })} />
+                  <progress
+                    max={1}
+                    value={entry.progress}
+                    aria-label={t('compose.mailbox.uploading', { name: entry.file.name })}
+                  />
                 )}
               </li>
             ))}
@@ -849,7 +924,11 @@ export function MailboxComposePage() {
           {t('compose.mailbox.discard')}
         </button>
         <span className="muted">
-          {saving ? t('compose.mailbox.saving') : savedAt ? t('compose.mailbox.draftSaved', { time: formatTime(savedAt.toISOString()) }) : ''}
+          {saving
+            ? t('compose.mailbox.saving')
+            : savedAt
+              ? t('compose.mailbox.draftSaved', { time: formatTime(savedAt.toISOString()) })
+              : ''}
         </span>
       </div>
 

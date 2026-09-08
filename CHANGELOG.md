@@ -8,6 +8,14 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- Mail reads as conversations. A folder lists one row per conversation, with
+  who has written and how many messages it holds; opening any message shows
+  the whole conversation, newest first, with the messages you have read
+  collapsed to a line you can click open; and the messages of it that live in
+  other folders are in it too, so your own answers — which are in Sent — are
+  where they belong. Reply, reply to all and forward open the composer at the
+  top of the conversation rather than on a page of its own, and sending puts
+  the answer at the top of what you were reading without leaving it.
 - A written design guideline for the dashboard,
   `docs/coding/frontend-design.md`: which shared component to reach for, where
   a panel's action goes, when a row action is an icon and when it is a word.

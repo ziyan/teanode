@@ -152,18 +152,16 @@ func senderOf(mail *models.Mail) (string, string) {
 	return strings.ToLower(address), name
 }
 
-// threadIDFor is the conversation a message belongs to: the thread of
-// whatever it answers, by In-Reply-To or References, or a new one of its own.
-// ThreadIDFor is threadIDFor for the packages that store a message without
-// going through the exchange: a draft saved from the dashboard, and a message
-// a mail program appends over IMAP. A message stored without one is a message
-// that reads as a conversation of its own, which for a draft reply or a
-// program's own copy of what it sent is wrong in the one place it shows.
+// ThreadIDFor is the conversation a message belongs to: the thread of
+// whatever it answers, by In-Reply-To or References, or nothing when it
+// answers nothing and so begins one of its own.
+//
+// Exported because the exchange is not the only thing that stores a message.
+// A draft saved from the dashboard and a message a mail program appends over
+// IMAP are stored too, and one stored without a conversation reads as a
+// conversation of its own — which for a draft reply, or a program's own copy
+// of what it sent, is wrong in the one place it shows.
 func ThreadIDFor(tx db.Transaction, headers []string) (string, error) {
-	return threadIDFor(tx, headers)
-}
-
-func threadIDFor(tx db.Transaction, headers []string) (string, error) {
 	candidates := threadCandidates(headers)
 	if len(candidates) == 0 {
 		return "", nil

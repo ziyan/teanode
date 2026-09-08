@@ -301,17 +301,6 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if created.ThreadID == "" {
-		// A draft that answers nothing starts a conversation of its own, and
-		// the id is known only once the row exists.
-		if _, err := tx.ModifyMail(created.ID, func(mail *models.Mail) error {
-			mail.ThreadID = mail.ID
-			return nil
-		}, nil); err != nil {
-			return nil, err
-		}
-		created.ThreadID = created.ID
-	}
 	if err := self.storage.Put(ctx, created.ID, composed.Headers, composed.Body); err != nil {
 		return nil, err
 	}

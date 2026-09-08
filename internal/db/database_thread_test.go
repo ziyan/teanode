@@ -141,6 +141,10 @@ func TestListThreadsGroupsAFolderByConversation(t *testing.T) {
 			}
 		}
 
+		if len(newest.ItemIDs) != 3 {
+			t.Errorf("the row carries %d item ids, want 3 — the conversation's messages in this folder", len(newest.ItemIDs))
+		}
+
 		if threads[1].ThreadID != other.ID {
 			t.Errorf("the second row is conversation %q, want the unrelated one %q", threads[1].ThreadID, other.ID)
 		}
