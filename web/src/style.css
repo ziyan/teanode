@@ -3419,7 +3419,9 @@ label.check-list-item {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  padding: 6px 8px;
+  /* The same left inset as a row of the list, so the box that ticks all of
+     them sits in the column of the boxes that tick one. */
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   /* As tall with nothing selected as with something: the row of actions
@@ -3428,6 +3430,11 @@ label.check-list-item {
      the second message somebody meant to tick had moved. The number is the
      icon buttons, the padding around them and the rule under them. */
   min-height: 47px;
+}
+/* The browser's own margin on a checkbox would put it four pixels to the
+   right of the column it belongs to. */
+.mailbox-actions input[type='checkbox'] {
+  margin: 0;
 }
 .mailbox-actions button,
 .mailbox-actions select {

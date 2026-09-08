@@ -29,6 +29,10 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The box that ticks every conversation sits in the column of the boxes that
+  tick one. It was two pixels to the right of them: the row of actions above
+  the list had a narrower inset than a row of the list, and a checkbox carries
+  a margin of the browser's own.
 - Nothing on the page changes size when it is chosen, hovered or ticked. The
   row being read in a list of groups or roles carries a pencil and a bin, and
   grew seven pixels taller than the rows around it, so choosing one moved the
