@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-08
+
 ### Added
 
 - A server reached through something in front of it — a relay, a tunnel, a
