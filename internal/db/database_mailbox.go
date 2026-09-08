@@ -1181,7 +1181,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 	// unproven mail is worth less than no claim at all.
 	senders := make([]string, 0, len(rows))
 	for _, mail := range byMailID {
-		if domain := senderDomain(mail.From); domain != "" {
+		if domain := mail.SenderDomain(); domain != "" {
 			senders = append(senders, domain)
 		}
 	}
@@ -1213,7 +1213,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 		if subscription.Name == "" {
 			subscription.Name = row.ListKey
 		}
-		if domain := senderDomain(mail.From); domain != "" && dmarcPassed(mail) {
+		if domain := mail.SenderDomain(); domain != "" && mail.DMARCPassed() {
 			if logo := logos[domain]; logo != nil && logo.ContentType != "" {
 				subscription.LogoDomain = domain
 			}
@@ -1239,23 +1239,6 @@ func (self *transaction) CountSubscriptions(mailboxId string) (int64, error) {
 	var count int64
 	err := self.subscriptionQuery(mailboxId).Distinct("\"mail\".\"list_key\"").Count(&count).Error
 	return count, err
-}
-
-// senderDomain is the part after the @, lowercased, or empty when the address
-// is not one.
-func senderDomain(address string) string {
-	at := strings.LastIndex(address, "@")
-	if at < 0 || at == len(address)-1 {
-		return ""
-	}
-	return strings.ToLower(strings.Trim(strings.TrimSpace(address[at+1:]), "<>"))
-}
-
-// dmarcPassed says the message proved it came from the domain it claims. What
-// a published logo may be shown for, and nothing else.
-func dmarcPassed(mail *models.Mail) bool {
-	return mail != nil && mail.AuthenticationResults.DMARC != nil &&
-		strings.EqualFold(mail.AuthenticationResults.DMARC.Result, "pass")
 }
 
 // splitUnsubscribe reads back the addresses stored as one column.

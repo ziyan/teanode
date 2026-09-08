@@ -3539,6 +3539,11 @@ label.check-list-item {
 .mailbox-row.unread .mailbox-row-subject {
   font-weight: 600;
 }
+.mailbox-row-from {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .mailbox-row-from,
 .mailbox-row-subject {
   overflow: hidden;
@@ -4488,6 +4493,70 @@ label.check-list-item {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* A mailing list in the list of them, laid out the way a conversation is: the
+   mark, then who and how much, then when and the way out. */
+.subscription-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+}
+.subscription-row:hover {
+  background: var(--field);
+}
+.subscription-row.active {
+  background: var(--sidebar-hover);
+}
+.subscription-row.unread .subscription-row-name {
+  font-weight: 600;
+}
+.subscription-row-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.subscription-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subscription-row-meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* What was asked of this list, in the colour of an answer rather than of a
+   warning: leaving one is a thing that went right. */
+.subscription-row-left {
+  color: var(--muted);
+  font-size: 12px;
+}
+.subscription-row-left.bad {
+  color: var(--bad);
+}
+.subscription-row-when {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* A group's name on a person's row is a link to that group, so on a phone it

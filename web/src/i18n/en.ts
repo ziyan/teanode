@@ -1115,6 +1115,7 @@ export const en = {
   'subscriptions.title': 'Subscriptions',
   'subscriptions.intro': 'The mailing lists this mailbox receives, newest first. What a filter caught and what you threw away are not counted.',
   'subscriptions.empty': 'No mailing lists have written to this mailbox.',
+  'subscriptions.choose': 'Choose a subscription to read what it has sent.',
   'subscriptions.messageCountOne': '{count} message',
   'subscriptions.messageCountOther': '{count} messages',
   'subscriptions.unread': '{count} unread',

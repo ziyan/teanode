@@ -32,6 +32,7 @@ import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -67,7 +68,7 @@ const THREADS = `
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
-            id from fromName sender subject recipients receivedAt size kind status
+            id from fromName sender subject recipients receivedAt size kind status logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
@@ -85,7 +86,7 @@ const THREAD = `
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
-            listKey listName listOneClick
+            listKey listName listOneClick logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
@@ -925,6 +926,10 @@ function Row({
         }}
       >
         <div className="mailbox-row-from">
+          {/* The sender's own mark where they publish one and the message
+              proved it came from them, and their initial otherwise. Who wrote
+              is what the eye looks for first in a list. */}
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
           {who}
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
           {/* An answer begun and left. Worth saying in the list, because the
@@ -1332,6 +1337,7 @@ export function ThreadMessage({
             at — except the menu at its end, which is a button of its own and
             so sits outside this one rather than inside it. */}
         <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={20} />
           <Tooltip label={mail?.from || mail?.sender || ''}>
             <span className="mailbox-message-who">{who}</span>
           </Tooltip>

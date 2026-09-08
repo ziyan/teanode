@@ -1104,6 +1104,7 @@ export const ja: Catalog = {
   'subscriptions.title': '購読',
   'subscriptions.intro': 'このメールボックスが受け取っているメーリングリスト。新しい順です。フィルターが振り分けたものと捨てたものは数えません。',
   'subscriptions.empty': 'このメールボックスに届いたメーリングリストはありません。',
+  'subscriptions.choose': '購読を選ぶと、届いたメールが読めます。',
   'subscriptions.messageCountOne': 'メール {count} 通',
   'subscriptions.messageCountOther': 'メール {count} 通',
   'subscriptions.unread': '未読 {count} 通',

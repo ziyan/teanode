@@ -297,6 +297,9 @@ export interface Mail {
   listKey?: string
   listName?: string
   listOneClick?: boolean
+  // The sending domain whose published logo this server holds, set only when
+  // the message proved it came from that domain.
+  logoDomain?: string
   recipients?: string[]
   status?: string
   kind?: string

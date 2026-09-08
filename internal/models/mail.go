@@ -3,6 +3,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/util/geoip"
@@ -168,6 +169,13 @@ type Mail struct {
 	ListOneClick    bool   `json:"listOneClick,omitempty"`
 	ListChecked     bool   `json:"listChecked,omitempty"`
 
+	// LogoDomain is the sending domain whose published logo this server
+	// holds, resolved when the message is read and empty unless there is one
+	// to show. Set only for a message that passed DMARC: a mark is a claim
+	// about who sent something, and one on unproven mail helps whoever is
+	// pretending to be them.
+	LogoDomain string `json:"logoDomain,omitempty" gorm:"-"`
+
 	// Kind gains draft for a message being written.
 
 	// Size of the received Mail
@@ -187,6 +195,27 @@ type Mail struct {
 
 	// One or more Delivery created from this Mail
 	Deliveries []*Delivery `json:"deliveries,omitempty"`
+}
+
+// SenderDomain is the domain of the From address, lowercased, or empty when
+// there is not one. What a published logo is looked up by.
+func (self *Mail) SenderDomain() string {
+	if self == nil {
+		return ""
+	}
+	at := strings.LastIndex(self.From, "@")
+	if at < 0 || at == len(self.From)-1 {
+		return ""
+	}
+	return strings.ToLower(strings.Trim(strings.TrimSpace(self.From[at+1:]), "<>"))
+}
+
+// DMARCPassed says the message proved it came from the domain it claims. The
+// condition on showing that domain's mark: a claim about who sent something,
+// made on unproven mail, helps whoever is pretending to be them.
+func (self *Mail) DMARCPassed() bool {
+	return self != nil && self.AuthenticationResults.DMARC != nil &&
+		strings.EqualFold(self.AuthenticationResults.DMARC.Result, "pass")
 }
 
 // AuthenticationResults holds authentication results of a Mail.

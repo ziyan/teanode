@@ -3,10 +3,9 @@ import { useCallback, useState } from 'react'
 import { MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
-import { ArrowLeftIcon, ChevronRightIcon, CloseIcon } from '../components/icons'
+import { ArrowLeftIcon, CloseIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
-import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
@@ -34,7 +33,7 @@ const READ = `
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
-            listKey listName listOneClick
+            listKey listName listOneClick logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
@@ -110,10 +109,11 @@ export function MailboxSubscriptionsPage() {
 
   // Which list is being read, and which is being left. Both are one at a
   // time: reading is a page and leaving is a question.
-  const [reading, setReading] = useState<Subscription | null>(null)
+  const [readingKey, setReadingKey] = useState<string | null>(null)
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const reading = subscriptions.find((subscription) => subscription.key === readingKey) ?? null
 
   const unsubscribe = useCallback(async () => {
     if (!leaving) {
@@ -141,91 +141,106 @@ export function MailboxSubscriptionsPage() {
     }
   }, [leaving, mailboxId, query, t])
 
-  if (reading) {
-    return (
-      <SubscriptionReader
-        mailboxId={mailboxId}
-        subscription={reading}
-        onBack={() => {
-          setReading(null)
-          void query.reload()
-        }}
-      />
-    )
-  }
-
   return (
     <>
       <ErrorMessage error={problem} />
-      {query.loading && !query.data && <Loading />}
       {query.error ? <ErrorMessage error={query.error} /> : null}
 
-      <SettingsSection card title={t('subscriptions.title')} description={t('subscriptions.intro')}>
-        {query.data && subscriptions.length === 0 && <SettingsEmpty>{t('subscriptions.empty')}</SettingsEmpty>}
+      <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
+        <div className="mailbox-list">
+          <div className="mailbox-actions">
+            <span className="muted">
+              {t('subscriptions.title')}
+              {query.data ? ` · ${query.data.ListMailboxSubscriptions.total}` : ''}
+            </span>
+          </div>
 
-        {subscriptions.map((subscription) => (
-          <SettingsRow
-            key={subscription.key}
-            title={
-              <span className="sender-row">
-                <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} />
-                {subscription.name}
-              </span>
-            }
-            subtitle={
-              <>
-                <div>{subscription.from}</div>
-                <div>
-                  {plural(
-                    subscription.count,
-                    { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
-                    { count: subscription.count },
-                  )}
-                  {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
-                  {' · '}
+          {query.loading && !query.data && <Loading />}
+          {query.data && subscriptions.length === 0 && (
+            <p className="mailbox-placeholder">{t('subscriptions.empty')}</p>
+          )}
+
+          <ul className="mailbox-rows">
+            {subscriptions.map((subscription) => (
+              <li
+                key={subscription.key}
+                className={[
+                  'subscription-row',
+                  subscription.unread > 0 ? 'unread' : '',
+                  subscription.key === readingKey ? 'active' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => setReadingKey(subscription.key)}
+              >
+                <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
+                <button
+                  type="button"
+                  className="subscription-row-link"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setReadingKey(subscription.key)
+                  }}
+                >
+                  <span className="subscription-row-name">{subscription.name}</span>
+                  <span className="subscription-row-meta">
+                    {subscription.from}
+                    {' · '}
+                    {plural(
+                      subscription.count,
+                      { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
+                      { count: subscription.count },
+                    )}
+                    {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
+                  </span>
+                  {subscription.requestedAt ? (
+                    <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
+                      {subscription.failed
+                        ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
+                        : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}
+                    </span>
+                  ) : null}
+                </button>
+                <div className="subscription-row-when">
                   <RelativeTime value={subscription.lastAt} />
+                  <Tooltip label={leaveLabel(t, subscription)}>
+                    <button
+                      className="icon-action danger"
+                      type="button"
+                      disabled={busy || unsubscribeKind(subscription) === 'none'}
+                      aria-label={`${subscription.name}: ${leaveLabel(t, subscription)}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setProblem(null)
+                        setLeaving(subscription)
+                      }}
+                    >
+                      <CloseIcon size={15} />
+                    </button>
+                  </Tooltip>
                 </div>
-                {subscription.requestedAt ? (
-                  <div className={subscription.failed ? 'bad' : undefined}>
-                    {subscription.failed
-                      ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
-                      : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}{' '}
-                    <RelativeTime value={subscription.requestedAt} />
-                  </div>
-                ) : null}
-              </>
-            }
-            actions={
-              <div className="row-actions">
-                <Tooltip label={leaveLabel(t, subscription)}>
-                  <button
-                    className="icon-action danger"
-                    type="button"
-                    disabled={busy || unsubscribeKind(subscription) === 'none'}
-                    aria-label={`${subscription.name}: ${leaveLabel(t, subscription)}`}
-                    onClick={() => {
-                      setProblem(null)
-                      setLeaving(subscription)
-                    }}
-                  >
-                    <CloseIcon size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label={t('subscriptions.read')}>
-                  <button
-                    className="icon-action"
-                    type="button"
-                    aria-label={`${subscription.name}: ${t('subscriptions.read')}`}
-                    onClick={() => setReading(subscription)}
-                  >
-                    <ChevronRightIcon size={16} />
-                  </button>
-                </Tooltip>
-              </div>
-            }
-          />
-        ))}
-      </SettingsSection>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="mailbox-pane">
+          {reading ? (
+            <SubscriptionReader
+              key={reading.key}
+              mailboxId={mailboxId}
+              subscription={reading}
+              onBack={() => setReadingKey(null)}
+              onLeave={() => {
+                setProblem(null)
+                setLeaving(reading)
+              }}
+            />
+          ) : (
+            <p className="mailbox-placeholder">{t('subscriptions.choose')}</p>
+          )}
+        </div>
+      </div>
 
       {leaving && (
         <ConfirmDialog
@@ -262,10 +277,12 @@ function SubscriptionReader({
   mailboxId,
   subscription,
   onBack,
+  onLeave,
 }: {
   mailboxId: string
   subscription: Subscription
   onBack: () => void
+  onLeave: () => void
 }) {
   const { t } = useTranslation()
   const query = useQuery(
@@ -291,15 +308,35 @@ function SubscriptionReader({
   return (
     <>
       <div className="mailbox-pane-actions">
+        {/* Back is for the width where the list is not beside this one. */}
         <Tooltip label={t('subscriptions.back')}>
-          <button className="icon-button" type="button" aria-label={t('subscriptions.back')} onClick={onBack}>
+          <button
+            className="icon-button mailbox-back"
+            type="button"
+            aria-label={t('subscriptions.back')}
+            onClick={onBack}
+          >
             <ArrowLeftIcon size={16} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('subscriptions.leave')}>
+          <button
+            className="icon-button danger"
+            type="button"
+            aria-label={`${subscription.name}: ${t('subscriptions.leave')}`}
+            disabled={unsubscribeKind(subscription) === 'none'}
+            onClick={onLeave}
+          >
+            <CloseIcon size={16} />
           </button>
         </Tooltip>
       </div>
 
       <div className="mailbox-pane-head">
-        <h2>{subscription.name}</h2>
+        <h2 className="sender-row">
+          <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} />
+          {subscription.name}
+        </h2>
         <p className="muted">{subscription.from}</p>
       </div>
 

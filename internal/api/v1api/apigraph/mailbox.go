@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/strainer"
@@ -340,6 +341,42 @@ func (self *graph) attachMails(ctx context.Context, items []*models.MailboxItem)
 	}
 	for index, item := range items {
 		item.Mail = mails[index]
+	}
+	return self.attachLogos(ctx, mails)
+}
+
+// attachLogos hangs the sender's published mark on each message that has one
+// and has earned it.
+//
+// One query for all of them: a list of fifty messages is a handful of distinct
+// sending domains, and asking per message would be fifty round trips to say
+// the same few things. Nothing is fetched here — what is not in the cache is
+// simply not shown, and the background pass will have it by the next visit.
+func (self *graph) attachLogos(ctx context.Context, mails []*models.Mail) error {
+	domains := make([]string, 0, len(mails))
+	for _, mail := range mails {
+		if !mail.DMARCPassed() {
+			continue
+		}
+		if domain := mail.SenderDomain(); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+	logos, err := self.transaction(ctx).ListBimiLogos(domains, bimi.DefaultSelector)
+	if err != nil {
+		return err
+	}
+	for _, mail := range mails {
+		if !mail.DMARCPassed() {
+			continue
+		}
+		domain := mail.SenderDomain()
+		if logo := logos[domain]; logo != nil && logo.ContentType != "" {
+			mail.LogoDomain = domain
+		}
 	}
 	return nil
 }
