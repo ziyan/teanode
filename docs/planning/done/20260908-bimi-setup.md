@@ -66,6 +66,32 @@ sample message.
       the full Go suite pass; the layout audit is clean at 1400 and 390 (the
       one small target it reports is the breadcrumb link, which every page
       has).
+- [x] (2026-09-08 22:10Z) A careful UX pass over the card and the DNS row,
+      which found four things: the row offered a copyable value containing
+      `<upload a logo first>`, the card said "Published" beside a table saying
+      "nothing published" about the same domain, the certificate warning was
+      the fourth sentence of a paragraph that also explained what an
+      acceptable file is, and — the reason the audit paid for itself —
+      `publishedLogo` dereferenced a database the DNS tests do not provide, so
+      every test in `internal/dns` panicked and the Server check was red.
+- [x] (2026-09-08 22:40Z) Milestone 6 — `DeleteDomainLogo`, so a mark can be
+      withdrawn; `teanode domain logo show|publish|remove` with an `Upload` on
+      the client, the first thing in this program to send a file; `teanode
+      mailbox subscription list|show|mail|unsubscribe`; `token revoke --user`.
+      `domain check` prints the blocked note, which only the dashboard said.
+- [x] (2026-09-08 23:10Z) A review pass, which found that the logo upload
+      asked only for a session while removing the same logo asked for
+      `domain:manage`. The picture upload beside it had the same hole. Both
+      ask properly now, and `internal/api/v1api/apimedia/authorize_test.go`
+      reads this package's own source so the next one fails a test — it found
+      the picture upload on the day it was written. Also: `ListDomains` asked
+      the database once per domain and did it before the permission filter;
+      `DeleteDomainLogo` opened a second transaction beside the request's own.
+- [x] (2026-09-08 23:40Z) The address the record names is the domain's own
+      picture host rather than this node's name, and optional records no
+      longer count as missing on the domain list or a domain's overview.
+      Rebased on v0.14.0, with the changelog entries put back under Unreleased
+      after the release absorbed them.
 
 ## Surprises & Discoveries
 
@@ -107,6 +133,40 @@ sample message.
   `l=` tag is any HTTPS URL, so a domain with no web server at all can point
   at one on this mail host, which already has a certificate for its own name.
   That removes the hardest step for the operator this feature is for.
+
+- Observation: the guarantee that every GraphQL resolver authorizes is a test
+  that reads the package's own source, and routes outside `apigraph` are
+  invisible to it. Implication: the logo upload shipped asking only that the
+  caller was signed in, while removing the same logo asked for
+  `domain:manage` — anybody with a mailbox here could have replaced any
+  domain's published mark. The picture upload beside it had had the same hole
+  for longer. Both fixed, and `apimedia` now has the equivalent test, which
+  caught the second one immediately. A guarantee that lives in a test only
+  covers what the test can see.
+
+- Observation: the record was published as `https://mx1.teanode.com/...`,
+  which verified, because that name really does serve the file. Implication:
+  it is still wrong. `mx1` is one machine in a pair and the address goes into
+  DNS, where it has to keep meaning the same thing after that machine is
+  replaced. `LinkHostFor` already existed for exactly this and is documented
+  as "whatever else a recipient's program later fetches". Both names are
+  accepted as ours when reading a logo back, so records written before this
+  keep verifying.
+
+- Observation: the domain list counted optional records as missing, and its
+  query did not ask for the `optional` field at all. Implication: the obvious
+  one-line fix compiles, typechecks, and changes nothing, because
+  `record.optional` is `undefined` on data that never carried it. This was
+  true of AAAA records for as long as there have been optional ones; the BIMI
+  row made it visible on every domain at once.
+
+- Observation: a release on main absorbs whatever sits under `[Unreleased]`,
+  and a rebase over it reports success while leaving this branch's entries
+  under the released version — the second time in this branch's life.
+  Implication: the `Changelog entry` check passes either way, since it
+  verifies that an entry exists rather than which heading it is under. Rebuild
+  the section from main's file plus this branch's own entries and diff the
+  released half to prove it is untouched.
 
 ## Decision Log
 
@@ -170,6 +230,27 @@ What remains: nothing verifies the certificate a record names, and the
 interface is careful never to say "verified". The `a=` tag is not offered as a
 field — an operator with a certificate has to write the record by hand, which
 is the right trade until somebody actually has one.
+
+Added after the five: a mark can be withdrawn, which it could not be when the
+five were done — `DeleteBimiPublication` had been written and never called, so
+a logo could be replaced but never taken down except by editing the database.
+Both features reach the command line as commands rather than only through
+`api call`, which needed the client's first file upload.
+
+What the later passes are worth recording for: the UX audit found a panicking
+test suite, and the review found a permission hole in code written an hour
+earlier. Neither was going to be found by reading the diff again — one came
+from running the thing at two window widths, the other from asking what each
+route checks and writing the answer down as a test. The question that started
+both was somebody asking whether it had been done, not a checklist.
+
+Proved end to end on the live server rather than argued: `teanode.com`
+publishes a mark, and the chain a receiver walks — record read through public
+DNS, file fetched over HTTPS, bytes validated against the profile — passes
+from outside the network. No certificate, so Gmail and Yahoo will not draw it,
+which is the honest limit the card states. The mark itself is the full
+lockup and is a green block at 20px; that is artwork rather than code, and is
+the one thing this work leaves undone.
 
 ## Context and Orientation
 
