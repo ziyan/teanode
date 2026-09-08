@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-09-08
+
+### Fixed
+
+- A message whose sender's SPF record could not be evaluated — a broken record, or a lookup this server could not complete — was refused with a permanent error even when its DKIM signatures satisfied the sender's DMARC policy. It is now accepted when DMARC passes, judged on DKIM alone when there is no DMARC verdict, and refused temporarily rather than permanently when the lookup failed only for now. (#57)
+
 ## [0.12.2] - 2026-09-08
 
 ### Fixed
