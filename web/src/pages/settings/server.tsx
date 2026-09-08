@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { ConfirmDialog } from '../../components/dialog'
+import { SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { Markdown } from '../../components/markdown'
 import { RelativeTime } from '../../components/relativeTime'
@@ -333,7 +335,7 @@ export function ServerAboutPage() {
 
   return (
     <>
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
       {cameBack && <p className="notice good">{t('server.cameBack')}</p>}
 
       <div className="card">
@@ -378,43 +380,37 @@ export function ServerAboutPage() {
         onApply={applyUpgrade}
       />
 
-      <div className="card">
-        <h3>{t('server.restart')}</h3>
-
+      <SettingsSection
+        card
+        title={t('server.restart')}
+        description={t('server.restartExplained')}
+        action={
+          <button type="button" onClick={() => setConfirming(true)} disabled={restarting}>
+            {restarting ? t('server.restarting') : t('server.restartNow')}
+          </button>
+        }
+      >
         {pending.length > 0 ? (
           <p className="notice">{t('server.pendingRestart', { settings: pending.join(', ') })}</p>
         ) : (
-          <p className="muted" style={{ marginTop: 0 }}>
-            {t('server.nothingPending')}
-          </p>
+          <p className="muted">{t('server.nothingPending')}</p>
         )}
 
-        <p className="muted">{t('server.restartExplained')}</p>
-
-        {status.supervision === 'unknown' && (
-          <p className="notice bad">{t('server.unsupervisedWarning')}</p>
-        )}
-
-        {confirming ? (
-          <>
-            <p>
-              <strong>{t('server.confirmQuestion', { instance: status.instance })}</strong>
-            </p>
-            <button className="destructive" onClick={restart} disabled={restarting}>
-              {t('server.confirmRestart')}
-            </button>{' '}
-            <button onClick={() => setConfirming(false)} disabled={restarting}>
-              {t('common.cancel')}
-            </button>
-          </>
-        ) : (
-          <button onClick={() => setConfirming(true)} disabled={restarting}>
-            {restarting ? t('server.restarting') : t('server.restartNow')}
-          </button>
-        )}
+        {status.supervision === 'unknown' && <p className="notice bad">{t('server.unsupervisedWarning')}</p>}
 
         {restarting && <p className="muted">{t('server.waiting')}</p>}
-      </div>
+      </SettingsSection>
+
+      {confirming && (
+        <ConfirmDialog
+          title={t('server.restart')}
+          body={t('server.confirmQuestion', { instance: status.instance })}
+          confirmLabel={t('server.confirmRestart')}
+          busy={restarting}
+          onConfirm={restart}
+          onClose={() => setConfirming(false)}
+        />
+      )}
     </>
   )
 }
@@ -545,15 +541,15 @@ function UpgradeCard({
         </p>
       )}
 
-      <div className="page-actions" style={{ marginTop: 12 }}>
-        <span />
+      <div className="page-actions page-actions-end">
         <span>
-          <button onClick={onCheck} disabled={checking || upgrading || !status.enabled}>
+          <button type="button" onClick={onCheck} disabled={checking || upgrading || !status.enabled}>
             {checking ? t('upgrade.checking') : t('upgrade.checkNow')}
           </button>{' '}
-          {status.available && status.applicable && !confirming && (
+          {status.available && status.applicable && (
             <button
               className="primary"
+              type="button"
               onClick={() => setConfirming(true)}
               disabled={upgrading || status.upgrading}
             >
@@ -564,28 +560,20 @@ function UpgradeCard({
       </div>
 
       {confirming && (
-        <>
-          <p style={{ marginBottom: 8 }}>
-            <strong>{t('upgrade.confirmQuestion', { version: status.latest ?? '' })}</strong>
-          </p>
-          <p className="muted">{t('upgrade.confirmExplained')}</p>
-          <button
-            className="primary"
-            disabled={upgrading}
-            onClick={() => {
-              setConfirming(false)
-              // The version this card is showing, so the upgrade installs what
-              // the sentence above the button said rather than whatever is
-              // newest by the time it runs.
-              onApply(status.latest)
-            }}
-          >
-            {t('upgrade.confirmUpgrade')}
-          </button>{' '}
-          <button onClick={() => setConfirming(false)} disabled={upgrading}>
-            {t('common.cancel')}
-          </button>
-        </>
+        <ConfirmDialog
+          title={t('upgrade.confirmQuestion', { version: status.latest ?? '' })}
+          body={t('upgrade.confirmExplained')}
+          confirmLabel={t('upgrade.confirmUpgrade')}
+          busy={upgrading}
+          onConfirm={() => {
+            setConfirming(false)
+            // The version this card is showing, so the upgrade installs what
+            // the dialog said rather than whatever is newest by the time it
+            // runs.
+            onApply(status.latest)
+          }}
+          onClose={() => setConfirming(false)}
+        />
       )}
 
       {(upgrading || status.upgrading) && <p className="muted">{t('upgrade.waiting')}</p>}

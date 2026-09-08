@@ -6,6 +6,45 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A written design guideline for the dashboard,
+  `docs/coding/frontend-design.md`: which shared component to reach for, where
+  a panel's action goes, when a row action is an icon and when it is a word.
+  `CONTRIBUTING.md` points at it.
+
+### Changed
+
+- The dashboard's panels are consistent. Mailbox settings, a domain's aliases
+  and credentials, the sessions page and the server page all draw a panel the
+  same way now: a heading, the sentence that says what it is for, and the one
+  action that adds to it, in the arrangement that folds onto a phone instead
+  of squeezing beside the heading. A form's fields are capped inside a panel
+  the width of the page, rather than the panel being narrow beside a wide one.
+- Folders, app passwords, aliases and credentials are made and changed in a
+  dialog. A form under a list moved the list while it was being read, and a
+  row that turned into a form made the page jump.
+- An app password and a domain credential are shown in the dialog every other
+  one-time secret uses, with a copy button, rather than in a banner that can
+  be scrolled past.
+- Removing an alias or a credential asks first. Both used to go on the click.
+- Signing out everywhere asks in the dashboard's own dialog rather than the
+  browser's, which was neither styled nor translated. Restarting and upgrading
+  the server ask the same way.
+- Mailbox rules move and are removed with the same icon buttons the folder
+  list uses, and the tab has a heading like the tabs beside it.
+- "Out of office" is "Auto reply", which is what it is when it is used to say
+  a reply comes from somewhere else.
+
+### Fixed
+
+- 183 lines of stylesheet had been pasted into the middle of a phone media
+  query, which both broke the rule they landed in — long DNS record values
+  stopped wrapping on a phone — and overrode the real rules at phone widths.
+- A checkbox and its label on the auto reply tab and the single sign-on
+  settings were laid out as a form field, one above the other, because they
+  asked for a class that does not exist.
+
 ## [0.11.0] - 2026-09-08
 
 ### Added

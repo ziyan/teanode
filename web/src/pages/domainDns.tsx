@@ -60,7 +60,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
     <>
       <div className="card">
         <h3>{t('domain.dnsTitle')}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
+        <p className="muted">
           {t('domain.dnsIntro')}
         </p>
         <table className="dns-table">
@@ -129,7 +129,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
 
       <div className="card">
         <h3>{t('domain.mailServersTitle')}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
+        <p className="muted">
           {t('domain.mailServersIntro')}
         </p>
         {/* A short host name in a field as wide as a table of DNS records
@@ -180,7 +180,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
           here — it happens in the reader's mail program. */}
       <div className="card">
         <h3>{t('domain.linkHostTitle')}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
+        <p className="muted">
           {t('domain.linkHostIntro')}
         </p>
         <div className="form-narrow">
@@ -217,7 +217,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
       <div className="card">
         <h3>{t('domain.keyTitle')}</h3>
         {domain.hasDkimKey ? (
-          <p className="muted" style={{ marginTop: 0 }}>
+          <p className="muted">
             {t('domain.keyPresent', { selector: domain.dkimSelector ?? '' })}
           </p>
         ) : (

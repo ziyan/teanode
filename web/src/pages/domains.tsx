@@ -133,8 +133,7 @@ export function DomainsPage() {
       {/* Behind a button rather than always on screen. Adding a domain is
           done a handful of times and then never again; the list is what
           somebody came here to read. */}
-      <div className="page-actions">
-        <span />
+      <div className="page-actions page-actions-end">
         <button className="primary" type="button" onClick={() => setAdding(true)}>
           {t('domains.newDomain')}
         </button>
@@ -166,18 +165,15 @@ export function DomainsPage() {
 
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
-      {data && domains.length === 0 && !adding && <p className="muted">{t('domains.empty')}</p>}
-      {domains.length > 0 && (
-        <DataTable
-          columns={columns}
-          rows={domains}
-          rowKey={(entry) => entry.id}
-          rowLink={(entry) => `/domains/${entry.id}`}
-          loading={loading}
-          emptyMessage={t('domains.empty')}
-          countLabel={(count) => plural(count, { one: 'domains.countOne', other: 'domains.countOther' })}
-        />
-      )}
+      <DataTable
+        columns={columns}
+        rows={domains}
+        rowKey={(entry) => entry.id}
+        rowLink={(entry) => `/domains/${entry.id}`}
+        loading={loading}
+        emptyMessage={t('domains.empty')}
+        countLabel={(count) => plural(count, { one: 'domains.countOne', other: 'domains.countOther' })}
+      />
     </>
   )
 }

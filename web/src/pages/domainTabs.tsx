@@ -120,7 +120,7 @@ export function DomainTabsPage() {
       />
 
       {/* One error line for the whole page, above the tab that caused it. */}
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
 
       {tab === 'overview' && <DomainOverviewTab domain={domain} />}
       {tab === 'settings' && <DomainDnsTab domain={domain} run={run} />}

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Attachment, MailContent, MailboxItem, graphql } from '../api'
 import { ErrorMessage, Loading, formatBytes, formatTime } from '../components/common'
+import { SettingsEmpty } from '../components/settingsList'
 import { ConfirmDialog } from '../components/dialog'
 import { PaperclipIcon } from '../components/icons'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
@@ -570,9 +571,7 @@ export function MailboxComposePage() {
   if (addresses.length === 0) {
     return (
       <div className="card">
-        <p className="muted" style={{ margin: 0 }}>
-          {t('compose.mailbox.noAddress')}
-        </p>
+        <SettingsEmpty>{t('compose.mailbox.noAddress')}</SettingsEmpty>
       </div>
     )
   }

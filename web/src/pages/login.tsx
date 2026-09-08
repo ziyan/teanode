@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { beginPasskeyAssertion, finishPasskeyAssertion, login } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
@@ -95,7 +96,7 @@ export function LoginPage({
         autoComplete="current-password"
       />
 
-      {error && <p className="error">{error}</p>}
+      <ErrorMessage error={error} />
       {!error && ssoMessage && <p className="error">{ssoMessage}</p>}
 
       <button className="primary auth-button" type="submit" disabled={busy}>

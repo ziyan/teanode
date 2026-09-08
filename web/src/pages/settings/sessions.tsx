@@ -2,9 +2,11 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
+import { ConfirmDialog } from '../../components/dialog'
 import { useQuery } from '../../components/useQuery'
 import { RelativeTime } from '../../components/relativeTime'
 import { TrashIcon } from '../../components/icons'
+import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useTranslation } from '../../i18n/i18n'
 
 const SESSIONS = `
@@ -44,6 +46,7 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
 
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const [revokingAll, setRevokingAll] = useState(false)
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true)
@@ -72,57 +75,57 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
   return (
     <>
       <p className="muted">{t('sessions.intro')}</p>
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
 
       {current.length > 0 && (
-        <div className="card">
-          <h3>{t('sessions.thisBrowser')}</h3>
+        <SettingsSection card title={t('sessions.thisBrowser')}>
           {current.map((session) => (
             <SessionRow key={session.id} session={session} busy={busy} onRevoke={null} />
           ))}
-        </div>
+        </SettingsSection>
       )}
 
-      <div className="card">
-        <h3>{t('sessions.otherBrowsers')}</h3>
+      <SettingsSection card title={t('sessions.otherBrowsers')}>
         {others.length === 0 ? (
-          <p className="muted" style={{ marginBottom: 0 }}>
-            {t('sessions.noOthers')}
-          </p>
+          <SettingsEmpty>{t('sessions.noOthers')}</SettingsEmpty>
         ) : (
           others.map((session) => (
             <SessionRow
               key={session.id}
               session={session}
               busy={busy}
-              onRevoke={
-                session.revoked
-                  ? null
-                  : () => run(() => graphql(REVOKE, { sessionId: session.id }))
-              }
+              onRevoke={session.revoked ? null : () => run(() => graphql(REVOKE, { sessionId: session.id }))}
             />
           ))
         )}
-      </div>
+      </SettingsSection>
 
-      <div className="card">
-        <label>
+      <SettingsSection card title={t('sessions.revokeAll')} description={t('sessions.revokeAllExplained')}>
+        <label className="checkbox">
           <input
             type="checkbox"
             checked={includeRevoked}
             onChange={(event) => setIncludeRevoked(event.target.checked)}
-          />{' '}
+          />
           {t('sessions.showRevoked')}
         </label>
 
-        <p className="muted">{t('sessions.revokeAllExplained')}</p>
-        <button
-          className="destructive"
-          disabled={busy}
-          onClick={async () => {
-            if (!window.confirm(t('sessions.revokeConfirm'))) {
-              return
-            }
+        <div className="page-actions">
+          <button className="primary danger" type="button" disabled={busy} onClick={() => setRevokingAll(true)}>
+            {t('sessions.revokeAll')}
+          </button>
+        </div>
+      </SettingsSection>
+
+      {/* Signing every browser out signs this one out too, which is not
+          something to discover by having clicked. */}
+      {revokingAll && (
+        <ConfirmDialog
+          title={t('sessions.revokeAll')}
+          body={t('sessions.revokeConfirm')}
+          confirmLabel={t('sessions.revokeAll')}
+          busy={busy}
+          onConfirm={async () => {
             setBusy(true)
             setProblem(null)
             try {
@@ -134,72 +137,60 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
               setProblem(caught instanceof Error ? caught.message : t('sessions.failed'))
             } finally {
               setBusy(false)
+              setRevokingAll(false)
             }
           }}
-        >
-          {t('sessions.revokeAll')}
-        </button>
-      </div>
+          onClose={() => setRevokingAll(false)}
+        />
+      )}
     </>
   )
 }
 
-function SessionRow({
-  session,
-  busy,
-  onRevoke,
-}: {
-  session: Session
-  busy: boolean
-  onRevoke: (() => void) | null
-}) {
+function SessionRow({ session, busy, onRevoke }: { session: Session; busy: boolean; onRevoke: (() => void) | null }) {
   const { t } = useTranslation()
 
+  const name = describeAgent(session.userAgent) || t('sessions.unknownBrowser')
+
   return (
-    <div className="settings-row">
-      <div className="settings-row-detail">
-        <strong title={session.userAgent ?? undefined}>
-          {describeAgent(session.userAgent) || t('sessions.unknownBrowser')}
-        </strong>
-        <span className="muted">
-          {[
-            session.ip,
-            session.lastUsed ? (
-              <>
-                {t('sessions.lastUsed')} <RelativeTime value={session.lastUsed} />
-              </>
-            ) : (
-              t('sessions.neverUsed')
-            ),
-          ]
-            .filter(Boolean)
-            .map((part, index) => (
-              <span key={index}>
-                {index > 0 && ' · '}
-                {part}
-              </span>
-            ))}
-        </span>
-      </div>
-
-      {session.revoked ? (
-        <Tag value={t('sessions.revoked')} tone="bad" />
-      ) : session.current ? (
-        <Tag value={t('sessions.current')} tone="good" />
-      ) : null}
-
-      {onRevoke && (
-        <button
-          className="icon-button"
-          aria-label={t('sessions.revokeOne')}
-          title={t('sessions.revokeOne')}
-          disabled={busy}
-          onClick={onRevoke}
-        >
-          <TrashIcon />
-        </button>
-      )}
-    </div>
+    <SettingsRow
+      title={<span title={session.userAgent ?? undefined}>{name}</span>}
+      badge={
+        session.revoked ? (
+          <Tag value={t('sessions.revoked')} tone="bad" />
+        ) : session.current ? (
+          <Tag value={t('sessions.current')} tone="good" />
+        ) : null
+      }
+      subtitle={
+        <>
+          {session.ip ? `${session.ip} · ` : ''}
+          {session.lastUsed ? (
+            <>
+              {t('sessions.lastUsed')} <RelativeTime value={session.lastUsed} />
+            </>
+          ) : (
+            t('sessions.neverUsed')
+          )}
+        </>
+      }
+      actions={
+        onRevoke && (
+          <div className="row-actions">
+            <button
+              type="button"
+              className="icon-action danger"
+              aria-label={`${name}: ${t('sessions.revokeOne')}`}
+              title={t('sessions.revokeOne')}
+              disabled={busy}
+              onClick={onRevoke}
+            >
+              <TrashIcon size={16} />
+            </button>
+          </div>
+        )
+      }
+    />
   )
 }
 

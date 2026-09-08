@@ -215,8 +215,7 @@ export function MailPage() {
       {mails.error && <ErrorMessage error={mails.error} />}
       {/* Writing a message is the one thing to do here that is not reading
           the list, so it is the one action above it. */}
-      <div className="page-actions">
-        <span />
+      <div className="page-actions page-actions-end">
         <Link className="button primary" to="/mail/compose">
           {t('compose.new')}
         </Link>

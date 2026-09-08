@@ -179,13 +179,13 @@ export function LayoutEditorPage() {
 
   return (
     <>
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
       {notice && <p className="muted">{notice}</p>}
 
       <div className="editor">
         <div className="card editor-form">
           <div className="row fields">
-            <label style={{ margin: 0 }}>
+            <label>
               <span>{t('layouts.comment')}</span>
               <input
                 value={form.comment}

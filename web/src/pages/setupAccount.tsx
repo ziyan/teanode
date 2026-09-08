@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { createFirstAccount } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
@@ -57,7 +58,7 @@ export function SetupAccountPage({ onCreated }: { onCreated: () => void }) {
         hint={mismatch ? <span className="error auth-hint">{t('common.passwordsDoNotMatch')}</span> : undefined}
       />
 
-      {error && <p className="error">{error}</p>}
+      <ErrorMessage error={error} />
 
       <button className="primary auth-button" type="submit" disabled={busy || !ready}>
         {busy ? t('setupAccount.creating') : t('setupAccount.create')}

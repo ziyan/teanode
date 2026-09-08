@@ -1,7 +1,8 @@
 import { useParams } from 'react-router-dom'
 
 import { Feedback, FeedbackRecord, Report, graphql } from '../api'
-import { ErrorMessage, Loading, Tag, formatTime, toneFor } from '../components/common'
+import { ErrorMessage, Field, Loading, Tag, formatTime, toneFor } from '../components/common'
+import { SettingsEmpty } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
@@ -144,9 +145,7 @@ export function ReportDetailPage() {
       <div className="card">
         <h3>{t('reportDetail.whatTheySaw')}</h3>
         {!feedback?.records?.length ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {t('reportDetail.noRecords')}
-          </p>
+          <SettingsEmpty>{t('reportDetail.noRecords')}</SettingsEmpty>
         ) : (
           feedback.records.map((record, index) => <Record key={index} record={record} />)
         )}
@@ -221,18 +220,6 @@ function Record({ record }: { record: FeedbackRecord }) {
         </tbody>
       </table>
     </div>
-  )
-}
-
-function Field({ label, mono, children }: { label: string; mono?: boolean; children?: React.ReactNode }) {
-  if (children === undefined || children === null || children === '' || children === false) {
-    return null
-  }
-  return (
-    <tr>
-      <td className="shrink muted">{label}</td>
-      <td className={mono ? 'mono wrap' : 'wrap'}>{children}</td>
-    </tr>
   )
 }
 

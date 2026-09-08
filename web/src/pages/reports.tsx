@@ -158,9 +158,9 @@ export function ReportsPage() {
   return (
     <>
       {reports.error && <ErrorMessage error={reports.error} />}
-      {rows.length === 0 ? (
-        <div className="table-surface" style={{ padding: '2rem' }}>
-          <p className="muted" style={{ margin: 0, maxWidth: '54ch' }}>
+      {rows.length === 0 && !reports.loading ? (
+        <div className="table-surface">
+          <p className="table-empty muted">
             <Trans k="reports.emptyExplained" nodes={{}} />
           </p>
         </div>

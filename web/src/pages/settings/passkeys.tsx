@@ -112,7 +112,7 @@ export function PasskeysPage() {
           <p className="muted">{t('passkeys.full', { count: policy.maximumPerUser })}</p>
         )}
 
-        {problem && <p className="error">{problem}</p>}
+        <ErrorMessage error={problem} />
 
         {passkeys.length === 0 ? (
           <SettingsEmpty>{t('passkeys.empty')}</SettingsEmpty>

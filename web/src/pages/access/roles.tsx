@@ -85,7 +85,7 @@ export function RolesTab() {
           ) : undefined
         }
       >
-        {problem && <p className="error">{problem}</p>}
+        <ErrorMessage error={problem} />
         {loading && !data && <Loading />}
         {error ? <ErrorMessage error={error} /> : null}
         {data && roles.length === 0 && <SettingsEmpty>{t('access.roles.empty')}</SettingsEmpty>}

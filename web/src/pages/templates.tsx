@@ -107,7 +107,7 @@ export function TemplatesTab() {
 
   return (
     <>
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
 
       <SettingsSection
         title={t('templates.title')}
@@ -157,15 +157,17 @@ export function TemplatesTab() {
                 >
                   {t('templates.send')}
                 </Link>
-                <button
-                  className="icon-button danger"
-                  type="button"
-                  aria-label={t('common.remove')}
-                  title={t('common.remove')}
-                  onClick={() => setRemovingTemplate(template)}
-                >
-                  <TrashIcon />
-                </button>
+                <div className="row-actions">
+                  <button
+                    className="icon-action danger"
+                    type="button"
+                    aria-label={`${template.name}: ${t('common.remove')}`}
+                    title={t('common.remove')}
+                    onClick={() => setRemovingTemplate(template)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </div>
               </>
             }
           />
@@ -204,15 +206,17 @@ export function TemplatesTab() {
               </div>
             }
             actions={
-              <button
-                className="icon-button danger"
-                type="button"
-                aria-label={t('common.remove')}
-                title={t('common.remove')}
-                onClick={() => setRemovingLayout(layout)}
-              >
-                <TrashIcon />
-              </button>
+              <div className="row-actions">
+                <button
+                  className="icon-action danger"
+                  type="button"
+                  aria-label={`${describeLayout(layout, t)}: ${t('common.remove')}`}
+                  title={t('common.remove')}
+                  onClick={() => setRemovingLayout(layout)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </div>
             }
           />
         ))}

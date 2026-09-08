@@ -9,7 +9,9 @@ import { Key, useTranslation } from '../i18n/i18n'
 // for an action to sit — and the scrolling below is the kind of thing that
 // gets fixed in one copy and not the other.
 
-export type TabItem = { id: string; label: Key }
+// A tab can be unavailable — the compose page's template tab when the domain
+// has no templates — and then it says why rather than only refusing.
+export type TabItem = { id: string; label: Key; disabled?: boolean; title?: string }
 
 export function Tabs({
   items,
@@ -81,6 +83,8 @@ export function Tabs({
           type="button"
           className={item.id === active ? 'active' : ''}
           aria-current={item.id === active ? 'page' : undefined}
+          disabled={item.disabled}
+          title={item.title}
           onClick={() => onSelect(item.id)}
         >
           {t(item.label)}

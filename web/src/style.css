@@ -193,7 +193,6 @@ a:hover { text-decoration-color: var(--text); }
 td a,
 th a,
 .sidebar a,
-.surface-card,
 .tile,
 .breadcrumb a {
   text-decoration: none;
@@ -442,50 +441,6 @@ td a:hover {
   margin-bottom: var(--space-6);
 }
 
-.surface-card {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-3);
-  color: var(--text);
-  text-decoration: none;
-}
-
-/* A shadow means "this responds to you", so the one thing on the page that is
-   entirely a link gets one when the pointer is over it. */
-.surface-card:hover {
-  border-color: var(--muted);
-  box-shadow: var(--shadow-floating);
-}
-
-.surface-card > span:last-child {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.surface-card strong {
-  font-size: var(--text-body);
-  font-weight: 600;
-}
-
-.surface-card .muted {
-  font-size: var(--text-label);
-  line-height: 1.45;
-}
-
-/* Status chips inside a card, below its description. */
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-top: var(--space-1);
-}
-
 .surface-icon {
   display: flex;
   align-items: center;
@@ -502,14 +457,6 @@ td a:hover {
 /* The small gray label over a group, in the rail and over a section of
    settings. Not uppercase: at this size the weight and the color do the
    separating, and capitals only make it harder to read. */
-.overline {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-overline);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--muted);
-}
-
 /* A line above a list: what it is on the left, what you can do to it on the
    right. */
 .page-actions {
@@ -528,6 +475,13 @@ td a:hover {
 .page-actions > :first-child:not(button):not(a):not(.tag) {
   flex: 1;
   min-width: 0;
+}
+
+/* One action and nothing beside it sits at the end of the row. Three pages
+   did this by putting an empty <span /> first so that the rule above had
+   something to stretch; a modifier says what is meant. */
+.page-actions-end {
+  justify-content: flex-end;
 }
 
 .page-actions button {
@@ -1122,6 +1076,27 @@ td.shrink { width: 1%; white-space: nowrap; }
    makes the padding look uneven. */
 .card > h3:first-child {
   margin-top: 0;
+}
+
+/* The sentence under a panel's heading belongs to the heading, so it sits
+   against it rather than a line below. Written once here because it was
+   written thirty times as style={{ marginTop: 0 }}, which no media query can
+   reach and no other page can share. */
+.card > h3 + p,
+.settings-section > h3 + p {
+  margin-top: 0;
+}
+
+/* The last paragraph in a panel stops at the padding. Same reason. */
+.card > p:last-child {
+  margin-bottom: 0;
+}
+
+/* A field in a row of fields is laid out by the row's gap, not by its own
+   margin: a label that keeps its block margin pushes its neighbours out of
+   line with it. */
+.row > label {
+  margin: 0;
 }
 
 /* Prose stops at a readable measure. These pages carry real explanation, and
@@ -2064,191 +2039,7 @@ pre.message-text {
   /* A DNS record value is a long unbroken string. Let it wrap instead of
      forcing the page sideways, and keep it selectable for copying. */
   code,
-  .record-value,
-  /* --- column filters -------------------------------------------------------
-   A second header row: the name of the column above, the question you can ask
-   of it below. Filters belong on the column they filter, not in a bar above
-   the table where you have to work out which one they apply to. */
-.filter-row td {
-  padding: 0 6px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-  background: none;
-}
-
-.column-filter {
-  width: 100%;
-  min-width: 0;
-  padding: 4px 8px;
-  font-size: var(--text-label);
-  min-height: 28px;
-}
-
-/* The trigger for a multiselect: reads as the current answer, not as a
-   control shouting for attention. */
-.column-filter-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-1);
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  background: var(--background);
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--text-label);
-  line-height: 1.2;
-  min-height: 28px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.column-filter-button:hover {
-  color: var(--text);
-  border-color: var(--muted);
-}
-
-/* A filter that is doing something says so, so a list that looks short is
-   never a mystery. */
-.column-filter-button.active {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.column-filter-summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The chevron points down when it opens a menu below it. */
-.column-filter-button svg {
-  flex: 0 0 auto;
-  transform: rotate(90deg);
-}
-
-.menu-search {
-  width: 100%;
-  margin-bottom: 4px;
-  padding: 6px 8px;
-  font-size: var(--text-label);
-  min-height: 30px;
-}
-
-.menu-clear {
-  width: 100%;
-  margin-bottom: 4px;
-  padding: 4px 8px;
-  border: none;
-  border-radius: var(--radius-1);
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-size: var(--text-label);
-  text-align: left;
-  cursor: pointer;
-}
-
-.menu-clear:hover {
-  background: var(--sidebar-hover);
-}
-
-/* Bounded, because a server with fifty domains should scroll the menu rather
-   than the page. */
-.menu-options {
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.menu-option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 8px;
-  border-radius: var(--radius-1);
-  font-size: var(--text-body);
-  cursor: pointer;
-}
-
-.menu-option:hover {
-  background: var(--sidebar-hover);
-}
-
-.menu-option input {
-  flex: 0 0 auto;
-  min-height: 0;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-/* The generic "label span" is a field caption above its input: block, muted,
-   with a gap under it. Inside a menu the span is the option itself, sitting
-   beside its tick box. */
-.menu-option span {
-  display: inline;
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  color: var(--text);
-  font-size: var(--text-body);
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* How many rows an option would leave, sitting at the end of its row. */
-.menu-count {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding-left: var(--space-2);
-  font-size: var(--text-label);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A sortable header is a button, and has to keep the header's own type. */
-.sort-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-}
-
-.sort-header:hover {
-  color: var(--text);
-}
-
-/* The chevrons are a hint until the column is the one in force. */
-.sort-header svg {
-  opacity: 0.4;
-}
-
-.sort-header:hover svg,
-.sort-header.active svg {
-  opacity: 1;
-}
-
-.sort-header.active {
-  color: var(--accent);
-}
-
-.menu-empty {
-  padding: 8px;
-  font-size: var(--text-label);
-  color: var(--muted);
-}
-
-pre.message-text {
+  .record-value {
     word-break: break-word;
     overflow-wrap: anywhere;
   }
@@ -2326,38 +2117,6 @@ body,
 
   .properties dd {
     margin-bottom: var(--space-2);
-  }
-}
-
-/* The detail takes the space and the actions keep their size, so a long user
-   agent truncates instead of pushing the revoke button off the row.
-   .settings-row itself is the card below; a ruled-list version of it used to
-   be declared here too, and the half of it that outlived the design — a
-   :last-child that took the padding off the bottom — is more specific than
-   the card's own padding, so the last row of every list on every page sat
-   flush against its own border. */
-.settings-row-detail {
-  flex: 1;
-  min-width: 0;
-}
-
-.settings-row-detail strong,
-.settings-row-detail .muted {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.settings-row-detail .muted {
-  font-size: 13px;
-}
-
-@media (max-width: 600px) {
-  /* On a phone the detail wraps onto its own line rather than being squeezed
-     to nothing beside the tag and the button. The row already wraps. */
-  .settings-row-detail {
-    flex-basis: 100%;
   }
 }
 

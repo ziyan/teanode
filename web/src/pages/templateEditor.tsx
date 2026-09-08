@@ -192,13 +192,13 @@ export function TemplateEditorPage() {
 
   return (
     <>
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
       {notice && <p className="muted">{notice}</p>}
 
       <div className="editor">
         <div className="card editor-form">
           <div className="row fields">
-            <label style={{ margin: 0 }}>
+            <label>
               <span>{t('templates.name')}</span>
               <input
                 className="mono"
@@ -319,7 +319,7 @@ export function TemplateEditorPage() {
           <h3>{t('editor.preview')}</h3>
           {variables.length > 0 ? (
             <>
-              <p className="muted" style={{ marginTop: 0 }}>
+              <p className="muted">
                 {t('editor.sampleValues')}
               </p>
               <div className="variables">
@@ -335,7 +335,7 @@ export function TemplateEditorPage() {
               </div>
             </>
           ) : (
-            <p className="muted" style={{ marginTop: 0 }}>
+            <p className="muted">
               {t('editor.noVariablesYet')}
             </p>
           )}

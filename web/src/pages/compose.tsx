@@ -6,6 +6,7 @@ import { ErrorMessage, Loading, formatBytes } from '../components/common'
 import { PaperclipIcon } from '../components/icons'
 import { RenderedPreview, useDebounced } from '../components/preview'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
+import { Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
 import { Trans, useTranslation } from '../i18n/i18n'
 
@@ -274,7 +275,7 @@ export function ComposePage() {
           void send()
         }}
       >
-        {problem && <p className="error">{problem}</p>}
+        <ErrorMessage error={problem} />
         {sent && (
           <div className="banner">
             {sent.id ? (
@@ -289,7 +290,7 @@ export function ComposePage() {
         )}
 
         <div className="row fields">
-          <label style={{ margin: 0 }}>
+          <label>
             <span>{t('compose.fromName')}</span>
             <input
               value={fromName}
@@ -341,35 +342,34 @@ export function ComposePage() {
           />
         </label>
         <div className="row fields">
-          <label style={{ margin: 0 }}>
+          <label>
             <span>{t('compose.carbonCopy')}</span>
             <input value={cc} spellCheck={false} onChange={(event) => setCc(event.target.value)} />
           </label>
-          <label style={{ margin: 0 }}>
+          <label>
             <span>{t('compose.blindCarbonCopy')}</span>
             <input value={bcc} spellCheck={false} onChange={(event) => setBcc(event.target.value)} />
           </label>
         </div>
 
-        <div className="tabs" style={{ marginTop: 16 }}>
-          <button type="button" className={mode === 'write' ? 'active' : ''} onClick={() => setMode('write')}>
-            {t('compose.modeWrite')}
-          </button>
-          <button
-            type="button"
-            className={mode === 'template' ? 'active' : ''}
-            onClick={() => setMode('template')}
-            disabled={templates.length === 0}
-            title={templates.length === 0 ? t('compose.noTemplates') : undefined}
-          >
-            {t('compose.modeTemplate')}
-          </button>
-        </div>
+        <Tabs
+          items={[
+            { id: 'write', label: 'compose.modeWrite' },
+            {
+              id: 'template',
+              label: 'compose.modeTemplate',
+              disabled: templates.length === 0,
+              title: templates.length === 0 ? t('compose.noTemplates') : undefined,
+            },
+          ]}
+          active={mode}
+          onSelect={(id) => setMode(id as 'write' | 'template')}
+        />
 
         {mode === 'template' && (
           <>
             <div className="row fields">
-              <label style={{ margin: 0 }}>
+              <label>
                 <span>
                   {t('compose.template')}
                   {template && (
@@ -522,7 +522,7 @@ export function ComposePage() {
         <div className="card editor-preview">
           <h3>{t('editor.preview')}</h3>
           {rendered?.locale && (
-            <p className="muted" style={{ marginTop: 0 }}>
+            <p className="muted">
               {t('compose.renderedIn', { locale: rendered.locale })}
             </p>
           )}

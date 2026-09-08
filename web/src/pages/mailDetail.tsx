@@ -3,17 +3,9 @@ import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
-import {
-  ErrorMessage,
-  KindTag,
-  Loading,
-  Tag,
-  formatBytes,
-  formatTime,
-  toneFor,
-  useEnumLabel,
-} from '../components/common'
+import { ErrorMessage, Field, KindTag, Loading, Tag, formatBytes, formatTime, toneFor, useEnumLabel } from '../components/common'
 import { useQuery } from '../components/useQuery'
+import { SettingsEmpty } from '../components/settingsList'
 import { MessageFrame } from '../components/messageFrame'
 import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
@@ -268,9 +260,7 @@ export function MailDetailPage() {
       <div className="card">
         <h3>{t('mailDetail.deliveries')}</h3>
         {data.ListDeliveriesByMail.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {t('mailDetail.noDeliveries')}
-          </p>
+          <SettingsEmpty>{t('mailDetail.noDeliveries')}</SettingsEmpty>
         ) : (
           data.ListDeliveriesByMail.map((delivery) => (
             <DeliveryDetail key={delivery.id} delivery={delivery} />
@@ -668,20 +658,6 @@ function Opens({ opens }: { opens?: MailOpens }) {
   )
 }
 
-// A row of the summary table, skipped when there is nothing to put in it. A
-// label with an em dash beside it is a row that costs a line and says nothing.
-function Field({ label, mono, children }: { label: string; mono?: boolean; children?: React.ReactNode }) {
-  if (children === undefined || children === null || children === '' || children === false) {
-    return null
-  }
-  return (
-    <tr>
-      <td className="shrink muted">{label}</td>
-      <td className={mono ? 'mono wrap' : 'wrap'}>{children}</td>
-    </tr>
-  )
-}
-
 // --- authentication --------------------------------------------------------
 //
 // Every check as a row: the mechanism, its verdict, and what it examined.
@@ -836,9 +812,7 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       <h3>{t('mailDetail.authentication')}</h3>
 
       {checks.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          {t('mailDetail.noChecks')}
-        </p>
+        <SettingsEmpty>{t('mailDetail.noChecks')}</SettingsEmpty>
       ) : (
         <table className="checks">
           <tbody>

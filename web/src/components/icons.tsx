@@ -126,6 +126,24 @@ export function PeopleIcon(props: IconProps) {
   )
 }
 
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </Icon>
+  )
+}
+
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Icon>
+  )
+}
+
 export function PinIcon(props: IconProps) {
   return (
     <Icon {...props}>

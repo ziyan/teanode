@@ -36,6 +36,14 @@ These are not negotiable, and `make lint` checks most of them.
 - **Name the same thing the same way everywhere.** If it is a `delivery` in the
   database it is not a `send` in the API.
 
+## The dashboard
+
+The web dashboard has its own conventions — which shared component to reach
+for, where a panel's action goes, when a row action is an icon and when it is
+a word — in `docs/coding/frontend-design.md`. Read it before adding a page or
+a panel. A page that builds by hand what a component already does is the
+change most likely to be sent back.
+
 ## Comments
 
 Explain **why**, not what. The what is in the code underneath.
