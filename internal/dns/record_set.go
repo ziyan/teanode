@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
@@ -430,7 +432,7 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 		Type:     "TXT",
 		Name:     name,
 		Optional: true,
-		Expected: "v=BIMI1; l=https://example.com/logo.svg",
+		Expected: "v=BIMI1; l=" + self.publishedLogo(domain),
 		Purpose:  "shows your own logo beside your mail, at receivers that support it",
 	}
 	if policy := dmarcPolicy(dmarc.Found); policy != "quarantine" && policy != "reject" {
@@ -447,6 +449,29 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 		}
 	}
 	return record
+}
+
+// publishedLogo is the address of the logo uploaded for this domain, or the
+// shape of one when none has been.
+//
+// The address is on this server rather than on the domain, which is allowed
+// and is the point: a BIMI record may name any HTTPS address, and somebody
+// running a mail server and no web server has nowhere else to put a file.
+func (self *verifier) publishedLogo(domain *models.Domain) string {
+	var publication *db.BimiPublication
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		found, err := tx.GetBimiPublication(domain.ID)
+		publication = found
+		return err
+	}); err != nil {
+		log.Errorf("failed to read the published logo of %q: %s", domain.Domain, err)
+	}
+	if publication == nil {
+		// Honest about what is missing, and still worth copying: the record
+		// is right apart from an address nobody has chosen yet.
+		return "https://" + self.config.Current().Server.Name + "/.well-known/bimi/<upload a logo first>.svg"
+	}
+	return "https://" + self.config.Current().Server.Name + api.BimiLogoPath(publication.FileID)
 }
 
 // dmarcPolicy reads the p tag out of whichever of a name's TXT records is the

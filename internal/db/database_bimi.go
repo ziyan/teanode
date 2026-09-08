@@ -28,6 +28,82 @@ type BimiQuery interface {
 	// mail comes from that have not been looked up since the given time —
 	// what the background job works through.
 	ListSenderDomainsWithoutLogo(before time.Time, limit int) ([]string, error)
+
+	// GetBimiPublication is the logo this server publishes for one of its own
+	// domains, or nil when it publishes none.
+	GetBimiPublication(domainId string) (*BimiPublication, error)
+
+	// GetBimiPublicationByFile is the same row found by the name in the
+	// address a receiver fetches.
+	GetBimiPublicationByFile(fileId string) (*BimiPublication, error)
+
+	// SaveBimiPublication records an uploaded logo, replacing whatever the
+	// domain published before.
+	SaveBimiPublication(publication *BimiPublication) error
+
+	// DeleteBimiPublication stops publishing one, and says which file to
+	// remove from storage.
+	DeleteBimiPublication(domainId string) (string, error)
+}
+
+// BimiPublication is a logo this server publishes for one of its own domains.
+// The bytes are in the file store under FileID; this is what they are.
+type BimiPublication struct {
+	DomainID   string `gorm:"primary_key:true;column:domain_id;size:32"`
+	FileID     string `gorm:"column:file_id;size:32"`
+	Filename   string `gorm:"column:filename;type:text"`
+	Title      string `gorm:"column:title;type:text"`
+	CreatedAt  time.Time
+	ModifiedAt time.Time
+}
+
+func (self *BimiPublication) TableName() string {
+	return "bimi_publication"
+}
+
+func (self *transaction) GetBimiPublication(domainId string) (*BimiPublication, error) {
+	return self.findPublication("\"domain_id\" = ?", domainId)
+}
+
+func (self *transaction) GetBimiPublicationByFile(fileId string) (*BimiPublication, error) {
+	return self.findPublication("\"file_id\" = ?", fileId)
+}
+
+func (self *transaction) findPublication(where string, value string) (*BimiPublication, error) {
+	var rows []BimiPublication
+	if err := self.tx.Where(where, value).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	publication := rows[0]
+	publication.CreatedAt = publication.CreatedAt.In(time.Local)
+	publication.ModifiedAt = publication.ModifiedAt.In(time.Local)
+	return &publication, nil
+}
+
+func (self *transaction) SaveBimiPublication(publication *BimiPublication) error {
+	now := time.Now().In(time.Local)
+	publication.ModifiedAt = now
+	if publication.CreatedAt.IsZero() {
+		publication.CreatedAt = now
+	}
+	return self.tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "domain_id"}},
+		UpdateAll: true,
+	}).Create(publication).Error
+}
+
+func (self *transaction) DeleteBimiPublication(domainId string) (string, error) {
+	publication, err := self.GetBimiPublication(domainId)
+	if err != nil || publication == nil {
+		return "", err
+	}
+	if err := self.tx.Where("\"domain_id\" = ?", domainId).Delete(&BimiPublication{}).Error; err != nil {
+		return "", err
+	}
+	return publication.FileID, nil
 }
 
 // BimiLogo is one domain's logo as this server holds it.

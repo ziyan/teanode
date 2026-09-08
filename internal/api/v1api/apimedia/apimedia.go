@@ -71,6 +71,8 @@ func (self *media) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathMediaUpload).Methods(http.MethodPost).HandlerFunc(self.uploadView)
 	router.Path(api.PathMediaFile).Methods(http.MethodGet).HandlerFunc(self.fileView)
 	router.Path(api.PathMediaLink).Methods(http.MethodGet).HandlerFunc(self.linkView)
+	router.Path(api.PathBimiLogoUpload).Methods(http.MethodPost).HandlerFunc(self.logoUploadView)
+	router.Path(api.PathBimiLogo).Methods(http.MethodGet).HandlerFunc(self.logoView)
 	return nil
 }
 

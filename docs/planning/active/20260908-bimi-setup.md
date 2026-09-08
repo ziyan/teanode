@@ -45,7 +45,13 @@ sample message.
       `internal/dns/bimi_test.go` over how the policy is read. On the dev
       server the row shows as optional against a domain that publishes
       `p=reject`, which is why no notice appears there.
-- [ ] Milestone 2 — upload a logo, validated, and host it.
+- [x] (2026-09-08 20:20Z) Milestone 2 — upload a logo, validated, and host it.
+      `internal/bimi/logo.go` with sixteen cases in `logo_test.go`; migration
+      `0027_bimi_publication`; the upload and the public address in
+      `internal/api/v1api/apimedia/logo.go`; the DNS row now offers the real
+      address. Checked against four real published marks — all four pass — and
+      end to end on the dev server: a valid file is stored and served with the
+      right headers, one with a script is refused naming the element.
 - [ ] Milestone 3 — verify it the way the other records are verified.
 - [ ] Milestone 4 — say what a certificate is for, and show the preview.
 - [ ] Milestone 5 — documentation, changelog, deployment.
@@ -64,6 +70,18 @@ sample message.
   specification requires is, by construction, a file with nothing in it that
   runs. The validation is not a nicety on top of the feature; it is what makes
   hosting the file safe.
+
+- Observation: four marks published by well-known senders all pass the
+  validator unchanged, which is the evidence that these rules match what is
+  actually published rather than being stricter than reality. Two of the four
+  use the literal title "bimi-svg-tiny-12-ps", so the title a generator writes
+  is not always meaningful — worth knowing before showing it to anybody as the
+  mark's name.
+
+- Observation: the record set is computed on a schedule and cached, so a logo
+  uploaded now does not appear in the row until the next sweep — thirty
+  minutes by default. The page has to ask for a re-check after an upload, or
+  the operator uploads a file and the row still tells them to upload one.
 
 - Observation: the logo does not have to live on the domain it belongs to. The
   `l=` tag is any HTTPS URL, so a domain with no web server at all can point
