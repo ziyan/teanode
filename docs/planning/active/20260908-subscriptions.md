@@ -71,7 +71,14 @@ and the sender appears as a row with a working unsubscribe button.
       message. In the conversation's toolbar, only when the message named a
       list, behind a confirmation that says what will be sent.
 - [ ] Milestone 7 — documentation, changelog, and the deployment check.
-- [ ] Milestone 8 — the sender's logo, from BIMI.
+- [x] (2026-09-08 21:15Z) Milestone 8 — the sender's logo, from BIMI.
+      `internal/bimi` parses and looks up the record; migration
+      `0026_bimi_logo` caches what was fetched; a background pass fetches one
+      batch every ten minutes through `safefetch`; `/api/v1/logo/{domain}`
+      serves it sandboxed; `SenderLogo` shows it, or a monogram. Verified
+      against real records — cnn.com, ebay.com, paypal.com and linkedin.com
+      all publish one, example.com does not — and end to end on the dev server
+      with a seeded row.
 
 ## Surprises & Discoveries
 
@@ -94,6 +101,13 @@ and the sender appears as a row with a working unsubscribe button.
   hostname, re-checks every redirect, and caps redirects at five. The one-click
   unsubscribe request needs precisely these guards and should reuse that code
   rather than grow a second copy.
+
+- Observation: BIMI is published by fewer domains than one would guess, and by
+  the ones that matter. A lookup of cnn.com, ebay.com, paypal.com and
+  linkedin.com found a record with a logo and a certificate on every one;
+  example.com has none. So the feature will look empty on a personal mailbox
+  and populated on one that receives commercial mail, which is exactly the
+  mail this page is about.
 
 - Observation: the dev server refuses a test newsletter sent from the reserved
   documentation domains. `example.com` publishes a null MX and a DMARC policy

@@ -1,6 +1,9 @@
 package api
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+)
 
 // Prefix is where the current API version is mounted. Everything the
 // dashboard and the command line client call lives under it.
@@ -53,7 +56,18 @@ const (
 	// behalf of a reader who asked for it. The address in the query is the
 	// address in the message.
 	PathMailRemote = Prefix + "/mail/{mailId}/remote"
+
+	// PathSenderLogo serves the logo a sending domain publishes for its mail,
+	// as this server fetched and cached it. Fetched here rather than by the
+	// browser, so that showing one does not tell the sender which address
+	// opened which message at what moment.
+	PathSenderLogo = Prefix + "/logo/{domain}"
 )
+
+// SenderLogoPath is PathSenderLogo with its parameter filled in.
+func SenderLogoPath(domain string) string {
+	return Prefix + "/logo/" + url.PathEscape(domain)
+}
 
 // MailAttachmentPath is PathMailAttachment with its parameters filled in.
 func MailAttachmentPath(mailId string, index int) string {

@@ -759,6 +759,19 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	listBackfill.Start()
 	self.onClose(listBackfill.Stop)
 
+	// The logos sending domains publish for their mail. Fetched here, once
+	// per domain per day, so that showing one does not tell the sender which
+	// address opened which message at what moment.
+	logoFetch := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		_, err := fetchSenderLogos(ctx, self.database, configuration.DNS.Nameserver)
+		return err
+	}, &periodic.Settings{
+		Interval: 10 * time.Minute,
+		Name:     "mailbox:logos",
+	})
+	logoFetch.Start()
+	self.onClose(logoFetch.Stop)
+
 	// Half-finished WebAuthn challenges. In this process unless a Redis is
 	// configured: one instance is the ordinary case, and a challenge that does
 	// not survive a restart costs one retry. Behind a load balancer it has to

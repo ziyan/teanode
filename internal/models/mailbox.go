@@ -225,6 +225,12 @@ type MailboxSubscription struct {
 	LastAt     time.Time `json:"lastAt"`
 	LastItemID string    `json:"lastItemId"`
 
+	// LogoDomain is the sending domain whose published logo this server holds,
+	// empty unless there is one to show. Set only when the newest message
+	// proved it came from that domain: a mark shown for mail that failed its
+	// checks is an aid to whoever is pretending to be the sender.
+	LogoDomain string `json:"logoDomain,omitempty"`
+
 	// OneClick is the newest message promising that one request is enough to
 	// leave, and Unsubscribe the addresses it offered to leave by.
 	OneClick    bool     `json:"oneClick"`

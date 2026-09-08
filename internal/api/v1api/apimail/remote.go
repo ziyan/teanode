@@ -9,6 +9,8 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/ziyan/teanode/internal/bimi"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
@@ -129,5 +131,55 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 
 	if _, err := io.Copy(response, io.LimitReader(fetched.Body, remoteMaximumSize)); err != nil {
 		log.Debugf("failed to write remote image %q: %s", target.Redacted(), err)
+	}
+}
+
+// senderLogoView serves the logo a sending domain publishes, as this server
+// fetched and cached it.
+//
+// From the cache and never from the sender: a request to the sender's server
+// at the moment a message is opened tells them which address is reading what
+// and when, which is the whole reason the image proxy above exists. What is
+// cached was fetched by the background job, on nobody's schedule but this
+// server's.
+//
+// Served as an image and with a policy that allows it nothing. An SVG can
+// carry script, and the only thing standing between a stranger's file and the
+// dashboard's origin is that the browser is told to treat it as an image and
+// to run nothing in it.
+func (self *mail) senderLogoView(response http.ResponseWriter, request *http.Request) {
+	if err := self.requireOperator(request); err != nil {
+		http.Error(response, "not logged in", http.StatusUnauthorized)
+		return
+	}
+	domain := strings.ToLower(strings.TrimSpace(mux.Vars(request)["domain"]))
+	if domain == "" {
+		http.Error(response, "no domain", http.StatusBadRequest)
+		return
+	}
+
+	var logo *db.BimiLogo
+	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
+		found, err := tx.GetBimiLogo(domain, bimi.DefaultSelector)
+		logo = found
+		return err
+	}); err != nil {
+		log.Errorf("failed to read the logo of %q: %s", domain, err)
+		http.Error(response, "cannot read", http.StatusInternalServerError)
+		return
+	}
+	if logo == nil || len(logo.Content) == 0 {
+		http.Error(response, "no logo", http.StatusNotFound)
+		return
+	}
+
+	response.Header().Set("Content-Type", logo.ContentType)
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	// A mark changes rarely and this server has already decided how often to
+	// ask the domain about it.
+	response.Header().Set("Cache-Control", "private, max-age=3600")
+	if _, err := response.Write(logo.Content); err != nil {
+		log.Debugf("failed to write the logo of %q: %s", domain, err)
 	}
 }

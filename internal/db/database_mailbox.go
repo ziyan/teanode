@@ -1175,6 +1175,21 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 		return nil, err
 	}
 
+	// The logos this server has already fetched for the domains these lists
+	// write from. Only for mail that passed DMARC, which is checked per row
+	// below: a mark is a claim about who sent something, and a claim on
+	// unproven mail is worth less than no claim at all.
+	senders := make([]string, 0, len(rows))
+	for _, mail := range byMailID {
+		if domain := senderDomain(mail.From); domain != "" {
+			senders = append(senders, domain)
+		}
+	}
+	logos, err := self.ListBimiLogos(senders, "default")
+	if err != nil {
+		return nil, err
+	}
+
 	subscriptions := make([]*models.MailboxSubscription, 0, len(rows))
 	for _, row := range rows {
 		item := items[row.ItemID]
@@ -1198,6 +1213,11 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 		if subscription.Name == "" {
 			subscription.Name = row.ListKey
 		}
+		if domain := senderDomain(mail.From); domain != "" && dmarcPassed(mail) {
+			if logo := logos[domain]; logo != nil && logo.ContentType != "" {
+				subscription.LogoDomain = domain
+			}
+		}
 		if count, ok := counted[row.ListKey]; ok {
 			subscription.Count = count.Count
 			subscription.Unread = count.Unread
@@ -1219,6 +1239,23 @@ func (self *transaction) CountSubscriptions(mailboxId string) (int64, error) {
 	var count int64
 	err := self.subscriptionQuery(mailboxId).Distinct("\"mail\".\"list_key\"").Count(&count).Error
 	return count, err
+}
+
+// senderDomain is the part after the @, lowercased, or empty when the address
+// is not one.
+func senderDomain(address string) string {
+	at := strings.LastIndex(address, "@")
+	if at < 0 || at == len(address)-1 {
+		return ""
+	}
+	return strings.ToLower(strings.Trim(strings.TrimSpace(address[at+1:]), "<>"))
+}
+
+// dmarcPassed says the message proved it came from the domain it claims. What
+// a published logo may be shown for, and nothing else.
+func dmarcPassed(mail *models.Mail) bool {
+	return mail != nil && mail.AuthenticationResults.DMARC != nil &&
+		strings.EqualFold(mail.AuthenticationResults.DMARC.Result, "pass")
 }
 
 // splitUnsubscribe reads back the addresses stored as one column.

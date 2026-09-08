@@ -117,6 +117,7 @@ type Transaction interface {
 	AuditOperation
 	MailboxOperation
 	SubscriptionQuery
+	BimiQuery
 	IdentityOperation
 
 	DomainUsageOperation

@@ -5,6 +5,7 @@ import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { ArrowLeftIcon, ChevronRightIcon, CloseIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
@@ -17,7 +18,8 @@ const SUBSCRIPTIONS = `
     ListMailboxSubscriptions(mailboxId: $mailboxId, first: 200) {
       total
       subscriptions {
-        key name from count unread lastAt lastItemId oneClick unsubscribe requestedAt method failed error
+        key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+        requestedAt method failed error
       }
     }
   }`
@@ -57,6 +59,7 @@ export type Subscription = {
   lastItemId: string
   oneClick: boolean
   unsubscribe: string[]
+  logoDomain?: string
   requestedAt?: string | null
   method?: string
   failed?: boolean
@@ -163,7 +166,12 @@ export function MailboxSubscriptionsPage() {
         {subscriptions.map((subscription) => (
           <SettingsRow
             key={subscription.key}
-            title={subscription.name}
+            title={
+              <span className="sender-row">
+                <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} />
+                {subscription.name}
+              </span>
+            }
             subtitle={
               <>
                 <div>{subscription.from}</div>
