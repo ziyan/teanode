@@ -12,6 +12,7 @@ import {
   MailIcon,
   PeopleIcon,
   PinIcon,
+  PinOffIcon,
   QueueIcon,
   ServerIcon,
   ServiceIcon,
@@ -316,7 +317,7 @@ export function Sidebar({
                             togglePin(folder, !isPinned)
                           }}
                         >
-                          <PinIcon size={14} />
+                          {isPinned ? <PinOffIcon size={14} /> : <PinIcon size={14} />}
                         </button>
                       )}
                       {folder.unread > 0 && (
@@ -336,7 +337,7 @@ export function Sidebar({
                       </span>
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
                     </NavLink>
-                    {pinned.map((folder) => folderRow(folder, 0, `pinned-${folder.id}`, true))}
+                    {pinned.map(({ folder, depth }) => folderRow(folder, depth, `pinned-${folder.id}`, true))}
                     {/* What is always at the top — the inbox, what is
                         starred, and whatever has been pinned up there — ends
                         here, and the mailbox's own folders start. The rule is
@@ -344,7 +345,6 @@ export function Sidebar({
                         does not change shape the first time somebody pins
                         something. */}
                     <div className="sidebar-divider" />
-                    {pinned.length > 0 && <div className="sidebar-group-label sidebar-label">{t('nav.folders')}</div>}
                     {rest.map(({ folder, depth }) => folderRow(folder, depth, folder.id, true))}
                   </>
                 )

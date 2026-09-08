@@ -788,7 +788,7 @@ a.tile:hover strong {
    the edges so it reads as a seam in a list rather than the end of the rail. */
 .sidebar-divider {
   height: 0;
-  margin: 8px 12px;
+  margin: 8px 0;
   border-top: 1px solid var(--border);
 }
 
@@ -1370,6 +1370,14 @@ input[type='radio'] {
 }
 
 label { display: block; margin-bottom: 10px; font-size: 14px; }
+
+/* The name of a control that is not a single field — a switch and the editor
+   under it — said the way a field's label is said, since it is doing the same
+   job for the reader. */
+.field-label {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
 
 /* A label whose control is a tick box is a row, not a block: the box and its
    text line up on one baseline and stay lined up when the text wraps onto a
@@ -2837,6 +2845,15 @@ a.button.primary:hover {
 
 .richtext-editor {
   min-height: 240px;
+}
+
+/* A signature is three lines and a link, not a message. */
+.signature-editor .richtext-editor,
+.signature-editor textarea {
+  min-height: 120px;
+}
+
+.richtext-editor {
   padding: 12px 14px;
   outline: none;
   line-height: 1.5;
@@ -3766,6 +3783,10 @@ a.button.primary:hover {
   color: var(--muted);
   cursor: pointer;
 }
+/* A pinned folder's button is drawn at full strength rather than as an
+   affordance waiting to be noticed, and it carries the pin with a line
+   through it: the button undoes the pin, and should not be the same picture
+   as the one that puts it there. */
 .icon-action:hover:not(:disabled),
 .icon-action.pinned {
   color: var(--text);

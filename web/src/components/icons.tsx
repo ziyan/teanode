@@ -153,6 +153,16 @@ export function PinIcon(props: IconProps) {
   )
 }
 
+export function PinOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+      <path d="m3 3 18 18" />
+    </Icon>
+  )
+}
+
 export function StarIcon(props: IconProps) {
   return (
     <Icon {...props}>

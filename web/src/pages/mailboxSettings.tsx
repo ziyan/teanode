@@ -11,7 +11,8 @@ import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from '../components/folderIcon'
-import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PinIcon, TrashIcon } from '../components/icons'
+import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
+import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
 
 // What a mailbox is set up to do, in four tabs: what it is called and how
 // it signs, its folders, the rules that sort what arrives, and the reply it
@@ -138,12 +139,27 @@ function GeneralTab({ view }: { view: MailboxView }) {
   const [name, setName] = useState(mailbox.name)
   const [signatureText, setSignatureText] = useState(mailbox.signatureText ?? '')
   const [signatureHtml, setSignatureHtml] = useState(mailbox.signatureHtml ?? '')
+  // A signature is written the way a message is: formatted, or not. Two boxes
+  // side by side, one of them asking for HTML source, made the reader answer
+  // a question about storage that is the program's to answer — and the second
+  // box is what actually goes out, so leaving it empty quietly meant the
+  // signature only appeared on plain messages.
+  const [editor, setEditor] = useState<'rich' | 'plain'>(mailbox.signatureHtml ? 'rich' : 'plain')
   const { busy, error, saved, save, touch } = useSave()
+
+  // What will be sent, which is the editor in front of you and the other form
+  // derived from it. A signature written as rich text keeps a plain rendering
+  // for plain messages; one written as plain text has no HTML form at all,
+  // and the server falls back to the plain one.
+  const signature =
+    editor === 'rich'
+      ? { signatureHtml, signatureText: htmlToText(signatureHtml) }
+      : { signatureHtml: '', signatureText }
 
   const changed =
     name !== mailbox.name ||
-    signatureText !== (mailbox.signatureText ?? '') ||
-    signatureHtml !== (mailbox.signatureHtml ?? '')
+    signature.signatureText !== (mailbox.signatureText ?? '') ||
+    signature.signatureHtml !== (mailbox.signatureHtml ?? '')
 
   return (
     <>
@@ -151,7 +167,7 @@ function GeneralTab({ view }: { view: MailboxView }) {
         className="card"
         onSubmit={(event) => {
           event.preventDefault()
-          void save(UPDATE, { mailboxId: mailbox.id, name: name.trim(), signatureText, signatureHtml })
+          void save(UPDATE, { mailboxId: mailbox.id, name: name.trim(), ...signature })
         }}
       >
         <h3>{t('mailboxSettings.tabGeneral')}</h3>
@@ -172,29 +188,56 @@ function GeneralTab({ view }: { view: MailboxView }) {
           </label>
           <p className="muted field-hint">{t('mailboxSettings.nameHint')}</p>
 
-          <label>
-            {t('mailboxSettings.signatureText')}
-            <textarea
-              rows={4}
-              value={signatureText}
-              onChange={(event) => {
-                setSignatureText(event.target.value)
+          <div className="field-label">{t('mailboxSettings.signature')}</div>
+          <div className="segmented compose-editor-switch" role="group">
+            <button
+              type="button"
+              className={editor === 'rich' ? 'active' : ''}
+              onClick={() => {
+                if (editor === 'plain') {
+                  setSignatureHtml(textToHtml(signatureText))
+                }
+                setEditor('rich')
                 touch()
               }}
-            />
-          </label>
-          <label>
-            {t('mailboxSettings.signatureHtml')}
-            <textarea
-              rows={4}
-              className="mono"
-              value={signatureHtml}
-              onChange={(event) => {
-                setSignatureHtml(event.target.value)
+            >
+              {t('compose.mailbox.richText')}
+            </button>
+            <button
+              type="button"
+              className={editor === 'plain' ? 'active' : ''}
+              onClick={() => {
+                if (editor === 'rich') {
+                  setSignatureText(htmlToText(signatureHtml))
+                }
+                setEditor('plain')
                 touch()
               }}
-            />
-          </label>
+            >
+              {t('compose.mailbox.plainText')}
+            </button>
+          </div>
+          <div className="signature-editor">
+            {editor === 'rich' ? (
+              <RichTextEditor
+                value={signatureHtml}
+                onChange={(next) => {
+                  setSignatureHtml(next)
+                  touch()
+                }}
+              />
+            ) : (
+              <textarea
+                rows={5}
+                aria-label={t('mailboxSettings.signature')}
+                value={signatureText}
+                onChange={(event) => {
+                  setSignatureText(event.target.value)
+                  touch()
+                }}
+              />
+            )}
+          </div>
           <p className="muted field-hint">{t('mailboxSettings.signatureHint')}</p>
 
           {error ? <ErrorMessage error={error} /> : null}
@@ -311,7 +354,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
                         disabled={busy}
                         onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
                       >
-                        <PinIcon size={16} />
+                        {folder.pinnedAt ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
                       </button>
                       {!folder.kind && (
                         <>

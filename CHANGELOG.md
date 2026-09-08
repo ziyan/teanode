@@ -46,7 +46,19 @@ Notable changes to TeaNode. The format follows
   unread mail and whether the number had one digit or two.
 - The rail names the mailbox only when there is more than one to choose
   between. One mailbox named above its own folders was a heading that said
-  nothing.
+  nothing. The "Folders" heading over the list goes for the same reason: the
+  rule above it already says where the list starts.
+- Pinning a folder lifts it out of the tree rather than copying it. It used to
+  appear twice, which made the rail longer the more of it you pinned. A pinned
+  folder brings its own subfolders up with it and sits at the top level of the
+  pinned area, whatever it was nested under.
+- The button that unpins a folder is a pin with a line through it, in the rail
+  and on the Folders tab. Both states used to be the same picture.
+- A mailbox's signature is written in the editor the compose page uses, with
+  the same Rich text and Plain text switch. It used to be two boxes side by
+  side, one of them asking for HTML source — and the HTML one is what actually
+  goes out, so leaving it empty quietly meant the signature appeared only on
+  plain messages.
 
 ### Fixed
 
