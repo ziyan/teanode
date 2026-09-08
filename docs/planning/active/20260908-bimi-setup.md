@@ -57,7 +57,11 @@ sample message.
       names, and validates it; the three failures are reported separately. A
       logo this server hosts is read from storage rather than fetched, which
       `internal/dns/bimi_logo_test.go` pins down.
-- [ ] Milestone 4 — say what a certificate is for, and show the preview.
+- [x] (2026-09-08 21:35Z) Milestone 4 — say what a certificate is for, and
+      show the preview. The domain's page has a card with the uploaded mark
+      drawn at both the sizes a reader sees it, what it is called, and a
+      paragraph naming the certificate, who requires one and roughly what it
+      costs.
 - [ ] Milestone 5 — documentation, changelog, deployment.
 
 ## Surprises & Discoveries
@@ -125,6 +129,17 @@ sample message.
   every receiver except the two that matter most to you". Learning it after
   buying an SVG from a designer is worse than learning it first.
   Date/Author: 2026-09-08, this plan.
+
+## Surprises, continued
+
+- Observation: the dashboard cannot draw its own published logo from the
+  public address in development. The dev server serves the dashboard's files
+  and answers `/.well-known/...` itself before the proxy sees it, whatever the
+  proxy is configured with.
+  Consequence: the page reads the file through the API instead, which is the
+  better split anyway — the public address exists for receiving mail systems
+  and the dashboard is the operator's own, behind their session. The domain
+  view carries both addresses and says which is which.
 
 ## Outcomes & Retrospective
 

@@ -134,6 +134,33 @@ func (self *media) logoUploadView(response http.ResponseWriter, request *http.Re
 	})
 }
 
+// domainLogoView serves the same file to the dashboard, so the operator can
+// see what they published. Behind a session, and by the domain's name rather
+// than the file's, because the page knows which domain it is showing and
+// should not have to know which file that means today.
+func (self *media) domainLogoView(response http.ResponseWriter, request *http.Request) {
+	if api.UsernameFromRequest(request) == "" && self.claimed() {
+		http.Error(response, "not logged in", http.StatusUnauthorized)
+		return
+	}
+	domainId := strings.TrimSpace(mux.Vars(request)["domainId"])
+	var publication *db.BimiPublication
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		found, err := tx.GetBimiPublication(domainId)
+		publication = found
+		return err
+	}); err != nil {
+		log.Errorf("failed to look up the logo of %q: %s", domainId, err)
+		http.Error(response, "not found", http.StatusNotFound)
+		return
+	}
+	if publication == nil {
+		http.Error(response, "no logo", http.StatusNotFound)
+		return
+	}
+	self.serveLogo(response, request, publication)
+}
+
 // logoView serves it, to whoever followed the DNS record.
 //
 // Public, like the media file next door and for the same reason: what fetches
@@ -157,6 +184,13 @@ func (self *media) logoView(response http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	self.serveLogo(response, request, publication)
+}
+
+// serveLogo writes the bytes, with the headers that make a stranger's
+// document safe to draw: the type it was checked as, no sniffing, and a
+// policy that allows it nothing.
+func (self *media) serveLogo(response http.ResponseWriter, request *http.Request, publication *db.BimiPublication) {
 	content, err := self.storage.GetFile(request.Context(), publication.FileID)
 	if err != nil {
 		if !errors.Is(err, storage.ErrNotFound) {

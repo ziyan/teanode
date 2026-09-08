@@ -62,6 +62,11 @@ const (
 	// session.
 	PathBimiLogoUpload = Prefix + "/domains/{domainId}/logo"
 
+	// PathDomainLogo serves the same file to the dashboard, which shows the
+	// operator what they published. Inside the API and behind a session,
+	// because it is the dashboard asking rather than a receiver.
+	PathDomainLogo = Prefix + "/domains/{domainId}/logo.svg"
+
 	// PathBimiLogo serves that logo. Outside the API prefix and outside the
 	// session check, because what fetches it is a receiving mail system
 	// following a DNS record — it has no session and never will.
@@ -73,6 +78,11 @@ const (
 	// opened which message at what moment.
 	PathSenderLogo = Prefix + "/logo/{domain}"
 )
+
+// DomainLogoPath is PathDomainLogo with its parameter filled in.
+func DomainLogoPath(domainId string) string {
+	return Prefix + "/domains/" + url.PathEscape(domainId) + "/logo.svg"
+}
 
 // BimiLogoPath is PathBimiLogo with its parameter filled in. The address goes
 // in a DNS record, so it has to keep meaning the same thing.

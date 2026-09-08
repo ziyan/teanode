@@ -310,6 +310,15 @@ export const en = {
   'domain.change': 'change',
   'domain.optional': 'optional',
   'domain.checkAgain': 'Check again',
+  'domain.logoTitle': 'Your logo',
+  'domain.logoIntro': 'The mark receivers show beside your mail, which the BIMI record above points at. Upload one and this server hosts it, so the domain needs no web server of its own.',
+  'domain.logoNone': 'No logo is published for this domain yet.',
+  'domain.logoUpload': 'Upload a logo',
+  'domain.logoReplace': 'Replace the logo',
+  'domain.logoRefused': 'The file could not be published.',
+  'domain.logoTitleIs': 'Titled “{title}”, which is what a screen reader says in place of the mark.',
+  'domain.logoUploaded': 'Published',
+  'domain.logoCertificate': 'It has to be an SVG of the restricted kind BIMI accepts — no script, no animation, nothing fetched from elsewhere, and square. This checks that before publishing it and says what is wrong if anything is. Gmail and Yahoo show a mark only for senders who also hold a Verified Mark Certificate, which is issued against a registered trademark, renewed yearly, and costs on the order of a thousand dollars; other receivers show one without. Its address goes in the record as the a= tag once you have one.',
 
   'domain.linkHostTitle': 'Pictures in mail',
   'domain.linkHostIntro':

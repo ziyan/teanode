@@ -79,6 +79,15 @@ module.exports = {
     historyApiFallback: true,
     // Proxied to whatever `make dev-backend` is actually listening on, read
     // from the configuration it runs with rather than written here twice.
-    proxy: [{ context: ['/api'], target: developmentBackend() }],
+    // Everything the server answers that is not the dashboard's own files.
+    // /media and /.well-known are outside the API prefix on purpose — they
+    // are fetched by mail programs and by receiving mail systems, which have
+    // no session — and a dev server that proxied only /api showed a broken
+    // picture for both.
+    proxy: [
+      { context: ['/api'], target: developmentBackend() },
+      { context: ['/media'], target: developmentBackend() },
+      { context: ['/.well-known'], target: developmentBackend() },
+    ],
   },
 }

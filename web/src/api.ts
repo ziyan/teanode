@@ -280,6 +280,19 @@ export interface Domain {
   linkHostname?: string
   dkimSelector?: string
   hasDkimKey: boolean
+  // The mark this server publishes for the domain, when one has been
+  // uploaded: what the BIMI record points at.
+  logo?: DomainLogo
+}
+
+export interface DomainLogo {
+  filename: string
+  title: string
+  // Where the dashboard reads it: inside the API, behind the session.
+  url: string
+  // Where a receiver following the DNS record finds it.
+  publicUrl: string
+  uploadedAt: string
 }
 
 export interface Location {

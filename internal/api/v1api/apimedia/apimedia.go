@@ -73,6 +73,7 @@ func (self *media) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathMediaLink).Methods(http.MethodGet).HandlerFunc(self.linkView)
 	router.Path(api.PathBimiLogoUpload).Methods(http.MethodPost).HandlerFunc(self.logoUploadView)
 	router.Path(api.PathBimiLogo).Methods(http.MethodGet).HandlerFunc(self.logoView)
+	router.Path(api.PathDomainLogo).Methods(http.MethodGet).HandlerFunc(self.domainLogoView)
 	return nil
 }
 

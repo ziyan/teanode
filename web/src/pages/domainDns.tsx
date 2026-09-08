@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
-import { CopyIconButton, Tag } from '../components/common'
+import { CopyIconButton, ErrorMessage, Tag } from '../components/common'
+import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
 import { ConfirmDialog } from '../components/dialog'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
@@ -126,6 +128,8 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
           <button onClick={() => void run(() => graphql(CHECK, { domainId }))}>{t('domain.checkAgain')}</button>
         </p>
       </div>
+
+      <DomainLogoCard domain={domain} domainId={domainId ?? ''} run={run} />
 
       <div className="card">
         <h3>{t('domain.mailServersTitle')}</h3>
@@ -298,5 +302,116 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         />
       )}
     </>
+  )
+}
+
+// The mark this server publishes for the domain, which is what the BIMI
+// record above points at.
+//
+// Hosting it here is the point of the card. A BIMI record names an address
+// over HTTPS, and somebody running a mail server and no web server has
+// nowhere to put a file — so the record the page offers names one this server
+// serves, and uploading is the whole of that step.
+//
+// The file is checked before it is stored, against the profile a mark has to
+// satisfy. A receiver that dislikes a file says nothing to anybody: the mark
+// never appears and the sender never learns why. So the message here names
+// what is wrong with it.
+function DomainLogoCard({
+  domain,
+  domainId,
+  run,
+}: {
+  domain: DomainTabProps['domain']
+  domainId: string
+  run: DomainTabProps['run']
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [refused, setRefused] = useState<string | null>(null)
+  const picker = useRef<HTMLInputElement>(null)
+  const logo = domain.logo
+
+  const upload = async (file: File) => {
+    setBusy(true)
+    setRefused(null)
+    try {
+      const form = new FormData()
+      form.append('file', file, file.name)
+      const answer = await fetch(`/api/v1/domains/${encodeURIComponent(domainId)}/logo`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      })
+      const body = await answer.json().catch(() => null)
+      if (!answer.ok) {
+        setRefused(body?.error ?? t('domain.logoRefused'))
+        return
+      }
+      // The records are computed on a schedule, so the row above would go on
+      // saying there is no logo until the next sweep. Ask for a check now, so
+      // the value to copy is the one that was just uploaded.
+      await run(() => graphql(CHECK, { domainId }))
+    } catch (caught) {
+      setRefused(caught instanceof Error ? caught.message : t('domain.logoRefused'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>{t('domain.logoTitle')}</h3>
+      <p className="muted">{t('domain.logoIntro')}</p>
+
+      {logo ? (
+        <div className="domain-logo">
+          {/* Drawn at both the sizes a reader sees it: beside a row of a
+              list, and beside the message itself. */}
+          {/* The file this server publishes, drawn from where it publishes
+              it — not from the cache of marks fetched from other people's
+              domains, which is what a sending domain's name would read. */}
+          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={32} />
+          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={20} />
+          <div className="domain-logo-about">
+            <div>{logo.filename}</div>
+            <div className="muted">{t('domain.logoTitleIs', { title: logo.title })}</div>
+            <div className="muted">
+              {t('domain.logoUploaded')} <RelativeTime value={logo.uploadedAt} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="muted">{t('domain.logoNone')}</p>
+      )}
+
+      <ErrorMessage error={refused} />
+
+      <div className="page-actions">
+        <input
+          ref={picker}
+          type="file"
+          accept="image/svg+xml,.svg"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) {
+              void upload(file)
+            }
+          }}
+        />
+        <button disabled={busy} onClick={() => picker.current?.click()}>
+          {logo ? t('domain.logoReplace') : t('domain.logoUpload')}
+        </button>
+      </div>
+
+      {/* Said before anybody starts, not after. The difference between "this
+          works" and "this works everywhere except the two receivers that
+          matter most to you" is a certificate costing about a thousand
+          dollars a year, and learning that after commissioning artwork is
+          learning it too late. */}
+      <p className="muted">{t('domain.logoCertificate')}</p>
+    </div>
   )
 }

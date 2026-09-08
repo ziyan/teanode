@@ -308,6 +308,15 @@ export const ja: Catalog = {
   'domain.change': '要変更',
   'domain.optional': '任意',
   'domain.checkAgain': '再確認',
+  'domain.logoTitle': 'あなたのロゴ',
+  'domain.logoIntro': '受信側があなたのメールの横に表示する図案で、上の BIMI レコードが指す先です。アップロードすればこのサーバーが配信するので、ドメイン側にウェブサーバーは要りません。',
+  'domain.logoNone': 'このドメインのロゴはまだ公開されていません。',
+  'domain.logoUpload': 'ロゴをアップロード',
+  'domain.logoReplace': 'ロゴを差し替える',
+  'domain.logoRefused': 'このファイルは公開できませんでした。',
+  'domain.logoTitleIs': 'タイトルは「{title}」。スクリーンリーダーは図案の代わりにこれを読み上げます。',
+  'domain.logoUploaded': '公開',
+  'domain.logoCertificate': 'ファイルは BIMI が認める制限付きの SVG である必要があります。スクリプトなし、アニメーションなし、外部参照なし、正方形。公開前に確認し、問題があれば内容を示します。Gmail と Yahoo は VMC（認証マーク証明書）を持つ送信者にしかロゴを表示しません。登録商標に対して発行され、毎年更新で、費用は千ドル前後です。他の受信側は証明書なしでも表示します。取得したら、その住所をレコードの a= タグに入れてください。',
 
   'domain.linkHostTitle': 'メール内の画像',
   'domain.linkHostIntro':

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -104,6 +106,10 @@ type Domain struct {
 	// mail is unsigned and receivers may distrust it.
 	HasDKIMKey bool `json:"hasDkimKey"`
 
+	// Logo is the mark this server publishes for this domain, when one has
+	// been uploaded. What the BIMI record above points at.
+	Logo *DomainLogo `json:"logo,omitempty"`
+
 	// Whether the caller may change this Domain, as opposed to only reading
 	// its mail. What the web UI shows the settings tab on.
 	Manageable bool `json:"manageable"`
@@ -174,6 +180,14 @@ func (self *graph) ListDomains(ctx context.Context) ([]*Domain, error) {
 	}
 	configuration := self.config.Current()
 	status := self.verifier.Status()
+	logos := map[string]*db.BimiPublication{}
+	for _, domain := range all {
+		publication, err := self.transaction(ctx).GetBimiPublication(domain.ID)
+		if err != nil {
+			return nil, err
+		}
+		logos[domain.ID] = publication
+	}
 
 	domains := make([]*Domain, 0, len(all))
 	for _, domain := range all {
@@ -181,7 +195,7 @@ func (self *graph) ListDomains(ctx context.Context) ([]*Domain, error) {
 		if !manageable && !principal.Permissions.HasOverDomain(models.PermissionMailAudit, domain.ID) {
 			continue
 		}
-		described := describeDomain(configuration, domain, all, status[domain.ID])
+		described := describeDomain(configuration, domain, all, status[domain.ID], logos[domain.ID])
 		described.Manageable = manageable
 		domains = append(domains, described)
 	}
@@ -233,7 +247,11 @@ func (self *graph) describeDomainById(ctx context.Context, domainId string, reco
 	}
 	for _, domain := range domains {
 		if domain.ID == domainId {
-			return describeDomain(self.config.Current(), domain, domains, records), nil
+			publication, err := self.transaction(ctx).GetBimiPublication(domain.ID)
+			if err != nil {
+				return nil, err
+			}
+			return describeDomain(self.config.Current(), domain, domains, records, publication), nil
 		}
 	}
 	return nil, api.ErrNotFound
@@ -497,12 +515,51 @@ func (self *graph) RegenerateDomainKey(ctx context.Context, arguments Regenerate
 	return described, nil
 }
 
+// DomainLogo is the mark this server publishes for a domain: what was
+// uploaded, and where a receiver following the BIMI record will find it.
+type DomainLogo struct {
+	// Filename the operator uploaded it as, so a list of them reads as their
+	// own files rather than as identifiers.
+	Filename string `json:"filename"`
+
+	// Title is the one inside the file, which is what a screen reader says in
+	// place of the mark.
+	Title string `json:"title"`
+
+	// URL is where the dashboard reads it, which is inside the API: the page
+	// showing it is the operator's own.
+	URL string `json:"url"`
+
+	// PublicURL is where a receiver following the DNS record finds it. The
+	// record itself carries the whole address; this is the path of it.
+	PublicURL string `json:"publicUrl"`
+
+	// UploadedAt is when it was published.
+	UploadedAt time.Time `json:"uploadedAt"`
+}
+
+// describeLogo renders the publication, or nothing when the domain publishes
+// no mark.
+func describeLogo(publication *db.BimiPublication) *DomainLogo {
+	if publication == nil {
+		return nil
+	}
+	return &DomainLogo{
+		Filename:   publication.Filename,
+		Title:      publication.Title,
+		URL:        api.DomainLogoPath(publication.DomainID),
+		PublicURL:  api.BimiLogoPath(publication.FileID),
+		UploadedAt: publication.ModifiedAt,
+	}
+}
+
 // describeDomain renders a domain for the API.
 //
 // Every domain comes with it because one of the answers is not a property of
 // the domain alone: which names its mail arrives at depends on what the domain
 // says and, when it says nothing, on which domain owns the server's name.
-func describeDomain(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain, records *dns.RecordSet) *Domain {
+func describeDomain(configuration *config.Configuration, domain *models.Domain, domains []*models.Domain,
+	records *dns.RecordSet, publication *db.BimiPublication) *Domain {
 	described := &Domain{
 		ID:                       domain.ID,
 		Domain:                   domain.Domain,
@@ -518,6 +575,7 @@ func describeDomain(configuration *config.Configuration, domain *models.Domain, 
 		LinkHostname:             configuration.LinkHostFor(domain, domains),
 		DKIMSelector:             domain.DKIM.Selector,
 		HasDKIMKey:               domain.DKIM.PrivateKey != "",
+		Logo:                     describeLogo(publication),
 	}
 	for _, alias := range domain.Aliases {
 		described.Aliases = append(described.Aliases, describeAlias(alias))

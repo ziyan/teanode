@@ -307,6 +307,15 @@ export const zh: Catalog = {
   'domain.change': '需修改',
   'domain.optional': '可选',
   'domain.checkAgain': '重新检查',
+  'domain.logoTitle': '你的标识',
+  'domain.logoIntro': '收件方在你的邮件旁显示的标识，也就是上面 BIMI 记录所指向的文件。上传后由本服务器托管，该域名无需自建网站。',
+  'domain.logoNone': '此域名尚未发布标识。',
+  'domain.logoUpload': '上传标识',
+  'domain.logoReplace': '更换标识',
+  'domain.logoRefused': '该文件无法发布。',
+  'domain.logoTitleIs': '标题为“{title}”，读屏软件会用它来代替图形。',
+  'domain.logoUploaded': '发布于',
+  'domain.logoCertificate': '文件必须是 BIMI 允许的受限 SVG：不含脚本、不含动画、不引用外部资源，且为正方形。发布前会先检查，并指出具体问题。Gmail 与 Yahoo 只对同时持有 VMC（认证标识证书）的发件人显示标识；该证书基于注册商标签发、每年续费，费用约一千美元，其他收件方则无需证书即可显示。取得证书后，把它的地址填入记录的 a= 标签。',
 
   'domain.linkHostTitle': '邮件里的图片',
   'domain.linkHostIntro':

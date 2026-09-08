@@ -4495,6 +4495,18 @@ label.check-list-item {
   height: 100%;
   object-fit: contain;
 }
+/* The mark a domain publishes, beside what is known about it. */
+.domain-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.domain-logo-about {
+  min-width: 0;
+  font-size: 13px;
+}
+
 /* A name with its mark beside it, on one line. */
 .sender-row {
   display: inline-flex;
