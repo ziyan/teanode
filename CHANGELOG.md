@@ -69,6 +69,15 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A message is delivered into a mailbox once however many of a domain's
+  aliases point at that mailbox. A domain with a catch-all into a mailbox and
+  a named address into the same mailbox matched both for that address and put
+  two copies in the Inbox. A message you address to yourself still arrives:
+  being in Sent does not count as being delivered.
+- Every message the server stores now belongs to a conversation. Only mail
+  that arrived from outside had one; a message you sent, a draft, and a
+  message a mail program appended over IMAP were all stored with no
+  conversation, so a reply stood apart from what it answered.
 - The IMAP settings — the host and ports a mail program is told to connect to
   for reading mail — were not among the sections written to the database, so
   they reset to the ports the process happens to bind every time the server

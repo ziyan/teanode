@@ -579,9 +579,28 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 		}
 		flags := flagsFromList(options.Flags)
 		mail := mailFromMessage(self.mailbox, headers, body, flags, options.Time)
+		// A program that keeps its own copy of what it sent appends it here,
+		// and that copy answers something. Without a conversation it reads as
+		// a message nobody replied to, beside the one it is the reply to.
+		threadId, err := mx.ThreadIDFor(tx, headers)
+		if err != nil {
+			return err
+		}
+		mail.ThreadID = threadId
 		created, err := tx.CreateMail(mail, nil)
 		if err != nil {
 			return err
+		}
+		if created.ThreadID == "" {
+			// It starts a conversation of its own; the id is known only once
+			// the row exists.
+			if _, err := tx.ModifyMail(created.ID, func(mail *models.Mail) error {
+				mail.ThreadID = mail.ID
+				return nil
+			}, nil); err != nil {
+				return err
+			}
+			created.ThreadID = created.ID
 		}
 		if err := self.settings.Storage.Put(context.Background(), created.ID, headers, body); err != nil {
 			return err

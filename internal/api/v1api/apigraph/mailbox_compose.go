@@ -276,7 +276,14 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 
 	recipients := append(append(append([]string{}, message.To...), message.Cc...), message.Bcc...)
 	now := time.Now()
+	// A draft reply belongs to the conversation it answers, so that it shows
+	// in it rather than as a message of its own with nothing around it.
+	threadId, err := mx.ThreadIDFor(tx, composed.Headers)
+	if err != nil {
+		return nil, err
+	}
 	created, err := tx.CreateMail(&models.Mail{
+		ThreadID:   threadId,
 		DomainID:   domain.ID,
 		EnvelopeID: composed.ID,
 		Sender:     message.From,
@@ -293,6 +300,17 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	}, nil)
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if created.ThreadID == "" {
+		// A draft that answers nothing starts a conversation of its own, and
+		// the id is known only once the row exists.
+		if _, err := tx.ModifyMail(created.ID, func(mail *models.Mail) error {
+			mail.ThreadID = mail.ID
+			return nil
+		}, nil); err != nil {
+			return nil, err
+		}
+		created.ThreadID = created.ID
 	}
 	if err := self.storage.Put(ctx, created.ID, composed.Headers, composed.Body); err != nil {
 		return nil, err
