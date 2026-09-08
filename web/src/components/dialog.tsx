@@ -15,6 +15,7 @@ export function FormDialog({
   busy,
   error,
   canSubmit = true,
+  wide,
   onSubmit,
   onClose,
   children,
@@ -24,6 +25,9 @@ export function FormDialog({
   busy?: boolean
   error?: string | null
   canSubmit?: boolean
+  // For a form that is a handful of rows rather than a field or two — a
+  // mailbox rule, where a condition is three controls on one line.
+  wide?: boolean
   onSubmit: () => void
   onClose: () => void
   children: React.ReactNode
@@ -49,7 +53,7 @@ export function FormDialog({
   return (
     <div className="dialog-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <form
-        className="dialog"
+        className={wide ? 'dialog dialog-wide' : 'dialog'}
         ref={form}
         role="dialog"
         aria-modal="true"

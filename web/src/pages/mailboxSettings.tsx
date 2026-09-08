@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
-import { ErrorMessage, Loading, formatTime } from '../components/common'
+import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -12,7 +12,16 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from '../components/folderIcon'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
-import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  ToggleOffIcon,
+  ToggleOnIcon,
+  TrashIcon,
+} from '../components/icons'
 
 // What a mailbox is set up to do, in four tabs: what it is called and how
 // it signs, its folders, the rules that sort what arrives, and the reply it
@@ -515,15 +524,66 @@ function cleanRules(rules: MailboxRule[]): MailboxRule[] {
   }))
 }
 
+// describeCondition and describeAction say what a rule does in a line, for
+// the list. The list is read far more often than it is edited — somebody
+// comes to it to find out where their mail is going — and a page of open
+// forms is the worst thing to read that with.
+function describeCondition(
+  condition: MailboxRule['conditions'][number],
+  t: (key: Key, values?: Record<string, string | number>) => string,
+): string {
+  const field = t(FIELD_LABELS[condition.field] ?? 'mailboxSettings.fieldAny')
+  if (condition.field === 'sender-known' || condition.field === 'any') {
+    return field
+  }
+  const name = condition.field === 'header' && condition.header ? ` ${condition.header}` : ''
+  const operator = t(OPERATOR_LABELS[condition.operator] ?? 'mailboxSettings.operatorContains')
+  return `${field}${name} ${operator} ${condition.value ?? ''}`.trim()
+}
+
+function describeAction(
+  action: MailboxRule['actions'][number],
+  t: (key: Key, values?: Record<string, string | number>) => string,
+  folderName: (folderId?: string | null) => string,
+): string {
+  const kind = t(ACTION_LABELS[action.kind] ?? 'mailboxSettings.actionMove')
+  if (action.kind === 'move') {
+    return `${kind} ${folderName(action.folderId)}`
+  }
+  if (action.kind === 'forward') {
+    return `${kind} ${action.address ?? ''}`.trim()
+  }
+  return kind
+}
+
 function RulesTab({ view }: { view: MailboxView }) {
   const { t } = useTranslation()
-  const { busy, error, saved, save, touch } = useSave()
+  const { busy, error, save } = useSave()
   const [rules, setRules] = useState<MailboxRule[]>(() => cleanRules(view.mailbox.rules ?? []))
-  const [dirty, setDirty] = useState(false)
+  // Which rule the dialog is for: its place in the list, or -1 for one that
+  // does not exist yet. A rule is eight fields and two repeating groups, and
+  // editing it in the row made the list jump about while it was being read.
+  const [editing, setEditing] = useState<{ at: number; rule: MailboxRule } | null>(null)
+  const [deleting, setDeleting] = useState<{ at: number; rule: MailboxRule } | null>(null)
   const folders = folderRows(view.folders)
+  const folderName = (folderId?: string | null) => {
+    const found = folders.find((row) => row.folder.id === folderId)
+    return found ? folderLabel(t, found.folder) : t('mailboxSettings.chooseFolder')
+  }
 
-  // The dry run: the rules as they are on the page, against the newest
-  // messages in the Inbox, saved or not.
+  // Every change to the list is saved as it is made. There is no half-edited
+  // state worth keeping on the page: the dialog is where a rule is unfinished,
+  // and the list behind it is what the server has.
+  const commit = (next: MailboxRule[]) =>
+    save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(next) }).then((done) => {
+      if (done) {
+        setRules(next)
+      }
+      return done
+    })
+
+  // The dry run: the rules as the server has them, against the newest
+  // messages in the Inbox.
   type Trial = {
     matched: number[]
     item: { id: string; mail?: { from?: string; sender?: string; subject?: string } | null }
@@ -548,123 +608,200 @@ function RulesTab({ view }: { view: MailboxView }) {
     }
   }
 
-  const update = (index: number, change: (rule: MailboxRule) => MailboxRule) => {
-    setRules((previous) => previous.map((rule, at) => (at === index ? change(rule) : rule)))
-    setDirty(true)
-    touch()
-  }
-  const move = (index: number, by: number) => {
-    setRules((previous) => {
-      const next = [...previous]
-      const target = index + by
-      if (target < 0 || target >= next.length) {
-        return previous
-      }
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-    setDirty(true)
-    touch()
+  const move = (at: number, by: number) => {
+    const target = at + by
+    if (target < 0 || target >= rules.length) {
+      return
+    }
+    const next = [...rules]
+    ;[next[at], next[target]] = [next[target], next[at]]
+    void commit(next)
   }
 
+  // What the dialog is editing, kept apart from the list so that cancelling
+  // leaves nothing behind.
+  const change = (make: (rule: MailboxRule) => MailboxRule) =>
+    setEditing((previous) => (previous ? { ...previous, rule: make(previous.rule) } : previous))
+
+  const rule = editing?.rule
+
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        void save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(rules) }).then(
-          (done) => done && setDirty(false),
-        )
-      }}
-    >
+    <>
       <SettingsSection
+        card
         title={t('mailboxSettings.tabRules')}
         description={t('mailboxSettings.rulesHint')}
         action={
-          <button
-            className="primary"
-            type="button"
-            onClick={() => {
-              setRules((previous) => [...previous, emptyRule()])
-              setDirty(true)
-              touch()
-            }}
-          >
+          <button className="primary" type="button" onClick={() => setEditing({ at: -1, rule: emptyRule() })}>
             {t('mailboxSettings.addRule')}
           </button>
         }
       >
-        {rules.length === 0 && <SettingsEmpty>{t('mailboxSettings.noRules')}</SettingsEmpty>}
+        <ErrorMessage error={error} />
+        {rules.length === 0 ? (
+          <SettingsEmpty>{t('mailboxSettings.noRules')}</SettingsEmpty>
+        ) : (
+          rules.map((entry, at) => (
+            <SettingsRow
+              key={at}
+              title={entry.name || t('mailboxSettings.ruleUnnamed')}
+              badge={
+                <>
+                  {!entry.enabled && <Tag value={t('mailboxSettings.ruleOff')} />}
+                  {entry.stop && <Tag value={t('mailboxSettings.ruleStops')} />}
+                </>
+              }
+              subtitle={
+                <>
+                  {t('mailboxSettings.ruleWhen', {
+                    conditions: entry.conditions.map((condition) => describeCondition(condition, t)).join(', '),
+                  })}
+                  {' · '}
+                  {t('mailboxSettings.ruleThen', {
+                    actions: entry.actions.map((action) => describeAction(action, t, folderName)).join(', '),
+                  })}
+                </>
+              }
+              actions={
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t(entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t(
+                      entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable',
+                    )}`}
+                    aria-pressed={entry.enabled}
+                    disabled={busy}
+                    onClick={() =>
+                      void commit(
+                        rules.map((item, index) => (index === at ? { ...item, enabled: !item.enabled } : item)),
+                      )
+                    }
+                  >
+                    {entry.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('mailboxSettings.moveUp')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveUp')}`}
+                    disabled={busy || at === 0}
+                    onClick={() => move(at, -1)}
+                  >
+                    <ArrowUpIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('mailboxSettings.moveDown')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveDown')}`}
+                    disabled={busy || at === rules.length - 1}
+                    onClick={() => move(at, 1)}
+                  >
+                    <ArrowDownIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('common.edit')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.edit')}`}
+                    disabled={busy}
+                    onClick={() => setEditing({ at, rule: entry })}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    title={t('common.remove')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.remove')}`}
+                    disabled={busy}
+                    onClick={() => setDeleting({ at, rule: entry })}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </div>
+              }
+            />
+          ))
+        )}
+        {rules.length > 0 && (
+          <div className="page-actions">
+            <button type="button" disabled={trying} onClick={() => tryRules()}>
+              {t('mailboxSettings.tryRules')}
+            </button>
+          </div>
+        )}
       </SettingsSection>
-      {rules.map((rule, index) => (
-        <div className="card rule" key={index}>
-          <div className="rule-head">
+
+      <ErrorMessage error={trialError} />
+      {trials && (
+        <SettingsSection card title={t('mailboxSettings.trialTitle')} description={t('mailboxSettings.trialHint')}>
+          {trials.length === 0 ? (
+            <SettingsEmpty>{t('mailbox.nothing')}</SettingsEmpty>
+          ) : (
+            <table>
+              <tbody>
+                {trials.map((trial) => (
+                  <tr key={trial.item.id}>
+                    <td className="shrink muted">{trial.item.mail?.from || trial.item.mail?.sender}</td>
+                    <td>{trial.item.mail?.subject || t('mailbox.noSubject')}</td>
+                    <td className="shrink">
+                      {trial.matched.length === 0 ? (
+                        <span className="muted">{t('mailboxSettings.trialNoMatch')}</span>
+                      ) : (
+                        trial.matched.map((index) => rules[index]?.name || `#${index + 1}`).join(', ')
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </SettingsSection>
+      )}
+
+      {editing && rule && (
+        <FormDialog
+          wide
+          title={editing.at < 0 ? t('mailboxSettings.addRule') : t('mailboxSettings.editRule')}
+          submitLabel={editing.at < 0 ? t('common.create') : t('common.save')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          canSubmit={rule.name.trim() !== ''}
+          onClose={() => setEditing(null)}
+          onSubmit={() => {
+            const next =
+              editing.at < 0 ? [...rules, rule] : rules.map((entry, at) => (at === editing.at ? rule : entry))
+            void commit(next).then((done) => done && setEditing(null))
+          }}
+        >
+          <label>
+            {t('mailboxSettings.ruleName')}
             <input
-              placeholder={t('mailboxSettings.ruleName')}
-              aria-label={t('mailboxSettings.ruleName')}
               value={rule.name}
-              onChange={(event) => update(index, (current) => ({ ...current, name: event.target.value }))}
+              onChange={(event) => change((current) => ({ ...current, name: event.target.value }))}
               required
             />
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={rule.enabled}
-                onChange={(event) => update(index, (current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              {t('mailboxSettings.ruleEnabled')}
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={rule.stop}
-                onChange={(event) => update(index, (current) => ({ ...current, stop: event.target.checked }))}
-              />
-              {t('mailboxSettings.ruleStop')}
-            </label>
-            <div className="row-actions">
-              <button
-                type="button"
-                className="icon-action"
-                title={t('mailboxSettings.moveUp')}
-                aria-label={`${rule.name || t('mailboxSettings.ruleName')}: ${t('mailboxSettings.moveUp')}`}
-                disabled={index === 0}
-                onClick={() => move(index, -1)}
-              >
-                <ArrowUpIcon size={16} />
-              </button>
-              <button
-                type="button"
-                className="icon-action"
-                title={t('mailboxSettings.moveDown')}
-                aria-label={`${rule.name || t('mailboxSettings.ruleName')}: ${t('mailboxSettings.moveDown')}`}
-                disabled={index === rules.length - 1}
-                onClick={() => move(index, 1)}
-              >
-                <ArrowDownIcon size={16} />
-              </button>
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('common.remove')}
-                aria-label={`${rule.name || t('mailboxSettings.ruleName')}: ${t('common.remove')}`}
-                onClick={() => {
-                  setRules((previous) => previous.filter((_, at) => at !== index))
-                  setDirty(true)
-                  touch()
-                }}
-              >
-                <TrashIcon size={16} />
-              </button>
-            </div>
-          </div>
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={rule.stop}
+              onChange={(event) => change((current) => ({ ...current, stop: event.target.checked }))}
+            />
+            {t('mailboxSettings.ruleStop')}
+          </label>
 
-          <h4>{t('mailboxSettings.conditions')}</h4>
+          <div className="field-label">{t('mailboxSettings.conditions')}</div>
           {rule.conditions.map((condition, conditionIndex) => (
             <div className="rule-line" key={conditionIndex}>
               <select
+                aria-label={t('mailboxSettings.conditions')}
                 value={condition.field}
                 onChange={(event) =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     conditions: current.conditions.map((item, at) =>
                       at === conditionIndex
@@ -691,9 +828,10 @@ function RulesTab({ view }: { view: MailboxView }) {
               {condition.field === 'header' && (
                 <input
                   placeholder={t('mailboxSettings.headerName')}
+                  aria-label={t('mailboxSettings.headerName')}
                   value={condition.header ?? ''}
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       conditions: current.conditions.map((item, at) =>
                         at === conditionIndex ? { ...item, header: event.target.value } : item,
@@ -705,9 +843,10 @@ function RulesTab({ view }: { view: MailboxView }) {
               {!['sender-known', 'any'].includes(condition.field) && (
                 <>
                   <select
+                    aria-label={t('mailboxSettings.operator')}
                     value={condition.operator}
                     onChange={(event) =>
-                      update(index, (current) => ({
+                      change((current) => ({
                         ...current,
                         conditions: current.conditions.map((item, at) =>
                           at === conditionIndex ? { ...item, operator: event.target.value } : item,
@@ -722,9 +861,10 @@ function RulesTab({ view }: { view: MailboxView }) {
                     ))}
                   </select>
                   <input
+                    aria-label={t('mailboxSettings.value')}
                     value={condition.value ?? ''}
                     onChange={(event) =>
-                      update(index, (current) => ({
+                      change((current) => ({
                         ...current,
                         conditions: current.conditions.map((item, at) =>
                           at === conditionIndex ? { ...item, value: event.target.value } : item,
@@ -736,16 +876,18 @@ function RulesTab({ view }: { view: MailboxView }) {
               )}
               <button
                 type="button"
-                className="link danger"
+                className="icon-action danger"
+                title={t('common.remove')}
+                aria-label={t('common.remove')}
                 disabled={rule.conditions.length === 1}
                 onClick={() =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     conditions: current.conditions.filter((_, at) => at !== conditionIndex),
                   }))
                 }
               >
-                {t('common.remove')}
+                <TrashIcon size={16} />
               </button>
             </div>
           ))}
@@ -753,7 +895,7 @@ function RulesTab({ view }: { view: MailboxView }) {
             type="button"
             className="link"
             onClick={() =>
-              update(index, (current) => ({
+              change((current) => ({
                 ...current,
                 conditions: [...current.conditions, { field: 'subject', operator: 'contains', value: '' }],
               }))
@@ -762,13 +904,14 @@ function RulesTab({ view }: { view: MailboxView }) {
             {t('mailboxSettings.addCondition')}
           </button>
 
-          <h4>{t('mailboxSettings.actions')}</h4>
+          <div className="field-label">{t('mailboxSettings.actions')}</div>
           {rule.actions.map((action, actionIndex) => (
             <div className="rule-line" key={actionIndex}>
               <select
+                aria-label={t('mailboxSettings.actions')}
                 value={action.kind}
                 onChange={(event) =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     actions: current.actions.map((item, at) =>
                       at === actionIndex ? { ...item, kind: event.target.value } : item,
@@ -784,10 +927,11 @@ function RulesTab({ view }: { view: MailboxView }) {
               </select>
               {action.kind === 'move' && (
                 <select
+                  aria-label={t('mailboxSettings.chooseFolder')}
                   value={action.folderId ?? ''}
                   required
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       actions: current.actions.map((item, at) =>
                         at === actionIndex ? { ...item, folderId: event.target.value } : item,
@@ -808,9 +952,10 @@ function RulesTab({ view }: { view: MailboxView }) {
                   type="email"
                   required
                   placeholder={t('mailboxSettings.forwardTo')}
+                  aria-label={t('mailboxSettings.forwardTo')}
                   value={action.address ?? ''}
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       actions: current.actions.map((item, at) =>
                         at === actionIndex ? { ...item, address: event.target.value } : item,
@@ -821,69 +966,47 @@ function RulesTab({ view }: { view: MailboxView }) {
               )}
               <button
                 type="button"
-                className="link danger"
+                className="icon-action danger"
+                title={t('common.remove')}
+                aria-label={t('common.remove')}
                 disabled={rule.actions.length === 1}
                 onClick={() =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     actions: current.actions.filter((_, at) => at !== actionIndex),
                   }))
                 }
               >
-                {t('common.remove')}
+                <TrashIcon size={16} />
               </button>
             </div>
           ))}
           <button
             type="button"
             className="link"
-            onClick={() =>
-              update(index, (current) => ({ ...current, actions: [...current.actions, { kind: 'markRead' }] }))
-            }
+            onClick={() => change((current) => ({ ...current, actions: [...current.actions, { kind: 'markRead' }] }))}
           >
             {t('mailboxSettings.addAction')}
           </button>
-        </div>
-      ))}
-
-      {error ? <ErrorMessage error={error} /> : null}
-      <div className="page-actions">
-        <button type="button" disabled={trying || rules.length === 0} onClick={() => tryRules()}>
-          {t('mailboxSettings.tryRules')}
-        </button>
-        <button className="primary" type="submit" disabled={busy || !dirty}>
-          {t('common.save')}
-        </button>
-        {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
-      </div>
-
-      {trialError ? <ErrorMessage error={trialError} /> : null}
-      {trials && (
-        <SettingsSection card title={t('mailboxSettings.trialTitle')} description={t('mailboxSettings.trialHint')}>
-          {trials.length === 0 ? (
-            <SettingsEmpty>{t('mailbox.nothing')}</SettingsEmpty>
-          ) : (
-            <table>
-              <tbody>
-                {trials.map((trial) => (
-                  <tr key={trial.item.id}>
-                    <td className="shrink muted">{trial.item.mail?.from || trial.item.mail?.sender}</td>
-                    <td>{trial.item.mail?.subject || t('mailbox.noSubject')}</td>
-                    <td className="shrink">
-                      {trial.matched.length === 0 ? (
-                        <span className="muted">{t('mailboxSettings.trialNoMatch')}</span>
-                      ) : (
-                        trial.matched.map((index) => rules[index]?.name || `#${index + 1}`).join(', ')
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </SettingsSection>
+        </FormDialog>
       )}
-    </form>
+
+      {deleting && (
+        <ConfirmDialog
+          title={t('mailboxSettings.removeRule')}
+          body={t('mailboxSettings.removeRuleConfirm', {
+            name: deleting.rule.name || t('mailboxSettings.ruleUnnamed'),
+          })}
+          confirmLabel={t('common.remove')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          onConfirm={() =>
+            void commit(rules.filter((_, at) => at !== deleting.at)).then((done) => done && setDeleting(null))
+          }
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -914,6 +1037,9 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
   const [until, setUntil] = useState(toLocalInput(existing?.until))
   const [subject, setSubject] = useState(existing?.subject ?? '')
   const [text, setText] = useState(existing?.text ?? '')
+  const [html, setHtml] = useState(existing?.html ?? '')
+  // The reply is a message, so it is written the way a message is written.
+  const [editor, setEditor] = useState<'rich' | 'plain'>(existing?.html ? 'rich' : 'plain')
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -935,7 +1061,16 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
         event.preventDefault()
         void save(UPDATE, {
           mailboxId: view.mailbox.id,
-          autoReply: { enabled, from: fromLocalInput(from), until: fromLocalInput(until), subject, text, html: '' },
+          autoReply: {
+            enabled,
+            from: fromLocalInput(from),
+            until: fromLocalInput(until),
+            subject,
+            // Rich text keeps a plain rendering for whoever cannot read the
+            // other; plain text has no HTML form, and the server sends the
+            // plain one.
+            ...(editor === 'rich' ? { text: htmlToText(html), html } : { text, html: '' }),
+          },
         }).then(() => setDirty(false))
       }}
     >
@@ -963,15 +1098,46 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
             onChange={(event) => change(setSubject)(event.target.value)}
           />
         </label>
-        <label>
-          {t('mailboxSettings.autoReplyText')}
+        <div className="field-label">{t('mailboxSettings.autoReplyText')}</div>
+        <div className="segmented compose-editor-switch" role="group">
+          <button
+            type="button"
+            className={editor === 'rich' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'plain') {
+                setHtml(textToHtml(text))
+              }
+              setEditor('rich')
+              change(setDirty)(true)
+            }}
+          >
+            {t('compose.mailbox.richText')}
+          </button>
+          <button
+            type="button"
+            className={editor === 'plain' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'rich') {
+                setText(htmlToText(html))
+              }
+              setEditor('plain')
+              change(setDirty)(true)
+            }}
+          >
+            {t('compose.mailbox.plainText')}
+          </button>
+        </div>
+        {editor === 'rich' ? (
+          <RichTextEditor value={html} onChange={(next) => change(setHtml)(next)} />
+        ) : (
           <textarea
             rows={6}
+            aria-label={t('mailboxSettings.autoReplyText')}
             value={text}
             required={enabled}
             onChange={(event) => change(setText)(event.target.value)}
           />
-        </label>
+        )}
         {error ? <ErrorMessage error={error} /> : null}
         <div className="page-actions">
           <button className="primary" type="submit" disabled={busy || !dirty}>

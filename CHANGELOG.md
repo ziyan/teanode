@@ -54,6 +54,13 @@ Notable changes to TeaNode. The format follows
   pinned area, whatever it was nested under.
 - The button that unpins a folder is a pin with a line through it, in the rail
   and on the Folders tab. Both states used to be the same picture.
+- Mailbox rules are a list of what each one does, and a rule is added or
+  changed in a dialog. The tab used to be every rule open as a form at once,
+  which is the wrong shape for the thing people come to it for: finding out
+  where their mail is going. Turning a rule on and off and moving it up and
+  down stay on the row, since those are what is done to a rule most often.
+- The automatic reply is written in the editor the compose page uses, like the
+  signature.
 - A mailbox's signature is written in the editor the compose page uses, with
   the same Rich text and Plain text switch. It used to be two boxes side by
   side, one of them asking for HTML source — and the HTML one is what actually

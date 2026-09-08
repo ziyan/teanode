@@ -153,6 +153,27 @@ export function PinIcon(props: IconProps) {
   )
 }
 
+// A switch, drawn on and drawn off: the two states of a rule that is running
+// or is not. Two pictures rather than one dimmed one, because a single icon
+// at half strength is a state nobody reads correctly the first time.
+export function ToggleOnIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="17" cy="12" r="2.5" fill="currentColor" />
+    </Icon>
+  )
+}
+
+export function ToggleOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="7" cy="12" r="2.5" />
+    </Icon>
+  )
+}
+
 export function PinOffIcon(props: IconProps) {
   return (
     <Icon {...props}>
