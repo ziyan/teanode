@@ -163,9 +163,14 @@ export interface Passkey {
 }
 
 export async function beginPasskeyAssertion(): Promise<PasskeyCeremony> {
-  const data = await graphql<{ BeginPasskeyAssertion: PasskeyCeremony }>(
-    `mutation { BeginPasskeyAssertion { ceremonyId options } }`,
-  )
+  const data = await graphql<{ BeginPasskeyAssertion: PasskeyCeremony }>(`
+    mutation {
+      BeginPasskeyAssertion {
+        ceremonyId
+        options
+      }
+    }
+  `)
   return data.BeginPasskeyAssertion
 }
 
@@ -611,4 +616,38 @@ export interface MailboxItem {
 export interface MailboxItemPage {
   items: MailboxItem[]
   total: number
+}
+
+// A conversation as a folder's list shows one: the newest of its messages in
+// that folder, how many there are, and who has written.
+export interface MailboxThread {
+  threadId: string
+  item: MailboxItem
+  count: number
+  unread: number
+  flagged: boolean
+  participants: string[]
+  itemIds: string[]
+}
+
+export interface MailboxThreadPage {
+  threads: MailboxThread[]
+  total: number
+}
+
+// One message of a conversation, and the folder it is filed in.
+export interface MailboxThreadItem {
+  item: MailboxItem
+  folderId: string
+  folderName: string
+  folderKind: string
+}
+
+// A conversation as it is read: every message of it in this mailbox, newest
+// first, whatever folder each is in.
+export interface MailboxThreadView {
+  threadId: string
+  subject: string
+  items: MailboxThreadItem[]
+  truncated: boolean
 }

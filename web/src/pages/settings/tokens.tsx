@@ -86,7 +86,7 @@ export function TokensPage() {
           </button>
         }
       >
-        {problem && <p className="error">{problem}</p>}
+        <ErrorMessage error={problem} />
         {loading && !data && <Loading />}
         {error ? <ErrorMessage error={error} /> : null}
         {data && tokens.length === 0 && <SettingsEmpty>{t('tokens.empty')}</SettingsEmpty>}

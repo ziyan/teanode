@@ -2,15 +2,26 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
-import { ErrorMessage, Loading, formatTime } from '../components/common'
+import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
-import { ConfirmDialog } from '../components/dialog'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from '../components/folderIcon'
-import { MoveIcon, PencilIcon, PinIcon, TrashIcon } from '../components/icons'
+import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  ToggleOffIcon,
+  ToggleOnIcon,
+  TrashIcon,
+} from '../components/icons'
 
 // What a mailbox is set up to do, in four tabs: what it is called and how
 // it signs, its folders, the rules that sort what arrives, and the reply it
@@ -137,74 +148,118 @@ function GeneralTab({ view }: { view: MailboxView }) {
   const [name, setName] = useState(mailbox.name)
   const [signatureText, setSignatureText] = useState(mailbox.signatureText ?? '')
   const [signatureHtml, setSignatureHtml] = useState(mailbox.signatureHtml ?? '')
+  // A signature is written the way a message is: formatted, or not. Two boxes
+  // side by side, one of them asking for HTML source, made the reader answer
+  // a question about storage that is the program's to answer — and the second
+  // box is what actually goes out, so leaving it empty quietly meant the
+  // signature only appeared on plain messages.
+  const [editor, setEditor] = useState<'rich' | 'plain'>(mailbox.signatureHtml ? 'rich' : 'plain')
   const { busy, error, saved, save, touch } = useSave()
+
+  // What will be sent, which is the editor in front of you and the other form
+  // derived from it. A signature written as rich text keeps a plain rendering
+  // for plain messages; one written as plain text has no HTML form at all,
+  // and the server falls back to the plain one.
+  const signature =
+    editor === 'rich'
+      ? { signatureHtml, signatureText: htmlToText(signatureHtml) }
+      : { signatureHtml: '', signatureText }
 
   const changed =
     name !== mailbox.name ||
-    signatureText !== (mailbox.signatureText ?? '') ||
-    signatureHtml !== (mailbox.signatureHtml ?? '')
+    signature.signatureText !== (mailbox.signatureText ?? '') ||
+    signature.signatureHtml !== (mailbox.signatureHtml ?? '')
 
   return (
     <>
       <form
-        className="card form-narrow"
+        className="card"
         onSubmit={(event) => {
           event.preventDefault()
-          void save(UPDATE, { mailboxId: mailbox.id, name: name.trim(), signatureText, signatureHtml })
+          void save(UPDATE, { mailboxId: mailbox.id, name: name.trim(), ...signature })
         }}
       >
-        <label>
-          {t('mailboxSettings.name')}
-          <input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value)
-              touch()
-            }}
-            required
-          />
-        </label>
-        <p className="muted field-hint">{t('mailboxSettings.nameHint')}</p>
+        <h3>{t('mailboxSettings.tabGeneral')}</h3>
+        <p className="muted">{t('mailboxSettings.generalHint')}</p>
+        {/* The fields are capped, not the card: a narrow card beside a wide
+            one reads as two different pages. */}
+        <div className="form-narrow">
+          <label>
+            {t('mailboxSettings.name')}
+            <input
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value)
+                touch()
+              }}
+              required
+            />
+          </label>
+          <p className="muted field-hint">{t('mailboxSettings.nameHint')}</p>
 
-        <label>
-          {t('mailboxSettings.signatureText')}
-          <textarea
-            rows={4}
-            value={signatureText}
-            onChange={(event) => {
-              setSignatureText(event.target.value)
-              touch()
-            }}
-          />
-        </label>
-        <label>
-          {t('mailboxSettings.signatureHtml')}
-          <textarea
-            rows={4}
-            className="mono"
-            value={signatureHtml}
-            onChange={(event) => {
-              setSignatureHtml(event.target.value)
-              touch()
-            }}
-          />
-        </label>
-        <p className="muted field-hint">{t('mailboxSettings.signatureHint')}</p>
+          <div className="field-label">{t('mailboxSettings.signature')}</div>
+          <div className="segmented compose-editor-switch" role="group">
+            <button
+              type="button"
+              className={editor === 'rich' ? 'active' : ''}
+              onClick={() => {
+                if (editor === 'plain') {
+                  setSignatureHtml(textToHtml(signatureText))
+                }
+                setEditor('rich')
+                touch()
+              }}
+            >
+              {t('compose.mailbox.richText')}
+            </button>
+            <button
+              type="button"
+              className={editor === 'plain' ? 'active' : ''}
+              onClick={() => {
+                if (editor === 'rich') {
+                  setSignatureText(htmlToText(signatureHtml))
+                }
+                setEditor('plain')
+                touch()
+              }}
+            >
+              {t('compose.mailbox.plainText')}
+            </button>
+          </div>
+          <div className="signature-editor">
+            {editor === 'rich' ? (
+              <RichTextEditor
+                value={signatureHtml}
+                onChange={(next) => {
+                  setSignatureHtml(next)
+                  touch()
+                }}
+              />
+            ) : (
+              <textarea
+                rows={5}
+                aria-label={t('mailboxSettings.signature')}
+                value={signatureText}
+                onChange={(event) => {
+                  setSignatureText(event.target.value)
+                  touch()
+                }}
+              />
+            )}
+          </div>
+          <p className="muted field-hint">{t('mailboxSettings.signatureHint')}</p>
 
-        {error ? <ErrorMessage error={error} /> : null}
-        <div className="page-actions">
-          <button className="primary" type="submit" disabled={busy || !changed || !name.trim()}>
-            {t('common.save')}
-          </button>
-          {saved && !changed && <span className="muted">{t('common.saved')}</span>}
+          {error ? <ErrorMessage error={error} /> : null}
+          <div className="page-actions">
+            <button className="primary" type="submit" disabled={busy || !changed || !name.trim()}>
+              {t('common.save')}
+            </button>
+            {saved && !changed && <span className="muted">{t('common.saved')}</span>}
+          </div>
         </div>
       </form>
 
-      <div className="card">
-        <h3>{t('mailboxSettings.addresses')}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          {t('mailboxSettings.addressesHint')}
-        </p>
+      <SettingsSection card title={t('mailboxSettings.addresses')} description={t('mailboxSettings.addressesHint')}>
         {mailbox.addresses?.length ? (
           <table>
             <tbody>
@@ -217,11 +272,9 @@ function GeneralTab({ view }: { view: MailboxView }) {
             </tbody>
           </table>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>
-            {t('mailbox.noAddress')}
-          </p>
+          <SettingsEmpty>{t('mailbox.noAddress')}</SettingsEmpty>
         )}
-      </div>
+      </SettingsSection>
     </>
   )
 }
@@ -229,13 +282,16 @@ function GeneralTab({ view }: { view: MailboxView }) {
 function FoldersTab({ view }: { view: MailboxView }) {
   const { t } = useTranslation()
   const { busy, error, save } = useSave()
+  // Adding a folder and changing one are the same two questions — what it is
+  // called, and what it sits inside — so they are one dialog, opened empty or
+  // filled in. They were forms in the page: a card of two fields under the
+  // list for adding, and a row that turned into a form for changing, which
+  // made the list jump about while it was being read.
+  const [editing, setEditing] = useState<MailboxFolder | null>(null)
+  const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
-  const [renaming, setRenaming] = useState<MailboxFolder | null>(null)
-  const [renameTo, setRenameTo] = useState('')
   const [deleting, setDeleting] = useState<MailboxFolder | null>(null)
-  const [moving, setMoving] = useState<MailboxFolder | null>(null)
-  const [moveTo, setMoveTo] = useState('')
   const rows = folderRows(view.folders)
 
   // A folder cannot go inside itself or anything under it.
@@ -254,173 +310,132 @@ function FoldersTab({ view }: { view: MailboxView }) {
     return inside
   }
 
+  const open = (folder: MailboxFolder | null) => {
+    setName(folder ? folder.name : '')
+    setParentId(folder ? (folder.parentId ?? '') : '')
+    setEditing(folder)
+    setAdding(folder === null)
+  }
+  const close = () => {
+    setEditing(null)
+    setAdding(false)
+  }
+
+  // What a folder may sit inside: anything but itself and its own children.
+  const parents = editing ? rows.filter((row) => !insideOf(editing).has(row.folder.id)) : rows
+
   return (
     <>
-      <div className="card">
-        <h3>{t('mailboxSettings.folders')}</h3>
-        {error ? <ErrorMessage error={error} /> : null}
+      <SettingsSection
+        card
+        title={t('mailboxSettings.folders')}
+        action={
+          <button className="primary" type="button" onClick={() => open(null)}>
+            {t('mailboxSettings.newFolder')}
+          </button>
+        }
+      >
+        <ErrorMessage error={error} />
         <table className="folders-table">
           <tbody>
             {rows.map(({ folder, depth }) => (
               <tr key={folder.id}>
-                {renaming?.id === folder.id || moving?.id === folder.id ? (
-                  // Renaming or moving takes the whole row: the count and
-                  // the actions mean nothing while the folder is being
-                  // changed, and the form needs the width on a phone.
-                  <td colSpan={3} style={{ paddingLeft: 8 + depth * 20 }}>
-                    {renaming?.id === folder.id ? (
-                      <form
-                        className="inline-form"
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          void save(UPDATE_FOLDER, { folderId: folder.id, name: renameTo.trim() }).then((done) => done && setRenaming(null))
-                        }}
+                <td style={{ paddingLeft: 8 + depth * 20 }}>
+                  <span className="folder-name">
+                    <FolderKindIcon kind={folder.kind} size={16} />
+                    {folderLabel(t, folder)}
+                  </span>
+                </td>
+                <td className="shrink muted hide-narrow">{folder.total}</td>
+                <td className="shrink">
+                  {/* Only the owner's own folders can be renamed or removed;
+                      the system folders are what the mailbox is. Any of
+                      them but the Inbox, which is always at the top, can
+                      be pinned up there beside it. */}
+                  {folder.kind !== 'inbox' && (
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className={folder.pinnedAt ? 'icon-action pinned' : 'icon-action'}
+                        title={t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}
+                        aria-label={`${folderLabel(t, folder)}: ${t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
+                        aria-pressed={Boolean(folder.pinnedAt)}
+                        disabled={busy}
+                        onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
                       >
-                        <input value={renameTo} onChange={(event) => setRenameTo(event.target.value)} autoFocus required />
-                        <button type="submit" className="primary" disabled={busy || !renameTo.trim()}>
-                          {t('common.save')}
-                        </button>
-                        <button type="button" onClick={() => setRenaming(null)}>
-                          {t('common.cancel')}
-                        </button>
-                      </form>
-                    ) : (
-                      <form
-                        className="inline-form"
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          void save(UPDATE_FOLDER, { folderId: folder.id, parentId: moveTo }).then((done) => done && setMoving(null))
-                        }}
-                      >
-                        <select value={moveTo} onChange={(event) => setMoveTo(event.target.value)} autoFocus>
-                          <option value="">{t('mailboxSettings.folderTop')}</option>
-                          {rows
-                            .filter((candidate) => !insideOf(folder).has(candidate.folder.id))
-                            .map((candidate) => (
-                              <option key={candidate.folder.id} value={candidate.folder.id}>
-                                {'  '.repeat(candidate.depth) + folderLabel(t, candidate.folder)}
-                              </option>
-                            ))}
-                        </select>
-                        <button type="submit" className="primary" disabled={busy || moveTo === (folder.parentId ?? '')}>
-                          {t('common.save')}
-                        </button>
-                        <button type="button" onClick={() => setMoving(null)}>
-                          {t('common.cancel')}
-                        </button>
-                      </form>
-                    )}
-                  </td>
-                ) : (
-                  <>
-                    <td style={{ paddingLeft: 8 + depth * 20 }}>
-                      <span className="folder-name">
-                        <FolderKindIcon kind={folder.kind} size={16} />
-                        {folderLabel(t, folder)}
-                      </span>
-                    </td>
-                    <td className="shrink muted hide-narrow">{folder.total}</td>
-                    <td className="shrink">
-                      {/* Only the owner's own folders can be renamed or removed;
-                          the system folders are what the mailbox is. Any of
-                          them but the Inbox, which is always at the top, can
-                          be pinned up there beside it. */}
-                      {folder.kind !== 'inbox' && (
-                        <div className="row-actions">
+                        {folder.pinnedAt ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
+                      </button>
+                      {!folder.kind && (
+                        <>
                           <button
                             type="button"
-                            className={folder.pinnedAt ? 'icon-action pinned' : 'icon-action'}
-                            title={t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}
-                            aria-label={`${folderLabel(t, folder)}: ${t(folder.pinnedAt ? 'mailbox.unpin' : 'mailbox.pinToTop')}`}
-                            aria-pressed={Boolean(folder.pinnedAt)}
+                            className="icon-action"
+                            title={t('common.edit')}
+                            aria-label={`${folder.name}: ${t('common.edit')}`}
                             disabled={busy}
-                            onClick={() => void save(PIN_FOLDER, { folderId: folder.id, pinned: !folder.pinnedAt })}
+                            onClick={() => open(folder)}
                           >
-                            <PinIcon size={16} />
+                            <PencilIcon size={16} />
                           </button>
-                          {!folder.kind && (
-                            <>
-                              <button
-                                type="button"
-                                className="icon-action"
-                                title={t('common.rename')}
-                                aria-label={`${folder.name}: ${t('common.rename')}`}
-                                disabled={busy}
-                                onClick={() => {
-                                  setRenaming(folder)
-                                  setRenameTo(folder.name)
-                                }}
-                              >
-                                <PencilIcon size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-action"
-                                title={t('common.move')}
-                                aria-label={`${folder.name}: ${t('common.move')}`}
-                                disabled={busy}
-                                onClick={() => {
-                                  setMoving(folder)
-                                  setMoveTo(folder.parentId ?? '')
-                                }}
-                              >
-                                <MoveIcon size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-action danger"
-                                title={t('common.delete')}
-                                aria-label={`${folder.name}: ${t('common.delete')}`}
-                                disabled={busy}
-                                onClick={() => setDeleting(folder)}
-                              >
-                                <TrashIcon size={16} />
-                              </button>
-                            </>
-                          )}
-                        </div>
+                          <button
+                            type="button"
+                            className="icon-action danger"
+                            title={t('common.delete')}
+                            aria-label={`${folder.name}: ${t('common.delete')}`}
+                            disabled={busy}
+                            onClick={() => setDeleting(folder)}
+                          >
+                            <TrashIcon size={16} />
+                          </button>
+                        </>
                       )}
-                    </td>
-                  </>
-                )}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </SettingsSection>
 
-      <form
-        className="card form-narrow"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void save(CREATE_FOLDER, { mailboxId: view.mailbox.id, name: name.trim(), parentId: parentId || undefined }).then(
-            (done) => done && setName(''),
-          )
-        }}
-      >
-        <h3>{t('mailboxSettings.newFolder')}</h3>
-        <label>
-          {t('mailboxSettings.folderName')}
-          <input value={name} onChange={(event) => setName(event.target.value)} required />
-        </label>
-        <label>
-          {t('mailboxSettings.folderParent')}
-          <select value={parentId} onChange={(event) => setParentId(event.target.value)}>
-            <option value="">{t('mailboxSettings.folderTop')}</option>
-            {rows.map(({ folder, depth }) => (
-              <option key={folder.id} value={folder.id}>
-                {'  '.repeat(depth) + folderLabel(t, folder)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {error ? <ErrorMessage error={error} /> : null}
-        <div className="page-actions">
-          <button className="primary" type="submit" disabled={busy || !name.trim()}>
-            {t('common.create')}
-          </button>
-        </div>
-      </form>
+      {(adding || editing) && (
+        <FormDialog
+          title={editing ? t('mailboxSettings.editFolder', { name: editing.name }) : t('mailboxSettings.newFolder')}
+          submitLabel={editing ? t('common.save') : t('common.create')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          canSubmit={name.trim() !== ''}
+          onClose={close}
+          onSubmit={() => {
+            const done = (ok: boolean) => ok && close()
+            if (editing) {
+              void save(UPDATE_FOLDER, { folderId: editing.id, name: name.trim(), parentId }).then(done)
+              return
+            }
+            void save(CREATE_FOLDER, {
+              mailboxId: view.mailbox.id,
+              name: name.trim(),
+              parentId: parentId || undefined,
+            }).then(done)
+          }}
+        >
+          <label>
+            {t('mailboxSettings.folderName')}
+            <input value={name} onChange={(event) => setName(event.target.value)} autoFocus required />
+          </label>
+          <label>
+            {t('mailboxSettings.folderParent')}
+            <select value={parentId} onChange={(event) => setParentId(event.target.value)}>
+              <option value="">{t('mailboxSettings.folderTop')}</option>
+              {parents.map(({ folder, depth }) => (
+                <option key={folder.id} value={folder.id}>
+                  {'  '.repeat(depth) + folderLabel(t, folder)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </FormDialog>
+      )}
 
       {deleting && (
         <ConfirmDialog
@@ -428,6 +443,7 @@ function FoldersTab({ view }: { view: MailboxView }) {
           body={t('mailboxSettings.deleteFolderConfirm', { name: deleting.name, count: deleting.total })}
           confirmLabel={t('common.delete')}
           busy={busy}
+          error={error instanceof Error ? error.message : null}
           onConfirm={() => save(DELETE_FOLDER, { folderId: deleting.id }).then((done) => done && setDeleting(null))}
           onClose={() => setDeleting(null)}
         />
@@ -496,28 +512,82 @@ function cleanRules(rules: MailboxRule[]): MailboxRule[] {
     stop: rule.stop,
     conditions: rule.conditions.map((condition) => ({
       field: condition.field,
-      header: condition.field === 'header' ? condition.header ?? '' : '',
+      header: condition.field === 'header' ? (condition.header ?? '') : '',
       operator: ['sender-known', 'any'].includes(condition.field) ? '' : condition.operator,
       value: condition.value ?? '',
     })),
     actions: rule.actions.map((action) => ({
       kind: action.kind,
-      folderId: action.kind === 'move' ? action.folderId ?? '' : '',
-      address: action.kind === 'forward' ? action.address ?? '' : '',
+      folderId: action.kind === 'move' ? (action.folderId ?? '') : '',
+      address: action.kind === 'forward' ? (action.address ?? '') : '',
     })),
   }))
 }
 
+// describeCondition and describeAction say what a rule does in a line, for
+// the list. The list is read far more often than it is edited — somebody
+// comes to it to find out where their mail is going — and a page of open
+// forms is the worst thing to read that with.
+function describeCondition(
+  condition: MailboxRule['conditions'][number],
+  t: (key: Key, values?: Record<string, string | number>) => string,
+): string {
+  const field = t(FIELD_LABELS[condition.field] ?? 'mailboxSettings.fieldAny')
+  if (condition.field === 'sender-known' || condition.field === 'any') {
+    return field
+  }
+  const name = condition.field === 'header' && condition.header ? ` ${condition.header}` : ''
+  const operator = t(OPERATOR_LABELS[condition.operator] ?? 'mailboxSettings.operatorContains')
+  return `${field}${name} ${operator} ${condition.value ?? ''}`.trim()
+}
+
+function describeAction(
+  action: MailboxRule['actions'][number],
+  t: (key: Key, values?: Record<string, string | number>) => string,
+  folderName: (folderId?: string | null) => string,
+): string {
+  const kind = t(ACTION_LABELS[action.kind] ?? 'mailboxSettings.actionMove')
+  if (action.kind === 'move') {
+    return `${kind} ${folderName(action.folderId)}`
+  }
+  if (action.kind === 'forward') {
+    return `${kind} ${action.address ?? ''}`.trim()
+  }
+  return kind
+}
+
 function RulesTab({ view }: { view: MailboxView }) {
   const { t } = useTranslation()
-  const { busy, error, saved, save, touch } = useSave()
+  const { busy, error, save } = useSave()
   const [rules, setRules] = useState<MailboxRule[]>(() => cleanRules(view.mailbox.rules ?? []))
-  const [dirty, setDirty] = useState(false)
+  // Which rule the dialog is for: its place in the list, or -1 for one that
+  // does not exist yet. A rule is eight fields and two repeating groups, and
+  // editing it in the row made the list jump about while it was being read.
+  const [editing, setEditing] = useState<{ at: number; rule: MailboxRule } | null>(null)
+  const [deleting, setDeleting] = useState<{ at: number; rule: MailboxRule } | null>(null)
   const folders = folderRows(view.folders)
+  const folderName = (folderId?: string | null) => {
+    const found = folders.find((row) => row.folder.id === folderId)
+    return found ? folderLabel(t, found.folder) : t('mailboxSettings.chooseFolder')
+  }
 
-  // The dry run: the rules as they are on the page, against the newest
-  // messages in the Inbox, saved or not.
-  type Trial = { matched: number[]; item: { id: string; mail?: { from?: string; sender?: string; subject?: string } | null } }
+  // Every change to the list is saved as it is made. There is no half-edited
+  // state worth keeping on the page: the dialog is where a rule is unfinished,
+  // and the list behind it is what the server has.
+  const commit = (next: MailboxRule[]) =>
+    save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(next) }).then((done) => {
+      if (done) {
+        setRules(next)
+      }
+      return done
+    })
+
+  // The dry run: the rules as the server has them, against the newest
+  // messages in the Inbox.
+  type Trial = {
+    matched: number[]
+    item: { id: string; mail?: { from?: string; sender?: string; subject?: string } | null }
+  }
   const [trials, setTrials] = useState<Trial[] | null>(null)
   const [trying, setTrying] = useState(false)
   const [trialError, setTrialError] = useState<unknown>(null)
@@ -538,94 +608,200 @@ function RulesTab({ view }: { view: MailboxView }) {
     }
   }
 
-  const update = (index: number, change: (rule: MailboxRule) => MailboxRule) => {
-    setRules((previous) => previous.map((rule, at) => (at === index ? change(rule) : rule)))
-    setDirty(true)
-    touch()
+  const move = (at: number, by: number) => {
+    const target = at + by
+    if (target < 0 || target >= rules.length) {
+      return
+    }
+    const next = [...rules]
+    ;[next[at], next[target]] = [next[target], next[at]]
+    void commit(next)
   }
-  const move = (index: number, by: number) => {
-    setRules((previous) => {
-      const next = [...previous]
-      const target = index + by
-      if (target < 0 || target >= next.length) {
-        return previous
-      }
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-    setDirty(true)
-    touch()
-  }
+
+  // What the dialog is editing, kept apart from the list so that cancelling
+  // leaves nothing behind.
+  const change = (make: (rule: MailboxRule) => MailboxRule) =>
+    setEditing((previous) => (previous ? { ...previous, rule: make(previous.rule) } : previous))
+
+  const rule = editing?.rule
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        void save(UPDATE, { mailboxId: view.mailbox.id, rules: cleanRules(rules) }).then((done) => done && setDirty(false))
-      }}
-    >
-      <p className="muted">{t('mailboxSettings.rulesHint')}</p>
-      {rules.length === 0 && (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            {t('mailboxSettings.noRules')}
-          </p>
-        </div>
+    <>
+      <SettingsSection
+        card
+        title={t('mailboxSettings.tabRules')}
+        description={t('mailboxSettings.rulesHint')}
+        action={
+          <button className="primary" type="button" onClick={() => setEditing({ at: -1, rule: emptyRule() })}>
+            {t('mailboxSettings.addRule')}
+          </button>
+        }
+      >
+        <ErrorMessage error={error} />
+        {rules.length === 0 ? (
+          <SettingsEmpty>{t('mailboxSettings.noRules')}</SettingsEmpty>
+        ) : (
+          rules.map((entry, at) => (
+            <SettingsRow
+              key={at}
+              title={entry.name || t('mailboxSettings.ruleUnnamed')}
+              badge={
+                <>
+                  {!entry.enabled && <Tag value={t('mailboxSettings.ruleOff')} />}
+                  {entry.stop && <Tag value={t('mailboxSettings.ruleStops')} />}
+                </>
+              }
+              subtitle={
+                <>
+                  {t('mailboxSettings.ruleWhen', {
+                    conditions: entry.conditions.map((condition) => describeCondition(condition, t)).join(', '),
+                  })}
+                  {' · '}
+                  {t('mailboxSettings.ruleThen', {
+                    actions: entry.actions.map((action) => describeAction(action, t, folderName)).join(', '),
+                  })}
+                </>
+              }
+              actions={
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t(entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t(
+                      entry.enabled ? 'mailboxSettings.ruleDisable' : 'mailboxSettings.ruleEnable',
+                    )}`}
+                    aria-pressed={entry.enabled}
+                    disabled={busy}
+                    onClick={() =>
+                      void commit(
+                        rules.map((item, index) => (index === at ? { ...item, enabled: !item.enabled } : item)),
+                      )
+                    }
+                  >
+                    {entry.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('mailboxSettings.moveUp')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveUp')}`}
+                    disabled={busy || at === 0}
+                    onClick={() => move(at, -1)}
+                  >
+                    <ArrowUpIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('mailboxSettings.moveDown')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('mailboxSettings.moveDown')}`}
+                    disabled={busy || at === rules.length - 1}
+                    onClick={() => move(at, 1)}
+                  >
+                    <ArrowDownIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('common.edit')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.edit')}`}
+                    disabled={busy}
+                    onClick={() => setEditing({ at, rule: entry })}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    title={t('common.remove')}
+                    aria-label={`${entry.name || t('mailboxSettings.ruleUnnamed')}: ${t('common.remove')}`}
+                    disabled={busy}
+                    onClick={() => setDeleting({ at, rule: entry })}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </div>
+              }
+            />
+          ))
+        )}
+        {rules.length > 0 && (
+          <div className="page-actions">
+            <button type="button" disabled={trying} onClick={() => tryRules()}>
+              {t('mailboxSettings.tryRules')}
+            </button>
+          </div>
+        )}
+      </SettingsSection>
+
+      <ErrorMessage error={trialError} />
+      {trials && (
+        <SettingsSection card title={t('mailboxSettings.trialTitle')} description={t('mailboxSettings.trialHint')}>
+          {trials.length === 0 ? (
+            <SettingsEmpty>{t('mailbox.nothing')}</SettingsEmpty>
+          ) : (
+            <table>
+              <tbody>
+                {trials.map((trial) => (
+                  <tr key={trial.item.id}>
+                    <td className="shrink muted">{trial.item.mail?.from || trial.item.mail?.sender}</td>
+                    <td>{trial.item.mail?.subject || t('mailbox.noSubject')}</td>
+                    <td className="shrink">
+                      {trial.matched.length === 0 ? (
+                        <span className="muted">{t('mailboxSettings.trialNoMatch')}</span>
+                      ) : (
+                        trial.matched.map((index) => rules[index]?.name || `#${index + 1}`).join(', ')
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </SettingsSection>
       )}
-      {rules.map((rule, index) => (
-        <div className="card rule" key={index}>
-          <div className="rule-head">
+
+      {editing && rule && (
+        <FormDialog
+          wide
+          title={editing.at < 0 ? t('mailboxSettings.addRule') : t('mailboxSettings.editRule')}
+          submitLabel={editing.at < 0 ? t('common.create') : t('common.save')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          canSubmit={rule.name.trim() !== ''}
+          onClose={() => setEditing(null)}
+          onSubmit={() => {
+            const next =
+              editing.at < 0 ? [...rules, rule] : rules.map((entry, at) => (at === editing.at ? rule : entry))
+            void commit(next).then((done) => done && setEditing(null))
+          }}
+        >
+          <label>
+            {t('mailboxSettings.ruleName')}
             <input
-              placeholder={t('mailboxSettings.ruleName')}
-              aria-label={t('mailboxSettings.ruleName')}
               value={rule.name}
-              onChange={(event) => update(index, (current) => ({ ...current, name: event.target.value }))}
+              onChange={(event) => change((current) => ({ ...current, name: event.target.value }))}
               required
             />
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={rule.enabled}
-                onChange={(event) => update(index, (current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              {t('mailboxSettings.ruleEnabled')}
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={rule.stop}
-                onChange={(event) => update(index, (current) => ({ ...current, stop: event.target.checked }))}
-              />
-              {t('mailboxSettings.ruleStop')}
-            </label>
-            <div className="row-actions">
-              <button type="button" className="link" disabled={index === 0} onClick={() => move(index, -1)}>
-                {t('mailboxSettings.moveUp')}
-              </button>
-              <button type="button" className="link" disabled={index === rules.length - 1} onClick={() => move(index, 1)}>
-                {t('mailboxSettings.moveDown')}
-              </button>
-              <button
-                type="button"
-                className="link danger"
-                onClick={() => {
-                  setRules((previous) => previous.filter((_, at) => at !== index))
-                  setDirty(true)
-                  touch()
-                }}
-              >
-                {t('common.remove')}
-              </button>
-            </div>
-          </div>
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={rule.stop}
+              onChange={(event) => change((current) => ({ ...current, stop: event.target.checked }))}
+            />
+            {t('mailboxSettings.ruleStop')}
+          </label>
 
-          <h4>{t('mailboxSettings.conditions')}</h4>
+          <div className="field-label">{t('mailboxSettings.conditions')}</div>
           {rule.conditions.map((condition, conditionIndex) => (
             <div className="rule-line" key={conditionIndex}>
               <select
+                aria-label={t('mailboxSettings.conditions')}
                 value={condition.field}
                 onChange={(event) =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     conditions: current.conditions.map((item, at) =>
                       at === conditionIndex
@@ -652,9 +828,10 @@ function RulesTab({ view }: { view: MailboxView }) {
               {condition.field === 'header' && (
                 <input
                   placeholder={t('mailboxSettings.headerName')}
+                  aria-label={t('mailboxSettings.headerName')}
                   value={condition.header ?? ''}
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       conditions: current.conditions.map((item, at) =>
                         at === conditionIndex ? { ...item, header: event.target.value } : item,
@@ -666,9 +843,10 @@ function RulesTab({ view }: { view: MailboxView }) {
               {!['sender-known', 'any'].includes(condition.field) && (
                 <>
                   <select
+                    aria-label={t('mailboxSettings.operator')}
                     value={condition.operator}
                     onChange={(event) =>
-                      update(index, (current) => ({
+                      change((current) => ({
                         ...current,
                         conditions: current.conditions.map((item, at) =>
                           at === conditionIndex ? { ...item, operator: event.target.value } : item,
@@ -683,9 +861,10 @@ function RulesTab({ view }: { view: MailboxView }) {
                     ))}
                   </select>
                   <input
+                    aria-label={t('mailboxSettings.value')}
                     value={condition.value ?? ''}
                     onChange={(event) =>
-                      update(index, (current) => ({
+                      change((current) => ({
                         ...current,
                         conditions: current.conditions.map((item, at) =>
                           at === conditionIndex ? { ...item, value: event.target.value } : item,
@@ -697,16 +876,18 @@ function RulesTab({ view }: { view: MailboxView }) {
               )}
               <button
                 type="button"
-                className="link danger"
+                className="icon-action danger"
+                title={t('common.remove')}
+                aria-label={t('common.remove')}
                 disabled={rule.conditions.length === 1}
                 onClick={() =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     conditions: current.conditions.filter((_, at) => at !== conditionIndex),
                   }))
                 }
               >
-                {t('common.remove')}
+                <TrashIcon size={16} />
               </button>
             </div>
           ))}
@@ -714,7 +895,7 @@ function RulesTab({ view }: { view: MailboxView }) {
             type="button"
             className="link"
             onClick={() =>
-              update(index, (current) => ({
+              change((current) => ({
                 ...current,
                 conditions: [...current.conditions, { field: 'subject', operator: 'contains', value: '' }],
               }))
@@ -723,13 +904,14 @@ function RulesTab({ view }: { view: MailboxView }) {
             {t('mailboxSettings.addCondition')}
           </button>
 
-          <h4>{t('mailboxSettings.actions')}</h4>
+          <div className="field-label">{t('mailboxSettings.actions')}</div>
           {rule.actions.map((action, actionIndex) => (
             <div className="rule-line" key={actionIndex}>
               <select
+                aria-label={t('mailboxSettings.actions')}
                 value={action.kind}
                 onChange={(event) =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     actions: current.actions.map((item, at) =>
                       at === actionIndex ? { ...item, kind: event.target.value } : item,
@@ -745,10 +927,11 @@ function RulesTab({ view }: { view: MailboxView }) {
               </select>
               {action.kind === 'move' && (
                 <select
+                  aria-label={t('mailboxSettings.chooseFolder')}
                   value={action.folderId ?? ''}
                   required
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       actions: current.actions.map((item, at) =>
                         at === actionIndex ? { ...item, folderId: event.target.value } : item,
@@ -769,9 +952,10 @@ function RulesTab({ view }: { view: MailboxView }) {
                   type="email"
                   required
                   placeholder={t('mailboxSettings.forwardTo')}
+                  aria-label={t('mailboxSettings.forwardTo')}
                   value={action.address ?? ''}
                   onChange={(event) =>
-                    update(index, (current) => ({
+                    change((current) => ({
                       ...current,
                       actions: current.actions.map((item, at) =>
                         at === actionIndex ? { ...item, address: event.target.value } : item,
@@ -782,85 +966,47 @@ function RulesTab({ view }: { view: MailboxView }) {
               )}
               <button
                 type="button"
-                className="link danger"
+                className="icon-action danger"
+                title={t('common.remove')}
+                aria-label={t('common.remove')}
                 disabled={rule.actions.length === 1}
                 onClick={() =>
-                  update(index, (current) => ({
+                  change((current) => ({
                     ...current,
                     actions: current.actions.filter((_, at) => at !== actionIndex),
                   }))
                 }
               >
-                {t('common.remove')}
+                <TrashIcon size={16} />
               </button>
             </div>
           ))}
           <button
             type="button"
             className="link"
-            onClick={() =>
-              update(index, (current) => ({ ...current, actions: [...current.actions, { kind: 'markRead' }] }))
-            }
+            onClick={() => change((current) => ({ ...current, actions: [...current.actions, { kind: 'markRead' }] }))}
           >
             {t('mailboxSettings.addAction')}
           </button>
-        </div>
-      ))}
-
-      {error ? <ErrorMessage error={error} /> : null}
-      <div className="page-actions">
-        <button
-          type="button"
-          onClick={() => {
-            setRules((previous) => [...previous, emptyRule()])
-            setDirty(true)
-            touch()
-          }}
-        >
-          {t('mailboxSettings.addRule')}
-        </button>
-        <button type="button" disabled={trying || rules.length === 0} onClick={() => tryRules()}>
-          {t('mailboxSettings.tryRules')}
-        </button>
-        <button className="primary" type="submit" disabled={busy || !dirty}>
-          {t('common.save')}
-        </button>
-        {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
-      </div>
-
-      {trialError ? <ErrorMessage error={trialError} /> : null}
-      {trials && (
-        <div className="card">
-          <h3>{t('mailboxSettings.trialTitle')}</h3>
-          <p className="muted" style={{ marginTop: 0 }}>
-          {t('mailboxSettings.trialHint')}
-        </p>
-          {trials.length === 0 ? (
-            <p className="muted" style={{ margin: 0 }}>
-              {t('mailbox.nothing')}
-            </p>
-          ) : (
-            <table>
-              <tbody>
-                {trials.map((trial) => (
-                  <tr key={trial.item.id}>
-                    <td className="shrink muted">{trial.item.mail?.from || trial.item.mail?.sender}</td>
-                    <td>{trial.item.mail?.subject || t('mailbox.noSubject')}</td>
-                    <td className="shrink">
-                      {trial.matched.length === 0 ? (
-                        <span className="muted">{t('mailboxSettings.trialNoMatch')}</span>
-                      ) : (
-                        trial.matched.map((index) => rules[index]?.name || `#${index + 1}`).join(', ')
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        </FormDialog>
       )}
-    </form>
+
+      {deleting && (
+        <ConfirmDialog
+          title={t('mailboxSettings.removeRule')}
+          body={t('mailboxSettings.removeRuleConfirm', {
+            name: deleting.rule.name || t('mailboxSettings.ruleUnnamed'),
+          })}
+          confirmLabel={t('common.remove')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          onConfirm={() =>
+            void commit(rules.filter((_, at) => at !== deleting.at)).then((done) => done && setDeleting(null))
+          }
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -891,61 +1037,114 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
   const [until, setUntil] = useState(toLocalInput(existing?.until))
   const [subject, setSubject] = useState(existing?.subject ?? '')
   const [text, setText] = useState(existing?.text ?? '')
+  const [html, setHtml] = useState(existing?.html ?? '')
+  // The reply is a message, so it is written the way a message is written.
+  const [editor, setEditor] = useState<'rich' | 'plain'>(existing?.html ? 'rich' : 'plain')
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     setDirty(false)
   }, [view.mailbox.id])
 
-  const change = <T,>(set: (value: T) => void) => (value: T) => {
-    set(value)
-    setDirty(true)
-    touch()
-  }
+  const change =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value)
+      setDirty(true)
+      touch()
+    }
 
   return (
     <form
-      className="card form-narrow"
+      className="card"
       onSubmit={(event) => {
         event.preventDefault()
         void save(UPDATE, {
           mailboxId: view.mailbox.id,
-          autoReply: { enabled, from: fromLocalInput(from), until: fromLocalInput(until), subject, text, html: '' },
+          autoReply: {
+            enabled,
+            from: fromLocalInput(from),
+            until: fromLocalInput(until),
+            subject,
+            // Rich text keeps a plain rendering for whoever cannot read the
+            // other; plain text has no HTML form, and the server sends the
+            // plain one.
+            ...(editor === 'rich' ? { text: htmlToText(html), html } : { text, html: '' }),
+          },
         }).then(() => setDirty(false))
       }}
     >
+      <h3>{t('mailboxSettings.tabAutoReply')}</h3>
       <p className="muted">{t('mailboxSettings.autoReplyHint')}</p>
-      <label className="check">
-        <input type="checkbox" checked={enabled} onChange={(event) => change(setEnabled)(event.target.checked)} />
-        {t('mailboxSettings.autoReplyEnabled')}
-      </label>
-      <label>
-        {t('mailboxSettings.autoReplyFrom')}
-        <input type="datetime-local" value={from} onChange={(event) => change(setFrom)(event.target.value)} />
-      </label>
-      <label>
-        {t('mailboxSettings.autoReplyUntil')}
-        <input type="datetime-local" value={until} onChange={(event) => change(setUntil)(event.target.value)} />
-      </label>
-      <p className="muted field-hint">{t('mailboxSettings.autoReplyWhenHint')}</p>
-      <label>
-        {t('mailboxSettings.autoReplySubject')}
-        <input
-          value={subject}
-          placeholder={t('mailboxSettings.autoReplySubjectHint')}
-          onChange={(event) => change(setSubject)(event.target.value)}
-        />
-      </label>
-      <label>
-        {t('mailboxSettings.autoReplyText')}
-        <textarea rows={6} value={text} required={enabled} onChange={(event) => change(setText)(event.target.value)} />
-      </label>
-      {error ? <ErrorMessage error={error} /> : null}
-      <div className="page-actions">
-        <button className="primary" type="submit" disabled={busy || !dirty}>
-          {t('common.save')}
-        </button>
-        {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
+      <div className="form-narrow">
+        <label className="checkbox">
+          <input type="checkbox" checked={enabled} onChange={(event) => change(setEnabled)(event.target.checked)} />
+          {t('mailboxSettings.autoReplyEnabled')}
+        </label>
+        <label>
+          {t('mailboxSettings.autoReplyFrom')}
+          <input type="datetime-local" value={from} onChange={(event) => change(setFrom)(event.target.value)} />
+        </label>
+        <label>
+          {t('mailboxSettings.autoReplyUntil')}
+          <input type="datetime-local" value={until} onChange={(event) => change(setUntil)(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('mailboxSettings.autoReplyWhenHint')}</p>
+        <label>
+          {t('mailboxSettings.autoReplySubject')}
+          <input
+            value={subject}
+            placeholder={t('mailboxSettings.autoReplySubjectHint')}
+            onChange={(event) => change(setSubject)(event.target.value)}
+          />
+        </label>
+        <div className="field-label">{t('mailboxSettings.autoReplyText')}</div>
+        <div className="segmented compose-editor-switch" role="group">
+          <button
+            type="button"
+            className={editor === 'rich' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'plain') {
+                setHtml(textToHtml(text))
+              }
+              setEditor('rich')
+              change(setDirty)(true)
+            }}
+          >
+            {t('compose.mailbox.richText')}
+          </button>
+          <button
+            type="button"
+            className={editor === 'plain' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'rich') {
+                setText(htmlToText(html))
+              }
+              setEditor('plain')
+              change(setDirty)(true)
+            }}
+          >
+            {t('compose.mailbox.plainText')}
+          </button>
+        </div>
+        {editor === 'rich' ? (
+          <RichTextEditor value={html} onChange={(next) => change(setHtml)(next)} />
+        ) : (
+          <textarea
+            rows={6}
+            aria-label={t('mailboxSettings.autoReplyText')}
+            value={text}
+            required={enabled}
+            onChange={(event) => change(setText)(event.target.value)}
+          />
+        )}
+        {error ? <ErrorMessage error={error} /> : null}
+        <div className="page-actions">
+          <button className="primary" type="submit" disabled={busy || !dirty}>
+            {t('common.save')}
+          </button>
+          {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
+        </div>
       </div>
     </form>
   )
@@ -977,6 +1176,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
     { refresh: false },
   )
   const [name, setName] = useState('')
+  const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [created, setCreated] = useState<{ password: string; username: string; name: string } | null>(null)
@@ -994,6 +1194,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
         name: response.CreateMailboxAppPassword.appPassword.name,
       })
       setName('')
+      setAdding(false)
       setError(null)
       await query.reload()
     } catch (failure) {
@@ -1026,88 +1227,97 @@ function DevicesTab({ view }: { view: MailboxView }) {
 
   return (
     <>
-      {created && (
-        <div className="card">
-          <h3>{t('mailboxSettings.appPasswordCreated', { name: created.name })}</h3>
-          <p className="muted">{t('mailboxSettings.appPasswordOnce')}</p>
-          <table className="detail">
-            <tbody>
-              <tr>
-                <td className="shrink muted">{t('mailboxSettings.deviceUsername')}</td>
-                <td className="mono">{created.username}</td>
-              </tr>
-              <tr>
-                <td className="shrink muted">{t('mailboxSettings.devicePassword')}</td>
-                <td className="mono">{created.password}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="page-actions">
-            <button type="button" onClick={() => setCreated(null)}>
-              {t('mailboxSettings.appPasswordDone')}
-            </button>
-          </div>
-        </div>
+      <SettingsSection
+        card
+        title={t('mailboxSettings.devices')}
+        description={t('mailboxSettings.devicesHint')}
+        action={
+          <button
+            className="primary"
+            type="button"
+            disabled={!address}
+            title={address ? undefined : t('mailbox.noAddress')}
+            onClick={() => {
+              setName('')
+              setError(null)
+              setAdding(true)
+            }}
+          >
+            {t('mailboxSettings.newDevice')}
+          </button>
+        }
+      >
+        {error && !adding ? <ErrorMessage error={error} /> : null}
+        {appPasswords.length === 0 ? (
+          <SettingsEmpty>{t('mailboxSettings.noDevices')}</SettingsEmpty>
+        ) : (
+          appPasswords.map((appPassword) => (
+            <SettingsRow
+              key={appPassword.id}
+              title={appPassword.name}
+              subtitle={
+                <>
+                  {t('mailboxSettings.deviceCreated', { time: formatTime(appPassword.createdAt) })}
+                  {' · '}
+                  {appPassword.lastUsedAt ? (
+                    <>
+                      {t('mailboxSettings.deviceLastUsed')} <RelativeTime value={appPassword.lastUsedAt} />
+                    </>
+                  ) : (
+                    t('mailboxSettings.neverUsed')
+                  )}
+                </>
+              }
+              actions={
+                <button className="link danger" type="button" onClick={() => setDeleting(appPassword)}>
+                  {t('mailboxSettings.revoke')}
+                </button>
+              }
+            />
+          ))
+        )}
+      </SettingsSection>
+
+      {adding && (
+        <FormDialog
+          title={t('mailboxSettings.newDevice')}
+          submitLabel={t('common.create')}
+          busy={busy}
+          error={error instanceof Error ? error.message : null}
+          canSubmit={name.trim() !== ''}
+          onClose={() => setAdding(false)}
+          onSubmit={() => void create()}
+        >
+          <label>
+            <span>{t('mailboxSettings.deviceName')}</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t('mailboxSettings.deviceNameHint')}
+              autoFocus
+              required
+            />
+          </label>
+        </FormDialog>
       )}
 
-      <div className="card">
-        <h3>{t('mailboxSettings.devices')}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          {t('mailboxSettings.devicesHint')}
-        </p>
-        {appPasswords.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {t('mailboxSettings.noDevices')}
-          </p>
-        ) : (
-          <table>
-            <tbody>
-              {appPasswords.map((appPassword) => (
-                <tr key={appPassword.id}>
-                  <td>{appPassword.name}</td>
-                  <td className="shrink muted hide-narrow">{formatTime(appPassword.createdAt)}</td>
-                  <td className="shrink muted">
-                    {appPassword.lastUsedAt ? <RelativeTime value={appPassword.lastUsedAt} /> : t('mailboxSettings.neverUsed')}
-                  </td>
-                  <td className="shrink">
-                    <button type="button" className="link danger" onClick={() => setDeleting(appPassword)}>
-                      {t('mailboxSettings.revoke')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <form
-        className="card form-narrow"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void create()
-        }}
-      >
-        <h3>{t('mailboxSettings.newDevice')}</h3>
-        <label>
-          {t('mailboxSettings.deviceName')}
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('mailboxSettings.deviceNameHint')} required />
-        </label>
-        {!address && <p className="muted field-hint">{t('mailbox.noAddress')}</p>}
-        {error ? <ErrorMessage error={error} /> : null}
-        <div className="page-actions">
-          <button className="primary" type="submit" disabled={busy || !name.trim() || !address}>
-            {t('common.create')}
-          </button>
-        </div>
-      </form>
+      {/* The password is shown this once, so it is shown the way every other
+          one-time secret in the dashboard is: alone, with a copy button, and
+          no way to dismiss it by accident. */}
+      {created && (
+        <SecretDialog
+          title={t('mailboxSettings.appPasswordCreated', { name: created.name })}
+          intro={t('mailboxSettings.appPasswordOnce')}
+          secret={created.password}
+          extra={<p className="muted">{t('mailboxSettings.appPasswordUsername', { username: created.username })}</p>}
+          onDone={() => setCreated(null)}
+        />
+      )}
 
       {addresses && (
         <div className="card">
           <h3>{t('mailboxSettings.programSettings')}</h3>
-          <p className="muted" style={{ marginTop: 0 }}>
-          {t('mailboxSettings.programSettingsHint')}
-        </p>
+          <p className="muted">{t('mailboxSettings.programSettingsHint')}</p>
           <table className="detail program-settings">
             <tbody>
               <tr>
@@ -1120,7 +1330,8 @@ function DevicesTab({ view }: { view: MailboxView }) {
               <tr>
                 <td className="shrink muted">{t('mailboxSettings.outgoingServer')}</td>
                 <td className="mono">
-                  {addresses.submissionHost} · SMTP · {t('mailboxSettings.portStartTls', { port: addresses.submissionPort })}
+                  {addresses.submissionHost} · SMTP ·{' '}
+                  {t('mailboxSettings.portStartTls', { port: addresses.submissionPort })}
                 </td>
               </tr>
               <tr>

@@ -27,6 +27,12 @@ type MailboxQuery interface {
 
 	// Get one item with its message
 	GetMailboxItem(ctx context.Context, arguments GetMailboxItemArguments) (*models.MailboxItem, error)
+
+	// List a folder as conversations, newest first, one row for each
+	ListMailboxThreads(ctx context.Context, arguments ListMailboxThreadsArguments) (*MailboxThreadPage, error)
+
+	// Get the whole conversation a message belongs to, across every folder
+	GetMailboxThread(ctx context.Context, arguments GetMailboxThreadArguments) (*MailboxThreadView, error)
 }
 
 type MailboxMutation interface {
@@ -220,6 +226,10 @@ type ListMailboxItemsArguments struct {
 	// Words to search for, over subject, sender, recipients and text
 	Search *string `json:"search"`
 
+	// Only messages of one conversation. With a mailbox id and no folder,
+	// that is the whole conversation wherever its messages are filed.
+	ThreadID *string `json:"threadId"`
+
 	// How many, at most 200; and the item to continue after
 	First *int    `json:"first"`
 	After *string `json:"after"`
@@ -273,6 +283,9 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	if arguments.Search != nil {
 		options.Search = strings.TrimSpace(*arguments.Search)
 	}
+	if arguments.ThreadID != nil {
+		options.ThreadID = strings.TrimSpace(*arguments.ThreadID)
+	}
 	if arguments.First != nil && *arguments.First > 0 {
 		options.Limit = min(*arguments.First, 200)
 	}
@@ -313,6 +326,273 @@ func (self *graph) attachMails(ctx context.Context, items []*models.MailboxItem)
 		item.Mail = mails[index]
 	}
 	return nil
+}
+
+// Conversations. A conversation is every message sharing a thread id, which
+// the server works out from the In-Reply-To and References headers when it
+// stores a message. It is not a stored thing and has no id of its own beyond
+// the id of the message that started it.
+
+type ListMailboxThreadsArguments struct {
+	// ID of the folder; or empty with a mailbox id, for every folder at once
+	FolderID string `json:"folderId" graphapi:"nullable"`
+
+	// ID of the mailbox, to search all of it
+	MailboxID *string `json:"mailboxId"`
+
+	// The same filters a list of messages takes
+	From          *string    `json:"from"`
+	To            *string    `json:"to"`
+	Subject       *string    `json:"subject"`
+	Since         *time.Time `json:"since"`
+	Before        *time.Time `json:"before"`
+	HasAttachment *bool      `json:"hasAttachment"`
+	Unread        *bool      `json:"unread"`
+	Flagged       *bool      `json:"flagged"`
+	Search        *string    `json:"search"`
+
+	// How many to skip, and how many to return, at most 200
+	Offset *int `json:"offset"`
+	First  *int `json:"first"`
+}
+
+// MailboxThreadPage is one page of a folder's conversations, with how many
+// conversations the folder holds.
+type MailboxThreadPage struct {
+	Threads []*models.MailboxThread `json:"threads"`
+	Total   int64                   `json:"total"`
+}
+
+// ListMailboxThreads is a folder read as conversations rather than messages:
+// one row for each, carrying the newest of its messages in that folder.
+func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailboxThreadsArguments) (*MailboxThreadPage, error) {
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment}
+	folderId := arguments.FolderID
+	if folderId != "" {
+		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)
+		if err != nil {
+			return nil, err
+		}
+		folderId = folder.ID
+	} else if arguments.MailboxID != nil && *arguments.MailboxID != "" {
+		mailbox, err := self.requireMailbox(ctx, models.PermissionMailRead, *arguments.MailboxID)
+		if err != nil {
+			return nil, err
+		}
+		options.MailboxID = mailbox.ID
+	} else {
+		return nil, api.ErrInvalidArguments
+	}
+	if arguments.From != nil {
+		options.From = strings.TrimSpace(*arguments.From)
+	}
+	if arguments.To != nil {
+		options.To = strings.TrimSpace(*arguments.To)
+	}
+	if arguments.Subject != nil {
+		options.Subject = strings.TrimSpace(*arguments.Subject)
+	}
+	if arguments.Since != nil {
+		options.Since = *arguments.Since
+	}
+	if arguments.Before != nil {
+		options.Before = *arguments.Before
+	}
+	if arguments.Unread != nil {
+		options.Unseen = arguments.Unread
+	}
+	if arguments.Search != nil {
+		options.Search = strings.TrimSpace(*arguments.Search)
+	}
+	if arguments.Offset != nil && *arguments.Offset > 0 {
+		options.Offset = *arguments.Offset
+	}
+	if arguments.First != nil && *arguments.First > 0 {
+		options.Limit = min(*arguments.First, 200)
+	}
+	tx := self.transaction(ctx)
+	threads, err := tx.ListThreads(folderId, options)
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountThreads(folderId, options)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*models.MailboxItem, 0, len(threads))
+	for _, thread := range threads {
+		if thread.Item != nil {
+			items = append(items, thread.Item)
+		}
+	}
+	if err := self.attachMails(ctx, items); err != nil {
+		return nil, err
+	}
+	return &MailboxThreadPage{Threads: threads, Total: total}, nil
+}
+
+type GetMailboxThreadArguments struct {
+	// Any message of the conversation. The conversation is found from it, so
+	// that a link to a message keeps working.
+	ItemID string `json:"itemId"`
+}
+
+// MailboxThreadView is a conversation as it is read: every message of it in
+// this mailbox, newest first, whatever folder each is in.
+type MailboxThreadView struct {
+	// ThreadID is the id of the message that began the conversation.
+	ThreadID string `json:"threadId"`
+
+	// Subject is the conversation's subject, from its oldest message, with
+	// the Re: and Fwd: the answers added left off.
+	Subject string `json:"subject"`
+
+	// Items are its messages, newest first, each with the folder it is in.
+	Items []*MailboxThreadItem `json:"items"`
+
+	// Truncated says the conversation has more messages than were returned,
+	// so that a reader showing it can say so rather than quietly leaving
+	// the oldest out.
+	Truncated bool `json:"truncated"`
+}
+
+// threadLimit is how many messages of one conversation are returned. Long
+// enough that no ordinary conversation reaches it, and bounded because the
+// whole of it is rendered at once.
+const threadLimit = 200
+
+// MailboxThreadItem is one message of a conversation, and where it is filed.
+type MailboxThreadItem struct {
+	Item *models.MailboxItem `json:"item"`
+
+	// FolderID and FolderName say where this message is, so the reader can
+	// tell you a message of the conversation is in Archive or in Sent.
+	FolderID   string `json:"folderId"`
+	FolderName string `json:"folderName"`
+
+	// FolderKind is the folder's kind — inbox, sent, drafts and so on, or
+	// empty for a folder the owner made.
+	FolderKind string `json:"folderKind"`
+}
+
+// GetMailboxThread is the whole conversation a message belongs to, across
+// every folder of that mailbox.
+//
+// Across folders rather than within one because the answers are in Sent while
+// the conversation is being read from the Inbox, and a conversation missing
+// your own replies reads as though you never answered.
+func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThreadArguments) (*MailboxThreadView, error) {
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailRead, []string{arguments.ItemID})
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	mails, err := tx.GetMails([]string{items[0].MailID}, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(mails) == 0 || mails[0] == nil {
+		return nil, api.ErrNotFound
+	}
+	threadId := mails[0].ThreadID
+	if threadId == "" {
+		// A message stored before conversations existed, or by a path that
+		// did not work one out. It is a conversation of one.
+		threadId = mails[0].ID
+	}
+
+	// By when each message was written, not by when its item was filed:
+	// moving a message to another folder makes a new item with a new
+	// added_at, and a conversation ordered that way puts whatever was last
+	// archived at the top of it.
+	found, err := tx.ListItems("", &db.ItemOptions{
+		MailboxID:  mailbox.ID,
+		ThreadID:   threadId,
+		ByReceived: true,
+		Limit:      threadLimit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		// The message itself, at least: a thread id that matches nothing
+		// means the message predates threading.
+		found = items
+	}
+	if err := self.attachMails(ctx, found); err != nil {
+		return nil, err
+	}
+
+	folders, err := tx.ListFolders(mailbox.ID)
+	if err != nil {
+		return nil, err
+	}
+	byId := make(map[string]*models.MailboxFolder, len(folders))
+	for _, folder := range folders {
+		byId[folder.ID] = folder
+	}
+
+	// One entry per message, not per item. A message you sent to somebody on
+	// this server is one row filed in your Sent folder and in their Inbox —
+	// and when you send to yourself, in both of yours — so a conversation
+	// listing items would show the same message twice, once under each
+	// folder. The copy that was asked for wins, so a link to a message opens
+	// the conversation showing that copy; otherwise the first, which is the
+	// most recently filed.
+	view := &MailboxThreadView{ThreadID: threadId, Items: make([]*MailboxThreadItem, 0, len(found))}
+	at := make(map[string]int, len(found))
+	for _, item := range found {
+		entry := &MailboxThreadItem{Item: item, FolderID: item.FolderID}
+		if folder := byId[item.FolderID]; folder != nil {
+			entry.FolderName = folder.Name
+			entry.FolderKind = string(folder.Kind)
+		}
+		if index, seen := at[item.MailID]; seen {
+			if item.ID == arguments.ItemID {
+				view.Items[index] = entry
+			}
+			continue
+		}
+		at[item.MailID] = len(view.Items)
+		view.Items = append(view.Items, entry)
+	}
+
+	// The subject of the message that started the conversation, which is the
+	// one the answers all carry with a Re: in front. Its id is the
+	// conversation's id, so it is found by name rather than by position —
+	// a very long conversation returns only its newest messages, and the
+	// oldest of those is somebody's reply.
+	named := view.Items[len(view.Items)-1]
+	for _, entry := range view.Items {
+		if entry.Item.MailID == threadId {
+			named = entry
+			break
+		}
+	}
+	if named.Item.Mail != nil {
+		view.Subject = threadSubject(named.Item.Mail.Subject)
+	}
+	view.Truncated = len(found) >= threadLimit
+	return view, nil
+}
+
+// threadSubject strips the Re: and Fwd: that answering adds, so a
+// conversation is named once rather than "Re: Re: Fwd: hello".
+func threadSubject(subject string) string {
+	for {
+		trimmed := strings.TrimSpace(subject)
+		lowered := strings.ToLower(trimmed)
+		switch {
+		case strings.HasPrefix(lowered, "re:"):
+			subject = trimmed[len("re:"):]
+		case strings.HasPrefix(lowered, "fw:"):
+			subject = trimmed[len("fw:"):]
+		case strings.HasPrefix(lowered, "fwd:"):
+			subject = trimmed[len("fwd:"):]
+		default:
+			return trimmed
+		}
+	}
 }
 
 type GetMailboxItemArguments struct {

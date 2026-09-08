@@ -174,26 +174,59 @@ export function folderRows(folders: MailboxFolder[]): FolderRow[] {
   return rows
 }
 
-// The rail in two parts. The top is what is always there: the Inbox with
+// The rail in three parts. The top is what is always there: the Inbox with
 // its subfolders, then (the caller adds) Starred, then the folders the owner
-// pinned in the order they pinned them. The rest is the tree of everything
-// else, in which a pinned folder still has its place.
-export type RailRows = { inbox: FolderRow[]; pinned: MailboxFolder[]; rest: FolderRow[] }
+// pinned, in the order they pinned them. The rest is the tree of everything
+// else.
+//
+// Pinning lifts a folder rather than copying it: it leaves the tree below and
+// takes its own subfolders with it, so a pinned folder is in the rail once
+// and the list underneath is what is not pinned. It used to appear in both
+// places, which made the rail longer the more of it you pinned and left you
+// reading the same name twice.
+export type RailRows = { inbox: FolderRow[]; pinned: FolderRow[]; rest: FolderRow[] }
 
 export function railRows(folders: MailboxFolder[]): RailRows {
   const rows = folderRows(folders)
-  const inboxAt = rows.findIndex(({ folder }) => folder.kind === 'inbox')
-  let inboxEnd = inboxAt
-  if (inboxAt >= 0) {
-    while (inboxEnd + 1 < rows.length && rows[inboxEnd + 1].depth > rows[inboxAt].depth) {
-      inboxEnd += 1
+
+  // A subtree is contiguous, because the rows are in pre-order: it runs from
+  // the folder until the next row at or above its own depth.
+  const subtreeAt = (start: number): FolderRow[] => {
+    let end = start
+    while (end + 1 < rows.length && rows[end + 1].depth > rows[start].depth) {
+      end += 1
     }
+    return rows.slice(start, end + 1)
   }
-  const inbox = inboxAt >= 0 ? rows.slice(inboxAt, inboxEnd + 1) : []
-  const rest = inboxAt >= 0 ? [...rows.slice(0, inboxAt), ...rows.slice(inboxEnd + 1)] : rows
-  const pinned = folders
+
+  const inboxAt = rows.findIndex(({ folder }) => folder.kind === 'inbox')
+  const inboxSubtree = inboxAt >= 0 ? subtreeAt(inboxAt) : []
+
+  const pinned: FolderRow[] = []
+  const lifted = new Set<string>()
+  const order = [...folders]
     .filter((folder) => folder.pinnedAt && folder.kind !== 'inbox')
     .sort((left, right) => Date.parse(left.pinnedAt as string) - Date.parse(right.pinnedAt as string))
+  for (const folder of order) {
+    // A folder pinned inside another pinned folder came up with it already.
+    if (lifted.has(folder.id)) {
+      continue
+    }
+    const at = rows.findIndex((row) => row.folder.id === folder.id)
+    if (at < 0) {
+      continue
+    }
+    const subtree = subtreeAt(at)
+    const base = subtree[0].depth
+    for (const row of subtree) {
+      lifted.add(row.folder.id)
+      pinned.push({ folder: row.folder, depth: row.depth - base })
+    }
+  }
+
+  const keep = (row: FolderRow) => !lifted.has(row.folder.id)
+  const inbox = inboxSubtree.filter(keep)
+  const rest = rows.filter((row) => !inboxSubtree.includes(row) && keep(row))
   return { inbox, pinned, rest }
 }
 

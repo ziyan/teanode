@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { graphql } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
@@ -158,7 +159,7 @@ export function CommandLinePage({ username }: { username: string }) {
         </select>
       </label>
 
-      {error && <p className="error">{error}</p>}
+      <ErrorMessage error={error} />
 
       <button className="primary auth-button" type="submit" disabled={phase === 'working'}>
         {phase === 'working' ? t('cli.working') : t('cli.authorize')}

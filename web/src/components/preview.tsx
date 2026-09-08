@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { Rendered } from '../api'
 import { useTranslation } from '../i18n/i18n'
@@ -41,7 +42,7 @@ export function RenderedPreview({
 
   return (
     <div className="preview">
-      {error && <p className="error">{error}</p>}
+      <ErrorMessage error={error} />
       {showSubject && rendered && (
         <div className="preview-subject">
           <span className="muted">{t('preview.subject')}</span>{' '}

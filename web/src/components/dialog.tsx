@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { useTranslation } from '../i18n/i18n'
 
@@ -14,6 +15,7 @@ export function FormDialog({
   busy,
   error,
   canSubmit = true,
+  wide,
   onSubmit,
   onClose,
   children,
@@ -23,6 +25,9 @@ export function FormDialog({
   busy?: boolean
   error?: string | null
   canSubmit?: boolean
+  // For a form that is a handful of rows rather than a field or two — a
+  // mailbox rule, where a condition is three controls on one line.
+  wide?: boolean
   onSubmit: () => void
   onClose: () => void
   children: React.ReactNode
@@ -48,7 +53,7 @@ export function FormDialog({
   return (
     <div className="dialog-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <form
-        className="dialog"
+        className={wide ? 'dialog dialog-wide' : 'dialog'}
         ref={form}
         role="dialog"
         aria-modal="true"
@@ -60,7 +65,7 @@ export function FormDialog({
       >
         <h3>{title}</h3>
         {children}
-        {error && <p className="error">{error}</p>}
+        <ErrorMessage error={error} />
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
             {t('common.cancel')}
@@ -121,7 +126,7 @@ export function ConfirmDialog({
       <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         {typeof body === 'string' ? <p className="muted">{body}</p> : body}
-        {error && <p className="error">{error}</p>}
+        <ErrorMessage error={error} />
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>
             {t('common.cancel')}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Domain, ServerAddresses, graphql } from '../api'
-import { ErrorMessage, Loading, Tag } from '../components/common'
+import { ErrorMessage, Loading, SaveRow, Tag } from '../components/common'
 import { useQuery } from '../components/useQuery'
 import { Trans, useTranslation } from '../i18n/i18n'
 
@@ -135,7 +135,7 @@ function OutgoingIdentityCard({ identity }: { identity?: OutgoingIdentity }) {
     return (
       <div className="card">
         <h3>{t('setup.outgoingTitle')}</h3>
-        <p className="muted" style={{ marginBottom: 0 }}>
+        <p className="muted">
           {identity.unknown}
         </p>
       </div>
@@ -185,7 +185,7 @@ function OutgoingIdentityCard({ identity }: { identity?: OutgoingIdentity }) {
   return (
     <div className="card">
       <h3>{t('setup.outgoingTitle')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {identity.via === 'proxy' ? t('setup.outgoingIntroProxy') : t('setup.outgoingIntro')}
       </p>
       <table>
@@ -230,7 +230,7 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
   return (
     <div className="card">
       <h3>{t('setup.addressTitle')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('setup.addressIntro')}
       </p>
       <table>
@@ -250,7 +250,7 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
         </tbody>
       </table>
       {!addresses.ipv6 && (
-        <p className="muted" style={{ marginBottom: 0 }}>
+        <p className="muted">
           {t('setup.noIPv6')}
         </p>
       )}
@@ -306,7 +306,7 @@ function MailProgramCard({ imap, onSaved }: { imap: IMAPAccess; onSaved: () => v
       }}
     >
       <h3>{t('setup.imapTitle')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('setup.imapIntro')}
       </p>
 
@@ -343,11 +343,7 @@ function MailProgramCard({ imap, onSaved }: { imap: IMAPAccess; onSaved: () => v
       </div>
       <p className="muted">{t('setup.imapHelp')}</p>
 
-      {problem && <p className="error">{problem}</p>}
-      {saved && <p className="notice good">{t('setup.imapSaved')}</p>}
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? t('integrations.saving') : t('common.save')}
-      </button>
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('setup.imapSaved')} />
     </form>
   )
 }
@@ -393,7 +389,7 @@ function SubmissionCard({ submission, onSaved }: { submission: Submission; onSav
       }}
     >
       <h3>{t('setup.submissionTitle')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('setup.submissionIntro')}
       </p>
 
@@ -425,11 +421,7 @@ function SubmissionCard({ submission, onSaved }: { submission: Submission; onSav
       </div>
       <p className="muted">{t('setup.submissionHelp')}</p>
 
-      {problem && <p className="error">{problem}</p>}
-      {saved && <p className="notice good">{t('setup.submissionSaved')}</p>}
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? t('integrations.saving') : t('common.save')}
-      </button>
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('setup.submissionSaved')} />
     </form>
   )
 }

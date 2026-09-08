@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { graphql } from '../../api'
-import { ErrorMessage, Loading, Tag } from '../../components/common'
+import { ErrorMessage, Loading, SaveRow, Tag } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
 import {
@@ -407,27 +407,6 @@ function SecretField({
   )
 }
 
-function SaveRow({
-  busy,
-  saved,
-  problem,
-}: {
-  busy: boolean
-  saved: boolean
-  problem: string | null
-}) {
-  const { t } = useTranslation()
-  return (
-    <>
-      {problem && <p className="error">{problem}</p>}
-      {saved && <p className="notice good">{t('integrations.savedNeedsRestart')}</p>}
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? t('integrations.saving') : t('common.save')}
-      </button>
-    </>
-  )
-}
-
 // PRESETS are the providers whose SMTP endpoint people actually point this
 // at, with the host, port and security each documents.
 //
@@ -481,7 +460,7 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
       }}
     >
       <h3>{t('integrations.relay')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.relayDescription')}
       </p>
 
@@ -555,7 +534,7 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
         />
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -605,7 +584,7 @@ function ObjectStoreForm({ settings, onSaved }: { settings: S3; onSaved: () => v
       }}
     >
       <h3>{t('integrations.objectStore')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.objectStoreDescription')}
       </p>
 
@@ -663,7 +642,7 @@ function ObjectStoreForm({ settings, onSaved }: { settings: S3; onSaved: () => v
         hasKeys={Boolean(settings.accessKeyId) || settings.hasSecretAccessKey}
       />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -742,7 +721,7 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
       }}
     >
       <h3>{t('integrations.certificatesTitle')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.certificatesIntro', { hosts: (settings.hosts ?? []).join(', ') })}
       </p>
 
@@ -809,13 +788,7 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
         <p className="muted field-hint">{t('serverSettings.privateKeyFileHint')}</p>
       </div>
 
-      {problem && <p className="error">{problem}</p>}
-      <div className="page-actions">
-        <button className="primary" type="submit" disabled={busy}>
-          {t('common.save')}
-        </button>
-        {saved && <span className="muted">{t('integrations.savedNeedsRestart')}</span>}
-      </div>
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -857,7 +830,7 @@ function Route53Form({ settings, onSaved }: { settings: Route53; onSaved: () => 
       }}
     >
       <h3>{t('integrations.route53')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.route53Description')}
       </p>
 
@@ -896,7 +869,7 @@ function Route53Form({ settings, onSaved }: { settings: Route53; onSaved: () => 
         hasKeys={Boolean(settings.accessKeyId) || settings.hasSecretAccessKey}
       />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -930,7 +903,7 @@ function ProxyForm({ settings, onSaved }: { settings: Proxy; onSaved: () => void
       }}
     >
       <h3>{t('integrations.proxy')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.proxyDescription')}
       </p>
 
@@ -944,7 +917,7 @@ function ProxyForm({ settings, onSaved }: { settings: Proxy; onSaved: () => void
       </label>
       <p className="muted field-hint">{t('integrations.proxyHelp')}</p>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -984,7 +957,7 @@ function ServiceForm({
       }}
     >
       <h3>{title}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {description}
       </p>
 
@@ -1008,7 +981,7 @@ function ServiceForm({
         </label>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -1072,7 +1045,7 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
       }}
     >
       <h3>{t('integrations.antispam')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('integrations.antispamDescription')}
       </p>
 
@@ -1152,7 +1125,7 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
         </>
       )}
 
-      <SaveRow busy={busy} saved={saved} problem={problem} />
+      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
 }
@@ -1262,7 +1235,7 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
               placeholder="groups"
             />
           </label>
-          <label className="check">
+          <label className="checkbox">
             <input type="checkbox" checked={provider.createUsers} onChange={(event) => update(index, { createUsers: event.target.checked })} />
             {t('integrations.ssoCreateUsers')}
           </label>
@@ -1276,7 +1249,7 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
           </div>
         </div>
       ))}
-      {problem && <p className="error">{problem}</p>}
+      <ErrorMessage error={problem} />
       <div className="page-actions">
         <button
           type="button"

@@ -51,7 +51,7 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	}, envelope.Headers)
 
 	// The conversation this message is part of, from what it answers.
-	threadId, err := threadIDFor(tx, envelope.Headers)
+	threadId, err := ThreadIDFor(tx, envelope.Headers)
 	if err != nil {
 		return nil, err
 	}
@@ -121,16 +121,6 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	// save mail and commit
 	if _, err := tx.CreateMail(mail, nil); err != nil {
 		return nil, err
-	}
-	if mail.ThreadID == "" {
-		// It starts a conversation of its own.
-		mail.ThreadID = mail.ID
-		if _, err := tx.ModifyMail(mail.ID, func(mail *models.Mail) error {
-			mail.ThreadID = mail.ID
-			return nil
-		}, nil); err != nil {
-			return nil, err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

@@ -157,6 +157,42 @@ type MailboxItem struct {
 	AddedAt   time.Time `json:"addedAt"`
 }
 
+// MailboxThread is a conversation as a folder's list shows one: the newest of
+// its messages that are in that folder, how many of them there are, how many
+// are unread, and who has taken part.
+//
+// A conversation is not a stored thing. It is every message sharing a
+// ThreadID, which the server derives from the In-Reply-To and References
+// headers when the message is stored. So a thread has no id of its own beyond
+// the id of the message that started it, and no row anywhere: it is what a
+// query groups.
+type MailboxThread struct {
+	// ThreadID is the id of the message that began the conversation.
+	ThreadID string `json:"threadId"`
+
+	// Item is the newest message of the conversation in this folder, which is
+	// what the row shows. Its Mail is resolved the way a listed item's is.
+	Item *MailboxItem `json:"item"`
+
+	// Count is how many of the conversation's messages are in this folder,
+	// and Unread how many of those have not been read.
+	Count  int `json:"count"`
+	Unread int `json:"unread"`
+
+	// Flagged is whether any of them is starred, so that a conversation
+	// carries the star of any message in it.
+	Flagged bool `json:"flagged"`
+
+	// Participants are the people who have written, oldest first, by the name
+	// they wrote under or their address when they gave none.
+	Participants []string `json:"participants"`
+
+	// ItemIDs is every message of the conversation in this folder, so that
+	// starring, moving or deleting the row acts on the conversation rather
+	// than on the one message the row happens to show.
+	ItemIDs []string `json:"itemIds"`
+}
+
 // MailboxItemFlags is what STORE and the web UI change on an item. Nil
 // leaves a flag alone.
 type MailboxItemFlags struct {

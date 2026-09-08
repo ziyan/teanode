@@ -276,7 +276,14 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 
 	recipients := append(append(append([]string{}, message.To...), message.Cc...), message.Bcc...)
 	now := time.Now()
+	// A draft reply belongs to the conversation it answers, so that it shows
+	// in it rather than as a message of its own with nothing around it.
+	threadId, err := mx.ThreadIDFor(tx, composed.Headers)
+	if err != nil {
+		return nil, err
+	}
 	created, err := tx.CreateMail(&models.Mail{
+		ThreadID:   threadId,
 		DomainID:   domain.ID,
 		EnvelopeID: composed.ID,
 		Sender:     message.From,

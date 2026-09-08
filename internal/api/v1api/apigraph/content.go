@@ -228,14 +228,19 @@ func renderContent(mailId string, headers []string, body []byte) (*MailContent, 
 			return nil
 		}
 
+		// What the part says it is written in. A body carries its charset
+		// once, in the Content-Type, and nothing else about the bytes says
+		// so — handed over as they arrived, a Japanese message in ISO-2022-JP
+		// is a page of escape sequences and a French one in Windows-1252 has
+		// a replacement character where every accent was.
 		switch mediaType {
 		case "text/plain":
 			if content.Text == "" {
-				content.Text = string(decoded)
+				content.Text = string(mailparse.DecodeCharset(decoded, parameters["charset"]))
 			}
 		case "text/html":
 			if content.HTML == "" {
-				sanitized, hasRemote := sanitizeHtml(string(decoded))
+				sanitized, hasRemote := sanitizeHtml(string(mailparse.DecodeCharset(decoded, parameters["charset"])))
 				content.HTML = sanitized
 				content.HasRemoteContent = hasRemote
 			}

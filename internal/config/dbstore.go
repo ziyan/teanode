@@ -23,6 +23,7 @@ import (
 const (
 	settingServer    = "server"
 	settingListen    = "listen"
+	settingImap      = "imap"
 	settingTls       = "tls"
 	settingSmtp      = "smtp"
 	settingDkim      = "dkim"
@@ -41,6 +42,7 @@ func (self *Configuration) sections() map[string]any {
 	return map[string]any{
 		settingServer:    &self.Server,
 		settingListen:    &self.Listen,
+		settingImap:      &self.IMAP,
 		settingTls:       &self.TLS,
 		settingSmtp:      &self.SMTP,
 		settingDkim:      &self.DKIM,

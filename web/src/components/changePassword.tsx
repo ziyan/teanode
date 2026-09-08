@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ErrorMessage } from '../components/common'
 
 import { changePassword } from '../api'
 import { useTranslation } from '../i18n/i18n'
@@ -38,7 +39,7 @@ export function ChangePassword({ username }: { username: string }) {
   return (
     <form className="card" onSubmit={submit}>
       <h3>{t('password.title')}</h3>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <p className="muted">
         {t('password.signedInAs', { username })}
       </p>
 
@@ -71,7 +72,7 @@ export function ChangePassword({ username }: { username: string }) {
         {mismatch && <span className="error">{t('common.passwordsDoNotMatch')}</span>}
       </label>
 
-      {error && <p className="error">{error}</p>}
+      <ErrorMessage error={error} />
       {done && <p style={{ color: 'var(--good)' }}>{t('password.changed')}</p>}
 
       <button className="primary" type="submit" disabled={busy || !ready}>

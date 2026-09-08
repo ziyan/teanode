@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { MailContent, MailboxFolder, MailboxItem, MailboxItemPage, MailboxView, graphql } from '../api'
+import {
+  MailContent,
+  MailboxFolder,
+  MailboxItem,
+  MailboxThread,
+  MailboxThreadItem,
+  MailboxThreadPage,
+  MailboxThreadView,
+  MailboxView,
+  graphql,
+} from '../api'
 import { ErrorMessage, Loading, formatTime } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
@@ -11,6 +21,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
 import { MessageContent } from './mailDetail'
+import { MailboxComposer } from './mailboxCompose'
 
 // The mailbox: one folder's messages beside the one being read.
 //
@@ -30,22 +41,31 @@ function starredFolder(view: MailboxView): MailboxFolder {
   return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: 0, total: 0 }
 }
 
-const ITEMS = `
-  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $after: String, $offset: Int) {
-    ListMailboxItems(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, after: $after, offset: $offset) {
+const THREADS = `
+  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $offset: Int) {
+    ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
       total
-      items {
-        id folderId mailId uid seen flagged answered forwarded draft addedAt
-        mail { id from fromName sender subject recipients receivedAt size kind status }
+      threads {
+        threadId count unread flagged participants itemIds
+        item {
+          id folderId mailId uid seen flagged answered forwarded draft addedAt
+          mail { id from fromName sender subject recipients receivedAt size kind status }
+        }
       }
     }
   }`
 
-const ITEM = `
+const THREAD = `
   query ($itemId: String!) {
-    GetMailboxItem(itemId: $itemId) {
-      id folderId mailId uid seen flagged answered forwarded draft addedAt
-      mail { id from fromName sender subject recipients receivedAt size kind status messageId }
+    GetMailboxThread(itemId: $itemId) {
+      threadId subject truncated
+      items {
+        folderId folderName folderKind
+        item {
+          id folderId mailId uid seen flagged answered forwarded draft addedAt
+          mail { id from fromName sender subject recipients receivedAt size kind status messageId }
+        }
+      }
     }
   }`
 
@@ -92,10 +112,25 @@ type Narrowing = {
   attachment: 'any' | 'with' | 'without'
 }
 
-const NOTHING_NARROWED: Narrowing = { everywhere: false, from: '', to: '', subject: '', since: '', before: '', attachment: 'any' }
+const NOTHING_NARROWED: Narrowing = {
+  everywhere: false,
+  from: '',
+  to: '',
+  subject: '',
+  since: '',
+  before: '',
+  attachment: 'any',
+}
 
 function narrowed(value: Narrowing): boolean {
-  return value.from !== '' || value.to !== '' || value.subject !== '' || value.since !== '' || value.before !== '' || value.attachment !== 'any'
+  return (
+    value.from !== '' ||
+    value.to !== '' ||
+    value.subject !== '' ||
+    value.since !== '' ||
+    value.before !== '' ||
+    value.attachment !== 'any'
+  )
 }
 
 // A day typed into a date field, as the moment it starts (or the moment the
@@ -166,15 +201,7 @@ function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: Mailb
   return <Folder key={folder.id} folder={folder} folders={view.folders} itemId={itemId} />
 }
 
-function Folder({
-  folder,
-  folders,
-  itemId,
-}: {
-  folder: MailboxFolder
-  folders: MailboxFolder[]
-  itemId?: string
-}) {
+function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: MailboxFolder[]; itemId?: string }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const mailboxes = useMailboxes()
@@ -190,8 +217,9 @@ function Folder({
   const [appliedNarrowing, setAppliedNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
   const [showNarrowing, setShowNarrowing] = useState(false)
   const starred = folder.kind === STARRED
-  const everywhere = starred || (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
-  const [items, setItems] = useState<MailboxItem[]>([])
+  const everywhere =
+    starred || (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
+  const [threads, setThreads] = useState<MailboxThread[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
@@ -218,24 +246,23 @@ function Folder({
   )
 
   const load = useCallback(
-    async (after?: string, offset?: number) => {
+    async (offset?: number) => {
       setLoading(true)
       try {
-        const response = await graphql<{ ListMailboxItems: MailboxItemPage }>(ITEMS, {
+        const response = await graphql<{ ListMailboxThreads: MailboxThreadPage }>(THREADS, {
           ...variables,
-          after: variables.mailboxId ? undefined : after,
-          offset: variables.mailboxId ? offset : undefined,
+          offset,
         })
-        const page = response.ListMailboxItems
-        setItems((previous) => {
-          if (!after) {
-            return page.items
+        const page = response.ListMailboxThreads
+        setThreads((previous) => {
+          if (!offset) {
+            return page.threads
           }
-          // Paged by offset across the mailbox, a message starred or
-          // arrived since the last page shifts the rest down one: the
-          // overlap is dropped rather than shown twice.
-          const shown = new Set(previous.map((item) => item.id))
-          return [...previous, ...page.items.filter((item) => !shown.has(item.id))]
+          // Paged by offset, a conversation answered or arrived since the
+          // last page shifts the rest down one: the overlap is dropped
+          // rather than shown twice.
+          const shown = new Set(previous.map((thread) => thread.threadId))
+          return [...previous, ...page.threads.filter((thread) => !shown.has(thread.threadId))]
         })
         setTotal(page.total)
         setError(null)
@@ -257,10 +284,50 @@ function Folder({
   // than reloaded: the list should not jump under somebody who just marked
   // a row, and the rail's counts are refreshed separately.
   const patch = (itemIds: string[], change: Partial<MailboxItem>) =>
-    setItems((previous) => previous.map((item) => (itemIds.includes(item.id) ? { ...item, ...change } : item)))
+    setThreads((previous) =>
+      previous.map((thread) => {
+        if (!thread.itemIds.some((id) => itemIds.includes(id))) {
+          return thread
+        }
+        const next = { ...thread }
+        if (itemIds.includes(thread.item.id)) {
+          next.item = { ...thread.item, ...change }
+        }
+        // The counts the row shows are of the whole conversation, so a
+        // message marked read changes them whichever message it was.
+        const touched = thread.itemIds.filter((id) => itemIds.includes(id)).length
+        if (change.seen === true) {
+          next.unread = Math.max(0, thread.unread - touched)
+        } else if (change.seen === false) {
+          next.unread = Math.min(thread.count, thread.unread + touched)
+        }
+        if (change.flagged !== undefined) {
+          next.flagged = change.flagged
+        }
+        return next
+      }),
+    )
   const remove = (itemIds: string[]) => {
-    setItems((previous) => previous.filter((item) => !itemIds.includes(item.id)))
-    setTotal((previous) => Math.max(0, previous - itemIds.length))
+    let gone = 0
+    setThreads((previous) =>
+      previous
+        .map((thread) => {
+          const left = thread.itemIds.filter((id) => !itemIds.includes(id))
+          if (left.length === thread.itemIds.length) {
+            return thread
+          }
+          if (left.length === 0 || itemIds.includes(thread.item.id)) {
+            // The message the row showed is gone. Rather than guess which of
+            // the rest to show, the row goes and the next load brings it back
+            // if the conversation still has messages here.
+            gone += 1
+            return null
+          }
+          return { ...thread, itemIds: left, count: Math.max(1, thread.count - (thread.itemIds.length - left.length)) }
+        })
+        .filter((thread): thread is MailboxThread => thread !== null),
+    )
+    setTotal((previous) => Math.max(0, previous - gone))
     setSelected((previous) => {
       const next = new Set(previous)
       itemIds.forEach((id) => next.delete(id))
@@ -310,8 +377,17 @@ function Folder({
       }
     })
 
-  const chosen = items.filter((item) => selected.has(item.id))
-  const chosenIds = chosen.map((item) => item.id)
+  // A chosen conversation is all of its messages in this folder: starring,
+  // moving or deleting one means the conversation, which is what the row is.
+  //
+  // Except where the list is not a folder. Starred and a search across the
+  // mailbox gather a conversation's messages from everywhere it has any —
+  // Sent, Drafts, Trash — and acting on all of those from a starred row
+  // would archive your own replies and delete an unsent draft. There the row
+  // stands for the message it shows, which is what it stood for before
+  // conversations existed.
+  const chosen = threads.filter((thread) => selected.has(thread.threadId))
+  const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
@@ -320,7 +396,9 @@ function Folder({
   // it "delete for good".
 
   const toggleAll = () =>
-    setSelected((previous) => (previous.size === items.length ? new Set() : new Set(items.map((item) => item.id))))
+    setSelected((previous) =>
+      previous.size === threads.length ? new Set() : new Set(threads.map((thread) => thread.threadId)),
+    )
 
   return (
     <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
@@ -347,11 +425,19 @@ function Folder({
             onBlur={() => setApplied(search.trim())}
           />
           <div className="segmented" role="group">
-            <button type="button" className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter(filter === 'unread' ? 'all' : 'unread')}>
+            <button
+              type="button"
+              className={filter === 'unread' ? 'active' : ''}
+              onClick={() => setFilter(filter === 'unread' ? 'all' : 'unread')}
+            >
               {t('mailbox.unreadOnly')}
             </button>
             {!starred && (
-              <button type="button" className={filter === 'flagged' ? 'active' : ''} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}>
+              <button
+                type="button"
+                className={filter === 'flagged' ? 'active' : ''}
+                onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}
+              >
                 {t('mailbox.flaggedOnly')}
               </button>
             )}
@@ -376,31 +462,50 @@ function Folder({
               </label>
               <label>
                 <span>{t('mailbox.narrowFrom')}</span>
-                <input value={narrowing.from} onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })} />
+                <input
+                  value={narrowing.from}
+                  onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })}
+                />
               </label>
               <label>
                 <span>{t('mailbox.narrowTo')}</span>
-                <input value={narrowing.to} onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })} />
+                <input
+                  value={narrowing.to}
+                  onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })}
+                />
               </label>
               <label>
                 <span>{t('mailbox.narrowSubject')}</span>
-                <input value={narrowing.subject} onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })} />
+                <input
+                  value={narrowing.subject}
+                  onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })}
+                />
               </label>
               <div className="mailbox-narrowing-row">
                 <label>
                   <span>{t('mailbox.narrowSince')}</span>
-                  <input type="date" value={narrowing.since} onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })} />
+                  <input
+                    type="date"
+                    value={narrowing.since}
+                    onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })}
+                  />
                 </label>
                 <label>
                   <span>{t('mailbox.narrowBefore')}</span>
-                  <input type="date" value={narrowing.before} onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })} />
+                  <input
+                    type="date"
+                    value={narrowing.before}
+                    onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })}
+                  />
                 </label>
               </div>
               <label>
                 <span>{t('mailbox.narrowAttachment')}</span>
                 <select
                   value={narrowing.attachment}
-                  onChange={(event) => setNarrowing({ ...narrowing, attachment: event.target.value as Narrowing['attachment'] })}
+                  onChange={(event) =>
+                    setNarrowing({ ...narrowing, attachment: event.target.value as Narrowing['attachment'] })
+                  }
                 >
                   <option value="any">{t('mailbox.narrowAttachmentAny')}</option>
                   <option value="with">{t('mailbox.narrowAttachmentWith')}</option>
@@ -433,14 +538,14 @@ function Folder({
           <input
             type="checkbox"
             aria-label={t('mailbox.selectAll')}
-            checked={items.length > 0 && selected.size === items.length}
+            checked={threads.length > 0 && selected.size === threads.length}
             onChange={toggleAll}
-            disabled={items.length === 0}
+            disabled={threads.length === 0}
           />
           {chosen.length > 0 ? (
             <>
               <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
-              {chosen.some((item) => !item.seen) ? (
+              {chosen.some((thread) => thread.unread > 0) ? (
                 <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { seen: true })}>
                   {t('mailbox.markRead')}
                 </button>
@@ -494,32 +599,44 @@ function Folder({
         {error ? <ErrorMessage error={error} /> : null}
 
         <ul className="mailbox-rows">
-          {items.map((item) => (
+          {threads.map((thread) => (
             <Row
-              key={item.id}
-              item={item}
-              folderName={everywhere && item.folderId !== folder.id ? folderLabelOf(folders, item.folderId, t) : undefined}
-              active={item.id === itemId}
-              selected={selected.has(item.id)}
+              key={thread.threadId}
+              thread={thread}
+              folderName={
+                everywhere && thread.item.folderId !== folder.id
+                  ? folderLabelOf(folders, thread.item.folderId, t)
+                  : undefined
+              }
+              active={thread.itemIds.includes(itemId ?? '')}
+              selected={selected.has(thread.threadId)}
               onSelect={(on) =>
                 setSelected((previous) => {
                   const next = new Set(previous)
                   if (on) {
-                    next.add(item.id)
+                    next.add(thread.threadId)
                   } else {
-                    next.delete(item.id)
+                    next.delete(thread.threadId)
                   }
                   return next
                 })
               }
-              href={item.draft ? `/mailbox/compose?draft=${item.id}` : `/mailbox/${folder.id}/${item.id}`}
-              onOpen={() =>
-                navigate(item.draft ? `/mailbox/compose?draft=${item.id}` : `/mailbox/${folder.id}/${item.id}`)
+              href={
+                thread.item.draft
+                  ? `/mailbox/compose?draft=${thread.item.id}`
+                  : `/mailbox/${folder.id}/${thread.item.id}`
               }
-              onFlag={(on) => setFlags([item.id], { flagged: on })}
+              onOpen={() =>
+                navigate(
+                  thread.item.draft
+                    ? `/mailbox/compose?draft=${thread.item.id}`
+                    : `/mailbox/${folder.id}/${thread.item.id}`,
+                )
+              }
+              onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
             />
           ))}
-          {!loading && items.length === 0 && (
+          {!loading && threads.length === 0 && (
             <li className="mailbox-placeholder">
               {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
                 t('mailbox.nothingFound')
@@ -545,9 +662,9 @@ function Folder({
         </ul>
 
         <div className="mailbox-foot">
-          <span>{loading ? t('common.loading') : t('mailbox.count', { shown: items.length, total })}</span>
-          {items.length < total && !loading && (
-            <button type="button" className="link" onClick={() => load(items[items.length - 1]?.id, items.length)}>
+          <span>{loading ? t('common.loading') : t('mailbox.count', { shown: threads.length, total })}</span>
+          {threads.length < total && !loading && (
+            <button type="button" className="link" onClick={() => load(threads.length)}>
               {t('mailbox.loadMore')}
             </button>
           )}
@@ -563,10 +680,10 @@ function Folder({
             archive={archive}
             targets={targets}
             busy={busy}
-            onSeen={(seen) => setFlags([itemId], { seen })}
-            onFlag={(flagged) => setFlags([itemId], { flagged })}
-            onMove={(target) => moveTo([itemId], target)}
-            onDelete={() => deleteItems([itemId])}
+            onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
+            onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
+            onMove={(itemIds, target) => moveTo(itemIds, target)}
+            onDelete={(itemIds) => deleteItems(itemIds)}
             onBack={() => navigate(`/mailbox/${folder.id}`)}
           />
         ) : (
@@ -583,7 +700,7 @@ function Folder({
           onConfirm={() =>
             act(async () => {
               await graphql(EMPTY_TRASH, { mailboxId: folder.mailboxId })
-              setItems([])
+              setThreads([])
               setTotal(0)
               setEmptying(false)
               if (itemId) {
@@ -605,7 +722,7 @@ function folderLabelOf(folders: MailboxFolder[], folderId: string, t: (key: Key)
 }
 
 function Row({
-  item,
+  thread,
   folderName,
   href,
   active,
@@ -614,7 +731,7 @@ function Row({
   onOpen,
   onFlag,
 }: {
-  item: MailboxItem
+  thread: MailboxThread
   folderName?: string
   href: string
   active: boolean
@@ -624,10 +741,17 @@ function Row({
   onFlag: (on: boolean) => void
 }) {
   const { t } = useTranslation()
+  const item = thread.item
   const mail = item.mail
+  // Who the row is about: everybody who has written, when more than one has.
+  // A conversation of one reads as it always did.
+  const who =
+    thread.participants.length > 1
+      ? thread.participants.join(', ')
+      : thread.participants[0] || mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
   return (
     <li
-      className={['mailbox-row', item.seen ? '' : 'unread', active ? 'active' : ''].filter(Boolean).join(' ')}
+      className={['mailbox-row', thread.unread > 0 ? 'unread' : '', active ? 'active' : ''].filter(Boolean).join(' ')}
       onClick={onOpen}
     >
       <input
@@ -639,15 +763,15 @@ function Row({
       />
       <button
         type="button"
-        className={['mailbox-star', item.flagged ? 'on' : ''].filter(Boolean).join(' ')}
-        aria-label={item.flagged ? t('mailbox.unflag') : t('mailbox.flag')}
-        aria-pressed={item.flagged}
+        className={['mailbox-star', thread.flagged ? 'on' : ''].filter(Boolean).join(' ')}
+        aria-label={thread.flagged ? t('mailbox.unflag') : t('mailbox.flag')}
+        aria-pressed={thread.flagged}
         onClick={(event) => {
           event.stopPropagation()
-          onFlag(!item.flagged)
+          onFlag(!thread.flagged)
         }}
       >
-        {item.flagged ? '★' : '☆'}
+        {thread.flagged ? '★' : '☆'}
       </button>
       {/* A real link, so the keyboard reaches it and a middle click opens
           it in a tab; the row's own click is for the mouse. */}
@@ -661,7 +785,8 @@ function Row({
         }}
       >
         <div className="mailbox-row-from" title={mail?.from || mail?.sender}>
-          {mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')}
+          {who}
+          {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
         </div>
         <div className="mailbox-row-subject">
           {folderName && <span className="mailbox-row-folder">{folderName}</span>}
@@ -675,6 +800,13 @@ function Row({
   )
 }
 
+// Reader shows the conversation a message belongs to, not the message alone.
+//
+// Newest first, because the last thing said is what somebody opening a
+// conversation wants; read messages collapsed to a line, because a
+// conversation of twenty is unreadable otherwise; and every message of it in
+// this mailbox whatever folder it is in, because the answers are in Sent
+// while the conversation is being read from the Inbox.
 function Reader({
   itemId,
   folder,
@@ -692,53 +824,105 @@ function Reader({
   archive?: MailboxFolder
   targets: { folder: MailboxFolder; depth: number }[]
   busy: boolean
-  onSeen: (seen: boolean) => void
-  onFlag: (flagged: boolean) => void
-  onMove: (folderId: string) => void
-  onDelete: () => void
+  onSeen: (itemIds: string[], seen: boolean) => void
+  onFlag: (itemIds: string[], flagged: boolean) => void
+  onMove: (itemIds: string[], folderId: string) => void
+  onDelete: (itemIds: string[]) => void
   onBack: () => void
 }) {
   const { t } = useTranslation()
-  // The action row's slot for the message menu, as an element so the
-  // portal renders once it exists.
-  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null)
   const navigate = useNavigate()
-  const item = useQuery(() => graphql<{ GetMailboxItem: MailboxItem }>(ITEM, { itemId }), [itemId], { refresh: false })
-  const mailId = item.data?.GetMailboxItem?.mailId
-  const content = useQuery(
-    () => (mailId ? graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId }) : Promise.resolve(null)),
-    [mailId],
-    { refresh: false },
-  )
+  const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
+    refresh: false,
+  })
 
-  // Opening a message reads it. Once, when it arrives unseen: the reader can
-  // mark it unread again afterwards and it stays that way.
-  const [seen, setSeen] = useState<boolean | null>(null)
-  const [flagged, setFlagged] = useState<boolean | null>(null)
+  // Which messages are open. Decided once from what arrives — the newest,
+  // anything unread, and the one that was clicked — and then it is the
+  // reader's, so opening and closing sticks while they are on the page.
+  const [open, setOpen] = useState<Set<string> | null>(null)
+  // What has been marked read or unread here, so that neither flickers back
+  // to what the query returned. Absent means "as it arrived".
+  const [marks, setMarks] = useState<Record<string, boolean>>({})
+  const [flags, setFlagState] = useState<Record<string, boolean>>({})
+  // What is being written, if anything: which message it answers and how.
+  // Above the newest message rather than below the whole conversation,
+  // because that is where the answer will be once it is sent.
+  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward'; itemId: string } | null>(null)
+  // The draft what is being written has been saved as. Closing the composer
+  // saves what was typed, so reopening it — Reply, then Reply to all — has to
+  // continue that draft rather than start a second one of the same reply.
+  const [draftId, setDraftId] = useState<string | null>(null)
+
+  const view = thread.data?.GetMailboxThread
+  const entries = view?.items ?? []
+
   useEffect(() => {
-    const loaded = item.data?.GetMailboxItem
-    if (loaded && seen === null) {
-      setSeen(true)
-      setFlagged(loaded.flagged)
-      if (!loaded.seen) {
-        onSeen(true)
+    if (!view || open !== null) {
+      return
+    }
+    const wanted = new Set<string>()
+    if (view.items.length > 0) {
+      wanted.add(view.items[0].item.id)
+    }
+    for (const entry of view.items) {
+      if (!entry.item.seen || entry.item.id === itemId) {
+        wanted.add(entry.item.id)
       }
     }
+    setOpen(wanted)
+    // Opening a conversation reads what it opens. Once: the reader can mark
+    // one unread again afterwards and it stays that way.
+    //
+    // Only what is in the folder being read, or the message that was asked
+    // for. Opening a conversation from the Inbox should not clear the unread
+    // mark on a message of it sitting in Junk.
+    const opening = view.items
+      .filter(
+        (entry) =>
+          wanted.has(entry.item.id) && !entry.item.seen && (entry.folderId === folder.id || entry.item.id === itemId),
+      )
+      .map((entry) => entry.item.id)
+    if (opening.length > 0) {
+      setMarks((previous) => ({ ...previous, ...Object.fromEntries(opening.map((id) => [id, true])) }))
+      onSeen(opening, true)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.data])
+  }, [view])
 
-  if (item.loading && !item.data) {
+  if (thread.loading && !thread.data) {
     return <Loading />
   }
-  if (item.error) {
-    return <ErrorMessage error={item.error} />
+  if (thread.error) {
+    return <ErrorMessage error={thread.error} />
   }
-  const loaded = item.data?.GetMailboxItem
-  if (!loaded) {
+  if (!view || entries.length === 0) {
     return <p className="muted">{t('common.notFound')}</p>
   }
-  const mail = loaded.mail
+
+  const newest = entries[0]
+  const opened = open ?? new Set([newest.item.id])
+  // What the actions act on: the conversation's messages in the folder being
+  // read, since that is the row the reader came from. A message of it that
+  // lives in Sent is not archived by archiving the conversation.
+  const here = entries.filter((entry) => entry.folderId === folder.id).map((entry) => entry.item.id)
+  // Read from Starred or from a search, there is no folder to scope to, so
+  // the actions act on the message that was opened — not on every message of
+  // the conversation wherever it happens to be filed.
+  const acting = here.length > 0 ? here : [itemId]
+  const seenOf = (entry: MailboxThreadItem) => marks[entry.item.id] ?? entry.item.seen
+  const anyUnread = entries.some((entry) => !seenOf(entry))
+  const anyFlagged = entries.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
   const inTrash = folder.kind === 'trash'
+  const toggle = (id: string) =>
+    setOpen((previous) => {
+      const next = new Set(previous ?? opened)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
 
   return (
     <>
@@ -746,19 +930,40 @@ function Reader({
         <button type="button" className="mailbox-back" onClick={onBack}>
           {t('mailbox.backToList')}
         </button>
-        {loaded.draft ? (
-          <button type="button" className="primary" onClick={() => navigate(`/mailbox/compose?draft=${itemId}`)}>
+        {newest.item.draft ? (
+          <button
+            type="button"
+            className="primary"
+            onClick={() => navigate(`/mailbox/compose?draft=${newest.item.id}`)}
+          >
             {t('mailbox.editDraft')}
           </button>
         ) : (
           <>
-            <button type="button" className="primary" onClick={() => navigate(`/mailbox/compose?reply=${itemId}`)}>
+            {/* One answer at a time. Swapping a half-written reply for a
+                forward would either throw away what was typed or leave a
+                second draft of it behind, and neither is what the click
+                meant: close it, and the draft is kept. */}
+            <button
+              type="button"
+              className="primary"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
+            >
               {t('mailbox.reply')}
             </button>
-            <button type="button" onClick={() => navigate(`/mailbox/compose?replyAll=${itemId}`)}>
+            <button
+              type="button"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
+            >
               {t('mailbox.replyAll')}
             </button>
-            <button type="button" onClick={() => navigate(`/mailbox/compose?forward=${itemId}`)}>
+            <button
+              type="button"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
+            >
               {t('mailbox.forward')}
             </button>
           </>
@@ -767,26 +972,30 @@ function Reader({
           type="button"
           disabled={busy}
           onClick={() => {
-            const next = !(seen ?? true)
-            setSeen(next)
-            onSeen(next)
+            // Anything unread and the button says "Mark read", so that is
+            // what it does; everything read and it marks unread.
+            const seen = anyUnread
+            setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
+            onSeen(acting, seen)
           }}
         >
-          {seen === false ? t('mailbox.markRead') : t('mailbox.markUnread')}
+          {anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={() => {
-            const next = !(flagged ?? loaded.flagged)
-            setFlagged(next)
-            onFlag(next)
+            const next = !anyFlagged
+            // The same messages the server is told about, so the star does
+            // not show the answer to a question that was never asked.
+            setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
+            onFlag(acting, next)
           }}
         >
-          {(flagged ?? loaded.flagged) ? t('mailbox.unflag') : t('mailbox.flag')}
+          {anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
         </button>
         {archive && folder.id !== archive.id && (
-          <button type="button" disabled={busy} onClick={() => onMove(archive.id)}>
+          <button type="button" disabled={busy} onClick={() => onMove(acting, archive.id)}>
             {t('mailbox.archive')}
           </button>
         )}
@@ -794,48 +1003,176 @@ function Reader({
           aria-label={t('mailbox.moveTo')}
           value=""
           disabled={busy}
-          onChange={(event) => event.target.value && onMove(event.target.value)}
+          onChange={(event) => event.target.value && onMove(acting, event.target.value)}
         >
           <option value="">{t('mailbox.moveTo')}</option>
           {targets.map(({ folder: candidate, depth }) => (
             <option key={candidate.id} value={candidate.id}>
-              {'  '.repeat(depth) + folderLabel(t, candidate)}
+              {'  '.repeat(depth) + folderLabel(t, candidate)}
             </option>
           ))}
         </select>
-        <button type="button" className="danger" disabled={busy} onClick={onDelete}>
+        <button type="button" className="danger" disabled={busy} onClick={() => onDelete(acting)}>
           {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
         </button>
-        {/* The message's own menu — download, headers, theme — sits at the
-            end of this row rather than on a row of its own. */}
-        <span className="reader-menu-slot" ref={setMenuSlot} />
       </div>
 
       <div className="mailbox-pane-head">
-        <h2>{mail?.subject || t('mailbox.noSubject')}</h2>
+        <h2>{view.subject || t('mailbox.noSubject')}</h2>
+        {entries.length > 1 && (
+          <p className="muted mailbox-thread-count">
+            {t('mailbox.threadCount', { count: entries.length })}
+            {/* A conversation longer than the server returns is shown from
+                its newest end; saying so is the difference between a long
+                conversation and a conversation that lost its beginning. */}
+            {view.truncated ? ` · ${t('mailbox.threadTruncated', { count: entries.length })}` : ''}
+          </p>
+        )}
       </div>
-      {mail ? (
-        <dl className="mailbox-pane-meta">
-          <dt>{t('mailbox.from')}</dt>
-          <dd>{mail.fromName ? `${mail.fromName} <${mail.from || mail.sender}>` : mail.from || mail.sender || t('mailbox.unknownSender')}</dd>
-          <dt>{t('mailbox.to')}</dt>
-          <dd>{(mail.recipients ?? []).join(', ')}</dd>
-          <dt>{t('mail.received')}</dt>
-          <dd>{formatTime(mail.receivedAt)}</dd>
-        </dl>
-      ) : (
-        <p className="muted">{t('mailbox.messageGone')}</p>
+
+      {writing && (
+        <div className="mailbox-thread-compose">
+          <div className="page-actions page-actions-end">
+            {/* Closing is not discarding: what was typed is saved as a draft
+                on the way out, and picking Reply again continues it. */}
+            <button type="button" onClick={() => setWriting(null)}>
+              {t('mailbox.closeReply')}
+            </button>
+          </div>
+          <MailboxComposer
+            key={`${writing.kind}-${writing.itemId}`}
+            replyTo={writing.kind === 'forward' ? null : writing.itemId}
+            replyAll={writing.kind === 'replyAll'}
+            forwardOf={writing.kind === 'forward' ? writing.itemId : null}
+            draftOf={draftId}
+            onDraft={setDraftId}
+            onSent={() => {
+              setWriting(null)
+              setDraftId(null)
+              void thread.reload()
+            }}
+            onCancel={() => {
+              setWriting(null)
+              setDraftId(null)
+            }}
+          />
+        </div>
       )}
 
-      {mail ? (
-        content.loading && !content.data ? (
-          <Loading />
-        ) : content.error ? (
-          <ErrorMessage error={content.error} />
-        ) : (
-          <MessageContent mailId={mail.id} content={content.data?.GetMailContent} mode="mailbox" menuContainer={menuSlot} />
-        )
-      ) : null}
+      <ol className="mailbox-thread">
+        {entries.map((entry) => (
+          <ThreadMessage
+            key={entry.item.id}
+            entry={entry}
+            folderId={folder.id}
+            seen={seenOf(entry)}
+            open={opened.has(entry.item.id)}
+            onToggle={() => {
+              const opening = !opened.has(entry.item.id)
+              toggle(entry.item.id)
+              if (opening && !seenOf(entry)) {
+                setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
+                onSeen([entry.item.id], true)
+              }
+            }}
+          />
+        ))}
+      </ol>
     </>
+  )
+}
+
+// ThreadMessage is one message of a conversation: a line when it is closed,
+// the message itself when it is open. Its body is fetched only once it is
+// opened, so a conversation of twenty costs one request rather than twenty.
+function ThreadMessage({
+  entry,
+  folderId,
+  seen,
+  open,
+  onToggle,
+}: {
+  entry: MailboxThreadItem
+  folderId: string
+  // Read as the page has it, which is what arrived plus what opening it has
+  // marked since — so a message does not stay bold after it was just read.
+  seen: boolean
+  open: boolean
+  onToggle: () => void
+}) {
+  const { t } = useTranslation()
+  const item = entry.item
+  const mail = item.mail
+  // Where the message's own menu — download, headers, theme — goes: the end
+  // of the line that names the message, not a row of its own above it. A
+  // conversation of six would otherwise carry six rows holding one button.
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null)
+  const content = useQuery(
+    () =>
+      open && mail ? graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId: mail.id }) : Promise.resolve(null),
+    [open, mail?.id],
+    { refresh: false },
+  )
+  const who = mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
+
+  return (
+    <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
+      <div className="mailbox-message-head">
+        {/* The whole line opens and closes it, so there is nothing to aim
+            at — except the menu at its end, which is a button of its own and
+            so sits outside this one rather than inside it. */}
+        <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
+          <span className="mailbox-message-who" title={mail?.from || mail?.sender}>
+            {who}
+          </span>
+          {/* Where it is, when that is not where the conversation is being
+              read: your own answer is in Sent, and saying so is the difference
+              between a conversation and a list. */}
+          {entry.folderId !== folderId && entry.folderName && (
+            <span className="mailbox-row-folder">{entry.folderName}</span>
+          )}
+          {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
+          <span className="mailbox-message-when">
+            <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+          </span>
+        </button>
+        {open && <span className="mailbox-message-menu" ref={setMenuSlot} />}
+      </div>
+
+      {open && (
+        <div className="mailbox-message-body">
+          {mail ? (
+            <>
+              <dl className="mailbox-pane-meta">
+                <dt>{t('mailbox.from')}</dt>
+                <dd>
+                  {mail.fromName
+                    ? `${mail.fromName} <${mail.from || mail.sender}>`
+                    : mail.from || mail.sender || t('mailbox.unknownSender')}
+                </dd>
+                <dt>{t('mailbox.to')}</dt>
+                <dd>{(mail.recipients ?? []).join(', ')}</dd>
+                <dt>{t('mail.received')}</dt>
+                <dd>{formatTime(mail.receivedAt)}</dd>
+              </dl>
+              {content.loading && !content.data ? (
+                <Loading />
+              ) : content.error ? (
+                <ErrorMessage error={content.error} />
+              ) : (
+                <MessageContent
+                  mailId={mail.id}
+                  content={content.data?.GetMailContent}
+                  mode="mailbox"
+                  menuContainer={menuSlot}
+                />
+              )}
+            </>
+          ) : (
+            <p className="muted">{t('mailbox.messageGone')}</p>
+          )}
+        </div>
+      )}
+    </li>
   )
 }

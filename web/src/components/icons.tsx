@@ -126,11 +126,60 @@ export function PeopleIcon(props: IconProps) {
   )
 }
 
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </Icon>
+  )
+}
+
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Icon>
+  )
+}
+
 export function PinIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M12 17v5" />
       <path d="M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+    </Icon>
+  )
+}
+
+// A switch, drawn on and drawn off: the two states of a rule that is running
+// or is not. Two pictures rather than one dimmed one, because a single icon
+// at half strength is a state nobody reads correctly the first time.
+export function ToggleOnIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="17" cy="12" r="2.5" fill="currentColor" />
+    </Icon>
+  )
+}
+
+export function ToggleOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="7" cy="12" r="2.5" />
+    </Icon>
+  )
+}
+
+export function PinOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+      <path d="m3 3 18 18" />
     </Icon>
   )
 }

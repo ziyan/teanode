@@ -6,6 +6,120 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Mail reads as conversations. A folder lists one row per conversation, with
+  who has written and how many messages it holds; opening any message shows
+  the whole conversation, newest first, with the messages you have read
+  collapsed to a line you can click open; and the messages of it that live in
+  other folders are in it too, so your own answers — which are in Sent — are
+  where they belong. Reply, reply to all and forward open the composer at the
+  top of the conversation rather than on a page of its own, and sending puts
+  the answer at the top of what you were reading without leaving it.
+- A written design guideline for the dashboard,
+  `docs/coding/frontend-design.md`: which shared component to reach for, where
+  a panel's action goes, when a row action is an icon and when it is a word.
+  `CONTRIBUTING.md` points at it.
+
+### Changed
+
+- The dashboard's panels are consistent. Mailbox settings, a domain's aliases
+  and credentials, the sessions page and the server page all draw a panel the
+  same way now: a heading, the sentence that says what it is for, and the one
+  action that adds to it, in the arrangement that folds onto a phone instead
+  of squeezing beside the heading. A form's fields are capped inside a panel
+  the width of the page, rather than the panel being narrow beside a wide one.
+- Folders, app passwords, aliases and credentials are made and changed in a
+  dialog. A form under a list moved the list while it was being read, and a
+  row that turned into a form made the page jump.
+- An app password and a domain credential are shown in the dialog every other
+  one-time secret uses, with a copy button, rather than in a banner that can
+  be scrolled past.
+- Removing an alias or a credential asks first. Both used to go on the click.
+- Signing out everywhere asks in the dashboard's own dialog rather than the
+  browser's, which was neither styled nor translated. Restarting and upgrading
+  the server ask the same way.
+- Mailbox rules move and are removed with the same icon buttons the folder
+  list uses, and the tab has a heading like the tabs beside it.
+- "Out of office" is "Auto reply", which is what it is when it is used to say
+  a reply comes from somewhere else.
+- The rail draws a rule under what is pinned to the top and another above
+  Contacts, so the inbox, the folders, and what is about the mailbox rather
+  than in it read as three lists instead of one long one. The rule under the
+  pinned area is drawn whether or not anything is pinned, so the rail does not
+  change shape the first time somebody pins a folder.
+- Pinning is done on the Folders tab, beside renaming and removing, and the
+  rail has no pin on its rows. A control that appeared only under the pointer,
+  on a row whose whole job is to be clicked, was a second thing to aim at on
+  every row and a thing a phone could not reach at all.
+- The rail names the mailbox only when there is more than one to choose
+  between. One mailbox named above its own folders was a heading that said
+  nothing. The "Folders" heading over the list goes for the same reason: the
+  rule above it already says where the list starts.
+- Pinning a folder lifts it out of the tree rather than copying it. It used to
+  appear twice, which made the rail longer the more of it you pinned. A pinned
+  folder brings its own subfolders up with it and sits at the top level of the
+  pinned area, whatever it was nested under.
+- The button that unpins a folder is a pin with a line through it, in the rail
+  and on the Folders tab. Both states used to be the same picture.
+- Mailbox rules are a list of what each one does, and a rule is added or
+  changed in a dialog. The tab used to be every rule open as a form at once,
+  which is the wrong shape for the thing people come to it for: finding out
+  where their mail is going. Turning a rule on and off and moving it up and
+  down stay on the row, since those are what is done to a rule most often.
+- The automatic reply is written in the editor the compose page uses, like the
+  signature.
+- A mailbox's signature is written in the editor the compose page uses, with
+  the same Rich text and Plain text switch. It used to be two boxes side by
+  side, one of them asking for HTML source — and the HTML one is what actually
+  goes out, so leaving it empty quietly meant the signature appeared only on
+  plain messages.
+
+### Fixed
+
+- A message is delivered into a mailbox once however many of a domain's
+  aliases point at that mailbox. A domain with a catch-all into a mailbox and
+  a named address into the same mailbox matched both for that address and put
+  two copies in the Inbox. A message you address to yourself still arrives:
+  being in Sent does not count as being delivered.
+- Every message the server stores now belongs to a conversation. Only mail
+  that arrived from outside had one; a message you sent, a draft, and a
+  message a mail program appended over IMAP were all stored with no
+  conversation, so a reply stood apart from what it answered.
+- A message is decoded from the character set it says it is written in.
+  Bodies were handed to the browser as they arrived, so a Japanese newsletter
+  in ISO-2022-JP was a page of escape sequences, a Chinese one in GB2312 was
+  nonsense, and a French one in Windows-1252 had a replacement character where
+  every accent had been. Subjects were already decoded, because a header
+  carries its character set in each encoded word while a body carries it once
+  in the Content-Type — which nothing was reading.
+- A message's own menu — download, headers, theme — sits at the end of the
+  line that names the message rather than on a row of its own above it. In a
+  conversation that was one row holding one button for every message in it.
+- Archiving or deleting a conversation from Starred, or from a search across
+  the mailbox, acted on every message of it wherever it was filed — including
+  your own replies in Sent and an unsent draft. From a list that is not a
+  folder, the row now stands for the message it shows.
+- Opening a conversation from the Inbox no longer marks read the messages of
+  it that are sitting in Junk or another folder.
+- Marking a whole conversation unread left it looking read, because the two
+  halves of the toggle were swapped.
+- A conversation is ordered by when each message was written rather than by
+  when its item was filed, so archiving the first message of a conversation
+  no longer moves it to the top and renames the conversation after a reply.
+- The IMAP settings — the host and ports a mail program is told to connect to
+  for reading mail — were not among the sections written to the database, so
+  they reset to the ports the process happens to bind every time the server
+  restarted. A mail program set up from what the dashboard said would then
+  stop connecting. The `imap` section is stored now, and a test walks the
+  configuration to check that every section is.
+- 183 lines of stylesheet had been pasted into the middle of a phone media
+  query, which both broke the rule they landed in — long DNS record values
+  stopped wrapping on a phone — and overrode the real rules at phone widths.
+- A checkbox and its label on the auto reply tab and the single sign-on
+  settings were laid out as a form field, one above the other, because they
+  asked for a class that does not exist.
+
 ## [0.11.0] - 2026-09-08
 
 ### Added

@@ -139,8 +139,18 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		receivedHeader,
 	}, envelope.Headers)
 
+	// The conversation this message is part of, from what it answers — the
+	// same question asked of an arriving message. Without it a reply sent
+	// from the dashboard or a mail program lands in Sent outside the thread
+	// it belongs to, and the thread reads as though nobody answered.
+	threadId, err := ThreadIDFor(tx, envelope.Headers)
+	if err != nil {
+		return nil, err
+	}
+
 	// save mail
 	mail := &models.Mail{
+		ThreadID:       threadId,
 		DomainID:       domain.ID,
 		Domain:         domain,
 		EnvelopeID:     envelope.ID,

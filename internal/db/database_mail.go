@@ -388,6 +388,14 @@ func (self *transaction) CreateMails(mails []*models.Mail, options *Options) ([]
 		if mail.FromName == "" && len(mail.Headers) > 0 {
 			mail.FromName = displayNameOf(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "From")))
 		}
+		// A message that answers nothing begins a conversation of its own,
+		// and its id is that conversation. Done here rather than at each of
+		// the six places that store a message, because a message stored
+		// without one groups with every other message that has none — the
+		// whole of "no conversation" reads as a single conversation.
+		if mail.ThreadID == "" {
+			mail.ThreadID = id
+		}
 		newModel := mailModel{
 			ID:         id,
 			CreatedAt:  now,

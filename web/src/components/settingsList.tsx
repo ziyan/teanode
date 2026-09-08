@@ -13,15 +13,21 @@ export function SettingsSection({
   title,
   description,
   action,
+  card,
   children,
 }: {
   title?: string
   description?: React.ReactNode
   action?: React.ReactNode
+  // Draw the section as a panel. Pages that show one list on a page let it
+  // sit on the page itself; a page of several lists, or a tab beside other
+  // tabs that are panels, asks for the border so the lists do not run
+  // together.
+  card?: boolean
   children?: React.ReactNode
 }) {
   return (
-    <section className="settings-section">
+    <section className={card ? 'settings-section card' : 'settings-section'}>
       {(title || action) && (
         <div className="settings-section-head">
           <div>

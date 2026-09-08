@@ -11,6 +11,7 @@ Then, depending on what you are doing:
 - `docs/reference/command-line.md` — the CLI, and how it reaches the whole API
 - `docs/reference/deployment.md` — running it with docker compose, and backups
 - `docs/coding/database-migrations.md` — how to add a migration safely
+- `docs/coding/frontend-design.md` — the dashboard's components and layout rules
 - `docs/security/security-review.md` — what was audited, and what is open
 - `docs/decisions/` — why the architecture is the way it is
 - `docs/planning/active/` — work in flight, including the current restructure

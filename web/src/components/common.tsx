@@ -108,9 +108,67 @@ export function Loading() {
   return <p className="muted">{t('common.loading')}</p>
 }
 
+// Whatever went wrong, said in the one place the eye already looks for it.
+// Nothing is drawn when there is nothing wrong, so a caller can render it
+// unconditionally instead of writing the same guard on every page.
 export function ErrorMessage({ error }: { error: unknown }) {
+  if (error === null || error === undefined || error === '' || error === false) {
+    return null
+  }
   const message = error instanceof Error ? error.message : String(error)
   return <p className="error">{message}</p>
+}
+
+// SaveRow is the foot of a settings form: what went wrong, the button, and
+// what it did. Written once because it was written ten times — with the note
+// above the button in one file and beside it in another, so two settings
+// pages disagreed about where "saved" appears.
+//
+// The note is a prop because it is not always the same sentence: some
+// settings take effect as soon as they are saved and some wait for a
+// restart, and that is the one thing the reader needs to be told here.
+export function SaveRow({
+  busy,
+  saved,
+  problem,
+  note,
+  canSave = true,
+}: {
+  busy: boolean
+  saved: boolean
+  problem?: unknown
+  note: string
+  // False while there is nothing to save — nothing changed, or a field is
+  // still empty.
+  canSave?: boolean
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <>
+      <ErrorMessage error={problem} />
+      <div className="page-actions">
+        <button className="primary" type="submit" disabled={busy || !canSave}>
+          {busy ? t('common.saving') : t('common.save')}
+        </button>
+        {saved && <span className="muted">{note}</span>}
+      </div>
+    </>
+  )
+}
+
+// Field is a row of a key/value table, skipped when there is nothing to put
+// in it: a label with an em dash beside it costs a line and says nothing.
+export function Field({ label, mono, children }: { label: string; mono?: boolean; children?: React.ReactNode }) {
+  if (children === undefined || children === null || children === '' || children === false) {
+    return null
+  }
+  return (
+    <tr>
+      <td className="shrink muted">{label}</td>
+      <td className={mono ? 'mono wrap' : 'wrap'}>{children}</td>
+    </tr>
+  )
 }
 
 export function formatBytes(size?: number): string {

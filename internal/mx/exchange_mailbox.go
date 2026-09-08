@@ -52,6 +52,23 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 			target = junk
 		}
 	}
+	// One copy per mailbox, however many aliases point at it. A domain with a
+	// catch-all into a mailbox and a named address into the same mailbox
+	// matches both for that address, and delivering twice puts the message in
+	// the Inbox twice — which is what a person sees, and which no
+	// configuration of aliases should be able to cause.
+	//
+	// One existence query, because this is the SMTP path: every message
+	// delivered anywhere asks it.
+	already, err := tx.MailIsInMailbox(mail.ID, mailbox.ID)
+	if err != nil {
+		return nil, err
+	}
+	if already {
+		log.Noticef("message %q is already in mailbox %q, not delivering it again", mail.ID, mailbox.ID)
+		return nil, nil
+	}
+
 	item, err := tx.AddItem(target.ID, mail.ID, models.MailboxItemFlags{})
 	if err != nil {
 		return nil, err
@@ -122,23 +139,41 @@ func senderOf(mail *models.Mail) (string, string) {
 	return strings.ToLower(address), name
 }
 
-// threadIDFor is the conversation a message belongs to: the thread of
-// whatever it answers, by In-Reply-To or References, or a new one of its own.
-func threadIDFor(tx db.Transaction, headers []string) (string, error) {
-	var candidates []string
-	for _, name := range []string{"In-Reply-To", "References"} {
-		value := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, name))
-		for _, field := range strings.Fields(value) {
-			field = strings.TrimSpace(field)
-			if field != "" {
-				candidates = append(candidates, field)
-			}
-		}
-	}
+// ThreadIDFor is the conversation a message belongs to: the thread of
+// whatever it answers, by In-Reply-To or References, or nothing when it
+// answers nothing and so begins one of its own.
+//
+// Exported because the exchange is not the only thing that stores a message.
+// A draft saved from the dashboard and a message a mail program appends over
+// IMAP are stored too, and one stored without a conversation reads as a
+// conversation of its own — which for a draft reply, or a program's own copy
+// of what it sent, is wrong in the one place it shows.
+func ThreadIDFor(tx db.Transaction, headers []string) (string, error) {
+	candidates := threadCandidates(headers)
 	if len(candidates) == 0 {
 		return "", nil
 	}
 	return tx.FindThreadID(candidates)
+}
+
+// threadCandidates is the message ids a message says it answers: the one in
+// In-Reply-To and every one in References, which carries the whole chain.
+//
+// Both headers are a list of angle-bracketed ids separated by whitespace, and
+// a long References is folded across lines by the sending program, so the
+// value is read as fields rather than as one string. Whichever of these the
+// server already has decides the conversation.
+func threadCandidates(headers []string) []string {
+	var candidates []string
+	for _, name := range []string{"In-Reply-To", "References"} {
+		value := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, name))
+		for _, field := range strings.Fields(value) {
+			if field = strings.TrimSpace(field); field != "" {
+				candidates = append(candidates, field)
+			}
+		}
+	}
+	return candidates
 }
 
 // SearchDocument is the text a folder search runs over: subject, sender,

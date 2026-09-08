@@ -43,6 +43,11 @@ type MailboxOperation interface {
 	GetItem(itemId string) (*models.MailboxItem, error)
 	ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error)
 	CountItems(folderId string, options *ItemOptions) (int64, error)
+
+	// ListThreads is ListItems grouped into conversations: one row per
+	// conversation, holding the newest of its messages in this folder.
+	ListThreads(folderId string, options *ItemOptions) ([]*models.MailboxThread, error)
+	CountThreads(folderId string, options *ItemOptions) (int64, error)
 	SetItemFlags(itemIds []string, flags models.MailboxItemFlags) (int64, error)
 
 	// MoveItems puts items in another folder: new items with that folder's
@@ -57,6 +62,11 @@ type MailboxOperation interface {
 	// ListItemsByMail is every item, in any mailbox, holding a message: what
 	// says who may read it.
 	ListItemsByMail(mailId string) ([]*models.MailboxItem, error)
+
+	// MailIsInMailbox says whether a message is already filed in a mailbox,
+	// anywhere but its Sent and Drafts folders. Asked on every delivery, so
+	// it is one existence query rather than a list of everything.
+	MailIsInMailbox(mailId, mailboxId string) (bool, error)
 
 	// ListExpunged is what vanished from a folder since a modseq.
 	ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error)
@@ -133,6 +143,13 @@ type ItemOptions struct {
 	// Ascending lists oldest first, which is UID order; the default is
 	// newest first, which is what a list shows.
 	Ascending bool
+
+	// ByReceived orders by when the message was written rather than by when
+	// the item was added to its folder. A conversation is read in the order
+	// it was said, and moving a message to another folder makes a new item
+	// with a new added_at — so without this, archiving the first message of
+	// a conversation moves it to the top of it.
+	ByReceived bool
 }
 
 type mailboxModel struct {
@@ -841,9 +858,7 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	if options.SinceModSeq > 0 {
 		query = query.Where("\"mailbox_item\".\"modseq\" > ?", options.SinceModSeq)
 	}
-	needsMail := options.Search != "" || options.ThreadID != "" || options.From != "" || options.To != "" || options.Subject != "" ||
-		!options.Since.IsZero() || !options.Before.IsZero() || options.HasAttachment != nil
-	if needsMail {
+	if needsMailJoin(options) {
 		query = query.Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"")
 		if options.Search != "" {
 			query = query.Where("\"mail\".\"search\" @@ websearch_to_tsquery('simple', ?)", options.Search)
@@ -880,17 +895,40 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	return query
 }
 
-func (self *transaction) ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error) {
-	query := self.itemQuery(folderId, options)
-	switch {
-	case folderId == "" && options != nil && options.MailboxID != "":
-		// Across folders a UID means nothing; arrival does.
-		query = query.Order("\"mailbox_item\".\"added_at\" DESC, \"mailbox_item\".\"id\" DESC")
-	case options != nil && options.Ascending:
-		query = query.Order("\"mailbox_item\".\"uid\" ASC")
-	default:
-		query = query.Order("\"mailbox_item\".\"uid\" DESC")
+// needsMailJoin says whether a filter reaches into the message rather than
+// the item, and so whether the query has to join "mail". Named because the
+// thread queries below need the same join whether or not a filter asks for it.
+func needsMailJoin(options *ItemOptions) bool {
+	if options == nil {
+		return false
 	}
+	return options.Search != "" || options.ThreadID != "" || options.From != "" || options.To != "" ||
+		options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() || options.HasAttachment != nil
+}
+
+// itemOrder is how a list of items is sorted: within a folder by UID, which is
+// arrival order and what IMAP means by it; across a mailbox by when the item
+// was added, since a UID from another folder is a different number line.
+func itemOrder(folderId string, options *ItemOptions, table string) string {
+	switch {
+	case options != nil && options.ByReceived:
+		// The message's own time, which is the same whichever folder its
+		// item happens to be in and whenever it was put there.
+		if options.Ascending {
+			return `"mail"."received_at" ASC, "` + table + `"."id" ASC`
+		}
+		return `"mail"."received_at" DESC, "` + table + `"."id" DESC`
+	case folderId == "" && options != nil && options.MailboxID != "":
+		return `"` + table + `"."added_at" DESC, "` + table + `"."id" DESC`
+	case options != nil && options.Ascending:
+		return `"` + table + `"."uid" ASC`
+	default:
+		return `"` + table + `"."uid" DESC`
+	}
+}
+
+func (self *transaction) ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error) {
+	query := self.itemQuery(folderId, options).Order(itemOrder(folderId, options, "mailbox_item"))
 	if options != nil && options.Limit > 0 {
 		query = query.Limit(options.Limit)
 	}
@@ -917,6 +955,172 @@ func (self *transaction) CountItems(folderId string, options *ItemOptions) (int6
 	}
 	err := self.itemQuery(folderId, options).Count(&count).Error
 	return count, err
+}
+
+// threadQuery is itemQuery with the message joined whatever the filters ask
+// for, because grouping by conversation reads a column of the message.
+func (self *transaction) threadQuery(folderId string, options *ItemOptions) *gorm.DB {
+	query := self.itemQuery(folderId, options)
+	if !needsMailJoin(options) {
+		query = query.Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"")
+	}
+	return query
+}
+
+// threadRow is what the grouping query returns before the counts are added.
+type threadRow struct {
+	ThreadID string `gorm:"column:thread_id"`
+	ItemID   string `gorm:"column:item_id"`
+}
+
+// ListThreads is ListItems grouped into conversations: one row per
+// conversation, holding the newest of its messages that are in this folder.
+//
+// Two queries rather than one. The first picks the newest item of each
+// conversation with DISTINCT ON, which PostgreSQL answers by sorting once;
+// the second counts the conversation's messages in the folder and collects
+// who wrote them. Doing both in one statement means either a window function
+// over every matching row or an aggregate that cannot also carry the whole
+// item, and neither reads as well as two plain queries.
+//
+// The counts deliberately ignore the search and flag filters: "3 messages"
+// means the conversation has three messages here, not that three of them
+// matched what was typed in the search box.
+func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*models.MailboxThread, error) {
+	inner := self.threadQuery(folderId, options)
+	order := itemOrder(folderId, options, "mailbox_item")
+	inner = inner.
+		Select("DISTINCT ON (\"mail\".\"thread_id\") \"mail\".\"thread_id\" AS thread_id, \"mailbox_item\".\"id\" AS item_id, " +
+			"\"mailbox_item\".\"id\" AS id, \"mailbox_item\".\"uid\" AS uid, \"mailbox_item\".\"added_at\" AS added_at").
+		Order("\"mail\".\"thread_id\", " + order)
+
+	// The conversations themselves, newest first, from the newest item of
+	// each. The inner query has to be a subquery: DISTINCT ON fixes the sort
+	// it needs, which is not the sort the list wants.
+	outer := self.tx.Table("(?) AS t", inner).Select("t.thread_id, t.item_id").Order(itemOrder(folderId, options, "t"))
+	if options != nil && options.Limit > 0 {
+		outer = outer.Limit(options.Limit)
+	}
+	if options != nil && options.Offset > 0 {
+		outer = outer.Offset(options.Offset)
+	}
+	var rows []threadRow
+	if err := outer.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []*models.MailboxThread{}, nil
+	}
+
+	itemIds := make([]string, 0, len(rows))
+	threadIds := make([]string, 0, len(rows))
+	for _, row := range rows {
+		itemIds = append(itemIds, row.ItemID)
+		threadIds = append(threadIds, row.ThreadID)
+	}
+
+	var itemModels []mailboxItemModel
+	if err := self.tx.Where("\"id\" IN ?", itemIds).Find(&itemModels).Error; err != nil {
+		return nil, err
+	}
+	items := make(map[string]*models.MailboxItem, len(itemModels))
+	for index := range itemModels {
+		items[itemModels[index].ID] = itemFromModel(&itemModels[index])
+	}
+
+	counts, err := self.threadCounts(folderId, options, threadIds)
+	if err != nil {
+		return nil, err
+	}
+
+	threads := make([]*models.MailboxThread, 0, len(rows))
+	for _, row := range rows {
+		item := items[row.ItemID]
+		if item == nil {
+			continue
+		}
+		thread := &models.MailboxThread{ThreadID: row.ThreadID, Item: item, Count: 1, ItemIDs: []string{item.ID}}
+		if count := counts[row.ThreadID]; count != nil {
+			thread.Count = count.Count
+			thread.Unread = count.Unread
+			thread.Flagged = count.Flagged
+			thread.Participants = count.Participants
+			thread.ItemIDs = count.ItemIDs
+		}
+		threads = append(threads, thread)
+	}
+	return threads, nil
+}
+
+// CountThreads is how many conversations the folder holds under the same
+// filters, for the page count under the list.
+func (self *transaction) CountThreads(folderId string, options *ItemOptions) (int64, error) {
+	if options != nil {
+		trimmed := *options
+		trimmed.Limit, trimmed.Offset, trimmed.Cursor = 0, 0, ""
+		options = &trimmed
+	}
+	var count int64
+	query := self.threadQuery(folderId, options).Distinct("\"mail\".\"thread_id\"")
+	err := query.Count(&count).Error
+	return count, err
+}
+
+// threadCount is the aggregate over one conversation within a folder.
+type threadCount struct {
+	ThreadID     string   `gorm:"column:thread_id"`
+	Count        int      `gorm:"column:count"`
+	Unread       int      `gorm:"column:unread"`
+	Flagged      bool     `gorm:"column:flagged"`
+	Names        string   `gorm:"column:names"`
+	Items        string   `gorm:"column:items"`
+	Participants []string `gorm:"-"`
+	ItemIDs      []string `gorm:"-"`
+}
+
+// threadCounts counts each conversation's messages in the folder, and gathers
+// who wrote them, oldest first.
+func (self *transaction) threadCounts(folderId string, options *ItemOptions, threadIds []string) (map[string]*threadCount, error) {
+	// The folder scope only. The filters that narrow the list — a search, a
+	// date, unread — are deliberately not applied: the count says how big the
+	// conversation is, not how much of it matched.
+	scope := &ItemOptions{}
+	if options != nil {
+		scope.MailboxID = options.MailboxID
+	}
+	query := self.threadQuery(folderId, scope).
+		Where("\"mail\".\"thread_id\" IN ?", threadIds).
+		// By message rather than by item: the same message filed in two
+		// folders is one message of the conversation, and a conversation read
+		// across the whole mailbox would otherwise say two.
+		Select("\"mail\".\"thread_id\" AS thread_id, COUNT(DISTINCT \"mailbox_item\".\"mail_id\") AS count, " +
+			"COUNT(DISTINCT \"mailbox_item\".\"mail_id\") FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread, " +
+			"BOOL_OR(\"mailbox_item\".\"flagged\") AS flagged, " +
+			"STRING_AGG(COALESCE(NULLIF(\"mail\".\"from_name\", ''), \"mail\".\"from\"), CHR(10) ORDER BY \"mail\".\"received_at\") AS names, " +
+			"STRING_AGG(\"mailbox_item\".\"id\", CHR(10) ORDER BY \"mail\".\"received_at\") AS items").
+		Group("\"mail\".\"thread_id\"")
+	var rows []threadCount
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]*threadCount, len(rows))
+	for index := range rows {
+		row := &rows[index]
+		seen := map[string]bool{}
+		for _, name := range strings.Split(row.Names, "\n") {
+			if name = strings.TrimSpace(name); name != "" && !seen[name] {
+				seen[name] = true
+				row.Participants = append(row.Participants, name)
+			}
+		}
+		for _, itemId := range strings.Split(row.Items, "\n") {
+			if itemId = strings.TrimSpace(itemId); itemId != "" {
+				row.ItemIDs = append(row.ItemIDs, itemId)
+			}
+		}
+		counts[row.ThreadID] = row
+	}
+	return counts, nil
 }
 
 func (self *transaction) SetItemFlags(itemIds []string, flags models.MailboxItemFlags) (int64, error) {
@@ -1049,6 +1253,21 @@ func (self *transaction) markUnreferenced(mailIds []string) error {
 		return nil
 	}
 	return self.tx.Exec(`UPDATE "mail" SET "unreferenced_at" = now() WHERE "id" IN ? AND "unreferenced_at" IS NULL AND NOT EXISTS (SELECT 1 FROM "mailbox_item" WHERE "mailbox_item"."mail_id" = "mail"."id")`, mailIds).Error
+}
+
+// MailIsInMailbox answers "has this mailbox already got this message" for
+// the delivery path, where two aliases of a domain can point at one mailbox.
+//
+// Sent and Drafts do not count. A message you address to yourself is in your
+// Sent folder before it is delivered, and it should still arrive.
+func (self *transaction) MailIsInMailbox(mailId, mailboxId string) (bool, error) {
+	var count int64
+	err := self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Where("\"mailbox_item\".\"mail_id\" = ? AND \"mailbox_folder\".\"mailbox_id\" = ? AND \"mailbox_folder\".\"kind\" NOT IN ?",
+			mailId, mailboxId, []string{string(models.MailboxFolderKindSent), string(models.MailboxFolderKindDrafts)}).
+		Limit(1).Count(&count).Error
+	return count > 0, err
 }
 
 func (self *transaction) ListItemsByMail(mailId string) ([]*models.MailboxItem, error) {
