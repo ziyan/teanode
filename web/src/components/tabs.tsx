@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { Key, useTranslation } from '../i18n/i18n'
+import { Tooltip } from './tooltip'
 
 // A row of tabs, each of which is a route.
 //
@@ -11,7 +12,17 @@ import { Key, useTranslation } from '../i18n/i18n'
 
 // A tab can be unavailable — the compose page's template tab when the domain
 // has no templates — and then it says why rather than only refusing.
-export type TabItem = { id: string; label: Key; disabled?: boolean; title?: string }
+export type TabItem = {
+  id: string
+  label: Key
+  disabled?: boolean
+  title?: string
+  // Something on this tab wants attention — an upgrade waiting to be applied.
+  // The rail shows a dot on the page; the page shows one on the tab, so that
+  // arriving from the first dot does not end in a page of tabs and no reason.
+  marked?: boolean
+  markedLabel?: string
+}
 
 export function Tabs({
   items,
@@ -78,17 +89,22 @@ export function Tabs({
   return (
     <div className="tabs" ref={strip}>
       {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={item.id === active ? 'active' : ''}
-          aria-current={item.id === active ? 'page' : undefined}
-          disabled={item.disabled}
-          title={item.title}
-          onClick={() => onSelect(item.id)}
-        >
-          {t(item.label)}
-        </button>
+        <Tooltip key={item.id} label={item.title ?? ''}>
+          <button
+            type="button"
+            className={item.id === active ? 'active' : ''}
+            aria-current={item.id === active ? 'page' : undefined}
+            disabled={item.disabled}
+            onClick={() => onSelect(item.id)}
+          >
+            {t(item.label)}
+            {item.marked && (
+              <span className="tab-dot">
+                <span className="visually-hidden">{item.markedLabel ?? ''}</span>
+              </span>
+            )}
+          </button>
+        </Tooltip>
       ))}
       {actions}
     </div>

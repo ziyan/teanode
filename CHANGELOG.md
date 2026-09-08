@@ -6,6 +6,183 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- What a message's checks said is in the mailbox, not only on the audit page:
+  a shield beside the time in the list, colored by whether the sending domain
+  authorized the server, whether the signature held, whether the domain's own
+  policy was satisfied and what the spam filter scored it, with all of that in
+  its tooltip — and the same in words on the message itself.
+- A message carries a link to its audit page, in its own menu, for anyone who
+  may read one: where it came from, every delivery attempt, and the raw
+  source.
+- Tooltips are the dashboard's own rather than the browser's. A native title
+  waits about a second, is drawn in the operating system's colors, and cannot
+  wrap — a timestamp with a zone name in it came out as one long line in a
+  font nobody chose. Every relative time and every icon-only row action uses
+  the new one.
+- Report junk moves a conversation to Junk and teaches the spam filter what it
+  is, in one action, from the reader or over what is selected in the list.
+  Moving without teaching leaves the next one from the same sender in the
+  Inbox; teaching without moving leaves you looking at what you have just
+  called junk. In Junk the button reads Not junk and does the opposite.
+
+### Fixed
+
+- About is the Server page's first tab, and where /server lands: what this
+  server is and the upgrade waiting for it, which is what the dot in the rail
+  is pointing at. It was last, behind eleven tabs of settings.
+- The Server page marks the tab that holds the reason for the dot in the
+  rail. The rail said "there is something here" and the page it opened said
+  nothing about which of its seven tabs meant it.
+- The buttons under the release notes have room above them. They sat against
+  the last line of the changelog, reading as part of it.
+- A tooltip no longer appears after a tap. A tap emulates a hover and focuses
+  what it touched, so the box arrived a third of a second after the button had
+  done its job — over the menu that had just opened, describing the button
+  underneath it. Tooltips are for a pointer and for keyboard focus.
+- On a phone an action stays on the right when it drops below what it acts
+  on. Stacked to the left, an action that is one icon — the plus that adds a
+  member, the cross that takes one out — was a mark alone on a line, reading
+  as something the heading had said rather than as a button.
+- The mailbox's rows of actions are one line that scrolls sideways on a
+  phone. Ten icons need four hundred pixels and a phone has three hundred and
+  ninety, so they wrapped, and the second row pushed the message down and left
+  one icon sitting alone under nine.
+- What you tap on a phone is big enough to tap. The box that selects a
+  conversation and the star that flags it were thirteen pixels wide in a row
+  forty pixels tall; a table's page arrows were squeezed to seventeen; a
+  group's name on a person's row was a chip too short to hit.
+- The box that ticks every conversation sits in the column of the boxes that
+  tick one. It was two pixels to the right of them: the row of actions above
+  the list had a narrower inset than a row of the list, and a checkbox carries
+  a margin of the browser's own.
+- Nothing on the page changes size when it is chosen, hovered or ticked. The
+  row being read in a list of groups or roles carries a pencil and a bin, and
+  grew seven pixels taller than the rows around it, so choosing one moved the
+  list you were choosing from; the mailbox's row of actions appeared when the
+  first message was ticked and pushed the list down fifteen pixels, so the
+  second message you meant to tick had moved. Three more said the same thing
+  with a heavier weight — the tabs, a chosen menu item, a ticked row — and
+  bolder text is wider text.
+- Every tooltip left in the dashboard is the dashboard's own. Twenty-five were
+  still the browser's `title` — the rail's collapse and refresh, the table's
+  sort headers, its page arrows and its clipped cells, the editor's toolbar,
+  the picture and clear buttons, a session's browser, a DNS value, a spam
+  check's meaning, who a message is from, and every tab that carries an
+  explanation. They waited a second, were drawn in the operating system's
+  colors and could not wrap.
+- The audit log's disclosure points down to open a row and up to close it. It
+  was the same arrow in both states, which says the button does the same thing
+  twice.
+- A tooltip appeared in the top left corner of the window rather than beside
+  what it describes. It was measured from its own anchor, which is drawn as
+  nothing at all so that it does not become an item of the row it sits in —
+  and an element with no box measures as zeros.
+- A row of a tick list with two lines in it — a permission and its key, a
+  role and what it is for — was squeezed to the height of one and drawn over
+  the row below it.
+- A session, an API token and a passkey record who used them rather than what
+  forwarded the request, the same way the audit log now does. Behind a CDN the
+  list of sessions said every one of them was used from one address in another
+  country. The limit on how often a password may be tried counts against the
+  client too: shared across everybody behind a proxy, one person guessing
+  passwords used up the allowance for the rest.
+- The audit log records who asked, not who forwarded. Behind a CDN every row
+  read as one address in another country, because the address a request
+  arrives from is the proxy's. The forwarded-for header says who the client
+  is, and is now read — but only when the connection itself came from an
+  address listed in the new `server.trustedProxies`, since anybody who can
+  reach the server directly can otherwise write their own address into the
+  audit trail. Single sign-on was already reading that header without asking,
+  and no longer does.
+- An audit row says what the thing is called and links to it: the alias
+  `sales@example.com` on its domain's page rather than an identifier, the
+  group, the role, the person, the mailbox, the app password. Something since
+  deleted is named from the row's own snapshot, which is the case that most
+  needed it.
+- An audit row of a change shows the fields that changed, each with what it
+  was and what it is. A mailbox's rules came out as a list of several thousand
+  numbers, since the snapshot is JSON and the API had been describing it as an
+  array of bytes.
+- A person created while there is no Members group joins no group at all,
+  which is no permissions at all — they can sign in and read nothing. The
+  server says so in the log, and the page no longer promises a group that is
+  not there.
+- A reply saved as a draft belongs to the conversation it answers. The headers
+  that say what a message answers were written when one was sent and not when
+  one was saved, so a half-written reply left the thread it was written in the
+  moment the page was left, and turned up in Drafts as a conversation of its
+  own.
+
+### Changed
+
+- What an audit row changed is a table: a column of fields, what each was, and
+  what it is. As cards across the width, five fields came out in five places
+  and the eye had to find each one before it could read it.
+- The mailbox picker in the rail and the rows-per-page control under a table
+  are the dashboard's own dropdown. A native select opens its list in the
+  operating system's colors, which on a dark rail is a white rectangle.
+- The mailbox's two toolbars are icons with their names in the tooltip. Nine
+  verbs across the top of a conversation — back, reply, reply to all, forward,
+  mark unread, flag, archive, report junk, move, delete — wrapped onto a
+  second line on anything narrower than a laptop, and every one of them is
+  something a mail program already has a picture for. Move to is a menu the
+  button opens, rather than a dropdown that had to be read before it could be
+  used.
+- A message's headers are a list of names and values, with a button that
+  copies the block exactly as it arrived. Read as it came off the wire, a
+  Received: is four folded lines of one header and the reader has to find
+  where each one ends before they can find the one they want.
+- A role is managed on the page too, beside the list of roles: what it is
+  for, and the sixty-odd permissions it may hold, each with its key under its
+  name. They were in a dialog, which for a list that long meant scrolling a
+  box that covered the page to reach the one permission you came to change.
+- A list where one thing is being looked at says so the way the rail does: a
+  raised pill on the row you are on, in the same weight as every other row,
+  because bolder text is wider text and the list would shift as you moved
+  down it.
+- Users and groups are their own tabs, and a group is managed on the page
+  rather than in a dialog. Everything a group is — who is in it, the roles it
+  holds, the domains those roles apply over — was three lists inside a box
+  covering the page, so reading who was in a group meant opening it, reading,
+  and closing it again. They are three panels beside each other now: the
+  groups, the members of the one being read, and what it carries. Ticking a
+  role or taking somebody out saves as it is done. A person's groups are
+  shown on the users tab as chips that lead to the group.
+- Every date and time the dashboard writes out names its time zone. One
+  without a zone is ambiguous the moment it is read anywhere but the machine
+  that rendered it, and these are pasted into tickets and compared against
+  logs from a server in another country.
+- People, groups and roles carry their actions as icons rather than as a
+  column of underlined words beside every name. A list of names had more text
+  in its actions than in the names.
+- A message's body is padded on every side. Whatever came first in it — the
+  details, or the notice about blocked images — sat against the border, since
+  the line that used to be there carried the padding.
+- A conversation says when it holds an unsent message, and shows it — folded,
+  since a draft is something to go back to rather than something to read.
+  Clicking it, or Edit draft, opens what was written where it was written.
+  Reply, reply to all and forward answer the newest message of the
+  conversation rather than your own half-written one.
+- A message says who it was addressed to in one muted line, the way a mail
+  program does. From, To, Received and what the checks found were four
+  labelled rows above every message in the conversation, saying at length what
+  the line above already said; they are behind "Show details" in the message's
+  own menu now.
+- The quoted message a reply or a forward carries is folded away while the
+  answer is being written, with a link to unfold it. It is hidden rather than
+  removed, so it is still in what is sent — but what is being written is the
+  answer, and in a conversation the thing it answers is on the screen already.
+- Lists of things to tick — a group's people, its roles, its domains — are
+  panels with a heading and a rule, and their rows are rows. Each one carried
+  the bottom margin of a form field and was drawn in the muted color of a
+  field's helper text, so a group of three roles was a dialog of paragraphs
+  that read as disabled.
+- Copy and blind copy are fields on the compose form like any other. They were
+  behind a "Cc / Bcc" link, which made two ordinary boxes into something to go
+  looking for and put a link where the form's rhythm wanted a label.
+
 ## [0.12.3] - 2026-09-08
 
 ### Fixed

@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
+import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog } from '../../components/dialog'
 import { useQuery } from '../../components/useQuery'
 import { RelativeTime } from '../../components/relativeTime'
@@ -154,7 +155,15 @@ function SessionRow({ session, busy, onRevoke }: { session: Session; busy: boole
 
   return (
     <SettingsRow
-      title={<span title={session.userAgent ?? undefined}>{name}</span>}
+      title={
+        session.userAgent ? (
+          <Tooltip label={session.userAgent}>
+            <span>{name}</span>
+          </Tooltip>
+        ) : (
+          name
+        )
+      }
       badge={
         session.revoked ? (
           <Tag value={t('sessions.revoked')} tone="bad" />
@@ -177,16 +186,17 @@ function SessionRow({ session, busy, onRevoke }: { session: Session; busy: boole
       actions={
         onRevoke && (
           <div className="row-actions">
-            <button
-              type="button"
-              className="icon-action danger"
-              aria-label={`${name}: ${t('sessions.revokeOne')}`}
-              title={t('sessions.revokeOne')}
-              disabled={busy}
-              onClick={onRevoke}
-            >
-              <TrashIcon size={16} />
-            </button>
+            <Tooltip label={t('sessions.revokeOne')}>
+              <button
+                type="button"
+                className="icon-action danger"
+                aria-label={`${name}: ${t('sessions.revokeOne')}`}
+                disabled={busy}
+                onClick={onRevoke}
+              >
+                <TrashIcon size={16} />
+              </button>
+            </Tooltip>
           </div>
         )
       }

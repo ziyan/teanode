@@ -427,7 +427,6 @@ td a:hover {
    one row; the accent says the same thing in the space already there. */
 .menu button.selected {
   color: var(--accent);
-  font-weight: 600;
 }
 
 /* --- a grid of destination cards ------------------------------------------
@@ -482,6 +481,13 @@ td a:hover {
    something to stretch; a modifier says what is meant. */
 .page-actions-end {
   justify-content: flex-end;
+}
+
+/* Room above it when it follows something. At the top of a page this row is
+   the heading's own line and needs none; under the release notes it had none
+   either, and Check now sat against the last line of the changelog. */
+.page-actions:not(:first-child) {
+  margin-top: var(--space-4);
 }
 
 .page-actions button {
@@ -833,8 +839,10 @@ a.tile:hover strong {
   border-color: var(--border);
   box-shadow: var(--shadow-raised);
   color: var(--text);
-  font-weight: 550;
-  font-weight: 600;
+  /* The same weight as every other row, deliberately: bolder text is wider
+     text, so the row you are on would be a different size from the row above
+     it, and the whole list would shift by a hair as you moved between them.
+     The pill says which row it is. */
 }
 
 .sidebar nav a.active .sidebar-icon {
@@ -1013,7 +1021,8 @@ tr:has(.icon-button) > td {
   margin-left: auto;
 }
 
-.table-pagination label {
+.table-pagination label,
+.table-rows {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -1021,7 +1030,7 @@ tr:has(.icon-button) > td {
   color: var(--muted);
 }
 
-.table-pagination select {
+.table-rows .select {
   padding: 3px 6px;
   min-height: 28px;
   font-size: var(--text-label);
@@ -1030,6 +1039,9 @@ tr:has(.icon-button) > td {
 .table-pagination .icon-button {
   width: 28px;
   height: 28px;
+  /* Kept square. As flex items in a crowded row they were squeezed to
+     seventeen pixels wide on a phone, which is a target nobody can press. */
+  flex: 0 0 auto;
 }
 
 .table-pagination .icon-button:disabled {
@@ -1699,7 +1711,10 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 /* The indicator is the text color rather than the accent. Switching a
    section of the page is not an action to be pressed, and coloring it spends
    the one emphasis the page has on something you are already looking at. */
-.tabs button.active { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
+/* Color and the rule under it, and not a heavier weight: bolder text is
+   wider text, so switching tabs moved every tab to the right of the one
+   chosen. */
+.tabs button.active { border-bottom-color: var(--text); color: var(--text); }
 
 /* The message body is rendered inside a sandboxed frame. It is mail written
    by a stranger, so it gets no scripts, no same-origin access, and a white
@@ -2371,18 +2386,26 @@ body,
 }
 
 @media (max-width: 600px) {
-  /* Stacked. The action is as wide as its words, and beside it on a phone the
-     description is left a column four words across with a tall empty space
-     under the button — the heading of a section should not be the widest
-     thing in it.
+  /* The action drops below what it acts on rather than sitting beside it: an
+     action as wide as its words leaves the description a column four words
+     across, and a subtitle wrapping to four lines next to two buttons has a
+     lot of nothing under them.
 
-     The row goes the same way: what the actions act on takes the line, and
-     the actions take the next one. Half a row each meant a subtitle wrapping
-     to four lines next to two buttons and a lot of nothing under them. */
+     It stays on the right when it drops, which is where it was. Stacked to
+     the left, an action that is one icon — a plus, a cross — was a mark alone
+     on a line under a heading, and read as something the heading had said
+     rather than a button. */
   .settings-section-head {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
     gap: var(--space-3);
+  }
+
+  .settings-section-head > div:first-child {
+    min-width: 60%;
+  }
+
+  .settings-section-head > *:not(:first-child) {
+    margin-left: auto;
   }
 
   .settings-row-body {
@@ -2391,6 +2414,7 @@ body,
 
   .settings-row-actions {
     width: 100%;
+    justify-content: flex-end;
   }
 }
 
@@ -2860,6 +2884,18 @@ a.button.primary:hover {
   word-wrap: break-word;
 }
 
+/* The quoted message a reply carries, folded away while the answer is being
+   written. Hidden rather than removed: it is still in the document and still
+   in what is sent — what is being written is the answer, and the thing it
+   answers is a click away and, in a conversation, on the screen already. */
+.richtext-editor.quoted-hidden .teanode-quote {
+  display: none;
+}
+
+.compose-quoted {
+  margin: -4px 0 12px;
+}
+
 .richtext-editor:empty::before {
   content: attr(data-placeholder);
   color: var(--muted);
@@ -3019,13 +3055,26 @@ a.button.primary:hover {
 
 /* A dot on the one row that has something waiting on it. It says "look here"
    and nothing else, which is all a rail should say. */
-.sidebar-dot {
+.sidebar-dot,
+.tab-dot {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   margin-left: auto;
   border-radius: 50%;
   background: var(--warn);
+}
+
+/* The same dot on the tab that holds the reason for it. A dot in the rail
+   takes somebody to a page of tabs, and without it here the page they land on
+   says nothing about why they came. */
+/* Inline-block, because width and height do nothing to an inline box: a tab
+   is a line of text rather than a flex row, and the dot came out as nothing
+   at all — no width, and the height of a line. */
+.tab-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
 }
 
 /* Collapsed, the dot moves onto the icon rather than disappearing: the reason
@@ -3165,40 +3214,174 @@ a.button.primary:hover {
   font-size: 13px;
 }
 
-/* Lists of things to tick: users in a group, roles of a group, permissions of a role. */
+/* Lists of things to tick: users in a group, roles of a group, permissions of
+   a role. A panel with a header and a ruled-off list of rows, rather than a
+   box with a label wedged into its top border. */
 .check-list {
   border: 1px solid var(--border, #ddd);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin: 8px 0;
+  border-radius: 8px;
+  padding: 0;
+  /* The same step as between the fields above it, so a dialog of labels and
+     lists has one rhythm rather than two. */
+  margin: 0 0 var(--space-3);
+}
+/* The header, and the one way a legend can be one: floated to the full width
+   it lays out as an ordinary block at the top of the fieldset, so it can have
+   a rule under it instead of sitting in a notch in the border. */
+.check-list legend {
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border, #ddd);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* How many are ticked, read as a count beside the heading rather than as more
+   heading. */
+.check-list legend .muted {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* Everything under a floated header has to clear it. */
+.check-list > p,
+.check-list-search,
+.check-list-items {
+  clear: both;
+}
+.check-list > p {
+  margin: 0;
+  padding: 10px 12px 0;
+  font-size: 13px;
 }
 /* The rows scroll, not the fieldset: a search box inside a scrolling
-   fieldset scrolls away with what it is searching. */
+   fieldset scrolls away with what it is searching.
+   
+   On the page the list is as long as it is — a nested scroller inside a page
+   that scrolls is two ways to move one list, and it cut the last row in half
+   to say so. The cap is there for the server with two hundred domains. */
 .check-list-items {
-  max-height: 14rem;
+  max-height: 60vh;
   overflow-y: auto;
+  padding: 6px 12px 8px;
 }
-.check-list legend {
-  font-weight: 600;
-  padding: 0 4px;
+/* In a dialog it has to be short: three of these and the buttons are off the
+   bottom of the screen. */
+.dialog .check-list-items {
+  max-height: 14rem;
 }
-.check-list-item {
+/* A row of the list, not a field of a form. It has to say so, because the
+   dialog styles every label as a field: a bottom margin meant for a labelled
+   input, and a small muted block for its text. Left alone the rows sat a
+   third of an inch apart in a colour that read as disabled. */
+label.check-list-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
+  gap: 10px;
+  /* The rows are the items of a scrolling column, and a flex item shrinks by
+     default: a row of two lines was squeezed to the height of one and drawn
+     over the row below it. */
+  flex: 0 0 auto;
+  /* Beats .dialog label, which is a class and a type and would otherwise
+     win: the row is not a field and must not carry a field's margin. */
+  margin: 0;
+  padding: 5px 0;
+  min-height: 30px;
   cursor: pointer;
+}
+/* What the row says, which is one line or two: a permission is its name and
+   its key, a role is its name and what it is for. The second line is a span
+   or a code inside this one, and the dialog's rule for a field's helper text
+   turned it into a block inside an inline box — so it broke out of the row
+   and was drawn over the row below it. */
+/* Written against the list rather than the row, to beat the page's rule for
+   a label with a tick box in it — which is a class and two types, and would
+   otherwise decide how these rows are aligned.
+   
+   The box belongs to the first line, not to the middle of a row that may be
+   two lines: centred against a name and its description it read as belonging
+   to the description. */
+.check-list-items > label.check-list-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+.check-list-item > span {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.check-list-item > span span,
+.check-list-item > span code {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
 }
 .check-list-item input {
   margin: 0;
 }
+.check-list-item input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  /* Down onto the first line's centre, since the row is aligned to its top. */
+  margin-top: 2px;
+}
 
 /* The row before and after a change, in the audit log. */
+/* What a change was, as a table: the field, what it was, what it is. Cards
+   across the width put five fields in five places and left the eye to find
+   each one before it could read it. */
 .audit-diff {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
   margin-top: 8px;
+  overflow-x: auto;
+}
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.audit-table th,
+.audit-table td {
+  padding: 4px 10px 4px 0;
+  text-align: left;
+  vertical-align: top;
+  /* An identifier is one long word and would otherwise decide the width of
+     the column it is in. */
+  overflow-wrap: anywhere;
+}
+.audit-table thead th {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.audit-table tbody th {
+  width: 1%;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.audit-table tbody tr + tr th,
+.audit-table tbody tr + tr td {
+  border-top: 1px solid var(--border);
+}
+/* What it was reads as what it was: struck through and muted, so the column
+   that matters is the one on the right. */
+.audit-table .audit-before {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 .audit-diff pre {
   white-space: pre-wrap;
@@ -3207,10 +3390,10 @@ a.button.primary:hover {
   max-height: 20rem;
   overflow: auto;
 }
-.audit-filter select {
-  width: auto;
-  display: inline-block;
-  margin-left: 6px;
+.audit-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* --- mailbox ------------------------------------------------------------ */
@@ -3219,7 +3402,7 @@ a.button.primary:hover {
 .sidebar-mailbox {
   padding: 4px 12px 8px;
 }
-.sidebar-mailbox select {
+.sidebar-mailbox .select {
   width: 100%;
   font-size: 13px;
 }
@@ -3307,9 +3490,22 @@ a.button.primary:hover {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  padding: 6px 8px;
+  /* The same left inset as a row of the list, so the box that ticks all of
+     them sits in the column of the boxes that tick one. */
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
+  /* As tall with nothing selected as with something: the row of actions
+     appears when the first message is ticked, and without this the list
+     under it jumped down by fifteen pixels at the moment of the tick — so
+     the second message somebody meant to tick had moved. The number is the
+     icon buttons, the padding around them and the rule under them. */
+  min-height: 47px;
+}
+/* The browser's own margin on a checkbox would put it four pixels to the
+   right of the column it belongs to. */
+.mailbox-actions input[type='checkbox'] {
+  margin: 0;
 }
 .mailbox-actions button,
 .mailbox-actions select {
@@ -3356,9 +3552,49 @@ a.button.primary:hover {
   color: var(--text);
 }
 .mailbox-row-when {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* What a message's checks said, in the width of one character. A list of
+   fifty cannot spend a line each on SPF, DKIM, DMARC and a spam score, and
+   one that said nothing at all for a message that failed them would be worse
+   than one that never mentioned them. The whole of it is in the tooltip. */
+.verdict-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.verdict-mark.good {
+  color: var(--good);
+  opacity: 0.5;
+}
+
+/* Not subtle, these two. A message that failed its checks is the one thing
+   in a list of names worth interrupting for. */
+.verdict-mark.warn {
+  color: var(--warn);
+  opacity: 1;
+}
+
+.verdict-mark.bad {
+  color: var(--bad);
+  opacity: 1;
+}
+
+/* The same answer in words, on the message itself, where there is room. */
+.verdict-detail.warn {
+  color: var(--warn);
+}
+
+.verdict-detail.bad {
+  color: var(--bad);
 }
 .mailbox-row input[type='checkbox'] {
   margin: 3px 0 0;
@@ -3404,6 +3640,111 @@ a.button.primary:hover {
   flex: 1 1 100%;
   text-wrap: balance;
 }
+/* --- our own dropdown --------------------------------------------------------
+   A native select's list is drawn by the operating system, in the operating
+   system's colors: on a dark page it opens as a white rectangle. Where a
+   control is part of the furniture rather than part of a form to fill in,
+   that is worth drawing ourselves. */
+.select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select:hover {
+  border-color: var(--muted);
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-list {
+  position: fixed;
+  z-index: 60;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.select-list button {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The row under the pointer and the row the keyboard is on are the same
+   thing, so they look the same. */
+.select-list button.active {
+  background: var(--background);
+}
+
+.select-list button[aria-selected='true'] {
+  font-weight: 600;
+}
+
+/* --- tooltips ----------------------------------------------------------------
+   The dashboard's own, rather than the browser's. A native title waits about
+   a second, is drawn in the operating system's colors, and cannot wrap — a
+   timestamp with a zone name comes out as one long line in a font nobody
+   chose. Rendered into the body and positioned from the anchor's box, so a
+   row inside a scrolling list does not clip it. */
+.tooltip-anchor {
+  display: contents;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* Under the thing it describes, for something near the top of the window
+   where there is no room above it. */
+.tooltip.below {
+  transform: translate(-50%, 0);
+}
+
 /* --- a conversation ---------------------------------------------------------
    The messages of one conversation, newest first. A message that has been
    read is a line; opening it puts the message under that line, so the line
@@ -3540,7 +3881,14 @@ a.button.primary:hover {
   color: var(--muted);
 }
 
+/* The time a message arrived, and beside it whether it is really from who it
+   says. Who it was addressed to is not here: for a mailbox with one address
+   that is a line saying what the reader already knows, above every message
+   they open. It is in the menu with the rest of the details. */
 .mailbox-message-when {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   flex: 0 0 auto;
   margin-left: auto;
   font-size: 12px;
@@ -3548,13 +3896,19 @@ a.button.primary:hover {
   white-space: nowrap;
 }
 
+/* Padded on every side. It had no padding at the top because the line saying
+   who the message was addressed to carried its own, and when that line went
+   whatever came first — the details, or the notice about remote images — sat
+   against the border. */
 .mailbox-message-body {
-  padding: 0 12px 12px;
+  padding: 12px;
   border-top: 1px solid var(--border);
 }
 
-.mailbox-message-body .mailbox-pane-meta {
-  margin-top: 12px;
+/* The first thing in the body is spaced by the padding above it, so it does
+   not add its own on top. */
+.mailbox-message-body > :first-child {
+  margin-top: 0;
 }
 
 /* An open message is the one being read; the closed ones around it are a
@@ -3605,6 +3959,55 @@ a.button.primary:hover {
 .mailbox-pane-actions button {
   font-size: 12px;
   padding: 3px 8px;
+}
+/* A finger is not a pointer. The box that selects a conversation and the star
+   that flags it were a thirteen-pixel column each, which on a phone is a
+   target you aim at rather than press. The row they sit in is forty pixels
+   tall; the width is what was missing. */
+@media (max-width: 760px) {
+  .mailbox-row input[type='checkbox'],
+  .mailbox-actions input[type='checkbox'] {
+    width: 24px;
+    height: 24px;
+  }
+  .mailbox-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    /* Back into the column it sits in, so widening the target does not move
+       the subject line across. */
+    margin: 0 -4px;
+  }
+}
+
+/* On a phone the row of actions is one line that scrolls, not two lines that
+   stack. Ten icons need four hundred pixels and a phone has three hundred and
+   ninety, so they wrapped — and a second row of them pushed the message down
+   and left one icon sitting alone under nine. Sideways, the row reads as a
+   row, and the ones past the edge are a swipe away. */
+@media (max-width: 760px) {
+  .mailbox-actions,
+  .mailbox-pane-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* No bar drawn over the icons: on a touch screen there is none to draw,
+       and the row is visibly cut off at the edge, which is the affordance. */
+    scrollbar-width: none;
+  }
+  .mailbox-actions::-webkit-scrollbar,
+  .mailbox-pane-actions::-webkit-scrollbar {
+    display: none;
+  }
+  /* Icons keep their size rather than being squeezed to fit the width. */
+  .mailbox-actions > *,
+  .mailbox-actions button,
+  .mailbox-pane-actions > *,
+  .mailbox-pane-actions button,
+  .mailbox-pane-actions .menu-button {
+    flex: 0 0 auto;
+  }
 }
 .mailbox-placeholder {
   color: var(--muted);
@@ -3777,6 +4180,18 @@ a.button.primary:hover {
   color: var(--muted);
 }
 
+/* An answer begun and left. Said in the list, because the conversation looks
+   finished without it and the half-written reply is two folders away. */
+.mailbox-row-draft {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--background);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--warn);
+}
+
 .mailbox-row-folder {
   display: inline-block;
   font-size: 11px;
@@ -3834,6 +4249,47 @@ a.button.primary:hover {
   max-height: 240px;
   overflow: auto;
   margin: 0;
+}
+/* A header block as a list of names and values. Received: is four folded
+   lines of one header, and read as it came off the wire the reader has to
+   find where each one ends before they can find the one they want. */
+.header-list {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.header-row {
+  display: grid;
+  grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.header-row:last-child {
+  border-bottom: 0;
+}
+.header-row dt {
+  color: var(--muted);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.header-row dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The value keeps its own line breaks — a Received: or an
+     Authentication-Results: is written in several — and wraps the rest. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* One column on a phone: a name of 160px and a value beside it leaves the
+   value forty characters wide. */
+@media (max-width: 600px) {
+  .header-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
 }
 .contacts-filter {
   max-width: 320px;
@@ -3996,12 +4452,20 @@ a.button.primary:hover {
 }
 .access-chip {
   padding: 1px 8px;
+  text-decoration: none;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: var(--text-small);
+  font-size: 13px;
   cursor: pointer;
+}
+/* A group's name on a person's row is a link to that group, so on a phone it
+   is worth being able to hit. */
+@media (max-width: 760px) {
+  .access-chip {
+    padding: 4px 10px;
+  }
 }
 .access-chip:hover {
   color: var(--text);
@@ -4010,19 +4474,120 @@ a.button.primary:hover {
   color: var(--text);
   border-color: var(--text);
 }
-.access-group-name {
+
+/* The groups tab: the groups to choose from, who is in the one chosen, and
+   what it carries — three panels side by side, because they are one subject
+   read together. Every one of them used to be inside a dialog. */
+.access-groups,
+.access-roles {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+.access-groups {
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr) minmax(0, 320px);
+}
+.access-roles {
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+}
+/* The panels are narrower than a page, and a heading beside the one button
+   that adds to it has to be able to fall onto its own line. */
+.access-groups .settings-section-head,
+.access-roles .settings-section-head {
+  flex-wrap: wrap;
+}
+.access-picker {
+  display: none;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+.access-picker .select {
+  flex: 1 1 auto;
+}
+
+/* Narrower than three: what a group carries goes under it, full width, and
+   the list of groups keeps its column. */
+@media (max-width: 1200px) {
+  .access-groups {
+    grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  }
+  .access-attached {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-3);
+    align-items: start;
+  }
+}
+@media (max-width: 900px) {
+  .access-groups,
+  .access-roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* One column: a list of groups above a list of members above two more
+     lists is a page of scrolling to reach what was chosen, so the choice
+     becomes a dropdown and the list of them goes away. */
+  .access-picker {
+    display: flex;
+  }
+  .access-groups > .settings-section:first-of-type,
+  .access-roles > .settings-section:first-of-type {
+    display: none;
+  }
+}
+/* A group or a role in the list beside what it holds, and the actions on the
+   one being read.
+   
+   This is navigation — a list of things where one is being looked at — so it
+   is said the way the rail says it: a raised pill on the row you are on,
+   rather than a rule under every row and an underline on one of them. */
+.access-pick-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 1px 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--muted);
+  /* The height of the row that carries the pencil and the bin, held by every
+     row that does not. The actions appear on the row being read, and without
+     this that row grew by seven pixels and pushed every row under it down —
+     so choosing a group moved the list you were choosing from. */
+  min-height: 42px;
+}
+.access-pick-row:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+.access-pick-row.chosen {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-raised);
+  color: var(--text);
+}
+.access-pick-name {
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
-  font: inherit;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
-.access-group-name:hover,
-.access-group-name.chosen {
-  text-decoration: underline;
+
+.access-idp-note {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
 }
+
 
 /* A dialog fits the screen it is on: what does not fit scrolls inside it,
    and the actions stay at its foot. */
@@ -4043,9 +4608,13 @@ a.button.primary:hover {
   .check-list-item input[type='radio'] {
     min-height: 0;
   }
-  .check-list-item {
+  label.check-list-item {
     padding: 8px 0;
     min-height: 40px;
+  }
+  .check-list-item input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
   }
   /* Lists inside a dialog on a phone: tall enough to work in, short enough
      that three of them do not bury the buttons. Measured in dvh like the
@@ -4059,16 +4628,18 @@ a.button.primary:hover {
    search sits under the legend, the rows scroll under it, and what is
    already chosen is at the top and reads as chosen. */
 .check-list-search {
-  width: 100%;
-  margin: 4px 0 6px;
+  width: calc(100% - 24px);
+  margin: 10px 12px 0;
 }
 .check-list-items {
   display: flex;
   flex-direction: column;
 }
+/* Ticked rows read as ticked from the box, which is the control this row is
+   about. Weight would say it again, in a width that differs from the rows
+   around it. */
 .check-list-item.chosen {
   color: var(--text);
-  font-weight: 500;
 }
 
 /* The groups as a row of chips over the people, for the width where the

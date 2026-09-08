@@ -1,7 +1,8 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Tabs } from '../components/tabs'
-import { Key } from '../i18n/i18n'
+import { useFreshness } from '../components/freshness'
+import { Key, useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
 import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
@@ -15,16 +16,16 @@ import { SetupPage } from './setup'
 // one held the thing they wanted, and two of the three were named after the
 // shape of the page rather than the question it answers.
 //
-// The order is the order somebody meets them. Setup first, because it is what
-// a new server needs and the page that says what is still missing. Then the
-// services, in the order mail moves through them. About last: it is the page
-// you go to when something is already running.
-type Tab = { id: string; label: Key }
+// About first: it is what this server is — the version it runs, and the
+// upgrade waiting for it, which is what the dot in the rail is pointing at.
+// Then Setup, which says what is still missing, and then the services in the
+// order mail moves through them.
+type Tab = { id: string; label: Key; marked?: boolean; markedLabel?: string }
 
 const SERVER_TABS: Tab[] = [
+  { id: 'about', label: 'server.tabAbout' },
   { id: 'setup', label: 'server.tabSetup' },
   ...INTEGRATION_SECTIONS,
-  { id: 'about', label: 'server.tabAbout' },
 ]
 
 // Who may do what moved out of here to /access, its own row in the rail:
@@ -40,13 +41,23 @@ export function ServerPage() {
   const { tab } = useParams()
   const navigate = useNavigate()
   const session = useSession()
+  const { t } = useTranslation()
 
   // A link to where the access tabs used to be goes where they are.
   if (tab && ACCESS_TABS.includes(tab)) {
     return <Navigate to={`/access/${tab}`} replace />
   }
 
-  const TABS: Tab[] = hasPermission(session.permissions, 'server:manage') ? SERVER_TABS : []
+  // The rail's dot says "there is something on the Server page"; this one
+  // says which tab it is on.
+  const { upgradeAvailable } = useFreshness()
+  const TABS: Tab[] = hasPermission(session.permissions, 'server:manage')
+    ? SERVER_TABS.map((candidate) =>
+        candidate.id === 'about' && upgradeAvailable
+          ? { ...candidate, marked: true, markedLabel: t('nav.upgradeAvailable') }
+          : candidate,
+      )
+    : []
   if (TABS.length === 0) {
     return <Navigate to="/access" replace />
   }

@@ -8,6 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/strainer"
 )
 
 // The mailbox, as the web UI reads it: the caller's own mailboxes, each with
@@ -44,6 +45,9 @@ type MailboxMutation interface {
 
 	// Move items to another folder of the same mailbox
 	MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error)
+
+	// Report messages as junk, or as not junk: moved, and the filter taught
+	ReportMailboxJunk(ctx context.Context, arguments ReportMailboxJunkArguments) (int, error)
 
 	// Delete items: into Trash, or for good when they are already there
 	DeleteMailboxItems(ctx context.Context, arguments DeleteMailboxItemsArguments) (int, error)
@@ -704,6 +708,89 @@ func (self *graph) DeleteMailboxItems(ctx context.Context, arguments DeleteMailb
 		count += int(removed)
 	}
 	return count, nil
+}
+
+type ReportMailboxJunkArguments struct {
+	// The messages being reported, which the dashboard passes as the whole
+	// conversation in this folder.
+	ItemIDs []string `json:"itemIds"`
+
+	// NotJunk reverses it: back to the Inbox, and the filter told it was
+	// wrong. Default false, which is reporting junk.
+	NotJunk *bool `json:"notJunk"`
+}
+
+// ReportMailboxJunk moves messages to Junk and teaches the spam filter what
+// they are — or, with notJunk, back to the Inbox and the opposite.
+//
+// Moving without teaching leaves the next one from the same sender in the
+// Inbox, and teaching without moving leaves the reader looking at what they
+// have just called junk. It is one action because it is one intention.
+//
+// The permission is the owner's over their own mailbox, not the server
+// manager's: a person reporting junk in their own Inbox is doing something to
+// their own mail. What it teaches is the one classifier this server has, so
+// on a server with several people one person's judgement does inform
+// everybody's filter — which is the tradeoff a shared Bayesian filter is.
+func (self *graph) ReportMailboxJunk(ctx context.Context, arguments ReportMailboxJunkArguments) (int, error) {
+	if len(arguments.ItemIDs) == 0 {
+		return 0, nil
+	}
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs)
+	if err != nil {
+		return 0, err
+	}
+	notJunk := arguments.NotJunk != nil && *arguments.NotJunk
+
+	kind := models.MailboxFolderKindJunk
+	label := models.SpamTrainingLabelSpam
+	if notJunk {
+		kind = models.MailboxFolderKindInbox
+		label = models.SpamTrainingLabelHam
+	}
+	tx := self.transaction(ctx)
+	target, err := tx.GetFolderByKind(mailbox.ID, kind)
+	if err != nil {
+		return 0, err
+	}
+	if target == nil {
+		return 0, api.ErrNotFound
+	}
+
+	// Teach first, from the messages as they are: moving an item makes a new
+	// one, and there is nothing to learn from a message whose spool file has
+	// been swept.
+	taught := map[string]bool{}
+	for _, item := range items {
+		if taught[item.MailID] {
+			continue
+		}
+		taught[item.MailID] = true
+		headers, body, err := self.storage.Get(ctx, item.MailID)
+		if err != nil {
+			// The message is out of the spool. Moving it is still worth
+			// doing; there is simply nothing left to learn from.
+			log.Warningf("cannot learn from message %q, which is no longer in the spool: %s", item.MailID, err)
+			continue
+		}
+		if err := strainer.Learn(self.database, item.MailID, label, headers, body); err != nil {
+			return 0, err
+		}
+	}
+
+	moving := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.FolderID != target.ID {
+			moving = append(moving, item.ID)
+		}
+	}
+	if len(moving) > 0 {
+		if _, err := tx.MoveItems(moving, target.ID); err != nil {
+			return 0, err
+		}
+	}
+	log.Noticef("%s reported %d message(s) of mailbox %q as %s", operatorName(ctx), len(items), mailbox.ID, label)
+	return len(items), nil
 }
 
 type EmptyMailboxTrashArguments struct {

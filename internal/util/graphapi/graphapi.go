@@ -4,6 +4,7 @@ package graphapi
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"runtime/debug"
@@ -80,6 +81,7 @@ var (
 	timeType      = reflect.TypeOf(time.Time{})
 	contextType   = reflect.TypeOf((*context.Context)(nil)).Elem()
 	byteSliceType = reflect.TypeOf([]byte{})
+	rawJSONType   = reflect.TypeOf(json.RawMessage{})
 )
 
 var Void = graphql.NewScalar(graphql.ScalarConfig{
@@ -101,6 +103,48 @@ var Data = graphql.NewScalar(graphql.ScalarConfig{
 			return nil
 		}
 		return raw
+	},
+	ParseLiteral: func(value ast.Value) interface{} {
+		return nil
+	},
+})
+
+// JSON is a value that is already JSON: a json.RawMessage, sent as what it
+// says rather than as the bytes that spell it.
+//
+// It matters because reflect does not see a named type as its underlying one,
+// so json.RawMessage — which is a []byte — did not match the []byte case
+// above and fell through to the generic slice branch. An audit event's
+// "before" and "after" came out as arrays of byte values: [123, 34, 105 ...],
+// which is "{"i..." spelled one number at a time.
+var JSON = graphql.NewScalar(graphql.ScalarConfig{
+	Name: "JSON",
+	Serialize: func(value interface{}) interface{} {
+		raw, ok := value.(json.RawMessage)
+		if !ok {
+			if bytes, isBytes := value.([]byte); isBytes {
+				raw = bytes
+			} else {
+				return value
+			}
+		}
+		if len(raw) == 0 {
+			return nil
+		}
+		var decoded interface{}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			log.Errorf("graphapi: a JSON field does not hold JSON: %s", err)
+			return nil
+		}
+		return decoded
+	},
+	ParseValue: func(value interface{}) interface{} {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			log.Errorf("graphapi: cannot read a JSON field: %s", err)
+			return nil
+		}
+		return json.RawMessage(raw)
 	},
 	ParseLiteral: func(value ast.Value) interface{} {
 		return nil
@@ -370,6 +414,12 @@ func (self *graphApi) translateOutputType(modelType reflect.Type) graphql.Type {
 	if modelType.Kind() == reflect.Interface {
 		nullable = true
 	}
+	if modelType == rawJSONType {
+		// Always nullable: a nil json.RawMessage is a field with no value,
+		// which is what null is. An audit event's "before" is nil on a
+		// create and its "after" is nil on a delete.
+		return JSON
+	}
 	if modelType == byteSliceType {
 		return makeNullable(Data, nullable)
 	}
@@ -432,6 +482,9 @@ func (self *graphApi) translateInputType(modelType reflect.Type, defaultNullable
 	}
 	if modelType.Kind() == reflect.Interface {
 		nullable = true
+	}
+	if modelType == rawJSONType {
+		return JSON
 	}
 	if modelType == byteSliceType {
 		return makeNullable(Data, nullable)
@@ -501,8 +554,8 @@ func (self *graphApi) coerceInputValue(raw interface{}, modelType reflect.Type) 
 		value.Elem().Set(self.coerceInputValue(raw, modelType.Elem()))
 		return value
 	}
-	if modelType == byteSliceType {
-		return reflect.ValueOf(raw)
+	if modelType == rawJSONType || modelType == byteSliceType {
+		return reflect.ValueOf(raw).Convert(modelType)
 	}
 	if modelType.Kind() == reflect.Slice {
 		rawValue := reflect.ValueOf(raw)

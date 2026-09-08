@@ -52,7 +52,7 @@ func (self *graph) draftAttachmentsView(response http.ResponseWriter, request *h
 	ctx := request.Context()
 	ctx = api.ContextWithRequest(ctx, request)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
-	ctx = db.ContextWithAuditPrincipal(ctx, auditPrincipal(request, user))
+	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
 
 	// Whose draft this is, settled in a transaction of its own before a
 	// byte of the body is read: a stranger's upload costs nothing to

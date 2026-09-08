@@ -182,6 +182,21 @@ type Server struct {
 	// advice is worked out, so a forwarder whose address moves stays right.
 	ExternalAddresses []string `yaml:"externalAddresses,omitempty"`
 
+	// TrustedProxies are the addresses this server is reached through, when
+	// it is behind a CDN, a load balancer or a reverse proxy: an address, or
+	// a range in CIDR form.
+	//
+	// A connection through a proxy comes from the proxy, so without this
+	// every audit row and every "last used from" records the proxy's address
+	// rather than the person's. The client's address is in X-Forwarded-For,
+	// which the proxy adds — and which anybody who can reach this server
+	// directly can also forge, so it is read only when the connection came
+	// from one of these.
+	//
+	// Empty is the safe default and the right one for a server that faces
+	// the internet, where the connection's own address is the truth.
+	TrustedProxies []string `yaml:"trustedProxies,omitempty"`
+
 	// LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL.
 	LogLevel string `yaml:"logLevel"`
 

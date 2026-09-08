@@ -12,7 +12,22 @@ import {
   MailboxView,
   graphql,
 } from '../api'
-import { ErrorMessage, Loading, formatTime } from '../components/common'
+import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  FlagIcon,
+  ForwardIcon,
+  JunkIcon,
+  MailIcon,
+  MailOpenIcon,
+  MoveIcon,
+  ReplyAllIcon,
+  ReplyIcon,
+  TrashIcon,
+} from '../components/icons'
+import { MenuButton } from '../components/menuButton'
+import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
@@ -46,10 +61,13 @@ const THREADS = `
     ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
       total
       threads {
-        threadId count unread flagged participants itemIds
+        threadId count unread flagged participants itemIds hasDraft
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
-          mail { id from fromName sender subject recipients receivedAt size kind status }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
         }
       }
     }
@@ -63,7 +81,10 @@ const THREAD = `
         folderId folderName folderKind
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
-          mail { id from fromName sender subject recipients receivedAt size kind status messageId }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status messageId
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
         }
       }
     }
@@ -91,6 +112,11 @@ const MOVE = `
 const DELETE = `
   mutation ($itemIds: [String!]!) {
     DeleteMailboxItems(itemIds: $itemIds)
+  }`
+
+const REPORT_JUNK = `
+  mutation ($itemIds: [String!]!, $notJunk: Boolean) {
+    ReportMailboxJunk(itemIds: $itemIds, notJunk: $notJunk)
   }`
 
 const EMPTY_TRASH = `
@@ -145,6 +171,81 @@ function dayStart(value: string, plusDays = 0): string | undefined {
   }
   date.setDate(date.getDate() + plusDays)
   return date.toISOString()
+}
+
+// A toolbar button: an icon, its name in a tooltip, and nothing else on the
+// screen. A mail toolbar is nine verbs, and nine words of them wrapped onto a
+// second line on anything narrower than a laptop.
+function IconAction({
+  label,
+  icon,
+  onClick,
+  disabled,
+  className,
+  // The state the action would undo — a flagged conversation, so the flag is
+  // drawn as set rather than as something to do.
+  active,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  active?: boolean
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className={['icon-button', className, active ? 'active' : ''].filter(Boolean).join(' ')}
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {icon}
+      </button>
+    </Tooltip>
+  )
+}
+
+// Where to move what is selected: the folders, in a menu the button opens.
+// A native select in a row of icons is a box with a word and an arrow in it,
+// which is the one control on the row that says what it is twice.
+function MoveToMenu({
+  targets,
+  onMove,
+  disabled,
+}: {
+  targets: { folder: MailboxFolder; depth: number }[]
+  onMove: (folderId: string) => void
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <MenuButton
+      label={t('mailbox.moveTo')}
+      className="icon-button"
+      icon={<MoveIcon size={16} />}
+      render={(close) =>
+        targets.map(({ folder: candidate, depth }) => (
+          <button
+            key={candidate.id}
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            style={{ paddingLeft: `${12 + depth * 12}px` }}
+            onClick={() => {
+              close()
+              onMove(candidate.id)
+            }}
+          >
+            {folderLabel(t, candidate)}
+          </button>
+        ))
+      }
+    />
+  )
 }
 
 export function MailboxPage() {
@@ -368,6 +469,17 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
         navigate(`/mailbox/${folder.id}`)
       }
     })
+  // Junk is a move and a lesson at once. Moving without teaching leaves the
+  // next one from the same sender in the Inbox; teaching without moving
+  // leaves the reader looking at what they have just called junk.
+  const reportJunk = (itemIds: string[], notJunk: boolean) =>
+    act(async () => {
+      await graphql(REPORT_JUNK, { itemIds, notJunk })
+      remove(itemIds)
+      if (itemIds.includes(itemId ?? '')) {
+        navigate(`/mailbox/${folder.id}`)
+      }
+    })
   const deleteItems = (itemIds: string[]) =>
     act(async () => {
       await graphql(DELETE, { itemIds })
@@ -390,6 +502,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
+  const inJunk = folder.kind === 'junk'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
   // In Starred, "delete" means what it means in the message's own folder;
   // the server decides by the item, so nothing to do here but not to call
@@ -545,45 +658,63 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
           {chosen.length > 0 ? (
             <>
               <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
+              {/* Icons, with their names in the tooltip. Eight words across
+                  the top of a list wrapped onto two lines on anything
+                  narrower than a laptop, and every one of them is a verb a
+                  mail program already has a picture for. */}
               {chosen.some((thread) => thread.unread > 0) ? (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { seen: true })}>
-                  {t('mailbox.markRead')}
-                </button>
+                <IconAction
+                  label={t('mailbox.markRead')}
+                  icon={<MailOpenIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { seen: true })}
+                />
               ) : (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { seen: false })}>
-                  {t('mailbox.markUnread')}
-                </button>
+                <IconAction
+                  label={t('mailbox.markUnread')}
+                  icon={<MailIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { seen: false })}
+                />
               )}
               {chosen.some((item) => !item.flagged) ? (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { flagged: true })}>
-                  {t('mailbox.flag')}
-                </button>
+                <IconAction
+                  label={t('mailbox.flag')}
+                  icon={<FlagIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { flagged: true })}
+                />
               ) : (
-                <button type="button" disabled={busy} onClick={() => setFlags(chosenIds, { flagged: false })}>
-                  {t('mailbox.unflag')}
-                </button>
+                <IconAction
+                  label={t('mailbox.unflag')}
+                  icon={<FlagIcon size={16} />}
+                  active
+                  disabled={busy}
+                  onClick={() => setFlags(chosenIds, { flagged: false })}
+                />
               )}
               {archive && folder.id !== archive.id && (
-                <button type="button" disabled={busy} onClick={() => moveTo(chosenIds, archive.id)}>
-                  {t('mailbox.archive')}
-                </button>
+                <IconAction
+                  label={t('mailbox.archive')}
+                  icon={<ArchiveIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => moveTo(chosenIds, archive.id)}
+                />
               )}
-              <select
-                aria-label={t('mailbox.moveTo')}
-                value=""
+              <IconAction
+                label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+                icon={<JunkIcon size={16} />}
                 disabled={busy}
-                onChange={(event) => event.target.value && moveTo(chosenIds, event.target.value)}
-              >
-                <option value="">{t('mailbox.moveTo')}</option>
-                {targets.map(({ folder: candidate, depth }) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {'  '.repeat(depth) + folderLabel(t, candidate)}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="danger" disabled={busy} onClick={() => deleteItems(chosenIds)}>
-                {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
-              </button>
+                onClick={() => reportJunk(chosenIds, inJunk)}
+              />
+              <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => moveTo(chosenIds, folderId)} />
+              <IconAction
+                label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+                icon={<TrashIcon size={16} />}
+                className="danger"
+                disabled={busy}
+                onClick={() => deleteItems(chosenIds)}
+              />
             </>
           ) : (
             <>
@@ -683,6 +814,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
             onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
             onMove={(itemIds, target) => moveTo(itemIds, target)}
+            onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
             onBack={() => navigate(`/mailbox/${folder.id}`)}
           />
@@ -784,9 +916,13 @@ function Row({
           onOpen()
         }}
       >
-        <div className="mailbox-row-from" title={mail?.from || mail?.sender}>
+        <div className="mailbox-row-from">
           {who}
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
+          {/* An answer begun and left. Worth saying in the list, because the
+              conversation looks finished otherwise and the half-written reply
+              is two folders away. */}
+          {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
         </div>
         <div className="mailbox-row-subject">
           {folderName && <span className="mailbox-row-folder">{folderName}</span>}
@@ -794,6 +930,10 @@ function Row({
         </div>
       </Link>
       <div className="mailbox-row-when">
+        {/* What the checks said, in the width of a character: the answer to
+            "is this really from who it says" belongs where the message is
+            listed, not only on the audit page. */}
+        <VerdictMark mail={mail} />
         <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
       </div>
     </li>
@@ -816,6 +956,7 @@ function Reader({
   onSeen,
   onFlag,
   onMove,
+  onJunk,
   onDelete,
   onBack,
 }: {
@@ -827,11 +968,11 @@ function Reader({
   onSeen: (itemIds: string[], seen: boolean) => void
   onFlag: (itemIds: string[], flagged: boolean) => void
   onMove: (itemIds: string[], folderId: string) => void
+  onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
   onBack: () => void
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
     refresh: false,
   })
@@ -847,7 +988,9 @@ function Reader({
   // What is being written, if anything: which message it answers and how.
   // Above the newest message rather than below the whole conversation,
   // because that is where the answer will be once it is sent.
-  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward'; itemId: string } | null>(null)
+  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward' | 'draft'; itemId: string } | null>(
+    null,
+  )
   // The draft what is being written has been saved as. Closing the composer
   // saves what was typed, so reopening it — Reply, then Reply to all — has to
   // continue that draft rather than start a second one of the same reply.
@@ -861,10 +1004,11 @@ function Reader({
       return
     }
     const wanted = new Set<string>()
-    if (view.items.length > 0) {
-      wanted.add(view.items[0].item.id)
+    const readable = view.items.filter((entry) => !entry.item.draft)
+    if (readable.length > 0) {
+      wanted.add(readable[0].item.id)
     }
-    for (const entry of view.items) {
+    for (const entry of readable) {
       if (!entry.item.seen || entry.item.id === itemId) {
         wanted.add(entry.item.id)
       }
@@ -899,7 +1043,11 @@ function Reader({
     return <p className="muted">{t('common.notFound')}</p>
   }
 
-  const newest = entries[0]
+  // What an answer answers is the newest message of the conversation, not
+  // the unsent one at the top of it: a draft is what you are writing, and
+  // replying to your own half-written reply is not a thing anybody means.
+  const newest = entries.find((entry) => !entry.item.draft) ?? entries[0]
+  const draft = entries.find((entry) => entry.item.draft)
   const opened = open ?? new Set([newest.item.id])
   // What the actions act on: the conversation's messages in the folder being
   // read, since that is the row the reader came from. A message of it that
@@ -927,49 +1075,46 @@ function Reader({
   return (
     <>
       <div className="mailbox-pane-actions">
-        <button type="button" className="mailbox-back" onClick={onBack}>
-          {t('mailbox.backToList')}
-        </button>
-        {newest.item.draft ? (
+        <IconAction label={t('mailbox.backToList')} icon={<ArrowLeftIcon size={16} />} onClick={onBack} />
+        {draft && (
           <button
             type="button"
             className="primary"
-            onClick={() => navigate(`/mailbox/compose?draft=${newest.item.id}`)}
+            disabled={Boolean(writing)}
+            onClick={() => setWriting({ kind: 'draft', itemId: draft.item.id })}
           >
             {t('mailbox.editDraft')}
           </button>
-        ) : (
+        )}
+        {!newest.item.draft && (
           <>
             {/* One answer at a time. Swapping a half-written reply for a
                 forward would either throw away what was typed or leave a
                 second draft of it behind, and neither is what the click
                 meant: close it, and the draft is kept. */}
-            <button
-              type="button"
-              className="primary"
+            <IconAction
+              label={t('mailbox.reply')}
+              icon={<ReplyIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
-            >
-              {t('mailbox.reply')}
-            </button>
-            <button
-              type="button"
+            />
+            <IconAction
+              label={t('mailbox.replyAll')}
+              icon={<ReplyAllIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
-            >
-              {t('mailbox.replyAll')}
-            </button>
-            <button
-              type="button"
+            />
+            <IconAction
+              label={t('mailbox.forward')}
+              icon={<ForwardIcon size={16} />}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
-            >
-              {t('mailbox.forward')}
-            </button>
+            />
           </>
         )}
-        <button
-          type="button"
+        <IconAction
+          label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
+          icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
           disabled={busy}
           onClick={() => {
             // Anything unread and the button says "Mark read", so that is
@@ -978,11 +1123,11 @@ function Reader({
             setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
             onSeen(acting, seen)
           }}
-        >
-          {anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
-        </button>
-        <button
-          type="button"
+        />
+        <IconAction
+          label={anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
+          icon={<FlagIcon size={16} />}
+          active={anyFlagged}
           disabled={busy}
           onClick={() => {
             const next = !anyFlagged
@@ -991,30 +1136,29 @@ function Reader({
             setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
             onFlag(acting, next)
           }}
-        >
-          {anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
-        </button>
+        />
         {archive && folder.id !== archive.id && (
-          <button type="button" disabled={busy} onClick={() => onMove(acting, archive.id)}>
-            {t('mailbox.archive')}
-          </button>
+          <IconAction
+            label={t('mailbox.archive')}
+            icon={<ArchiveIcon size={16} />}
+            disabled={busy}
+            onClick={() => onMove(acting, archive.id)}
+          />
         )}
-        <select
-          aria-label={t('mailbox.moveTo')}
-          value=""
+        <IconAction
+          label={folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+          icon={<JunkIcon size={16} />}
           disabled={busy}
-          onChange={(event) => event.target.value && onMove(acting, event.target.value)}
-        >
-          <option value="">{t('mailbox.moveTo')}</option>
-          {targets.map(({ folder: candidate, depth }) => (
-            <option key={candidate.id} value={candidate.id}>
-              {'  '.repeat(depth) + folderLabel(t, candidate)}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="danger" disabled={busy} onClick={() => onDelete(acting)}>
-          {inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
-        </button>
+          onClick={() => onJunk(acting, folder.kind === 'junk')}
+        />
+        <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
+        <IconAction
+          label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+          icon={<TrashIcon size={16} />}
+          className="danger"
+          disabled={busy}
+          onClick={() => onDelete(acting)}
+        />
       </div>
 
       <div className="mailbox-pane-head">
@@ -1041,10 +1185,10 @@ function Reader({
           </div>
           <MailboxComposer
             key={`${writing.kind}-${writing.itemId}`}
-            replyTo={writing.kind === 'forward' ? null : writing.itemId}
+            replyTo={writing.kind === 'forward' || writing.kind === 'draft' ? null : writing.itemId}
             replyAll={writing.kind === 'replyAll'}
             forwardOf={writing.kind === 'forward' ? writing.itemId : null}
-            draftOf={draftId}
+            draftOf={writing.kind === 'draft' ? writing.itemId : draftId}
             onDraft={setDraftId}
             onSent={() => {
               setWriting(null)
@@ -1060,23 +1204,33 @@ function Reader({
       )}
 
       <ol className="mailbox-thread">
-        {entries.map((entry) => (
-          <ThreadMessage
-            key={entry.item.id}
-            entry={entry}
-            folderId={folder.id}
-            seen={seenOf(entry)}
-            open={opened.has(entry.item.id)}
-            onToggle={() => {
-              const opening = !opened.has(entry.item.id)
-              toggle(entry.item.id)
-              if (opening && !seenOf(entry)) {
-                setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
-                onSeen([entry.item.id], true)
-              }
-            }}
-          />
-        ))}
+        {entries
+          // The draft being written is the composer above, not a row as
+          // well: the same half-written answer twice on one screen.
+          .filter((entry) => !(writing?.kind === 'draft' && writing.itemId === entry.item.id))
+          .map((entry) => (
+            <ThreadMessage
+              key={entry.item.id}
+              entry={entry}
+              folderId={folder.id}
+              seen={seenOf(entry)}
+              open={opened.has(entry.item.id)}
+              onToggle={() => {
+                // A draft is not a message to read, it is an answer to go back
+                // to. Clicking it opens what was written where it was written.
+                if (entry.item.draft) {
+                  setWriting({ kind: 'draft', itemId: entry.item.id })
+                  return
+                }
+                const opening = !opened.has(entry.item.id)
+                toggle(entry.item.id)
+                if (opening && !seenOf(entry)) {
+                  setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
+                  onSeen([entry.item.id], true)
+                }
+              }}
+            />
+          ))}
       </ol>
     </>
   )
@@ -1114,6 +1268,9 @@ function ThreadMessage({
     { refresh: false },
   )
   const who = mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
+  const verdict = verdictOf(mail, t)
+  // From, To, Received and what the checks said, when somebody asks for them.
+  const [details, setDetails] = useState(false)
 
   return (
     <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
@@ -1122,9 +1279,9 @@ function ThreadMessage({
             at — except the menu at its end, which is a button of its own and
             so sits outside this one rather than inside it. */}
         <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
-          <span className="mailbox-message-who" title={mail?.from || mail?.sender}>
-            {who}
-          </span>
+          <Tooltip label={mail?.from || mail?.sender || ''}>
+            <span className="mailbox-message-who">{who}</span>
+          </Tooltip>
           {/* Where it is, when that is not where the conversation is being
               read: your own answer is in Sent, and saying so is the difference
               between a conversation and a list. */}
@@ -1133,6 +1290,10 @@ function ThreadMessage({
           )}
           {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
           <span className="mailbox-message-when">
+            {/* Whether the message is really from who it says: the one thing
+                about it worth seeing without asking. Everything else the
+                checks found is behind "show details" in the menu. */}
+            <VerdictMark mail={mail} />
             <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
           </span>
         </button>
@@ -1143,18 +1304,28 @@ function ThreadMessage({
         <div className="mailbox-message-body">
           {mail ? (
             <>
-              <dl className="mailbox-pane-meta">
-                <dt>{t('mailbox.from')}</dt>
-                <dd>
-                  {mail.fromName
-                    ? `${mail.fromName} <${mail.from || mail.sender}>`
-                    : mail.from || mail.sender || t('mailbox.unknownSender')}
-                </dd>
-                <dt>{t('mailbox.to')}</dt>
-                <dd>{(mail.recipients ?? []).join(', ')}</dd>
-                <dt>{t('mail.received')}</dt>
-                <dd>{formatTime(mail.receivedAt)}</dd>
-              </dl>
+              {details && (
+                <dl className="mailbox-pane-meta">
+                  <dt>{t('mailbox.from')}</dt>
+                  <dd>
+                    {mail.fromName
+                      ? `${mail.fromName} <${mail.from || mail.sender}>`
+                      : mail.from || mail.sender || t('mailbox.unknownSender')}
+                  </dd>
+                  <dt>{t('mailbox.to')}</dt>
+                  <dd>{(mail.recipients ?? []).join(', ')}</dd>
+                  <dt>{t('mail.received')}</dt>
+                  <dd>{formatTime(mail.receivedAt)}</dd>
+                  {verdict && (
+                    <>
+                      <dt>{t('mailDetail.authentication')}</dt>
+                      <dd className={verdict.tone ? `verdict-detail ${verdict.tone}` : 'verdict-detail'}>
+                        {verdict.detail}
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
               {content.loading && !content.data ? (
                 <Loading />
               ) : content.error ? (
@@ -1165,6 +1336,18 @@ function ThreadMessage({
                   content={content.data?.GetMailContent}
                   mode="mailbox"
                   menuContainer={menuSlot}
+                  menuExtra={(close) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        close()
+                        setDetails((previous) => !previous)
+                      }}
+                    >
+                      {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
+                    </button>
+                  )}
                 />
               )}
             </>

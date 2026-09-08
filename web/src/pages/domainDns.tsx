@@ -6,6 +6,7 @@ import { CopyIconButton, Tag } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
+import { Tooltip } from '../components/tooltip'
 
 const CHECK = `mutation ($domainId: String!) { CheckDomain(domainId: $domainId) { id } }`
 const UPDATE_MAIL_SERVERS = `
@@ -60,9 +61,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
     <>
       <div className="card">
         <h3>{t('domain.dnsTitle')}</h3>
-        <p className="muted">
-          {t('domain.dnsIntro')}
-        </p>
+        <p className="muted">{t('domain.dnsIntro')}</p>
         <table className="dns-table">
           <thead>
             <tr>
@@ -88,9 +87,9 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
                   <div className="value-row">
                     {/* An MX value is the preference and the host together,
                         so it can be copied into a zone as it stands. */}
-                    <span className="value-clamp" title={expectedValue(record)}>
-                      {expectedValue(record)}
-                    </span>
+                    <Tooltip label={expectedValue(record)}>
+                      <span className="value-clamp">{expectedValue(record)}</span>
+                    </Tooltip>
                     <CopyIconButton value={expectedValue(record)} />
                   </div>
                   {!record.verified && <div className="muted cell-note">{record.purpose}</div>}
@@ -109,11 +108,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
                 <td className="shrink">
                   <Tag
                     value={
-                      record.verified
-                        ? t('domain.ok')
-                        : record.optional
-                          ? t('domain.optional')
-                          : t('domain.change')
+                      record.verified ? t('domain.ok') : record.optional ? t('domain.optional') : t('domain.change')
                     }
                     tone={record.verified ? 'good' : record.optional ? undefined : 'warn'}
                   />
@@ -129,9 +124,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
 
       <div className="card">
         <h3>{t('domain.mailServersTitle')}</h3>
-        <p className="muted">
-          {t('domain.mailServersIntro')}
-        </p>
+        <p className="muted">{t('domain.mailServersIntro')}</p>
         {/* A short host name in a field as wide as a table of DNS records
             reads as a mistake. The cards here are full width because they
             hold those tables; the fields inside them are not. */}
@@ -173,16 +166,13 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         </div>
       </div>
 
-
       {/* Where a picture in a message is fetched from. It looks like a
           detail of DNS and is not: get it wrong and the mail is fine while
           every picture in it is broken, which is a failure nobody sees from
           here — it happens in the reader's mail program. */}
       <div className="card">
         <h3>{t('domain.linkHostTitle')}</h3>
-        <p className="muted">
-          {t('domain.linkHostIntro')}
-        </p>
+        <p className="muted">{t('domain.linkHostIntro')}</p>
         <div className="form-narrow">
           <label>
             <span>{t('domain.linkHostLabel')}</span>
@@ -195,9 +185,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
               onChange={(event) => setLinkHost(event.target.value)}
             />
           </label>
-          <p className="muted field-hint">
-            {t('domain.linkHostHint', { name: domain.linkHostname ?? '' })}
-          </p>
+          <p className="muted field-hint">{t('domain.linkHostHint', { name: domain.linkHostname ?? '' })}</p>
         </div>
         <div className="page-actions">
           <button
@@ -217,9 +205,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
       <div className="card">
         <h3>{t('domain.keyTitle')}</h3>
         {domain.hasDkimKey ? (
-          <p className="muted">
-            {t('domain.keyPresent', { selector: domain.dkimSelector ?? '' })}
-          </p>
+          <p className="muted">{t('domain.keyPresent', { selector: domain.dkimSelector ?? '' })}</p>
         ) : (
           <p className="error" style={{ marginTop: 0 }}>
             {t('domain.keyMissing')}
@@ -252,8 +238,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         <div className="page-actions">
           <button
             disabled={
-              (selector ?? domain.dkimSelector ?? '') === (domain.dkimSelector ?? '') ||
-              (selector ?? '').trim() === ''
+              (selector ?? domain.dkimSelector ?? '') === (domain.dkimSelector ?? '') || (selector ?? '').trim() === ''
             }
             onClick={() => setMovingSelector(true)}
           >

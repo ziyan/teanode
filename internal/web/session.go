@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -278,7 +277,7 @@ func (self *authenticator) touch(
 	if !used.IsZero() && now.Sub(used) < db.TouchInterval {
 		return
 	}
-	ip, userAgent := requestOrigin(request)
+	ip, userAgent := requestOrigin(request, self.trustedProxies())
 	if err := write(id, now, ip, userAgent); err != nil {
 		// Not fatal. The request is authenticated either way, and a column
 		// nobody reads more precisely than "this morning" is not worth
@@ -342,7 +341,10 @@ func (self *authenticator) Login(response http.ResponseWriter, request *http.Req
 	// Keyed by address, not by username: the username in a guess is chosen by
 	// whoever is guessing, so counting per username lets them reset the count
 	// by changing it.
-	if !self.loginLimiter.Allow(remoteAddress(request)) {
+	// Counted against the client rather than the proxy in front of it. Behind
+	// a CDN every attempt shares one address, so one person guessing
+	// passwords would use up the allowance for everybody.
+	if !self.loginLimiter.Allow(api.RemoteAddress(request, self.trustedProxies())) {
 		return ErrTooManyAttempts
 	}
 
@@ -377,7 +379,7 @@ func (self *authenticator) startSession(response http.ResponseWriter, request *h
 	expiry := time.Now().Add(lifetime)
 
 	id, value, keyHash := issue(kindSession, SessionPrefix, self.sessionKey())
-	ip, userAgent := requestOrigin(request)
+	ip, userAgent := requestOrigin(request, self.trustedProxies())
 	if _, err := self.database.CreateSession(&models.Session{
 		ID:        id,
 		UserID:    user.ID,
@@ -437,15 +439,10 @@ func (self *authenticator) Logout(response http.ResponseWriter, request *http.Re
 // which would only cause the cookie to be marked Secure when it need not be —
 // the safe direction to be wrong in. An operator who exposes the server
 // directly should serve HTTPS themselves, in which case request.TLS is set.
-// remoteAddress is the address a rate limit is counted against. The port is
-// dropped, because a limit that counts per port counts every connection
-// separately and therefore counts nothing.
-func remoteAddress(request *http.Request) string {
-	host, _, err := net.SplitHostPort(request.RemoteAddr)
-	if err != nil {
-		return request.RemoteAddr
-	}
-	return host
+// trustedProxies is what the operator has said sits in front of this server,
+// read at each use so a change takes effect without a restart.
+func (self *authenticator) trustedProxies() []string {
+	return self.config.Current().Server.TrustedProxies
 }
 
 func isSecureRequest(request *http.Request) bool {

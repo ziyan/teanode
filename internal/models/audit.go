@@ -35,6 +35,16 @@ type AuditEvent struct {
 	ResourceID   string            `json:"resourceId"`
 	Action       AuditAction       `json:"action"`
 
+	// ResourceLabel is what the thing is called, resolved when the event is
+	// read rather than stored: a renamed group reads by the name it has now,
+	// and a row that only carried an id said nothing to anybody.
+	ResourceLabel string `json:"resourceLabel,omitempty"`
+
+	// ResourceLink is where the thing is in the dashboard, when it is still
+	// there and the reader may see it. Empty for something that has been
+	// deleted, or that has no page of its own.
+	ResourceLink string `json:"resourceLink,omitempty"`
+
 	// Before is the row before the change, redacted; nil on create.
 	Before json.RawMessage `json:"before,omitempty"`
 

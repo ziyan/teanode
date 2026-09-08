@@ -27,6 +27,8 @@ import { hasAnywhere, hasPermission, useSession } from '../session'
 import { folderLabel, railRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from './folderIcon'
 import { MailboxFolder } from '../api'
+import { Select } from './select'
+import { Tooltip } from './tooltip'
 
 // permission is what a row needs, when it needs one: a domain permission held
 // over at least one domain, or a server permission. A row nothing gates is
@@ -215,15 +217,16 @@ export function Sidebar({
               which is why this asks rather than reloading underneath somebody
               in the middle of writing a message. */}
           {staleBundle && (
-            <button
-              type="button"
-              className="sidebar-refresh"
-              title={t('nav.refreshTooltip')}
-              aria-label={t('nav.refreshTooltip')}
-              onClick={() => window.location.reload()}
-            >
-              <RefreshIcon size={16} />
-            </button>
+            <Tooltip label={t('nav.refreshTooltip')}>
+              <button
+                type="button"
+                className="sidebar-refresh"
+                aria-label={t('nav.refreshTooltip')}
+                onClick={() => window.location.reload()}
+              >
+                <RefreshIcon size={16} />
+              </button>
+            </Tooltip>
           )}
         </div>
 
@@ -252,24 +255,24 @@ export function Sidebar({
                   the top of its own rail is a heading that says nothing: the
                   rows under it are that mailbox's folders and there is
                   nothing else they could be. */}
+              {/* The dashboard's own dropdown rather than the browser's: the
+                  rail is dark, and a native select opens its list in the
+                  operating system's colors — a white rectangle over a dark
+                  column. */}
               {mailboxes.views.length > 1 && (
-                <div className="sidebar-mailbox">
-                  <select
-                    aria-label={t('nav.chooseMailbox')}
+                <div className="sidebar-mailbox" onClick={(event) => event.stopPropagation()}>
+                  <Select
+                    label={t('nav.chooseMailbox')}
                     value={current.mailbox.id}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => {
-                      mailboxes.setCurrentId(event.target.value)
+                    options={mailboxes.views.map((view) => ({
+                      value: view.mailbox.id,
+                      label: view.unread > 0 ? `${view.mailbox.name} (${view.unread})` : view.mailbox.name,
+                    }))}
+                    onChange={(mailboxId) => {
+                      mailboxes.setCurrentId(mailboxId)
                       navigate('/mailbox')
                     }}
-                  >
-                    {mailboxes.views.map((view) => (
-                      <option key={view.mailbox.id} value={view.mailbox.id}>
-                        {view.mailbox.name}
-                        {view.unread > 0 ? ` (${view.unread})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               )}
               {(() => {
@@ -361,9 +364,11 @@ export function Sidebar({
                         reopens. */}
                     <span className="sidebar-label">{label}</span>
                     {marked && (
-                      <span className="sidebar-dot" title={t('nav.upgradeAvailable')}>
-                        <span className="visually-hidden">{t('nav.upgradeAvailable')}</span>
-                      </span>
+                      <Tooltip label={t('nav.upgradeAvailable')}>
+                        <span className="sidebar-dot">
+                          <span className="visually-hidden">{t('nav.upgradeAvailable')}</span>
+                        </span>
+                      </Tooltip>
                     )}
                   </NavLink>
                 )
@@ -384,33 +389,35 @@ export function Sidebar({
                 the mailbox, entered on purpose and left by the row at the
                 top. Only for somebody who has anything to manage. */}
             {!inManagement && firstManagementRow && (
-              <button
-                type="button"
-                className="sidebar-collapse"
-                title={t('nav.manageTooltip')}
-                aria-label={t('nav.manage')}
-                onClick={() => navigate(firstManagementRow.to)}
-              >
-                <span className="sidebar-icon">
-                  <GridIcon />
-                </span>
-                <span className="sidebar-label">{t('nav.manage')}</span>
-              </button>
+              <Tooltip label={t('nav.manageTooltip')}>
+                <button
+                  type="button"
+                  className="sidebar-collapse"
+                  aria-label={t('nav.manage')}
+                  onClick={() => navigate(firstManagementRow.to)}
+                >
+                  <span className="sidebar-icon">
+                    <GridIcon />
+                  </span>
+                  <span className="sidebar-label">{t('nav.manage')}</span>
+                </button>
+              </Tooltip>
             )}
             {onToggle && (
-              <button
-                type="button"
-                className="sidebar-collapse"
-                aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
-                title={collapsed ? t('nav.expand') : t('nav.collapse')}
-                aria-expanded={!collapsed}
-                onClick={onToggle}
-              >
-                <span className="sidebar-icon">
-                  <ChevronRightIcon size={18} />
-                </span>
-                <span className="sidebar-label">{t('nav.collapse')}</span>
-              </button>
+              <Tooltip label={collapsed ? t('nav.expand') : t('nav.collapse')}>
+                <button
+                  type="button"
+                  className="sidebar-collapse"
+                  aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
+                  aria-expanded={!collapsed}
+                  onClick={onToggle}
+                >
+                  <span className="sidebar-icon">
+                    <ChevronRightIcon size={18} />
+                  </span>
+                  <span className="sidebar-label">{t('nav.collapse')}</span>
+                </button>
+              </Tooltip>
             )}
             {account}
           </div>

@@ -105,9 +105,7 @@ export function MultiSelectFilter({
                     checked={checked}
                     onChange={() =>
                       onChange(
-                        checked
-                          ? selected.filter((value) => value !== option.value)
-                          : [...selected, option.value],
+                        checked ? selected.filter((value) => value !== option.value) : [...selected, option.value],
                       )
                     }
                   />

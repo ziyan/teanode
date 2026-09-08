@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
-import { ErrorMessage, Field, KindTag, Loading, Tag, formatBytes, formatTime, toneFor, useEnumLabel } from '../components/common'
+import {
+  CopyIconButton,
+  ErrorMessage,
+  Field,
+  KindTag,
+  Loading,
+  Tag,
+  formatBytes,
+  formatTime,
+  toneFor,
+  useEnumLabel,
+} from '../components/common'
 import { useQuery } from '../components/useQuery'
 import { SettingsEmpty } from '../components/settingsList'
 import { MessageFrame } from '../components/messageFrame'
@@ -11,8 +22,10 @@ import { HighlightedHtml } from '../components/highlightHtml'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 import { useResolvedTheme } from '../components/theme'
+import { hasAnywhere, useSession } from '../session'
 import { MenuButton } from '../components/menuButton'
 import { CloseIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -234,7 +247,9 @@ export function MailDetailPage() {
             <Field label={t('mail.received')}>
               {t('mailDetail.receivedFrom', { time: formatTime(mail.receivedAt), ip: mail.ip ?? '' })}
               {mail.rdns ? ` (${mail.rdns.replace(/\.$/, '')})` : ''}
-              {mail.location?.country ? ` · ${[mail.location.city, mail.location.country].filter(Boolean).join(', ')}` : ''}
+              {mail.location?.country
+                ? ` · ${[mail.location.city, mail.location.country].filter(Boolean).join(', ')}`
+                : ''}
             </Field>
             {/* Whether the hop into this server was encrypted, and how the
                 sender introduced itself. Both are part of "who sent this",
@@ -262,9 +277,7 @@ export function MailDetailPage() {
         {data.ListDeliveriesByMail.length === 0 ? (
           <SettingsEmpty>{t('mailDetail.noDeliveries')}</SettingsEmpty>
         ) : (
-          data.ListDeliveriesByMail.map((delivery) => (
-            <DeliveryDetail key={delivery.id} delivery={delivery} />
-          ))
+          data.ListDeliveriesByMail.map((delivery) => <DeliveryDetail key={delivery.id} delivery={delivery} />)
         )}
       </div>
 
@@ -284,6 +297,7 @@ export function MessageContent({
   content,
   mode = 'audit',
   menuContainer,
+  menuExtra,
 }: {
   mailId: string
   content?: MailContent | null
@@ -294,8 +308,17 @@ export function MessageContent({
   // Where the mailbox's menu goes when the page has a row of actions for
   // it to sit in; on its own row above the message otherwise.
   menuContainer?: HTMLElement | null
+  // Items the page around this message wants in that menu — a conversation
+  // puts "show details" there, because who a message was addressed to and
+  // what its checks said belong with the other things about the message that
+  // are a click away rather than always on the screen.
+  menuExtra?: (close: () => void) => React.ReactNode
 }) {
   const { t } = useTranslation()
+  const session = useSession()
+  // The same permission the Mail page in the rail is gated on, so the link
+  // never goes somewhere the reader is refused.
+  const canAudit = hasAnywhere(session.permissions, 'mail:audit')
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
   const [showHeaders, setShowHeaders] = useState(false)
@@ -345,8 +368,7 @@ export function MessageContent({
   }, [mailId, mode])
 
   const document = useMemo(
-    () =>
-      content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : '',
+    () => (content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : ''),
     [content?.html, loadRemote, mailId, dark, darkened],
   )
 
@@ -359,251 +381,292 @@ export function MessageContent({
 
   return (
     <>
-    {!content?.available ? (
-      <p className="muted">{t('mailDetail.notStored')}</p>
-    ) : mode === 'mailbox' ? (
-      <>
-        {/* What a mail program shows, and a menu for what it hides. */}
-        {((menu) => (menuContainer ? createPortal(menu, menuContainer) : <div className="message-menu">{menu}</div>))(
-          <MenuButton
-            className="message-menu-button"
-            label={t('mailDetail.more')}
-            icon={<span aria-hidden="true">…</span>}
-            render={(close) => (
-              <>
-                <a href={`/api/v1/mail/${mailId}/raw`} download role="menuitem" onClick={close}>
-                  {t('mailDetail.download')}
-                </a>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!content.rawHeaders}
-                  onClick={() => {
-                    close()
-                    setShowHeaders((previous) => !previous)
-                  }}
-                >
-                  {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
-                </button>
-                {dark && hasHtml && (
+      {!content?.available ? (
+        <p className="muted">{t('mailDetail.notStored')}</p>
+      ) : mode === 'mailbox' ? (
+        <>
+          {/* What a mail program shows, and a menu for what it hides. */}
+          {((menu) => (menuContainer ? createPortal(menu, menuContainer) : <div className="message-menu">{menu}</div>))(
+            <MenuButton
+              className="message-menu-button"
+              label={t('mailDetail.more')}
+              icon={<span aria-hidden="true">…</span>}
+              render={(close) => (
+                <>
+                  <a href={`/api/v1/mail/${mailId}/raw`} download role="menuitem" onClick={close}>
+                    {t('mailDetail.download')}
+                  </a>
+                  {/* Where the message came from and what happened to it, for
+                    somebody who may look: the audit page carries the
+                    authentication in full, the delivery attempts and the raw
+                    source. Behind the menu, since most people reading their
+                    mail have no use for it and some may not open it at all. */}
+                  {canAudit && (
+                    <Link to={`/mail/${mailId}`} role="menuitem" onClick={close}>
+                      {t('mailDetail.trace')}
+                    </Link>
+                  )}
+                  {/* Details first, then the headers underneath them: the
+                      details are what somebody wants nine times in ten, and
+                      the headers are the whole of it. */}
+                  {menuExtra?.(close)}
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={alreadyDark}
-                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                    disabled={!content.rawHeaders}
                     onClick={() => {
                       close()
-                      chooseDarkened(!darkened)
+                      setShowHeaders((previous) => !previous)
                     }}
                   >
-                    {darkened ? t('mailDetail.showOriginalTheme') : t('mailDetail.showDarkTheme')}
+                    {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
                   </button>
-                )}
-              </>
-            )}
-          />,
-        )}
-        {/* The headers above the message, where they are in the message
+                  {dark && hasHtml && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={alreadyDark}
+                      aria-description={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                      onClick={() => {
+                        close()
+                        chooseDarkened(!darkened)
+                      }}
+                    >
+                      {darkened ? t('mailDetail.showOriginalTheme') : t('mailDetail.showDarkTheme')}
+                    </button>
+                  )}
+                </>
+              )}
+            />,
+          )}
+          {/* The headers above the message, where they are in the message
             itself, in a box of their own that scrolls rather than pushing
             the message out of sight. */}
-        {showHeaders && (
-          <div className="message-headers">
-            <div className="message-headers-title">
-              <span>{t('mailDetail.headers')}</span>
-              <button
-                type="button"
-                className="message-headers-close"
-                aria-label={t('mailDetail.hideHeaders')}
-                title={t('mailDetail.hideHeaders')}
-                onClick={() => setShowHeaders(false)}
-              >
-                <CloseIcon size={14} />
-              </button>
-            </div>
-            <pre className="message-text">{content.rawHeaders}</pre>
-          </div>
-        )}
-        {hasHtml ? (
-          <>
-            {content.hasRemoteContent && !loadRemote && (
-              <div className="banner">
-                {t('mailDetail.remoteBlocked')}{' '}
-                <button className="link" onClick={() => setLoadRemote(true)}>
-                  {t('mailDetail.loadRemote')}
-                </button>
+          {showHeaders && (
+            <div className="message-headers">
+              <div className="message-headers-title">
+                <span>{t('mailDetail.headers')}</span>
+                <div className="row-actions">
+                  {/* The whole of it, exactly as it arrived — folded lines,
+                      order and all — because what a header block is pasted
+                      into is a bug report or another tool. */}
+                  <CopyIconButton value={content.rawHeaders ?? ''} label={t('mailDetail.copyHeaders')} />
+                  <Tooltip label={t('mailDetail.hideHeaders')}>
+                    <button
+                      type="button"
+                      className="message-headers-close"
+                      aria-label={t('mailDetail.hideHeaders')}
+                      onClick={() => setShowHeaders(false)}
+                    >
+                      <CloseIcon size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
-            )}
-            <MessageFrame
-              document={document}
-              title={t('mailDetail.message')}
-              darkened={dark && darkened}
-              onGroundMeasured={setAlreadyDark}
-            />
-          </>
-        ) : (
-          <pre className="message-text">{content.text}</pre>
-        )}
-        {content.attachments?.length ? (
-          <div className="card" style={{ marginTop: 16 }}>
-            <h3>{t('mailDetail.attachments')}</h3>
-            <table>
-              <tbody>
-                {content.attachments.map((attachment, index) => (
-                  <tr key={index}>
-                    <td>
-                      <a href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`} download={attachment.filename}>
-                        {attachment.filename}
-                      </a>
-                    </td>
-                    <td className="shrink muted">{attachment.contentType}</td>
-                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </>
-    ) : (
-      <>
-        <div className="tabs">
-          {hasHtml && (
-            <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
-              {t('mailDetail.rendered')}
-            </button>
+              {/* A name and its value, one to a row, rather than the block as
+                  it came off the wire. Received: is four lines of one header
+                  and a reader looking for who signed the message should not
+                  have to find where it ends. The original is one click away
+                  on the copy button. */}
+              {(content.headers ?? []).length > 0 ? (
+                <dl className="header-list">
+                  {(content.headers ?? []).map((header, index) => (
+                    <div key={index} className="header-row">
+                      <dt>{header.key}</dt>
+                      <dd>{header.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <pre className="message-text">{content.rawHeaders}</pre>
+              )}
+            </div>
           )}
-          <button
-            className={tab === 'text' ? 'active' : ''}
-            onClick={() => setChosen('text')}
-            disabled={!content.text}
-          >
-            {t('mailDetail.text')}
-          </button>
-          {/* The markup behind the rendered view. What the frame shows has
+          {hasHtml ? (
+            <>
+              {content.hasRemoteContent && !loadRemote && (
+                <div className="banner">
+                  {t('mailDetail.remoteBlocked')}{' '}
+                  <button className="link" onClick={() => setLoadRemote(true)}>
+                    {t('mailDetail.loadRemote')}
+                  </button>
+                </div>
+              )}
+              <MessageFrame
+                document={document}
+                title={t('mailDetail.message')}
+                darkened={dark && darkened}
+                onGroundMeasured={setAlreadyDark}
+              />
+            </>
+          ) : (
+            <pre className="message-text">{content.text}</pre>
+          )}
+          {content.attachments?.length ? (
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3>{t('mailDetail.attachments')}</h3>
+              <table>
+                <tbody>
+                  {content.attachments.map((attachment, index) => (
+                    <tr key={index}>
+                      <td>
+                        <a
+                          href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
+                          download={attachment.filename}
+                        >
+                          {attachment.filename}
+                        </a>
+                      </td>
+                      <td className="shrink muted">{attachment.contentType}</td>
+                      <td className="shrink muted">{formatBytes(attachment.size)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div className="tabs">
+            {hasHtml && (
+              <button className={tab === 'rendered' ? 'active' : ''} onClick={() => setChosen('rendered')}>
+                {t('mailDetail.rendered')}
+              </button>
+            )}
+            <button
+              className={tab === 'text' ? 'active' : ''}
+              onClick={() => setChosen('text')}
+              disabled={!content.text}
+            >
+              {t('mailDetail.text')}
+            </button>
+            {/* The markup behind the rendered view. What the frame shows has
               been sanitized and rewritten; when it looks wrong, this is the
               only way to see what it is actually rendering. */}
-          {hasHtml && (
-            <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
-              {t('mailDetail.html')}
-            </button>
-          )}
-          <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
-            {t('mailDetail.headers')}
-          </button>
-          <button
-            className={tab === 'raw' ? 'active' : ''}
-            onClick={() => setChosen('raw')}
-            disabled={!content.rawHeaders}
-          >
-            {t('mailDetail.rawHeaders')}
-          </button>
-          {/* A real link, so the browser saves it the way it saves anything
-              else, and middle-click and "save as" both work. */}
-          <a className="tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
-            {t('mailDetail.download')}
-          </a>
-        </div>
-
-        {tab === 'rendered' && content.html && (
-          <>
-            {content.hasRemoteContent && !loadRemote && (
-              <div className="banner">
-                {t('mailDetail.remoteBlocked')}{' '}
-                <button className="link" onClick={() => setLoadRemote(true)}>
-                  {t('mailDetail.loadRemote')}
-                </button>
-              </div>
+            {hasHtml && (
+              <button className={tab === 'html' ? 'active' : ''} onClick={() => setChosen('html')}>
+                {t('mailDetail.html')}
+              </button>
             )}
-            {/* Only in the dark theme: in the light one there is nothing
+            <button className={tab === 'source' ? 'active' : ''} onClick={() => setChosen('source')}>
+              {t('mailDetail.headers')}
+            </button>
+            <button
+              className={tab === 'raw' ? 'active' : ''}
+              onClick={() => setChosen('raw')}
+              disabled={!content.rawHeaders}
+            >
+              {t('mailDetail.rawHeaders')}
+            </button>
+            {/* A real link, so the browser saves it the way it saves anything
+              else, and middle-click and "save as" both work. */}
+            <a className="tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
+              {t('mailDetail.download')}
+            </a>
+          </div>
+
+          {tab === 'rendered' && content.html && (
+            <>
+              {content.hasRemoteContent && !loadRemote && (
+                <div className="banner">
+                  {t('mailDetail.remoteBlocked')}{' '}
+                  <button className="link" onClick={() => setLoadRemote(true)}>
+                    {t('mailDetail.loadRemote')}
+                  </button>
+                </div>
+              )}
+              {/* Only in the dark theme: in the light one there is nothing
                 to fix, and the control would be a question nobody asked.
                 A plain message is already dark from the frame's ground;
                 this is for one that paints its own, which the inversion
                 darkens while keeping its pictures the right way round. */}
-            {dark && (
-              <div className="frame-mode">
-                <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
-                  <button
-                    type="button"
-                    className={darkened ? '' : 'active'}
-                    aria-pressed={!darkened}
-                    onClick={() => chooseDarkened(false)}
-                  >
-                    {t('mailDetail.asSent')}
-                  </button>
-                  <button
-                    type="button"
-                    className={darkened && !alreadyDark ? 'active' : ''}
-                    aria-pressed={darkened && !alreadyDark}
-                    disabled={alreadyDark}
-                    title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
-                    onClick={() => chooseDarkened(true)}
-                  >
-                    {t('mailDetail.darkened')}
-                  </button>
+              {dark && (
+                <div className="frame-mode">
+                  <div className="segmented" role="group" aria-label={t('mailDetail.frameMode')}>
+                    <button
+                      type="button"
+                      className={darkened ? '' : 'active'}
+                      aria-pressed={!darkened}
+                      onClick={() => chooseDarkened(false)}
+                    >
+                      {t('mailDetail.asSent')}
+                    </button>
+                    <Tooltip label={alreadyDark ? t('mailDetail.alreadyDark') : ''}>
+                      <button
+                        type="button"
+                        className={darkened && !alreadyDark ? 'active' : ''}
+                        aria-pressed={darkened && !alreadyDark}
+                        disabled={alreadyDark}
+                        onClick={() => chooseDarkened(true)}
+                      >
+                        {t('mailDetail.darkened')}
+                      </button>
+                    </Tooltip>
+                  </div>
                 </div>
-              </div>
-            )}
-            {/* Rendered in a sandbox that permits no scripts, on top of
+              )}
+              {/* Rendered in a sandbox that permits no scripts, on top of
                 the server-side sanitizing and a policy of default-src
                 'none' inside the frame. It is mail from a stranger. */}
-            <MessageFrame
-              document={document}
-              title={t('mailDetail.message')}
-              darkened={dark && darkened}
-              onGroundMeasured={setAlreadyDark}
-            />
-          </>
-        )}
+              <MessageFrame
+                document={document}
+                title={t('mailDetail.message')}
+                darkened={dark && darkened}
+                onGroundMeasured={setAlreadyDark}
+              />
+            </>
+          )}
 
-        {tab === 'text' && <pre className="message-text">{content.text}</pre>}
+          {tab === 'text' && <pre className="message-text">{content.text}</pre>}
 
-        {/* The sanitized markup, not the original: it is what the frame
+          {/* The sanitized markup, not the original: it is what the frame
             above is rendering, which is the thing being explained. The
             untouched original is in the .eml behind Download. */}
-        {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
+          {tab === 'html' && <HighlightedHtml source={content.html ?? ''} />}
 
-        {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
+          {tab === 'raw' && <pre className="message-text">{content.rawHeaders}</pre>}
 
-        {tab === 'source' && (
-          <table>
-            <tbody>
-              {(content.headers ?? []).map((header, index) => (
-                <tr key={index}>
-                  <td className="shrink muted">{header.key}</td>
-                  <td className="mono wrap">{header.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {content.attachments?.length ? (
-          <div className="card" style={{ marginTop: 16 }}>
-            <h3>{t('mailDetail.attachments')}</h3>
+          {tab === 'source' && (
             <table>
               <tbody>
-                {content.attachments.map((attachment, index) => (
+                {(content.headers ?? []).map((header, index) => (
                   <tr key={index}>
-                    <td>
-                      {/* A real link, so saving it works the way saving
-                          anything else does. */}
-                      <a
-                        href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
-                        download={attachment.filename}
-                      >
-                        {attachment.filename}
-                      </a>
-                    </td>
-                    <td className="shrink muted">{attachment.contentType}</td>
-                    <td className="shrink muted">{formatBytes(attachment.size)}</td>
+                    <td className="shrink muted">{header.key}</td>
+                    <td className="mono wrap">{header.value}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        ) : null}
-      </>
-    )}
+          )}
+
+          {content.attachments?.length ? (
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3>{t('mailDetail.attachments')}</h3>
+              <table>
+                <tbody>
+                  {content.attachments.map((attachment, index) => (
+                    <tr key={index}>
+                      <td>
+                        {/* A real link, so saving it works the way saving
+                          anything else does. */}
+                        <a
+                          href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
+                          download={attachment.filename}
+                        >
+                          {attachment.filename}
+                        </a>
+                      </td>
+                      <td className="shrink muted">{attachment.contentType}</td>
+                      <td className="shrink muted">{formatBytes(attachment.size)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </>
+      )}
     </>
   )
 }
@@ -635,7 +698,10 @@ function Opens({ opens }: { opens?: MailOpens }) {
           beside it rather than inside it: a tag that reads as a sentence
           stops working as a tag. */}
       <div className="verdict" style={{ marginBottom: 8 }}>
-        <Tag value={opens.opened ? t('mail.opened') : t('mailDetail.notOpened')} tone={opens.opened ? 'good' : undefined} />
+        <Tag
+          value={opens.opened ? t('mail.opened') : t('mailDetail.notOpened')}
+          tone={opens.opened ? 'good' : undefined}
+        />
         {opens.opened && (
           <span className="muted">
             {[
@@ -724,8 +790,12 @@ function Authentication({ results }: { results: AuthenticationResults }) {
 
   if (results.dmarc) {
     const alignment = [
-      results.dmarc.dkimAlignment ? t('mailDetail.alignmentDkim', { mode: alignmentMode(t, results.dmarc.dkimAlignment) }) : '',
-      results.dmarc.spfAlignment ? t('mailDetail.alignmentSpf', { mode: alignmentMode(t, results.dmarc.spfAlignment) }) : '',
+      results.dmarc.dkimAlignment
+        ? t('mailDetail.alignmentDkim', { mode: alignmentMode(t, results.dmarc.dkimAlignment) })
+        : '',
+      results.dmarc.spfAlignment
+        ? t('mailDetail.alignmentSpf', { mode: alignmentMode(t, results.dmarc.spfAlignment) })
+        : '',
     ]
       .filter(Boolean)
       .join(', ')
@@ -769,12 +839,14 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       detail: results.spamFilter.checks?.length ? (
         <span className="spam-checks">
           {results.spamFilter.checks.map((check) => (
-            <span key={check.symbol} className="spam-check" title={check.description ?? ''}>
-              <span className="mono">{check.symbol}</span>
-              <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
-                {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
+            <Tooltip key={check.symbol} label={check.description ?? ''}>
+              <span className="spam-check">
+                <span className="mono">{check.symbol}</span>
+                <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
+                  {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
+                </span>
               </span>
-            </span>
+            </Tooltip>
           ))}
         </span>
       ) : results.spamFilter.symbols?.length ? (
@@ -912,20 +984,12 @@ function DeliveryDetail({ delivery }: { delivery: Delivery }) {
                 })
               : t('mailDetail.notAttempted')}
           </Field>
-          <Field label={t('mailDetail.deliveredAt')}>
-            {delivery.deliveredAt && formatTime(delivery.deliveredAt)}
-          </Field>
-          <Field label={t('mailDetail.droppedAt')}>
-            {delivery.droppedAt && formatTime(delivery.droppedAt)}
-          </Field>
-          <Field label={t('mailDetail.retryAtLabel')}>
-            {delivery.retryAt && formatTime(delivery.retryAt)}
-          </Field>
+          <Field label={t('mailDetail.deliveredAt')}>{delivery.deliveredAt && formatTime(delivery.deliveredAt)}</Field>
+          <Field label={t('mailDetail.droppedAt')}>{delivery.droppedAt && formatTime(delivery.droppedAt)}</Field>
+          <Field label={t('mailDetail.retryAtLabel')}>{delivery.retryAt && formatTime(delivery.retryAt)}</Field>
           {/* When the sender was told this failed. A bounce that was never
               sent is a different problem from one that was. */}
-          <Field label={t('mailDetail.notifiedAt')}>
-            {delivery.notifiedAt && formatTime(delivery.notifiedAt)}
-          </Field>
+          <Field label={t('mailDetail.notifiedAt')}>{delivery.notifiedAt && formatTime(delivery.notifiedAt)}</Field>
           <Field label={t('mail.size')}>{delivery.size ? formatBytes(delivery.size) : undefined}</Field>
           <Field label={t('mailDetail.lastError')}>{delivery.error}</Field>
         </tbody>
@@ -942,9 +1006,7 @@ function DeliveryDetail({ delivery }: { delivery: Delivery }) {
                 <>
                   {status.remoteMta && <span className="mono">{status.remoteMta}</span>}
                   {status.action && <> · {status.action}</>}
-                  {status.diagnosticCode && (
-                    <div className="mono wrap">{status.diagnosticCode}</div>
-                  )}
+                  {status.diagnosticCode && <div className="mono wrap">{status.diagnosticCode}</div>}
                 </>
               </Field>
             ))}
@@ -956,7 +1018,6 @@ function DeliveryDetail({ delivery }: { delivery: Delivery }) {
 }
 
 // --- wording ---------------------------------------------------------------
-
 
 // One sentence saying what became of the message, because "rejected" alone
 // invites the next question and the answer is already on the page.
@@ -1041,12 +1102,9 @@ function buildDocument(html: string, mailId?: string, dark = false, darkened = f
   // endpoint, and the remote ones, which go through the server too once the
   // reader asks for them. Nothing in a message reaches the network from the
   // reader's browser, so this never has to widen to https:.
-  const policy = [
-    "default-src 'none'",
-    "img-src data: 'self'",
-    "style-src 'unsafe-inline'",
-    'font-src data:',
-  ].join('; ')
+  const policy = ["default-src 'none'", "img-src data: 'self'", "style-src 'unsafe-inline'", 'font-src data:'].join(
+    '; ',
+  )
 
   const body = mailId ? restoreRemoteImages(html, mailId) : html
 

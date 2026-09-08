@@ -150,26 +150,11 @@ func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailbox
 
 	// Threading. In-Reply-To names the message answered; References carries
 	// its own references plus itself, which is how a thread stays one.
-	var replied *models.MailboxItem
-	if parameters.ReplyToItemID != "" {
-		item, original, err := self.requireOwnItem(ctx, mailbox, parameters.ReplyToItemID)
-		if err != nil {
-			return nil, err
-		}
-		replied = item
-		if original != nil && original.MessageID != "" {
-			references := original.MessageID
-			if headers, _, err := self.storage.Get(ctx, original.ID); err == nil {
-				if existing := strings.TrimSpace(mailparse.FindHeaderValue(headers, "References")); existing != "" {
-					references = existing + " " + original.MessageID
-				}
-			}
-			message.Headers = append(message.Headers,
-				mailparse.UnsplitHeader("In-Reply-To", original.MessageID),
-				mailparse.UnsplitHeader("References", references),
-			)
-		}
+	replied, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
+	if err != nil {
+		return nil, err
 	}
+	message.Headers = append(message.Headers, threading...)
 	var forwarded *models.MailboxItem
 	if parameters.ForwardItemID != "" {
 		item, _, err := self.requireOwnItem(ctx, mailbox, parameters.ForwardItemID)
@@ -233,6 +218,34 @@ func (self *graph) SaveMailboxDraft(ctx context.Context, arguments SaveMailboxDr
 	return self.saveDraft(ctx, self.transaction(ctx), mailbox, &arguments.Message, nil)
 }
 
+// threadingHeaders is In-Reply-To and References for a reply: the message
+// being answered, and the chain it belongs to plus itself. Empty for a
+// message that answers nothing.
+//
+// Returns the item replied to as well, which the send path marks answered.
+func (self *graph) threadingHeaders(ctx context.Context, mailbox *models.Mailbox, replyToItemId string) (*models.MailboxItem, []string, error) {
+	if replyToItemId == "" {
+		return nil, nil, nil
+	}
+	item, original, err := self.requireOwnItem(ctx, mailbox, replyToItemId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if original == nil || original.MessageID == "" {
+		return item, nil, nil
+	}
+	references := original.MessageID
+	if headers, _, err := self.storage.Get(ctx, original.ID); err == nil {
+		if existing := strings.TrimSpace(mailparse.FindHeaderValue(headers, "References")); existing != "" {
+			references = existing + " " + original.MessageID
+		}
+	}
+	return item, []string{
+		mailparse.UnsplitHeader("In-Reply-To", original.MessageID),
+		mailparse.UnsplitHeader("References", references),
+	}, nil
+}
+
 // saveDraft stores what is being written as a message in Drafts — the
 // fields given, the parts kept from the draft being continued, and any
 // files just uploaded — and removes the previous save of it.
@@ -250,9 +263,15 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 		message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderBcc, strings.Join(message.Bcc, ", ")))
 	}
 	if parameters.ReplyToItemID != "" {
-		if _, _, err := self.requireOwnItem(ctx, mailbox, parameters.ReplyToItemID); err != nil {
+		// The same headers a sent reply carries, so that a draft reply
+		// belongs to the conversation it answers and is shown in it. Without
+		// them the draft has nothing to say what it answers, and a thread
+		// somebody was midway through writing into looked empty of it.
+		_, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
+		if err != nil {
 			return nil, err
 		}
+		message.Headers = append(message.Headers, threading...)
 		message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderReplyTo, parameters.ReplyToItemID))
 	}
 	if parameters.ForwardItemID != "" {

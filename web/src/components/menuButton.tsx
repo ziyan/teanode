@@ -115,20 +115,13 @@ export function MenuButton({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
-        title={label}
         onClick={() => setOpen((previous) => !previous)}
       >
         {icon}
       </button>
       {open &&
         createPortal(
-          <div
-            className="menu"
-            id={id}
-            role="menu"
-            ref={menu}
-            style={position}
-          >
+          <div className="menu" id={id} role="menu" ref={menu} style={position}>
             {render(() => setOpen(false))}
           </div>,
           document.body,

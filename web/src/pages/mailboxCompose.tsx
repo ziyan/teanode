@@ -188,7 +188,11 @@ export function MailboxComposer({
   const [to, setTo] = useState(initialTo)
   const [cc, setCc] = useState('')
   const [bcc, setBcc] = useState('')
-  const [showCc, setShowCc] = useState(false)
+  // Whether this message carries a quoted original, and whether it is being
+  // shown. Folded by default: what is being written is the answer, and the
+  // thing it answers is above it in the conversation anyway.
+  const [quoted, setQuoted] = useState(false)
+  const [showQuoted, setShowQuoted] = useState(false)
   const [subject, setSubject] = useState('')
   const [editor, setEditor] = useState<Editor>('rich')
   const [html, setHtml] = useState('')
@@ -279,11 +283,13 @@ export function MailboxComposer({
           setTo(draft.to.join(', '))
           setCc(draftCopies.join(', '))
           setBcc(draftBlindCopies.join(', '))
-          setShowCc(draftCopies.length > 0 || draftBlindCopies.length > 0)
           setSubject(draft.subject)
           if (draft.html) {
             setEditor('rich')
             setHtml(draft.html)
+            // A draft picked up again carries whatever quote it was written
+            // with, so it folds away the same as a fresh reply's.
+            setQuoted(draft.html.includes('teanode-quote'))
           } else {
             setEditor('plain')
             setText(draft.text ?? '')
@@ -319,11 +325,14 @@ export function MailboxComposer({
             if (replyAll) {
               const others = (original?.recipients ?? []).filter((recipient) => !mine.has(recipient.toLowerCase()))
               setCc(others.join(', '))
-              setShowCc(others.length > 0)
             }
             setSubject(replySubject(original?.subject ?? ''))
             const attribution = t('compose.mailbox.quotedOn', { date: when, from: originalFrom })
-            setHtml(`<p><br></p><p>${escapeHtml(attribution)}</p><blockquote>${originalHtml}</blockquote>`)
+            setHtml(
+              `<p><br></p><div class="teanode-quote"><p>${escapeHtml(attribution)}</p>` +
+                `<blockquote>${originalHtml}</blockquote></div>`,
+            )
+            setQuoted(true)
             setText(`\n\n${attribution}\n${quoteText(originalText)}`)
           } else {
             setSubject(forwardSubject(original?.subject ?? ''))
@@ -335,11 +344,13 @@ export function MailboxComposer({
               `${t('compose.mailbox.subject')}: ${original?.subject ?? ''}`,
             ]
             setHtml(
-              `<p><br></p><p>---------- ${escapeHtml(header[0])} ----------<br>${header
-                .slice(1)
-                .map(escapeHtml)
-                .join('<br>')}</p>${originalHtml}`,
+              `<p><br></p><div class="teanode-quote">` +
+                `<p>---------- ${escapeHtml(header[0])} ----------<br>${header
+                  .slice(1)
+                  .map(escapeHtml)
+                  .join('<br>')}</p>${originalHtml}</div>`,
             )
+            setQuoted(true)
             setText(`\n\n---------- ${header[0]} ----------\n${header.slice(1).join('\n')}\n\n${originalText}`)
             setCarried((content?.attachments ?? []).filter((attachment) => !attachment.inline))
           }
@@ -731,50 +742,43 @@ export function MailboxComposer({
           ))}
         </datalist>
       </label>
-      {!showCc && (
-        <button type="button" className="link" onClick={() => setShowCc(true)}>
-          {t('compose.mailbox.showCc')}
-        </button>
-      )}
-      {showCc && (
-        <>
-          <label>
-            {t('compose.mailbox.copy')}
-            <input
-              value={cc}
-              list="compose-contacts-cc"
-              onChange={(event) => {
-                setCc(event.target.value)
-                setTyping(event.target.value)
-                touch()
-              }}
-            />
-            <datalist id="compose-contacts-cc">
-              {completions(cc).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </label>
-          <label>
-            {t('compose.mailbox.blindCopy')}
-            <input
-              value={bcc}
-              list="compose-contacts-bcc"
-              onChange={(event) => {
-                setBcc(event.target.value)
-                setTyping(event.target.value)
-                touch()
-              }}
-            />
-            <datalist id="compose-contacts-bcc">
-              {completions(bcc).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </label>
-        </>
-      )}
-      <p className="muted field-hint">{t('compose.mailbox.addressesHint')}</p>
+      {/* Copy and blind copy are fields like any other. They were behind a
+          link, which made two ordinary boxes into something to go looking
+          for, and put a link where the form's rhythm wanted a label. */}
+      <label>
+        {t('compose.mailbox.copy')}
+        <input
+          value={cc}
+          list="compose-contacts-cc"
+          onChange={(event) => {
+            setCc(event.target.value)
+            setTyping(event.target.value)
+            touch()
+          }}
+        />
+        <datalist id="compose-contacts-cc">
+          {completions(cc).map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </label>
+      <label>
+        {t('compose.mailbox.blindCopy')}
+        <input
+          value={bcc}
+          list="compose-contacts-bcc"
+          onChange={(event) => {
+            setBcc(event.target.value)
+            setTyping(event.target.value)
+            touch()
+          }}
+        />
+        <datalist id="compose-contacts-bcc">
+          {completions(bcc).map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </label>
       <label>
         {t('compose.mailbox.subject')}
         <input
@@ -815,6 +819,7 @@ export function MailboxComposer({
       {editor === 'rich' ? (
         <RichTextEditor
           value={html}
+          hideQuoted={quoted && !showQuoted}
           onChange={(next) => {
             setHtml(next)
             touch()
@@ -829,6 +834,18 @@ export function MailboxComposer({
             touch()
           }}
         />
+      )}
+
+      {/* The quote is folded away while the answer is being written, and this
+          unfolds it. Only in the rich text editor: the plain one is a
+          textarea, where "> " lines are the message and there is nothing to
+          fold them into. */}
+      {quoted && editor === 'rich' && (
+        <div className="compose-quoted">
+          <button type="button" className="link" onClick={() => setShowQuoted((previous) => !previous)}>
+            {t(showQuoted ? 'compose.mailbox.hideQuoted' : 'compose.mailbox.showQuoted')}
+          </button>
+        </div>
       )}
 
       <div className="attachments">

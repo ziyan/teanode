@@ -128,8 +128,10 @@ type CreateUserArguments struct {
 	// Address that receives notifications
 	Email *string `json:"email"`
 
-	// Groups to put them in. Omitted means Members, so that a person made
-	// here can read the mailbox they are about to be given.
+	// Groups to put them in. Omitted means Members, when that group is still
+	// there, so that a person made here can read the mailbox they are about
+	// to be given. A server whose Members group was renamed or deleted has
+	// to name the groups, or the account joins none and can do nothing.
 	GroupIDs *[]string `json:"groupIds"`
 }
 
@@ -162,6 +164,15 @@ func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments
 		return nil, err
 	} else if members != nil {
 		created.GroupIDs = []string{members.ID}
+	} else {
+		// Somebody renamed or deleted that group, and nothing puts it back:
+		// seeding only runs on a server that has no groups at all. So this
+		// account joins no group, which is no roles and no permissions — it
+		// can sign in and see nothing, including the mailbox made for it
+		// below. That is worth a line in the log, because from the dashboard
+		// it looks like an account that simply does not work.
+		log.Warningf("there is no %s group, so %q was created in no group and holds no permissions",
+			models.GroupNameMembers, username)
 	}
 	stored, err := tx.CreateUser(created)
 	if err != nil {

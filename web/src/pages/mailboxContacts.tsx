@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
+import { Tooltip } from '../components/tooltip'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon } from '../components/icons'
@@ -36,7 +37,10 @@ export function MailboxContactsPage() {
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
   const query = useQuery(
-    () => (mailboxId ? graphql<{ ListMailboxContacts: Contact[] }>(CONTACTS, { mailboxId, first: 500 }) : Promise.resolve(null)),
+    () =>
+      mailboxId
+        ? graphql<{ ListMailboxContacts: Contact[] }>(CONTACTS, { mailboxId, first: 500 })
+        : Promise.resolve(null),
     [mailboxId],
     { refresh: false },
   )
@@ -113,30 +117,32 @@ export function MailboxContactsPage() {
         width: '5rem',
         render: (contact) => (
           <div className="row-actions">
-            <button
-              type="button"
-              className="icon-action"
-              title={t('common.edit')}
-              aria-label={`${contact.address}: ${t('common.edit')}`}
-              disabled={busy}
-              onClick={() => {
-                setEditing(contact)
-                setEditName(contact.name ?? '')
-                setProblem(null)
-              }}
-            >
-              <PencilIcon size={16} />
-            </button>
-            <button
-              type="button"
-              className="icon-action danger"
-              title={t('common.delete')}
-              aria-label={`${contact.address}: ${t('common.delete')}`}
-              disabled={busy}
-              onClick={() => setDeleting(contact)}
-            >
-              <TrashIcon size={16} />
-            </button>
+            <Tooltip label={t('common.edit')}>
+              <button
+                type="button"
+                className="icon-action"
+                aria-label={`${contact.address}: ${t('common.edit')}`}
+                disabled={busy}
+                onClick={() => {
+                  setEditing(contact)
+                  setEditName(contact.name ?? '')
+                  setProblem(null)
+                }}
+              >
+                <PencilIcon size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t('common.delete')}>
+              <button
+                type="button"
+                className="icon-action danger"
+                aria-label={`${contact.address}: ${t('common.delete')}`}
+                disabled={busy}
+                onClick={() => setDeleting(contact)}
+              >
+                <TrashIcon size={16} />
+              </button>
+            </Tooltip>
           </div>
         ),
       },

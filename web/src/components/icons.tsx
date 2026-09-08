@@ -299,6 +299,26 @@ export function ShieldIcon(props: IconProps) {
   )
 }
 
+// A chevron pointing down: what opens a thing in place, and turns to point up
+// when it is open.
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  )
+}
+
+// The other half of a disclosure: pointing at where the thing that is open
+// goes back to.
+export function ChevronUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 15 6-6 6 6" />
+    </Icon>
+  )
+}
+
 export function ChevronRightIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -542,6 +562,68 @@ export function PictureIcon(props: IconProps) {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="M21 15l-5-5L5 21" />
+    </Icon>
+  )
+}
+
+// Back: an arrow pointing at where you came from.
+export function ArrowLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M19 12H5M12 19l-7-7 7-7" />
+    </Icon>
+  )
+}
+
+// Reply: the arrow that turns back on itself, which is what every mail
+// program has drawn for thirty years.
+export function ReplyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 17 4 12l5-5" />
+      <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+    </Icon>
+  )
+}
+
+// Reply to all: the same arrow, with a second one behind it.
+export function ReplyAllIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 17 2 12l5-5" />
+      <path d="M12 17 7 12l5-5" />
+      <path d="M22 18v-2a4 4 0 0 0-4-4H7" />
+    </Icon>
+  )
+}
+
+// Forward: the reply arrow, the other way round.
+export function ForwardIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 17 5-5-5-5" />
+      <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
+    </Icon>
+  )
+}
+
+// Flagged: a flag on a pole. Not the star, which is what the list already
+// uses for the same thing at a glance.
+export function FlagIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <path d="M4 22v-7" />
+    </Icon>
+  )
+}
+
+// Read: an envelope with its flap open, against MailIcon's closed one.
+export function MailOpenIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9l-9-6z" />
+      <path d="m3 10 9 6 9-6" />
     </Icon>
   )
 }

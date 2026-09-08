@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { Tooltip } from './tooltip'
 import { useTranslation } from '../i18n/i18n'
 
 // "5 minutes ago", with the exact time on hover.
@@ -80,8 +81,8 @@ export function RelativeTime({ value }: { value: string | undefined | null }) {
   }
 
   return (
-    <time dateTime={date.toISOString()} title={formatAbsolute(date)}>
-      {formatRelative(date, language)}
-    </time>
+    <Tooltip label={formatAbsolute(date)}>
+      <time dateTime={date.toISOString()}>{formatRelative(date, language)}</time>
+    </Tooltip>
   )
 }
