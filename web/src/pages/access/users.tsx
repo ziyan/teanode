@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { graphql } from '../../api'
-import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
-import { KeyIcon, PencilIcon, TrashIcon } from '../../components/icons'
+import { ErrorMessage, Loading, Tag } from '../../components/common'
+import { RelativeTime } from '../../components/relativeTime'
+import { KeyIcon, PencilIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -100,18 +101,21 @@ export function UsersTab() {
         description={members ? t('access.users.intro') : t('access.users.introNoMembers')}
         action={
           managesUsers ? (
-            <button
-              className="primary"
-              type="button"
-              onClick={() =>
-                open(() => {
-                  setPersonDraft(EMPTY_PERSON)
-                  setAddingPerson(true)
-                })
-              }
-            >
-              {t('access.users.new')}
-            </button>
+            <Tooltip label={t('access.users.new')}>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={t('access.users.new')}
+                onClick={() =>
+                  open(() => {
+                    setPersonDraft(EMPTY_PERSON)
+                    setAddingPerson(true)
+                  })
+                }
+              >
+                <PlusIcon size={16} />
+              </button>
+            </Tooltip>
           ) : undefined
         }
       >
@@ -137,10 +141,15 @@ export function UsersTab() {
             }
             subtitle={
               <>
-                <div>
-                  {user.name || t('common.none')}
-                  {user.email ? ` · ${user.email}` : ''}
-                </div>
+                {/* Only what there is to say. A person with no name and no
+                    notification address had a line holding an em dash. */}
+                {(user.name || user.email) && (
+                  <div>
+                    {user.name}
+                    {user.name && user.email ? ' · ' : ''}
+                    {user.email}
+                  </div>
+                )}
                 <div className="access-chips">
                   {user.groupIds.length > 0 ? (
                     user.groupIds.map((groupId) => (
@@ -154,7 +163,11 @@ export function UsersTab() {
                     <span className="muted">{t('access.users.noGroups')}</span>
                   )}
                 </div>
-                <div className="muted">{t('access.users.created', { time: formatTime(user.createdAt) })}</div>
+                {/* When, said the way a list is read — "created 2 days ago",
+                    with the timestamp and its zone one hover away. */}
+                <div className="muted">
+                  {t('access.users.createdWhen')} <RelativeTime value={user.createdAt} />
+                </div>
               </>
             }
             actions={

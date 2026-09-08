@@ -132,18 +132,21 @@ export function GroupsTab() {
           description={t('access.groups.intro')}
           action={
             managesGroups ? (
-              <button
-                className="primary"
-                type="button"
-                onClick={() =>
-                  open(() => {
-                    setGroupDraft(EMPTY_GROUP)
-                    setAddingGroup(true)
-                  })
-                }
-              >
-                {t('access.groups.new')}
-              </button>
+              <Tooltip label={t('access.groups.new')}>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={t('access.groups.new')}
+                  onClick={() =>
+                    open(() => {
+                      setGroupDraft(EMPTY_GROUP)
+                      setAddingGroup(true)
+                    })
+                  }
+                >
+                  <PlusIcon size={16} />
+                </button>
+              </Tooltip>
             ) : undefined
           }
         >
@@ -153,7 +156,7 @@ export function GroupsTab() {
         <div className="access-groups">
           {/* Where the list of groups is a column too narrow to be one: the
               same choice as a control rather than as a panel. */}
-          <div className="access-group-picker">
+          <div className="access-picker">
             <Select
               label={t('access.people.groups')}
               value={chosen?.id ?? ''}
@@ -217,26 +220,29 @@ export function GroupsTab() {
             title={t('access.people.groups')}
             action={
               managesGroups ? (
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={() =>
-                    open(() => {
-                      setGroupDraft(EMPTY_GROUP)
-                      setAddingGroup(true)
-                    })
-                  }
-                >
-                  {t('access.groups.new')}
-                </button>
+                <Tooltip label={t('access.groups.new')}>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label={t('access.groups.new')}
+                    onClick={() =>
+                      open(() => {
+                        setGroupDraft(EMPTY_GROUP)
+                        setAddingGroup(true)
+                      })
+                    }
+                  >
+                    <PlusIcon size={16} />
+                  </button>
+                </Tooltip>
               ) : undefined
             }
           >
             {groups.map((group) => (
-              <div key={group.id} className={group.id === chosen?.id ? 'access-group-row chosen' : 'access-group-row'}>
+              <div key={group.id} className={group.id === chosen?.id ? 'access-pick-row chosen' : 'access-pick-row'}>
                 <button
                   type="button"
-                  className="access-group-name"
+                  className="access-pick-name"
                   aria-current={group.id === chosen?.id}
                   onClick={() => choose(group.id)}
                 >
@@ -286,18 +292,21 @@ export function GroupsTab() {
               description={chosen.description || undefined}
               action={
                 managesUsers || managesGroups ? (
-                  <button
-                    className="primary"
-                    type="button"
-                    onClick={() =>
-                      open(() => {
-                        setMemberDraft(chosen.userIds)
-                        setAddingMembers(true)
-                      })
-                    }
-                  >
-                    {t('access.groups.addMembers')}
-                  </button>
+                  <Tooltip label={t('access.groups.addMembers')}>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={t('access.groups.addMembers')}
+                      onClick={() =>
+                        open(() => {
+                          setMemberDraft(chosen.userIds)
+                          setAddingMembers(true)
+                        })
+                      }
+                    >
+                      <PlusIcon size={16} />
+                    </button>
+                  </Tooltip>
                 ) : undefined
               }
             >
@@ -339,7 +348,7 @@ export function GroupsTab() {
           )}
 
           {chosen && managesGroups && (
-            <div className="access-group-attached">
+            <div className="access-attached">
               {/* Ticking writes. What a group holds is two short lists, and a
                   Save button under them would be a second thing to remember
                   for a change that is one click. */}
@@ -348,10 +357,12 @@ export function GroupsTab() {
                 items={roles}
                 selected={chosen.roleIds}
                 onChange={(roleIds) => void save(chosen, { roleIds })}
+                // The name reads as the row; what the role is for is the
+                // line under it, the way a permission's key is.
                 describe={(role) => (
                   <>
-                    <span>{role.name}</span>
-                    {role.description && <span className="access-role-description">{role.description}</span>}
+                    {role.name}
+                    {role.description && <span>{role.description}</span>}
                   </>
                 )}
                 empty="access.roles.empty"

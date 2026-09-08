@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
-import { PencilIcon, TrashIcon } from '../../components/icons'
+import { PencilIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { Select } from '../../components/select'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
-import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
+import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
@@ -20,8 +22,8 @@ import {
 } from './common'
 
 const CREATE = `
-  mutation ($name: String!, $description: String, $permissions: [String!]) {
-    CreateRole(name: $name, description: $description, permissions: $permissions) ${ROLE_FIELDS}
+  mutation ($name: String!, $description: String) {
+    CreateRole(name: $name, description: $description) ${ROLE_FIELDS}
   }`
 
 const UPDATE = `
@@ -31,7 +33,9 @@ const UPDATE = `
 
 const DELETE = `mutation ($roleId: String!) { DeleteRole(roleId: $roleId) }`
 
-type Draft = { name: string; description: string; permissions: string[] }
+type Draft = { name: string; description: string }
+
+const EMPTY: Draft = { name: '', description: '' }
 
 const KINDS: {
   id: PermissionDescription['kind']
@@ -44,6 +48,12 @@ const KINDS: {
 
 // RolesTab is the vocabulary of permissions, bundled into names. The three
 // seeded roles are ordinary rows: renamed, edited or deleted like any other.
+//
+// The roles are the list, and the one being read is beside it: what it is for,
+// and the sixty-odd permissions it may hold, ticked on the page. They were in
+// a dialog, which for a list that long meant scrolling a box that covered the
+// page to find the one permission you came to change. Only the name and the
+// description are still a dialog, because they are a form.
 export function RolesTab() {
   const { t } = useTranslation()
   const session = useSession()
@@ -54,9 +64,14 @@ export function RolesTab() {
     [],
   )
 
+  // Which role is being read, in the query string, so it can be linked to and
+  // survives a reload.
+  const [parameters, setParameters] = useSearchParams()
+  const asked = parameters.get('role') ?? ''
+
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Role | null>(null)
-  const [draft, setDraft] = useState<Draft>({ name: '', description: '', permissions: [] })
+  const [draft, setDraft] = useState<Draft>(EMPTY)
   const [deleting, setDeleting] = useState<Role | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -79,82 +94,167 @@ export function RolesTab() {
   const roles = data?.roles ?? []
   const permissions = data?.permissions ?? []
 
+  const chosen = roles.find((role) => role.id === asked) ?? roles[0] ?? null
+  const choose = (roleId: string) => setParameters(roleId ? { role: roleId } : {}, { replace: true })
+
+  function startAdding() {
+    setProblem(null)
+    setDraft(EMPTY)
+    setAdding(true)
+  }
+
+  function startEditing(role: Role) {
+    setProblem(null)
+    setDraft({ name: role.name, description: role.description ?? '' })
+    setEditing(role)
+  }
+
+  // Ticking writes. A role is a set of permissions and nothing else, so the
+  // set is the thing being edited; holding it behind a Save button made
+  // changing one permission a three-step operation.
+  const setPermissions = (role: Role, kind: PermissionDescription['kind'], selected: string[]) =>
+    run(() =>
+      graphql(UPDATE, {
+        roleId: role.id,
+        permissions: permissions
+          .map((permission) => permission.key)
+          .filter((key) =>
+            permissions.find((permission) => permission.key === key)?.kind === kind
+              ? selected.includes(key)
+              : role.permissions.includes(key),
+          ),
+      }),
+    )
+
+  const newRoleButton = manages ? (
+    <Tooltip label={t('access.roles.new')}>
+      <button className="icon-button" type="button" aria-label={t('access.roles.new')} onClick={startAdding}>
+        <PlusIcon size={16} />
+      </button>
+    </Tooltip>
+  ) : undefined
+
   return (
     <>
-      <SettingsSection
-        description={t('access.roles.intro')}
-        action={
-          manages ? (
-            <button
-              className="primary"
-              type="button"
-              onClick={() => {
-                setDraft({ name: '', description: '', permissions: [] })
-                setAdding(true)
-              }}
-            >
-              {t('access.roles.new')}
-            </button>
-          ) : undefined
-        }
-      >
-        <ErrorMessage error={problem} />
-        {loading && !data && <Loading />}
-        {error ? <ErrorMessage error={error} /> : null}
-        {data && roles.length === 0 && <SettingsEmpty>{t('access.roles.empty')}</SettingsEmpty>}
+      <ErrorMessage error={problem} />
+      {loading && !data && <Loading />}
+      {error ? <ErrorMessage error={error} /> : null}
 
-        {roles.map((role) => (
-          <SettingsRow
-            key={role.id}
-            title={role.name}
-            subtitle={
+      {data && roles.length === 0 ? (
+        <SettingsSection card description={t('access.roles.intro')} action={newRoleButton}>
+          <SettingsEmpty>{t('access.roles.empty')}</SettingsEmpty>
+        </SettingsSection>
+      ) : (
+        <div className="access-roles">
+          {/* Where the list is a column too narrow to be one: the same choice
+              as a control rather than as a panel. */}
+          <div className="access-picker">
+            <Select
+              label={t('server.tabRoles')}
+              value={chosen?.id ?? ''}
+              options={roles.map((role) => ({ value: role.id, label: role.name }))}
+              onChange={choose}
+            />
+            {manages && chosen && (
               <>
-                {role.description && <div>{role.description}</div>}
-                <div>
-                  {role.permissions.length === permissions.length && permissions.length > 0
-                    ? t('access.roles.everyPermission')
-                    : role.permissions.length > 0
-                      ? role.permissions.map(label).join(', ')
-                      : t('access.roles.noPermissions')}
-                </div>
+                <Tooltip label={t('access.roles.edit')}>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label={`${chosen.name}: ${t('access.roles.edit')}`}
+                    onClick={() => startEditing(chosen)}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('common.remove')}>
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    aria-label={`${chosen.name}: ${t('common.remove')}`}
+                    onClick={() => setDeleting(chosen)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               </>
-            }
-            actions={
-              manages ? (
-                <div className="row-actions">
-                  <Tooltip label={t('access.roles.edit')}>
-                    <button
-                      className="icon-action"
-                      type="button"
-                      aria-label={`${role.name}: ${t('access.roles.edit')}`}
-                      onClick={() => {
-                        setDraft({
-                          name: role.name,
-                          description: role.description ?? '',
-                          permissions: role.permissions,
-                        })
-                        setEditing(role)
-                      }}
-                    >
-                      <PencilIcon size={16} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={t('common.remove')}>
-                    <button
-                      className="icon-action danger"
-                      type="button"
-                      aria-label={`${role.name}: ${t('common.remove')}`}
-                      onClick={() => setDeleting(role)}
-                    >
-                      <TrashIcon size={16} />
-                    </button>
-                  </Tooltip>
-                </div>
-              ) : undefined
-            }
-          />
-        ))}
-      </SettingsSection>
+            )}
+            {manages && (
+              <Tooltip label={t('access.roles.new')}>
+                <button className="icon-button" type="button" aria-label={t('access.roles.new')} onClick={startAdding}>
+                  <PlusIcon size={16} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+
+          <SettingsSection card title={t('server.tabRoles')} action={newRoleButton}>
+            {roles.map((role) => (
+              <div key={role.id} className={role.id === chosen?.id ? 'access-pick-row chosen' : 'access-pick-row'}>
+                <button
+                  type="button"
+                  className="access-pick-name"
+                  aria-current={role.id === chosen?.id}
+                  onClick={() => choose(role.id)}
+                >
+                  {role.name}
+                </button>
+                {manages && role.id === chosen?.id && (
+                  <div className="row-actions">
+                    <Tooltip label={t('access.roles.edit')}>
+                      <button
+                        className="icon-action"
+                        type="button"
+                        aria-label={`${role.name}: ${t('access.roles.edit')}`}
+                        onClick={() => startEditing(role)}
+                      >
+                        <PencilIcon size={16} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={t('common.remove')}>
+                      <button
+                        className="icon-action danger"
+                        type="button"
+                        aria-label={`${role.name}: ${t('common.remove')}`}
+                        onClick={() => setDeleting(role)}
+                      >
+                        <TrashIcon size={16} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
+              </div>
+            ))}
+          </SettingsSection>
+
+          {chosen && (
+            <div className="access-attached">
+              <SettingsSection card title={t('access.roles.description')}>
+                <p className={chosen.description ? undefined : 'muted'}>
+                  {chosen.description || t('access.roles.noDescription')}
+                </p>
+              </SettingsSection>
+              {KINDS.map((kind) => (
+                <CheckList
+                  key={kind.id}
+                  label={t(kind.label)}
+                  items={permissions
+                    .filter((permission) => permission.kind === kind.id)
+                    .map((permission) => ({ ...permission, id: permission.key }))}
+                  selected={chosen.permissions}
+                  onChange={(selected) => manages && void setPermissions(chosen, kind.id, selected)}
+                  describe={(permission) => (
+                    <>
+                      {label(permission.key)}
+                      <code className="mono">{permission.key}</code>
+                    </>
+                  )}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {(adding || editing) && (
         <FormDialog
@@ -168,14 +268,13 @@ export function RolesTab() {
             setEditing(null)
           }}
           onSubmit={async () => {
-            const variables = {
-              name: draft.name.trim(),
-              description: draft.description,
-              permissions: draft.permissions,
-            }
+            const variables = { name: draft.name.trim(), description: draft.description }
             const ok = editing
               ? await run(() => graphql(UPDATE, { roleId: editing.id, ...variables }))
-              : await run(() => graphql(CREATE, variables))
+              : await run(async () => {
+                  const created = await graphql<{ CreateRole: Role }>(CREATE, variables)
+                  choose(created.CreateRole.id)
+                })
             if (ok) {
               setAdding(false)
               setEditing(null)
@@ -197,33 +296,6 @@ export function RolesTab() {
               onChange={(event) => setDraft({ ...draft, description: event.target.value })}
             />
           </label>
-          {KINDS.map((kind) => (
-            <CheckList
-              key={kind.id}
-              label={t(kind.label)}
-              items={permissions
-                .filter((permission) => permission.kind === kind.id)
-                .map((permission) => ({ ...permission, id: permission.key }))}
-              selected={draft.permissions}
-              onChange={(selected) =>
-                setDraft({
-                  ...draft,
-                  permissions: permissions
-                    .map((permission) => permission.key)
-                    .filter((key) =>
-                      permissions.find((permission) => permission.key === key)?.kind === kind.id
-                        ? selected.includes(key)
-                        : draft.permissions.includes(key),
-                    ),
-                })
-              }
-              describe={(permission) => (
-                <>
-                  {label(permission.key)} <span className="muted mono">{permission.key}</span>
-                </>
-              )}
-            />
-          ))}
         </FormDialog>
       )}
 
@@ -235,6 +307,9 @@ export function RolesTab() {
           busy={busy}
           onConfirm={async () => {
             if (await run(() => graphql(DELETE, { roleId: deleting.id }))) {
+              if (deleting.id === asked) {
+                choose('')
+              }
               setDeleting(null)
             }
           }}

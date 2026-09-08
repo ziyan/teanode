@@ -29,6 +29,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A tooltip appeared in the top left corner of the window rather than beside
+  what it describes. It was measured from its own anchor, which is drawn as
+  nothing at all so that it does not become an item of the row it sits in —
+  and an element with no box measures as zeros.
+- A row of a tick list with two lines in it — a permission and its key, a
+  role and what it is for — was squeezed to the height of one and drawn over
+  the row below it.
 - The audit log records who asked, not who forwarded. Behind a CDN every row
   read as one address in another country, because the address a request
   arrives from is the proxy's. The forwarded-for header says who the client
@@ -58,6 +65,18 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A message's headers are a list of names and values, with a button that
+  copies the block exactly as it arrived. Read as it came off the wire, a
+  Received: is four folded lines of one header and the reader has to find
+  where each one ends before they can find the one they want.
+- A role is managed on the page too, beside the list of roles: what it is
+  for, and the sixty-odd permissions it may hold, each with its key under its
+  name. They were in a dialog, which for a list that long meant scrolling a
+  box that covered the page to reach the one permission you came to change.
+- A list where one thing is being looked at says so the way the rail does: a
+  raised pill on the row you are on, in the same weight as every other row,
+  because bolder text is wider text and the list would shift as you moved
+  down it.
 - Users and groups are their own tabs, and a group is managed on the page
   rather than in a dialog. Everything a group is — who is in it, the roles it
   holds, the domains those roles apply over — was three lists inside a box

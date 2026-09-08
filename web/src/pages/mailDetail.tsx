@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { AuthenticationResults, Delivery, Mail, MailContent, MailOpens, graphql } from '../api'
 import {
+  CopyIconButton,
   ErrorMessage,
   Field,
   KindTag,
@@ -24,6 +25,7 @@ import { useResolvedTheme } from '../components/theme'
 import { hasAnywhere, useSession } from '../session'
 import { MenuButton } from '../components/menuButton'
 import { CloseIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
@@ -444,17 +446,40 @@ export function MessageContent({
             <div className="message-headers">
               <div className="message-headers-title">
                 <span>{t('mailDetail.headers')}</span>
-                <button
-                  type="button"
-                  className="message-headers-close"
-                  aria-label={t('mailDetail.hideHeaders')}
-                  title={t('mailDetail.hideHeaders')}
-                  onClick={() => setShowHeaders(false)}
-                >
-                  <CloseIcon size={14} />
-                </button>
+                <div className="row-actions">
+                  {/* The whole of it, exactly as it arrived — folded lines,
+                      order and all — because what a header block is pasted
+                      into is a bug report or another tool. */}
+                  <CopyIconButton value={content.rawHeaders ?? ''} label={t('mailDetail.copyHeaders')} />
+                  <Tooltip label={t('mailDetail.hideHeaders')}>
+                    <button
+                      type="button"
+                      className="message-headers-close"
+                      aria-label={t('mailDetail.hideHeaders')}
+                      onClick={() => setShowHeaders(false)}
+                    >
+                      <CloseIcon size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
-              <pre className="message-text">{content.rawHeaders}</pre>
+              {/* A name and its value, one to a row, rather than the block as
+                  it came off the wire. Received: is four lines of one header
+                  and a reader looking for who signed the message should not
+                  have to find where it ends. The original is one click away
+                  on the copy button. */}
+              {(content.headers ?? []).length > 0 ? (
+                <dl className="header-list">
+                  {(content.headers ?? []).map((header, index) => (
+                    <div key={index} className="header-row">
+                      <dt>{header.key}</dt>
+                      <dd>{header.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <pre className="message-text">{content.rawHeaders}</pre>
+              )}
             </div>
           )}
           {hasHtml ? (

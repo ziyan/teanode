@@ -23,6 +23,14 @@ const MARGIN = 8
 
 type Position = { top: number; left: number; below: boolean }
 
+// Where a run of text is, for an anchor that wraps words rather than a
+// button.
+function rangeOver(element: Element): Range {
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  return range
+}
+
 export function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
   const anchor = useRef<HTMLSpanElement>(null)
   const timer = useRef<number | null>(null)
@@ -45,7 +53,15 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
     if (!element) {
       return
     }
-    const box = element.getBoundingClientRect()
+    // What is being described, which is not the anchor. The anchor is
+    // display: contents so that it does not become a flex item of the row it
+    // sits in — and an element with no box of its own measures as zeros, so
+    // measuring it put every tooltip in the top left corner of the window,
+    // half of it off the edge. A range covers the case where what is wrapped
+    // is text rather than an element.
+    const box = element.firstElementChild
+      ? element.firstElementChild.getBoundingClientRect()
+      : rangeOver(element).getBoundingClientRect()
     // Above by default, because the thing being described is usually at the
     // end of a row and the pointer is coming from the left.
     const below = box.top < 40

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { CheckIcon, CopyIcon, ShieldIcon } from './icons'
+import { Tooltip } from './tooltip'
 import { Mail } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
 
@@ -126,28 +127,31 @@ export function CopyIconButton({ value, label }: { value: string; label?: string
 
   const name = label ?? t('common.copy')
 
+  const said = state === 'failed' ? t('common.copyFailed') : state === 'copied' ? t('common.copied') : name
+
   return (
-    <button
-      type="button"
-      className="icon-button copy-button"
-      aria-label={state === 'copied' ? t('common.copied') : name}
-      title={state === 'failed' ? t('common.copyFailed') : state === 'copied' ? t('common.copied') : name}
-      onClick={() => {
-        // The clipboard API is absent on an insecure origin, which a
-        // deployment behind plain HTTP is. Say so rather than doing nothing:
-        // the value is on the screen either way.
-        if (!navigator.clipboard) {
-          setState('failed')
-          return
-        }
-        void navigator.clipboard.writeText(value).then(
-          () => setState('copied'),
-          () => setState('failed'),
-        )
-      }}
-    >
-      {state === 'copied' ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
-    </button>
+    <Tooltip label={said}>
+      <button
+        type="button"
+        className="icon-button copy-button"
+        aria-label={state === 'copied' ? t('common.copied') : name}
+        onClick={() => {
+          // The clipboard API is absent on an insecure origin, which a
+          // deployment behind plain HTTP is. Say so rather than doing nothing:
+          // the value is on the screen either way.
+          if (!navigator.clipboard) {
+            setState('failed')
+            return
+          }
+          void navigator.clipboard.writeText(value).then(
+            () => setState('copied'),
+            () => setState('failed'),
+          )
+        }}
+      >
+        {state === 'copied' ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+      </button>
+    </Tooltip>
   )
 }
 
