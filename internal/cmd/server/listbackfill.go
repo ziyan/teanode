@@ -46,11 +46,11 @@ func backfillMailLists(ctx context.Context, database db.Database, store storage.
 	// Read outside a transaction: these are network calls when storage is S3,
 	// and a transaction held open across them is a transaction held open for
 	// as long as the slowest of them.
-	type found struct {
-		id   string
-		info mailparse.ListInfo
+	type examined struct {
+		id     string
+		parsed mailparse.ListInfo
 	}
-	results := make([]found, 0, len(ids))
+	results := make([]examined, 0, len(ids))
 	for _, id := range ids {
 		if ctx.Err() != nil {
 			return len(results), ctx.Err()
@@ -61,14 +61,14 @@ func backfillMailLists(ctx context.Context, database db.Database, store storage.
 				// The message is gone from storage but its row is still here.
 				// Mark it read anyway: there is nothing more to learn about
 				// it, and leaving it unread means reading it again forever.
-				results = append(results, found{id: id})
+				results = append(results, examined{id: id})
 				continue
 			}
 			return len(results), err
 		}
-		results = append(results, found{
-			id:   id,
-			info: mailparse.ParseList(headers, mailparse.FindHeaderValue(headers, "From")),
+		results = append(results, examined{
+			id:     id,
+			parsed: mailparse.ParseList(headers, mailparse.FindHeaderValue(headers, "From")),
 		})
 	}
 
@@ -76,10 +76,10 @@ func backfillMailLists(ctx context.Context, database db.Database, store storage.
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 		subscriptions = 0
 		for _, result := range results {
-			if err := tx.SetMailList(result.id, result.info); err != nil {
+			if err := tx.SetMailList(result.id, result.parsed); err != nil {
 				return err
 			}
-			if result.info.Subscription() {
+			if result.parsed.Subscription() {
 				subscriptions++
 			}
 		}

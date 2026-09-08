@@ -34,6 +34,12 @@ type MailboxQuery interface {
 
 	// Get the whole conversation a message belongs to, across every folder
 	GetMailboxThread(ctx context.Context, arguments GetMailboxThreadArguments) (*MailboxThreadView, error)
+
+	// List the mailing lists this mailbox receives, newest first
+	ListMailboxSubscriptions(ctx context.Context, arguments ListMailboxSubscriptionsArguments) (*MailboxSubscriptionPage, error)
+
+	// Get one mailing list this mailbox receives
+	GetMailboxSubscription(ctx context.Context, arguments GetMailboxSubscriptionArguments) (*models.MailboxSubscription, error)
 }
 
 type MailboxMutation interface {

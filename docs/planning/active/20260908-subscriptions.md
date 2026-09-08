@@ -52,7 +52,12 @@ and the sender appears as a row with a working unsubscribe button.
       `internal/cmd/server/listbackfill.go`, started every two minutes beside
       the session scavenger. On the dev database one pass examined the 12
       messages stored before this and left nothing unchecked.
-- [ ] Milestone 3 — list the subscriptions over the API.
+- [x] (2026-09-08 19:05Z) Milestone 3 — list the subscriptions over the API.
+      `models.MailboxSubscription`, `ListSubscriptions`/`CountSubscriptions`/
+      `GetSubscription`/`RecordUnsubscribe` in `internal/db`, migration
+      `0025_mailbox_subscription`, and `ListMailboxSubscriptions` /
+      `GetMailboxSubscription` on the graph. Answered over the dev server with
+      three lists, their counts and their unsubscribe addresses.
 - [ ] Milestone 4 — the Subscriptions page, and reading one like a conversation.
 - [ ] Milestone 5 — unsubscribing, all three ways.
 - [ ] Milestone 6 — the unsubscribe button on a message.
@@ -79,6 +84,17 @@ and the sender appears as a row with a working unsubscribe button.
   hostname, re-checks every redirect, and caps redirects at five. The one-click
   unsubscribe request needs precisely these guards and should reuse that code
   rather than grow a second copy.
+
+- Observation: the dev server refuses a test newsletter sent from the reserved
+  documentation domains. `example.com` publishes a null MX and a DMARC policy
+  of reject, and a name under `.test` does not resolve at all, so both are
+  refused before they reach a mailbox — which is correct behaviour and a
+  nuisance for seeding.
+  Evidence: a message from `news@example.com` is stored with status `rejected`
+  and `authentication_results.errors` of "Sender address has null MX" and
+  "DMARC alignment failed". Sending the same message from an address at a
+  large mail provider, whose domain has a real MX and a DMARC policy of none,
+  is accepted and reaches the Inbox. Seed with one of those.
 
 - Observation: `internal/web/middlewares.go` defines
   `MakeForwarderMiddleware`, which nothing installs. With an empty key it
@@ -120,6 +136,19 @@ and the sender appears as a row with a working unsubscribe button.
   RFC 8058's one-click POST is specified for the mail system to perform. It
   also means the request is subject to the same SSRF guards as every other
   outbound fetch.
+  Date/Author: 2026-09-08, this plan.
+
+- Decision: mail in Trash and in Junk is not counted as a subscription.
+  Rationale: what you threw away is not a list you have, and mail a filter
+  caught is not one you agreed to — pressing unsubscribe on it tells a sender
+  who guessed your address that a person reads it. Both exclusions are in
+  `subscriptionQuery` in `internal/db/database_mailbox.go` with that comment.
+  Date/Author: 2026-09-08, this plan.
+
+- Decision: how to leave comes from the newest message of the list, not from
+  the oldest or from a stored copy.
+  Rationale: a list can change its unsubscribe address between issues, and the
+  address in a two-year-old newsletter is the one most likely to be dead.
   Date/Author: 2026-09-08, this plan.
 
 - Decision: nothing unsubscribes on its own. Every request is one a person
