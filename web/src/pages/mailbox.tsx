@@ -916,7 +916,7 @@ function Row({
           onOpen()
         }}
       >
-        <div className="mailbox-row-from" title={mail?.from || mail?.sender}>
+        <div className="mailbox-row-from">
           {who}
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
           {/* An answer begun and left. Worth saying in the list, because the
@@ -1279,9 +1279,9 @@ function ThreadMessage({
             at — except the menu at its end, which is a button of its own and
             so sits outside this one rather than inside it. */}
         <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
-          <span className="mailbox-message-who" title={mail?.from || mail?.sender}>
-            {who}
-          </span>
+          <Tooltip label={mail?.from || mail?.sender || ''}>
+            <span className="mailbox-message-who">{who}</span>
+          </Tooltip>
           {/* Where it is, when that is not where the conversation is being
               read: your own answer is in Sent, and saying so is the difference
               between a conversation and a list. */}

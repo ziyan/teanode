@@ -29,6 +29,16 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Every tooltip left in the dashboard is the dashboard's own. Twenty-five were
+  still the browser's `title` — the rail's collapse and refresh, the table's
+  sort headers, its page arrows and its clipped cells, the editor's toolbar,
+  the picture and clear buttons, a session's browser, a DNS value, a spam
+  check's meaning, who a message is from, and every tab that carries an
+  explanation. They waited a second, were drawn in the operating system's
+  colors and could not wrap.
+- The audit log's disclosure points down to open a row and up to close it. It
+  was the same arrow in both states, which says the button does the same thing
+  twice.
 - A tooltip appeared in the top left corner of the window rather than beside
   what it describes. It was measured from its own anchor, which is drawn as
   nothing at all so that it does not become an item of the row it sits in —
@@ -65,6 +75,9 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- The mailbox picker in the rail and the rows-per-page control under a table
+  are the dashboard's own dropdown. A native select opens its list in the
+  operating system's colors, which on a dark rail is a white rectangle.
 - The mailbox's two toolbars are icons with their names in the tooltip. Nine
   verbs across the top of a conversation — back, reply, reply to all, forward,
   mark unread, flag, archive, report junk, move, delete — wrapped onto a

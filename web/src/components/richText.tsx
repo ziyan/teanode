@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '../i18n/i18n'
 import { EraserIcon, LinkIcon, ListIcon, NumberedListIcon, QuoteIcon } from './icons'
 import { MediaButton, imageTag } from './media'
+import { Tooltip } from './tooltip'
 
 // A rich text editor for writing a message: a contentEditable element with
 // a toolbar over it. No library, for the same reason nothing else here has
@@ -116,34 +117,35 @@ export function RichTextEditor({
     <div className="richtext">
       <div className="richtext-toolbar" role="toolbar" aria-label={t('richText.toolbar')}>
         {commands.map((entry) => (
+          <Tooltip key={entry.command + (entry.argument ?? '')} label={entry.title}>
+            <button
+              type="button"
+              className={entry.className}
+              aria-label={entry.title}
+              // mousedown rather than click, and prevented, so the editor
+              // keeps its selection: a click would move focus to the button
+              // and the command would apply to nothing.
+              onMouseDown={(event) => {
+                event.preventDefault()
+                run(entry.command, entry.argument)
+              }}
+            >
+              {entry.label}
+            </button>
+          </Tooltip>
+        ))}
+        <Tooltip label={t('richText.link')}>
           <button
-            key={entry.command + (entry.argument ?? '')}
             type="button"
-            className={entry.className}
-            title={entry.title}
-            aria-label={entry.title}
-            // mousedown rather than click, and prevented, so the editor
-            // keeps its selection: a click would move focus to the button
-            // and the command would apply to nothing.
+            aria-label={t('richText.link')}
             onMouseDown={(event) => {
               event.preventDefault()
-              run(entry.command, entry.argument)
+              beginLink()
             }}
           >
-            {entry.label}
+            <LinkIcon size={16} />
           </button>
-        ))}
-        <button
-          type="button"
-          title={t('richText.link')}
-          aria-label={t('richText.link')}
-          onMouseDown={(event) => {
-            event.preventDefault()
-            beginLink()
-          }}
-        >
-          <LinkIcon size={16} />
-        </button>
+        </Tooltip>
         <MediaButton
           domainId={domainId}
           onMouseDown={() => {
@@ -165,18 +167,19 @@ export function RichTextEditor({
             emit()
           }}
         />
-        <button
-          type="button"
-          title={t('richText.clear')}
-          aria-label={t('richText.clear')}
-          onMouseDown={(event) => {
-            event.preventDefault()
-            run('removeFormat')
-            run('unlink')
-          }}
-        >
-          <EraserIcon size={16} />
-        </button>
+        <Tooltip label={t('richText.clear')}>
+          <button
+            type="button"
+            aria-label={t('richText.clear')}
+            onMouseDown={(event) => {
+              event.preventDefault()
+              run('removeFormat')
+              run('unlink')
+            }}
+          >
+            <EraserIcon size={16} />
+          </button>
+        </Tooltip>
         {linking !== null && (
           <form
             className="richtext-link"

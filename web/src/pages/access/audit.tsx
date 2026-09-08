@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
-import { ChevronDownIcon } from '../../components/icons'
+import { ChevronDownIcon, ChevronUpIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -189,7 +189,10 @@ export function AuditTab() {
                   aria-label={open === event.id ? t('access.audit.hide') : t('access.audit.show')}
                   onClick={() => setOpen(open === event.id ? null : event.id)}
                 >
-                  <ChevronDownIcon size={16} />
+                  {/* Which way it goes from here: down to open it, up to
+                      put it back. The same arrow in both states says the
+                      button does the same thing twice. */}
+                  {open === event.id ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
                 </button>
               </Tooltip>
             </div>

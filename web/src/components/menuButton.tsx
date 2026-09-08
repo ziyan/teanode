@@ -115,7 +115,6 @@ export function MenuButton({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
-        title={label}
         onClick={() => setOpen((previous) => !previous)}
       >
         {icon}

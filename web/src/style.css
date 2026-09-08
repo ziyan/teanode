@@ -1015,7 +1015,8 @@ tr:has(.icon-button) > td {
   margin-left: auto;
 }
 
-.table-pagination label {
+.table-pagination label,
+.table-rows {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -1023,7 +1024,7 @@ tr:has(.icon-button) > td {
   color: var(--muted);
 }
 
-.table-pagination select {
+.table-rows .select {
   padding: 3px 6px;
   min-height: 28px;
   font-size: var(--text-label);
@@ -3328,7 +3329,7 @@ label.check-list-item {
 .sidebar-mailbox {
   padding: 4px 12px 8px;
 }
-.sidebar-mailbox select {
+.sidebar-mailbox .select {
   width: 100%;
   font-size: 13px;
 }
@@ -4321,7 +4322,7 @@ label.check-list-item {
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font-size: var(--text-small);
+  font-size: 13px;
   cursor: pointer;
 }
 .access-chip:hover {

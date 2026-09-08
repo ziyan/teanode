@@ -155,7 +155,15 @@ function SessionRow({ session, busy, onRevoke }: { session: Session; busy: boole
 
   return (
     <SettingsRow
-      title={<span title={session.userAgent ?? undefined}>{name}</span>}
+      title={
+        session.userAgent ? (
+          <Tooltip label={session.userAgent}>
+            <span>{name}</span>
+          </Tooltip>
+        ) : (
+          name
+        )
+      }
       badge={
         session.revoked ? (
           <Tag value={t('sessions.revoked')} tone="bad" />

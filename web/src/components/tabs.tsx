@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { Key, useTranslation } from '../i18n/i18n'
+import { Tooltip } from './tooltip'
 
 // A row of tabs, each of which is a route.
 //
@@ -78,17 +79,17 @@ export function Tabs({
   return (
     <div className="tabs" ref={strip}>
       {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={item.id === active ? 'active' : ''}
-          aria-current={item.id === active ? 'page' : undefined}
-          disabled={item.disabled}
-          title={item.title}
-          onClick={() => onSelect(item.id)}
-        >
-          {t(item.label)}
-        </button>
+        <Tooltip key={item.id} label={item.title ?? ''}>
+          <button
+            type="button"
+            className={item.id === active ? 'active' : ''}
+            aria-current={item.id === active ? 'page' : undefined}
+            disabled={item.disabled}
+            onClick={() => onSelect(item.id)}
+          >
+            {t(item.label)}
+          </button>
+        </Tooltip>
       ))}
       {actions}
     </div>

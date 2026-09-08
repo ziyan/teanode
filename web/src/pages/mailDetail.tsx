@@ -426,7 +426,7 @@ export function MessageContent({
                       type="button"
                       role="menuitem"
                       disabled={alreadyDark}
-                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
+                      aria-description={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
                       onClick={() => {
                         close()
                         chooseDarkened(!darkened)
@@ -592,16 +592,17 @@ export function MessageContent({
                     >
                       {t('mailDetail.asSent')}
                     </button>
-                    <button
-                      type="button"
-                      className={darkened && !alreadyDark ? 'active' : ''}
-                      aria-pressed={darkened && !alreadyDark}
-                      disabled={alreadyDark}
-                      title={alreadyDark ? t('mailDetail.alreadyDark') : undefined}
-                      onClick={() => chooseDarkened(true)}
-                    >
-                      {t('mailDetail.darkened')}
-                    </button>
+                    <Tooltip label={alreadyDark ? t('mailDetail.alreadyDark') : ''}>
+                      <button
+                        type="button"
+                        className={darkened && !alreadyDark ? 'active' : ''}
+                        aria-pressed={darkened && !alreadyDark}
+                        disabled={alreadyDark}
+                        onClick={() => chooseDarkened(true)}
+                      >
+                        {t('mailDetail.darkened')}
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               )}
@@ -838,12 +839,14 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       detail: results.spamFilter.checks?.length ? (
         <span className="spam-checks">
           {results.spamFilter.checks.map((check) => (
-            <span key={check.symbol} className="spam-check" title={check.description ?? ''}>
-              <span className="mono">{check.symbol}</span>
-              <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
-                {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
+            <Tooltip key={check.symbol} label={check.description ?? ''}>
+              <span className="spam-check">
+                <span className="mono">{check.symbol}</span>
+                <span className={check.score < 0 ? 'spam-check-good' : 'spam-check-bad'}>
+                  {check.score > 0 ? `+${formatScore(check.score)}` : formatScore(check.score)}
+                </span>
               </span>
-            </span>
+            </Tooltip>
           ))}
         </span>
       ) : results.spamFilter.symbols?.length ? (

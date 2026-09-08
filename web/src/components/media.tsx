@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 
 import { useTranslation } from '../i18n/i18n'
 import { PictureIcon } from './icons'
+import { Tooltip } from './tooltip'
 
 // Uploading a picture, in one place, because three editors need it and they
 // put the result in three different ways: the rich text editor writes an <img>
@@ -76,20 +77,21 @@ export function MediaButton({
 
   return (
     <>
-      <button
-        type="button"
-        title={t('richText.picture')}
-        aria-label={t('richText.picture')}
-        disabled={uploading}
-        onMouseDown={(event) => {
-          event.preventDefault()
-          onMouseDown?.()
-          picker.current?.click()
-        }}
-      >
-        <PictureIcon size={16} />
-        {label && <span>{label}</span>}
-      </button>
+      <Tooltip label={t('richText.picture')}>
+        <button
+          type="button"
+          aria-label={t('richText.picture')}
+          disabled={uploading}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            onMouseDown?.()
+            picker.current?.click()
+          }}
+        >
+          <PictureIcon size={16} />
+          {label && <span>{label}</span>}
+        </button>
+      </Tooltip>
       <input
         ref={picker}
         type="file"

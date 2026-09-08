@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Key, useTranslation } from '../i18n/i18n'
 import { ChevronRightIcon, FilterIcon, SortIcon } from './icons'
 import { MultiSelectFilter, Option, TextFilter, matchesSelection, matchesText } from './filters'
+import { Select } from './select'
+import { Tooltip } from './tooltip'
 
 // One table, used by every list. The mail list and the queue had the same
 // header row, the same filter row, the same "nothing matches" and the same
@@ -269,15 +271,18 @@ export function DataTable<Row>({
                   }
                 >
                   {column.sort ? (
-                    <button
-                      type="button"
-                      className={order?.key === column.key ? 'sort-header active' : 'sort-header'}
-                      title={describeSort(t, column.header, order?.key === column.key ? order.direction : undefined)}
-                      onClick={() => setOrder(nextSort(order, column.key))}
+                    <Tooltip
+                      label={describeSort(t, column.header, order?.key === column.key ? order.direction : undefined)}
                     >
-                      {column.header}
-                      <SortIcon size={13} direction={order?.key === column.key ? order.direction : undefined} />
-                    </button>
+                      <button
+                        type="button"
+                        className={order?.key === column.key ? 'sort-header active' : 'sort-header'}
+                        onClick={() => setOrder(nextSort(order, column.key))}
+                      >
+                        {column.header}
+                        <SortIcon size={13} direction={order?.key === column.key ? order.direction : undefined} />
+                      </button>
+                    </Tooltip>
                   ) : (
                     column.header
                   )}
@@ -334,9 +339,16 @@ export function DataTable<Row>({
                       className={[column.optional ? 'optional' : '', column.truncate ? 'truncate' : '']
                         .filter(Boolean)
                         .join(' ')}
-                      title={column.truncate ? column.value?.(row) : undefined}
                     >
-                      {column.render ? column.render(row) : column.value?.(row)}
+                      {column.truncate && column.value?.(row) ? (
+                        <Tooltip label={column.value(row) ?? ''}>
+                          <span>{column.render ? column.render(row) : column.value(row)}</span>
+                        </Tooltip>
+                      ) : column.render ? (
+                        column.render(row)
+                      ) : (
+                        column.value?.(row)
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -361,16 +373,19 @@ export function DataTable<Row>({
           )}
 
           <span className="table-pagination">
-            <label>
-              {t('table.rowsPerPage')}
-              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
-                {PAGE_SIZES.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {/* Part of the table's furniture rather than a field of a form,
+                so it is drawn the way the rest of the page is: a native
+                select opens its list in the operating system's colors, which
+                on a dark page is a white rectangle. */}
+            <span className="table-rows">
+              <span className="muted">{t('table.rowsPerPage')}</span>
+              <Select
+                label={t('table.rowsPerPage')}
+                value={String(pageSize)}
+                options={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+                onChange={(value) => setPageSize(Number(value))}
+              />
+            </span>
 
             <span className="muted">
               {t('table.range', {
@@ -380,26 +395,28 @@ export function DataTable<Row>({
               })}
             </span>
 
-            <button
-              className="icon-button"
-              aria-label={t('table.previous')}
-              title={t('table.previous')}
-              disabled={current === 0}
-              onClick={() => setPage(current - 1)}
-            >
-              <span className="flip">
+            <Tooltip label={t('table.previous')}>
+              <button
+                className="icon-button"
+                aria-label={t('table.previous')}
+                disabled={current === 0}
+                onClick={() => setPage(current - 1)}
+              >
+                <span className="flip">
+                  <ChevronRightIcon size={16} />
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip label={t('table.next')}>
+              <button
+                className="icon-button"
+                aria-label={t('table.next')}
+                disabled={current >= pageCount - 1}
+                onClick={() => setPage(current + 1)}
+              >
                 <ChevronRightIcon size={16} />
-              </span>
-            </button>
-            <button
-              className="icon-button"
-              aria-label={t('table.next')}
-              title={t('table.next')}
-              disabled={current >= pageCount - 1}
-              onClick={() => setPage(current + 1)}
-            >
-              <ChevronRightIcon size={16} />
-            </button>
+              </button>
+            </Tooltip>
           </span>
         </div>
       )}

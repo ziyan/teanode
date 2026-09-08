@@ -72,6 +72,12 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
     })
   }, [])
 
+  // Nothing to say, nothing to show. A caller that has a label only
+  // sometimes — a tab that carries an explanation, a control that says why it
+  // is disabled — passes the empty string the rest of the time, and an empty
+  // grey box on hover is worse than no tooltip.
+  const silent = label.trim() === ''
+
   const show = useCallback(() => {
     if (timer.current !== null) {
       window.clearTimeout(timer.current)
@@ -106,14 +112,15 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
         // Described rather than labelled: the tooltip adds to what the
         // element says, it does not replace it.
         aria-describedby={position ? id : undefined}
-        onMouseEnter={show}
+        onMouseEnter={silent ? undefined : show}
         onMouseLeave={hide}
-        onFocus={place}
+        onFocus={silent ? undefined : place}
         onBlur={hide}
       >
         {children}
       </span>
-      {position &&
+      {!silent &&
+        position &&
         createPortal(
           <span
             id={id}

@@ -94,13 +94,11 @@ export function VerdictMark({ mail }: { mail?: Mail | null }) {
     return null
   }
   return (
-    <span
-      className={verdict.tone ? `verdict-mark ${verdict.tone}` : 'verdict-mark'}
-      title={verdict.detail}
-      aria-label={verdict.detail}
-    >
-      <ShieldIcon size={13} />
-    </span>
+    <Tooltip label={verdict.detail}>
+      <span className={verdict.tone ? `verdict-mark ${verdict.tone}` : 'verdict-mark'} aria-label={verdict.detail}>
+        <ShieldIcon size={13} />
+      </span>
+    </Tooltip>
   )
 }
 

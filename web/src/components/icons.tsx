@@ -309,6 +309,16 @@ export function ChevronDownIcon(props: IconProps) {
   )
 }
 
+// The other half of a disclosure: pointing at where the thing that is open
+// goes back to.
+export function ChevronUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 15 6-6 6 6" />
+    </Icon>
+  )
+}
+
 export function ChevronRightIcon(props: IconProps) {
   return (
     <Icon {...props}>

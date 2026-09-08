@@ -1243,19 +1243,20 @@ function DevicesTab({ view }: { view: MailboxView }) {
         title={t('mailboxSettings.devices')}
         description={t('mailboxSettings.devicesHint')}
         action={
-          <button
-            className="primary"
-            type="button"
-            disabled={!address}
-            title={address ? undefined : t('mailbox.noAddress')}
-            onClick={() => {
-              setName('')
-              setError(null)
-              setAdding(true)
-            }}
-          >
-            {t('mailboxSettings.newDevice')}
-          </button>
+          <Tooltip label={address ? '' : t('mailbox.noAddress')}>
+            <button
+              className="primary"
+              type="button"
+              disabled={!address}
+              onClick={() => {
+                setName('')
+                setError(null)
+                setAdding(true)
+              }}
+            >
+              {t('mailboxSettings.newDevice')}
+            </button>
+          </Tooltip>
         }
       >
         {error && !adding ? <ErrorMessage error={error} /> : null}
