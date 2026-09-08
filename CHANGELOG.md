@@ -22,6 +22,37 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- Subscriptions: the mailing lists a mailbox receives, on a page of their own,
+  with the way out of each. Most of what arrives in a mailbox is not a letter,
+  and the only way to stop one was to open it, find the word "unsubscribe" in
+  the small print at the bottom, and hope. A newsletter says how to leave in
+  its headers — this reads them. Each row says who sends it, how much of it is
+  here and unread, and when it last wrote; a button asks the sender to stop,
+  in the way that sender said to ask; and the list's mail can be read together,
+  newest first, the way a conversation is. A newsletter open in the ordinary
+  reader carries the same button in its toolbar.
+
+  The request is made by this server rather than by the browser, so that
+  leaving a list does not tell the sender which address opened which message at
+  what moment, and it goes through the same guard that stops the image proxy
+  fetching an address inside this network. It asks before it acts, every time,
+  and says which of the three things will happen — one request, a message from
+  your address, or a page for you to open — because an unsubscribe tells the
+  sender that a person reads this address and cannot be taken back. Mail in
+  Trash and in Junk is not counted: what you threw away is not a subscription
+  you have, and what a filter caught is not one you agreed to.
+
+- The logo a sending domain publishes for its mail, beside the subscription it
+  sends. BIMI is a DNS record naming an image, and it is shown only for mail
+  that passed DMARC — a mark is a claim about who sent something, and one on
+  unproven mail helps whoever is pretending to be them. Fetched by this server
+  once a day per domain rather than by the browser, for the same reason the
+  images in a message are, and served as a picture the page is told to run
+  nothing from. A sender that publishes none gets a monogram. The certificate a
+  record names is stored and not checked, so nothing here says "verified".
+
+### Added
+
 - What a message's checks said is in the mailbox, not only on the audit page:
   a shield beside the time in the list, colored by whether the sending domain
   authorized the server, whether the signature held, whether the domain's own

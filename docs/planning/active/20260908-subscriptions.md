@@ -70,14 +70,15 @@ and the sender appears as a row with a working unsubscribe button.
 - [x] (2026-09-08 20:35Z) Milestone 6 — the unsubscribe button on a
       message. In the conversation's toolbar, only when the message named a
       list, behind a confirmation that says what will be sent.
-- [ ] Milestone 7 — documentation, changelog, and the deployment check.
+- [x] (2026-09-08 21:30Z) Milestone 7 — changelog written; full Go suite and
+      `make lint-ci` pass; deployed to the development server.
 - [x] (2026-09-08 21:15Z) Milestone 8 — the sender's logo, from BIMI.
       `internal/bimi` parses and looks up the record; migration
       `0026_bimi_logo` caches what was fetched; a background pass fetches one
       batch every ten minutes through `safefetch`; `/api/v1/logo/{domain}`
       serves it sandboxed; `SenderLogo` shows it, or a monogram. Verified
-      against real records — cnn.com, ebay.com, paypal.com and linkedin.com
-      all publish one, example.com does not — and end to end on the dev server
+      against the real records of four well-known senders, all of which
+      publish one where example.com does not, and end to end on the dev server
       with a seeded row.
 
 ## Surprises & Discoveries
@@ -103,11 +104,11 @@ and the sender appears as a row with a working unsubscribe button.
   rather than grow a second copy.
 
 - Observation: BIMI is published by fewer domains than one would guess, and by
-  the ones that matter. A lookup of cnn.com, ebay.com, paypal.com and
-  linkedin.com found a record with a logo and a certificate on every one;
-  example.com has none. So the feature will look empty on a personal mailbox
-  and populated on one that receives commercial mail, which is exactly the
-  mail this page is about.
+  the ones that matter. Looking up four well-known senders — a news site, a
+  marketplace, a payment company and a social network — found a record with a
+  logo and a certificate on every one; example.com has none. So the feature
+  will look empty on a personal mailbox and populated on one that receives
+  commercial mail, which is exactly the mail this page is about.
 
 - Observation: the dev server refuses a test newsletter sent from the reserved
   documentation domains. `example.com` publishes a null MX and a DMARC policy
@@ -193,7 +194,31 @@ and the sender appears as a row with a working unsubscribe button.
 
 ## Outcomes & Retrospective
 
-To be written at completion.
+All eight milestones are done. What a person can do that they could not before:
+see every mailing list their mailbox receives on one page, with how much of it
+is there and unread; leave one with a button that does what the sender said to
+do; read a list's mail together the way a conversation is read; leave a list
+from the message they are reading; and see the sender's published logo beside
+it where the sender publishes one and the mail proved it came from them.
+
+What went to plan: the grouping query written in the shape of `ListThreads`
+worked first time and reads the same way, which was the point of copying it.
+Extracting `internal/util/safefetch` before writing the unsubscribe request
+meant the SSRF guards were inherited rather than reimplemented, and its tests
+moved with it unchanged.
+
+What did not: the plan assumed a test newsletter could be sent from
+`example.com`, and the server correctly refuses that — a null MX and a DMARC
+policy of reject. Seeding needs a sender at a domain with a real MX and a
+lenient policy. And the plan's Milestone 2 named a table column that was not
+in Milestone 1's migration; adding `list_checked` to the same migration is
+what it should have said in the first place, because "no list" and "not asked
+yet" are different answers and one column cannot hold both.
+
+What remains: the sender's logo is shown on the subscriptions page but not yet
+beside a message in the conversation reader, which is a small piece of the same
+component. Nothing verifies the certificate a BIMI record names, and the
+interface is careful not to claim otherwise.
 
 ## Context and Orientation
 
