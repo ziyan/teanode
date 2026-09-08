@@ -38,6 +38,9 @@ type MailboxQuery interface {
 	// List the mailing lists this mailbox receives, newest first
 	ListMailboxSubscriptions(ctx context.Context, arguments ListMailboxSubscriptionsArguments) (*MailboxSubscriptionPage, error)
 
+	// Read one mailing list's mail, newest first, the way a conversation is read
+	ReadMailboxSubscription(ctx context.Context, arguments ReadMailboxSubscriptionArguments) (*MailboxThreadView, error)
+
 	// Get one mailing list this mailbox receives
 	GetMailboxSubscription(ctx context.Context, arguments GetMailboxSubscriptionArguments) (*models.MailboxSubscription, error)
 }
@@ -533,39 +536,11 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 		return nil, err
 	}
 
-	folders, err := tx.ListFolders(mailbox.ID)
+	view, err := self.threadViewOf(ctx, mailbox, found, arguments.ItemID)
 	if err != nil {
 		return nil, err
 	}
-	byId := make(map[string]*models.MailboxFolder, len(folders))
-	for _, folder := range folders {
-		byId[folder.ID] = folder
-	}
-
-	// One entry per message, not per item. A message you sent to somebody on
-	// this server is one row filed in your Sent folder and in their Inbox —
-	// and when you send to yourself, in both of yours — so a conversation
-	// listing items would show the same message twice, once under each
-	// folder. The copy that was asked for wins, so a link to a message opens
-	// the conversation showing that copy; otherwise the first, which is the
-	// most recently filed.
-	view := &MailboxThreadView{ThreadID: threadId, Items: make([]*MailboxThreadItem, 0, len(found))}
-	at := make(map[string]int, len(found))
-	for _, item := range found {
-		entry := &MailboxThreadItem{Item: item, FolderID: item.FolderID}
-		if folder := byId[item.FolderID]; folder != nil {
-			entry.FolderName = folder.Name
-			entry.FolderKind = string(folder.Kind)
-		}
-		if index, seen := at[item.MailID]; seen {
-			if item.ID == arguments.ItemID {
-				view.Items[index] = entry
-			}
-			continue
-		}
-		at[item.MailID] = len(view.Items)
-		view.Items = append(view.Items, entry)
-	}
+	view.ThreadID = threadId
 
 	// The subject of the message that started the conversation, which is the
 	// one the answers all carry with a Re: in front. Its id is the
@@ -582,7 +557,50 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 	if named.Item.Mail != nil {
 		view.Subject = threadSubject(named.Item.Mail.Subject)
 	}
-	view.Truncated = len(found) >= threadLimit
+	return view, nil
+}
+
+// threadViewOf turns a mailbox's items into what a reader shows: one entry per
+// message, each saying which folder it is filed in.
+//
+// One entry per message, not per item. A message you sent to somebody on this
+// server is one row filed in your Sent folder and in their Inbox — and when
+// you send to yourself, in both of yours — so listing items would show the
+// same message twice, once under each folder. The copy that was asked for
+// wins, so a link to a message opens on that copy; otherwise the first, which
+// is the most recently filed.
+//
+// Shared by a conversation and by a mailing list, which are read the same way
+// and differ only in what gathers the messages.
+func (self *graph) threadViewOf(ctx context.Context, mailbox *models.Mailbox,
+	items []*models.MailboxItem, preferred string) (*MailboxThreadView, error) {
+	folders, err := self.transaction(ctx).ListFolders(mailbox.ID)
+	if err != nil {
+		return nil, err
+	}
+	byId := make(map[string]*models.MailboxFolder, len(folders))
+	for _, folder := range folders {
+		byId[folder.ID] = folder
+	}
+
+	view := &MailboxThreadView{Items: make([]*MailboxThreadItem, 0, len(items))}
+	at := make(map[string]int, len(items))
+	for _, item := range items {
+		entry := &MailboxThreadItem{Item: item, FolderID: item.FolderID}
+		if folder := byId[item.FolderID]; folder != nil {
+			entry.FolderName = folder.Name
+			entry.FolderKind = string(folder.Kind)
+		}
+		if index, seen := at[item.MailID]; seen {
+			if item.ID == preferred {
+				view.Items[index] = entry
+			}
+			continue
+		}
+		at[item.MailID] = len(view.Items)
+		view.Items = append(view.Items, entry)
+	}
+	view.Truncated = len(items) >= threadLimit
 	return view, nil
 }
 

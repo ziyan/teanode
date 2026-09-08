@@ -2,16 +2,14 @@ package apimail
 
 import (
 	"context"
-	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // The remote image proxy.
@@ -76,7 +74,7 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 		return
 	}
 
-	target, err := parseRemoteTarget(request.URL.Query().Get("url"))
+	target, err := safefetch.ParseTarget(request.URL.Query().Get("url"))
 	if err != nil {
 		http.Error(response, "not a fetchable address", http.StatusBadRequest)
 		return
@@ -96,7 +94,7 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 	outgoing.Header.Set("User-Agent", "teanode")
 	outgoing.Header.Set("Accept", "image/*")
 
-	fetched, err := remoteClient().Do(outgoing)
+	fetched, err := safefetch.Client().Do(outgoing)
 	if err != nil {
 		log.Debugf("failed to fetch remote image %q: %s", target.Redacted(), err)
 		http.Error(response, "could not fetch it", http.StatusBadGateway)
@@ -132,117 +130,4 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 	if _, err := io.Copy(response, io.LimitReader(fetched.Body, remoteMaximumSize)); err != nil {
 		log.Debugf("failed to write remote image %q: %s", target.Redacted(), err)
 	}
-}
-
-// parseRemoteTarget accepts only what a message can legitimately link an
-// image to. Everything else — a scheme with a local meaning, a userinfo
-// section, a missing host — is refused before anything is dialled.
-func parseRemoteTarget(raw string) (*url.URL, error) {
-	if raw == "" || len(raw) > 2048 {
-		return nil, errors.New("apimail: no address")
-	}
-	target, err := url.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	if target.Scheme != "http" && target.Scheme != "https" {
-		return nil, errors.New("apimail: not an http address")
-	}
-	if target.Host == "" {
-		return nil, errors.New("apimail: no host")
-	}
-	// Credentials in the URL would be sent to the host, and a URL carrying
-	// them is not an image reference; it is somebody trying something.
-	if target.User != nil {
-		return nil, errors.New("apimail: credentials in the address")
-	}
-	return target, nil
-}
-
-// remoteClient dials through a control function, which is the only place the
-// address check can go that a redirect cannot get around: it runs for every
-// connection the client makes, including the ones a redirect causes, and it
-// sees the address actually being connected to rather than a name that was
-// resolved a moment ago and might resolve differently now.
-func remoteClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout:   remoteTimeout,
-		KeepAlive: remoteTimeout,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			return allowRemoteAddress(address)
-		},
-	}
-	return &http.Client{
-		Timeout: remoteTimeout,
-		Transport: &http.Transport{
-			DialContext:           dialer.DialContext,
-			TLSHandshakeTimeout:   remoteTimeout,
-			ResponseHeaderTimeout: remoteTimeout,
-			DisableKeepAlives:     true,
-		},
-		CheckRedirect: func(request *http.Request, via []*http.Request) error {
-			// A redirect to somewhere unreachable is refused by the dialler
-			// anyway; this stops a chain being used to spend time, and keeps
-			// the scheme check applying at every hop.
-			if len(via) >= 5 {
-				return errors.New("apimail: too many redirects")
-			}
-			if request.URL.Scheme != "http" && request.URL.Scheme != "https" {
-				return errors.New("apimail: redirected to a scheme this will not follow")
-			}
-			return nil
-		},
-	}
-}
-
-// allowRemoteAddress refuses anything that is not a public address.
-//
-// On the address rather than on the hostname: a name is whatever DNS says at
-// the moment it is asked, and a name that resolved publicly a moment ago can
-// resolve to 127.0.0.1 for the connection that follows. This runs on the
-// address being dialled, so there is no gap to race.
-func allowRemoteAddress(address string) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return err
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return errors.New("apimail: not an address")
-	}
-	if !ip.IsGlobalUnicast() ||
-		ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		ip.IsUnspecified() ||
-		isSharedAddressSpace(ip) {
-		return errors.New("apimail: not a public address")
-	}
-	return nil
-}
-
-// isSharedAddressSpace covers the ranges net.IP does not have a predicate for
-// and which are still not the public internet: the carrier-grade NAT block,
-// and IPv4-mapped IPv6 addresses whose embedded address is itself private.
-func isSharedAddressSpace(ip net.IP) bool {
-	if mapped := ip.To4(); mapped != nil {
-		// 100.64.0.0/10, RFC 6598.
-		if mapped[0] == 100 && mapped[1]&0xc0 == 64 {
-			return true
-		}
-		// 192.0.0.0/24 and 198.18.0.0/15, both reserved and both routable
-		// inside somebody's network.
-		if mapped[0] == 192 && mapped[1] == 0 && mapped[2] == 0 {
-			return true
-		}
-		if mapped[0] == 198 && mapped[1]&0xfe == 18 {
-			return true
-		}
-		return false
-	}
-	// Unique local addresses, fc00::/7: private in every way that matters,
-	// and net.IP.IsPrivate already says so. Kept for the mapped case above.
-	return false
 }

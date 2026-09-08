@@ -123,6 +123,10 @@ type ItemOptions struct {
 	// when the folder id given is empty.
 	MailboxID string
 
+	// ListKey lists the mail of one mailing list, the way ThreadID lists the
+	// mail of one conversation.
+	ListKey string
+
 	// From, To and Subject match a part of the header, case-insensitively.
 	From    string
 	To      string
@@ -871,6 +875,9 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 		if options.ThreadID != "" {
 			query = query.Where("\"mail\".\"thread_id\" = ?", options.ThreadID)
 		}
+		if options.ListKey != "" {
+			query = query.Where("\"mail\".\"list_key\" = ?", options.ListKey)
+		}
 		if options.From != "" {
 			query = query.Where("(\"mail\".\"from\" ILIKE ? OR \"mail\".\"sender\" ILIKE ?)", contains(options.From), contains(options.From))
 		}
@@ -907,8 +914,9 @@ func needsMailJoin(options *ItemOptions) bool {
 	if options == nil {
 		return false
 	}
-	return options.Search != "" || options.ThreadID != "" || options.From != "" || options.To != "" ||
-		options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() || options.HasAttachment != nil
+	return options.Search != "" || options.ThreadID != "" || options.ListKey != "" || options.From != "" ||
+		options.To != "" || options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() ||
+		options.HasAttachment != nil
 }
 
 // itemOrder is how a list of items is sorted: within a folder by UID, which is

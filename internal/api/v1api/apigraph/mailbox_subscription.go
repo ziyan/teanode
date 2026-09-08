@@ -2,6 +2,9 @@ package apigraph
 
 import (
 	"context"
+	"strings"
+
+	"github.com/ziyan/teanode/internal/db"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
@@ -57,6 +60,60 @@ func (self *graph) ListMailboxSubscriptions(ctx context.Context,
 		return nil, err
 	}
 	return &MailboxSubscriptionPage{Subscriptions: subscriptions, Total: total}, nil
+}
+
+type ReadMailboxSubscriptionArguments struct {
+	// MailboxID of the mailbox to read
+	MailboxID string `json:"mailboxId"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it
+	Key string `json:"key"`
+}
+
+// ReadMailboxSubscription is a mailing list's mail, newest first, in the shape
+// a conversation is read in — so that "what has this newsletter sent me" is
+// one page rather than a search. Capped like a conversation, and saying so
+// when it is.
+func (self *graph) ReadMailboxSubscription(ctx context.Context,
+	arguments ReadMailboxSubscriptionArguments) (*MailboxThreadView, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailRead, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(arguments.Key) == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	subscription, err := tx.GetSubscription(mailbox.ID, arguments.Key)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil {
+		return nil, api.ErrNotFound
+	}
+
+	// By when each message was written rather than by when it was filed, for
+	// the reason a conversation is: moving a message makes a new item with a
+	// new added_at, and the list would put whatever was last archived first.
+	items, err := tx.ListItems("", &db.ItemOptions{
+		MailboxID:  mailbox.ID,
+		ListKey:    arguments.Key,
+		ByReceived: true,
+		Limit:      threadLimit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := self.attachMails(ctx, items); err != nil {
+		return nil, err
+	}
+	view, err := self.threadViewOf(ctx, mailbox, items, "")
+	if err != nil {
+		return nil, err
+	}
+	view.ThreadID = arguments.Key
+	view.Subject = subscription.Name
+	return view, nil
 }
 
 type GetMailboxSubscriptionArguments struct {
