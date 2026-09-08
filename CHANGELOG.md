@@ -10,6 +10,26 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- Help publishing your own logo, on a domain's page. TeaNode shows the mark
+  other domains publish for their mail; this is the other side of it. The DNS
+  tab has a BIMI row that says what to publish and, when something is stopping
+  it, what — most often that the domain's DMARC policy is none, which is the
+  policy this same page recommends starting with, so every domain begins
+  unable to use one and nothing said so. Upload an SVG and this server hosts
+  it, so a domain with no web server has somewhere to put the file; the record
+  the page offers names that address. The file is checked first against the
+  restricted profile a mark has to satisfy — no script, no animation, nothing
+  fetched from elsewhere, square — and refused with the element that is wrong,
+  because a receiver refuses the same file silently and the sender never
+  learns why. The row then verifies the whole chain rather than the record's
+  existence: the logo is read, and checked as a receiver would check it.
+
+  It also says, before anybody starts, that Gmail and Yahoo show a mark only
+  for senders holding a Verified Mark Certificate — issued against a
+  registered trademark, renewed yearly, on the order of a thousand dollars —
+  and that other receivers show one without. Nothing here issues one, and
+  nothing here says "verified".
+
 - Subscriptions: the mailing lists a mailbox receives, on a page of their own,
   with the way out of each. Most of what arrives in a mailbox is not a letter,
   and the only way to stop one was to open it, find the word "unsubscribe" in

@@ -62,7 +62,10 @@ sample message.
       drawn at both the sizes a reader sees it, what it is called, and a
       paragraph naming the certificate, who requires one and roughly what it
       costs.
-- [ ] Milestone 5 — documentation, changelog, deployment.
+- [x] (2026-09-08 21:50Z) Milestone 5 — changelog written; `make lint-ci` and
+      the full Go suite pass; the layout audit is clean at 1400 and 390 (the
+      one small target it reports is the breadcrumb link, which every page
+      has).
 
 ## Surprises & Discoveries
 
@@ -143,7 +146,30 @@ sample message.
 
 ## Outcomes & Retrospective
 
-To be written at completion.
+The five things offered are all there: the row that says what is stopping a
+domain, hosting for the file, validation that names what is wrong with it,
+verification of the whole chain rather than the record's existence, and the
+sentence about the certificate.
+
+What went well: the validator was written before anything that used it, and
+checking it against four marks published by well-known senders — all four pass
+unchanged — is the evidence that these rules match what is really published
+rather than being an invention. The same check turned out to be what makes
+hosting the file safe, which resolved a question the media store had
+deliberately declined to answer.
+
+What did not go to plan: two of the three interesting problems were only
+visible once it ran. A self-hosted logo cannot be verified by fetching it,
+because the fetch refuses addresses that are not public and these servers
+routinely answer to names that resolve inside their own network. And the
+dashboard cannot draw its own logo from the public address in development,
+because the dev server answers that path itself. Both are recorded above; both
+changed the design rather than being worked around.
+
+What remains: nothing verifies the certificate a record names, and the
+interface is careful never to say "verified". The `a=` tag is not offered as a
+field — an operator with a certificate has to write the record by hand, which
+is the right trade until somebody actually has one.
 
 ## Context and Orientation
 
