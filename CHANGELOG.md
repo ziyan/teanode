@@ -29,6 +29,9 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- About is the Server page's first tab, and where /server lands: what this
+  server is and the upgrade waiting for it, which is what the dot in the rail
+  is pointing at. It was last, behind eleven tabs of settings.
 - The Server page marks the tab that holds the reason for the dot in the
   rail. The rail said "there is something here" and the page it opened said
   nothing about which of its seven tabs meant it.

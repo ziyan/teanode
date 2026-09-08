@@ -16,16 +16,16 @@ import { SetupPage } from './setup'
 // one held the thing they wanted, and two of the three were named after the
 // shape of the page rather than the question it answers.
 //
-// The order is the order somebody meets them. Setup first, because it is what
-// a new server needs and the page that says what is still missing. Then the
-// services, in the order mail moves through them. About last: it is the page
-// you go to when something is already running.
+// About first: it is what this server is — the version it runs, and the
+// upgrade waiting for it, which is what the dot in the rail is pointing at.
+// Then Setup, which says what is still missing, and then the services in the
+// order mail moves through them.
 type Tab = { id: string; label: Key; marked?: boolean; markedLabel?: string }
 
 const SERVER_TABS: Tab[] = [
+  { id: 'about', label: 'server.tabAbout' },
   { id: 'setup', label: 'server.tabSetup' },
   ...INTEGRATION_SECTIONS,
-  { id: 'about', label: 'server.tabAbout' },
 ]
 
 // Who may do what moved out of here to /access, its own row in the rail:
