@@ -4507,6 +4507,16 @@ label.check-list-item {
   font-size: 13px;
 }
 
+/* The exemption above frees a notice from the measure because a notice
+   usually sits among full-width rows, where a capped one reads as a mistake.
+   This card has no rows: it is prose, a button, and this. Left full width it
+   is the one thing on the card running to 1060px while every passage around
+   it stops at 617, which reads as the mistake instead. Two class names so it
+   outweighs that exemption by specificity rather than by !important. */
+p.notice.domain-logo-note {
+  max-width: var(--measure);
+}
+
 /* A name with its mark beside it, on one line. */
 .sender-row {
   display: inline-flex;

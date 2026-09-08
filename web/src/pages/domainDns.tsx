@@ -86,14 +86,22 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
                       took four lines of the table to say it. What somebody
                       does with this value is paste it into a zone, which is
                       what the button is for; hovering says the rest. */}
-                  <div className="value-row">
-                    {/* An MX value is the preference and the host together,
-                        so it can be copied into a zone as it stands. */}
-                    <Tooltip label={expectedValue(record)}>
-                      <span className="value-clamp">{expectedValue(record)}</span>
-                    </Tooltip>
-                    <CopyIconButton value={expectedValue(record)} />
-                  </div>
+                  {expectedValue(record) === '' ? (
+                    /* Nothing to publish yet: an optional record whose value
+                       waits on something the operator has not done. A value
+                       here would be a made-up one, and the button beside it
+                       copies. */
+                    <span className="muted">{t('domain.nothingToPublish')}</span>
+                  ) : (
+                    <div className="value-row">
+                      {/* An MX value is the preference and the host together,
+                          so it can be copied into a zone as it stands. */}
+                      <Tooltip label={expectedValue(record)}>
+                        <span className="value-clamp">{expectedValue(record)}</span>
+                      </Tooltip>
+                      <CopyIconButton value={expectedValue(record)} />
+                    </div>
+                  )}
                   {!record.verified && <div className="muted cell-note">{record.purpose}</div>}
                   {/* What is stopping it, when something is. Said whether or
                       not the record is published: publishing one and waiting
@@ -371,13 +379,16 @@ function DomainLogoCard({
           {/* The file this server publishes, drawn from where it publishes
               it — not from the cache of marks fetched from other people's
               domains, which is what a sending domain's name would read. */}
-          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={32} />
+          <SenderLogo name={logo.title || domain.domain} src={logo.url} size={40} />
           <SenderLogo name={logo.title || domain.domain} src={logo.url} size={20} />
           <div className="domain-logo-about">
             <div>{logo.filename}</div>
-            <div className="muted">{t('domain.logoTitleIs', { title: logo.title })}</div>
+            {/* Said, because two drawings of the same mark side by side
+                otherwise read as a mistake rather than as the point. */}
+            <div className="muted">{t('domain.logoSizes')}</div>
             <div className="muted">
-              {t('domain.logoUploaded')} <RelativeTime value={logo.uploadedAt} />
+              {t('domain.logoTitleIs', { title: logo.title })} {t('domain.logoUploaded')}{' '}
+              <RelativeTime value={logo.uploadedAt} />
             </div>
           </div>
         </div>
@@ -386,6 +397,8 @@ function DomainLogoCard({
       )}
 
       <ErrorMessage error={refused} />
+
+      <p className="muted">{t('domain.logoRules')}</p>
 
       <div className="page-actions">
         <input
@@ -406,12 +419,15 @@ function DomainLogoCard({
         </button>
       </div>
 
-      {/* Said before anybody starts, not after. The difference between "this
-          works" and "this works everywhere except the two receivers that
-          matter most to you" is a certificate costing about a thousand
-          dollars a year, and learning that after commissioning artwork is
-          learning it too late. */}
-      <p className="muted">{t('domain.logoCertificate')}</p>
+      {/* Said before anybody starts, not after, and set apart rather than
+          left as the fourth sentence of a grey paragraph. The difference
+          between "this works" and "this works everywhere except the two
+          receivers that matter most to you" is a certificate costing about a
+          thousand dollars a year, and learning that after commissioning
+          artwork is learning it too late. */}
+      <p className="notice domain-logo-note">
+        <strong>{t('domain.logoCertificateTitle')}</strong> {t('domain.logoCertificate')}
+      </p>
     </div>
   )
 }

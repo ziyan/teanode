@@ -436,12 +436,25 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 		Type:     "TXT",
 		Name:     name,
 		Optional: true,
-		Expected: "v=BIMI1; l=" + self.publishedLogo(domain),
 		Purpose:  "shows your own logo beside your mail, at receivers that support it",
 	}
-	if policy := dmarcPolicy(dmarc.Found); policy != "quarantine" && policy != "reject" {
+
+	// A value only when there is one to publish. A record with a made-up
+	// address in it is worse than no record offered: the button beside it
+	// copies, and what it would copy is broken.
+	if logo := self.publishedLogo(domain); logo != "" {
+		record.Expected = "v=BIMI1; l=" + logo
+	}
+
+	// One thing to do next, and the one that has to happen first. Both can be
+	// true at once, and a row saying two things is a row somebody reads
+	// neither of.
+	switch policy := dmarcPolicy(dmarc.Found); {
+	case policy != "quarantine" && policy != "reject":
 		record.Blocked = "your DMARC policy is " + describePolicy(policy) +
 			"; no receiver shows a logo until it is quarantine or reject"
+	case record.Expected == "":
+		record.Blocked = "upload a logo below, and this row will show the record to publish"
 	}
 	records, err := self.resolveTxt(ctx, name)
 	if err != nil {
@@ -571,13 +584,20 @@ func (self *verifier) fetchPublishedLogo(ctx context.Context, address string) er
 	return nil
 }
 
-// publishedLogo is the address of the logo uploaded for this domain, or the
-// shape of one when none has been.
+// publishedLogo is the address of the logo uploaded for this domain, or empty
+// when none has been.
 //
 // The address is on this server rather than on the domain, which is allowed
 // and is the point: a BIMI record may name any HTTPS address, and somebody
 // running a mail server and no web server has nowhere else to put a file.
 func (self *verifier) publishedLogo(domain *models.Domain) string {
+	// A verifier can be built to answer questions about names alone, with no
+	// database behind it; the record set is then everything but this row's
+	// value.
+	if self.database == nil {
+		return ""
+	}
+
 	var publication *db.BimiPublication
 	if err := self.database.Transaction(func(tx db.Transaction) error {
 		found, err := tx.GetBimiPublication(domain.ID)
@@ -587,9 +607,7 @@ func (self *verifier) publishedLogo(domain *models.Domain) string {
 		log.Errorf("failed to read the published logo of %q: %s", domain.Domain, err)
 	}
 	if publication == nil {
-		// Honest about what is missing, and still worth copying: the record
-		// is right apart from an address nobody has chosen yet.
-		return "https://" + self.config.Current().Server.Name + "/.well-known/bimi/<upload a logo first>.svg"
+		return ""
 	}
 	return "https://" + self.config.Current().Server.Name + api.BimiLogoPath(publication.FileID)
 }
