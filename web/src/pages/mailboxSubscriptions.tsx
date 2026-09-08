@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { MailboxThreadView, graphql } from '../api'
+import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import {
@@ -310,12 +310,53 @@ function SubscriptionReader({
       setBusy(false)
     }
   }
-  // Which messages are open, and which have been read since the page loaded:
-  // the same two things a conversation tracks, for the same reasons.
-  const [open, setOpen] = useState<Set<string>>(new Set())
+  // Which messages are open, and which have been read here: the same two
+  // things a conversation tracks, for the same reasons. Decided once from what
+  // arrived — the newest, and anything unread — and then it is the reader's,
+  // so opening and closing sticks. Deriving "open" from "unread" on every
+  // render instead meant an unread message could not be collapsed at all: the
+  // click set the state and the state was ignored.
+  const [open, setOpen] = useState<Set<string> | null>(null)
+  const [marks, setMarks] = useState<Record<string, boolean>>({})
+  const seenOf = (entry: MailboxThreadItem) => marks[entry.item.id] ?? entry.item.seen
+
+  const markRead = useCallback(
+    (itemIds: string[]) => {
+      if (itemIds.length === 0) {
+        return
+      }
+      setMarks((previous) => ({ ...previous, ...Object.fromEntries(itemIds.map((id) => [id, true])) }))
+      // The list beside this one counts what is unread, so it is told too.
+      void graphql(SET_FLAGS, { itemIds, seen: true }).then(onChanged)
+    },
+    [onChanged],
+  )
+
+  useEffect(() => {
+    if (!thread || open !== null) {
+      return
+    }
+    const wanted = new Set<string>()
+    const readable = thread.items.filter((entry) => !entry.item.draft)
+    if (readable.length > 0) {
+      wanted.add(readable[0].item.id)
+    }
+    for (const entry of readable) {
+      if (!entry.item.seen) {
+        wanted.add(entry.item.id)
+      }
+    }
+    setOpen(wanted)
+    // Opening a list reads what it opened. Once — marking one unread again
+    // afterwards leaves it that way.
+    markRead(readable.filter((entry) => wanted.has(entry.item.id) && !entry.item.seen).map((entry) => entry.item.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread])
+
+  const opened = open ?? new Set<string>()
   const toggle = (id: string) =>
     setOpen((previous) => {
-      const next = new Set(previous)
+      const next = new Set(previous ?? [])
       if (next.has(id)) {
         next.delete(id)
       } else {
@@ -410,9 +451,17 @@ function SubscriptionReader({
             key={entry.item.id}
             entry={entry}
             folderId={entry.folderId}
-            seen={entry.item.seen}
-            open={open.has(entry.item.id) || !entry.item.seen}
-            onToggle={() => toggle(entry.item.id)}
+            seen={seenOf(entry)}
+            open={opened.has(entry.item.id)}
+            onToggle={() => {
+              const opening = !opened.has(entry.item.id)
+              toggle(entry.item.id)
+              // Reading one is reading it: what somebody has just looked at
+              // should not still be counted as unread beside its name.
+              if (opening && !seenOf(entry)) {
+                markRead([entry.item.id])
+              }
+            }}
           />
         ))}
       </ul>
