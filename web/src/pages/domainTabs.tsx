@@ -44,7 +44,7 @@ const DOMAIN = `
       id domain subdomain comment spamFilterScoreThreshold mailServers mailHosts linkHost linkHostname dkimSelector hasDkimKey
       aliases { id pattern comment kind email webhook mailboxId disabled mailServer { host port username } }
       credentials { id comment alias disabled }
-      records { checkedAt error records { type name expected priority optional found verified purpose } }
+      records { checkedAt error records { type name expected priority optional found verified purpose blocked } }
     }
   }`
 

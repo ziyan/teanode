@@ -223,6 +223,10 @@ export interface DNSRecord {
   found?: string[]
   verified: boolean
   purpose: string
+  // What has to be true elsewhere before this record does anything, when it
+  // is not: a BIMI record is ignored by every receiver while the domain's
+  // DMARC policy is none.
+  blocked?: string
 }
 
 export interface RecordSet {

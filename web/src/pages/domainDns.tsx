@@ -93,6 +93,11 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
                     <CopyIconButton value={expectedValue(record)} />
                   </div>
                   {!record.verified && <div className="muted cell-note">{record.purpose}</div>}
+                  {/* What is stopping it, when something is. Said whether or
+                      not the record is published: publishing one and waiting
+                      to see what happens is how somebody spends a week
+                      finding this out. */}
+                  {record.blocked && <div className="cell-note warn">{record.blocked}</div>}
                 </td>
                 <td className="mono wrap">
                   {record.verified ? (

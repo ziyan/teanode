@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
@@ -111,6 +112,12 @@ type Record struct {
 
 	// Purpose says, in one sentence, what breaks without this record.
 	Purpose string `json:"purpose"`
+
+	// Blocked says what has to be true elsewhere before this record can do
+	// anything, when it is not. A published BIMI record is ignored by every
+	// receiver while the domain's DMARC policy is none, and publishing one
+	// and waiting is how somebody spends a week finding that out.
+	Blocked string `json:"blocked,omitempty"`
 }
 
 // RecordSet is every record one domain needs, and whether mail can flow.
@@ -399,8 +406,73 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	}
 	recordSet.Records = append(recordSet.Records, dmarc)
 
+	recordSet.Records = append(recordSet.Records, self.checkBimi(ctx, domain, dmarc))
+
 	log.Debugf("took %s to check the records for %q", time.Since(start), domain.Domain)
 	return recordSet
+}
+
+// checkBimi is the logo this domain publishes for its own mail, if it wants
+// one.
+//
+// Optional, and deliberately so: most domains will never publish a mark, and
+// coloring a missing one the same red as a missing MX is how a page teaches
+// its reader to ignore the color.
+//
+// The prerequisite is the point of the row. A BIMI record is ignored by every
+// receiver while the domain's DMARC policy is none — which is the policy this
+// page recommends starting with, so every domain here begins unable to use
+// one. Publishing the record and waiting to see what happens is how somebody
+// spends a week finding that out.
+func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmarc *Record) *Record {
+	name := dnsName(bimi.DefaultSelector + "._bimi." + domain.Domain)
+	record := &Record{
+		Type:     "TXT",
+		Name:     name,
+		Optional: true,
+		Expected: "v=BIMI1; l=https://example.com/logo.svg",
+		Purpose:  "shows your own logo beside your mail, at receivers that support it",
+	}
+	if policy := dmarcPolicy(dmarc.Found); policy != "quarantine" && policy != "reject" {
+		record.Blocked = "your DMARC policy is " + describePolicy(policy) +
+			"; no receiver shows a logo until it is quarantine or reject"
+	}
+	if records, err := self.resolveTxt(ctx, name); err == nil {
+		record.Found = records
+		for _, published := range records {
+			if parsed, ok := bimi.Parse(published); ok && parsed.Logo != "" {
+				record.Verified = true
+				break
+			}
+		}
+	}
+	return record
+}
+
+// dmarcPolicy reads the p tag out of whichever of a name's TXT records is the
+// DMARC one.
+func dmarcPolicy(records []string) string {
+	for _, record := range records {
+		if !strings.HasPrefix(strings.TrimSpace(record), "v=DMARC1") {
+			continue
+		}
+		for _, part := range strings.Split(record, ";") {
+			key, value, found := strings.Cut(part, "=")
+			if found && strings.EqualFold(strings.TrimSpace(key), "p") {
+				return strings.ToLower(strings.TrimSpace(value))
+			}
+		}
+	}
+	return ""
+}
+
+// describePolicy names a policy for a sentence, including the case where
+// there is no record at all.
+func describePolicy(policy string) string {
+	if policy == "" {
+		return "not published"
+	}
+	return policy
 }
 
 // dnsName returns a fully qualified name, with the trailing dot that DNS

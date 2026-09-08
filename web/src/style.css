@@ -1200,6 +1200,13 @@ td p.muted {
    hundred characters a line — the case that made this necessary is the advice
    under a failing check, which is the most important text on the page and was
    the hardest to read. The table itself is unaffected. */
+/* What is stopping a record from doing anything, as distinct from what the
+   record is for: the colour of a caution rather than of an aside, because it
+   is the sentence that saves the week. */
+td .cell-note.warn {
+  color: var(--warn);
+}
+
 td .cell-note {
   display: block;
   /* A sentence breaks at its spaces. It sits inside a cell that may allow
