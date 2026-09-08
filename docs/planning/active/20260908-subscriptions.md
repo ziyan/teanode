@@ -103,6 +103,17 @@ and the sender appears as a row with a working unsubscribe button.
   unsubscribe request needs precisely these guards and should reuse that code
   rather than grow a second copy.
 
+- Observation: a BIMI lookup has to ask the organizational domain too, or it
+  finds almost nothing on real mail. Deployed without that fallback, eight
+  sending domains from a real mailbox produced no logo at all; with it, the
+  ones that publish a mark produce it — a cosmetics retailer's mail comes from
+  a `beauty.` subdomain and a home improvement retailer's from an `e.`
+  subdomain, and neither publishes a record there because the one above covers
+  them. This is the same fallback `internal/util/dmarc/discover.go` makes for a
+  policy, and its comment says the same thing about subdomains.
+  Evidence: the same eight domains, before and after — six unchanged, two
+  turning from "found=false" into a logo and a certificate.
+
 - Observation: BIMI is published by fewer domains than one would guess, and by
   the ones that matter. Looking up four well-known senders — a news site, a
   marketplace, a payment company and a social network — found a record with a

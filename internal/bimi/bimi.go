@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"golang.org/x/net/publicsuffix"
 )
 
 // DefaultSelector is the record read when a message names none.
@@ -108,6 +109,13 @@ func SelectorFrom(header string) string {
 
 // Lookup asks DNS what a domain publishes. A domain that publishes nothing is
 // not an error: most do not.
+//
+// Two questions, the way a DMARC policy is discovered and for the same reason.
+// Bulk mail comes from a subdomain as a matter of course —
+// e.lowes.example, notifications.example.net — and almost none of them publish
+// a record there. The organizational domain above is asked when the sending
+// domain says nothing, which is what turns "hardly anything has a logo" into
+// "the senders that publish one have one".
 func Lookup(ctx context.Context, nameserver, domain, selector string) (Record, bool, error) {
 	domain = clean(domain)
 	selector = clean(selector)
@@ -117,6 +125,28 @@ func Lookup(ctx context.Context, nameserver, domain, selector string) (Record, b
 	if selector == "" {
 		selector = DefaultSelector
 	}
+	record, found, err := lookupAt(ctx, nameserver, domain, selector)
+	if err != nil || found {
+		return record, found, err
+	}
+
+	// The organizational domain, asked under the default selector: a record
+	// published for a whole organization is not published per campaign.
+	organizational, err := publicsuffix.EffectiveTLDPlusOne(domain)
+	if err != nil || organizational == domain {
+		return Record{}, false, nil
+	}
+	record, found, err = lookupAt(ctx, nameserver, organizational, DefaultSelector)
+	if err != nil {
+		// The sending domain has already answered "nothing". A failure above
+		// it is not worth failing the whole lookup over.
+		return Record{}, false, nil
+	}
+	return record, found, nil
+}
+
+// lookupAt asks one name.
+func lookupAt(ctx context.Context, nameserver, domain, selector string) (Record, bool, error) {
 	timed, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
 
