@@ -29,6 +29,14 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The mailbox's rows of actions are one line that scrolls sideways on a
+  phone. Ten icons need four hundred pixels and a phone has three hundred and
+  ninety, so they wrapped, and the second row pushed the message down and left
+  one icon sitting alone under nine.
+- What you tap on a phone is big enough to tap. The box that selects a
+  conversation and the star that flags it were thirteen pixels wide in a row
+  forty pixels tall; a table's page arrows were squeezed to seventeen; a
+  group's name on a person's row was a chip too short to hit.
 - The box that ticks every conversation sits in the column of the boxes that
   tick one. It was two pixels to the right of them: the row of actions above
   the list had a narrower inset than a row of the list, and a checkbox carries

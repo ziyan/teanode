@@ -1032,6 +1032,9 @@ tr:has(.icon-button) > td {
 .table-pagination .icon-button {
   width: 28px;
   height: 28px;
+  /* Kept square. As flex items in a crowded row they were squeezed to
+     seventeen pixels wide on a phone, which is a target nobody can press. */
+  flex: 0 0 auto;
 }
 
 .table-pagination .icon-button:disabled {
@@ -3889,6 +3892,55 @@ label.check-list-item {
   font-size: 12px;
   padding: 3px 8px;
 }
+/* A finger is not a pointer. The box that selects a conversation and the star
+   that flags it were a thirteen-pixel column each, which on a phone is a
+   target you aim at rather than press. The row they sit in is forty pixels
+   tall; the width is what was missing. */
+@media (max-width: 760px) {
+  .mailbox-row input[type='checkbox'],
+  .mailbox-actions input[type='checkbox'] {
+    width: 24px;
+    height: 24px;
+  }
+  .mailbox-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    /* Back into the column it sits in, so widening the target does not move
+       the subject line across. */
+    margin: 0 -4px;
+  }
+}
+
+/* On a phone the row of actions is one line that scrolls, not two lines that
+   stack. Ten icons need four hundred pixels and a phone has three hundred and
+   ninety, so they wrapped — and a second row of them pushed the message down
+   and left one icon sitting alone under nine. Sideways, the row reads as a
+   row, and the ones past the edge are a swipe away. */
+@media (max-width: 760px) {
+  .mailbox-actions,
+  .mailbox-pane-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* No bar drawn over the icons: on a touch screen there is none to draw,
+       and the row is visibly cut off at the edge, which is the affordance. */
+    scrollbar-width: none;
+  }
+  .mailbox-actions::-webkit-scrollbar,
+  .mailbox-pane-actions::-webkit-scrollbar {
+    display: none;
+  }
+  /* Icons keep their size rather than being squeezed to fit the width. */
+  .mailbox-actions > *,
+  .mailbox-actions button,
+  .mailbox-pane-actions > *,
+  .mailbox-pane-actions button,
+  .mailbox-pane-actions .menu-button {
+    flex: 0 0 auto;
+  }
+}
 .mailbox-placeholder {
   color: var(--muted);
   padding: 40px 16px;
@@ -4339,6 +4391,13 @@ label.check-list-item {
   color: var(--muted);
   font-size: 13px;
   cursor: pointer;
+}
+/* A group's name on a person's row is a link to that group, so on a phone it
+   is worth being able to hit. */
+@media (max-width: 760px) {
+  .access-chip {
+    padding: 4px 10px;
+  }
 }
 .access-chip:hover {
   color: var(--text);
