@@ -62,6 +62,12 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The IMAP settings — the host and ports a mail program is told to connect to
+  for reading mail — were not among the sections written to the database, so
+  they reset to the ports the process happens to bind every time the server
+  restarted. A mail program set up from what the dashboard said would then
+  stop connecting. The `imap` section is stored now, and a test walks the
+  configuration to check that every section is.
 - 183 lines of stylesheet had been pasted into the middle of a phone media
   query, which both broke the rule they landed in — long DNS record values
   stopped wrapping on a phone — and overrode the real rules at phone widths.
