@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-08
+
 ### Added
 
 - What a message's checks said is in the mailbox, not only on the audit page:
