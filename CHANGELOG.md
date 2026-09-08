@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-08
+
+### Fixed
+
+- A remote image in a message could be fetched from a different address than
+  the message named. The dashboard undoes the escaping the server applied to
+  the blocked address, and it undid the ampersand before the entities an
+  ampersand can spell, so an address holding `&amp;lt;` was decoded twice. It
+  also looked for a quote written the one way this server never writes it, so
+  an address holding a quote or a carriage return was not decoded at all. A
+  sender chose what any of those produced. Found by CodeQL. (#61)
+
 ## [0.13.0] - 2026-09-08
 
 ### Added
