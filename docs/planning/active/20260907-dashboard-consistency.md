@@ -28,6 +28,18 @@ not.
 - 183 lines of `style.css` that had been pasted into the middle of a phone
   media query, breaking the rule they landed in, are gone.
 
+Later in the same pass, on the mailbox pages:
+
+- The rail draws a rule under what is pinned and another above Contacts, names
+  the mailbox only when there is more than one, and has no pin on its rows —
+  pinning is on the Folders tab with renaming and removing.
+- Pinning lifts a folder out of the tree instead of copying it, so the rail
+  lists it once.
+- The signature and the automatic reply are written in the compose page's
+  editor, with its rich text and plain text switch.
+- The Rules tab is a list of what each rule does, with a dialog to add or
+  change one.
+
 ## Not done
 
 Each of these is a page that works and reads acceptably, listed so that the
