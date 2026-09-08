@@ -29,6 +29,14 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Nothing on the page changes size when it is chosen, hovered or ticked. The
+  row being read in a list of groups or roles carries a pencil and a bin, and
+  grew seven pixels taller than the rows around it, so choosing one moved the
+  list you were choosing from; the mailbox's row of actions appeared when the
+  first message was ticked and pushed the list down fifteen pixels, so the
+  second message you meant to tick had moved. Three more said the same thing
+  with a heavier weight — the tabs, a chosen menu item, a ticked row — and
+  bolder text is wider text.
 - Every tooltip left in the dashboard is the dashboard's own. Twenty-five were
   still the browser's `title` — the rail's collapse and refresh, the table's
   sort headers, its page arrows and its clipped cells, the editor's toolbar,

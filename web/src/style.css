@@ -427,7 +427,6 @@ td a:hover {
    one row; the accent says the same thing in the space already there. */
 .menu button.selected {
   color: var(--accent);
-  font-weight: 600;
 }
 
 /* --- a grid of destination cards ------------------------------------------
@@ -1702,7 +1701,10 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 /* The indicator is the text color rather than the accent. Switching a
    section of the page is not an action to be pressed, and coloring it spends
    the one emphasis the page has on something you are already looking at. */
-.tabs button.active { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
+/* Color and the rule under it, and not a heavier weight: bolder text is
+   wider text, so switching tabs moved every tab to the right of the one
+   chosen. */
+.tabs button.active { border-bottom-color: var(--text); color: var(--text); }
 
 /* The message body is rendered inside a sandboxed frame. It is mail written
    by a stranger, so it gets no scripts, no same-origin access, and a white
@@ -3420,6 +3422,12 @@ label.check-list-item {
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
+  /* As tall with nothing selected as with something: the row of actions
+     appears when the first message is ticked, and without this the list
+     under it jumped down by fifteen pixels at the moment of the tick — so
+     the second message somebody meant to tick had moved. The number is the
+     icon buttons, the padding around them and the rule under them. */
+  min-height: 47px;
 }
 .mailbox-actions button,
 .mailbox-actions select {
@@ -4409,6 +4417,11 @@ label.check-list-item {
   border: 1px solid transparent;
   border-radius: var(--radius-2);
   color: var(--muted);
+  /* The height of the row that carries the pencil and the bin, held by every
+     row that does not. The actions appear on the row being read, and without
+     this that row grew by seven pixels and pushed every row under it down —
+     so choosing a group moved the list you were choosing from. */
+  min-height: 42px;
 }
 .access-pick-row:hover {
   background: var(--sidebar-hover);
@@ -4488,8 +4501,11 @@ label.check-list-item {
   display: flex;
   flex-direction: column;
 }
+/* Ticked rows read as ticked from the box, which is the control this row is
+   about. Weight would say it again, in a width that differs from the rows
+   around it. */
 .check-list-item.chosen {
-  font-weight: 500;
+  color: var(--text);
 }
 
 /* The groups as a row of chips over the people, for the width where the
