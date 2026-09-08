@@ -79,6 +79,13 @@ const (
 	PathSenderLogo = Prefix + "/logo/{domain}"
 )
 
+// BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where
+// a logo is sent, which is a multipart request and so has no place in the
+// schema.
+func BimiLogoUploadPath(domainId string) string {
+	return Prefix + "/domains/" + url.PathEscape(domainId) + "/logo"
+}
+
 // DomainLogoPath is PathDomainLogo with its parameter filled in.
 func DomainLogoPath(domainId string) string {
 	return Prefix + "/domains/" + url.PathEscape(domainId) + "/logo.svg"

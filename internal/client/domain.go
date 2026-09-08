@@ -2,8 +2,15 @@ package client
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/api"
 )
 
 // Domain is a mail domain the server accepts mail for, as the dashboard sees
@@ -23,6 +30,17 @@ type Domain struct {
 	Aliases                  []*Alias      `json:"aliases"`
 	Credentials              []*Credential `json:"credentials"`
 	Records                  *RecordSet    `json:"records"`
+	Logo                     *DomainLogo   `json:"logo"`
+}
+
+// DomainLogo is the mark this server publishes for a domain, when one has been
+// uploaded.
+type DomainLogo struct {
+	Filename   string    `json:"filename"`
+	Title      string    `json:"title"`
+	URL        string    `json:"url"`
+	PublicURL  string    `json:"publicUrl"`
+	UploadedAt time.Time `json:"uploadedAt"`
 }
 
 // RecordSet is the DNS a domain needs, and what is published now.
@@ -43,6 +61,11 @@ type Record struct {
 	Priority uint16   `json:"priority"`
 	Optional bool     `json:"optional"`
 	Purpose  string   `json:"purpose"`
+
+	// Blocked says why publishing this record would not have the effect it
+	// promises — a BIMI record with no logo behind it, or with a DMARC policy
+	// no receiver acts on. Empty when nothing is in the way.
+	Blocked string `json:"blocked"`
 }
 
 // FindRecord returns the record of a type whose name matches, or nil.
@@ -100,7 +123,8 @@ const domainFields = `{
 	hasDkimKey
 	aliases ` + aliasFields + `
 	credentials ` + credentialFields + `
-	records { domain checkedAt error records { type name expected found verified priority optional purpose } }
+	records { domain checkedAt error records { type name expected found verified priority optional purpose blocked } }
+	logo { filename title url publicUrl uploadedAt }
 }`
 
 // ListDomains returns the configured domains.
@@ -248,4 +272,49 @@ func GetOutgoingIdentity(ctx context.Context, connection *Client) (*OutgoingIden
 // equalFold compares domain names, which are case insensitive.
 func equalFold(left, right string) bool {
 	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
+}
+
+// UploadDomainLogo publishes a mark for a domain.
+//
+// Not a schema operation: it sends a file, and the server checks the file
+// against the profile a mark has to satisfy before storing it. A refusal
+// carries the rule that refused it, which is the whole value of checking here
+// rather than leaving a receiver to refuse it silently.
+func UploadDomainLogo(ctx context.Context, connection *Client, domainId, filename string, content []byte) (*DomainLogo, error) {
+	response, err := connection.Upload(ctx, api.BimiLogoUploadPath(domainId), "file", filename, content)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	var answer struct {
+		Filename string `json:"filename"`
+		Title    string `json:"title"`
+		URL      string `json:"url"`
+		Error    string `json:"error"`
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		// Not every refusal is JSON; a body that is not says so as it stands.
+		return nil, fmt.Errorf("client: the server answered HTTP %d: %s",
+			response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if answer.Error != "" {
+		return nil, errors.New(answer.Error)
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("client: the server answered HTTP %d", response.StatusCode)
+	}
+	return &DomainLogo{Filename: answer.Filename, Title: answer.Title, PublicURL: answer.URL}, nil
+}
+
+// DeleteDomainLogo stops publishing a domain's mark, and removes the file.
+func DeleteDomainLogo(ctx context.Context, connection *Client, domainId string) error {
+	query := `mutation ($domainId: String!) { DeleteDomainLogo(domainId: $domainId) }`
+	return connection.Execute(ctx, query, map[string]any{"domainId": domainId}, nil)
 }

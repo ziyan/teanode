@@ -322,6 +322,9 @@ export const en = {
   'domain.logoRules': 'It has to be an SVG of the restricted kind BIMI accepts — no script, no animation, nothing fetched from elsewhere, and square. This checks that before publishing it, and says what is wrong if anything is.',
   'domain.logoSizes': 'Drawn here at the two sizes receivers use.',
   'domain.nothingToPublish': 'Nothing to publish yet',
+  'domain.logoRemove': 'Remove the logo',
+  'domain.logoRemoveConfirm': 'The file stops being served. Take the BIMI record naming it down as well, or receivers will keep fetching an address that answers nothing.',
+  'domain.logoRemoveTitle': 'Stop publishing this logo?',
   'domain.logoCertificate': 'They show a mark only for senders who also hold a Verified Mark Certificate, which is issued against a registered trademark, renewed yearly, and costs on the order of a thousand dollars. Other receivers show one without. Its address goes in the record as the a= tag once you have one.',
 
   'domain.linkHostTitle': 'Pictures in mail',

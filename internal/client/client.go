@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -186,6 +187,46 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 		return fmt.Errorf("client: cannot decode the reply: %w", err)
 	}
 	return nil
+}
+
+// Upload sends a file to an endpoint that takes one, as a multipart form with
+// the file under the given field. The counterpart of Download, and the only
+// way to reach the parts of the API that take a file rather than arguments: a
+// logo is bytes, and bytes are not a GraphQL argument.
+//
+// The reply is returned as it came, since callers read a small JSON object out
+// of it — the address to publish, or the reason the file was refused.
+func (self *Client) Upload(ctx context.Context, path, field, filename string, content []byte) (*http.Response, error) {
+	body := &bytes.Buffer{}
+	form := multipart.NewWriter(body)
+	part, err := form.CreateFormFile(field, filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(content); err != nil {
+		return nil, err
+	}
+	if err := form.Close(); err != nil {
+		return nil, err
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+path, body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	response, err := self.client.Do(request)
+	if err != nil {
+		return nil, &ConnectionError{URL: self.url, Cause: err}
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+	return response, nil
 }
 
 // Download fetches something that is a file rather than a GraphQL reply — the

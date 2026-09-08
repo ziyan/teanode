@@ -320,6 +320,9 @@ export const ja: Catalog = {
   'domain.logoRules': 'ファイルは BIMI が認める制限付きの SVG である必要があります。スクリプトなし、アニメーションなし、外部参照なし、正方形。公開前に確認し、問題があれば内容を示します。',
   'domain.logoSizes': '受信側が使う二つのサイズで表示しています。',
   'domain.nothingToPublish': '公開するものはまだありません',
+  'domain.logoRemove': 'ロゴを削除',
+  'domain.logoRemoveConfirm': 'ファイルの配信を停止します。それを指す BIMI レコードも取り下げてください。さもないと受信側は何も返さないアドレスを取得し続けます。',
+  'domain.logoRemoveTitle': 'このロゴの公開をやめますか？',
   'domain.logoCertificate': 'VMC（認証マーク証明書）を持つ送信者にしかロゴを表示しません。登録商標に対して発行され、毎年更新で、費用は千ドル前後です。他の受信側は証明書なしでも表示します。取得したら、その住所をレコードの a= タグに入れてください。',
 
   'domain.linkHostTitle': 'メール内の画像',

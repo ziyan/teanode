@@ -319,6 +319,9 @@ export const zh: Catalog = {
   'domain.logoRules': '文件必须是 BIMI 允许的受限 SVG：不含脚本、不含动画、不引用外部资源，且为正方形。发布前会先检查，并指出具体问题。',
   'domain.logoSizes': '按收件方使用的两种尺寸显示。',
   'domain.nothingToPublish': '暂无可发布的内容',
+  'domain.logoRemove': '移除标识',
+  'domain.logoRemoveConfirm': '该文件将不再提供。请同时撤下指向它的 BIMI 记录，否则收件方仍会去取一个已无内容的地址。',
+  'domain.logoRemoveTitle': '停止发布该标识？',
   'domain.logoCertificate': '它们只对同时持有 VMC（认证标识证书）的发件人显示标识；该证书基于注册商标签发、每年续费，费用约一千美元。其他收件方无需证书即可显示。取得证书后，把它的地址填入记录的 a= 标签。',
 
   'domain.linkHostTitle': '邮件里的图片',

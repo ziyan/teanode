@@ -11,6 +11,7 @@ import { DomainTabProps } from './domainTabs'
 import { Tooltip } from '../components/tooltip'
 
 const CHECK = `mutation ($domainId: String!) { CheckDomain(domainId: $domainId) { id } }`
+const DELETE_LOGO = `mutation ($domainId: String!) { DeleteDomainLogo(domainId: $domainId) }`
 const UPDATE_MAIL_SERVERS = `
   mutation ($domainId: String!, $mailServers: [String]) {
     UpdateDomain(domainId: $domainId, domainParameters: { mailServers: $mailServers }) {
@@ -337,6 +338,7 @@ function DomainLogoCard({
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [refused, setRefused] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
   const logo = domain.logo
 
@@ -417,6 +419,13 @@ function DomainLogoCard({
         <button disabled={busy} onClick={() => picker.current?.click()}>
           {logo ? t('domain.logoReplace') : t('domain.logoUpload')}
         </button>
+        {/* The way back. Without it a mark could be replaced but never taken
+            down, and a domain that stops using one would go on serving it. */}
+        {logo ? (
+          <button className="danger" disabled={busy} onClick={() => setRemoving(true)}>
+            {t('domain.logoRemove')}
+          </button>
+        ) : null}
       </div>
 
       {/* Said before anybody starts, not after, and set apart rather than
@@ -428,6 +437,25 @@ function DomainLogoCard({
       <p className="notice domain-logo-note">
         <strong>{t('domain.logoCertificateTitle')}</strong> {t('domain.logoCertificate')}
       </p>
+
+      {removing && (
+        <ConfirmDialog
+          title={t('domain.logoRemoveTitle')}
+          body={t('domain.logoRemoveConfirm')}
+          confirmLabel={t('domain.logoRemove')}
+          onConfirm={() => {
+            setRemoving(false)
+            void run(async () => {
+              await graphql(DELETE_LOGO, { domainId })
+              // The row above names the file by address, so it has to be
+              // asked again or it goes on offering a record for a mark that
+              // is no longer served.
+              await graphql(CHECK, { domainId })
+            })
+          }}
+          onClose={() => setRemoving(false)}
+        />
+      )}
     </div>
   )
 }

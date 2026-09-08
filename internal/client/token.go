@@ -71,7 +71,11 @@ func CreateToken(ctx context.Context, connection *Client, name, username, lifeti
 }
 
 // DeleteToken revokes a token.
-func DeleteToken(ctx context.Context, connection *Client, id string) error {
-	query := `mutation ($tokenId: String!) { DeleteToken(tokenId: $tokenId) }`
-	return connection.Execute(ctx, query, map[string]any{"tokenId": id}, nil)
+func DeleteToken(ctx context.Context, connection *Client, id, username string) error {
+	query := `mutation ($tokenId: String!, $username: String) { DeleteToken(tokenId: $tokenId, username: $username) }`
+	variables := map[string]any{"tokenId": id, "username": nil}
+	if username != "" {
+		variables["username"] = username
+	}
+	return connection.Execute(ctx, query, variables, nil)
 }

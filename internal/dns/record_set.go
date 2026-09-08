@@ -454,7 +454,11 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 		record.Blocked = "your DMARC policy is " + describePolicy(policy) +
 			"; no receiver shows a logo until it is quarantine or reject"
 	case record.Expected == "":
-		record.Blocked = "upload a logo below, and this row will show the record to publish"
+		// Said without pointing anywhere: the dashboard shows this above the
+		// card that takes a file, and the command line shows it under a
+		// table, so "below" is true in one place and meaningless in the
+		// other.
+		record.Blocked = "no logo has been uploaded for this domain yet; upload one and this row will show the record to publish"
 	}
 	records, err := self.resolveTxt(ctx, name)
 	if err != nil {

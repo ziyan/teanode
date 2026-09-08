@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -62,6 +64,7 @@ func NewDomainCommand() *cli.Command {
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runDomainCheck,
 			},
+			newDomainLogoCommand(),
 		},
 	}
 }
@@ -237,11 +240,32 @@ func printRecords(records *client.RecordSet) error {
 		default:
 			state = "MISSING"
 		}
-		rows = append(rows, []string{state, record.Type, record.Name, truncate(record.Expected, 60), truncate(record.Purpose, 60)})
+		value := truncate(record.Expected, 60)
+		if value == "" {
+			value = "nothing to publish yet"
+		}
+		rows = append(rows, []string{state, record.Type, record.Name, value, truncate(record.Purpose, 60)})
 	}
 	if err := printTable([]string{"STATE", "TYPE", "NAME", "VALUE", "PURPOSE"}, rows); err != nil {
 		return err
 	}
+
+	// Said under the table rather than in it: a record can be published
+	// perfectly and still have no effect, and the reason is a sentence rather
+	// than a column. Without this the command line would show a BIMI row that
+	// looks fine while no receiver acts on it.
+	blocked := false
+	for _, record := range records.Records {
+		if record.Blocked == "" {
+			continue
+		}
+		if !blocked {
+			fmt.Println()
+			blocked = true
+		}
+		fmt.Printf("%s: %s\n", record.Name, record.Blocked)
+	}
+
 	fmt.Println("\n'teanode domain get <domain> --json' prints every value in full, and what was found instead.")
 	return nil
 }
@@ -381,4 +405,135 @@ func joinNames(names []string) string {
 	default:
 		return fmt.Sprintf("%s and %d others", names[0], len(names)-1)
 	}
+}
+
+// newDomainLogoCommand is the mark a domain publishes for its own mail.
+//
+// A logo is bytes, and bytes are not a GraphQL argument, so publishing one is
+// the single thing in this program that sends a file. Reading and removing are
+// ordinary operations; only "publish" goes another way.
+func newDomainLogoCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "logo",
+		Usage: "the mark this server publishes for a domain, which receivers show beside its mail",
+		Commands: []*cli.Command{
+			{
+				Name:      "show",
+				Usage:     "the logo published for a domain, and where it is served from",
+				ArgsUsage: "<domain>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runDomainLogoShow,
+			},
+			{
+				Name:      "publish",
+				Aliases:   []string{"upload"},
+				Usage:     "publish an SVG as the domain's mark; it is checked before it is stored",
+				ArgsUsage: "<domain> <file.svg>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runDomainLogoPublish,
+			},
+			{
+				Name:      "remove",
+				Aliases:   []string{"delete"},
+				Usage:     "stop publishing a domain's mark, and remove the file",
+				ArgsUsage: "<domain>",
+				Flags:     []cli.Flag{ForceFlag()},
+				Action:    runDomainLogoRemove,
+			},
+		},
+	}
+}
+
+func runDomainLogoShow(ctx context.Context, command *cli.Command) error {
+	name := command.Args().First()
+	if name == "" {
+		return usage("which domain? usage: teanode domain logo show <domain>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	domain, err := requireDomain(ctx, command, connection, name)
+	if err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(domain.Logo)
+	}
+	if domain.Logo == nil {
+		fmt.Printf("%s publishes no logo; publish one with 'teanode domain logo publish %s <file.svg>'\n",
+			domain.Domain, domain.Domain)
+		return nil
+	}
+	return printFields([][2]string{
+		{"file", domain.Logo.Filename},
+		{"title", domain.Logo.Title},
+		{"uploaded", formatTime(&domain.Logo.UploadedAt)},
+		{"served at", domain.Logo.PublicURL},
+	})
+}
+
+func runDomainLogoPublish(ctx context.Context, command *cli.Command) error {
+	name := command.Args().First()
+	path := command.Args().Get(1)
+	if name == "" || path == "" {
+		return usage("usage: teanode domain logo publish <domain> <file.svg>")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", path, err)
+	}
+
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	domain, err := requireDomain(ctx, command, connection, name)
+	if err != nil {
+		return err
+	}
+
+	// A refusal names the rule that refused it, and is the answer rather than
+	// an error about the request: a receiver would refuse the same file
+	// silently, which is the whole reason for checking here.
+	logo, err := client.UploadDomainLogo(ctx, connection, domain.ID, filepath.Base(path), content)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(logo)
+	}
+	fmt.Printf("published %s as the mark of %s, titled %q\n", logo.Filename, domain.Domain, logo.Title)
+	fmt.Printf("it is served at %s\n", logo.PublicURL)
+	fmt.Printf("publish the record 'teanode domain check %s' now names, and receivers will find it\n", domain.Domain)
+	return nil
+}
+
+func runDomainLogoRemove(ctx context.Context, command *cli.Command) error {
+	name := command.Args().First()
+	if name == "" {
+		return usage("which domain? usage: teanode domain logo remove <domain>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	domain, err := requireDomain(ctx, command, connection, name)
+	if err != nil {
+		return err
+	}
+	if domain.Logo == nil {
+		fmt.Printf("%s publishes no logo\n", domain.Domain)
+		return nil
+	}
+	if err := confirm(command, fmt.Sprintf(
+		"This stops serving %s for %s. Take the BIMI record naming it down too, or receivers will fetch a file that is gone.",
+		domain.Logo.Filename, domain.Domain)); err != nil {
+		return err
+	}
+	if err := client.DeleteDomainLogo(ctx, connection, domain.ID); err != nil {
+		return describeError(command, err)
+	}
+	fmt.Printf("stopped publishing the mark of %s\n", domain.Domain)
+	return nil
 }

@@ -481,3 +481,132 @@ func GetMailProgramSettings(ctx context.Context, connection *Client) (*MailProgr
 	}
 	return result.GetMailProgramSettings, nil
 }
+
+// MailboxSubscription is one mailing list a mailbox receives: who sends it,
+// how much of it there is, and whether leaving has been asked for.
+type MailboxSubscription struct {
+	Key         string     `json:"key"`
+	Name        string     `json:"name"`
+	From        string     `json:"from"`
+	Count       int        `json:"count"`
+	Unread      int        `json:"unread"`
+	LastAt      time.Time  `json:"lastAt"`
+	LastItemID  string     `json:"lastItemId"`
+	OneClick    bool       `json:"oneClick"`
+	Unsubscribe []string   `json:"unsubscribe"`
+	RequestedAt *time.Time `json:"requestedAt"`
+	Method      string     `json:"method"`
+	Failed      bool       `json:"failed"`
+	Error       string     `json:"error"`
+}
+
+// MailboxSubscriptionPage is a page of them, with how many there are in all.
+type MailboxSubscriptionPage struct {
+	Subscriptions []*MailboxSubscription `json:"subscriptions"`
+	Total         int64                  `json:"total"`
+}
+
+// MailboxThreadView is the mail of one subscription, read as a conversation
+// is: the messages it sent, newest first.
+type MailboxThreadView struct {
+	ThreadID  string               `json:"threadId"`
+	Subject   string               `json:"subject"`
+	Items     []*MailboxThreadItem `json:"items"`
+	Truncated bool                 `json:"truncated"`
+}
+
+// MailboxThreadItem is one message in that view, with the folder it sits in.
+type MailboxThreadItem struct {
+	Item       *MailboxItem `json:"item"`
+	FolderID   string       `json:"folderId"`
+	FolderName string       `json:"folderName"`
+	FolderKind string       `json:"folderKind"`
+}
+
+const (
+	subscriptionFields = `{
+		key name from count unread lastAt lastItemId oneClick unsubscribe
+		requestedAt method failed error
+	}`
+
+	documentListMailboxSubscriptions = `query ($mailboxId: String!, $first: Int, $offset: Int) {
+		ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset) {
+			total
+			subscriptions ` + subscriptionFields + `
+		}
+	}`
+
+	documentGetMailboxSubscription = `query ($mailboxId: String!, $key: String!) {
+		GetMailboxSubscription(mailboxId: $mailboxId, key: $key) ` + subscriptionFields + `
+	}`
+
+	documentReadMailboxSubscription = `query ($mailboxId: String!, $key: String!) {
+		ReadMailboxSubscription(mailboxId: $mailboxId, key: $key) {
+			threadId subject truncated
+			items {
+				folderId folderName folderKind
+				item { id folderId seen flagged mail { id from fromName subject receivedAt } }
+			}
+		}
+	}`
+
+	documentUnsubscribeMailboxSubscription = `mutation ($mailboxId: String!, $key: String!) {
+		UnsubscribeMailboxSubscription(mailboxId: $mailboxId, key: $key) ` + subscriptionFields + `
+	}`
+)
+
+// ListMailboxSubscriptions is every mailing list a mailbox receives.
+func ListMailboxSubscriptions(ctx context.Context, connection *Client, mailboxId string, first, offset int) (*MailboxSubscriptionPage, error) {
+	var result struct {
+		ListMailboxSubscriptions *MailboxSubscriptionPage `json:"ListMailboxSubscriptions"`
+	}
+	variables := map[string]any{"mailboxId": mailboxId}
+	if first > 0 {
+		variables["first"] = first
+	}
+	if offset > 0 {
+		variables["offset"] = offset
+	}
+	if err := connection.Execute(ctx, documentListMailboxSubscriptions, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListMailboxSubscriptions, nil
+}
+
+// GetMailboxSubscription is one of them, by the key that identifies the list.
+func GetMailboxSubscription(ctx context.Context, connection *Client, mailboxId, key string) (*MailboxSubscription, error) {
+	var result struct {
+		GetMailboxSubscription *MailboxSubscription `json:"GetMailboxSubscription"`
+	}
+	variables := map[string]any{"mailboxId": mailboxId, "key": key}
+	if err := connection.Execute(ctx, documentGetMailboxSubscription, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.GetMailboxSubscription, nil
+}
+
+// ReadMailboxSubscription is its mail, grouped the way a conversation is.
+func ReadMailboxSubscription(ctx context.Context, connection *Client, mailboxId, key string) (*MailboxThreadView, error) {
+	var result struct {
+		ReadMailboxSubscription *MailboxThreadView `json:"ReadMailboxSubscription"`
+	}
+	variables := map[string]any{"mailboxId": mailboxId, "key": key}
+	if err := connection.Execute(ctx, documentReadMailboxSubscription, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadMailboxSubscription, nil
+}
+
+// UnsubscribeMailboxSubscription asks to leave a list, by whichever way the
+// sender offered: a one-click request, a message to the address it named, or
+// a page handed back for a person to open.
+func UnsubscribeMailboxSubscription(ctx context.Context, connection *Client, mailboxId, key string) (*MailboxSubscription, error) {
+	var result struct {
+		UnsubscribeMailboxSubscription *MailboxSubscription `json:"UnsubscribeMailboxSubscription"`
+	}
+	variables := map[string]any{"mailboxId": mailboxId, "key": key}
+	if err := connection.Execute(ctx, documentUnsubscribeMailboxSubscription, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.UnsubscribeMailboxSubscription, nil
+}

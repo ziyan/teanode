@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 type DomainQuery interface {
@@ -53,6 +55,10 @@ type DomainMutation interface {
 	// Check a Domain's DNS records now rather than waiting for the next
 	// scheduled check
 	CheckDomain(ctx context.Context, arguments CheckDomainArguments) (*Domain, error)
+
+	// Stop publishing a Domain's logo, removing the file this server serves
+	// for it. The BIMI record naming it should come down too.
+	DeleteDomainLogo(ctx context.Context, arguments DeleteDomainLogoArguments) error
 }
 
 // Domain is a mail domain this server accepts mail for, as the web UI sees
@@ -407,6 +413,52 @@ func (self *graph) DeleteDomain(ctx context.Context, arguments DeleteDomainArgum
 	// its identifier. The web UI renders it as belonging to a deleted domain
 	// rather than losing it.
 	log.Noticef("%s removed domain %q; mail already received for it is kept", operatorName(ctx), domain.Domain)
+	return nil
+}
+
+type DeleteDomainLogoArguments struct {
+	// ID of the Domain to stop publishing a logo for
+	DomainID string `json:"domainId"`
+}
+
+// DeleteDomainLogo stops publishing a domain's mark.
+//
+// The counterpart of the upload, and the reason this exists rather than only
+// a replacement: an operator who published the wrong artwork, or who has
+// stopped using the domain, needs a way to take it down. Without one the
+// record keeps naming a file this server keeps serving, and the only way out
+// is an edit to the database.
+//
+// The row goes first and the bytes after, which is the upload's order
+// reversed and for the upload's reason: a row pointing at bytes that are gone
+// answers 404 for ever, while bytes with no row cost only the space.
+func (self *graph) DeleteDomainLogo(ctx context.Context, arguments DeleteDomainLogoArguments) error {
+	domain, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID)
+	if err != nil {
+		return err
+	}
+
+	fileId := ""
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		removed, err := tx.DeleteBimiPublication(domain.ID)
+		fileId = removed
+		return err
+	}); err != nil {
+		return translateError(err)
+	}
+	if fileId == "" {
+		return fmt.Errorf("%w: this domain publishes no logo", api.ErrNotFound)
+	}
+
+	// A failure here leaves bytes nothing points at, which is why it is
+	// logged rather than returned: the publication is already gone, and the
+	// operator asked for it to stop being published, not for a tidy disk.
+	if err := self.storage.DeleteFile(ctx, fileId); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		log.Warningf("failed to remove the withdrawn logo %s of %q: %s", fileId, domain.Domain, err)
+	}
+
+	log.Noticef("%s withdrew the logo of %q; the BIMI record naming it should come down too",
+		operatorName(ctx), domain.Domain)
 	return nil
 }
 

@@ -30,6 +30,23 @@ Notable changes to TeaNode. The format follows
   and that other receivers show one without. Nothing here issues one, and
   nothing here says "verified".
 
+- A published logo can be withdrawn, from the dashboard or the command line.
+  `DeleteBimiPublication` was written and never called, so a mark could be
+  replaced but never taken down: an operator who published the wrong artwork,
+  or who stopped using a domain, had no way out but an edit to the database
+  while the record went on naming a file this server went on serving.
+
+- `teanode domain logo show|publish|remove` and `teanode mailbox subscription
+  list|show|mail|unsubscribe`, so this week's two features are reachable from
+  the command line as commands rather than only through `teanode api call`.
+  Publishing a logo sends a file, which nothing in the command line did
+  before. `teanode domain check` now also prints what would stop a published
+  record having any effect, which until now only the dashboard said.
+
+- `teanode token revoke --user`, which `create` and `list` already took. Without
+  it the server's own console could issue tokens and list them but never revoke
+  one — which is exactly where somebody who has lost their token is standing.
+
 - Subscriptions: the mailing lists a mailbox receives, on a page of their own,
   with the way out of each. Most of what arrives in a mailbox is not a letter,
   and the only way to stop one was to open it, find the word "unsubscribe" in

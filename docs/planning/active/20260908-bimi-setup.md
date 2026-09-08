@@ -352,6 +352,50 @@ can now do, and the honest limit. A paragraph in the domain documentation if
 there is a natural place for it. Then `make lint-ci`, `make test`, and the
 deployment to the development server.
 
+### Milestone 6 — a logo can be withdrawn, and both features reach the CLI
+
+Found by asking whether the command line covers the two features shipped this
+week. It covers subscriptions through `teanode api call`, since those are
+schema operations; it does not cover a logo at all, because uploading one is a
+multipart request rather than a schema operation. Asking that question turned
+up something worse than a missing command.
+
+**A published logo cannot be withdrawn.** `DeleteBimiPublication` was written
+and never called — not by the dashboard, not by the API, not by the CLI. A
+mark can be replaced but never taken down, so an operator who publishes the
+wrong artwork, or who stops using a domain, has no way out but an edit to the
+database. The record keeps pointing at a file this server keeps serving.
+
+Four pieces, smallest first:
+
+1. `DeleteDomainLogo(domainId)` as a mutation. The graph already holds
+   `storage`, so it can drop the row and the bytes together, in that order —
+   the same order the upload uses in reverse, since a row pointing at bytes
+   that are gone answers 404 for ever while bytes with no row cost only space.
+   Being a schema operation, the CLI reaches it through `api call` the moment
+   it exists, and a Remove button on the logo card gives the dashboard the
+   same.
+
+2. `token revoke --user`. `DeleteTokenArguments` has no `Username`, so the
+   resolver passes nil to `owner`, which refuses on the console with "say whose
+   this is with --user" — a flag `revoke` does not define. `create` and `list`
+   both take it. The asymmetry makes revocation impossible from the server's
+   own console, which is exactly where somebody who has lost their token is
+   standing.
+
+3. `teanode mailbox subscription`: list, show, unsubscribe. Wiring over the
+   four operations that already exist, shaped like the `folder` and `rule`
+   groups beside it.
+
+4. `teanode domain logo`: show, publish, remove. `publish` needs the one new
+   thing here — an `Upload` on the client, mirroring the `Download` that
+   already fetches a stored message. Nothing in the CLI sends a file today.
+
+Acceptance: `DeleteBimiPublication` has a caller; a logo published in the
+dashboard can be removed there and from the command line; `teanode token
+revoke --user ziyan <id>` works on the console; the two new command groups
+appear in `--help` and are documented in `command-line.md`.
+
 ## Validation
 
 From the repository root: `make test` for the Go tests, which needs Docker;
