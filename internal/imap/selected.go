@@ -229,6 +229,17 @@ func readAll(reader goimap.LiteralReader) ([]byte, error) {
 	return io.ReadAll(reader)
 }
 
+// messageSize is the size of a message as it was uploaded: the headers, the
+// blank line, and the body. The row used to record the body alone, so an
+// appended copy showed a tenth of the size of the message it copied.
+func messageSize(headers []string, body []byte) uint64 {
+	size := uint64(len(body)) + 2
+	for _, header := range headers {
+		size += uint64(len(header)) + 2
+	}
+	return size
+}
+
 // mailFromMessage is the row for a message a client appended: what the
 // headers say about it, under the mailbox's own domain.
 func mailFromMessage(mailbox *models.Mailbox, headers []string, body []byte, flags models.MailboxItemFlags, at time.Time) *models.Mail {
@@ -256,7 +267,7 @@ func mailFromMessage(mailbox *models.Mailbox, headers []string, body []byte, fla
 		MessageID:  mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, "Message-ID")),
 		Headers:    headers,
 		Body:       body,
-		Size:       uint64(len(body)),
+		Size:       messageSize(headers, body),
 		Status:     models.MailStatusAccepted,
 		ReceivedAt: at,
 		Kind:       kind,

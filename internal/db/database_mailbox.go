@@ -68,6 +68,11 @@ type MailboxOperation interface {
 	// it is one existence query rather than a list of everything.
 	MailIsInMailbox(mailId, mailboxId string) (bool, error)
 
+	// FindItemByMessageID is the earliest item in a folder whose message
+	// carries this Message-ID, or nil. What tells a copy of a sent message
+	// from the message itself.
+	FindItemByMessageID(folderId, messageId string) (*models.MailboxItem, error)
+
 	// ListExpunged is what vanished from a folder since a modseq.
 	ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error)
 
@@ -1268,6 +1273,23 @@ func (self *transaction) MailIsInMailbox(mailId, mailboxId string) (bool, error)
 			mailId, mailboxId, []string{string(models.MailboxFolderKindSent), string(models.MailboxFolderKindDrafts)}).
 		Limit(1).Count(&count).Error
 	return count > 0, err
+}
+
+func (self *transaction) FindItemByMessageID(folderId, messageId string) (*models.MailboxItem, error) {
+	if folderId == "" || messageId == "" {
+		return nil, nil
+	}
+	var rows []mailboxItemModel
+	if err := self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
+		Where("\"mailbox_item\".\"folder_id\" = ? AND \"mail\".\"message_id\" = ?", folderId, messageId).
+		Order("\"mailbox_item\".\"uid\" ASC").Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return itemFromModel(&rows[0]), nil
 }
 
 func (self *transaction) ListItemsByMail(mailId string) ([]*models.MailboxItem, error) {
