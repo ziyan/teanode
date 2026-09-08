@@ -6,6 +6,12 @@
 
 <p align="center">A mail server for your own domains, in one executable.</p>
 
+<p align="center">
+  <a href="https://teanode.com">teanode.com</a> ·
+  <a href="https://teanode.com/doc/quick-start">Quick start</a> ·
+  <a href="https://teanode.com/doc/introduction">Documentation</a>
+</p>
+
 It receives mail over SMTP, checks that it is genuine (SPF, DKIM, DMARC, ARC),
 scores it for spam and optionally scans it for viruses, and then either files
 it in a mailbox here or hands it on — to an inbox you already read, to a
@@ -98,10 +104,14 @@ an alias of kind `mailbox`, make an app password under **Mailbox settings →
 Mail programs**, and a mail program reads it over IMAP.
 
 Or skip the binaries and run the compose file, which is how this is meant to
-run in production: `docs/reference/deployment.md`.
+run in production: [the quick start](https://teanode.com/doc/quick-start) is
+four commands.
 
-`docs/getting-started.md` has the full walk-through, including the DNS records
-and the reality that many providers block outbound port 25.
+[Getting started](https://teanode.com/doc/getting-started) has the full
+walk-through, including the DNS records and the reality that many providers
+block outbound port 25. Every document here is on
+[teanode.com](https://teanode.com/doc/introduction) as well, rendered and
+translated.
 
 ## What you need
 
@@ -210,7 +220,7 @@ The settings — the listeners, TLS, the spam filter, single sign-on and the res
 — are one document, which `teanode-server config show` prints and
 `teanode-server config import` reads, so a server's settings can be put under
 version control and loaded. Every field is documented in
-`docs/configuration.md`.
+[Configuration](https://teanode.com/doc/configuration).
 
 ## Running it
 
