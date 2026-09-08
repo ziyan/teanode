@@ -513,13 +513,28 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 		byId[folder.ID] = folder
 	}
 
+	// One entry per message, not per item. A message you sent to somebody on
+	// this server is one row filed in your Sent folder and in their Inbox —
+	// and when you send to yourself, in both of yours — so a conversation
+	// listing items would show the same message twice, once under each
+	// folder. The copy that was asked for wins, so a link to a message opens
+	// the conversation showing that copy; otherwise the first, which is the
+	// most recently filed.
 	view := &MailboxThreadView{ThreadID: threadId, Items: make([]*MailboxThreadItem, 0, len(found))}
+	at := make(map[string]int, len(found))
 	for _, item := range found {
 		entry := &MailboxThreadItem{Item: item, FolderID: item.FolderID}
 		if folder := byId[item.FolderID]; folder != nil {
 			entry.FolderName = folder.Name
 			entry.FolderKind = string(folder.Kind)
 		}
+		if index, seen := at[item.MailID]; seen {
+			if item.ID == arguments.ItemID {
+				view.Items[index] = entry
+			}
+			continue
+		}
+		at[item.MailID] = len(view.Items)
 		view.Items = append(view.Items, entry)
 	}
 
