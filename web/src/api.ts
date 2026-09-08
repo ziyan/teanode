@@ -628,6 +628,7 @@ export interface MailboxThread {
   flagged: boolean
   participants: string[]
   itemIds: string[]
+  hasDraft: boolean
 }
 
 export interface MailboxThreadPage {

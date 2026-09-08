@@ -287,6 +287,9 @@ export function MailboxComposer({
           if (draft.html) {
             setEditor('rich')
             setHtml(draft.html)
+            // A draft picked up again carries whatever quote it was written
+            // with, so it folds away the same as a fresh reply's.
+            setQuoted(draft.html.includes('teanode-quote'))
           } else {
             setEditor('plain')
             setText(draft.text ?? '')
@@ -776,7 +779,6 @@ export function MailboxComposer({
           ))}
         </datalist>
       </label>
-      <p className="muted field-hint">{t('compose.mailbox.addressesHint')}</p>
       <label>
         {t('compose.mailbox.subject')}
         <input

@@ -46,7 +46,7 @@ const THREADS = `
     ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
       total
       threads {
-        threadId count unread flagged participants itemIds
+        threadId count unread flagged participants itemIds hasDraft
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
@@ -793,6 +793,10 @@ function Row({
         <div className="mailbox-row-from" title={mail?.from || mail?.sender}>
           {who}
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
+          {/* An answer begun and left. Worth saying in the list, because the
+              conversation looks finished otherwise and the half-written reply
+              is two folders away. */}
+          {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
         </div>
         <div className="mailbox-row-subject">
           {folderName && <span className="mailbox-row-folder">{folderName}</span>}
@@ -841,7 +845,6 @@ function Reader({
   onBack: () => void
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
     refresh: false,
   })
@@ -857,7 +860,9 @@ function Reader({
   // What is being written, if anything: which message it answers and how.
   // Above the newest message rather than below the whole conversation,
   // because that is where the answer will be once it is sent.
-  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward'; itemId: string } | null>(null)
+  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward' | 'draft'; itemId: string } | null>(
+    null,
+  )
   // The draft what is being written has been saved as. Closing the composer
   // saves what was typed, so reopening it — Reply, then Reply to all — has to
   // continue that draft rather than start a second one of the same reply.
@@ -871,10 +876,11 @@ function Reader({
       return
     }
     const wanted = new Set<string>()
-    if (view.items.length > 0) {
-      wanted.add(view.items[0].item.id)
+    const readable = view.items.filter((entry) => !entry.item.draft)
+    if (readable.length > 0) {
+      wanted.add(readable[0].item.id)
     }
-    for (const entry of view.items) {
+    for (const entry of readable) {
       if (!entry.item.seen || entry.item.id === itemId) {
         wanted.add(entry.item.id)
       }
@@ -909,7 +915,11 @@ function Reader({
     return <p className="muted">{t('common.notFound')}</p>
   }
 
-  const newest = entries[0]
+  // What an answer answers is the newest message of the conversation, not
+  // the unsent one at the top of it: a draft is what you are writing, and
+  // replying to your own half-written reply is not a thing anybody means.
+  const newest = entries.find((entry) => !entry.item.draft) ?? entries[0]
+  const draft = entries.find((entry) => entry.item.draft)
   const opened = open ?? new Set([newest.item.id])
   // What the actions act on: the conversation's messages in the folder being
   // read, since that is the row the reader came from. A message of it that
@@ -940,15 +950,17 @@ function Reader({
         <button type="button" className="mailbox-back" onClick={onBack}>
           {t('mailbox.backToList')}
         </button>
-        {newest.item.draft ? (
+        {draft && (
           <button
             type="button"
             className="primary"
-            onClick={() => navigate(`/mailbox/compose?draft=${newest.item.id}`)}
+            disabled={Boolean(writing)}
+            onClick={() => setWriting({ kind: 'draft', itemId: draft.item.id })}
           >
             {t('mailbox.editDraft')}
           </button>
-        ) : (
+        )}
+        {!newest.item.draft && (
           <>
             {/* One answer at a time. Swapping a half-written reply for a
                 forward would either throw away what was typed or leave a
@@ -956,7 +968,7 @@ function Reader({
                 meant: close it, and the draft is kept. */}
             <button
               type="button"
-              className="primary"
+              className={draft ? '' : 'primary'}
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
             >
@@ -1051,10 +1063,10 @@ function Reader({
           </div>
           <MailboxComposer
             key={`${writing.kind}-${writing.itemId}`}
-            replyTo={writing.kind === 'forward' ? null : writing.itemId}
+            replyTo={writing.kind === 'forward' || writing.kind === 'draft' ? null : writing.itemId}
             replyAll={writing.kind === 'replyAll'}
             forwardOf={writing.kind === 'forward' ? writing.itemId : null}
-            draftOf={draftId}
+            draftOf={writing.kind === 'draft' ? writing.itemId : draftId}
             onDraft={setDraftId}
             onSent={() => {
               setWriting(null)
@@ -1070,23 +1082,33 @@ function Reader({
       )}
 
       <ol className="mailbox-thread">
-        {entries.map((entry) => (
-          <ThreadMessage
-            key={entry.item.id}
-            entry={entry}
-            folderId={folder.id}
-            seen={seenOf(entry)}
-            open={opened.has(entry.item.id)}
-            onToggle={() => {
-              const opening = !opened.has(entry.item.id)
-              toggle(entry.item.id)
-              if (opening && !seenOf(entry)) {
-                setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
-                onSeen([entry.item.id], true)
-              }
-            }}
-          />
-        ))}
+        {entries
+          // The draft being written is the composer above, not a row as
+          // well: the same half-written answer twice on one screen.
+          .filter((entry) => !(writing?.kind === 'draft' && writing.itemId === entry.item.id))
+          .map((entry) => (
+            <ThreadMessage
+              key={entry.item.id}
+              entry={entry}
+              folderId={folder.id}
+              seen={seenOf(entry)}
+              open={opened.has(entry.item.id)}
+              onToggle={() => {
+                // A draft is not a message to read, it is an answer to go back
+                // to. Clicking it opens what was written where it was written.
+                if (entry.item.draft) {
+                  setWriting({ kind: 'draft', itemId: entry.item.id })
+                  return
+                }
+                const opening = !opened.has(entry.item.id)
+                toggle(entry.item.id)
+                if (opening && !seenOf(entry)) {
+                  setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
+                  onSeen([entry.item.id], true)
+                }
+              }}
+            />
+          ))}
       </ol>
     </>
   )
@@ -1125,6 +1147,8 @@ function ThreadMessage({
   )
   const who = mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
   const verdict = verdictOf(mail, t)
+  // From, To, Received and what the checks said, when somebody asks for them.
+  const [details, setDetails] = useState(false)
 
   return (
     <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
@@ -1154,26 +1178,42 @@ function ThreadMessage({
         <div className="mailbox-message-body">
           {mail ? (
             <>
-              <dl className="mailbox-pane-meta">
-                <dt>{t('mailbox.from')}</dt>
-                <dd>
-                  {mail.fromName
-                    ? `${mail.fromName} <${mail.from || mail.sender}>`
-                    : mail.from || mail.sender || t('mailbox.unknownSender')}
-                </dd>
-                <dt>{t('mailbox.to')}</dt>
-                <dd>{(mail.recipients ?? []).join(', ')}</dd>
-                <dt>{t('mail.received')}</dt>
-                <dd>{formatTime(mail.receivedAt)}</dd>
-                {verdict && (
-                  <>
-                    <dt>{t('mailDetail.authentication')}</dt>
-                    <dd className={verdict.tone ? `verdict-detail ${verdict.tone}` : 'verdict-detail'}>
-                      {verdict.detail}
-                    </dd>
-                  </>
-                )}
-              </dl>
+              {/* Who it went to, and everything else a click away. Four
+                  labelled rows of From, To, Received and Authentication were
+                  above every message in the conversation, saying at length
+                  what the line above already says and pushing the message
+                  itself down the page. */}
+              <div className="message-addressing">
+                <span className="message-addressing-to">
+                  {t('mailbox.toShort', { recipients: (mail.recipients ?? []).join(', ') })}
+                </span>
+                {/* The one thing here worth seeing without asking: whether
+                    the message is really from who it says. */}
+                <VerdictMark mail={mail} />
+              </div>
+
+              {details && (
+                <dl className="mailbox-pane-meta">
+                  <dt>{t('mailbox.from')}</dt>
+                  <dd>
+                    {mail.fromName
+                      ? `${mail.fromName} <${mail.from || mail.sender}>`
+                      : mail.from || mail.sender || t('mailbox.unknownSender')}
+                  </dd>
+                  <dt>{t('mailbox.to')}</dt>
+                  <dd>{(mail.recipients ?? []).join(', ')}</dd>
+                  <dt>{t('mail.received')}</dt>
+                  <dd>{formatTime(mail.receivedAt)}</dd>
+                  {verdict && (
+                    <>
+                      <dt>{t('mailDetail.authentication')}</dt>
+                      <dd className={verdict.tone ? `verdict-detail ${verdict.tone}` : 'verdict-detail'}>
+                        {verdict.detail}
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
               {content.loading && !content.data ? (
                 <Loading />
               ) : content.error ? (
@@ -1184,6 +1224,18 @@ function ThreadMessage({
                   content={content.data?.GetMailContent}
                   mode="mailbox"
                   menuContainer={menuSlot}
+                  menuExtra={(close) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        close()
+                        setDetails((previous) => !previous)
+                      }}
+                    >
+                      {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
+                    </button>
+                  )}
                 />
               )}
             </>

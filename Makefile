@@ -31,7 +31,10 @@ LDFLAGS := -s -w -extldflags "-static" \
 	-X github.com/ziyan/teanode/internal/version.version=$(VERSION) \
 	-X github.com/ziyan/teanode/internal/version.commit=$(COMMIT)
 
-GOFMTARGS := $(shell find . -mindepth 1 -maxdepth 1 -type d -not -path ./vendor -not -path ./web -not -path ./.git) \
+# Hidden directories are excluded wholesale rather than one at a time: .git
+# was already, and a git worktree left under .claude has its own vendor
+# directory, which made the format check fail on somebody else's upstream code.
+GOFMTARGS := $(shell find . -mindepth 1 -maxdepth 1 -type d -not -path ./vendor -not -path ./web -not -name '.*') \
 	$(shell find . -mindepth 1 -maxdepth 1 -type f -iname '*.go')
 
 help: ## Show available targets

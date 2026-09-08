@@ -191,6 +191,12 @@ type MailboxThread struct {
 	// starring, moving or deleting the row acts on the conversation rather
 	// than on the one message the row happens to show.
 	ItemIDs []string `json:"itemIds"`
+
+	// HasDraft says the conversation has an unsent message in it, anywhere in
+	// the mailbox — a reply begun and left. The draft is in the Drafts
+	// folder while the conversation is being read from the Inbox, so this is
+	// asked of the whole mailbox rather than of the folder listed.
+	HasDraft bool `json:"hasDraft"`
 }
 
 // MailboxItemFlags is what STORE and the web UI change on an item. Nil

@@ -1037,6 +1037,10 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 	if err != nil {
 		return nil, err
 	}
+	drafting, err := self.threadsWithDrafts(folderId, options, threadIds)
+	if err != nil {
+		return nil, err
+	}
 
 	threads := make([]*models.MailboxThread, 0, len(rows))
 	for _, row := range rows {
@@ -1052,6 +1056,7 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 			thread.Participants = count.Participants
 			thread.ItemIDs = count.ItemIDs
 		}
+		thread.HasDraft = drafting[row.ThreadID]
 		threads = append(threads, thread)
 	}
 	return threads, nil
@@ -1069,6 +1074,45 @@ func (self *transaction) CountThreads(folderId string, options *ItemOptions) (in
 	query := self.threadQuery(folderId, options).Distinct("\"mail\".\"thread_id\"")
 	err := query.Count(&count).Error
 	return count, err
+}
+
+// threadsWithDrafts is which of these conversations have an unsent message in
+// them, asked of the whole mailbox rather than of the folder being listed: a
+// reply begun and left is in Drafts while the conversation it answers is read
+// from the Inbox.
+func (self *transaction) threadsWithDrafts(folderId string, options *ItemOptions, threadIds []string) (map[string]bool, error) {
+	mailboxId := ""
+	if options != nil {
+		mailboxId = options.MailboxID
+	}
+	if mailboxId == "" && folderId != "" {
+		folder, err := self.GetFolder(folderId)
+		if err != nil {
+			return nil, err
+		}
+		if folder == nil {
+			return map[string]bool{}, nil
+		}
+		mailboxId = folder.MailboxID
+	}
+	if mailboxId == "" {
+		return map[string]bool{}, nil
+	}
+	var found []string
+	err := self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
+		Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Where("\"mailbox_folder\".\"mailbox_id\" = ? AND \"mailbox_item\".\"draft\" AND \"mail\".\"thread_id\" IN ?", mailboxId, threadIds).
+		Distinct("\"mail\".\"thread_id\"").
+		Pluck("\"mail\".\"thread_id\"", &found).Error
+	if err != nil {
+		return nil, err
+	}
+	drafting := make(map[string]bool, len(found))
+	for _, threadId := range found {
+		drafting[threadId] = true
+	}
+	return drafting, nil
 }
 
 // threadCount is the aggregate over one conversation within a folder.

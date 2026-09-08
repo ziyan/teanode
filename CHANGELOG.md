@@ -17,8 +17,26 @@ Notable changes to TeaNode. The format follows
   may read one: where it came from, every delivery attempt, and the raw
   source.
 
+### Fixed
+
+- A reply saved as a draft belongs to the conversation it answers. The headers
+  that say what a message answers were written when one was sent and not when
+  one was saved, so a half-written reply left the thread it was written in the
+  moment the page was left, and turned up in Drafts as a conversation of its
+  own.
+
 ### Changed
 
+- A conversation says when it holds an unsent message, and shows it — folded,
+  since a draft is something to go back to rather than something to read.
+  Clicking it, or Edit draft, opens what was written where it was written.
+  Reply, reply to all and forward answer the newest message of the
+  conversation rather than your own half-written one.
+- A message says who it was addressed to in one muted line, the way a mail
+  program does. From, To, Received and what the checks found were four
+  labelled rows above every message in the conversation, saying at length what
+  the line above already said; they are behind "Show details" in the message's
+  own menu now.
 - The quoted message a reply or a forward carries is folded away while the
   answer is being written, with a link to unfold it. It is hidden rather than
   removed, so it is still in what is sent — but what is being written is the

@@ -295,6 +295,7 @@ export function MessageContent({
   content,
   mode = 'audit',
   menuContainer,
+  menuExtra,
 }: {
   mailId: string
   content?: MailContent | null
@@ -305,6 +306,11 @@ export function MessageContent({
   // Where the mailbox's menu goes when the page has a row of actions for
   // it to sit in; on its own row above the message otherwise.
   menuContainer?: HTMLElement | null
+  // Items the page around this message wants in that menu — a conversation
+  // puts "show details" there, because who a message was addressed to and
+  // what its checks said belong with the other things about the message that
+  // are a click away rather than always on the screen.
+  menuExtra?: (close: () => void) => React.ReactNode
 }) {
   const { t } = useTranslation()
   const session = useSession()
@@ -409,6 +415,7 @@ export function MessageContent({
                   >
                     {showHeaders ? t('mailDetail.hideHeaders') : t('mailDetail.showHeaders')}
                   </button>
+                  {menuExtra?.(close)}
                   {dark && hasHtml && (
                     <button
                       type="button"
