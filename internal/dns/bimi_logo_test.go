@@ -14,6 +14,11 @@ import (
 // that resolves inside the network they run in — so checking a perfectly
 // correct record would fail with "not a public address" and tell the operator
 // to fix something that is not wrong.
+//
+// Two names count as ours: the one a domain publishes its pictures under,
+// which is what a record written today says, and the server's own, which is
+// what records written before that said. A server called mx1.example.com
+// serving mail.example.com has both.
 func TestALogoOnThisServerIsRecognisedAsOurs(t *testing.T) {
 	t.Parallel()
 
@@ -24,12 +29,34 @@ func TestALogoOnThisServerIsRecognisedAsOurs(t *testing.T) {
 	tests := []struct {
 		name    string
 		address string
+		host    string
 		want    string
 	}{
 		{
+			name:    "the name this domain publishes under, which is what a record says today",
+			address: "https://mail.example.com/.well-known/bimi/01abc.svg",
+			host:    "mail.example.com",
+			want:    "01abc",
+		},
+		{
+			// The node's own name. A record written before the address moved
+			// still says this, and the file is still ours to read.
 			name:    "our own address",
 			address: "https://mail.example.com/.well-known/bimi/01abc.svg",
 			want:    "01abc",
+		},
+		{
+			name:    "a domain whose pictures are on a name of its own",
+			address: "https://images.example.org/.well-known/bimi/01abc.svg",
+			host:    "images.example.org",
+			want:    "01abc",
+		},
+		{
+			// Somebody else's server is somebody else's, whatever this domain
+			// publishes its own pictures under.
+			name:    "another server, while this domain has a picture name",
+			address: "https://vmc.example.net/9e57aa28.svg",
+			host:    "images.example.org",
 		},
 		{
 			name:    "somebody else's server, which is fetched",
@@ -55,8 +82,8 @@ func TestALogoOnThisServerIsRecognisedAsOurs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := verifier.ownLogoID(test.address); got != test.want {
-				t.Errorf("ownLogoID(%q) = %q, want %q", test.address, got, test.want)
+			if got := verifier.ownLogoID(test.address, test.host); got != test.want {
+				t.Errorf("ownLogoID(%q, %q) = %q, want %q", test.address, test.host, got, test.want)
 			}
 		})
 	}

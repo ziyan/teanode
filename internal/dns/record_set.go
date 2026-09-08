@@ -412,7 +412,11 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	}
 	recordSet.Records = append(recordSet.Records, dmarc)
 
-	recordSet.Records = append(recordSet.Records, self.checkBimi(ctx, domain, dmarc))
+	// The name a receiver will fetch the mark from: the domain's own, which is
+	// the one it publishes pictures under, rather than whatever this node
+	// happens to be called.
+	recordSet.Records = append(recordSet.Records,
+		self.checkBimi(ctx, domain, dmarc, configuration.LinkHostFor(domain, domains)))
 
 	log.Debugf("took %s to check the records for %q", time.Since(start), domain.Domain)
 	return recordSet
@@ -430,7 +434,7 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 // page recommends starting with, so every domain here begins unable to use
 // one. Publishing the record and waiting to see what happens is how somebody
 // spends a week finding that out.
-func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmarc *Record) *Record {
+func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmarc *Record, host string) *Record {
 	name := dnsName(bimi.DefaultSelector + "._bimi." + domain.Domain)
 	record := &Record{
 		Type:     "TXT",
@@ -442,7 +446,7 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 	// A value only when there is one to publish. A record with a made-up
 	// address in it is worse than no record offered: the button beside it
 	// copies, and what it would copy is broken.
-	if logo := self.publishedLogo(domain); logo != "" {
+	if logo := self.publishedLogo(domain, host); logo != "" {
 		record.Expected = "v=BIMI1; l=" + logo
 	}
 
@@ -482,7 +486,7 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 	// the three things went wrong is said, because they need different
 	// answers — a wrong address, a server that refuses, or a file the
 	// receiver would reject.
-	if err := self.checkPublishedLogo(ctx, domain, published); err != nil {
+	if err := self.checkPublishedLogo(ctx, domain, published, host); err != nil {
 		record.Blocked = err.Error()
 		return record
 	}
@@ -498,8 +502,8 @@ func (self *verifier) checkBimi(ctx context.Context, domain *models.Domain, dmar
 // servers answer to a name that resolves to an address on somebody's own
 // network. Fetching our own file would then fail with "not a public address"
 // and tell the operator their correct record is wrong.
-func (self *verifier) checkPublishedLogo(ctx context.Context, domain *models.Domain, address string) error {
-	if fileId := self.ownLogoID(address); fileId != "" {
+func (self *verifier) checkPublishedLogo(ctx context.Context, domain *models.Domain, address, host string) error {
+	if fileId := self.ownLogoID(address, host); fileId != "" {
 		content, err := self.readOwnLogo(ctx, domain, fileId)
 		if err != nil {
 			return err
@@ -514,12 +518,33 @@ func (self *verifier) checkPublishedLogo(ctx context.Context, domain *models.Dom
 
 // ownLogoID is the file this server serves, when the address is one of ours,
 // and empty when it names somebody else's server.
-func (self *verifier) ownLogoID(address string) string {
-	prefix := "https://" + self.config.Current().Server.Name + "/.well-known/bimi/"
-	if !strings.HasPrefix(address, prefix) {
-		return ""
+func (self *verifier) ownLogoID(address, host string) string {
+	// Whichever name the record was written with. A domain that published its
+	// mark under one name and later moved to another still has the old
+	// address in DNS, and reading that file from storage is right for the
+	// same reason it was right before: this server has the bytes, and
+	// fetching its own address is what the guard refuses.
+	for _, name := range self.ownLogoHosts(host) {
+		prefix := "https://" + name + "/.well-known/bimi/"
+		if strings.HasPrefix(address, prefix) {
+			return strings.TrimSuffix(strings.TrimPrefix(address, prefix), ".svg")
+		}
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(address, prefix), ".svg")
+	return ""
+}
+
+// ownLogoHosts are the names this server answers a logo address on: the one a
+// record would be written with today, and the server's own, which is what
+// earlier records were written with.
+func (self *verifier) ownLogoHosts(host string) []string {
+	names := make([]string, 0, 2)
+	if host != "" {
+		names = append(names, host)
+	}
+	if name := self.config.Current().Server.Name; name != "" && name != host {
+		names = append(names, name)
+	}
+	return names
 }
 
 // readOwnLogo reads it out of storage, and says the two things that can be
@@ -594,7 +619,13 @@ func (self *verifier) fetchPublishedLogo(ctx context.Context, address string) er
 // The address is on this server rather than on the domain, which is allowed
 // and is the point: a BIMI record may name any HTTPS address, and somebody
 // running a mail server and no web server has nowhere else to put a file.
-func (self *verifier) publishedLogo(domain *models.Domain) string {
+//
+// The name is the one this domain already publishes pictures under, not the
+// name of the node answering. Those are often different: a server called
+// mx1.example.com serves mail.example.com, and mx1 is a name for one machine
+// in a pair while the record in DNS has to keep meaning the same thing after
+// that machine is replaced.
+func (self *verifier) publishedLogo(domain *models.Domain, host string) string {
 	// A verifier can be built to answer questions about names alone, with no
 	// database behind it; the record set is then everything but this row's
 	// value.
@@ -613,7 +644,10 @@ func (self *verifier) publishedLogo(domain *models.Domain) string {
 	if publication == nil {
 		return ""
 	}
-	return "https://" + self.config.Current().Server.Name + api.BimiLogoPath(publication.FileID)
+	if host == "" {
+		host = self.config.Current().Server.Name
+	}
+	return "https://" + host + api.BimiLogoPath(publication.FileID)
 }
 
 // dmarcPolicy reads the p tag out of whichever of a name's TXT records is the

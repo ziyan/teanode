@@ -71,7 +71,10 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
   }
 
   const records = domain.records?.records ?? []
-  const missing = records.filter((record) => !record.verified).length
+  // Optional records do not count as missing: nothing about the mail depends
+  // on them, and a domain with everything published should not be told it is
+  // one short because nobody has uploaded a logo.
+  const missing = records.filter((record) => !record.verified && !record.optional).length
   const newest = data?.ListMails?.[0]
   const pending = data?.ListPendingDeliveries ?? []
   // A delivery that has already been put off to a later attempt is one that

@@ -61,6 +61,18 @@ Notable changes to TeaNode. The format follows
   it for domains the caller is not allowed to see. One query now, for the
   domains that survive the permission filter.
 
+- The address a BIMI record names is the one the domain already publishes its
+  pictures under, rather than the name of the node answering. Those are often
+  different — a server called mx1.example.com serves mail.example.com — and a
+  record in DNS has to keep meaning the same thing after that machine is
+  replaced. A logo published at the old address is still read from storage
+  rather than fetched, so a record written before this keeps verifying.
+
+- A domain with everything published no longer reads as one record short
+  because nobody has uploaded a logo. The domain list and a domain's overview
+  counted optional records as missing; the BIMI row made that visible on every
+  domain at once, but an AAAA record has always counted the same way.
+
 ## [0.14.0] - 2026-09-08
 
 ### Added
