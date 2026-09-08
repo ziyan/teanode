@@ -52,7 +52,11 @@ sample message.
       address. Checked against four real published marks — all four pass — and
       end to end on the dev server: a valid file is stored and served with the
       right headers, one with a script is refused naming the element.
-- [ ] Milestone 3 — verify it the way the other records are verified.
+- [x] (2026-09-08 20:50Z) Milestone 3 — verify it the way the other records
+      are verified. The row resolves the record, reads or fetches the logo it
+      names, and validates it; the three failures are reported separately. A
+      logo this server hosts is read from storage rather than fetched, which
+      `internal/dns/bimi_logo_test.go` pins down.
 - [ ] Milestone 4 — say what a certificate is for, and show the preview.
 - [ ] Milestone 5 — documentation, changelog, deployment.
 
@@ -77,6 +81,15 @@ sample message.
   use the literal title "bimi-svg-tiny-12-ps", so the title a generator writes
   is not always meaningful — worth knowing before showing it to anybody as the
   mark's name.
+
+- Observation: a self-hosted logo cannot be verified by fetching it. The
+  fetch goes through the guard that refuses anything but a public address, and
+  a great many of these servers answer to a name that resolves inside the
+  network they run in — a dev box certainly does. Checking a perfectly correct
+  record would then say "not a public address" and send the operator looking
+  for a fault that is not there. A logo this server hosts is read out of
+  storage instead, and the DNS package is given a function to do that with so
+  it needs to know nothing about where files are kept.
 
 - Observation: the record set is computed on a schedule and cached, so a logo
   uploaded now does not appear in the row until the next sweep — thirty

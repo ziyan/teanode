@@ -711,6 +711,13 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
 		Nameserver:    configuration.DNS.Nameserver,
 		CheckInterval: configuration.DNS.CheckInterval.Duration(),
+		// A BIMI record naming a logo this server hosts is checked by reading
+		// the file rather than by fetching our own address: that fetch
+		// refuses anything but a public address, and this server's own name
+		// often resolves inside the network it runs in.
+		PublishedLogo: func(ctx context.Context, fileId string) ([]byte, error) {
+			return self.storage.GetFile(ctx, fileId)
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the DNS verifier: %w", err)
