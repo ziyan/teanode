@@ -1140,11 +1140,18 @@ function restoreRemoteImages(html: string, mailId: string): string {
 // The source came out of an HTML attribute the server wrote, so an ampersand
 // in a query string arrives as &amp;. Putting that through the proxy verbatim
 // would fetch a different address than the message named.
+//
+// The ampersand is decoded last, and the order is the whole correctness of
+// this. It is the one entity that can spell another: a sender writing
+// &amp;lt; means the four characters "&lt;", and decoding the ampersand first
+// leaves "&lt;" for the next replacement to turn into "<". That is a second
+// decoding the message never asked for, and it lands on a different address
+// again — which is the thing this function exists to prevent.
 function decodeEntities(value: string): string {
   return value
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
 }
