@@ -1,0 +1,36 @@
+# Configuration for gitleaks, which .github/workflows/secrets.yml runs over the
+# whole history.
+#
+# The upstream rules are the useful part; everything here is a correction to
+# them for this repository. Keep this file short. A long allowlist is a
+# scanner nobody trusts, and the point of running a generic detector is that it
+# finds the shapes we did not think to look for.
+
+[extend]
+# Take the default rule set rather than restating it, so a detector added
+# upstream arrives here without a change.
+useDefault = true
+
+[allowlist]
+description = "Vendored code, and the one fake key the tests share"
+
+paths = [
+  # Vendored dependencies are somebody else's code. A finding in them is
+  # theirs to fix and ours to upgrade past, which is what govulncheck already
+  # watches for. scripts/check-secrets.bash skips them for the same reason.
+  '''^vendor/''',
+  '''^web/node_modules/''',
+  '''^web/package-lock\.json$''',
+]
+
+regexes = [
+  # Sixteen hex digits in order, used as a key by every test that needs one.
+  # Being obviously counted rather than generated is what makes it safe to
+  # commit and, unhelpfully, is also what makes a generic detector reach for
+  # it: high entropy is the signal, and this has plenty.
+  '''^0123456789abcdef$''',
+  # The character set an app password is drawn from, in
+  # internal/api/v1api/apigraph/mailbox_apppassword.go. It is the alphabet and
+  # not a password; the letters that read alike are missing from it.
+  '''^abcdefghijkmnpqrstuvwxyz23456789$''',
+]
