@@ -627,3 +627,17 @@ export function MailOpenIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// Stop sending: a bell with a line through it. Not a cross, which reads as
+// "close this", and not the circle with a slash, which is already what
+// reporting junk is drawn as.
+export function BellOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8.7 3.7A6 6 0 0 1 18 9v2c0 .7.1 1.3.4 1.9" />
+      <path d="M6 9v2c0 2-1 3-1 3h11" />
+      <path d="M10.3 21a2 2 0 0 0 3.4 0" />
+      <path d="M2 2l20 20" />
+    </Icon>
+  )
+}

@@ -42,6 +42,7 @@ func (self *mail) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathMailRaw).Methods(http.MethodGet).HandlerFunc(self.rawView)
 	router.Path(api.PathMailAttachment).Methods(http.MethodGet).HandlerFunc(self.attachmentView)
 	router.Path(api.PathMailRemote).Methods(http.MethodGet).HandlerFunc(self.remoteView)
+	router.Path(api.PathSenderLogo).Methods(http.MethodGet).HandlerFunc(self.senderLogoView)
 	return nil
 }
 

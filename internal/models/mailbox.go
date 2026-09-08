@@ -199,6 +199,67 @@ type MailboxThread struct {
 	HasDraft bool `json:"hasDraft"`
 }
 
+// MailboxSubscription is one mailing list a mailbox receives: what it is,
+// how much of it there is, and whether leaving it has been asked for.
+//
+// It is not a stored thing but a grouping of stored things — every message
+// that named the same list — so it exists for as long as there is mail from
+// it. What is stored is the request to leave, which outlives the mail.
+type MailboxSubscription struct {
+	// Key identifies the list: the identifier the list publishes for itself,
+	// or the address it sends from when it publishes none.
+	Key string `json:"key"`
+
+	// Name is what to call it, and From the address the newest message came
+	// from, which is not always what the name says.
+	Name string `json:"name"`
+	From string `json:"from"`
+
+	// Count is how much of it this mailbox holds, Unread how much of that has
+	// not been read.
+	Count  int `json:"count"`
+	Unread int `json:"unread"`
+
+	// LastAt is when the newest arrived and LastItemID which message it is,
+	// so the row opens on something.
+	LastAt     time.Time `json:"lastAt"`
+	LastItemID string    `json:"lastItemId"`
+
+	// LogoDomain is the sending domain whose published logo this server holds,
+	// empty unless there is one to show. Set only when the newest message
+	// proved it came from that domain: a mark shown for mail that failed its
+	// checks is an aid to whoever is pretending to be the sender.
+	LogoDomain string `json:"logoDomain,omitempty"`
+
+	// OneClick is the newest message promising that one request is enough to
+	// leave, and Unsubscribe the addresses it offered to leave by.
+	OneClick    bool     `json:"oneClick"`
+	Unsubscribe []string `json:"unsubscribe"`
+
+	// What this person has already asked for. RequestedAt is when they asked
+	// to leave, nil while they have not; Method is how it was asked —
+	// oneClick, mail, or link for a page they were handed; Failed and Error
+	// say what went wrong when something did.
+	RequestedAt *time.Time `json:"requestedAt,omitempty"`
+	Method      string     `json:"method,omitempty"`
+	Failed      bool       `json:"failed,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
+// How a subscription was left, or asked to be.
+const (
+	// UnsubscribeOneClick is the request RFC 8058 describes: one POST, which
+	// the sender undertook to honour without asking anything further.
+	UnsubscribeOneClick = "oneClick"
+
+	// UnsubscribeMail is a message sent to the address the sender named.
+	UnsubscribeMail = "mail"
+
+	// UnsubscribeLink is a page handed to the reader, because a page that
+	// wants a human cannot be pressed by a server.
+	UnsubscribeLink = "link"
+)
+
 // MailboxItemFlags is what STORE and the web UI change on an item. Nil
 // leaves a flag alone.
 type MailboxItemFlags struct {

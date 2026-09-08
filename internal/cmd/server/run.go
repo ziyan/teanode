@@ -743,6 +743,35 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		scavengeGroup.Wait()
 	})
 
+	// The list headers of mail that arrived before this server read them.
+	// Every message in a mailbox is examined once, in batches, and a pass
+	// that finds nothing costs one query — so this quietly finishes and then
+	// stays out of the way. Two minutes apart, because the mail it is
+	// catching up on has been waiting for months and the reads are somebody
+	// else's storage.
+	listBackfill := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		_, err := backfillMailLists(ctx, self.database, self.storage)
+		return err
+	}, &periodic.Settings{
+		Interval: 2 * time.Minute,
+		Name:     "mailbox:lists",
+	})
+	listBackfill.Start()
+	self.onClose(listBackfill.Stop)
+
+	// The logos sending domains publish for their mail. Fetched here, once
+	// per domain per day, so that showing one does not tell the sender which
+	// address opened which message at what moment.
+	logoFetch := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		_, err := fetchSenderLogos(ctx, self.database, configuration.DNS.Nameserver)
+		return err
+	}, &periodic.Settings{
+		Interval: 10 * time.Minute,
+		Name:     "mailbox:logos",
+	})
+	logoFetch.Start()
+	self.onClose(logoFetch.Stop)
+
 	// Half-finished WebAuthn challenges. In this process unless a Redis is
 	// configured: one instance is the ordinary case, and a challenge that does
 	// not survive a restart costs one retry. Behind a load balancer it has to

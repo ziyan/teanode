@@ -6,6 +6,7 @@ import {
   MailboxFolder,
   MailboxItem,
   MailboxThread,
+  Mail,
   MailboxThreadItem,
   MailboxThreadPage,
   MailboxThreadView,
@@ -16,6 +17,7 @@ import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../co
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  CloseIcon,
   FlagIcon,
   ForwardIcon,
   JunkIcon,
@@ -30,6 +32,7 @@ import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
 import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -65,7 +68,7 @@ const THREADS = `
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
-            id from fromName sender subject recipients receivedAt size kind status
+            id from fromName sender subject recipients receivedAt size kind status logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
@@ -83,11 +86,17 @@ const THREAD = `
           id folderId mailId uid seen flagged answered forwarded draft addedAt
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
+            listKey listName listOneClick logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
           }
         }
       }
     }
+  }`
+
+const UNSUBSCRIBE = `
+  mutation ($mailboxId: String!, $key: String!) {
+    UnsubscribeMailboxSubscription(mailboxId: $mailboxId, key: $key) { key failed error }
   }`
 
 const CONTENT = `
@@ -99,22 +108,22 @@ const CONTENT = `
     }
   }`
 
-const SET_FLAGS = `
+export const SET_FLAGS = `
   mutation ($itemIds: [String!]!, $seen: Boolean, $flagged: Boolean) {
     SetMailboxItemFlags(itemIds: $itemIds, seen: $seen, flagged: $flagged)
   }`
 
-const MOVE = `
+export const MOVE = `
   mutation ($itemIds: [String!]!, $folderId: String!) {
     MoveMailboxItems(itemIds: $itemIds, folderId: $folderId) { id folderId }
   }`
 
-const DELETE = `
+export const DELETE = `
   mutation ($itemIds: [String!]!) {
     DeleteMailboxItems(itemIds: $itemIds)
   }`
 
-const REPORT_JUNK = `
+export const REPORT_JUNK = `
   mutation ($itemIds: [String!]!, $notJunk: Boolean) {
     ReportMailboxJunk(itemIds: $itemIds, notJunk: $notJunk)
   }`
@@ -176,7 +185,8 @@ function dayStart(value: string, plusDays = 0): string | undefined {
 // A toolbar button: an icon, its name in a tooltip, and nothing else on the
 // screen. A mail toolbar is nine verbs, and nine words of them wrapped onto a
 // second line on anything narrower than a laptop.
-function IconAction({
+// Shared for the same reason: a toolbar of these is what both readers are.
+export function IconAction({
   label,
   icon,
   onClick,
@@ -212,7 +222,9 @@ function IconAction({
 // Where to move what is selected: the folders, in a menu the button opens.
 // A native select in a row of icons is a box with a word and an arrow in it,
 // which is the one control on the row that says what it is twice.
-function MoveToMenu({
+// Shared with the subscriptions page, which moves a whole list's mail the
+// same way a conversation is moved.
+export function MoveToMenu({
   targets,
   onMove,
   disabled,
@@ -917,6 +929,10 @@ function Row({
         }}
       >
         <div className="mailbox-row-from">
+          {/* The sender's own mark where they publish one and the message
+              proved it came from them, and their initial otherwise. Who wrote
+              is what the eye looks for first in a list. */}
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
           {who}
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
           {/* An answer begun and left. Worth saying in the list, because the
@@ -995,6 +1011,11 @@ function Reader({
   // saves what was typed, so reopening it — Reply, then Reply to all — has to
   // continue that draft rather than start a second one of the same reply.
   const [draftId, setDraftId] = useState<string | null>(null)
+  // The list this conversation came from, while its way out is being asked
+  // about: leaving one is asked before it is done, because it tells the
+  // sender a person reads this address and cannot be taken back.
+  const [leaving, setLeaving] = useState<Mail | null>(null)
+  const [leaveFailed, setLeaveFailed] = useState<string | null>(null)
 
   const view = thread.data?.GetMailboxThread
   const entries = view?.items ?? []
@@ -1151,6 +1172,17 @@ function Reader({
           disabled={busy}
           onClick={() => onJunk(acting, folder.kind === 'junk')}
         />
+        {/* A newsletter says how to leave it in its headers, so the way out
+            is here rather than in the small print at the bottom of the
+            message. Only when the message named one. */}
+        {newest.item.mail?.listKey && (
+          <IconAction
+            label={t('subscriptions.leave')}
+            icon={<CloseIcon size={16} />}
+            disabled={busy}
+            onClick={() => setLeaving(newest.item.mail ?? null)}
+          />
+        )}
         <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
         <IconAction
           label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
@@ -1160,6 +1192,33 @@ function Reader({
           onClick={() => onDelete(acting)}
         />
       </div>
+
+      {leaving && (
+        <ConfirmDialog
+          title={t('subscriptions.leaveTitle', { name: leaving.listName || leaving.from || '' })}
+          body={t(`subscriptions.leaveBody.${leaving.listOneClick ? 'oneClick' : 'mail'}`)}
+          confirmLabel={t('subscriptions.leave')}
+          busy={busy}
+          error={leaveFailed}
+          onConfirm={async () => {
+            const key = leaving.listKey
+            if (!key) {
+              return
+            }
+            setLeaveFailed(null)
+            try {
+              await graphql(UNSUBSCRIBE, { mailboxId: folder.mailboxId, key })
+              setLeaving(null)
+            } catch (caught) {
+              setLeaveFailed(caught instanceof Error ? caught.message : t('domain.failed'))
+            }
+          }}
+          onClose={() => {
+            setLeaving(null)
+            setLeaveFailed(null)
+          }}
+        />
+      )}
 
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>
@@ -1239,7 +1298,9 @@ function Reader({
 // ThreadMessage is one message of a conversation: a line when it is closed,
 // the message itself when it is open. Its body is fetched only once it is
 // opened, so a conversation of twenty costs one request rather than twenty.
-function ThreadMessage({
+// Exported so that a mailing list is read the way a conversation is: the same
+// component, the same collapsed line for what has been read, the same menu.
+export function ThreadMessage({
   entry,
   folderId,
   seen,
@@ -1279,6 +1340,7 @@ function ThreadMessage({
             at — except the menu at its end, which is a button of its own and
             so sits outside this one rather than inside it. */}
         <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={20} />
           <Tooltip label={mail?.from || mail?.sender || ''}>
             <span className="mailbox-message-who">{who}</span>
           </Tooltip>

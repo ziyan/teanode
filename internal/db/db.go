@@ -116,6 +116,8 @@ type Transaction interface {
 	GroupOperation
 	AuditOperation
 	MailboxOperation
+	SubscriptionQuery
+	BimiQuery
 	IdentityOperation
 
 	DomainUsageOperation

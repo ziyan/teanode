@@ -123,6 +123,10 @@ type ItemOptions struct {
 	// when the folder id given is empty.
 	MailboxID string
 
+	// ListKey lists the mail of one mailing list, the way ThreadID lists the
+	// mail of one conversation.
+	ListKey string
+
 	// From, To and Subject match a part of the header, case-insensitively.
 	From    string
 	To      string
@@ -871,6 +875,9 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 		if options.ThreadID != "" {
 			query = query.Where("\"mail\".\"thread_id\" = ?", options.ThreadID)
 		}
+		if options.ListKey != "" {
+			query = query.Where("\"mail\".\"list_key\" = ?", options.ListKey)
+		}
 		if options.From != "" {
 			query = query.Where("(\"mail\".\"from\" ILIKE ? OR \"mail\".\"sender\" ILIKE ?)", contains(options.From), contains(options.From))
 		}
@@ -907,8 +914,9 @@ func needsMailJoin(options *ItemOptions) bool {
 	if options == nil {
 		return false
 	}
-	return options.Search != "" || options.ThreadID != "" || options.From != "" || options.To != "" ||
-		options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() || options.HasAttachment != nil
+	return options.Search != "" || options.ThreadID != "" || options.ListKey != "" || options.From != "" ||
+		options.To != "" || options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() ||
+		options.HasAttachment != nil
 }
 
 // itemOrder is how a list of items is sorted: within a folder by UID, which is
@@ -1060,6 +1068,192 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 		threads = append(threads, thread)
 	}
 	return threads, nil
+}
+
+// subscriptionRow is what the grouping query returns before the counts.
+type subscriptionRow struct {
+	ListKey string `gorm:"column:list_key"`
+	ItemID  string `gorm:"column:item_id"`
+}
+
+// subscriptionCount is the second query's answer for one list.
+type subscriptionCount struct {
+	ListKey string `gorm:"column:list_key"`
+	Count   int    `gorm:"column:count"`
+	Unread  int    `gorm:"column:unread"`
+}
+
+// subscriptionQuery is the mailbox's mail that belongs to a mailing list.
+//
+// Trash and Junk are left out, and for different reasons. Mail you have
+// thrown away should not be presented as a subscription you have; and mail in
+// Junk is mail nobody agreed to receive, where pressing unsubscribe tells a
+// sender that guessed your address that a person reads it.
+func (self *transaction) subscriptionQuery(mailboxId string) *gorm.DB {
+	return self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
+		Where("\"mailbox_item\".\"folder_id\" IN ("+
+			"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"mailbox_id\" = ? AND \"kind\" NOT IN (?, ?))",
+			mailboxId, string(models.MailboxFolderKindTrash), string(models.MailboxFolderKindJunk)).
+		Where("\"mail\".\"list_key\" <> ''").
+		Where("NOT \"mailbox_item\".\"deleted\"")
+}
+
+// ListSubscriptions is the mailing lists a mailbox receives, one row each,
+// newest first, holding the newest message of each.
+//
+// Written the way ListThreads is, and for the same reasons: a DISTINCT ON
+// picks the newest message of each list in one sort, and a second query counts
+// the rest. One statement would need a window function over every message in
+// the mailbox to carry both.
+func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) ([]*models.MailboxSubscription, error) {
+	inner := self.subscriptionQuery(mailboxId).
+		Select("DISTINCT ON (\"mail\".\"list_key\") \"mail\".\"list_key\" AS list_key, " +
+			"\"mailbox_item\".\"id\" AS item_id, \"mail\".\"received_at\" AS received_at").
+		Order("\"mail\".\"list_key\", \"mail\".\"received_at\" DESC")
+
+	outer := self.tx.Table("(?) AS s", inner).Select("s.list_key, s.item_id").Order("s.received_at DESC")
+	if limit > 0 {
+		outer = outer.Limit(limit)
+	}
+	if offset > 0 {
+		outer = outer.Offset(offset)
+	}
+	var rows []subscriptionRow
+	if err := outer.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []*models.MailboxSubscription{}, nil
+	}
+
+	itemIds := make([]string, 0, len(rows))
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		itemIds = append(itemIds, row.ItemID)
+		keys = append(keys, row.ListKey)
+	}
+
+	var itemModels []mailboxItemModel
+	if err := self.tx.Where("\"id\" IN ?", itemIds).Find(&itemModels).Error; err != nil {
+		return nil, err
+	}
+	items := make(map[string]*models.MailboxItem, len(itemModels))
+	mailIds := make([]string, 0, len(itemModels))
+	for index := range itemModels {
+		item := itemFromModel(&itemModels[index])
+		items[item.ID] = item
+		mailIds = append(mailIds, item.MailID)
+	}
+	mails, err := self.GetMails(mailIds, nil)
+	if err != nil {
+		return nil, err
+	}
+	byMailID := make(map[string]*models.Mail, len(mails))
+	for _, mail := range mails {
+		if mail != nil {
+			byMailID[mail.ID] = mail
+		}
+	}
+
+	var counts []subscriptionCount
+	if err := self.subscriptionQuery(mailboxId).
+		Select("\"mail\".\"list_key\" AS list_key, COUNT(DISTINCT \"mailbox_item\".\"mail_id\") AS count, "+
+			"COUNT(DISTINCT \"mailbox_item\".\"mail_id\") FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread").
+		Where("\"mail\".\"list_key\" IN ?", keys).
+		Group("\"mail\".\"list_key\"").
+		Find(&counts).Error; err != nil {
+		return nil, err
+	}
+	counted := make(map[string]subscriptionCount, len(counts))
+	for _, count := range counts {
+		counted[count.ListKey] = count
+	}
+
+	requests, err := self.listUnsubscribeRequests(mailboxId, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	// The logos this server has already fetched for the domains these lists
+	// write from. Only for mail that passed DMARC, which is checked per row
+	// below: a mark is a claim about who sent something, and a claim on
+	// unproven mail is worth less than no claim at all.
+	senders := make([]string, 0, len(rows))
+	for _, mail := range byMailID {
+		if domain := mail.SenderDomain(); domain != "" {
+			senders = append(senders, domain)
+		}
+	}
+	logos, err := self.ListBimiLogos(senders, "default")
+	if err != nil {
+		return nil, err
+	}
+
+	subscriptions := make([]*models.MailboxSubscription, 0, len(rows))
+	for _, row := range rows {
+		item := items[row.ItemID]
+		if item == nil {
+			continue
+		}
+		mail := byMailID[item.MailID]
+		if mail == nil {
+			continue
+		}
+		subscription := &models.MailboxSubscription{
+			Key:         row.ListKey,
+			Name:        mail.ListName,
+			From:        mail.From,
+			Count:       1,
+			LastAt:      mail.ReceivedAt,
+			LastItemID:  item.ID,
+			OneClick:    mail.ListOneClick,
+			Unsubscribe: splitUnsubscribe(mail.ListUnsubscribe),
+		}
+		if subscription.Name == "" {
+			subscription.Name = row.ListKey
+		}
+		if domain := mail.SenderDomain(); domain != "" && mail.DMARCPassed() {
+			if logo := logos[domain]; logo != nil && logo.ContentType != "" {
+				subscription.LogoDomain = domain
+			}
+		}
+		if count, ok := counted[row.ListKey]; ok {
+			subscription.Count = count.Count
+			subscription.Unread = count.Unread
+		}
+		if request := requests[row.ListKey]; request != nil {
+			subscription.RequestedAt = request.RequestedAt
+			subscription.Method = request.Method
+			subscription.Failed = request.Failed
+			subscription.Error = request.Error
+		}
+		subscriptions = append(subscriptions, subscription)
+	}
+	return subscriptions, nil
+}
+
+// CountSubscriptions is how many lists the mailbox receives, for the count
+// under the list.
+func (self *transaction) CountSubscriptions(mailboxId string) (int64, error) {
+	var count int64
+	err := self.subscriptionQuery(mailboxId).Distinct("\"mail\".\"list_key\"").Count(&count).Error
+	return count, err
+}
+
+// splitUnsubscribe reads back the addresses stored as one column.
+func splitUnsubscribe(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	urls := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			urls = append(urls, trimmed)
+		}
+	}
+	return urls
 }
 
 // CountThreads is how many conversations the folder holds under the same

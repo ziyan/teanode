@@ -292,6 +292,14 @@ export interface Mail {
   from?: string
   fromName?: string
   subject?: string
+  // The mailing list this message came from, when it named one: what the
+  // subscriptions page groups by, and what the button that leaves it needs.
+  listKey?: string
+  listName?: string
+  listOneClick?: boolean
+  // The sending domain whose published logo this server holds, set only when
+  // the message proved it came from that domain.
+  logoDomain?: string
   recipients?: string[]
   status?: string
   kind?: string
