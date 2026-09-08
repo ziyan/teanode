@@ -33,7 +33,16 @@ var deliveryBackoffs = []time.Duration{
 }
 
 // kick off generated deliveries
+//
+// Only the ones that still need making. A delivery into a mailbox is complete
+// by the time it is created — the item is in the folder, inside the same
+// transaction — and attempting it again is what put every mailbox delivery
+// on the retry ladder: deliver() has nothing to do for the kind, so the
+// status it had overwritten with "attempted" stayed that way, and the retry
+// loop picked the row up again every hour or two until it was dropped, with
+// the message sitting in the Inbox the whole time.
 func (self *exchange) goDeliver(ctx context.Context, deliveries []*models.Delivery) {
+	deliveries = pendingDeliveries(deliveries)
 	if len(deliveries) == 0 {
 		return
 	}
@@ -60,8 +69,27 @@ func (self *exchange) goDeliver(ctx context.Context, deliveries []*models.Delive
 	}()
 }
 
+// pendingDeliveries is the deliveries that have not been made yet.
+func pendingDeliveries(deliveries []*models.Delivery) []*models.Delivery {
+	pending := make([]*models.Delivery, 0, len(deliveries))
+	for _, delivery := range deliveries {
+		if delivery.Status == models.DeliveryStatusDelivered {
+			continue
+		}
+		pending = append(pending, delivery)
+	}
+	return pending
+}
+
 // try to deliver one mail
 func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) error {
+	// A mailbox delivery was made when it was created, so there is nothing
+	// to attempt; the row is settled as delivered. Reached by the retry loop,
+	// for the rows that a release before this one left on the ladder.
+	if delivery.Kind == models.DeliveryKindMailbox {
+		return self.settleMailboxDelivery(delivery)
+	}
+
 	// attempt delivery and update status
 	delivery.Status = models.DeliveryStatusAttempted
 	delivery.Error = ""
@@ -496,6 +524,37 @@ func (self *exchange) sendWebhook(ctx context.Context, url, sender, recipient st
 		return 0, fmt.Errorf("mx: webhook failed with status code %d", response.StatusCode)
 	}
 	return uint64(buffer.Len()), nil
+}
+
+// settleMailboxDelivery records that a mailbox delivery is done: delivered,
+// with no retry, no error, and the time it was actually made kept — the
+// item went into the folder when the row was created, not now.
+func (self *exchange) settleMailboxDelivery(delivery *models.Delivery) error {
+	delivery.Status = models.DeliveryStatusDelivered
+	delivery.Error = ""
+	delivery.RetryAt = nil
+	if delivery.DeliveredAt == nil {
+		delivered := delivery.CreatedAt
+		if delivered.IsZero() {
+			delivered = time.Now().In(time.Local)
+		}
+		delivery.DeliveredAt = &delivered
+	}
+	return self.database.Transaction(func(tx db.Transaction) error {
+		_, err := tx.ModifyDelivery(delivery.ID, func(existingDelivery *models.Delivery) error {
+			if existingDelivery.CreatedAt.IsZero() {
+				return fmt.Errorf("mx: delivery already deleted")
+			}
+			existingDelivery.Status = delivery.Status
+			existingDelivery.Error = ""
+			existingDelivery.RetryAt = nil
+			if existingDelivery.DeliveredAt == nil {
+				existingDelivery.DeliveredAt = delivery.DeliveredAt
+			}
+			return nil
+		}, nil)
+		return err
+	})
 }
 
 // periodically re-attempt deliveries
