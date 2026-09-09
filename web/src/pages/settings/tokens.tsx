@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { TrashIcon } from '../../components/icons'
 import { RelativeTime } from '../../components/relativeTime'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -48,9 +50,10 @@ const LIFETIMES = [
 
 export function TokensPage() {
   const { t } = useTranslation()
+  const [includeRevoked, setIncludeRevoked] = useState(false)
   const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListTokens: Token[] }>(TOKENS, { includeRevoked: false }),
-    [],
+    () => graphql<{ ListTokens: Token[] }>(TOKENS, { includeRevoked }),
+    [includeRevoked],
   )
 
   const [adding, setAdding] = useState(false)
@@ -81,9 +84,21 @@ export function TokensPage() {
       <SettingsSection
         description={t('tokens.intro')}
         action={
-          <button className="primary" type="button" onClick={() => setAdding(true)}>
-            {t('tokens.new')}
-          </button>
+          <>
+            {/* What the list shows, changed and looked at, rather than a
+                setting kept: a button, like the one on the sessions page. */}
+            <button
+              type="button"
+              className={includeRevoked ? 'active' : undefined}
+              aria-pressed={includeRevoked}
+              onClick={() => setIncludeRevoked((previous) => !previous)}
+            >
+              {includeRevoked ? t('tokens.hideRevoked') : t('tokens.showRevoked')}
+            </button>
+            <button className="primary" type="button" onClick={() => setAdding(true)}>
+              {t('tokens.new')}
+            </button>
+          </>
         }
       >
         <ErrorMessage error={problem} />
@@ -115,9 +130,18 @@ export function TokensPage() {
               </>
             }
             actions={
-              <button className="link danger" type="button" onClick={() => setRevoking(token)}>
-                {t('tokens.revoke')}
-              </button>
+              token.revoked ? undefined : (
+                <Tooltip label={t('tokens.revoke')}>
+                  <button
+                    className="icon-action danger"
+                    type="button"
+                    aria-label={`${token.name || t('tokens.unnamed')}: ${t('tokens.revoke')}`}
+                    onClick={() => setRevoking(token)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              )
             }
           />
         ))}

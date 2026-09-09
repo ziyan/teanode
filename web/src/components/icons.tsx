@@ -5,11 +5,12 @@
 // together without one looking heavier than the rest, and they take their
 // color from the text around them.
 
-type IconProps = { size?: number }
+type IconProps = { size?: number; className?: string }
 
-function Icon({ size = 18, children }: IconProps & { children: React.ReactNode }) {
+function Icon({ size = 18, className, children }: IconProps & { children: React.ReactNode }) {
   return (
     <svg
+      className={className}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -323,6 +324,17 @@ export function ChevronRightIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="m9 18 6-6-6-6" />
+    </Icon>
+  )
+}
+
+// The same arrow the other way, for a control that puts something back rather
+// than opening it: narrowing the rail moves it to the left, and the arrow
+// should say which way the thing goes.
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
     </Icon>
   )
 }

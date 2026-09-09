@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
@@ -42,6 +43,12 @@ type MailContent struct {
 
 	// Whether the HTML referred to remote images, which are not loaded
 	HasRemoteContent bool `json:"hasRemoteContent"`
+
+	// ImagesAllowed says the reader has already answered the question this
+	// time: they loaded this message's pictures before, or said to load this
+	// list's every time. Asking again would protect nobody — the sender was
+	// told the first time — and reads as the program not paying attention.
+	ImagesAllowed bool `json:"imagesAllowed"`
 
 	// Files attached to the message
 	Attachments []*Attachment `json:"attachments,omitempty"`
@@ -164,7 +171,46 @@ func (self *graph) GetMailContent(ctx context.Context, arguments GetMailContentA
 		return nil, err
 	}
 
-	return renderContent(mail.ID, headers, body)
+	content, err := renderContent(mail.ID, headers, body)
+	if err != nil {
+		return nil, err
+	}
+	if content.HasRemoteContent {
+		allowed, err := self.imagesAllowed(ctx, mail)
+		if err != nil {
+			return nil, err
+		}
+		content.ImagesAllowed = allowed
+	}
+	return content, nil
+}
+
+// imagesAllowed asks whether this reader has already said yes for this
+// message, or for the list it belongs to.
+//
+// The question is about a mailbox rather than about the message, since two
+// people who received the same message answer it separately — so it is asked
+// of the mailboxes this caller owns. An administrator reading mail in the
+// administrative pages owns none of them and is always asked, which is right:
+// they are looking at somebody else's mail.
+func (self *graph) imagesAllowed(ctx context.Context, mail *models.Mail) (bool, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil || principal.User == nil {
+		return false, nil
+	}
+	tx := self.transaction(ctx)
+	mailboxes, err := tx.ListMailboxes(principal.User.ID)
+	if err != nil {
+		return false, err
+	}
+	if len(mailboxes) == 0 {
+		return false, nil
+	}
+	mailboxIds := make([]string, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		mailboxIds = append(mailboxIds, mailbox.ID)
+	}
+	return tx.ImagesAllowedFor(mailboxIds, mail.ID, mail.ListKey)
 }
 
 func renderContent(mailId string, headers []string, body []byte) (*MailContent, error) {

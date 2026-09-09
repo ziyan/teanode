@@ -4,11 +4,13 @@ import { useSearchParams } from 'react-router-dom'
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
+import { EnvelopeTrail } from '../components/envelopeTrail'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
   BellOffIcon,
   InboxOffIcon,
+  PictureIcon,
   JunkIcon,
   MailIcon,
   MailOpenIcon,
@@ -33,7 +35,7 @@ const SUBSCRIPTIONS = `
       total
       subscriptions {
         key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
-        requestedAt method failed error stripped mutedAt
+        requestedAt method failed error stripped mutedAt imagesAt
       }
     }
   }`
@@ -42,8 +44,13 @@ const ONE = `
   query ($mailboxId: String!, $key: String!) {
     GetMailboxSubscription(mailboxId: $mailboxId, key: $key) {
       key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
-      requestedAt method failed error stripped mutedAt
+      requestedAt method failed error stripped mutedAt imagesAt
     }
+  }`
+
+const IMAGES = `
+  mutation ($mailboxId: String!, $key: String!, $show: Boolean!) {
+    ShowMailboxSubscriptionImages(mailboxId: $mailboxId, key: $key, show: $show) { key imagesAt }
   }`
 
 const MUTE = `
@@ -95,6 +102,8 @@ export type Subscription = {
   stripped?: boolean
   // Set while the list is kept out of the Inbox.
   mutedAt?: string | null
+  // Set while this list's pictures are loaded without asking.
+  imagesAt?: string | null
 }
 
 // Which of the three ways of leaving this list offers, which decides what the
@@ -216,6 +225,19 @@ export function MailboxSubscriptionsPage() {
       setProblem(null)
       try {
         await graphql(MUTE, { mailboxId, key, muted })
+        await query.reload()
+      } catch (caught) {
+        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      }
+    },
+    [mailboxId, query, t],
+  )
+
+  const images = useCallback(
+    async (key: string, show: boolean) => {
+      setProblem(null)
+      try {
+        await graphql(IMAGES, { mailboxId, key, show })
         await query.reload()
       } catch (caught) {
         setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
@@ -352,10 +374,14 @@ export function MailboxSubscriptionsPage() {
                 setLeaving(reading)
               }}
               onMute={(muted) => mute(reading.key, muted)}
+              onImages={(show) => images(reading.key, show)}
               onChanged={() => void query.reload()}
             />
           ) : (
-            <p className="mailbox-placeholder">{t('subscriptions.choose')}</p>
+            <div className="mailbox-placeholder">
+              <EnvelopeTrail />
+              <span>{t('subscriptions.choose')}</span>
+            </div>
           )}
         </div>
       </div>
@@ -413,6 +439,7 @@ function SubscriptionReader({
   onBack,
   onLeave,
   onMute,
+  onImages,
   onChanged,
 }: {
   mailboxId: string
@@ -420,6 +447,7 @@ function SubscriptionReader({
   onBack: () => void
   onLeave: () => void
   onMute: (muted: boolean) => Promise<void>
+  onImages: (show: boolean) => Promise<void>
   // Something was moved, deleted or marked: the list beside this shows counts
   // and has to be told.
   onChanged: () => void
@@ -556,6 +584,13 @@ function SubscriptionReader({
           onClick={() => setEmptying(true)}
         />
         <IconAction
+          label={subscription.imagesAt ? t('subscriptions.imagesAsk') : t('subscriptions.imagesAlways')}
+          icon={<PictureIcon size={16} />}
+          className={subscription.imagesAt ? 'active' : undefined}
+          disabled={busy}
+          onClick={() => void onImages(!subscription.imagesAt)}
+        />
+        <IconAction
           label={subscription.mutedAt ? t('subscriptions.unmute') : t('subscriptions.mute')}
           icon={<InboxOffIcon size={16} />}
           className={subscription.mutedAt ? 'active' : undefined}
@@ -609,6 +644,7 @@ function SubscriptionReader({
             entry={entry}
             folderId={entry.folderId}
             seen={seenOf(entry)}
+            allowImages={!!subscription.imagesAt}
             open={opened.has(entry.item.id)}
             onToggle={() => {
               const opening = !opened.has(entry.item.id)

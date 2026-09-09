@@ -101,11 +101,18 @@ func (self *graph) ReadMailboxSubscription(ctx context.Context,
 	// By when each message was written rather than by when it was filed, for
 	// the reason a conversation is: moving a message makes a new item with a
 	// new added_at, and the list would put whatever was last archived first.
+	// The same mail the listing counted. Trash and Junk are left out there —
+	// what you threw away is not a subscription you have, and what a filter
+	// caught is not one you agreed to — and a reader that showed them anyway
+	// disagreed with the count beside the list's own name.
+	deleted := false
 	items, err := tx.ListItems("", &db.ItemOptions{
-		MailboxID:  mailbox.ID,
-		ListKey:    arguments.Key,
-		ByReceived: true,
-		Limit:      threadLimit,
+		MailboxID:    mailbox.ID,
+		ListKey:      arguments.Key,
+		ByReceived:   true,
+		Limit:        threadLimit,
+		Deleted:      &deleted,
+		ExcludeKinds: []models.MailboxFolderKind{models.MailboxFolderKindTrash, models.MailboxFolderKindJunk},
 	})
 	if err != nil {
 		return nil, err
@@ -217,6 +224,49 @@ func (self *graph) archiveInboxMail(tx db.Transaction, mailbox *models.Mailbox, 
 		return 0, err
 	}
 	return len(itemIds), nil
+}
+
+type ShowMailboxSubscriptionImagesArguments struct {
+	// MailboxID of the mailbox the list writes to
+	MailboxID string `json:"mailboxId"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it
+	Key string `json:"key"`
+
+	// Show: true to load this list's pictures without asking, false to go
+	// back to asking
+	Show bool `json:"show"`
+}
+
+// ShowMailboxSubscriptionImages says the pictures in this list's mail may be
+// loaded without asking, every time.
+//
+// The cost is the same as loading them once, repeated: the sender learns the
+// message was opened. A reader who has decided that for a newsletter they
+// read every week should be able to say so once.
+func (self *graph) ShowMailboxSubscriptionImages(ctx context.Context,
+	arguments ShowMailboxSubscriptionImagesArguments) (*models.MailboxSubscription, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(arguments.Key) == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	subscription, err := tx.GetSubscription(mailbox.ID, arguments.Key)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil {
+		return nil, api.ErrNotFound
+	}
+	if err := tx.SetSubscriptionImages(mailbox.ID, subscription.Key, arguments.Show); err != nil {
+		return nil, err
+	}
+	log.Noticef("%s set pictures in %q to %s", operatorName(ctx), subscription.Key,
+		map[bool]string{true: "always load", false: "ask"}[arguments.Show])
+	return tx.GetSubscription(mailbox.ID, subscription.Key)
 }
 
 type GetMailboxSubscriptionArguments struct {

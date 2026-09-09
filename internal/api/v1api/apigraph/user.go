@@ -185,6 +185,19 @@ func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments
 	return describeUser(stored), nil
 }
 
+// selfService says whether this change is one a person may make to their own
+// account without being allowed to administer everybody's.
+//
+// Their own account, and only the parts of it that are about them. Whether an
+// account may sign in and which groups it is in are about what a person may
+// do, and nobody grants themselves that.
+func selfService(own bool, arguments UpdateUserArguments) bool {
+	if !own {
+		return false
+	}
+	return arguments.Disabled == nil && arguments.GroupIDs == nil
+}
+
 type UpdateUserArguments struct {
 	// ID of the User to change
 	UserID string `json:"userId"`
@@ -210,9 +223,24 @@ type UpdateUserArguments struct {
 }
 
 func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	// A person may change their own account without being allowed to
+	// administer everybody's. /settings/profile is the page about you — what
+	// to call you, what you sign in with, where notifications go — and
+	// needing user:manage to use it meant only administrators could correct
+	// their own name.
+	//
+	// Two fields stay administrative whoever asks: whether an account may
+	// sign in, and which groups it is in. Those are about what a person may
+	// do, and nobody grants themselves that.
+	principal, err := self.requireSignedIn(ctx)
 	if err != nil {
 		return nil, err
+	}
+	own := principal.User != nil && principal.User.ID == arguments.UserID
+	if !selfService(own, arguments) {
+		if principal, err = self.requirePermission(ctx, models.PermissionUserManage); err != nil {
+			return nil, err
+		}
 	}
 	if arguments.Username != nil {
 		if err := validateUsername(strings.TrimSpace(*arguments.Username)); err != nil {

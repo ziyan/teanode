@@ -155,6 +155,11 @@ type MailboxItem struct {
 	Draft     bool      `json:"draft"`
 	Deleted   bool      `json:"deleted"` // IMAP's \Deleted, awaiting EXPUNGE
 	AddedAt   time.Time `json:"addedAt"`
+
+	// ImagesAt is when the reader chose to load this message's remote
+	// pictures. Set once and kept, so the choice is not asked for again every
+	// time the message is opened.
+	ImagesAt *time.Time `json:"imagesAt,omitempty"`
 }
 
 // MailboxThread is a conversation as a folder's list shows one: the newest of
@@ -244,6 +249,11 @@ type MailboxSubscription struct {
 	// MutedAt is when the reader asked for this list to stop arriving in the
 	// Inbox. It keeps coming and goes straight to the Archive, read.
 	MutedAt *time.Time `json:"mutedAt,omitempty"`
+
+	// ImagesAt is when the reader said this list's pictures may be loaded
+	// without asking. The cost is the same as loading them once, repeated:
+	// the sender learns each message was opened.
+	ImagesAt *time.Time `json:"imagesAt,omitempty"`
 
 	// What this person has already asked for. RequestedAt is when they asked
 	// to leave, nil while they have not; Method is how it was asked —
@@ -370,6 +380,12 @@ type MailboxContact struct {
 	LastSeenAt    time.Time  `json:"lastSeenAt"`
 	Count         int        `json:"count"`
 	AutoRepliedAt *time.Time `json:"autoRepliedAt,omitempty"`
+
+	// LogoDomain is the sending domain whose published mark this server
+	// holds, empty unless there is one to show. Set only when mail from this
+	// address proved it came from that domain: a mark beside an address whose
+	// mail failed its checks is an aid to whoever is pretending to be them.
+	LogoDomain string `json:"logoDomain,omitempty"`
 }
 
 // MailboxAppPassword is what a mail program signs in with. It belongs to a

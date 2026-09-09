@@ -39,6 +39,10 @@ type SubscriptionQuery interface {
 	// SubscriptionIsMuted is asked by delivery for every message that names a
 	// list, so it is one row by primary key and nothing more.
 	SubscriptionIsMuted(mailboxId, listKey string) (bool, error)
+
+	// SetSubscriptionImages says that this list's pictures may be loaded
+	// without asking, every time, or takes that back.
+	SetSubscriptionImages(mailboxId, listKey string, show bool) error
 }
 
 type mailboxSubscriptionModel struct {
@@ -52,6 +56,7 @@ type mailboxSubscriptionModel struct {
 	Failed      bool
 	Error       string     `gorm:"type:text"`
 	MutedAt     *time.Time `gorm:"column:muted_at"`
+	ImagesAt    *time.Time `gorm:"column:images_at"`
 }
 
 func (self *mailboxSubscriptionModel) TableName() string {
@@ -106,10 +111,17 @@ func (self *transaction) GetSubscription(mailboxId, listKey string) (*models.Mai
 // the mail, so a list muted while it was quiet is still muted when it writes
 // again months later.
 func (self *transaction) SetSubscriptionMuted(mailboxId, listKey string, muted bool) error {
+	return self.setSubscriptionTime(mailboxId, listKey, "muted_at", muted)
+}
+
+// setSubscriptionTime sets or clears one of the row's "when they asked for
+// this" columns, creating the row when there is something to record. Turning
+// something off that was never on is not a row.
+func (self *transaction) setSubscriptionTime(mailboxId, listKey, column string, on bool) error {
 	now := time.Now().In(time.Local)
-	mutedAt := &now
-	if !muted {
-		mutedAt = nil
+	var at *time.Time
+	if on {
+		at = &now
 	}
 
 	var existing []mailboxSubscriptionModel
@@ -120,24 +132,33 @@ func (self *transaction) SetSubscriptionMuted(mailboxId, listKey string, muted b
 	if len(existing) > 0 {
 		return self.tx.Model(&mailboxSubscriptionModel{}).
 			Where("\"id\" = ?", existing[0].ID).
-			Updates(map[string]any{
-				"modified_at": now,
-				"muted_at":    mutedAt,
-			}).Error
+			Updates(map[string]any{"modified_at": now, column: at}).Error
 	}
-	if !muted {
-		// Nothing recorded and nothing asked for: unmuting a list that was
-		// never muted is not a row.
+	if !on {
 		return nil
 	}
-	return self.tx.Create(&mailboxSubscriptionModel{
+	row := &mailboxSubscriptionModel{
 		ID:         security.NewULID(),
 		CreatedAt:  now,
 		ModifiedAt: now,
 		MailboxID:  mailboxId,
 		ListKey:    listKey,
-		MutedAt:    mutedAt,
-	}).Error
+	}
+	switch column {
+	case "muted_at":
+		row.MutedAt = at
+	case "images_at":
+		row.ImagesAt = at
+	}
+	return self.tx.Create(row).Error
+}
+
+// SetSubscriptionImages says the pictures in this list's mail may be loaded
+// without asking. A newsletter is pictures with a few words around them, and a
+// reader who trusts one sender should be able to say so once rather than on
+// every issue.
+func (self *transaction) SetSubscriptionImages(mailboxId, listKey string, show bool) error {
+	return self.setSubscriptionTime(mailboxId, listKey, "images_at", show)
 }
 
 // SubscriptionIsMuted answers the delivery path, which asks for every message

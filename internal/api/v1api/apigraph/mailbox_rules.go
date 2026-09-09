@@ -20,6 +20,9 @@ type MailboxContactMutation interface {
 
 	// Remove a contact; it comes back when that address writes again
 	DeleteMailboxContact(ctx context.Context, arguments DeleteMailboxContactArguments) error
+
+	// Forget several contacts at once, saying how many were removed
+	DeleteMailboxContacts(ctx context.Context, arguments DeleteMailboxContactsArguments) (int, error)
 }
 
 type SaveMailboxContactArguments struct {
@@ -54,6 +57,39 @@ func (self *graph) DeleteMailboxContact(ctx context.Context, arguments DeleteMai
 		return err
 	}
 	return translateError(self.transaction(ctx).DeleteContact(mailbox.ID, arguments.Address))
+}
+
+type DeleteMailboxContactsArguments struct {
+	MailboxID string `json:"mailboxId"`
+
+	// The addresses to forget, as the list gives them
+	Addresses []string `json:"addresses"`
+}
+
+// DeleteMailboxContacts forgets several at once, which is how a list of them
+// is tidied: one at a time is a dialog per row.
+//
+// It reports how many were removed rather than failing on the first address
+// that is already gone — two people tidying the same list should not turn one
+// of them into an error.
+func (self *graph) DeleteMailboxContacts(ctx context.Context, arguments DeleteMailboxContactsArguments) (int, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return 0, err
+	}
+	tx := self.transaction(ctx)
+	removed := 0
+	for _, address := range arguments.Addresses {
+		if strings.TrimSpace(address) == "" {
+			continue
+		}
+		if err := tx.DeleteContact(mailbox.ID, address); err != nil {
+			return removed, translateError(err)
+		}
+		removed++
+	}
+	log.Noticef("%s forgot %d contacts of mailbox %q", operatorName(ctx), removed, mailbox.ID)
+	return removed, nil
 }
 
 type MailboxRulesQuery interface {

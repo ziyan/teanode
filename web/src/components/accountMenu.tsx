@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 
 import { LanguageItems, useTranslation } from '../i18n/i18n'
 import { ConfirmDialog } from './dialog'
-import { LogoutIcon, SettingsIcon, SortIcon } from './icons'
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GridIcon, LogoutIcon, SettingsIcon } from './icons'
 import { MenuButton } from './menuButton'
 import { ThemeItems } from './theme'
 import { SETTINGS_LANDING } from '../pages/settings/nav'
+import { useSession } from '../session'
+import { firstManagementPath } from './sidebar'
 
 // AccountMenu is who you are, at the foot of the rail, and everything that
 // belongs to you rather than to a page: which language, light or dark, the way
@@ -27,6 +29,8 @@ export function AccountMenu({
   username,
   name,
   onLogout,
+  collapsed,
+  onToggleSidebar,
 }: {
   username: string
 
@@ -36,8 +40,16 @@ export function AccountMenu({
   name?: string
 
   onLogout: () => void
+
+  // Whether the rail is narrowed, and how to change it. Absent where there is
+  // nothing to narrow — the drawer on a phone opens and closes by other
+  // means.
+  collapsed?: boolean
+  onToggleSidebar?: () => void
 }) {
   const { t } = useTranslation()
+  const session = useSession()
+  const managePath = firstManagementPath(session.permissions)
   const [signingOut, setSigningOut] = useState(false)
   const displayed = name?.trim() || username
 
@@ -53,22 +65,57 @@ export function AccountMenu({
               {initial(displayed)}
             </span>
             <span className="sidebar-label account-name">{displayed}</span>
+            {/* A single arrow that turns when the menu opens. Two arrows
+                pointing apart is what a sortable column header wears, and it
+                said "this reorders something" on a button that opens a
+                menu. */}
             <span className="sidebar-label account-chevron" aria-hidden="true">
-              <SortIcon size={14} />
+              <ChevronDownIcon size={14} className="chevron" />
             </span>
           </>
         }
         render={(close) => (
           <>
-            <div className="menu-header">{t('nav.signedInAs', { username })}</div>
-            <LanguageItems close={close} />
+            {/* First, because it is the thing done most often here and the
+                only one about the window rather than about the account. It
+                was a row at the foot of the rail, where it was one of the
+                things it was hiding. */}
+            {onToggleSidebar && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={onToggleSidebar}
+                >
+                  {/* Which way the rail is about to go: left to narrow it,
+                      right to bring it back. One arrow for both said the
+                      control did the same thing twice. */}
+                  {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+                  {collapsed ? t('nav.expand') : t('nav.collapse')}
+                </button>
+                <div className="menu-separator" role="separator" />
+              </>
+            )}
+            <LanguageItems />
             <div className="menu-separator" role="separator" />
-            <ThemeItems close={close} />
+            <ThemeItems />
             <div className="menu-separator" role="separator" />
             <Link to={SETTINGS_LANDING} role="menuitem" onClick={close}>
               <SettingsIcon />
               {t('nav.settings')}
             </Link>
+            {/* The way into the management side, beside the account's own
+                settings because the two are the same kind of thing: places
+                that are not the mailbox, entered on purpose. It was a row at
+                the foot of the rail, where it sat among the mailbox's folders
+                looking like one more of them. Only for somebody who has
+                anything to manage. */}
+            {managePath && (
+              <Link to={managePath} role="menuitem" onClick={close}>
+                <GridIcon />
+                {t('nav.manage')}
+              </Link>
+            )}
             <div className="menu-separator" role="separator" />
             <button
               type="button"

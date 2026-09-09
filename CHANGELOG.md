@@ -6,6 +6,87 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Loading a message's remote pictures is remembered. Blocking them by default
+  is right — loading one tells the sender the message was opened, and from
+  roughly where — but asking again every time the same message is reopened
+  protects nobody, since the sender was told the first time. A list can also be
+  trusted once and for all: a newsletter is pictures with a few words around
+  them, and "always show pictures from this list" is one answer instead of one
+  per issue. Both are per mailbox, since two people who received the same
+  message decide separately, and an administrator reading somebody else's mail
+  in the audit pages records nothing and is always asked.
+
+- Keyboard shortcuts for the message you are reading: `e` archive, `r` reply,
+  `a` reply to all, `f` forward, `s` flag, `m` read or unread, `!` junk, `#`
+  delete, `u` back to the list, and `?` for the list of them. Every one is
+  something the toolbar can also do — a shortcut for something with no button
+  is a feature only its author knows about. They are ignored while you are
+  typing, ignored with Ctrl or Cmd held, and ignored behind a dialog, which is
+  the difference between a shortcut and a trap.
+
+- A press leaves a mark. Buttons, menu rows and the sidebar draw a ripple from
+  where the pointer went down, which matters most where the thing pressed does
+  not visibly change. Drawn in a layer of its own rather than inside each
+  control, so no layout anywhere changes to make room for it, and not drawn at
+  all for a reader who asked for less movement.
+
+- Contacts can be chosen and forgotten together, the way messages are: a
+  checkbox on each row, one at the head that takes the page, and the action
+  beside the filter only while something is chosen. Each contact carries the
+  mark its domain publishes when there is one — behind the rule the
+  subscriptions list uses, so a mark is never drawn beside an address whose
+  mail failed its checks.
+
+- Writing a message has a place in the rail, above the Inbox. It is not a
+  folder, so it is not drawn as one.
+
+- An empty reading pane holds the figure from the front page: a dashed line
+  across it with an envelope following, drawn differently every time and
+  already part way along.
+
+### Changed
+
+- "Manage" has moved from the foot of the rail into the account menu, beside
+  Settings. It sat among the mailbox's folders looking like one more of them,
+  when it is the same kind of thing as Settings: somewhere that is not the
+  mailbox, entered on purpose.
+
+- The list of people is a line each: a monogram, what to call them, and what
+  they sign in with. Groups have a page that says what they mean, and when an
+  account was made is not read down a list.
+
+- Sessions are one list rather than two — "this browser" and "other browsers"
+  were two cards holding rows that a badge already told apart. Whether signed
+  out sessions are shown is a button beside "Sign out everywhere" rather than a
+  checkbox under it, and the tokens page has the same button for revoked ones.
+  Revoking a token, and renaming or removing a passkey, are icon buttons like
+  every other row in the program.
+
+### Fixed
+
+- Saving your own profile. The page named the account by its username and the
+  new name by another argument, and the schema had stopped taking either, so
+  the save failed with a GraphQL error and changed nothing. Underneath that,
+  changing your own name needed the permission to administer everybody: your
+  account is now yours to change, except whether it may sign in and which
+  groups it is in, which stay administrative.
+
+- Inserting a link in the rich text editor reloaded the page. The address
+  prompt was a form, the composer around it is a form, and a form inside a form
+  is dropped by the browser while parsing — so the insert button submitted the
+  composer.
+
+- Reading a subscription shows the mail the list counted. Trash and Junk are
+  left out of the count on purpose, and the reader left out neither, so a list
+  said it had three messages and showed five.
+
+- Trusting a list's pictures shows the ones already on the screen, rather than
+  waiting for the list to be opened again.
+
+- The last row of the rail has room under it, instead of touching the edge.
+
 ## [0.16.0] - 2026-09-09
 
 ### Added

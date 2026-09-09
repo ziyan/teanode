@@ -50,6 +50,15 @@ type MailboxOperation interface {
 	CountThreads(folderId string, options *ItemOptions) (int64, error)
 	SetItemFlags(itemIds []string, flags models.MailboxItemFlags) (int64, error)
 
+	// SetItemImages remembers that the reader loaded a message's remote
+	// pictures, so that opening it again does not ask a question they have
+	// already answered.
+	SetItemImages(itemIds []string, show bool) error
+
+	// ImagesAllowedFor says whether this message's pictures may be shown
+	// without asking: allowed for the message, or for the list it came from.
+	ImagesAllowedFor(mailboxIds []string, mailId, listKey string) (bool, error)
+
 	// MoveItems puts items in another folder: new items with that folder's
 	// next UIDs, the old ones expunged, both folders' modseq bumped. Returns
 	// the new items.
@@ -123,6 +132,14 @@ type ItemOptions struct {
 	// when the folder id given is empty.
 	MailboxID string
 
+	// ExcludeKinds leaves out the folders of these kinds. Mail in Trash or
+	// Junk is not part of a subscription — what you threw away is not a
+	// subscription you have, and what a filter caught is not one you agreed
+	// to — so the listing of subscriptions leaves both out, and reading one
+	// has to leave out the same mail or the two disagree about what a list
+	// has sent.
+	ExcludeKinds []models.MailboxFolderKind
+
 	// ListKey lists the mail of one mailing list, the way ThreadID lists the
 	// mail of one conversation.
 	ListKey string
@@ -192,18 +209,19 @@ type mailboxFolderModel struct {
 func (mailboxFolderModel) TableName() string { return "mailbox_folder" }
 
 type mailboxItemModel struct {
-	ID        string    `gorm:"column:id;primaryKey"`
-	FolderID  string    `gorm:"column:folder_id"`
-	MailID    string    `gorm:"column:mail_id"`
-	UID       int64     `gorm:"column:uid"`
-	ModSeq    int64     `gorm:"column:modseq"`
-	Seen      bool      `gorm:"column:seen"`
-	Flagged   bool      `gorm:"column:flagged"`
-	Answered  bool      `gorm:"column:answered"`
-	Forwarded bool      `gorm:"column:forwarded"`
-	Draft     bool      `gorm:"column:draft"`
-	Deleted   bool      `gorm:"column:deleted"`
-	AddedAt   time.Time `gorm:"column:added_at"`
+	ID        string     `gorm:"column:id;primaryKey"`
+	FolderID  string     `gorm:"column:folder_id"`
+	MailID    string     `gorm:"column:mail_id"`
+	UID       int64      `gorm:"column:uid"`
+	ModSeq    int64      `gorm:"column:modseq"`
+	Seen      bool       `gorm:"column:seen"`
+	Flagged   bool       `gorm:"column:flagged"`
+	Answered  bool       `gorm:"column:answered"`
+	Forwarded bool       `gorm:"column:forwarded"`
+	Draft     bool       `gorm:"column:draft"`
+	Deleted   bool       `gorm:"column:deleted"`
+	AddedAt   time.Time  `gorm:"column:added_at"`
+	ImagesAt  *time.Time `gorm:"column:images_at"`
 }
 
 func (mailboxItemModel) TableName() string { return "mailbox_item" }
@@ -332,6 +350,7 @@ func itemFromModel(model *mailboxItemModel) *models.MailboxItem {
 		Draft:     model.Draft,
 		Deleted:   model.Deleted,
 		AddedAt:   model.AddedAt.In(time.Local),
+		ImagesAt:  localTime(model.ImagesAt),
 	}
 }
 
@@ -861,6 +880,23 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	if options.UIDs != nil {
 		query = query.Where("\"mailbox_item\".\"uid\" IN ?", options.UIDs)
 	}
+	if len(options.ExcludeKinds) > 0 {
+		kinds := make([]string, 0, len(options.ExcludeKinds))
+		for _, kind := range options.ExcludeKinds {
+			kinds = append(kinds, string(kind))
+		}
+		// Scoped to the mailbox when one is known, so the subquery is that
+		// mailbox's two or three folders rather than every Trash on the
+		// server.
+		if options.MailboxID != "" {
+			query = query.Where("\"mailbox_item\".\"folder_id\" NOT IN ("+
+				"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"mailbox_id\" = ? AND \"kind\" IN ?)",
+				options.MailboxID, kinds)
+		} else {
+			query = query.Where("\"mailbox_item\".\"folder_id\" NOT IN ("+
+				"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"kind\" IN ?)", kinds)
+		}
+	}
 	if options.Deleted != nil {
 		query = query.Where("\"mailbox_item\".\"deleted\" = ?", *options.Deleted)
 	}
@@ -1229,6 +1265,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			subscription.Failed = request.Failed
 			subscription.Error = request.Error
 			subscription.MutedAt = localTime(request.MutedAt)
+			subscription.ImagesAt = localTime(request.ImagesAt)
 		}
 		subscriptions = append(subscriptions, subscription)
 	}
@@ -1419,6 +1456,55 @@ func (self *transaction) SetItemFlags(itemIds []string, flags models.MailboxItem
 	return changed, nil
 }
 
+// SetItemImages records that the reader chose to load a message's remote
+// pictures, or takes that back.
+//
+// Not an IMAP flag: no mail program has a word for this, and inventing a
+// keyword would put it on the wire for every client to guess at.
+func (self *transaction) SetItemImages(itemIds []string, show bool) error {
+	if len(itemIds) == 0 {
+		return nil
+	}
+	var at *time.Time
+	if show {
+		now := time.Now().In(time.Local)
+		at = &now
+	}
+	return self.tx.Model(&mailboxItemModel{}).Where("\"id\" IN ?", itemIds).
+		Update("images_at", at).Error
+}
+
+// ImagesAllowedFor says whether this mail's pictures have already been asked
+// about and allowed, in any of these mailboxes: by the reader saying so for
+// this message, or by them saying so for the whole list it came from.
+func (self *transaction) ImagesAllowedFor(mailboxIds []string, mailId, listKey string) (bool, error) {
+	if len(mailboxIds) == 0 || mailId == "" {
+		return false, nil
+	}
+
+	var count int64
+	if err := self.tx.Model(&mailboxItemModel{}).
+		Joins("JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Where("\"mailbox_item\".\"mail_id\" = ? AND \"mailbox_item\".\"images_at\" IS NOT NULL", mailId).
+		Where("\"mailbox_folder\".\"mailbox_id\" IN ?", mailboxIds).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	if listKey == "" {
+		return false, nil
+	}
+	if err := self.tx.Model(&mailboxSubscriptionModel{}).
+		Where("\"mailbox_id\" IN ? AND \"list_key\" = ? AND \"images_at\" IS NOT NULL", mailboxIds, listKey).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (self *transaction) MoveItems(itemIds []string, folderId string) ([]*models.MailboxItem, error) {
 	if len(itemIds) == 0 {
 		return nil, nil
@@ -1604,7 +1690,82 @@ func (self *transaction) ListContacts(mailboxId string, prefix string, limit int
 	for index := range rows {
 		contacts = append(contacts, contactFromModel(&rows[index]))
 	}
+	if err := self.attachContactLogos(mailboxId, contacts); err != nil {
+		// A missing mark is a missing picture, not a missing contact.
+		log.Warningf("failed to read the marks for the contacts of %q: %s", mailboxId, err)
+	}
 	return contacts, nil
+}
+
+// attachContactLogos gives each contact the mark its domain publishes, when
+// this server holds one and the mail proves the address is that domain's.
+//
+// The proof matters: the cache is filled from whatever writes to this server,
+// and a mark drawn beside an address whose mail failed its checks would be
+// this program vouching for whoever is pretending to be them. So the newest
+// message from each address is read, and the mark is shown only where that
+// message passed DMARC — the same rule the subscriptions list uses.
+func (self *transaction) attachContactLogos(mailboxId string, contacts []*models.MailboxContact) error {
+	if len(contacts) == 0 {
+		return nil
+	}
+
+	addresses := make([]string, 0, len(contacts))
+	domains := make([]string, 0, len(contacts))
+	for _, contact := range contacts {
+		addresses = append(addresses, contact.Address)
+		if _, domain, found := strings.Cut(contact.Address, "@"); found && domain != "" {
+			domains = append(domains, strings.ToLower(domain))
+		}
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+
+	logos, err := self.ListBimiLogos(domains, "default")
+	if err != nil {
+		return err
+	}
+	if len(logos) == 0 {
+		return nil
+	}
+
+	// The newest message from each of these addresses that this mailbox
+	// holds: one row per address, which is what decides whether the mark is
+	// shown.
+	var newest []mailModel
+	if err := self.tx.Raw(`
+		SELECT DISTINCT ON (lower("mail"."from")) "mail".*
+		FROM "mail"
+		JOIN "mailbox_item" ON "mailbox_item"."mail_id" = "mail"."id"
+		JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
+		WHERE "mailbox_folder"."mailbox_id" = ? AND lower("mail"."from") IN ?
+		ORDER BY lower("mail"."from"), "mail"."received_at" DESC`,
+		mailboxId, addresses).Scan(&newest).Error; err != nil {
+		return err
+	}
+
+	authenticated := make(map[string]bool, len(newest))
+	for index := range newest {
+		mail := getMailFromMailModel(newest[index])
+		if mail.DMARCPassed() {
+			authenticated[strings.ToLower(mail.From)] = true
+		}
+	}
+
+	for _, contact := range contacts {
+		if !authenticated[strings.ToLower(contact.Address)] {
+			continue
+		}
+		_, domain, found := strings.Cut(strings.ToLower(contact.Address), "@")
+		if !found {
+			continue
+		}
+		if logo := logos[domain]; logo != nil && logo.ContentType != "" {
+			contact.LogoDomain = domain
+		}
+	}
+	return nil
 }
 
 func (self *transaction) GetContact(mailboxId, address string) (*models.MailboxContact, error) {

@@ -471,6 +471,9 @@ export interface MailContent {
   text?: string
   html?: string
   hasRemoteContent: boolean
+  // The reader has already said to load them — for this message, or for the
+  // list it came from.
+  imagesAllowed?: boolean
   attachments?: Attachment[]
   headers?: { key: string; value: string }[]
   rawHeaders?: string

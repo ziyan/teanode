@@ -45,6 +45,10 @@
   --accent: #1f1f22;
   --accent-text: #ffffff;
   --accent-hover: #000000;
+  /* The leaf from the mark, and from the front page. Not an accent: the
+     accent here is deliberately not a color. This is for the one drawing that
+     is decoration rather than interface. */
+  --leaf: #729d39;
   --good: #16a34a;
   --bad: #dc2626;
   --warn: #d97706;
@@ -126,6 +130,8 @@
     --accent: #f4f4f5;
     --accent-text: #18181b;
     --accent-hover: #ffffff;
+    /* Lifted off the leaf, which is too dark to read on this ground. */
+    --leaf: #9fca63;
     --good: #4ade80;
     --bad: #f87171;
     --warn: #fbbf24;
@@ -147,6 +153,7 @@
   --accent: #f4f4f5;
   --accent-text: #18181b;
   --accent-hover: #ffffff;
+  --leaf: #9fca63;
   --good: #4ade80;
   --bad: #f87171;
   --warn: #fbbf24;
@@ -361,7 +368,7 @@ td a:hover {
   /* Fixed, and placed from the button's rectangle: it is rendered into the
      body so that a table's scroll container cannot clip it. */
   position: fixed;
-  max-height: min(60vh, 420px);
+  max-height: min(80vh, 640px);
   overflow-y: auto;
   /* Wide enough for a domain name. The trigger is as narrow as its column,
      and the menu is not: it is positioned, so it can be wider than the cell
@@ -763,7 +770,9 @@ a.tile:hover strong {
   overflow: hidden;
   background: var(--rail);
   border-right: 1px solid var(--border);
-  padding-bottom: var(--space-2);
+  /* No padding under the account row: that row has its own, and the two
+     together left the name sitting twice as far from the bottom edge as from
+     the line above it. */
   overflow-y: auto;
 }
 
@@ -2178,6 +2187,10 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Room under the last row. Without it the final item — mailbox settings,
+     at the foot of a long list — sat against the edge of the scrolling area
+     and touched the line under it. */
+  padding-bottom: var(--space-3);
 }
 
 /* The label over a group. Sentence case and quiet: it separates, it is not
@@ -4582,6 +4595,181 @@ p.notice.domain-logo-note {
 }
 /* What was asked of this list, in the colour of an answer rather than of a
    warning: leaving one is a thing that went right. */
+/* The empty reading pane: a sentence with the drawing above it, both held in
+   the middle of the space rather than at the top of it. */
+.mailbox-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-height: 240px;
+  /* None: the line runs to the edges of the pane, and a sentence under it
+     carries its own room. */
+  padding: 0;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+}
+
+/* The pane gives up its padding for a placeholder, so the line reaches the
+   sides. It keeps it for a message, which should not be against the edge. */
+.mailbox-pane:has(> .mailbox-placeholder) {
+  padding: 0;
+}
+
+/* Edge to edge, and no taller than the line it holds. The box was the
+   drawing's own proportions, which left a band of nothing under the wave and
+   pushed the sentence away from it; this crops to the wave instead. */
+.envelope-trail {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 190;
+  max-height: 40%;
+  color: var(--leaf);
+  pointer-events: none;
+}
+
+/* Under the line rather than over it: the drawing is the thing to look at,
+   and the sentence says what to do about it. */
+.mailbox-placeholder > span {
+  padding: 0 var(--space-4);
+}
+
+/* Writing a message, at the head of the folders. It is not one of them: the
+   folders below it hold mail and carry counts, and this makes a message. The
+   accent says so without a second shape in the rail. */
+.sidebar-compose {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* The monogram at the head of a row about a person, so a list of people is
+   found by shape before it is read. Sized to the row rather than to a face:
+   this sits beside one line of text, not above a card. */
+.settings-row-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* What they sign in with, beside what to call them. Set apart by weight and
+   size rather than by a separator, because it is a different kind of fact
+   about the same person. */
+.access-user-username {
+  margin-left: var(--space-2);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* An arrow that turns rather than being replaced.
+   A control that opens something shows which way it goes: down to open, and
+   the same arrow turned over once it is open. Swapping it for a different
+   arrow redraws the button at the moment it is pressed, which reads as a
+   flicker rather than as a movement — and leaves nothing on the screen that
+   shows the two states are one thing. */
+.chevron {
+  transition: transform 180ms ease;
+}
+
+[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
+/* Where presses are drawn. Above the page and untouchable, so nothing it
+   contains can take a click meant for what is underneath. */
+.ripple-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* A copy of the pressed control's box, which is what the circle is clipped
+   to — the control itself is not touched, so no layout anywhere changes to
+   make room for this. */
+.ripple-clip {
+  position: fixed;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ripple {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(0);
+  border-radius: 50%;
+  /* The text colour of whatever was pressed, at the faintest weight that is
+     still visible on both grounds: the mark belongs to the control rather
+     than being a colour of its own. */
+  background: currentColor;
+  opacity: 0.18;
+  animation: ripple-out 450ms ease-out forwards;
+}
+
+@keyframes ripple-out {
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Nothing moves for somebody who asked for less movement. The listener also
+   returns early, so this is the second of two locks on the same door. */
+@media (prefers-reduced-motion: reduce) {
+  .ripple {
+    display: none;
+  }
+}
+
+/* The list of shortcuts, key beside meaning. A definition list because that
+   is what it is, and a grid so the keys line up in a column of their own. */
+.shortcut-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+.shortcut-list > div {
+  display: contents;
+}
+.shortcut-list dt {
+  margin: 0;
+}
+.shortcut-list dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.shortcut-list kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-1);
+  background: var(--surface-sunken, transparent);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  text-align: center;
+}
+
 .subscription-row-left {
   color: var(--muted);
   font-size: 12px;
