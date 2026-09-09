@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-09
+
 ### Added
 
 - The mailbox says what it just did, and offers the way back. Archiving,
