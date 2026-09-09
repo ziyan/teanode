@@ -197,21 +197,18 @@ export function MailboxContactsPage() {
         selected={chosen}
         onSelect={setChosen}
         selectionActions={(addresses) => (
-          <Tooltip label={t('common.delete')}>
-            <button
-              type="button"
-              className="icon-action danger"
-              aria-label={plural(
-                addresses.length,
-                { one: 'contacts.forgetChosenOne', other: 'contacts.forgetChosenOther' },
-                { count: addresses.length },
-              )}
-              disabled={busy}
-              onClick={() => setForgetting(true)}
-            >
-              <TrashIcon size={16} />
-            </button>
-          </Tooltip>
+          // Shaped like the filter button it stands next to, rather than the
+          // small bare icon a row's own actions use: this is a control in a
+          // toolbar, and beside a bordered button with a word in it a 28px
+          // icon reads as something half-drawn.
+          <button type="button" className="danger" disabled={busy} onClick={() => setForgetting(true)}>
+            <TrashIcon size={16} />
+            {plural(
+              addresses.length,
+              { one: 'contacts.forgetChosenOne', other: 'contacts.forgetChosenOther' },
+              { count: addresses.length },
+            )}
+          </button>
         )}
         rows={contacts}
         rowKey={(contact) => contact.address}
