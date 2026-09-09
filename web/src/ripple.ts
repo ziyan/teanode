@@ -37,6 +37,7 @@ const PRESSABLE = [
   // The rows of a list, and of any table whose rows go somewhere.
   '.subscription-row',
   '.mailbox-row',
+  '.access-pick-row',
   'tr.linked',
   // A tile with somewhere to go. One that is only a number is not pressed.
   'a.tile',
@@ -49,17 +50,39 @@ const PRESSABLE = [
 // a mistake rather than as a press.
 
 // Rows where the whole width is the thing being pressed.
-const ROWS = '.subscription-row, .mailbox-row'
+const ROWS = '.subscription-row, .mailbox-row, .access-pick-row, tr.linked'
 
-// The part of such a row that is the row's own label rather than a separate
-// control sitting inside it.
-const ROW_LABELS = '.subscription-row-link, .mailbox-row-link'
+// The controls a row carries that are their own act rather than the row's.
+// Anything else inside a row is the row's label, however it is named — which
+// is the rule, so that a row added later needs nothing added here.
+const ROW_ACTIONS = '.icon-button, .icon-action, input, .row-actions, .mailbox-star'
 
 function pressable(target: EventTarget | null): HTMLElement | null {
-  const element = (target as HTMLElement | null)?.closest?.(PRESSABLE) as HTMLElement | null
-  if (!element || element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true') {
+  const pressed = (target as HTMLElement | null)?.closest?.(PRESSABLE) as HTMLElement | null
+  if (!pressed || pressed.hasAttribute('disabled') || pressed.getAttribute('aria-disabled') === 'true') {
     return null
   }
+
+  // What is being pressed is decided before anything is asked about it. A
+  // row's label is the row: the label is a button, so the nearest match is the
+  // label, and a mark clipped to it stopped two thirds of the way across a row
+  // that had been pressed all the way. What the press means there is "open
+  // this", and that is the whole row.
+  //
+  // A control that is its own act — the star, a checkbox, the pencil at the
+  // end of a row — stays itself: it does something to the row rather than
+  // opening it, and should look like the smaller act it is. Which is the rule
+  // here, rather than a list of label names: anything in a row that is not one
+  // of the row's own controls is the row.
+  //
+  // Asking in the other order was the bug this replaced: the label was judged
+  // on its own borders, found to have none, and refused before anything
+  // noticed it stood for a row.
+  const row = pressed.closest(ROWS) as HTMLElement | null
+  const element =
+    row && (pressed === row || !(pressed.matches(ROW_ACTIONS) || pressed.closest('.row-actions')))
+      ? row
+      : pressed
 
   if (element.closest('.tabs')) {
     return null
@@ -72,35 +95,21 @@ function pressable(target: EventTarget | null): HTMLElement | null {
     return null
   }
 
-  // The rule, rather than a list of exceptions kept by hand: a mark fills a
-  // box, so a control drawn without one has nothing to fill. A link-like
-  // button is a word, an icon button without a border is an icon, and a mark
-  // on either is a rectangle appearing around something that never had one.
-  //
-  // Rows and tiles are exempt because their box is the row or the tile, drawn
-  // by what they sit in rather than by themselves.
+  // A mark fills a box, so a control drawn without one has nothing to fill. A
+  // link-like button is a word, an icon button without a border is an icon,
+  // and a mark on either is a rectangle appearing around something that never
+  // had one. Rows and tiles are exempt: their box is drawn by what they sit
+  // in rather than by themselves.
   if (!element.matches(ALWAYS) && !drawn(element)) {
     return null
   }
 
-  // A row's label is the row. The label is a button, so the nearest match is
-  // the label — and the mark then stopped at the label's edge, two thirds of
-  // the way across, which reads as the row having been half pressed. What the
-  // press means is "open this row", and that is the whole row.
-  //
-  // A control that is its own thing inside the row — the star, a checkbox, an
-  // action — is still itself: pressing it does something to the row rather
-  // than opening it, and it should look like the smaller act it is.
-  const row = element.closest(ROWS) as HTMLElement | null
-  if (row && (element === row || element.matches(ROW_LABELS))) {
-    return row
-  }
   return element
 }
 
 // Things whose box is drawn by what they sit in rather than by themselves, so
 // asking whether they have a border of their own answers the wrong question.
-const ALWAYS = '.subscription-row, .mailbox-row, tr.linked, a.tile, .sidebar a'
+const ALWAYS = ROWS + ', a.tile, .sidebar a'
 
 // drawn says whether a control has a box: a border on any side, or a
 // background that is actually painted.
