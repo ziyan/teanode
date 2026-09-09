@@ -171,7 +171,11 @@ export function LanguagePicker() {
 // language is something somebody chooses once, and once is not worth its own
 // button on every page — it belongs with the rest of what is about the reader
 // rather than about the page.
-export function LanguageItems({ close }: { close: () => void }) {
+// close is optional: a menu that stays open after a choice passes none,
+// which is what the account menu does — the language and the theme are
+// things somebody tries, and trying two should not mean opening the menu
+// twice.
+export function LanguageItems({ close }: { close?: () => void }) {
   const { language, setLanguage } = useTranslation()
 
   return (
@@ -185,7 +189,7 @@ export function LanguageItems({ close }: { close: () => void }) {
           className={code === language ? 'selected' : undefined}
           onClick={() => {
             setLanguage(code)
-            close()
+            close?.()
           }}
         >
           <GlobeIcon />

@@ -133,7 +133,11 @@ export function ThemeToggle() {
 }
 
 // The same options as rows, for a menu that has other things in it too.
-export function ThemeItems({ close }: { close: () => void }) {
+// close is optional: a menu that stays open after a choice passes none,
+// which is what the account menu does — the language and the theme are
+// things somebody tries, and trying two should not mean opening the menu
+// twice.
+export function ThemeItems({ close }: { close?: () => void }) {
   const [theme, setTheme] = useTheme()
   const { t } = useTranslation()
   const order: Theme[] = ['system', 'light', 'dark']
@@ -149,7 +153,7 @@ export function ThemeItems({ close }: { close: () => void }) {
           className={option === theme ? 'selected' : undefined}
           onClick={() => {
             setTheme(option)
-            close()
+            close?.()
           }}
         >
           <ThemeIcon theme={option} />

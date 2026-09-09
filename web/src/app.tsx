@@ -130,6 +130,8 @@ export function App() {
                   <AccountMenu
                     username={session.username}
                     name={session.name}
+                    collapsed={desktop && collapsed}
+                    onToggleSidebar={desktop ? toggleSidebar : undefined}
                     onLogout={async () => {
                       await logout()
                       await refresh()

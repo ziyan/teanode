@@ -88,6 +88,13 @@ function pressable(target: EventTarget | null): HTMLElement | null {
     return null
   }
 
+  // The mark at the head of the rail is a picture that happens to be a link
+  // home. A rectangle spreading out of it reads as the logo being pressed
+  // rather than as somewhere being gone to.
+  if (element.classList.contains('sidebar-brand')) {
+    return null
+  }
+
   // A control whose arrow turns has already said the press landed, and said
   // it better: the turn shows which way the thing went. A mark as well is two
   // answers to one press.

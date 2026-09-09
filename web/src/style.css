@@ -368,7 +368,7 @@ td a:hover {
   /* Fixed, and placed from the button's rectangle: it is rendered into the
      body so that a table's scroll container cannot clip it. */
   position: fixed;
-  max-height: min(60vh, 420px);
+  max-height: min(80vh, 640px);
   overflow-y: auto;
   /* Wide enough for a domain name. The trigger is as narrow as its column,
      and the menu is not: it is positioned, so it can be wider than the cell
@@ -770,7 +770,9 @@ a.tile:hover strong {
   overflow: hidden;
   background: var(--rail);
   border-right: 1px solid var(--border);
-  padding-bottom: var(--space-2);
+  /* No padding under the account row: that row has its own, and the two
+     together left the name sitting twice as far from the bottom edge as from
+     the line above it. */
   overflow-y: auto;
 }
 

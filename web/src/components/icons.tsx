@@ -328,6 +328,17 @@ export function ChevronRightIcon(props: IconProps) {
   )
 }
 
+// The same arrow the other way, for a control that puts something back rather
+// than opening it: narrowing the rail moves it to the left, and the arrow
+// should say which way the thing goes.
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
+    </Icon>
+  )
+}
+
 // A pair of chevrons for an unsorted column, one for the direction in force.
 export function SortIcon({ direction, ...props }: IconProps & { direction?: 'ascending' | 'descending' }) {
   if (direction === 'ascending') {

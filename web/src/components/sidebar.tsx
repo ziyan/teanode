@@ -216,9 +216,10 @@ export function Sidebar({
             across the page: the bar says where you are, and the rail says what
             this is. Collapsed, the mark stays and the word goes. */}
         <div className="sidebar-top">
-          <Link className="sidebar-brand" to="/" onClick={onClose}>
+          {/* The mark alone. The word beside it said what the mark already
+              says, twice, at the top of every page. */}
+          <Link className="sidebar-brand" to="/" onClick={onClose} aria-label={t('app.name')}>
             <Logo size={22} />
-            <span className="sidebar-label">{t('app.name')}</span>
           </Link>
 
           {/* The server has been upgraded under this page, so what is loaded
@@ -414,22 +415,6 @@ export function Sidebar({
             when you use it is a trap. */}
         {(onToggle || account) && (
           <div className="sidebar-account">
-            {onToggle && (
-              <Tooltip label={collapsed ? t('nav.expand') : t('nav.collapse')}>
-                <button
-                  type="button"
-                  className="sidebar-collapse"
-                  aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
-                  aria-expanded={!collapsed}
-                  onClick={onToggle}
-                >
-                  <span className="sidebar-icon">
-                    <ChevronRightIcon size={18} />
-                  </span>
-                  <span className="sidebar-label">{t('nav.collapse')}</span>
-                </button>
-              </Tooltip>
-            )}
             {account}
           </div>
         )}
