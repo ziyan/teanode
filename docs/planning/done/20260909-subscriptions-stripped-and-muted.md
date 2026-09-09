@@ -58,6 +58,28 @@ prints the true total next to the truncated list, which makes it a lie.
       a message that belongs to a list now opens that list rather than asking
       about leaving in a second place.
 
+## Outcomes & Retrospective
+
+All three landed, and two things were learned by measuring rather than by
+reasoning.
+
+The orphan `List-Unsubscribe-Post` recovered exactly the six messages the
+measurement predicted, out of eleven that came through a relay — and the count
+held when the backfill finished on the live server. Widening by proof rather
+than by inference was the right call: the other twenty-three messages with no
+list headers include an Amazon shipping notice and a sign-in alert, and any
+rule loose enough to catch Nextdoor catches those too.
+
+What did not go to plan: reading a subscription used the ordinary item query,
+which leaves out neither Trash nor Junk nor mail marked deleted, while the
+listing leaves out all three. So a list said it had three messages and showed
+five, and throwing one away from inside the list left it sitting there. The
+exclusion is an option on the query now rather than a second hand-built one,
+so the two cannot answer differently again.
+
+What remains: a list whose sender publishes no headers at all is still not a
+subscription, and cannot be. Nothing here guesses from a sending address.
+
 ## Context and Orientation
 
 - `internal/util/mailparse/list.go` — `ParseList(headers, from)`. Returns the
