@@ -122,6 +122,103 @@ func (self *graph) ReadMailboxSubscription(ctx context.Context,
 	return view, nil
 }
 
+// archiveLimit bounds what muting clears out of the Inbox in one go. A list
+// somebody is only now muting can have a great deal of mail there, and this
+// runs inside the request's transaction.
+const archiveLimit = 500
+
+type MuteMailboxSubscriptionArguments struct {
+	// MailboxID of the mailbox the list writes to
+	MailboxID string `json:"mailboxId"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it
+	Key string `json:"key"`
+
+	// Muted: true to keep it out of the Inbox, false to let it back
+	Muted bool `json:"muted"`
+}
+
+// MuteMailboxSubscription keeps a list arriving and stops it being in the way.
+//
+// The other answer to a newsletter, and often the better one. Leaving tells
+// the sender that a person reads this address and cannot be taken back; some
+// lists offer no way out at all; and a reader may want the mail without
+// wanting it first thing. A muted list is filed in the Archive, already read,
+// and is still there to search and to read as a group.
+//
+// Muting also clears what the Inbox is holding from that list, because a
+// reader muting a list while its mail sits in front of them means both.
+func (self *graph) MuteMailboxSubscription(ctx context.Context,
+	arguments MuteMailboxSubscriptionArguments) (*models.MailboxSubscription, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(arguments.Key) == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	subscription, err := tx.GetSubscription(mailbox.ID, arguments.Key)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil {
+		return nil, api.ErrNotFound
+	}
+
+	if err := tx.SetSubscriptionMuted(mailbox.ID, subscription.Key, arguments.Muted); err != nil {
+		return nil, err
+	}
+
+	moved := 0
+	if arguments.Muted {
+		if moved, err = self.archiveInboxMail(tx, mailbox, subscription.Key); err != nil {
+			return nil, err
+		}
+	}
+
+	if arguments.Muted {
+		log.Noticef("%s muted the list %q, and archived %d of its messages from the Inbox",
+			operatorName(ctx), subscription.Key, moved)
+	} else {
+		log.Noticef("%s unmuted the list %q", operatorName(ctx), subscription.Key)
+	}
+	return tx.GetSubscription(mailbox.ID, subscription.Key)
+}
+
+// archiveInboxMail files what the Inbox holds from one list into the Archive,
+// read. It reports how many, and does nothing when the mailbox has no Archive.
+func (self *graph) archiveInboxMail(tx db.Transaction, mailbox *models.Mailbox, key string) (int, error) {
+	inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+	if err != nil || inbox == nil {
+		return 0, err
+	}
+	archive, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindArchive)
+	if err != nil || archive == nil {
+		return 0, err
+	}
+
+	items, err := tx.ListItems(inbox.ID, &db.ItemOptions{ListKey: key, Limit: archiveLimit})
+	if err != nil {
+		return 0, err
+	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+	itemIds := make([]string, 0, len(items))
+	for _, item := range items {
+		itemIds = append(itemIds, item.ID)
+	}
+	seen := true
+	if _, err := tx.SetItemFlags(itemIds, models.MailboxItemFlags{Seen: &seen}); err != nil {
+		return 0, err
+	}
+	if _, err := tx.MoveItems(itemIds, archive.ID); err != nil {
+		return 0, err
+	}
+	return len(itemIds), nil
+}
+
 type GetMailboxSubscriptionArguments struct {
 	// MailboxID of the mailbox to read
 	MailboxID string `json:"mailboxId"`

@@ -6,6 +6,45 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Subscriptions can be muted: the list keeps arriving and stops being in the
+  way, filed in the Archive and already read. The other answer to a newsletter,
+  and often the better one — leaving tells the sender that a person reads this
+  address and cannot be taken back, some lists offer no way out at all, and a
+  reader may want the mail without wanting it first thing. Muting also clears
+  what the Inbox is already holding from that list. Mail the filter called spam
+  still goes to Junk: muting says where mail you asked for should go, and is
+  not a way past the filter.
+
+- Newsletters whose unsubscribe was removed in transit are subscriptions again.
+  A sender never writes `List-Unsubscribe-Post` on its own — it exists only to
+  promise that the address in `List-Unsubscribe` answers a POST — so finding it
+  alone means the address was taken out on the way here, which is what the
+  relays that hide a reader's address do. Measured against a real mailbox, it
+  recovers six of the eleven messages that arrived through one. They group and
+  archive like any other list; what cannot be offered is a way out, and the
+  page says why rather than leaving it looking like the sender withheld one.
+
+### Changed
+
+- A mailing list does not become a contact, and neither does an address that
+  says it takes no replies — no-reply@, do-not-reply@ and the rest. Nobody
+  corresponds with either. They filled completion with addresses that can never
+  be written to and, worse, made the "sender is known" rule true for exactly
+  the mail that rule exists to tell apart from a stranger's.
+
+- A message that belongs to a list opens that list, instead of asking about
+  leaving in a second place with a second dialog. Leaving is one decision made
+  in one place, next to muting and to everything that list has ever sent — and
+  it is drawn with the same icon wherever it is offered, which it was not.
+
+### Fixed
+
+- The subscriptions page pages. It asked for 200 and printed the true total
+  beside them, so a mailbox with more said two different things at once.
+
+
 ## [0.15.1] - 2026-09-09
 
 ### Changed

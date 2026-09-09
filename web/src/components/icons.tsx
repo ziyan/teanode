@@ -628,6 +628,20 @@ export function MailOpenIcon(props: IconProps) {
   )
 }
 
+// Skips the Inbox: the Inbox with a line through it, which is what muting a
+// list does — the mail keeps coming and goes straight to the Archive. Drawn
+// with the same stroke as BellOffIcon beside it, so the pair reads as two
+// answers to the same question rather than two unrelated marks.
+export function InboxOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+      <path d="M2 2l20 20" />
+    </Icon>
+  )
+}
+
 // Stop sending: a bell with a line through it. Not a cross, which reads as
 // "close this", and not the circle with a slash, which is already what
 // reporting junk is drawn as.

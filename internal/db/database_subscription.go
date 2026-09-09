@@ -30,6 +30,15 @@ type SubscriptionQuery interface {
 	// writes the same row: a second attempt after a failure is an attempt,
 	// not a second subscription.
 	RecordUnsubscribe(mailboxId, listKey, method string, failed bool, reason string) error
+
+	// SetSubscriptionMuted turns a list's mail away from the Inbox, or lets it
+	// back. The row outlives the mail, so a list muted while it was quiet is
+	// still muted when it writes again.
+	SetSubscriptionMuted(mailboxId, listKey string, muted bool) error
+
+	// SubscriptionIsMuted is asked by delivery for every message that names a
+	// list, so it is one row by primary key and nothing more.
+	SubscriptionIsMuted(mailboxId, listKey string) (bool, error)
 }
 
 type mailboxSubscriptionModel struct {
@@ -41,7 +50,8 @@ type mailboxSubscriptionModel struct {
 	RequestedAt *time.Time
 	Method      string `gorm:"size:16"`
 	Failed      bool
-	Error       string `gorm:"type:text"`
+	Error       string     `gorm:"type:text"`
+	MutedAt     *time.Time `gorm:"column:muted_at"`
 }
 
 func (self *mailboxSubscriptionModel) TableName() string {
@@ -87,6 +97,60 @@ func (self *transaction) GetSubscription(mailboxId, listKey string) (*models.Mai
 		}
 	}
 	return nil, nil
+}
+
+// SetSubscriptionMuted records that a list should keep arriving and stop being
+// in the way, or that it should stop doing so.
+//
+// The same row the unsubscribe request uses, for the same reason: it outlives
+// the mail, so a list muted while it was quiet is still muted when it writes
+// again months later.
+func (self *transaction) SetSubscriptionMuted(mailboxId, listKey string, muted bool) error {
+	now := time.Now().In(time.Local)
+	mutedAt := &now
+	if !muted {
+		mutedAt = nil
+	}
+
+	var existing []mailboxSubscriptionModel
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"list_key\" = ?", mailboxId, listKey).
+		Limit(1).Find(&existing).Error; err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return self.tx.Model(&mailboxSubscriptionModel{}).
+			Where("\"id\" = ?", existing[0].ID).
+			Updates(map[string]any{
+				"modified_at": now,
+				"muted_at":    mutedAt,
+			}).Error
+	}
+	if !muted {
+		// Nothing recorded and nothing asked for: unmuting a list that was
+		// never muted is not a row.
+		return nil
+	}
+	return self.tx.Create(&mailboxSubscriptionModel{
+		ID:         security.NewULID(),
+		CreatedAt:  now,
+		ModifiedAt: now,
+		MailboxID:  mailboxId,
+		ListKey:    listKey,
+		MutedAt:    mutedAt,
+	}).Error
+}
+
+// SubscriptionIsMuted answers the delivery path, which asks for every message
+// that names a list.
+func (self *transaction) SubscriptionIsMuted(mailboxId, listKey string) (bool, error) {
+	if mailboxId == "" || listKey == "" {
+		return false, nil
+	}
+	var count int64
+	err := self.tx.Model(&mailboxSubscriptionModel{}).
+		Where("\"mailbox_id\" = ? AND \"list_key\" = ? AND \"muted_at\" IS NOT NULL", mailboxId, listKey).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (self *transaction) RecordUnsubscribe(mailboxId, listKey, method string, failed bool, reason string) error {

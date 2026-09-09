@@ -43,6 +43,7 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	// A message under a quarantine policy was accepted rather than refused
 	// because that is what quarantine asks for; this is the quarantine.
 	target := inbox
+	flags := models.MailboxItemFlags{}
 	if isSuspicious(mail) {
 		junk, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindJunk)
 		if err != nil {
@@ -50,6 +51,21 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 		}
 		if junk != nil {
 			target = junk
+		}
+	} else if muted, err := tx.SubscriptionIsMuted(mailbox.ID, mail.ListKey); err != nil {
+		return nil, err
+	} else if muted {
+		// A muted list keeps arriving and stops being in the way: the Archive,
+		// already read. Asked second, because what the filter called spam does
+		// not become a tidy archive — Junk is still where that belongs.
+		archive, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindArchive)
+		if err != nil {
+			return nil, err
+		}
+		if archive != nil {
+			seen := true
+			target = archive
+			flags.Seen = &seen
 		}
 	}
 	// One copy per mailbox, however many aliases point at it. A domain with a
@@ -69,7 +85,7 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 		return nil, nil
 	}
 
-	item, err := tx.AddItem(target.ID, mail.ID, models.MailboxItemFlags{})
+	item, err := tx.AddItem(target.ID, mail.ID, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +107,13 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	}
 	// The sender becomes a contact of the mailbox, for completion and for
 	// the "sender is known" rule.
-	if address, name := senderOf(mail); address != "" {
+	//
+	// Two senders do not: a mailing list, and an address that says in so many
+	// words that it does not take replies. Nobody corresponds with either.
+	// Putting them in the address book fills completion with addresses that
+	// can never be written to and — worse — makes "sender is known" true for
+	// exactly the mail that rule exists to tell apart from a stranger's.
+	if address, name := senderOf(mail); address != "" && mail.ListKey == "" && !noReplyAddress(address) {
 		if err := tx.TouchContact(mailbox.ID, address, name, mail.ReceivedAt); err != nil {
 			return nil, err
 		}
@@ -345,3 +367,25 @@ const (
 	// UID list once.
 	expungeLogRetention = 90 * 24 * time.Hour
 )
+
+// noReplyAddress says whether an address announces that it does not read
+// answers: no-reply@, noreply@, do-not-reply@ and the rest of the family.
+//
+// Matched on the local part with the separators taken out, so that no-reply,
+// no_reply, no.reply and noreply are one thing, and a tag or a suffix after it
+// still matches — noreply-alerts@ is the same promise. A domain is never
+// looked at: mail from a person at a company whose name begins "no" is a
+// person.
+func noReplyAddress(address string) bool {
+	local, _, found := strings.Cut(strings.ToLower(strings.TrimSpace(address)), "@")
+	if !found || local == "" {
+		return false
+	}
+	local = strings.NewReplacer(".", "", "-", "", "_", "", " ", "").Replace(local)
+	for _, prefix := range []string{"noreply", "donotreply", "dontreply", "neverreply", "noanswer"} {
+		if strings.HasPrefix(local, prefix) {
+			return true
+		}
+	}
+	return false
+}
