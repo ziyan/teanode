@@ -9,6 +9,7 @@ import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
 import {
@@ -59,6 +60,7 @@ const KINDS: {
 // description are still a dialog, because they are a form.
 export function RolesTab() {
   const { t } = useTranslation()
+  const toast = useToast()
   const session = useSession()
   const manages = hasPermission(session.permissions, 'role:manage')
   const label = usePermissionLabel()
@@ -88,6 +90,7 @@ export function RolesTab() {
       return true
     } catch (caught) {
       setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
       return false
     } finally {
       setBusy(false)
@@ -139,7 +142,6 @@ export function RolesTab() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
 

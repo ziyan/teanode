@@ -9,6 +9,7 @@ import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
 import {
@@ -51,6 +52,7 @@ const EMPTY_GROUP: GroupDraft = { name: '', description: '', idpGroup: '' }
 // is made rather than held until a Save button at the bottom of a scroll.
 export function GroupsTab() {
   const { t } = useTranslation()
+  const toast = useToast()
   const session = useSession()
   const managesGroups = hasPermission(session.permissions, 'group:manage')
   const managesUsers = hasPermission(session.permissions, 'user:manage')
@@ -89,6 +91,7 @@ export function GroupsTab() {
       return true
     } catch (caught) {
       setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
       return false
     } finally {
       setBusy(false)
@@ -121,7 +124,6 @@ export function GroupsTab() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
 
