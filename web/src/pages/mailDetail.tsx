@@ -24,7 +24,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { useResolvedTheme } from '../components/theme'
 import { hasAnywhere, useSession } from '../session'
 import { MenuButton } from '../components/menuButton'
-import { CloseIcon } from '../components/icons'
+import { CloseIcon, PaperclipIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 
 // Teaching the built-in filter. The classifier is the part that does most of
@@ -300,6 +300,35 @@ export function MailDetailPage() {
 // verdict and the deliveries; the mailbox shows it under the subject line.
 // One component, so that what a message looks like does not depend on which
 // page it is read from.
+// What is attached, in one line: a paperclip, the name, and the size. Each is
+// a real link with a download attribute, so saving one works the way saving
+// anything else in a browser works — right click, middle click, keyboard.
+function Attachments({
+  mailId,
+  attachments,
+}: {
+  mailId: string
+  attachments?: MailContent['attachments']
+}) {
+  const { t } = useTranslation()
+  if (!attachments?.length) {
+    return null
+  }
+  return (
+    <ul className="attachment-strip" aria-label={t('mailDetail.attachments')}>
+      {attachments.map((attachment, index) => (
+        <li key={index}>
+          <a href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`} download={attachment.filename}>
+            <PaperclipIcon size={14} />
+            <span className="attachment-name">{attachment.filename}</span>
+            <span className="muted">{formatBytes(attachment.size)}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function MessageContent({
   mailId,
   content,
@@ -518,6 +547,12 @@ export function MessageContent({
               )}
             </div>
           )}
+          {/* What is attached, above what is written. It was under the
+              message — which for anything with a quoted thread under it meant
+              a screen of somebody else's words between the reader and the
+              file the message was sent to deliver. One line, because the
+              names are the point and the sizes are a detail. */}
+          <Attachments mailId={mailId} attachments={content.attachments} />
           {hasHtml ? (
             <>
               {content.hasRemoteContent && !allowed && (
@@ -538,29 +573,6 @@ export function MessageContent({
           ) : (
             <pre className="message-text">{content.text}</pre>
           )}
-          {content.attachments?.length ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>{t('mailDetail.attachments')}</h3>
-              <table>
-                <tbody>
-                  {content.attachments.map((attachment, index) => (
-                    <tr key={index}>
-                      <td>
-                        <a
-                          href={`/api/v1/mail/${mailId}/attachment/${attachment.index}`}
-                          download={attachment.filename}
-                        >
-                          {attachment.filename}
-                        </a>
-                      </td>
-                      <td className="shrink muted">{attachment.contentType}</td>
-                      <td className="shrink muted">{formatBytes(attachment.size)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
         </>
       ) : (
         <>

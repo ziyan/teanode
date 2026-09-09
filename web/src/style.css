@@ -1034,6 +1034,26 @@ tr:has(.icon-button) > td {
   margin-left: auto;
 }
 
+/* None of these are sentences. "383 messages", "1-50 of 383" — each is one
+   fact, and breaking one across lines to save a few pixels makes it harder to
+   read than the crowding it was meant to relieve. They keep their line and
+   the bar wraps instead. */
+.table-bar > .muted,
+.table-pagination > .muted {
+  white-space: nowrap;
+}
+
+/* On a phone all of it does not fit on one line: the count, the rows control,
+   the range and the two arrows want about 340 pixels of a 356 pixel bar, and
+   flex answers that by shrinking the text rather than the control. So the bar
+   wraps — the count on its own line, the controls under it. */
+@media (max-width: 600px) {
+  .table-bar {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+}
+
 .table-pagination label,
 .table-rows {
   display: flex;
@@ -2049,6 +2069,18 @@ pre.message-text {
     display: none;
   }
 
+  /* A table keeps its shape here and scrolls sideways, which is what a table
+     does when it is wider than the screen. It runs to the edges to make that
+     scroll as long as it can be: the page's padding was holding a table that
+     had none to spare 24 pixels away from the glass. */
+  .table-surface {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
   /* A filter per column needs a column header to sit under, and the table is
      already scrolling sideways here. The filters that matter most stay, in a
      stack above the table. */
@@ -2407,6 +2439,50 @@ body,
   align-items: center;
   gap: var(--space-3);
   flex: 0 0 auto;
+}
+
+/* Boxes inside boxes, on a screen with no room for them.
+   ------------------------------------------------------------------------
+   Measured on a 390px phone: the page gave up 28 pixels of its width, the
+   card inside it another 34, and the row inside that another 34 — a hundred
+   and four pixels, better than a quarter of the screen, spent on the space
+   between three borders that all say the same thing. On a wide screen that
+   nesting reads as structure; on a phone it reads as a column of text that
+   will not fit.
+
+   So on a phone the middle box gives up its own frame. A card at the width of
+   the screen is a band rather than a card, which is what every mail program
+   does at this size, and the rows inside it keep the padding that separates
+   them from each other. */
+@media (max-width: 600px) {
+  .content {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  /* Full width, no side frame: the section's heading and its rows keep the
+     page's own margin instead of adding a second one inside it. */
+  .card,
+  .settings-section.card {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  /* A row inside one of those is already inside the page's margin, so it
+     draws its own separation with less. */
+  .settings-row {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
 }
 
 @media (max-width: 600px) {
@@ -2893,6 +2969,16 @@ a.button.primary:hover {
 
 .richtext-editor {
   min-height: 240px;
+}
+
+/* A reply written inside a conversation starts at the height of a reply, not
+   of a page. It grows as it is typed — the box has no fixed height, so the
+   conversation under it moves down as the message gets longer, which is what
+   every mail program does with an inline reply. Two hundred and forty pixels
+   of empty box above a quoted thread is a page pretending somebody has a lot
+   to say. */
+.mailbox-pane .richtext-editor {
+  min-height: 120px;
 }
 
 /* A signature is three lines and a link, not a message. */
@@ -3573,6 +3659,21 @@ label.check-list-item {
   align-items: center;
   gap: 6px;
 }
+
+/* A name is as long as it is — a list of recipients doubly so — and it used
+   to be a bare run of text in this line, which a flex box cannot shorten. So
+   it pushed everything after it out of the row instead: the count, and the
+   badge saying an answer was begun and left, which is the one thing in the
+   row somebody needs to see. The name gives way now, and the marks stay. */
+.mailbox-row-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mailbox-row-from > :not(.mailbox-row-who) {
+  flex: 0 0 auto;
+}
 .mailbox-row-from,
 .mailbox-row-subject {
   overflow: hidden;
@@ -3694,6 +3795,17 @@ label.check-list-item {
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+}
+
+/* A select holding a number needs the width of a number. The 160px above is
+   for one holding words — "Every status", "The last seven days" — and on a
+   phone it is nearly half the screen, which is how the control that chooses
+   how many rows to show came to push "383 messages" and "1-50 of 383" onto
+   two lines each. Wide enough for the longest of its options, so choosing a
+   different one does not move what is beside it. */
+.select.select-number {
+  min-width: 0;
+  width: 4.75rem;
 }
 
 .select:hover {
@@ -4068,6 +4180,44 @@ label.check-list-item {
     display: none;
   }
 }
+
+/* On a phone the mailbox is not a panel on a page, it is the page. Four
+   frames were drawn between the screen's edge and the message inside it —
+   the page's padding, the mailbox's border, the pane's padding, the
+   message's own box — and each one took a bite out of a width that had none
+   to spare: a message rendered in 302px of a 390px screen.
+   
+   So the outer frames go. The mailbox runs to the edges, the pane keeps
+   enough padding to hold a message off the glass, and the message keeps its
+   own border, because the messages in a thread are separate things and that
+   border is what says so. */
+@media (max-width: 600px) {
+  .mailbox {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  .mailbox-pane {
+    padding: 12px 8px;
+  }
+
+  .mailbox-message-body {
+    padding: 10px 8px;
+  }
+
+  /* And the actions wrap instead of scrolling. Sideways scrolling on a row
+     of icons is a gesture nobody makes on a row of icons: nine actions in a
+     360px pane put 111px of them past the edge, the overflow menu among
+     them, reachable only by dragging a toolbar that does not look draggable.
+     A second line costs one row of height and hides nothing. */
+  .mailbox-pane-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
 .mailbox-actions select,
 .mailbox-pane-actions select {
   width: auto;
@@ -4129,11 +4279,70 @@ label.check-list-item {
 .compose-editor-switch {
   margin: 12px 0 6px;
 }
+/* What is attached to what is being written, as a row of chips rather than a
+   list down the page. A stack of one file per line pushes the buttons that
+   send the message off the bottom of a composer that is already tall, and
+   three files are three words. */
 .attachments-kept ul,
-.attachments ul {
+.attachments ul,
+.uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   list-style: none;
   margin: 6px 0;
   padding: 0;
+}
+
+.attachments-kept li,
+.attachments ul li,
+.uploads li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+/* The name is what is looked for, so it takes the room and it is what gets
+   cut when there is not enough. */
+.attachments-kept li > :first-child,
+.attachments ul li > :first-child,
+.uploads .upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Taking one off is a mark on the chip, not a word beside it. */
+.attachments-kept li button,
+.attachments ul li button {
+  display: inline-flex;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.attachments-kept li button:hover,
+.attachments ul li button:hover {
+  color: var(--bad);
+}
+
+.uploads li.failed {
+  border-color: var(--bad);
+}
+
+.uploads progress {
+  width: 60px;
 }
 
 /* Sign in through an identity provider: one button per provider, under the
@@ -4694,6 +4903,142 @@ p.notice.domain-logo-note {
 @media (prefers-reduced-motion: reduce) {
   .chevron {
     transition: none;
+  }
+}
+
+/* What is attached, above the message rather than under it: one line of
+   names, wrapping when there are more than a line's worth. */
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-strip a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.attachment-strip a:hover {
+  border-color: var(--accent);
+}
+
+/* The name is what is being looked for, so it is the part that gets the room
+   and the part that is cut when there is not enough. */
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where the program says what just happened: at the foot of the window, out
+   of the way of what is being read, and never over the thing that was acted
+   on. Stacked upward, newest nearest the reader. */
+.toasts {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 80;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  /* The strip takes no clicks; each message does. Otherwise an invisible
+     column down the side of the window would swallow them. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(420px, calc(100vw - var(--space-4) * 2));
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text);
+  font-size: 13px;
+  pointer-events: auto;
+  animation: toast-in 140ms ease-out;
+}
+
+/* A failure is marked down the edge rather than by painting the whole thing
+   red: it is being told something, not being stopped. */
+.toast.failed {
+  border-left: 3px solid var(--bad);
+}
+
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The way back, and the only thing here worth a colour. */
+.toast-action {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  border-color: var(--border);
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+/* On a phone the strip is the width of the screen, because 420px of message
+   beside 30px of margin is neither. */
+@media (max-width: 600px) {
+  .toasts {
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
   }
 }
 

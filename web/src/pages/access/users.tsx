@@ -7,6 +7,7 @@ import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
 import { Group, USER_FIELDS, User, listGroups, listUsers } from './common'
@@ -37,6 +38,7 @@ const EMPTY_PERSON: PersonDraft = { username: '', password: '', name: '', email:
 // here joins the server's default group, which the server decides.
 export function UsersTab() {
   const { t } = useTranslation()
+  const toast = useToast()
   const session = useSession()
   const managesUsers = hasPermission(session.permissions, 'user:manage')
 
@@ -64,6 +66,7 @@ export function UsersTab() {
       return true
     } catch (caught) {
       setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
       return false
     } finally {
       setBusy(false)
@@ -88,7 +91,6 @@ export function UsersTab() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
       {loading && !data && <Loading />}
       {error ? <ErrorMessage error={error} /> : null}
 

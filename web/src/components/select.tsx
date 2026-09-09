@@ -44,12 +44,39 @@ export function Select({
   // Positioned from the button's rectangle and rendered into the body, so a
   // dropdown inside a scrolling panel is not clipped to it, and matched to
   // the button's width so it reads as the same control opened.
+  //
+  // Which side it opens on is decided here rather than assumed. The list is
+  // fixed to the window, so a list drawn past the bottom edge cannot be
+  // scrolled to: it is simply gone. The control that chooses how many rows a
+  // table shows sits at the foot of the page, which is exactly where there is
+  // no room below — so when there is more room above, it opens upward, and
+  // either way it is no taller than the room it has and scrolls inside that.
   const place = useCallback(() => {
     const box = trigger.current?.getBoundingClientRect()
     if (!box) {
       return
     }
-    setPosition({ top: box.bottom + 4, left: box.left, minWidth: box.width })
+    const gap = 4
+    const margin = 8
+    const below = window.innerHeight - box.bottom - gap - margin
+    const above = box.top - gap - margin
+    const wanted = list.current?.scrollHeight ?? 0
+    const upward = below < wanted && above > below
+    // Never taller than the stylesheet's own cap, so a long list looks the
+    // same here as it does anywhere else with room to spare.
+    const room = Math.max(80, Math.min(320, upward ? above : below))
+
+    // And it stays inside the window sideways as well, for a list wider than
+    // the button that opened it near the right-hand edge.
+    const width = Math.max(list.current?.offsetWidth ?? 0, box.width)
+    const left = Math.max(margin, Math.min(box.left, window.innerWidth - margin - width))
+
+    setPosition({
+      left,
+      minWidth: box.width,
+      maxHeight: room,
+      ...(upward ? { bottom: window.innerHeight - box.top + gap } : { top: box.bottom + gap }),
+    })
   }, [])
 
   useLayoutEffect(() => {

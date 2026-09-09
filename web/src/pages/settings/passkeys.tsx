@@ -9,6 +9,7 @@ import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { canceled, createCredential, isPasskeySupported } from '../../passkeys'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 
 const PASSKEYS = `
@@ -41,6 +42,7 @@ type Response = { GetPasskeyPolicy: PasskeyPolicy; ListPasskeys: Passkey[] }
 // they have said whether to keep it.
 export function PasskeysPage() {
   const { t } = useTranslation()
+  const toast = useToast()
   const { data, error, loading, reload } = useQuery(() => graphql<Response>(PASSKEYS), [])
 
   const [supported] = useState(isPasskeySupported)
@@ -60,6 +62,7 @@ export function PasskeysPage() {
     } catch (caught) {
       if (!canceled(caught)) {
         setProblem(caught instanceof Error ? caught.message : t('passkeys.failed'))
+      toast.failure(caught, t('passkeys.failed'))
       }
     } finally {
       setBusy(false)
@@ -113,8 +116,6 @@ export function PasskeysPage() {
         {policy?.enabled && supported && full && (
           <p className="muted">{t('passkeys.full', { count: policy.maximumPerUser })}</p>
         )}
-
-        <ErrorMessage error={problem} />
 
         {passkeys.length === 0 ? (
           <SettingsEmpty>{t('passkeys.empty')}</SettingsEmpty>

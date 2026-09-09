@@ -8,6 +8,7 @@ import { useQuery } from '../../components/useQuery'
 import { RelativeTime } from '../../components/relativeTime'
 import { TrashIcon } from '../../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 
 const SESSIONS = `
@@ -39,6 +40,7 @@ type Session = {
 // can be ended without touching the others.
 export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [includeRevoked, setIncludeRevoked] = useState(false)
   const { data, error, loading, reload } = useQuery(
     () => graphql<{ ListSessions: Session[] }>(SESSIONS, { includeRevoked }),
@@ -46,17 +48,15 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
   )
 
   const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
   const [revokingAll, setRevokingAll] = useState(false)
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true)
-    setProblem(null)
     try {
       await work()
       await reload()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('sessions.failed'))
+      toast.failure(caught, t('sessions.failed'))
     } finally {
       setBusy(false)
     }
@@ -75,7 +75,6 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
-      <ErrorMessage error={problem} />
 
       {/* One list, the way the tokens page lists tokens. Two cards said
           "this browser" and "other browsers" about rows that are the same
@@ -129,14 +128,13 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
           busy={busy}
           onConfirm={async () => {
             setBusy(true)
-            setProblem(null)
-            try {
+                    try {
               await graphql(REVOKE_ALL)
               // This browser's session was one of them, so the shell has to
               // notice it is signed out.
               onSignedOut()
             } catch (caught) {
-              setProblem(caught instanceof Error ? caught.message : t('sessions.failed'))
+              toast.failure(caught, t('sessions.failed'))
             } finally {
               setBusy(false)
               setRevokingAll(false)

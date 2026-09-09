@@ -30,6 +30,7 @@ import {
 import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
+import { useToast } from '../components/toast'
 import { EnvelopeTrail } from '../components/envelopeTrail'
 import { Shortcut, useShortcuts } from '../shortcuts'
 import { RelativeTime } from '../components/relativeTime'
@@ -109,9 +110,22 @@ export const SET_FLAGS = `
     SetMailboxItemFlags(itemIds: $itemIds, seen: $seen, flagged: $flagged)
   }`
 
+// What a move gives back: the new item, where it now is, and which message it
+// holds. The last of those is what makes undo possible, since the item's own
+// identifier does not survive the move.
+type MovedItem = { id: string; folderId: string; mailId: string }
+
+// What is in a folder now, which is how a moved message is found again.
+const ITEMS_IN = `
+  query ($folderId: String, $first: Int) {
+    ListMailboxItems(folderId: $folderId, first: $first) {
+      items { id folderId mailId addedAt }
+    }
+  }`
+
 export const MOVE = `
   mutation ($itemIds: [String!]!, $folderId: String!) {
-    MoveMailboxItems(itemIds: $itemIds, folderId: $folderId) { id folderId }
+    MoveMailboxItems(itemIds: $itemIds, folderId: $folderId) { id folderId mailId }
   }`
 
 export const DELETE = `
@@ -188,9 +202,10 @@ export function IconAction({
   onClick,
   disabled,
   className,
-  // The state the action would undo — a flagged conversation, so the flag is
+  // The state the action would undo — a starred conversation, so the star is
   // drawn as set rather than as something to do.
   active,
+  shortcut,
 }: {
   label: string
   icon: React.ReactNode
@@ -198,13 +213,22 @@ export function IconAction({
   disabled?: boolean
   className?: string
   active?: boolean
+  // The key that does the same thing. Said in the tooltip — "Archive (E)" —
+  // because a shortcut nobody is told about belongs to whoever wrote it, and
+  // the place somebody looks to find out what a button does is the place to
+  // say there is a faster way to do it.
+  shortcut?: string
 }) {
+  const described = shortcut ? `${label} (${shortcut.toUpperCase()})` : label
   return (
-    <Tooltip label={label}>
+    <Tooltip label={described}>
       <button
         type="button"
         className={['icon-button', className, active ? 'active' : ''].filter(Boolean).join(' ')}
+        // The label without the key: a screen reader announces the button, and
+        // the keyboard hint is for somebody who can see the pointer.
         aria-label={label}
+        aria-keyshortcuts={shortcut}
         aria-pressed={active}
         disabled={disabled}
         onClick={onClick}
@@ -311,7 +335,8 @@ function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: Mailb
 }
 
 function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: MailboxFolder[]; itemId?: string }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
+  const toast = useToast()
   const navigate = useNavigate()
   const mailboxes = useMailboxes()
   const session = useSession()
@@ -335,6 +360,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [emptying, setEmptying] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [reloadToken, setReloadToken] = useState(0)
 
   const variables = useMemo(
     () => ({
@@ -387,7 +413,12 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   useEffect(() => {
     setSelected(new Set())
     void load()
-  }, [load])
+    // reloadToken is here so that something outside the ordinary flow — undo
+    // putting messages back where they were — can ask for the list again
+    // through the same path the page loads by, rather than calling load()
+    // from a closure that has already served its purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, reloadToken])
 
   // A change to a message's flags is written into the list in place rather
   // than reloaded: the list should not jump under somebody who just marked
@@ -444,17 +475,161 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     })
   }
 
-  const act = async (action: () => Promise<void>) => {
+  // What happened, said once and briefly. An action that worked used to say
+  // nothing at all, and one that failed left a block above the list until
+  // something else replaced it — both are passing facts, and a passing fact
+  // belongs somewhere it can pass.
+  const act = async (action: () => Promise<void>, said?: { message: string; undo?: () => Promise<void> }) => {
     setBusy(true)
     try {
       await action()
       setError(null)
+      if (said) {
+        toast.done(said.message, said.undo ? { label: t('common.undo'), run: said.undo } : undefined)
+      }
     } catch (failure) {
-      setError(failure)
+      toast.failure(failure, t('mailbox.actionFailed'))
     } finally {
       setBusy(false)
       void mailboxes.refresh()
     }
+  }
+
+  // What to read once the open conversation has been dealt with.
+  //
+  // Emptying the pane was the wrong answer: the reason somebody archives what
+  // they are reading is to get to the next one, and being returned to the
+  // list means finding their place again for every message. The next one
+  // down, or the one above when the last was dealt with, or the list itself
+  // when there is nothing left.
+  const openNext = (itemIds: string[]) => {
+    if (!itemId || !itemIds.includes(itemId)) {
+      return
+    }
+    const shown = threads.map((thread) => thread.item.id)
+    const at = shown.indexOf(itemId)
+    const remaining = shown.filter((id) => !itemIds.includes(id))
+    if (remaining.length === 0 || at < 0) {
+      navigate(`/mailbox/${folder.id}`)
+      return
+    }
+    // The first one after it that is still there, and failing that the
+    // nearest one before it.
+    const after = shown.slice(at + 1).find((id) => remaining.includes(id))
+    const before = [...shown.slice(0, at)].reverse().find((id) => remaining.includes(id))
+    const next = after ?? before
+    navigate(next ? `/mailbox/${folder.id}/${next}` : `/mailbox/${folder.id}`)
+  }
+
+  // Moving down the list without the pointer, the way every mail program has
+  // done it for twenty years: j to the next conversation, k to the one above.
+  // They open it rather than moving a highlight, because a highlight that is
+  // not the thing being read is a second idea of "where you are".
+  const stepThrough = (by: number) => {
+    const shown = threads.map((thread) => thread.item.id)
+    if (shown.length === 0) {
+      return
+    }
+    const at = itemId ? shown.indexOf(itemId) : -1
+    const to = at < 0 ? (by > 0 ? 0 : shown.length - 1) : Math.min(Math.max(at + by, 0), shown.length - 1)
+    navigate(`/mailbox/${folder.id}/${shown[to]}`)
+  }
+
+  useShortcuts(
+    useMemo(
+      () => [
+        { key: 'j', label: t('shortcuts.nextConversation'), run: () => stepThrough(1) },
+        { key: 'k', label: t('shortcuts.previousConversation'), run: () => stepThrough(-1) },
+      ],
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [threads, itemId, folder.id, t],
+    ),
+    !busy,
+  )
+
+  // Where each of these messages is now, so that undoing means putting them
+  // back rather than guessing. Read from the list the reader is looking at,
+  // which is the only place that knows.
+  // Where a message was, keyed by the message rather than by the item.
+  //
+  // An item is a message in a folder, and moving one does not move a row: it
+  // makes a new row in the destination and expunges the old, with a new
+  // identifier. So undo cannot put back the ids it was given — they no longer
+  // exist, and asking for them is how undo came to fail silently with "not
+  // found". What survives a move is the message, so that is what the map is
+  // keyed by, and the move says which message each new item holds.
+  const whereTheyWere = (itemIds: string[]): Record<string, string> => {
+    // Everything acted on here is in the folder being read, unless the list
+    // is showing several folders at once — Starred, or a search across the
+    // mailbox — where the row says which one each came from.
+    //
+    // The folder is the floor rather than the row, because the ids come from
+    // whichever part of the page did the acting: the reader hands over the
+    // conversation's messages, which are not the row's own list of them, and
+    // looking them up in the rows found nothing at all. An undo that quietly
+    // does nothing is worse than no undo.
+    const byItem = new Map<string, { mailId: string; folderId: string }>()
+    for (const thread of threads) {
+      byItem.set(thread.item.id, {
+        mailId: thread.item.mailId,
+        folderId: thread.item.folderId || folder.id,
+      })
+    }
+    const places: Record<string, string> = {}
+    for (const id of itemIds) {
+      const known = byItem.get(id)
+      if (known?.mailId) {
+        places[known.mailId] = known.folderId
+      }
+    }
+    return places
+  }
+
+  // Where a message goes back to when the map does not name it. A row knows
+  // only its newest message, and a conversation is acted on whole — so most
+  // of the messages moved are not in the map at all. In a folder they all came
+  // from that folder, which is the answer; a list gathered from several
+  // folders is the exception the map is for.
+  const home = (places: Record<string, string>, mailId: string) => places[mailId] ?? folder.id
+
+  // Putting them back where they were, which may be several folders at once:
+  // a conversation read from Starred can have messages in three.
+  // What a folder gained just now.
+  //
+  // Moving a message makes a new item and expunges the old, so the ids handed
+  // to an action are gone by the time anybody wants to undo it. The message
+  // survives — but a row names only the newest message of its conversation,
+  // and a conversation is acted on whole, so most of what moved cannot be
+  // named that way either.
+  //
+  // What is knowable is what the destination gained: the items filed there
+  // since the moment before the action. Nothing else files mail into Trash,
+  // and the few seconds this covers are the ones between an action and the
+  // undo beside it.
+  const itemsAddedSince = async (folderId: string, since: number): Promise<MovedItem[]> => {
+    const answer = await graphql<{ ListMailboxItems: { items: (MovedItem & { addedAt: string })[] } }>(
+      ITEMS_IN,
+      { folderId, first: 200 },
+    )
+    return (answer.ListMailboxItems?.items ?? []).filter((item) => Date.parse(item.addedAt) >= since)
+  }
+
+  const putBack = async (places: Record<string, string>, moved: MovedItem[]) => {
+    // Group the items the move produced by the folder their message came
+    // from, so a conversation gathered from three folders goes back to three.
+    const byFolder = new Map<string, string[]>()
+    for (const item of moved) {
+      const back = home(places, item.mailId)
+      if (!back || back === item.folderId) {
+        continue
+      }
+      byFolder.set(back, [...(byFolder.get(back) ?? []), item.id])
+    }
+    for (const [folderId, ids] of byFolder) {
+      await graphql(MOVE, { itemIds: ids, folderId })
+    }
+    setReloadToken((previous) => previous + 1)
+    void mailboxes.refresh()
   }
 
   const setFlags = (itemIds: string[], flags: { seen?: boolean; flagged?: boolean }) =>
@@ -469,33 +644,93 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
         }
       }
     })
-  const moveTo = (itemIds: string[], target: string) =>
-    act(async () => {
-      await graphql(MOVE, { itemIds, folderId: target })
-      remove(itemIds)
-      if (itemIds.includes(itemId ?? '')) {
-        navigate(`/mailbox/${folder.id}`)
-      }
-    })
+  const moveTo = (itemIds: string[], target: string) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const archive = folders.find((candidate) => candidate.id === target)?.kind === 'archive'
+    return act(
+      async () => {
+        const answer = await graphql<{ MoveMailboxItems: MovedItem[] }>(MOVE, { itemIds, folderId: target })
+        moved = answer.MoveMailboxItems ?? []
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: archive
+          ? plural(itemIds.length, { one: 'mailbox.saidArchivedOne', other: 'mailbox.saidArchivedOther' }, { count: itemIds.length })
+          : plural(itemIds.length, { one: 'mailbox.saidMovedOne', other: 'mailbox.saidMovedOther' }, { count: itemIds.length }),
+        undo: () => putBack(places, moved),
+      },
+    )
+  }
   // Junk is a move and a lesson at once. Moving without teaching leaves the
   // next one from the same sender in the Inbox; teaching without moving
   // leaves the reader looking at what they have just called junk.
-  const reportJunk = (itemIds: string[], notJunk: boolean) =>
-    act(async () => {
-      await graphql(REPORT_JUNK, { itemIds, notJunk })
-      remove(itemIds)
-      if (itemIds.includes(itemId ?? '')) {
-        navigate(`/mailbox/${folder.id}`)
-      }
-    })
-  const deleteItems = (itemIds: string[]) =>
-    act(async () => {
-      await graphql(DELETE, { itemIds })
-      remove(itemIds)
-      if (itemIds.includes(itemId ?? '')) {
-        navigate(`/mailbox/${folder.id}`)
-      }
-    })
+  const reportJunk = (itemIds: string[], notJunk: boolean) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const began = Date.now() - 1000
+    return act(
+      async () => {
+        await graphql(REPORT_JUNK, { itemIds, notJunk })
+        // Where they went, so undo can find them: reporting junk files it in
+        // Junk, and saying it is not junk puts it back in the Inbox.
+        const landed = folders.find((candidate) => candidate.kind === (notJunk ? 'inbox' : 'junk'))
+        moved = landed ? await itemsAddedSince(landed.id, began) : []
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: notJunk
+          ? plural(itemIds.length, { one: 'mailbox.saidNotJunkOne', other: 'mailbox.saidNotJunkOther' }, { count: itemIds.length })
+          : plural(itemIds.length, { one: 'mailbox.saidJunkOne', other: 'mailbox.saidJunkOther' }, { count: itemIds.length }),
+        // Junk teaches as well as moves, so undoing has to unteach: moving it
+        // back while the filter still believes it was junk leaves the next one
+        // from that sender in the same place.
+        undo: async () => {
+          if (moved.length === 0) {
+            return
+          }
+          // Un-reporting is itself a move — junk goes to Junk, not-junk goes
+          // to the Inbox — so this both unteaches the filter and brings the
+          // messages back. Moving them again afterwards with the ids from
+          // before would ask for items that no longer exist, which is what
+          // "not found" was.
+          const back = Date.now() - 1000
+          await graphql(REPORT_JUNK, { itemIds: moved.map((item) => item.id), notJunk: !notJunk })
+          const returned = folders.find((candidate) => candidate.kind === (notJunk ? 'junk' : 'inbox'))
+          // And on to wherever they actually came from, when that is not
+          // where un-reporting puts them.
+          await putBack(places, returned ? await itemsAddedSince(returned.id, back) : [])
+        },
+      },
+    )
+  }
+  const deleteItems = (itemIds: string[]) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const began = Date.now() - 1000
+    // From the Trash there is no way back: the message is gone rather than
+    // moved, so nothing is offered that cannot be done.
+    const forever = inTrash
+    return act(
+      async () => {
+        await graphql(DELETE, { itemIds })
+        // Deleting from anywhere but the Trash is a move to it, so that is
+        // where the messages are found again.
+        const trash = folders.find((candidate) => candidate.kind === 'trash')
+        moved = forever || !trash ? [] : await itemsAddedSince(trash.id, began)
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: forever
+          ? plural(itemIds.length, { one: 'mailbox.saidDeletedOne', other: 'mailbox.saidDeletedOther' }, { count: itemIds.length })
+          : plural(itemIds.length, { one: 'mailbox.saidTrashedOne', other: 'mailbox.saidTrashedOther' }, { count: itemIds.length }),
+        undo: forever ? undefined : () => putBack(places, moved),
+      },
+    )
+  }
 
   // A chosen conversation is all of its messages in this folder: starring,
   // moving or deleting one means the conversation, which is what the row is.
@@ -760,18 +995,14 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                   return next
                 })
               }
-              href={
-                thread.item.draft
-                  ? `/mailbox/compose?draft=${thread.item.id}`
-                  : `/mailbox/${folder.id}/${thread.item.id}`
-              }
-              onOpen={() =>
-                navigate(
-                  thread.item.draft
-                    ? `/mailbox/compose?draft=${thread.item.id}`
-                    : `/mailbox/${folder.id}/${thread.item.id}`,
-                )
-              }
+              // A draft goes to its conversation like anything else. It used
+              // to open a page of its own, which is the one place in the
+              // program where a half-written reply is shown without the thing
+              // it is replying to — the composer opens inside the
+              // conversation instead, which is where it opens when the reply
+              // is started.
+              href={`/mailbox/${folder.id}/${thread.item.id}`}
+              onOpen={() => navigate(`/mailbox/${folder.id}/${thread.item.id}`)}
               onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
             />
           ))}
@@ -932,7 +1163,9 @@ function Row({
               proved it came from them, and their initial otherwise. Who wrote
               is what the eye looks for first in a list. */}
           <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
-          {who}
+          {/* The name has its own box so that it, and not the marks beside
+              it, is what gives way when the row is narrow. */}
+          <span className="mailbox-row-who">{who}</span>
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
           {/* An answer begun and left. Worth saying in the list, because the
               conversation looks finished otherwise and the half-written reply
@@ -991,6 +1224,16 @@ function Reader({
   const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
     refresh: false,
   })
+
+  // Opening a draft opens the composer on it. The thread is what was asked
+  // for; the draft inside it is what the reader meant.
+  useEffect(() => {
+    const entries = thread.data?.GetMailboxThread?.items ?? []
+    const opened = entries.find((entry) => entry.item.id === itemId)
+    if (opened?.item.draft) {
+      setWriting((previous) => previous ?? { kind: 'draft', itemId: opened.item.id })
+    }
+  }, [thread.data, itemId])
 
   // Which messages are open. Decided once from what arrives — the newest,
   // anything unread, and the one that was clicked — and then it is the
@@ -1162,18 +1405,21 @@ function Reader({
             <IconAction
               label={t('mailbox.reply')}
               icon={<ReplyIcon size={16} />}
+              shortcut="r"
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
             />
             <IconAction
               label={t('mailbox.replyAll')}
               icon={<ReplyAllIcon size={16} />}
+              shortcut="a"
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
             />
             <IconAction
               label={t('mailbox.forward')}
               icon={<ForwardIcon size={16} />}
+              shortcut="f"
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
             />
@@ -1182,6 +1428,7 @@ function Reader({
         <IconAction
           label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
           icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
+          shortcut="m"
           disabled={busy}
           onClick={() => {
             // Anything unread and the button says "Mark read", so that is
@@ -1194,6 +1441,7 @@ function Reader({
         <IconAction
           label={anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
           icon={<FlagIcon size={16} />}
+          shortcut="s"
           active={anyFlagged}
           disabled={busy}
           onClick={() => {
@@ -1208,6 +1456,7 @@ function Reader({
           <IconAction
             label={t('mailbox.archive')}
             icon={<ArchiveIcon size={16} />}
+            shortcut="e"
             disabled={busy}
             onClick={() => onMove(acting, archive.id)}
           />
@@ -1215,6 +1464,7 @@ function Reader({
         <IconAction
           label={folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
           icon={<JunkIcon size={16} />}
+          shortcut="!"
           disabled={busy}
           onClick={() => onJunk(acting, folder.kind === 'junk')}
         />
@@ -1236,6 +1486,7 @@ function Reader({
           label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
           icon={<TrashIcon size={16} />}
           className="danger"
+          shortcut="#"
           disabled={busy}
           onClick={() => onDelete(acting)}
         />

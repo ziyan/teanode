@@ -9,6 +9,7 @@ import { TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
+import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 
 const LIST = `
@@ -58,6 +59,7 @@ const TEMPLATE_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/
 
 export function TemplatesTab() {
   const { t, plural } = useTranslation()
+  const toast = useToast()
   const { domainId = '' } = useParams()
   const navigate = useNavigate()
   const { data, error, loading, reload } = useQuery(() => graphql<Response>(LIST, { domainId }), [domainId], {
@@ -81,6 +83,7 @@ export function TemplatesTab() {
       await reload()
     } catch (caught) {
       setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
@@ -108,7 +111,6 @@ export function TemplatesTab() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
 
       <SettingsSection
         title={t('templates.title')}

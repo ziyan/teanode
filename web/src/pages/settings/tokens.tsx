@@ -8,6 +8,7 @@ import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 
 const TOKENS = `
@@ -50,6 +51,7 @@ const LIFETIMES = [
 
 export function TokensPage() {
   const { t } = useTranslation()
+  const toast = useToast()
   const [includeRevoked, setIncludeRevoked] = useState(false)
   const { data, error, loading, reload } = useQuery(
     () => graphql<{ ListTokens: Token[] }>(TOKENS, { includeRevoked }),
@@ -72,6 +74,7 @@ export function TokensPage() {
       await reload()
     } catch (caught) {
       setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
@@ -101,7 +104,6 @@ export function TokensPage() {
           </>
         }
       >
-        <ErrorMessage error={problem} />
         {loading && !data && <Loading />}
         {error ? <ErrorMessage error={error} /> : null}
         {data && tokens.length === 0 && <SettingsEmpty>{t('tokens.empty')}</SettingsEmpty>}

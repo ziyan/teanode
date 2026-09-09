@@ -449,6 +449,7 @@ export function DataTable<Row>({
             <span className="table-rows">
               <span className="muted">{t('table.rowsPerPage')}</span>
               <Select
+                className="select-number"
                 label={t('table.rowsPerPage')}
                 value={String(pageSize)}
                 options={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}

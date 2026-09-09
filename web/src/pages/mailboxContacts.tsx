@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { SenderLogo } from '../components/senderLogo'
+import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -39,6 +40,7 @@ type Contact = { address: string; name?: string; lastSeenAt: string; count: numb
 // ask about. A page of its own, listed the way the other lists are.
 export function MailboxContactsPage() {
   const { t, plural } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
@@ -75,6 +77,7 @@ export function MailboxContactsPage() {
       return true
     } catch (failure) {
       setProblem(failure instanceof Error ? failure.message : String(failure))
+      toast.failure(failure, t('domain.failed'))
       return false
     } finally {
       setBusy(false)
@@ -278,10 +281,14 @@ export function MailboxContactsPage() {
           busy={busy}
           error={problem}
           onConfirm={async () => {
+            const count = chosen.size
             const ok = await run(() => graphql(DELETE_CONTACTS, { mailboxId, addresses: [...chosen] }))
             if (ok) {
               setChosen(new Set())
               setForgetting(false)
+              toast.done(
+                plural(count, { one: 'contacts.saidForgotOne', other: 'contacts.saidForgotOther' }, { count }),
+              )
             }
           }}
           onClose={() => setForgetting(false)}

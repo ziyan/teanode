@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
+import { useToast } from '../components/toast'
 import { EnvelopeTrail } from '../components/envelopeTrail'
 import {
   ArchiveIcon,
@@ -20,7 +21,7 @@ import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
-import { useTranslation } from '../i18n/i18n'
+import { Key, useTranslation } from '../i18n/i18n'
 import { folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMessage } from './mailbox'
 
@@ -132,6 +133,7 @@ export function unsubscribeKind(subscription: {
 // is that, as a page.
 export function MailboxSubscriptionsPage() {
   const { t, plural } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
@@ -181,7 +183,7 @@ export function MailboxSubscriptionsPage() {
       })
       setTotal(page.total)
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setPaging(false)
     }
@@ -226,8 +228,9 @@ export function MailboxSubscriptionsPage() {
       try {
         await graphql(MUTE, { mailboxId, key, muted })
         await query.reload()
+        toast.done(muted ? t('subscriptions.saidMuted') : t('subscriptions.saidUnmuted'))
       } catch (caught) {
-        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+        toast.failure(caught, t('domain.failed'))
       }
     },
     [mailboxId, query, t],
@@ -239,8 +242,9 @@ export function MailboxSubscriptionsPage() {
       try {
         await graphql(IMAGES, { mailboxId, key, show })
         await query.reload()
+        toast.done(show ? t('subscriptions.saidImagesAlways') : t('subscriptions.saidImagesAsk'))
       } catch (caught) {
-        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+        toast.failure(caught, t('domain.failed'))
       }
     },
     [mailboxId, query, t],
@@ -265,8 +269,9 @@ export function MailboxSubscriptionsPage() {
       await graphql(UNSUBSCRIBE, { mailboxId, key: leaving.key })
       setLeaving(null)
       await query.reload()
+      toast.done(t('subscriptions.saidLeft', { name: leaving.name }))
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
@@ -274,7 +279,9 @@ export function MailboxSubscriptionsPage() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
+      {/* The query's failure stays on the page: it describes what is not
+          there, and a message that takes itself away is no use for that. What
+          an action did is said in a toast instead. */}
       {query.error ? <ErrorMessage error={query.error} /> : null}
 
       <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
@@ -452,7 +459,8 @@ function SubscriptionReader({
   // and has to be told.
   onChanged: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const folders = mailboxes.current?.folders ?? []
   const [busy, setBusy] = useState(false)
@@ -475,19 +483,27 @@ function SubscriptionReader({
   const inJunk = (thread?.items ?? []).every((entry) => entry.folderKind === 'junk')
   const archive = folderOfKind(mailboxes.current, 'archive')
 
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>, said?: string) => {
     setBusy(true)
     setProblem(null)
     try {
       await action()
       await query.reload()
       onChanged()
+      if (said) {
+        toast.done(said)
+      }
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
   }
+
+  // How many messages an action is about, which is what the sentence needs:
+  // acting on a whole list is not the same size of act as acting on one.
+  const many = (one: Key, other: Key) =>
+    plural(acting.length, { one, other }, { count: acting.length })
   // Which messages are open, and which have been read here: the same two
   // things a conversation tracks, for the same reasons. Decided once from what
   // arrived — the newest, and anything unread — and then it is the reader's,
@@ -555,26 +571,46 @@ function SubscriptionReader({
           label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
           icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
           disabled={busy || acting.length === 0}
-          onClick={() => void run(() => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }))}
+          onClick={() =>
+            void run(
+              () => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }),
+              anyUnread ? many('mailbox.saidReadOne', 'mailbox.saidReadOther') : many('mailbox.saidUnreadOne', 'mailbox.saidUnreadOther'),
+            )
+          }
         />
         {archive && (
           <IconAction
             label={t('mailbox.archive')}
             icon={<ArchiveIcon size={16} />}
             disabled={busy || acting.length === 0}
-            onClick={() => void run(() => graphql(MOVE, { itemIds: acting, folderId: archive.id }))}
+            onClick={() =>
+              void run(
+                () => graphql(MOVE, { itemIds: acting, folderId: archive.id }),
+                many('mailbox.saidArchivedMessageOne', 'mailbox.saidArchivedMessageOther'),
+              )
+            }
           />
         )}
         <IconAction
           label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
           icon={<JunkIcon size={16} />}
           disabled={busy || acting.length === 0}
-          onClick={() => void run(() => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }))}
+          onClick={() =>
+            void run(
+              () => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }),
+              inJunk ? many('mailbox.saidNotJunkOne', 'mailbox.saidNotJunkOther') : many('mailbox.saidJunkOne', 'mailbox.saidJunkOther'),
+            )
+          }
         />
         <MoveToMenu
           targets={targets}
           disabled={busy || acting.length === 0}
-          onMove={(folderId) => void run(() => graphql(MOVE, { itemIds: acting, folderId }))}
+          onMove={(folderId) =>
+            void run(
+              () => graphql(MOVE, { itemIds: acting, folderId }),
+              many('mailbox.saidMovedMessageOne', 'mailbox.saidMovedMessageOther'),
+            )
+          }
         />
         <IconAction
           label={t('mailbox.delete')}
@@ -617,7 +653,10 @@ function SubscriptionReader({
           busy={busy}
           error={problem}
           onConfirm={async () => {
-            await run(() => graphql(DELETE, { itemIds: acting }))
+            await run(
+              () => graphql(DELETE, { itemIds: acting }),
+              many('mailbox.saidTrashedMessageOne', 'mailbox.saidTrashedMessageOther'),
+            )
             setEmptying(false)
           }}
           onClose={() => setEmptying(false)}

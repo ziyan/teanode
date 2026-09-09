@@ -6,6 +6,97 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The mailbox says what it just did, and offers the way back. Archiving,
+  moving, reporting junk and deleting each raise a line at the foot of the
+  window — "Conversation archived" — with Undo beside it, and the clock stops
+  while the pointer is on it so reaching for undo does not lose it. Undo works
+  from what the destination gained rather than from the identifiers the action
+  was given, because moving a message makes a new item and retires the old
+  one; asking for the old ones is how an undo can fail while appearing to
+  work.
+
+- Failures are said the same way, in one place, instead of a red block above
+  a list that stays until something replaces it. What describes the state of a
+  page — a query that failed, a field that is wrong, a question in a dialog —
+  stays where it is: a message that takes itself away is no use for something
+  that has to be dealt with.
+
+- More keys, and every control that has one says so. "Archive (E)" rather than
+  "Archive", because a shortcut nobody is told about belongs to whoever wrote
+  it. `j` and `k` move down and up the list.
+
+### Changed
+
+- Archiving what you are reading opens the next conversation instead of
+  emptying the pane. The reason somebody archives what is in front of them is
+  to get to the next one.
+
+- A draft opens inside its conversation rather than on a page of its own —
+  the one place in the program where a half-written reply was shown without
+  the thing it replies to.
+
+- What is attached is a line above the message rather than a table under it.
+  For anything with a quoted thread beneath it, the file the message was sent
+  to deliver was a screen of somebody else's words away.
+
+- Every action in the mailbox says what it did, not only the four that move a
+  conversation: acting on a subscription's mail, muting a list, trusting its
+  pictures, leaving it, and forgetting contacts all said nothing at all.
+
+- The list pages — roles, groups, users, tokens, sessions, passkeys,
+  templates — report through the same line instead of each keeping a red block
+  above its own list. Dialogs and forms keep theirs: a question on the screen
+  is still being asked, and a field that is wrong says so beside itself.
+
+- On a phone, a card is a band at the width of the screen rather than a box
+  inside a box inside a box. Measured at 390px, the page, the card and the row
+  together spent 104 pixels — a quarter of the screen — on the space between
+  three borders that say the same thing; the people list now gives its text 82%
+  of the width where it had 72%, and the profile form 94% where it had 84%.
+
+- A reply written inside a conversation starts at the height of a reply and
+  grows as one is written, instead of opening as 240 pixels of empty box above
+  the thread it answers. What is attached to it is a row of chips rather than a
+  list down the page.
+
+- A table on a phone runs to the edges of the screen. It stays a table and
+  scrolls sideways, which is what a table does when it is wider than the
+  screen; the page's padding was holding one that had no width to spare 24
+  pixels away from the glass.
+
+- And the mailbox runs to the edges of a phone. Four frames stood between the
+  screen and the message inside it — the page's padding, the mailbox's border,
+  the pane's padding, the message's own box — and a message was rendered in 302
+  pixels of a 390 pixel screen; it gets 352 now. The row of actions above it
+  wraps onto a second line rather than scrolling: nine actions in a 360 pixel
+  pane put 111 pixels of them past the edge, the overflow menu among them,
+  reachable only by dragging a toolbar that does not look draggable.
+
+### Fixed
+
+- The foot of a table reads on a phone. The control that chooses how many rows
+  to show was as wide as one holding words rather than a number — 160 pixels,
+  nearly half the screen — and what it crowded out did not move aside but
+  broke: "383 messages" over two lines, "1-50 of 383" over three. The control
+  is the width of a number now, each of those is one fact on one line, and the
+  bar wraps instead of the words.
+
+- A dropdown opens where there is room for it. The list is fixed to the
+  window, so one drawn past the bottom edge cannot be scrolled to — it is
+  simply gone, and the control that chooses how many rows a table shows sits
+  at the foot of the page, which is exactly where there is no room below. It
+  opens upward when there is more room above, is no taller than the room it
+  has, and stays inside the window sideways as well.
+
+- The name in a mailbox row gives way before the marks beside it. It was a bare
+  run of text in a flex line, which cannot be shortened, so a long list of
+  recipients pushed the count and the "Draft" badge out of the row instead —
+  and the badge saying an answer was begun and left is the one thing in the row
+  somebody needs to see. This was not only a phone: the list column is 380
+  pixels at its widest.
+
 ## [0.17.3] - 2026-09-09
 
 ### Security
