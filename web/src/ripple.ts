@@ -30,8 +30,23 @@ function surface(): HTMLElement {
 // What takes a ripple: the things a person presses. Not every clickable thing
 // — a link inside a sentence is read, not operated — and nothing disabled,
 // which is a press that does nothing and should look like it.
-const PRESSABLE =
-  'button, [role="menuitem"], .sidebar a, .tabs a, .tab, .icon-button, .subscription-row, .mailbox-row'
+const PRESSABLE = [
+  'button',
+  '[role="menuitem"]',
+  '.sidebar a',
+  // The rows of a list, and of any table whose rows go somewhere.
+  '.subscription-row',
+  '.mailbox-row',
+  'tr.linked',
+  // A tile with somewhere to go. One that is only a number is not pressed.
+  'a.tile',
+].join(', ')
+
+// What never takes one, whatever it is built from. A tab is a button, so
+// naming buttons above catches it: it is drawn as a word with a line under
+// the chosen one and no box of its own, and a mark clipped to its bounds is a
+// rectangle appearing around something that has no rectangle — which reads as
+// a mistake rather than as a press.
 
 // Rows where the whole width is the thing being pressed.
 const ROWS = '.subscription-row, .mailbox-row'
@@ -43,6 +58,17 @@ const ROW_LABELS = '.subscription-row-link, .mailbox-row-link'
 function pressable(target: EventTarget | null): HTMLElement | null {
   const element = (target as HTMLElement | null)?.closest?.(PRESSABLE) as HTMLElement | null
   if (!element || element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true') {
+    return null
+  }
+
+  if (element.closest('.tabs')) {
+    return null
+  }
+
+  // An icon button with no border is an icon: there is nothing drawn for the
+  // mark to fill, so it appears as a box around a shape that never had one.
+  // The ones drawn with a border are buttons, and those take it.
+  if (element.classList.contains('icon-button') && !bordered(element)) {
     return null
   }
 
@@ -59,6 +85,18 @@ function pressable(target: EventTarget | null): HTMLElement | null {
     return row
   }
   return element
+}
+
+// bordered says whether a control is drawn with a border on any side.
+function bordered(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element)
+  const sides = [
+    [style.borderTopStyle, style.borderTopWidth],
+    [style.borderRightStyle, style.borderRightWidth],
+    [style.borderBottomStyle, style.borderBottomWidth],
+    [style.borderLeftStyle, style.borderLeftWidth],
+  ]
+  return sides.some(([kind, width]) => kind !== 'none' && kind !== 'hidden' && parseFloat(width) > 0)
 }
 
 export function startRipples() {
