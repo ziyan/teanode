@@ -75,47 +75,48 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
-      <p className="muted">{t('sessions.intro')}</p>
       <ErrorMessage error={problem} />
 
-      {current.length > 0 && (
-        <SettingsSection card title={t('sessions.thisBrowser')}>
-          {current.map((session) => (
-            <SessionRow key={session.id} session={session} busy={busy} onRevoke={null} />
-          ))}
-        </SettingsSection>
-      )}
+      {/* One list, the way the tokens page lists tokens. Two cards said
+          "this browser" and "other browsers" about rows that are the same
+          thing and are told apart by a badge anyway — and the second card
+          held one row, the first held the rest, so the eye crossed a heading
+          to compare two lines of the same list. */}
+      <SettingsSection
+        description={t('sessions.intro')}
+        action={
+          <>
+            {/* What the list shows, changed and looked at, rather than a
+                setting kept. */}
+            <button
+              type="button"
+              className={includeRevoked ? 'active' : undefined}
+              aria-pressed={includeRevoked}
+              onClick={() => setIncludeRevoked((previous) => !previous)}
+            >
+              {includeRevoked ? t('sessions.hideRevoked') : t('sessions.showRevoked')}
+            </button>
+            <button className="primary danger" type="button" disabled={busy} onClick={() => setRevokingAll(true)}>
+              {t('sessions.revokeAll')}
+            </button>
+          </>
+        }
+      >
+        {sessions.length === 0 && <SettingsEmpty>{t('sessions.noOthers')}</SettingsEmpty>}
 
-      <SettingsSection card title={t('sessions.otherBrowsers')}>
-        {others.length === 0 ? (
-          <SettingsEmpty>{t('sessions.noOthers')}</SettingsEmpty>
-        ) : (
-          others.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              busy={busy}
-              onRevoke={session.revoked ? null : () => run(() => graphql(REVOKE, { sessionId: session.id }))}
-            />
-          ))
-        )}
-      </SettingsSection>
-
-      <SettingsSection card title={t('sessions.revokeAll')} description={t('sessions.revokeAllExplained')}>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={includeRevoked}
-            onChange={(event) => setIncludeRevoked(event.target.checked)}
+        {/* This browser first, because it is the one being read from and the
+            one that "sign out everywhere" will also close. */}
+        {current.map((session) => (
+          <SessionRow key={session.id} session={session} busy={busy} onRevoke={null} />
+        ))}
+        {others.map((session) => (
+          <SessionRow
+            key={session.id}
+            session={session}
+            busy={busy}
+            onRevoke={session.revoked ? null : () => run(() => graphql(REVOKE, { sessionId: session.id }))}
           />
-          {t('sessions.showRevoked')}
-        </label>
-
-        <div className="page-actions">
-          <button className="primary danger" type="button" disabled={busy} onClick={() => setRevokingAll(true)}>
-            {t('sessions.revokeAll')}
-          </button>
-        </div>
+        ))}
       </SettingsSection>
 
       {/* Signing every browser out signs this one out too, which is not

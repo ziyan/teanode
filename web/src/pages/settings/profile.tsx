@@ -6,16 +6,20 @@ import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
 
-const CURRENT_USER = `{ GetCurrentUser { username name email } }`
+const CURRENT_USER = `{ GetCurrentUser { id username name email } }`
 
+// An account is named by its identifier, and "username" is the name to sign in
+// with from here on. This page used to send the old username as the identity
+// and the new one as "newUsername", which the schema stopped taking: saving
+// the page failed with "unknown argument" and nothing was changed.
 const UPDATE = `
-  mutation ($username: String!, $name: String, $email: String, $newUsername: String) {
-    UpdateUser(username: $username, name: $name, email: $email, newUsername: $newUsername) {
-      username name email
+  mutation ($userId: String!, $username: String, $name: String, $email: String) {
+    UpdateUser(userId: $userId, username: $username, name: $name, email: $email) {
+      id username name email
     }
   }`
 
-type User = { username: string; name?: string; email?: string }
+type User = { id: string; username: string; name?: string; email?: string }
 
 // The account itself: what to call you, what you sign in with, and where
 // notifications go. Where /settings lands, because it is the one page here
@@ -64,10 +68,10 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
     setSaved(false)
     try {
       await graphql(UPDATE, {
-        username: user!.username,
+        userId: user!.id,
         name: name.trim(),
         email: email.trim(),
-        newUsername: username.trim(),
+        username: username.trim(),
       })
       setEditedName(null)
       setEditedUsername(null)

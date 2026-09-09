@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 import { Passkey, PasskeyCeremony, PasskeyPolicy, graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { PencilIcon, TrashIcon } from '../../components/icons'
 import { RelativeTime, hasTime } from '../../components/relativeTime'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -147,21 +149,31 @@ export function PasskeysPage() {
                 </>
               }
               actions={
-                <>
-                  <button
-                    className="link"
-                    type="button"
-                    onClick={() => {
-                      setName(passkey.name)
-                      setRenaming(passkey)
-                    }}
-                  >
-                    {t('passkeys.rename')}
-                  </button>
-                  <button className="link danger" type="button" onClick={() => setRemoving(passkey)}>
-                    {t('passkeys.remove')}
-                  </button>
-                </>
+                <div className="row-actions">
+                  <Tooltip label={t('passkeys.rename')}>
+                    <button
+                      className="icon-action"
+                      type="button"
+                      aria-label={`${passkey.name}: ${t('passkeys.rename')}`}
+                      onClick={() => {
+                        setName(passkey.name)
+                        setRenaming(passkey)
+                      }}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('passkeys.remove')}>
+                    <button
+                      className="icon-action danger"
+                      type="button"
+                      aria-label={`${passkey.name}: ${t('passkeys.remove')}`}
+                      onClick={() => setRemoving(passkey)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
               }
             />
           ))

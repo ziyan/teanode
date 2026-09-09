@@ -534,6 +534,8 @@ export const en = {
   'tokens.lastUsed': 'Last used',
   'tokens.neverUsed': 'never',
   'tokens.revoked': 'revoked',
+  'tokens.hideRevoked': 'Hide revoked tokens',
+  'tokens.showRevoked': 'Show revoked tokens',
   'tokens.revoke': 'Revoke',
   'tokens.saveNow': 'Save this token now; only its hash is stored, so it is not shown again.',
   'tokens.useIt': 'Use it from another machine with:',
@@ -567,7 +569,8 @@ export const en = {
   'sessions.lastUsed': 'last used',
   'sessions.neverUsed': 'not used since it was created',
   'sessions.unknownBrowser': 'A browser that did not say what it is',
-  'sessions.showRevoked': 'Show sessions that have been signed out',
+  'sessions.hideRevoked': 'Hide signed out sessions',
+  'sessions.showRevoked': 'Show signed out sessions',
   'sessions.failed': 'That did not work.',
   'sessions.revokeAllExplained':
     'Signing out everywhere ends every session on this account, including this one. Use it if you have lost a device.',

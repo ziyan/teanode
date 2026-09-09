@@ -1,9 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { RelativeTime } from '../../components/relativeTime'
 import { KeyIcon, PencilIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
@@ -74,7 +72,6 @@ export function UsersTab() {
 
   const users = data?.users ?? []
   const groups: Group[] = data?.groups ?? []
-  const groupName = (groupId: string) => groups.find((group) => group.id === groupId)?.name ?? groupId
 
   // The group a new person joins by default — when it is still there. It can
   // be renamed or deleted like any other, and nothing puts it back, so this
@@ -126,9 +123,14 @@ export function UsersTab() {
         {users.map((user) => (
           <SettingsRow
             key={user.id}
+            avatar={user.name || user.username}
             title={
               <>
-                {user.username}
+                {/* What to call them, then what they sign in with. A list of
+                    people reads as people; the username is how the server
+                    knows them, which is the smaller fact. */}
+                {user.name || user.username}
+                {user.name ? <span className="muted access-user-username">{user.username}</span> : null}
                 {user.id === session.userId ? <span className="muted"> · {t('access.users.you')}</span> : null}
               </>
             }
@@ -139,37 +141,7 @@ export function UsersTab() {
                 <Tag value={t('access.users.noPassword')} tone="warn" />
               ) : undefined
             }
-            subtitle={
-              <>
-                {/* Only what there is to say. A person with no name and no
-                    notification address had a line holding an em dash. */}
-                {(user.name || user.email) && (
-                  <div>
-                    {user.name}
-                    {user.name && user.email ? ' · ' : ''}
-                    {user.email}
-                  </div>
-                )}
-                <div className="access-chips">
-                  {user.groupIds.length > 0 ? (
-                    user.groupIds.map((groupId) => (
-                      // What this person can do is what their groups say, so
-                      // each one is the way to the group that says it.
-                      <Link key={groupId} className="access-chip" to={`/access/groups?group=${groupId}`}>
-                        {groupName(groupId)}
-                      </Link>
-                    ))
-                  ) : (
-                    <span className="muted">{t('access.users.noGroups')}</span>
-                  )}
-                </div>
-                {/* When, said the way a list is read — "created 2 days ago",
-                    with the timestamp and its zone one hover away. */}
-                <div className="muted">
-                  {t('access.users.createdWhen')} <RelativeTime value={user.createdAt} />
-                </div>
-              </>
-            }
+            subtitle={user.email ? user.email : undefined}
             actions={
               managesUsers ? (
                 <div className="row-actions">

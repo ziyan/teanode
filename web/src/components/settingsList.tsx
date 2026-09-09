@@ -47,14 +47,24 @@ export function SettingsRow({
   subtitle,
   badge,
   actions,
+  avatar,
 }: {
   title: React.ReactNode
   subtitle?: React.ReactNode
   badge?: React.ReactNode
   actions?: React.ReactNode
+  // A name to draw a monogram from, for a row that is about a person. The
+  // face of a list of people, so a row is found by its shape before it is
+  // read.
+  avatar?: string
 }) {
   return (
     <div className="settings-row">
+      {avatar ? (
+        <span className="settings-row-avatar" aria-hidden="true">
+          {(Array.from(avatar.trim())[0] ?? '?').toUpperCase()}
+        </span>
+      ) : null}
       <div className="settings-row-body">
         <div className="settings-row-title">
           <strong>{title}</strong>
