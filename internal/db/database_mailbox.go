@@ -132,6 +132,14 @@ type ItemOptions struct {
 	// when the folder id given is empty.
 	MailboxID string
 
+	// ExcludeKinds leaves out the folders of these kinds. Mail in Trash or
+	// Junk is not part of a subscription — what you threw away is not a
+	// subscription you have, and what a filter caught is not one you agreed
+	// to — so the listing of subscriptions leaves both out, and reading one
+	// has to leave out the same mail or the two disagree about what a list
+	// has sent.
+	ExcludeKinds []models.MailboxFolderKind
+
 	// ListKey lists the mail of one mailing list, the way ThreadID lists the
 	// mail of one conversation.
 	ListKey string
@@ -871,6 +879,23 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	}
 	if options.UIDs != nil {
 		query = query.Where("\"mailbox_item\".\"uid\" IN ?", options.UIDs)
+	}
+	if len(options.ExcludeKinds) > 0 {
+		kinds := make([]string, 0, len(options.ExcludeKinds))
+		for _, kind := range options.ExcludeKinds {
+			kinds = append(kinds, string(kind))
+		}
+		// Scoped to the mailbox when one is known, so the subquery is that
+		// mailbox's two or three folders rather than every Trash on the
+		// server.
+		if options.MailboxID != "" {
+			query = query.Where("\"mailbox_item\".\"folder_id\" NOT IN ("+
+				"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"mailbox_id\" = ? AND \"kind\" IN ?)",
+				options.MailboxID, kinds)
+		} else {
+			query = query.Where("\"mailbox_item\".\"folder_id\" NOT IN ("+
+				"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"kind\" IN ?)", kinds)
+		}
 	}
 	if options.Deleted != nil {
 		query = query.Where("\"mailbox_item\".\"deleted\" = ?", *options.Deleted)
