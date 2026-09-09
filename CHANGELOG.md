@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-09
+
 ### Added
 
 - Subscriptions can be muted: the list keeps arriving and stops being in the
@@ -43,7 +45,6 @@ Notable changes to TeaNode. The format follows
 
 - The subscriptions page pages. It asked for 200 and printed the true total
   beside them, so a mailbox with more said two different things at once.
-
 
 ## [0.15.1] - 2026-09-09
 
