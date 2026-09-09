@@ -61,6 +61,28 @@ Notable changes to TeaNode. The format follows
   the thread it answers. What is attached to it is a row of chips rather than a
   list down the page.
 
+- A table stops being a table on a phone. The tables that did not fit scrolled
+  sideways instead, which asks somebody to drag a record left and right to read
+  it and takes the heading away from the column they are reading; every record
+  is now a block, and every value carries the name of the column it came from.
+
+- And the mailbox runs to the edges of a phone. Four frames stood between the
+  screen and the message inside it — the page's padding, the mailbox's border,
+  the pane's padding, the message's own box — and a message was rendered in 302
+  pixels of a 390 pixel screen; it gets 352 now. The row of actions above it
+  wraps onto a second line rather than scrolling: nine actions in a 360 pixel
+  pane put 111 pixels of them past the edge, the overflow menu among them,
+  reachable only by dragging a toolbar that does not look draggable.
+
+### Fixed
+
+- The name in a mailbox row gives way before the marks beside it. It was a bare
+  run of text in a flex line, which cannot be shortened, so a long list of
+  recipients pushed the count and the "Draft" badge out of the row instead —
+  and the badge saying an answer was begun and left is the one thing in the row
+  somebody needs to see. This was not only a phone: the list column is 380
+  pixels at its widest.
+
 ## [0.17.3] - 2026-09-09
 
 ### Security

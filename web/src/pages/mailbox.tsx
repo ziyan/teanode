@@ -1163,7 +1163,9 @@ function Row({
               proved it came from them, and their initial otherwise. Who wrote
               is what the eye looks for first in a list. */}
           <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
-          {who}
+          {/* The name has its own box so that it, and not the marks beside
+              it, is what gives way when the row is narrow. */}
+          <span className="mailbox-row-who">{who}</span>
           {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
           {/* An answer begun and left. Worth saying in the list, because the
               conversation looks finished otherwise and the half-written reply

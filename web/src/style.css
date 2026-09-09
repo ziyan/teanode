@@ -2049,6 +2049,79 @@ pre.message-text {
     display: none;
   }
 
+  /* A table is a shape for a wide screen. On a phone the remaining columns
+     still did not fit, so the whole thing scrolled sideways — which means the
+     reader drags a table left and right to read one record, and the column
+     they are reading loses its heading as they go.
+     
+     So it stops being a table: every record becomes a block, and every cell
+     says what it is. The header row goes, because each cell now carries the
+     name that was in it. */
+  .table-surface,
+  .table-surface table,
+  .table-surface tbody,
+  .table-surface tr,
+  .table-surface td {
+    display: block;
+    width: auto;
+  }
+
+  .table-surface {
+    border: none;
+    background: none;
+    overflow: visible;
+  }
+
+  .table-surface thead {
+    display: none;
+  }
+
+  .table-surface tbody tr {
+    margin-bottom: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--surface);
+  }
+
+  .table-surface tbody td {
+    padding: 2px 0;
+    border: none;
+    text-align: left;
+  }
+
+  /* The name of the column, before the value it holds. Quiet, because the
+     value is what is being read. */
+  .table-surface tbody td[data-label]:not(.table-choose)::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Except the first, which is the record's own name and needs no label, and
+     the checkbox, which is not a fact about the record. */
+  .table-surface tbody td[data-label]:first-of-type::before,
+  .table-surface tbody td[data-label].table-choose::before {
+    content: none;
+  }
+
+  .table-surface tbody td:first-of-type {
+    font-weight: 600;
+  }
+
+  /* A cell with nothing in it is a label with nothing under it. */
+  .table-surface tbody td:empty {
+    display: none;
+  }
+
+  .table-surface tbody td.truncate {
+    min-width: 0;
+    white-space: normal;
+  }
+
   /* A filter per column needs a column header to sit under, and the table is
      already scrolling sideways here. The filters that matter most stay, in a
      stack above the table. */
@@ -3627,6 +3700,21 @@ label.check-list-item {
   align-items: center;
   gap: 6px;
 }
+
+/* A name is as long as it is — a list of recipients doubly so — and it used
+   to be a bare run of text in this line, which a flex box cannot shorten. So
+   it pushed everything after it out of the row instead: the count, and the
+   badge saying an answer was begun and left, which is the one thing in the
+   row somebody needs to see. The name gives way now, and the marks stay. */
+.mailbox-row-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mailbox-row-from > :not(.mailbox-row-who) {
+  flex: 0 0 auto;
+}
 .mailbox-row-from,
 .mailbox-row-subject {
   overflow: hidden;
@@ -4120,6 +4208,44 @@ label.check-list-item {
   }
   .mailbox:not(.reading) .mailbox-pane {
     display: none;
+  }
+}
+
+/* On a phone the mailbox is not a panel on a page, it is the page. Four
+   frames were drawn between the screen's edge and the message inside it —
+   the page's padding, the mailbox's border, the pane's padding, the
+   message's own box — and each one took a bite out of a width that had none
+   to spare: a message rendered in 302px of a 390px screen.
+   
+   So the outer frames go. The mailbox runs to the edges, the pane keeps
+   enough padding to hold a message off the glass, and the message keeps its
+   own border, because the messages in a thread are separate things and that
+   border is what says so. */
+@media (max-width: 600px) {
+  .mailbox {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  .mailbox-pane {
+    padding: 12px 8px;
+  }
+
+  .mailbox-message-body {
+    padding: 10px 8px;
+  }
+
+  /* And the actions wrap instead of scrolling. Sideways scrolling on a row
+     of icons is a gesture nobody makes on a row of icons: nine actions in a
+     360px pane put 111px of them past the edge, the overflow menu among
+     them, reachable only by dragging a toolbar that does not look draggable.
+     A second line costs one row of height and hides nothing. */
+  .mailbox-pane-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 }
 .mailbox-actions select,
