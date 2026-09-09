@@ -61,10 +61,10 @@ Notable changes to TeaNode. The format follows
   the thread it answers. What is attached to it is a row of chips rather than a
   list down the page.
 
-- A table stops being a table on a phone. The tables that did not fit scrolled
-  sideways instead, which asks somebody to drag a record left and right to read
-  it and takes the heading away from the column they are reading; every record
-  is now a block, and every value carries the name of the column it came from.
+- A table on a phone runs to the edges of the screen. It stays a table and
+  scrolls sideways, which is what a table does when it is wider than the
+  screen; the page's padding was holding one that had no width to spare 24
+  pixels away from the glass.
 
 - And the mailbox runs to the edges of a phone. Four frames stood between the
   screen and the message inside it — the page's padding, the mailbox's border,

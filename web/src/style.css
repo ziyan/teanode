@@ -2049,77 +2049,16 @@ pre.message-text {
     display: none;
   }
 
-  /* A table is a shape for a wide screen. On a phone the remaining columns
-     still did not fit, so the whole thing scrolled sideways — which means the
-     reader drags a table left and right to read one record, and the column
-     they are reading loses its heading as they go.
-     
-     So it stops being a table: every record becomes a block, and every cell
-     says what it is. The header row goes, because each cell now carries the
-     name that was in it. */
-  .table-surface,
-  .table-surface table,
-  .table-surface tbody,
-  .table-surface tr,
-  .table-surface td {
-    display: block;
-    width: auto;
-  }
-
+  /* A table keeps its shape here and scrolls sideways, which is what a table
+     does when it is wider than the screen. It runs to the edges to make that
+     scroll as long as it can be: the page's padding was holding a table that
+     had none to spare 24 pixels away from the glass. */
   .table-surface {
-    border: none;
-    background: none;
-    overflow: visible;
-  }
-
-  .table-surface thead {
-    display: none;
-  }
-
-  .table-surface tbody tr {
-    margin-bottom: var(--space-2);
-    padding: var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-3);
-    background: var(--surface);
-  }
-
-  .table-surface tbody td {
-    padding: 2px 0;
-    border: none;
-    text-align: left;
-  }
-
-  /* The name of the column, before the value it holds. Quiet, because the
-     value is what is being read. */
-  .table-surface tbody td[data-label]:not(.table-choose)::before {
-    content: attr(data-label);
-    display: block;
-    color: var(--muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  /* Except the first, which is the record's own name and needs no label, and
-     the checkbox, which is not a fact about the record. */
-  .table-surface tbody td[data-label]:first-of-type::before,
-  .table-surface tbody td[data-label].table-choose::before {
-    content: none;
-  }
-
-  .table-surface tbody td:first-of-type {
-    font-weight: 600;
-  }
-
-  /* A cell with nothing in it is a label with nothing under it. */
-  .table-surface tbody td:empty {
-    display: none;
-  }
-
-  .table-surface tbody td.truncate {
-    min-width: 0;
-    white-space: normal;
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
   }
 
   /* A filter per column needs a column header to sit under, and the table is

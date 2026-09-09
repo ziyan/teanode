@@ -405,10 +405,6 @@ export function DataTable<Row>({
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      // The column's name travels with the cell, because on a
-                      // phone the table is not a table: the header row is gone
-                      // and each cell says what it is.
-                      data-label={column.header}
                       className={[column.optional ? 'optional' : '', column.truncate ? 'truncate' : '']
                         .filter(Boolean)
                         .join(' ')}
