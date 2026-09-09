@@ -436,6 +436,7 @@ export const ja: Catalog = {
   'setup.submissionSaved': '保存しました。以降に表示される認証情報はこの宛先になります。',
   'setup.submissionFailed': '保存できませんでした。',
 
+  'common.close': '閉じる',
   'common.cancel': 'キャンセル',
   'common.create': '作成',
   'common.never': '無期限',
@@ -1133,6 +1134,7 @@ export const ja: Catalog = {
   'subscriptions.openList': 'この購読を表示',
   'subscriptions.stripped': 'この配信元は解除方法を示していましたが、そのアドレスは届く前に取り除かれました。差出人のページから解除するか、受信トレイに入れない設定にしてください。',
   'subscriptions.unmute': '受信トレイに戻す',
+  'subscriptions.noWayOutTitle': '{name} を解除する方法がありません',
   'subscriptions.noWayOut': 'この配信元は解除方法を示していません。受信トレイに入れない設定にすれば邪魔になりません。ルールで別の場所に振り分けることもできます。',
   'subscriptions.leave': '購読をやめる',
   'subscriptions.leaveNoWay': 'このリストは解除方法を示していません',

@@ -438,6 +438,7 @@ export const en = {
   'setup.submissionSaved': 'Saved. Credentials shown from now on will say this.',
   'setup.submissionFailed': 'That could not be saved.',
 
+  'common.close': 'Close',
   'common.cancel': 'Cancel',
   'common.create': 'Create',
   'common.never': 'never',
@@ -1144,6 +1145,7 @@ export const en = {
   'subscriptions.openList': 'Show this subscription',
   'subscriptions.stripped': 'This list did say how to leave it, and the address was removed before the mail reached here — which is what a relay that hides your address does. Leave it from the sender’s own page, or stop the mail here by keeping it out of the Inbox.',
   'subscriptions.unmute': 'Let back into the Inbox',
+  'subscriptions.noWayOutTitle': 'There is no way to leave {name}',
   'subscriptions.noWayOut': 'This list offered no way to leave. Keeping it out of the Inbox stops it being in the way; a rule can file it somewhere else entirely.',
   'subscriptions.leave': 'Unsubscribe',
   'subscriptions.leaveNoWay': 'This list named no way to leave it',

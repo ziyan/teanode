@@ -3740,7 +3740,13 @@ label.check-list-item {
   position: fixed;
   z-index: 60;
   transform: translate(-50%, -100%);
-  max-width: 280px;
+  /* Never wider than the window, whatever the label is. */
+  max-width: min(280px, calc(100vw - 16px));
+  /* An address is one word with no space in it to break at, so a maximum
+     width alone did nothing: the box grew to the length of the address and
+     ran off the side of the screen. This lets it break mid-word, which for an
+     address is the only place there is. */
+  overflow-wrap: anywhere;
   padding: 5px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
@@ -4581,14 +4587,6 @@ p.notice.domain-logo-note {
   font-size: 12px;
 }
 
-/* A sentence under the toolbar, saying why one of its controls is disabled.
-   Capped to the measure like any other passage, and set in from the edge so
-   it reads as belonging to the toolbar above rather than to the mail below. */
-.mailbox-pane-note {
-  margin: 0 var(--space-3) var(--space-3);
-  max-width: var(--measure);
-  font-size: 13px;
-}
 .subscription-row-left.bad {
   color: var(--bad);
 }

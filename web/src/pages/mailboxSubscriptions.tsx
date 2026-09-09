@@ -211,6 +211,19 @@ export function MailboxSubscriptionsPage() {
     }
   }, [mailboxId, readingKey, subscriptions])
 
+  const mute = useCallback(
+    async (key: string, muted: boolean) => {
+      setProblem(null)
+      try {
+        await graphql(MUTE, { mailboxId, key, muted })
+        await query.reload()
+      } catch (caught) {
+        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      }
+    },
+    [mailboxId, query, t],
+  )
+
   const unsubscribe = useCallback(async () => {
     if (!leaving) {
       return
@@ -338,15 +351,7 @@ export function MailboxSubscriptionsPage() {
                 setProblem(null)
                 setLeaving(reading)
               }}
-              onMute={async (muted) => {
-                setProblem(null)
-                try {
-                  await graphql(MUTE, { mailboxId, key: reading.key, muted })
-                  await query.reload()
-                } catch (caught) {
-                  setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
-                }
-              }}
+              onMute={(muted) => mute(reading.key, muted)}
               onChanged={() => void query.reload()}
             />
           ) : (
@@ -355,17 +360,41 @@ export function MailboxSubscriptionsPage() {
         </div>
       </div>
 
-      {leaving && (
-        <ConfirmDialog
-          title={t('subscriptions.leaveTitle', { name: leaving.name })}
-          body={t(`subscriptions.leaveBody.${unsubscribeKind(leaving)}`)}
-          confirmLabel={t('subscriptions.leave')}
-          busy={busy}
-          error={problem}
-          onConfirm={unsubscribe}
-          onClose={() => setLeaving(null)}
-        />
-      )}
+      {leaving &&
+        (unsubscribeKind(leaving) === 'none' ? (
+          // Nothing to confirm: this says why, and offers the one thing that
+          // does work. The reason is not the same in both cases, and a reader
+          // told "no way to leave" would otherwise blame the sender for a
+          // relay's doing.
+          <ConfirmDialog
+            title={t('subscriptions.noWayOutTitle', { name: leaving.name })}
+            body={leaving.stripped ? t('subscriptions.stripped') : t('subscriptions.noWayOut')}
+            confirmLabel={leaving.mutedAt ? undefined : t('subscriptions.mute')}
+            destructive={false}
+            busy={busy}
+            error={problem}
+            onConfirm={
+              leaving.mutedAt
+                ? undefined
+                : () => {
+                    const key = leaving.key
+                    setLeaving(null)
+                    void mute(key, true)
+                  }
+            }
+            onClose={() => setLeaving(null)}
+          />
+        ) : (
+          <ConfirmDialog
+            title={t('subscriptions.leaveTitle', { name: leaving.name })}
+            body={t(`subscriptions.leaveBody.${unsubscribeKind(leaving)}`)}
+            confirmLabel={t('subscriptions.leave')}
+            busy={busy}
+            error={problem}
+            onConfirm={unsubscribe}
+            onClose={() => setLeaving(null)}
+          />
+        ))}
     </>
   )
 }
@@ -536,18 +565,10 @@ function SubscriptionReader({
         <IconAction
           label={t('subscriptions.leave')}
           icon={<BellOffIcon size={16} />}
-          disabled={unsubscribeKind(subscription) === 'none'}
           onClick={onLeave}
         />
       </div>
 
-      {/* Beside the control it explains: "Unsubscribe" is disabled here, and
-          the reason is not the same in both cases. */}
-      {unsubscribeKind(subscription) === 'none' && (
-        <p className="muted mailbox-pane-note">
-          {subscription.stripped ? t('subscriptions.stripped') : t('subscriptions.noWayOut')}
-        </p>
-      )}
 
       <ErrorMessage error={problem} />
 
