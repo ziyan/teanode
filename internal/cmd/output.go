@@ -132,7 +132,7 @@ func forTerminal(text string) string {
 	var builder strings.Builder
 	for _, character := range text {
 		if isTerminalControl(character) {
-			builder.WriteString(fmt.Sprintf("\\x%02x", character))
+			fmt.Fprintf(&builder, "\\x%02x", character)
 			continue
 		}
 		builder.WriteRune(character)
