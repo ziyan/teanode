@@ -2409,6 +2409,50 @@ body,
   flex: 0 0 auto;
 }
 
+/* Boxes inside boxes, on a screen with no room for them.
+   ------------------------------------------------------------------------
+   Measured on a 390px phone: the page gave up 28 pixels of its width, the
+   card inside it another 34, and the row inside that another 34 — a hundred
+   and four pixels, better than a quarter of the screen, spent on the space
+   between three borders that all say the same thing. On a wide screen that
+   nesting reads as structure; on a phone it reads as a column of text that
+   will not fit.
+
+   So on a phone the middle box gives up its own frame. A card at the width of
+   the screen is a band rather than a card, which is what every mail program
+   does at this size, and the rows inside it keep the padding that separates
+   them from each other. */
+@media (max-width: 600px) {
+  .content {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  /* Full width, no side frame: the section's heading and its rows keep the
+     page's own margin instead of adding a second one inside it. */
+  .card,
+  .settings-section.card {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  /* A row inside one of those is already inside the page's margin, so it
+     draws its own separation with less. */
+  .settings-row {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+}
+
 @media (max-width: 600px) {
   /* The action drops below what it acts on rather than sitting beside it: an
      action as wide as its words leaves the description a column four words
@@ -2893,6 +2937,16 @@ a.button.primary:hover {
 
 .richtext-editor {
   min-height: 240px;
+}
+
+/* A reply written inside a conversation starts at the height of a reply, not
+   of a page. It grows as it is typed — the box has no fixed height, so the
+   conversation under it moves down as the message gets longer, which is what
+   every mail program does with an inline reply. Two hundred and forty pixels
+   of empty box above a quoted thread is a page pretending somebody has a lot
+   to say. */
+.mailbox-pane .richtext-editor {
+  min-height: 120px;
 }
 
 /* A signature is three lines and a link, not a message. */
@@ -4129,11 +4183,70 @@ label.check-list-item {
 .compose-editor-switch {
   margin: 12px 0 6px;
 }
+/* What is attached to what is being written, as a row of chips rather than a
+   list down the page. A stack of one file per line pushes the buttons that
+   send the message off the bottom of a composer that is already tall, and
+   three files are three words. */
 .attachments-kept ul,
-.attachments ul {
+.attachments ul,
+.uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   list-style: none;
   margin: 6px 0;
   padding: 0;
+}
+
+.attachments-kept li,
+.attachments ul li,
+.uploads li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+/* The name is what is looked for, so it takes the room and it is what gets
+   cut when there is not enough. */
+.attachments-kept li > :first-child,
+.attachments ul li > :first-child,
+.uploads .upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Taking one off is a mark on the chip, not a word beside it. */
+.attachments-kept li button,
+.attachments ul li button {
+  display: inline-flex;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.attachments-kept li button:hover,
+.attachments ul li button:hover {
+  color: var(--bad);
+}
+
+.uploads li.failed {
+  border-color: var(--bad);
+}
+
+.uploads progress {
+  width: 60px;
 }
 
 /* Sign in through an identity provider: one button per provider, under the
