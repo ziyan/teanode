@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-09-09
+
+### Fixed
+
+- `teanode user update`, `teanode user password` and `teanode user delete`
+  failed on every invocation. They named an account by its username after the
+  API moved to an identifier, so the whole write half of the `user` command
+  group was unusable from the command line. They resolve the name now, asking
+  after the signed-in account before listing everybody, so changing your own
+  name and password still works without the permission to administer others. (#68)
+- `teanode report show` failed on every invocation: it asked for the parsed
+  report without saying which parts of it to return. (#68)
+- Creating a role in the dashboard failed before it reached the server, and
+  saving a domain's mail servers from its DNS page was refused for the type it
+  declared. (#68)
+
 ## [0.17.1] - 2026-09-09
 
 ### Security
