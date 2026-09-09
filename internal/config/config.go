@@ -268,8 +268,10 @@ type Listen struct {
 	// production, which is what most mail programs try first.
 	IMAPS string `yaml:"imaps"`
 
-	// HTTP serves the dashboard and answers ACME http-01 challenges. Port 80
-	// must be reachable from the internet when tls.acme.challenge is http-01.
+	// HTTP answers ACME http-01 challenges and, when HTTPS is served too,
+	// redirects everything else there; with no HTTPS listener — TLS ended at
+	// a proxy in front — it serves the dashboard itself. Port 80 must be
+	// reachable from the internet when tls.acme.challenge is http-01.
 	HTTP string `yaml:"http"`
 
 	// HTTPS serves the dashboard over TLS.

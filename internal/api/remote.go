@@ -109,3 +109,35 @@ func isTrusted(host string, trusted []netip.Prefix) bool {
 	}
 	return false
 }
+
+// IsSecure reports whether a request reached this server over HTTPS: on
+// its own TLS listener, or through a proxy that terminated TLS and said
+// so. The header is believed only from a proxy in server.trustedProxies,
+// for the same reason X-Forwarded-For is: anyone who can reach the server
+// directly can write it.
+//
+// The safe direction to be wrong in is towards "not secure", which makes
+// a cookie more restrictive; the direction that matters is a proxy that
+// terminates TLS and does not say so, which issues a cookie that a browser
+// then sends in the clear. That is the operator's proxy to configure.
+func IsSecure(request *http.Request, trustedProxies []string) bool {
+	if request == nil {
+		return false
+	}
+	if request.TLS != nil {
+		return true
+	}
+	trusted := parsePrefixes(trustedProxies)
+	if len(trusted) == 0 || !isTrusted(hostOf(request.RemoteAddr), trusted) {
+		return false
+	}
+	forwarded := request.Header.Get("X-Forwarded-Proto")
+	if forwarded == "" {
+		return false
+	}
+	// A chain of proxies appends, so the client's own protocol is first.
+	if index := strings.Index(forwarded, ","); index >= 0 {
+		forwarded = forwarded[:index]
+	}
+	return strings.EqualFold(strings.TrimSpace(forwarded), "https")
+}

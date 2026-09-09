@@ -201,6 +201,14 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
 			}
 			// Nothing is sniffed into a type the sender chose.
 			response.Header().Set("X-Content-Type-Options", "nosniff")
+			// A browser that has reached this server over TLS is told to
+			// keep doing so, so that a typed hostname does not go to the
+			// plain listener first. Only over TLS: the header means nothing
+			// on a plain response, and a proxy that terminates TLS sets its
+			// own.
+			if request.TLS != nil {
+				response.Header().Set("Strict-Transport-Security", "max-age=31536000")
+			}
 			// A dashboard URL carries a message identifier, so it is not sent
 			// to whatever a reader clicks through to.
 			response.Header().Set("Referrer-Policy", "no-referrer")

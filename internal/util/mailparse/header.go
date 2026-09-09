@@ -178,6 +178,18 @@ func inStringSlice(needle string, haystack []string) bool {
 	return false
 }
 
+// CountHeaders is how many headers carry a name, whatever their case.
+func CountHeaders(headers []string, key string) int {
+	count := 0
+	for _, header := range headers {
+		name, _ := SplitHeader(header)
+		if strings.EqualFold(name, key) {
+			count++
+		}
+	}
+	return count
+}
+
 func FindHeaderValue(headers []string, key string) string {
 	for index := len(headers) - 1; index >= 0; index-- {
 		name, value := SplitHeader(headers[index])

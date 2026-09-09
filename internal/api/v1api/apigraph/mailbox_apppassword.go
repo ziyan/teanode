@@ -69,6 +69,10 @@ type CreatedAppPassword struct {
 // from a screen: 0 and O, 1 and l and I.
 const appPasswordAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
 
+// maximumAppPasswords is how many a mailbox may hold: one per device, with
+// room to spare.
+const maximumAppPasswords = 20
+
 func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments CreateMailboxAppPasswordArguments) (*CreatedAppPassword, error) {
 	mailbox, err := self.requireMailbox(ctx, models.PermissionMailboxManage, arguments.MailboxID)
 	if err != nil {
@@ -80,6 +84,14 @@ func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments Creat
 	}
 	if len(mailbox.Addresses) == 0 {
 		return nil, fmt.Errorf("%w: the mailbox has no address to sign in with", api.ErrInvalidArguments)
+	}
+	// Every one of them is tried, one bcrypt each, on each sign-in.
+	existing, err := self.transaction(ctx).ListAppPasswords(mailbox.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if len(existing) >= maximumAppPasswords {
+		return nil, fmt.Errorf("%w: a mailbox may have at most %d app passwords; revoke one first", api.ErrInvalidArguments, maximumAppPasswords)
 	}
 	// Twenty characters of a 32-letter alphabet is a hundred bits, and the
 	// grouping makes it possible to type from a phone's screen.

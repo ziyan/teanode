@@ -33,6 +33,20 @@ func TestSanitizeHTMLRemovesActiveContent(t *testing.T) {
 			mustNotHave: []string{"javascript:"},
 		},
 		{
+			// With scripting on, a parser keeps what is inside noscript as
+			// one piece of text, and writes it back out as it was; the frame
+			// runs without scripts, so a browser turns that text into the
+			// elements it spells — none of which the sanitizer had seen.
+			name:        "noscript smuggling markup",
+			input:       `<p>hi</p><noscript><link rel="preconnect" href="https://attacker.example/"><meta http-equiv="refresh" content="0;url=https://attacker.example/"><img src="https://attacker.example/x"></noscript><p>hello</p>`,
+			mustNotHave: []string{"noscript", "<link", "<meta", "attacker.example", "preconnect", "refresh"},
+		},
+		{
+			name:        "other raw text elements",
+			input:       `<xmp><img src=https://attacker.example/x></xmp><noembed><meta http-equiv=refresh content=0></noembed><plaintext><script>alert(1)</script>`,
+			mustNotHave: []string{"xmp", "noembed", "plaintext", "attacker.example", "script", "refresh"},
+		},
+		{
 			name:        "javascript url with padding",
 			input:       `<a href="  JaVaScRiPt&#58;alert(1)">click</a><a href="java&#9;script:alert(1)">x</a>`,
 			mustNotHave: []string{"javascript:alert", "JaVaScRiPt:alert"},

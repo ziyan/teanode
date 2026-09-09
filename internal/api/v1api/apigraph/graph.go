@@ -20,8 +20,15 @@ type graphRequest struct {
 	OperationName string                 `json:"operationName"`
 }
 
+// maximumRequestSize bounds a GraphQL request body. This endpoint is reached
+// before authentication, because logging in is a mutation, so what it reads
+// from a stranger has to be bounded; a query is a few kilobytes and a draft
+// with files goes through its own route, which has its own cap.
+const maximumRequestSize = 1 << 20
+
 func (self *graph) graphView(response http.ResponseWriter, request *http.Request) {
 	var data graphRequest
+	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestSize)
 	if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 		http.Error(response, fmt.Sprintf("failed to decode request: %s", err), http.StatusBadRequest)
 		return
@@ -43,10 +50,12 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		}
 		if found == nil || found.Disabled() {
 			// Signed in as somebody who no longer exists, or may no longer
-			// sign in: the session outlived the account.
+			// sign in: the session outlived the account. Neither the name
+			// nor the account is kept, so no principal is built from it.
 			username = ""
+		} else {
+			user = found
 		}
-		user = found
 	}
 
 	ctx := request.Context()

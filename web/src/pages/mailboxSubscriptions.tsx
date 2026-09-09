@@ -644,7 +644,10 @@ function SubscriptionReader({
             entry={entry}
             folderId={entry.folderId}
             seen={seenOf(entry)}
-            allowImages={!!subscription.imagesAt}
+            // The list's standing answer applies to a message that is
+            // authenticated as from the list. A List-Id is a header anyone
+            // can write, and the server applies the same rule.
+            allowImages={!!subscription.imagesAt && entry.item.mail?.authenticationResults?.dmarc?.result === 'pass'}
             open={opened.has(entry.item.id)}
             onToggle={() => {
               const opening = !opened.has(entry.item.id)

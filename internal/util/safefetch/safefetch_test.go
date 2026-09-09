@@ -32,6 +32,11 @@ func TestOnlyPublicAddressesAreDialled(t *testing.T) {
 		{"carrier grade nat", "100.64.0.1:80"},
 		{"reserved 192.0.0", "192.0.0.1:80"},
 		{"benchmarking 198.18", "198.18.0.1:80"},
+		// Transition prefixes carry an IPv4 address inside them, which a
+		// host speaking them would reach without this check seeing it.
+		{"6to4 wrapping a private address", "[2002:c0a8:101::1]:80"},
+		{"teredo", "[2001:0:c0a8:101::1]:80"},
+		{"nat64 wrapping a private address", "[64:ff9b::c0a8:101]:80"},
 		// A name rather than an address cannot reach here, because this runs
 		// on what is actually being dialled.
 		{"not an address", "example.com:80"},

@@ -34,6 +34,11 @@ func (self *send) sendView(response http.ResponseWriter, request *http.Request) 
 		if len(decodedParts) != 2 {
 			return api.ErrInvalidCredential
 		}
+		// Counted against the same limiter as a submission on port 587:
+		// this is the same credential, presented at another door.
+		if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(api.RemoteAddress(request, self.config.Current().Server.TrustedProxies)) {
+			return api.ErrTooManyRequests
+		}
 		credentialId, credentialKey, err := security.DecodeCredential(decodedParts[0], decodedParts[1], self.settings.Secret)
 		if err != nil {
 			return api.ErrInvalidCredential
@@ -113,6 +118,8 @@ func (self *send) sendView(response http.ResponseWriter, request *http.Request) 
 			http.Error(response, err.Error(), http.StatusNotFound)
 		case api.ErrPermissionDenied:
 			http.Error(response, err.Error(), http.StatusForbidden)
+		case api.ErrTooManyRequests:
+			http.Error(response, err.Error(), http.StatusTooManyRequests)
 		default:
 			log.Errorf("failed to execute request: %s", err)
 			http.Error(response, fmt.Sprintf("failed to execute request: %s", err), http.StatusInternalServerError)

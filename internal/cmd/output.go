@@ -79,7 +79,8 @@ func NoteUsageError(failed *cli.Command, arguments []string) {
 // error, so that a failure is never mistaken for a result.
 func PrintError(err error) {
 	if !jsonRequested {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+		// A server's error can carry what a stranger wrote.
+		fmt.Fprintf(os.Stderr, "%s\n", forTerminal(err.Error()))
 		return
 	}
 	encoded, encodeError := json.Marshal(map[string]any{"error": err.Error(), "exitCode": ExitCode(err)})
@@ -108,9 +109,50 @@ func printTable(headers []string, rows [][]string) error {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(writer, strings.Join(headers, "\t"))
 	for _, row := range rows {
-		_, _ = fmt.Fprintln(writer, strings.Join(row, "\t"))
+		cells := make([]string, len(row))
+		for index, cell := range row {
+			cells[index] = forTerminal(cell)
+		}
+		_, _ = fmt.Fprintln(writer, strings.Join(cells, "\t"))
 	}
 	return writer.Flush()
+}
+
+// forTerminal makes a string from somebody else — a subject line, a sender's
+// name, a server's error — safe to write to a terminal. Terminals obey
+// control characters: an escape sequence in a subject can rewrite the row
+// above it, so a rejected message reads as delivered, or load the clipboard
+// with a command. Each such character is shown as its escape instead, so
+// what was in the message is visible rather than acted on. Tabs are kept;
+// the table writer aligns on them and they do nothing else.
+func forTerminal(text string) string {
+	if !strings.ContainsFunc(text, isTerminalControl) {
+		return text
+	}
+	var builder strings.Builder
+	for _, character := range text {
+		if isTerminalControl(character) {
+			fmt.Fprintf(&builder, "\\x%02x", character)
+			continue
+		}
+		builder.WriteRune(character)
+	}
+	return builder.String()
+}
+
+// isTerminalControl is a character a terminal would act on: the C0 controls
+// other than tab and newline, delete, and the C1 controls, which include a
+// bare control sequence introducer.
+func isTerminalControl(character rune) bool {
+	switch {
+	case character == '\t' || character == '\n':
+		return false
+	case character < 0x20 || character == 0x7f:
+		return true
+	case character >= 0x80 && character <= 0x9f:
+		return true
+	}
+	return false
 }
 
 // printFields writes one record as aligned "name: value" lines, for the
@@ -122,10 +164,10 @@ func printFields(fields [][2]string) error {
 		// behind a spam score, say. Printing the colon anyway left a column
 		// of bare punctuation down the page.
 		if field[0] == "" {
-			_, _ = fmt.Fprintf(writer, "\t%s\n", field[1])
+			_, _ = fmt.Fprintf(writer, "\t%s\n", forTerminal(field[1]))
 			continue
 		}
-		_, _ = fmt.Fprintf(writer, "%s:\t%s\n", field[0], field[1])
+		_, _ = fmt.Fprintf(writer, "%s:\t%s\n", forTerminal(field[0]), forTerminal(field[1]))
 	}
 	return writer.Flush()
 }
@@ -219,7 +261,7 @@ func yesNo(value bool) string {
 // column off the right of the terminal. Counted in characters, not bytes, so
 // a subject in Japanese is cut between letters rather than inside one.
 func truncate(text string, limit int) string {
-	text = strings.Join(strings.Fields(text), " ")
+	text = forTerminal(strings.Join(strings.Fields(text), " "))
 	runes := []rune(text)
 	if len(runes) <= limit {
 		return text

@@ -263,9 +263,15 @@ func (self *graph) ChangePassword(ctx context.Context, arguments ChangePasswordA
 		return nil, err
 	}
 
-	// The session stays valid: its signature covers the username and expiry,
-	// not the password, and forcing a re-login after a deliberate change is
-	// friction with no security benefit.
+	// This session stays; every other one ends. The usual reason to change
+	// a password in a hurry is that somebody else has it, and that
+	// somebody may already be signed in with it.
+	request := api.ContextRequest(ctx)
+	if ended, err := self.authenticator.RevokeSessions(username, self.authenticator.CurrentSessionID(request)); err != nil {
+		log.Errorf("failed to end the other sessions of %q after a password change: %s", username, err)
+	} else if ended > 0 {
+		log.Noticef("%s changed their password, ending %d other session(s)", username, ended)
+	}
 	return self.signedInAs(ctx, username), nil
 }
 

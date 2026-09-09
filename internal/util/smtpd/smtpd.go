@@ -56,6 +56,13 @@ type Settings struct {
 	// being wrong. Nil disables it.
 	AuthenticateMailbox func(username, password string) (mailboxId, domainId string, ok bool)
 
+	// MaxConnections bounds how many connections are served at once; past
+	// it a new one is told to come back later and closed. Every connection
+	// is a goroutine and, once it sends DATA, a buffer of MaxSize, for as
+	// long as Timeout allows, so without a bound a stranger decides how
+	// much memory this process holds. Zero means no bound.
+	MaxConnections int
+
 	// AuthLimiter bounds how often one address may attempt to authenticate.
 	// Nil disables the limit.
 	//
@@ -74,6 +81,11 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 	}
 	log.Debugf("trusted senders: %q", trustedSenders)
 
+	var connections chan struct{}
+	if settings.MaxConnections > 0 {
+		connections = make(chan struct{}, settings.MaxConnections)
+	}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -83,6 +95,15 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 			return err
 		}
 
+		if connections != nil {
+			select {
+			case connections <- struct{}{}:
+			default:
+				go refuseConnection(conn)
+				continue
+			}
+		}
+
 		// TODO: we should wait for the ongoing connections before exit
 		go func(conn net.Conn) {
 			defer deferutil.Recover()
@@ -90,6 +111,9 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 			log.Infof("accepted connection from %s", conn.RemoteAddr())
 			defer func() {
 				_ = conn.Close()
+				if connections != nil {
+					<-connections
+				}
 				log.Infof("closed connection from %s, elapsed %s", conn.RemoteAddr(), time.Since(start))
 			}()
 
@@ -147,6 +171,17 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 	}
 }
 
+// refuseConnection tells a client the server is full, and closes. A 421 is
+// what RFC 5321 §4.2.3 gives for this; a client that means well tries
+// another server or comes back later.
+func refuseConnection(conn net.Conn) {
+	defer deferutil.Recover()
+	defer func() { _ = conn.Close() }()
+	log.Warningf("refusing connection from %s: too many connections", conn.RemoteAddr())
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, _ = fmt.Fprintf(conn, "421 4.7.0 Too many connections, try again later\r\n")
+}
+
 func checkIp(ip net.IP, resolver Resolver, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -184,6 +219,11 @@ func delay(conn net.Conn, duration time.Duration) error {
 	}
 	return fmt.Errorf("smtpd: received data too early")
 }
+
+// handleTimeout is how long handling one accepted message may take. A
+// virus scan of the largest message allowed, and the DNS lookups that
+// authenticating it needs, are minutes at the outside.
+const handleTimeout = 10 * time.Minute
 
 type session struct {
 	outgoing bool
@@ -547,9 +587,14 @@ func (self *session) handleData() error {
 		Body:          body,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Bounded: what is done with a message — the authentication lookups,
+	// the scans — happens while the client waits for its reply, and a
+	// message built to make that slow must not hold the connection and
+	// its buffer for ever. Not the connection's own context, because the
+	// message has been accepted for handling by the time this runs.
 	// TODO: cancel properly when connection is going away
+	ctx, cancel := context.WithTimeout(context.Background(), handleTimeout)
+	defer cancel()
 
 	if err := self.handle(ctx, envelope); err != nil {
 		log.Errorf("failed to handle envelope: %s: %s", envelope, err)
@@ -715,17 +760,39 @@ func (self *session) writeLines(statusCode int, enhancedStatusCodes string, line
 	return nil
 }
 
+// maximumLineLength bounds a command line. RFC 5321 §4.5.3.1.4 asks a
+// server to accept 512 bytes; an AUTH line carrying a base64 credential
+// and a MAIL line with every extension are a few hundred. Without a bound
+// a client that never sends a newline is buffered until the read deadline,
+// at whatever rate it likes.
+const maximumLineLength = 8192
+
+var errLineTooLong = errors.New("smtpd: line too long")
+
 // Read a complete line from the socket.
 func (self *session) readLine() (string, error) {
 	if err := self.conn.SetReadDeadline(time.Now().Add(time.Minute)); err != nil {
 		log.Errorf("%s: failed to set read deadline: %s", self, err)
 		return "", err
 	}
-	line, err := self.text.ReadLine()
-	if err != nil {
-		return "", err
+	// Read in pieces the buffer's size, so a line is refused once it is too
+	// long rather than accumulated first and measured after.
+	var line []byte
+	for {
+		piece, isPrefix, err := self.text.R.ReadLine()
+		if err != nil {
+			return "", err
+		}
+		if len(line)+len(piece) > maximumLineLength {
+			_ = self.writeLines(500, "5.5.2", "Line too long")
+			return "", errLineTooLong
+		}
+		line = append(line, piece...)
+		if !isPrefix {
+			break
+		}
 	}
-	return line, nil
+	return string(line), nil
 }
 
 func (self *session) readCommand() (string, string, error) {

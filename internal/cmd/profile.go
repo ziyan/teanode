@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -119,16 +120,16 @@ func (self *Profiles) Save() error {
 	if err != nil {
 		return err
 	}
-	file, err := atomicfile.Create(path)
+	// Created private rather than made private afterwards: the token is
+	// written into it, and a file that is readable for a moment first is
+	// readable to whoever opened it during that moment.
+	file, err := atomicfile.CreateWithMode(path, 0o600)
 	if err != nil {
 		return fmt.Errorf("cannot write %s: %w", path, err)
 	}
 	defer func() {
 		_ = atomicfile.Discard(file)
 	}()
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
-	}
 	if _, err := file.Write(append(content, '\n')); err != nil {
 		return fmt.Errorf("cannot write %s: %w", path, err)
 	}
@@ -190,4 +191,15 @@ func (self *Profiles) Names() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// profileNamePattern is what a saved profile may be called: a host name,
+// or a word. The name is shown in the sign-in page and written into the
+// command that page offers when the browser cannot reach the client, so
+// it is kept to characters a shell does nothing with.
+var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]{0,63}$`)
+
+// isProfileName says whether a name may be a saved profile's.
+func isProfileName(name string) bool {
+	return profileNamePattern.MatchString(name)
 }

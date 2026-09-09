@@ -64,7 +64,8 @@ dropping to `sslmode=require` to encrypt without checking who answered.
 The first start migrates the schema, writes the configuration the environment
 describes, generates a server secret and a signing key for the domain, and
 obtains a certificate over HTTP-01 — which needs port 80 reachable from the
-internet. Watch it do all that:
+internet. Port 80 answers those challenges and sends everything else to
+HTTPS; the dashboard is never served in the clear. Watch it do all that:
 
     docker compose logs -f teanode
 

@@ -95,9 +95,11 @@ func (self *graph) GetTemplate(ctx context.Context, arguments GetTemplateArgumen
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, template.DomainID) {
-		return nil, api.ErrNotFound
+	// Over this template's domain, not just some domain: a template's
+	// identifier is no secret, and a manager of one domain must not read
+	// another's. Not found either way, and when the domain is gone.
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, template.DomainID); err != nil {
+		return nil, err
 	}
 
 	layout, err := self.layoutOfTemplate(api.ContextTransaction(ctx), template)
@@ -395,9 +397,8 @@ func (self *graph) DeleteTemplate(ctx context.Context, arguments DeleteTemplateA
 		return api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, template.DomainID) {
-		return api.ErrNotFound
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, template.DomainID); err != nil {
+		return err
 	}
 
 	return api.ContextTransaction(ctx).DeleteTemplate(template.ID, nil)

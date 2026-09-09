@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"errors"
 	"io"
 	"mime/quotedprintable"
 	"strings"
@@ -32,6 +33,12 @@ var removedElements = []string{
 	"script", "iframe", "frame", "frameset", "object", "embed",
 	"applet", "form", "input", "button", "select", "textarea", "link", "meta",
 	"base", "svg", "math",
+	// Raw-text elements, whose contents the parser keeps as one string
+	// and the renderer writes back out unescaped. The frame that shows
+	// the message runs without scripts, so a browser building that
+	// document turns what is inside noscript into elements — every one of
+	// them unseen by the pass below.
+	"noscript", "xmp", "noembed", "noframes", "plaintext",
 }
 
 // allowedAttributes survive on any element. Everything else is removed, which
@@ -74,7 +81,16 @@ func sanitizeHtml(input string) (string, bool) {
 	var hasRemoteContent bool
 	var hasRemoteStyle bool
 
-	document, err := goquery.NewDocumentFromReader(strings.NewReader(input))
+	// Parsed the way the frame will parse it, without scripting, so that
+	// the tree checked here is the tree the browser builds there.
+	root, err := html.ParseWithOptions(strings.NewReader(input), html.ParseOptionEnableScripting(false))
+	if err == nil && root == nil {
+		err = errors.New("no document")
+	}
+	var document *goquery.Document
+	if err == nil {
+		document = goquery.NewDocumentFromNode(root)
+	}
 	if err != nil {
 		// If it cannot be parsed it cannot be made safe, so show nothing
 		// rather than something unchecked.

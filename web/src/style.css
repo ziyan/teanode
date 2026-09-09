@@ -2906,6 +2906,11 @@ a.button.primary:hover {
   outline: none;
   line-height: 1.5;
   word-wrap: break-word;
+  /* A quoted message is somebody else's markup inside this box, and an
+     inline position:fixed in it would otherwise leave the box and cover
+     the page. */
+  contain: paint;
+  isolation: isolate;
 }
 
 /* The quoted message a reply carries, folded away while the answer is being

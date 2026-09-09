@@ -3,8 +3,10 @@ package mx
 import (
 	"context"
 	"fmt"
-	"github.com/ziyan/teanode/internal/access"
+	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/access"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -15,7 +17,7 @@ import (
 
 func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, envelope *mailparse.Envelope) ([]*models.Delivery, error) {
 	// figure out sender domain
-	senderAlias, senderDomain := mailparse.SplitAddress(envelope.Sender)
+	_, senderDomain := mailparse.SplitAddress(envelope.Sender)
 
 	// extract some important headers
 	from, err := mailparse.ParseAddress(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "From")))
@@ -46,8 +48,8 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		if credential.Key != envelope.CredentialKey {
 			return nil, mailparse.ErrInvalidCredentials
 		}
-		// A credential restricted to one local part may not send as another.
-		if credential.Alias != "" && credential.Alias != senderAlias {
+		if !credentialMaySendAs(credential, domain, envelope.Sender, from) {
+			log.Warningf("credential %q may not send as %q, rejecting", credential.ID, from)
 			return nil, mailparse.ErrInvalidCredentials
 		}
 		if envelope.DomainID != "" && envelope.DomainID != domain.ID {
@@ -367,4 +369,21 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 	}
 	names := mailparse.AttachmentNames(mail.Headers, mail.Body)
 	return tx.SetMailSearch(mail.ID, searchDocument(mail, names), len(names))
+}
+
+// credentialMaySendAs says whether a credential restricted to one local
+// part is being used as that identity: in the envelope sender, and in the
+// From header, which is the one the recipient reads. A client writes its
+// own From line, so a check on the envelope alone confined nothing — a
+// credential handed to a newsletter service could send as anyone at the
+// domain, signed and aligned. An unrestricted credential may send as any
+// address of its domain, which the caller has already checked the envelope
+// against.
+func credentialMaySendAs(credential *models.Credential, domain *models.Domain, envelopeSender, from string) bool {
+	if credential.Alias == "" {
+		return true
+	}
+	senderAlias, _ := mailparse.SplitAddress(envelopeSender)
+	fromAlias, fromDomain := mailparse.SplitAddress(from)
+	return credential.Alias == senderAlias && credential.Alias == fromAlias && strings.EqualFold(fromDomain, domain.Domain)
 }

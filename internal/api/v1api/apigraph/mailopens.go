@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -68,6 +69,11 @@ func (self *graph) GetMailOpens(ctx context.Context, arguments GetMailOpensArgum
 	}
 	if mail == nil {
 		return nil, api.ErrNotFound
+	}
+	// Over the mail's domain, not just some domain: the answer carries
+	// where and when the recipient read it.
+	if _, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, mail.DomainID); err != nil {
+		return nil, err
 	}
 
 	// The addresses were recorded against the envelope, which is the
@@ -145,7 +151,8 @@ func existingMails(mails []*models.Mail) []*models.Mail {
 }
 
 func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArguments) ([]*MailOpens, error) {
-	if _, err := self.requireAnyPermission(ctx, models.PermissionMailAudit); err != nil {
+	principal, err := self.requireAnyPermission(ctx, models.PermissionMailAudit)
+	if err != nil {
 		return nil, err
 	}
 	if len(arguments.MailIDs) == 0 {
@@ -158,6 +165,11 @@ func (self *graph) ListMailOpens(ctx context.Context, arguments ListMailOpensArg
 	}
 
 	mails = existingMails(mails)
+	// A message of a domain the caller does not audit is left out the way
+	// a deleted one is: the page reads either as "nothing known".
+	mails = slices.DeleteFunc(mails, func(mail *models.Mail) bool {
+		return !principal.Permissions.HasOverDomain(models.PermissionMailAudit, mail.DomainID)
+	})
 
 	envelopeIds := make([]string, 0, len(mails))
 	for _, mail := range mails {

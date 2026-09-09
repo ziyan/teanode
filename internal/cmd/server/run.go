@@ -246,6 +246,10 @@ type server struct {
 	secret   []byte
 	instance string
 
+	// credentialLimiter is what authLimiter builds, once.
+	credentialLimiter *ratelimit.Registry
+	authLimiterOnce   sync.Once
+
 	// upgradeDirectory is where a staged binary goes and where the next start
 	// looks for one. From the environment, because that next start has to
 	// find it before it can read anything from the database.
@@ -289,6 +293,24 @@ type server struct {
 		http         net.Listener
 		https        net.Listener
 	}
+}
+
+// authLimiter is the one limiter every way of presenting a credential
+// counts against — the submission listener, IMAP, the send endpoint — built
+// once so that every connection counts against the same buckets. Nil when
+// either setting is zero, which is how an operator turns the limit off.
+func (self *server) authLimiter(configuration *config.Configuration) *ratelimit.Registry {
+	self.authLimiterOnce.Do(func() {
+		if configuration.SMTP.AuthRateLimit > 0 && configuration.SMTP.AuthRateBurst > 0 {
+			self.credentialLimiter = ratelimit.NewRegistry(
+				float64(configuration.SMTP.AuthRateLimit)/60.0,
+				int64(configuration.SMTP.AuthRateBurst),
+				authLimiterAddresses,
+				time.Hour,
+			)
+		}
+	})
+	return self.credentialLimiter
 }
 
 func (self *server) onClose(close func()) {
@@ -821,8 +843,9 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		// The instance, not the server name: the name is the same on every
 		// instance sharing this database, and this is the field that says
 		// which process you are talking to.
-		BackendID: self.instance,
-		Restarter: self.restarter,
+		BackendID:   self.instance,
+		Restarter:   self.restarter,
+		AuthLimiter: self.authLimiter(configuration),
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)
@@ -859,17 +882,37 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 // When a different challenge type is configured this returns the handler
 // unchanged, and when the dashboard is disabled it returns a handler that
 // serves only challenges.
-func withChallengeHandler(handler http.Handler, manager autoacme.Manager) http.Handler {
-	if manager == nil {
-		return handler
+// Bounds on an HTTP connection, on both listeners. Anyone can open one;
+// without these a client that sends its request a byte a minute, or a
+// header without end, holds a connection and its buffers for as long as it
+// likes.
+const (
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 5 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+	httpMaxHeaderBytes    = 64 * 1024
+)
+
+// withChallengeHandler is the plain HTTP listener's handler: ACME
+// challenges first, then — when this process serves HTTPS itself — a
+// redirect there for everything else, and otherwise the handler as it is,
+// for a deployment whose TLS ends at a proxy in front.
+func withChallengeHandler(handler http.Handler, manager autoacme.Manager, redirectToTLS bool) http.Handler {
+	var challengeHandler http.Handler
+	if manager != nil {
+		challengeHandler = manager.HTTPHandler()
 	}
-	challengeHandler := manager.HTTPHandler()
-	if challengeHandler == nil {
+	if challengeHandler == nil && !redirectToTLS {
 		return handler
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if strings.HasPrefix(request.URL.Path, autoacme.ChallengePath) {
+		if challengeHandler != nil && strings.HasPrefix(request.URL.Path, autoacme.ChallengePath) {
 			challengeHandler.ServeHTTP(response, request)
+			return
+		}
+		if redirectToTLS && request.TLS == nil {
+			target := "https://" + request.Host + request.URL.RequestURI()
+			http.Redirect(response, request, target, http.StatusPermanentRedirect)
 			return
 		}
 		if handler == nil {
@@ -879,6 +922,12 @@ func withChallengeHandler(handler http.Handler, manager autoacme.Manager) http.H
 		handler.ServeHTTP(response, request)
 	})
 }
+
+// smtpConnectionsAtOnce bounds how many SMTP connections each listener
+// serves at once. Each holds a goroutine and, once it sends DATA, a buffer
+// the size of the largest message allowed, for up to an hour; a thousand of
+// them is what a busy server sees and what this process can hold.
+const smtpConnectionsAtOnce = 1000
 
 // authLimiterAddresses caps how many addresses the submission limiter keeps
 // buckets for at once. Bounded because the key is a remote address and there
@@ -988,10 +1037,14 @@ func (self *server) serve(ctx context.Context) error {
 	stopped := make(chan string, 4)
 
 	// The plain HTTP listener also answers ACME http-01 challenges, so it is
-	// worth running even when the dashboard is switched off.
-	httpHandler := withChallengeHandler(self.handler, self.acme)
-	httpServer := &http.Server{Handler: httpHandler}
-	httpsServer := &http.Server{Handler: self.handler}
+	// worth running even when the dashboard is switched off. When this
+	// process serves HTTPS itself, everything else on the plain listener is
+	// sent there: a hostname typed into a browser goes to port 80 first,
+	// and a dashboard that answered there took a password in the clear.
+	servesTLS := self.listeners.https != nil && self.handler != nil && tlsConfig != nil
+	httpHandler := withChallengeHandler(self.handler, self.acme, servesTLS)
+	httpServer := &http.Server{Handler: httpHandler, ReadHeaderTimeout: httpReadHeaderTimeout, ReadTimeout: httpReadTimeout, IdleTimeout: httpIdleTimeout, MaxHeaderBytes: httpMaxHeaderBytes}
+	httpsServer := &http.Server{Handler: self.handler, ReadHeaderTimeout: httpReadHeaderTimeout, ReadTimeout: httpReadTimeout, IdleTimeout: httpIdleTimeout, MaxHeaderBytes: httpMaxHeaderBytes}
 
 	if self.listeners.http != nil && httpHandler != nil {
 		waitGroup.Add(1)
@@ -1005,7 +1058,7 @@ func (self *server) serve(ctx context.Context) error {
 		}()
 	}
 
-	if self.listeners.https != nil && self.handler != nil && tlsConfig != nil {
+	if servesTLS {
 		waitGroup.Add(1)
 		go func() {
 			defer deferutil.Recover()
@@ -1052,6 +1105,7 @@ func (self *server) serve(ctx context.Context) error {
 				Secret:         self.secret,
 				TrustedSenders: configuration.SMTP.TrustedSenders,
 				Delay:          configuration.SMTP.GreylistDelay.Duration(),
+				MaxConnections: smtpConnectionsAtOnce,
 
 				RequireReverseDNS: configuration.SMTP.RequireReverseDNS,
 			}); err != nil {
@@ -1061,18 +1115,7 @@ func (self *server) serve(ctx context.Context) error {
 		}()
 	}
 
-	// One limiter for the submission listener, built once so that every
-	// connection counts against the same buckets. Nil when either setting is
-	// zero, which is how an operator turns the limit off.
-	var authLimiter *ratelimit.Registry
-	if configuration.SMTP.AuthRateLimit > 0 && configuration.SMTP.AuthRateBurst > 0 {
-		authLimiter = ratelimit.NewRegistry(
-			float64(configuration.SMTP.AuthRateLimit)/60.0,
-			int64(configuration.SMTP.AuthRateBurst),
-			authLimiterAddresses,
-			time.Hour,
-		)
-	}
+	authLimiter := self.authLimiter(configuration)
 
 	if self.listeners.smtpOutgoing != nil {
 		waitGroup.Add(1)
@@ -1080,13 +1123,14 @@ func (self *server) serve(ctx context.Context) error {
 			defer deferutil.Recover()
 			defer waitGroup.Done()
 			if err := smtpd.Serve(self.listeners.smtpOutgoing, self.exchange.HandleEnvelope, self.locator, self.resolver, self.dropper, &smtpd.Settings{
-				Outgoing:      true,
-				Greeting:      greeting,
-				Timeout:       time.Hour,
-				MaxSize:       int(configuration.SMTP.MaxMessageSize.Bytes()),
-				MaxRecipients: configuration.SMTP.MaxRecipientsOutgoing,
-				TLSConfig:     tlsConfig,
-				Secret:        self.secret,
+				Outgoing:       true,
+				Greeting:       greeting,
+				Timeout:        time.Hour,
+				MaxSize:        int(configuration.SMTP.MaxMessageSize.Bytes()),
+				MaxRecipients:  configuration.SMTP.MaxRecipientsOutgoing,
+				TLSConfig:      tlsConfig,
+				Secret:         self.secret,
+				MaxConnections: smtpConnectionsAtOnce,
 
 				AuthLimiter:         authLimiter,
 				AuthenticateMailbox: authenticateMailbox,

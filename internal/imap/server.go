@@ -176,6 +176,9 @@ type session struct {
 	mailbox     *models.Mailbox
 	appPassword string
 	checkedAt   time.Time
+	// canWrite is whether the owner holds mail:write, checked at sign-in
+	// and again whenever the sign-in is rechecked.
+	canWrite bool
 
 	// Set by Select.
 	view *view
@@ -194,9 +197,14 @@ func (self *session) Login(username, password string) error {
 	}
 	var mailbox *models.Mailbox
 	var appPassword *models.MailboxAppPassword
+	var canWrite bool
 	err := self.settings.Database.Transaction(func(tx db.Transaction) error {
 		var err error
 		mailbox, appPassword, err = access.AuthenticateAppPasswordWithID(tx, username, password)
+		if err != nil {
+			return err
+		}
+		canWrite, err = access.MailboxMayWrite(tx, mailbox)
 		return err
 	})
 	if err != nil {
@@ -209,9 +217,20 @@ func (self *session) Login(username, password string) error {
 	}
 	self.mailbox = mailbox
 	self.appPassword = appPassword.ID
+	self.canWrite = canWrite
 	self.checkedAt = time.Now()
 	log.Debugf("imap sign-in as %q into mailbox %q from %s", username, mailbox.ID, self.remote)
 	return nil
+}
+
+// requireWrite refuses a command that changes mail when the owner may only
+// read it. The dashboard checks mail:write on every change; a mail program
+// signed in with an app password gets the same answer.
+func (self *session) requireWrite() error {
+	if self.canWrite {
+		return nil
+	}
+	return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeNoPerm, Text: "This sign-in may not change mail"}
 }
 
 // recheckInterval is how often an open session asks whether it may stay
@@ -231,6 +250,11 @@ func (self *session) stillAllowed(tx db.Transaction) error {
 		log.Noticef("imap session on mailbox %q ended: its app password or account is gone", self.mailbox.ID)
 		return &goimap.Error{Type: goimap.StatusResponseTypeBye, Code: goimap.ResponseCodeAuthenticationFailed, Text: "This sign-in is no longer valid"}
 	}
+	canWrite, err := access.MailboxMayWrite(tx, self.mailbox)
+	if err != nil {
+		return err
+	}
+	self.canWrite = canWrite
 	self.checkedAt = time.Now()
 	return nil
 }
@@ -446,6 +470,9 @@ func (self *session) Namespace() (*goimap.NamespaceData, error) {
 }
 
 func (self *session) Create(name string, options *goimap.CreateOptions) error {
+	if err := self.requireWrite(); err != nil {
+		return err
+	}
 	name = strings.Trim(name, string(delimiter))
 	if name == "" || strings.EqualFold(name, inboxName) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeCannot, Text: "Cannot create that folder"}
@@ -483,6 +510,9 @@ func (self *session) Create(name string, options *goimap.CreateOptions) error {
 }
 
 func (self *session) Delete(name string) error {
+	if err := self.requireWrite(); err != nil {
+		return err
+	}
 	return self.transaction(func(tx db.Transaction) error {
 		entry, err := self.folderNamed(tx, name)
 		if err != nil {
@@ -502,6 +532,9 @@ func (self *session) Delete(name string) error {
 }
 
 func (self *session) Rename(oldName, newName string, options *goimap.RenameOptions) error {
+	if err := self.requireWrite(); err != nil {
+		return err
+	}
 	newName = strings.Trim(newName, string(delimiter))
 	if newName == "" || strings.EqualFold(newName, inboxName) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeCannot, Text: "Cannot use that name"}
@@ -556,6 +589,9 @@ func (self *session) Unsubscribe(name string) error { return nil }
 // Append stores a message a client hands over — its own copy of something it
 // sent, or a draft — as a row and an item, so it shows in the web UI too.
 func (self *session) Append(name string, reader goimap.LiteralReader, options *goimap.AppendOptions) (*goimap.AppendData, error) {
+	if err := self.requireWrite(); err != nil {
+		return nil, err
+	}
 	limit := int64(self.settings.MaxSize)
 	if limit > 0 && reader.Size() > limit {
 		return nil, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeLimit, Text: fmt.Sprintf("Messages may be at most %d bytes", limit)}

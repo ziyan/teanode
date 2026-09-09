@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/op/go-logging"
@@ -280,13 +281,32 @@ func AuthenticateAppPassword(tx db.Transaction, username, password string) (*mod
 	return mailbox, err
 }
 
+// dummyPasswordHash is what a refused sign-in is compared against, so that
+// refusing takes as long as checking. Made once, on first use, at the cost
+// every stored hash has.
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, err := security.HashPassword("not-a-password-anybody-holds")
+	if err != nil {
+		panic(err)
+	}
+	return hash
+})
+
 // AuthenticateAppPasswordWithID is AuthenticateAppPassword returning the app
 // password that matched too, for a session that wants to check later that
 // it still exists.
 func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string) (*models.Mailbox, *models.MailboxAppPassword, error) {
+	// Every way of being wrong is one answer, and takes one bcrypt: an
+	// address with no mailbox behind it used to be refused at once, and an
+	// address with one after a hash, which told a caller which addresses
+	// have mailboxes by how long the refusal took.
+	refuse := func() (*models.Mailbox, *models.MailboxAppPassword, error) {
+		_, _ = security.VerifyPassword(dummyPasswordHash(), password)
+		return nil, nil, ErrInvalidAppPassword
+	}
 	address, err := mailparse.ParseAddress(strings.TrimSpace(username))
 	if err != nil {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	localPart, domainName := mailparse.SplitAddress(address)
 	domain, err := tx.GetDomainByName(domainName)
@@ -294,7 +314,7 @@ func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string)
 		return nil, nil, err
 	}
 	if domain == nil {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	var mailboxId string
 	for _, alias := range domain.Aliases {
@@ -307,32 +327,35 @@ func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string)
 		}
 	}
 	if mailboxId == "" {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	mailbox, err := tx.GetMailbox(mailboxId)
 	if err != nil {
 		return nil, nil, err
 	}
 	if mailbox == nil {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	user, err := tx.GetUser(mailbox.UserID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if user == nil || user.Disabled() {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	permissions, err := tx.EffectivePermissions(user.ID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !permissions.Has(models.PermissionMailRead) {
-		return nil, nil, ErrInvalidAppPassword
+		return refuse()
 	}
 	appPasswords, err := tx.ListAppPasswords(mailbox.ID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(appPasswords) == 0 {
+		return refuse()
 	}
 	for _, appPassword := range appPasswords {
 		ok, err := security.VerifyPassword([]byte(appPassword.PasswordHash), password)
@@ -523,6 +546,20 @@ func ReconcileIDPGroups(tx db.Transaction, user *models.User, claimed []string) 
 	}
 	*user = *updated
 	return nil
+}
+
+// MailboxMayWrite says whether a mailbox's owner may change its mail:
+// flag, move, delete, file, and add to it. A mail program signed in with
+// an app password holds no more than the owner does in the dashboard.
+func MailboxMayWrite(tx db.Transaction, mailbox *models.Mailbox) (bool, error) {
+	if mailbox == nil {
+		return false, nil
+	}
+	permissions, err := tx.EffectivePermissions(mailbox.UserID)
+	if err != nil {
+		return false, err
+	}
+	return permissions.Has(models.PermissionMailWrite), nil
 }
 
 // AppPasswordStillValid says whether a session signed in with an app

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
@@ -387,24 +388,33 @@ func runMailContent(ctx context.Context, command *cli.Command) error {
 	if !content.Available {
 		return fmt.Errorf("the message is no longer stored; retention removed it, or it arrived before storage was configured")
 	}
+	// A message's own text is written as it is when it goes to a file or a
+	// pipe, and with control characters escaped when it goes to a terminal,
+	// which would otherwise obey whatever the sender put in it.
+	show := func(text string) {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			text = forTerminal(text)
+		}
+		fmt.Println(text)
+	}
 	switch {
 	case command.Bool("headers"):
-		fmt.Println(content.RawHeaders)
+		show(content.RawHeaders)
 	case command.Bool("html"):
 		if content.HTML == "" {
 			return fmt.Errorf("the message has no HTML part; drop --html for the text")
 		}
-		fmt.Println(content.HTML)
+		show(content.HTML)
 	default:
 		if content.Text == "" && content.HTML != "" {
 			return fmt.Errorf("the message has no text part; pass --html for the HTML")
 		}
-		fmt.Println(content.Text)
+		show(content.Text)
 	}
 	if len(content.Attachments) > 0 && !command.Bool("headers") {
 		fmt.Fprintf(os.Stderr, "\n%d attachment(s):\n", len(content.Attachments))
 		for _, attachment := range content.Attachments {
-			fmt.Fprintf(os.Stderr, "  %d: %s (%s, %d bytes)\n", attachment.Index, attachment.Filename, attachment.ContentType, attachment.Size)
+			fmt.Fprintf(os.Stderr, "  %d: %s (%s, %d bytes)\n", attachment.Index, forTerminal(attachment.Filename), forTerminal(attachment.ContentType), attachment.Size)
 		}
 	}
 	return nil

@@ -49,3 +49,28 @@ func TestSecurityPolicyAllowsLoopbackOnlyForTheCommandLinePage(t *testing.T) {
 		}
 	}
 }
+
+// A browser that reached the server over TLS is told to keep to it, so a
+// hostname typed later does not go to the plain listener first. The header
+// is meaningless on a plain response and is not sent there.
+func TestStrictTransportSecurityIsSentOverTLSOnly(t *testing.T) {
+	t.Parallel()
+
+	handler := web.MakeSecurityHeadersMiddleware(nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}))
+
+	plain := httptest.NewRecorder()
+	handler.ServeHTTP(plain, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got := plain.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("a plain response carried %q", got)
+	}
+
+	secure := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "https://mail.example.com/", nil)
+	handler.ServeHTTP(secure, request)
+	if got := secure.Header().Get("Strict-Transport-Security"); !strings.HasPrefix(got, "max-age=") {
+		t.Errorf("a TLS response carried %q, want a max-age", got)
+	}
+}

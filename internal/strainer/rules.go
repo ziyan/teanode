@@ -538,13 +538,21 @@ func newRuleSubjects(message *spamfilter.Message) *ruleSubjects {
 	// proportional to how many somebody put in it.
 	uris := linkPattern.FindAllString(raw, 64)
 
+	// The header block is bounded the same way the body is: a "full"
+	// rule runs over both, and a message is allowed more header than the
+	// patterns should be run across.
+	joinedHeaders := strings.Join(message.Headers, "\n")
+	if len(joinedHeaders) > bodyLimit {
+		joinedHeaders = joinedHeaders[:bodyLimit]
+	}
+
 	return &ruleSubjects{
 		headers: headers,
 		// Lines joined and runs of whitespace collapsed, which is the form
 		// the published body rules are written against.
 		body:    strings.Join(strings.Fields(raw), " "),
 		rawBody: raw,
-		full:    strings.Join(message.Headers, "\n") + "\n\n" + raw,
+		full:    joinedHeaders + "\n\n" + raw,
 		uris:    uris,
 	}
 }

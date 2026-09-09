@@ -232,6 +232,11 @@ func (self *graph) FinishPasskeyRegistration(ctx context.Context, arguments Fini
 // for this site and the server is never told a username first. That also means
 // this request reveals nothing about who has an account here.
 func (self *graph) BeginPasskeyAssertion(ctx context.Context) (*PasskeyCeremony, error) {
+	// Anyone may start one, and each started one is held for its lifetime,
+	// so starting them is counted the way login attempts are.
+	if self.authenticator != nil && !self.authenticator.AllowLoginAttempt(api.ContextRequest(ctx)) {
+		return nil, api.ErrTooManyRequests
+	}
 	engine, err := self.webAuthn()
 	if err != nil {
 		return nil, err

@@ -31,11 +31,21 @@ func Lookup(ctx context.Context, domain string, options *LookupOptions) (*Record
 		}
 		return nil, fmt.Errorf("dmarc: failed to lookup txt record %q: %w", record, err)
 	}
-	if len(txts) == 0 {
+	// Only a DMARC record counts, RFC 7489 §6.6.3: a name carries other TXT
+	// records too — an ownership proof, say — and one of those joined onto
+	// the policy made it unreadable, which refused every message from the
+	// domain. More than one DMARC record is no record.
+	var records []string
+	for _, txt := range txts {
+		if strings.HasPrefix(strings.TrimSpace(txt), "v=DMARC1") {
+			records = append(records, txt)
+		}
+	}
+	if len(records) == 0 {
 		return nil, nil
 	}
-
-	// long keys are split in multiple parts
-	txt := strings.Join(txts, "")
-	return Parse(txt)
+	if len(records) > 1 {
+		return nil, nil
+	}
+	return Parse(records[0])
 }

@@ -396,3 +396,22 @@ export function textToHtml(text: string): string {
     .map((paragraph) => `<p>${escapeText(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('')
 }
+
+// quotableHtml is a stranger's message made fit to paste into the editor.
+//
+// The message frame shows a message under its own policy, in a document of
+// its own; the editor is part of the dashboard's document. A style block
+// that is harmless in the frame restyles the whole page from inside the
+// editor — hides the compose form, lays a fake sign-in over it — and an id
+// lets the quote borrow the dashboard's own rules. So the quote keeps its
+// text and its tables, and loses everything that reaches outside its box.
+export function quotableHtml(html: string): string {
+  const document = new DOMParser().parseFromString(html, 'text/html')
+  for (const element of document.querySelectorAll('style, link, meta, noscript, title, template, script')) {
+    element.remove()
+  }
+  for (const element of document.querySelectorAll('[id]')) {
+    element.removeAttribute('id')
+  }
+  return document.body.innerHTML
+}

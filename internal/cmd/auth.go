@@ -133,6 +133,9 @@ func runAuthLogin(ctx context.Context, command *cli.Command) error {
 		serverUrl = command.Root().String("url")
 	}
 	name := command.String("name")
+	if name != "" && !isProfileName(name) {
+		return usage(fmt.Sprintf("%q is not a profile name; use letters, digits, dots, dashes and underscores", name))
+	}
 	insecure := command.Bool("insecure") || command.Root().Bool("insecure")
 	readOnly := command.Bool("read-only") || command.Root().Bool("read-only")
 

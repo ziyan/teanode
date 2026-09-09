@@ -312,6 +312,13 @@ func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswor
 		return nil, translateError(err)
 	}
 	log.Noticef("%s set the password for %q", operatorName(ctx), updated.Username)
+	// An administrator resetting a password is taking the account back;
+	// whoever was signed in as it is signed out.
+	if self.authenticator != nil {
+		if _, err := self.authenticator.RevokeSessions(updated.Username, ""); err != nil {
+			log.Errorf("failed to end the sessions of %q after a password reset: %s", updated.Username, err)
+		}
+	}
 	return describeUser(updated), nil
 }
 
@@ -350,6 +357,12 @@ func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments
 // account added later cannot be one that could not have been created first.
 func validateUsername(username string) error {
 	if username == "" || len(username) > 64 || strings.ContainsAny(username, " \t\r\n") {
+		return api.ErrInvalidArguments
+	}
+	// The console's name is not an account's to take: a request carrying
+	// it is handled as the console, with every permission, and an account
+	// renamed to it would be from then on.
+	if models.IsReservedUsername(username) {
 		return api.ErrInvalidArguments
 	}
 	return nil

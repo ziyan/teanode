@@ -1,6 +1,7 @@
 package mailparse
 
 import (
+	"crypto/subtle"
 	"encoding/base32"
 	"fmt"
 	"net/mail"
@@ -72,7 +73,7 @@ func ValidateAddress(address string, secret []byte) (string, string, error) {
 	contentToSign := UnsplitAddress(strings.Join(parts[:2], "-"), domain)
 	hash := security.SignString(contentToSign, secret)
 	expectedSignature := strings.ToLower(base32.HexEncoding.EncodeToString(hash)[:16])
-	if parts[2] != expectedSignature {
+	if subtle.ConstantTimeCompare([]byte(parts[2]), []byte(expectedSignature)) != 1 {
 		return "", "", fmt.Errorf("mailparse: invalid address, signature does not match")
 	}
 

@@ -76,12 +76,18 @@ func (self *component) provider(request *http.Request) *sso.Provider {
 
 // redirectURL is where the provider sends the browser back: this server, as
 // the browser reached it.
-func redirectURL(request *http.Request, providerId string) string {
+func (self *component) redirectURL(request *http.Request, providerId string) string {
 	scheme := "https"
-	if request.TLS == nil && !strings.EqualFold(request.Header.Get("X-Forwarded-Proto"), "https") {
+	if !self.isSecure(request) {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s://%s/api/v1/sso/%s/callback", scheme, request.Host, url.PathEscape(providerId))
+}
+
+// isSecure is whether the browser reached this server over HTTPS, believing
+// a proxy's word for it only when the operator listed the proxy.
+func (self *component) isSecure(request *http.Request) bool {
+	return api.IsSecure(request, self.configuration.Current().Server.TrustedProxies)
 }
 
 func (self *component) start(response http.ResponseWriter, request *http.Request) {
@@ -93,7 +99,7 @@ func (self *component) start(response http.ResponseWriter, request *http.Request
 	// Where to land afterwards: a path on this site and nothing else, so
 	// the sign-in cannot be used to send somebody elsewhere.
 	returnTo := safeReturn(request.URL.Query().Get("return"))
-	authURL, cookie, err := self.service.Begin(request.Context(), *provider, redirectURL(request, provider.ID), returnTo)
+	authURL, cookie, err := self.service.Begin(request.Context(), *provider, self.redirectURL(request, provider.ID), returnTo)
 	if err != nil {
 		log.Errorf("cannot start single sign-on with %q: %s", provider.ID, err)
 		http.Error(response, "the identity provider could not be reached", http.StatusBadGateway)
@@ -105,7 +111,7 @@ func (self *component) start(response http.ResponseWriter, request *http.Request
 		Path:     "/api/v1/sso/",
 		MaxAge:   int((10 * time.Minute).Seconds()),
 		HttpOnly: true,
-		Secure:   request.TLS != nil || strings.EqualFold(request.Header.Get("X-Forwarded-Proto"), "https"),
+		Secure:   self.isSecure(request),
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(response, request, authURL, http.StatusFound)
@@ -131,7 +137,7 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 	// The cookie is spent whatever happens next.
 	http.SetCookie(response, &http.Cookie{Name: cookieName, Value: "", Path: "/api/v1/sso/", MaxAge: -1, HttpOnly: true})
 
-	claims, returnTo, err := self.service.Complete(request.Context(), *provider, redirectURL(request, provider.ID), cookie.Value, query.Get("state"), query.Get("code"))
+	claims, returnTo, err := self.service.Complete(request.Context(), *provider, self.redirectURL(request, provider.ID), cookie.Value, query.Get("state"), query.Get("code"))
 	if err != nil {
 		log.Warningf("single sign-on with %q failed: %s", provider.ID, err)
 		if errors.Is(err, sso.ErrBadState) {

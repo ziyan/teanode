@@ -155,6 +155,16 @@ func parseHeaderGroups(reader io.Reader) ([][]string, error) {
 	text := textproto.NewReader(bufferedReader)
 	var headerGroups [][]string
 	var headers []string
+	// The header being assembled, built up rather than appended to a
+	// string, so that many short continuation lines cost their length and
+	// not its square.
+	var current strings.Builder
+	flush := func() {
+		if current.Len() > 0 {
+			headers = append(headers, current.String())
+			current.Reset()
+		}
+	}
 	for {
 		l, err := text.ReadLine()
 		if errors.Is(err, io.EOF) {
@@ -164,17 +174,22 @@ func parseHeaderGroups(reader io.Reader) ([][]string, error) {
 			return nil, fmt.Errorf("dsn: failed to read header: %w", err)
 		}
 		if len(l) == 0 {
+			flush()
 			if len(headers) > 0 {
 				headerGroups = append(headerGroups, headers)
 				headers = nil
 			}
-		} else if len(headers) > 0 && (l[0] == ' ' || l[0] == '\t') {
+		} else if current.Len() > 0 && (l[0] == ' ' || l[0] == '\t') {
 			// this is a continuation line
-			headers[len(headers)-1] += l + crlf
+			current.WriteString(l)
+			current.WriteString(crlf)
 		} else {
-			headers = append(headers, l+crlf)
+			flush()
+			current.WriteString(l)
+			current.WriteString(crlf)
 		}
 	}
+	flush()
 	if len(headers) > 0 {
 		headerGroups = append(headerGroups, headers)
 	}

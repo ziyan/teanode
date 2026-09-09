@@ -1062,6 +1062,11 @@ func (self *graph) UpdateMailbox(ctx context.Context, arguments UpdateMailboxArg
 			mailbox.Rules = *arguments.Rules
 		}
 		if arguments.AutoReply != nil {
+			// A reply is a message sent as the mailbox, so it needs what
+			// a forward needs.
+			if arguments.AutoReply.Enabled && !principal.Permissions.Has(models.PermissionMailSend) {
+				return api.ErrNotFound
+			}
 			mailbox.AutoReply = arguments.AutoReply
 		}
 		if arguments.ClearAutoReply != nil && *arguments.ClearAutoReply {

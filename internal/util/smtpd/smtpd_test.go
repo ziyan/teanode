@@ -1,6 +1,8 @@
 package smtpd_test
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -10,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -290,4 +293,110 @@ func TestAuth(t *testing.T) {
 			t.Fatalf("should not pass auth: %s", err)
 		}
 	}()
+}
+
+// A command line that never ends used to be buffered until the read
+// deadline, at whatever rate the client sent it. Now it is refused once it
+// is longer than any command has a reason to be.
+func TestAnEndlessCommandLineIsRefused(t *testing.T) {
+	t.Parallel()
+
+	var waitGroup sync.WaitGroup
+	defer waitGroup.Wait()
+
+	listener, err := net.Listen("tcp", testListenAddr)
+	if err != nil {
+		t.Fatalf("cannot create listener: %s", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		_ = smtpd.Serve(listener, func(ctx context.Context, envelope *mailparse.Envelope) error { return nil }, &testLocator{}, &testResolver{}, &testDropper{}, &smtpd.Settings{
+			Greeting:       "localhost Test/1.2.3",
+			Timeout:        3 * time.Second,
+			MaxSize:        1024,
+			MaxRecipients:  3,
+			Secret:         testSecret,
+			TrustedSenders: []string{"localhost"},
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to dial: %s", err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	reader := bufio.NewReader(conn)
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("no greeting: %s", err)
+	}
+
+	// A megabyte with no newline in it, written until the server stops
+	// reading; the write itself may fail once it has.
+	chunk := bytes.Repeat([]byte("x"), 64*1024)
+	for written := 0; written < 1024*1024; written += len(chunk) {
+		if _, err := conn.Write(chunk); err != nil {
+			break
+		}
+	}
+	reply, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("no reply to a line too long: %s", err)
+	}
+	if !strings.HasPrefix(reply, "500 ") {
+		t.Errorf("got %q, want a 500", reply)
+	}
+}
+
+// Past the connection limit a client is told to come back later, rather
+// than served, so the memory a connection holds is bounded by a setting
+// instead of by how many a stranger opens.
+func TestConnectionsPastTheLimitAreRefused(t *testing.T) {
+	t.Parallel()
+
+	var waitGroup sync.WaitGroup
+	defer waitGroup.Wait()
+
+	listener, err := net.Listen("tcp", testListenAddr)
+	if err != nil {
+		t.Fatalf("cannot create listener: %s", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		_ = smtpd.Serve(listener, func(ctx context.Context, envelope *mailparse.Envelope) error { return nil }, &testLocator{}, &testResolver{}, &testDropper{}, &smtpd.Settings{
+			Greeting:       "localhost Test/1.2.3",
+			Timeout:        3 * time.Second,
+			MaxSize:        1024,
+			MaxRecipients:  3,
+			Secret:         testSecret,
+			TrustedSenders: []string{"localhost"},
+			MaxConnections: 1,
+		})
+	}()
+
+	greeting := func() string {
+		conn, err := net.Dial("tcp", listener.Addr().String())
+		if err != nil {
+			t.Fatalf("failed to dial: %s", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		reply, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			t.Fatalf("no greeting: %s", err)
+		}
+		return reply
+	}
+	if first := greeting(); !strings.HasPrefix(first, "220 ") {
+		t.Fatalf("the first connection was answered %q, want 220", first)
+	}
+	if second := greeting(); !strings.HasPrefix(second, "421 ") {
+		t.Errorf("the second connection was answered %q, want 421", second)
+	}
 }

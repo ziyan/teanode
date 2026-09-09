@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // LocalTokenPrefix begins a locally minted token. It exists so that a token
@@ -19,7 +21,7 @@ const LocalTokenPrefix = "tnl_"
 // LocalUsername is the operator a locally minted token acts as. It is not a
 // configurable account, and the parentheses keep it clearly apart from one in
 // the log.
-const LocalUsername = "(local)"
+const LocalUsername = models.LocalUsername
 
 // MintLocalToken issues a short lived token signed with the server secret,
 // without storing anything.

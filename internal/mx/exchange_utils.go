@@ -516,10 +516,15 @@ func (self *exchange) checkArc(authenticator *authenticator, headers []string, b
 				Result: "fail",
 			},
 		}
+		// A chain that cannot be validated is a failed chain, RFC 8617
+		// §5.2, and a failed chain is a result the next hop reads, not a
+		// reason to refuse the message: nothing here rests on ARC passing.
+		// A sealer's expired key, or a resolver that did not answer,
+		// used to bounce the message with a permanent error.
 		arcResult, err := arc.Validate(ctx, headers, body, self.resolver)
 		if err != nil {
-			log.Errorf("failed to verify arc: %s", err)
-			return authenticationResults, nil, mailparse.ErrARCValidationFailed
+			log.Warningf("could not verify arc: %s", err)
+			return authenticationResults, []authres.Result{&authres.ARCResult{Value: authres.ResultFail}}, nil
 		}
 		authenticationResults.ARC.Result = string(arcResult.Status)
 		authenticationResults.ARC.Instances = arcResult.Instances
@@ -822,4 +827,35 @@ func dkimVerdict(results []*dkim.Verification, spfResult spf.Result) error {
 		}
 	}
 	return mailparse.ErrDKIMVerificationFailed
+}
+
+// withoutOwnAuthenticationResults is a message's headers with any
+// Authentication-Results that names this server as its author removed. The
+// names that count as this server's are the one it answers as for this
+// message and the one it is configured as, which are what it writes.
+func (self *exchange) withoutOwnAuthenticationResults(envelope *mailparse.Envelope) []string {
+	own := []string{self.receivedBy(envelope)}
+	if self.settings != nil && self.settings.Server != "" {
+		own = append(own, self.settings.Server)
+	}
+	kept := make([]string, 0, len(envelope.Headers))
+	for _, header := range envelope.Headers {
+		key, value := mailparse.SplitHeader(header)
+		if strings.EqualFold(key, "Authentication-Results") {
+			identifier, _, _ := authres.Parse(mailparse.DecodeHeaderValue(value))
+			forged := false
+			for _, name := range own {
+				if name != "" && strings.EqualFold(strings.TrimSuffix(identifier, "."), strings.TrimSuffix(name, ".")) {
+					forged = true
+					break
+				}
+			}
+			if forged {
+				log.Warningf("removing an Authentication-Results header claiming to be from %q on mail from %q", identifier, envelope.Sender)
+				continue
+			}
+		}
+		kept = append(kept, header)
+	}
+	return kept
 }
