@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-09-09
+
+### Security
+
+- The single sign-on state cookie is always marked `Secure`. It took the request's word for whether it arrived over TLS; there is no sign-in through an identity provider that does not. (#70)
+
 ## [0.17.2] - 2026-09-09
 
 ### Fixed
