@@ -6,10 +6,16 @@ import './style.css'
 import { App } from './app'
 import { initializeTheme } from './components/theme'
 import { TranslationProvider } from './i18n/i18n'
+import { startRipples } from './ripple'
 
 // The page already did this inline, before the bundle was fetched. Doing it
 // again keeps the two from drifting if the storage key ever changes.
 initializeTheme()
+
+// Presses leave a mark, everywhere rather than on the few controls somebody
+// remembered to decorate. Listens on the document, so a control added later
+// gets it without knowing about it.
+startRipples()
 
 const container = document.getElementById('teanode')
 if (!container) {

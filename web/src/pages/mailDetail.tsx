@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 
@@ -30,6 +30,14 @@ import { Tooltip } from '../components/tooltip'
 // Teaching the built-in filter. The classifier is the part that does most of
 // the work and it learns nothing on its own, so marking a message has to be
 // one press from reading it.
+// Remembering the answer, so the question is asked once rather than every
+// time the message is opened. The audit pages pass no item and record nothing:
+// somebody looking at another person's mail is not making a choice for them.
+const SHOW_IMAGES = `
+  mutation ($itemIds: [String!]!, $show: Boolean!) {
+    ShowMailboxItemImages(itemIds: $itemIds, show: $show)
+  }`
+
 const MARK = `
   mutation ($mailId: String!, $label: String!) {
     MarkMail(mailId: $mailId, label: $label) { mailId label learnedSpam learnedHam }
@@ -62,7 +70,7 @@ const MAIL = `
       }
     }
     GetMailContent(mailId: $mailId) {
-      mailId available text html hasRemoteContent size rawHeaders
+      mailId available text html hasRemoteContent imagesAllowed size rawHeaders
       headers { key value }
       attachments { index filename contentType size inline }
     }
@@ -298,6 +306,7 @@ export function MessageContent({
   mode = 'audit',
   menuContainer,
   menuExtra,
+  itemId,
 }: {
   mailId: string
   content?: MailContent | null
@@ -313,6 +322,10 @@ export function MessageContent({
   // what its checks said belong with the other things about the message that
   // are a click away rather than always on the screen.
   menuExtra?: (close: () => void) => React.ReactNode
+  // The item this message is in the reader's own mailbox, when it is one.
+  // Loading the pictures is remembered against it, so the question is asked
+  // once rather than every time the message is opened.
+  itemId?: string
 }) {
   const { t } = useTranslation()
   const session = useSession()
@@ -321,7 +334,24 @@ export function MessageContent({
   const canAudit = hasAnywhere(session.permissions, 'mail:audit')
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
+  const allowed = loadRemote || content?.imagesAllowed === true
   const [showHeaders, setShowHeaders] = useState(false)
+
+  // Loading them is the answer to the question; recording it is what stops the
+  // question being asked again. A failure to record is not a failure to show:
+  // the reader asked for the pictures, and they get them either way.
+  const showImages = useCallback(async () => {
+    setLoadRemote(true)
+    if (!itemId) {
+      return
+    }
+    try {
+      await graphql(SHOW_IMAGES, { itemIds: [itemId], show: true })
+    } catch {
+      // Said nowhere: the pictures are on the screen, which is what was asked
+      // for, and the only cost is being asked again next time.
+    }
+  }, [itemId])
 
   // Reading in the dark. The frame's document is built as a string, so the
   // web UI's theme has to be resolved here and written in as literals.
@@ -368,8 +398,8 @@ export function MessageContent({
   }, [mailId, mode])
 
   const document = useMemo(
-    () => (content?.html ? buildDocument(content.html, loadRemote ? mailId : undefined, dark, dark && darkened) : ''),
-    [content?.html, loadRemote, mailId, dark, darkened],
+    () => (content?.html ? buildDocument(content.html, allowed ? mailId : undefined, dark, dark && darkened) : ''),
+    [content?.html, allowed, mailId, dark, darkened],
   )
 
   // A message with no HTML has no rendered view and no markup behind one, so
@@ -484,10 +514,10 @@ export function MessageContent({
           )}
           {hasHtml ? (
             <>
-              {content.hasRemoteContent && !loadRemote && (
+              {content.hasRemoteContent && !allowed && (
                 <div className="banner">
                   {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => setLoadRemote(true)}>
+                  <button className="link" onClick={() => void showImages()}>
                     {t('mailDetail.loadRemote')}
                   </button>
                 </div>
@@ -568,10 +598,10 @@ export function MessageContent({
 
           {tab === 'rendered' && content.html && (
             <>
-              {content.hasRemoteContent && !loadRemote && (
+              {content.hasRemoteContent && !allowed && (
                 <div className="banner">
                   {t('mailDetail.remoteBlocked')}{' '}
-                  <button className="link" onClick={() => setLoadRemote(true)}>
+                  <button className="link" onClick={() => void showImages()}>
                     {t('mailDetail.loadRemote')}
                   </button>
                 </div>

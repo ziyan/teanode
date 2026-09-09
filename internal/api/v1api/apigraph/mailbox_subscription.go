@@ -219,6 +219,49 @@ func (self *graph) archiveInboxMail(tx db.Transaction, mailbox *models.Mailbox, 
 	return len(itemIds), nil
 }
 
+type ShowMailboxSubscriptionImagesArguments struct {
+	// MailboxID of the mailbox the list writes to
+	MailboxID string `json:"mailboxId"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it
+	Key string `json:"key"`
+
+	// Show: true to load this list's pictures without asking, false to go
+	// back to asking
+	Show bool `json:"show"`
+}
+
+// ShowMailboxSubscriptionImages says the pictures in this list's mail may be
+// loaded without asking, every time.
+//
+// The cost is the same as loading them once, repeated: the sender learns the
+// message was opened. A reader who has decided that for a newsletter they
+// read every week should be able to say so once.
+func (self *graph) ShowMailboxSubscriptionImages(ctx context.Context,
+	arguments ShowMailboxSubscriptionImagesArguments) (*models.MailboxSubscription, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(arguments.Key) == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	subscription, err := tx.GetSubscription(mailbox.ID, arguments.Key)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil {
+		return nil, api.ErrNotFound
+	}
+	if err := tx.SetSubscriptionImages(mailbox.ID, subscription.Key, arguments.Show); err != nil {
+		return nil, err
+	}
+	log.Noticef("%s set pictures in %q to %s", operatorName(ctx), subscription.Key,
+		map[bool]string{true: "always load", false: "ask"}[arguments.Show])
+	return tx.GetSubscription(mailbox.ID, subscription.Key)
+}
+
 type GetMailboxSubscriptionArguments struct {
 	// MailboxID of the mailbox to read
 	MailboxID string `json:"mailboxId"`

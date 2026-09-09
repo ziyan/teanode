@@ -53,6 +53,12 @@ type MailboxMutation interface {
 	// Keep a mailing list out of the Inbox without leaving it: its mail is filed in the Archive, read, and what the Inbox holds from it is filed too
 	MuteMailboxSubscription(ctx context.Context, arguments MuteMailboxSubscriptionArguments) (*models.MailboxSubscription, error)
 
+	// Load the pictures in a mailing list's mail without asking, every time
+	ShowMailboxSubscriptionImages(ctx context.Context, arguments ShowMailboxSubscriptionImagesArguments) (*models.MailboxSubscription, error)
+
+	// Remember that the reader loaded these messages' remote pictures, so opening them again does not ask
+	ShowMailboxItemImages(ctx context.Context, arguments ShowMailboxItemImagesArguments) (int, error)
+
 	// Run the stored rules over the mail already in a folder, as arrival would have, except that nothing is forwarded
 	ApplyMailboxRules(ctx context.Context, arguments ApplyMailboxRulesArguments) (*MailboxRuleApplication, error)
 
@@ -696,6 +702,31 @@ func (self *graph) SetMailboxItemFlags(ctx context.Context, arguments SetMailbox
 		return 0, translateError(err)
 	}
 	return int(changed), nil
+}
+
+type ShowMailboxItemImagesArguments struct {
+	// IDs of the items whose pictures were loaded
+	ItemIDs []string `json:"itemIds"`
+
+	// Show: false forgets the choice, so the question is asked again
+	Show bool `json:"show"`
+}
+
+// ShowMailboxItemImages remembers that the reader loaded these messages'
+// remote pictures.
+//
+// Recorded because the question has already been answered, and answering it
+// again protects nobody: the sender was told the message was opened the first
+// time. It is remembered per mailbox, since two people who received the same
+// message decide separately.
+func (self *graph) ShowMailboxItemImages(ctx context.Context, arguments ShowMailboxItemImagesArguments) (int, error) {
+	if _, _, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs); err != nil {
+		return 0, err
+	}
+	if err := self.transaction(ctx).SetItemImages(arguments.ItemIDs, arguments.Show); err != nil {
+		return 0, translateError(err)
+	}
+	return len(arguments.ItemIDs), nil
 }
 
 type MoveMailboxItemsArguments struct {

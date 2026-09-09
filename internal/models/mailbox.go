@@ -155,6 +155,11 @@ type MailboxItem struct {
 	Draft     bool      `json:"draft"`
 	Deleted   bool      `json:"deleted"` // IMAP's \Deleted, awaiting EXPUNGE
 	AddedAt   time.Time `json:"addedAt"`
+
+	// ImagesAt is when the reader chose to load this message's remote
+	// pictures. Set once and kept, so the choice is not asked for again every
+	// time the message is opened.
+	ImagesAt *time.Time `json:"imagesAt,omitempty"`
 }
 
 // MailboxThread is a conversation as a folder's list shows one: the newest of
@@ -244,6 +249,11 @@ type MailboxSubscription struct {
 	// MutedAt is when the reader asked for this list to stop arriving in the
 	// Inbox. It keeps coming and goes straight to the Archive, read.
 	MutedAt *time.Time `json:"mutedAt,omitempty"`
+
+	// ImagesAt is when the reader said this list's pictures may be loaded
+	// without asking. The cost is the same as loading them once, repeated:
+	// the sender learns each message was opened.
+	ImagesAt *time.Time `json:"imagesAt,omitempty"`
 
 	// What this person has already asked for. RequestedAt is when they asked
 	// to leave, nil while they have not; Method is how it was asked —

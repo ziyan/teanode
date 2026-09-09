@@ -6,6 +6,32 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Loading a message's remote pictures is remembered. Blocking them by default
+  is right — loading one tells the sender the message was opened, and from
+  roughly where — but asking again every time the same message is reopened
+  protects nobody, since the sender was told the first time. A list can also be
+  trusted once and for all: a newsletter is pictures with a few words around
+  them, and "always show pictures from this list" is one answer instead of one
+  per issue. Both are per mailbox, since two people who received the same
+  message decide separately, and an administrator reading somebody else's mail
+  in the audit pages records nothing and is always asked.
+
+- Keyboard shortcuts for the message you are reading: `e` archive, `r` reply,
+  `a` reply to all, `f` forward, `s` flag, `m` read or unread, `!` junk, `#`
+  delete, `u` back to the list, and `?` for the list of them. Every one is
+  something the toolbar can also do — a shortcut for something with no button
+  is a feature only its author knows about. They are ignored while you are
+  typing, ignored with Ctrl or Cmd held, and ignored behind a dialog, which is
+  the difference between a shortcut and a trap.
+
+- A press leaves a mark. Buttons, menu rows and the sidebar draw a ripple from
+  where the pointer went down, which matters most where the thing pressed does
+  not visibly change. Drawn in a layer of its own rather than inside each
+  control, so no layout anywhere changes to make room for it, and not drawn at
+  all for a reader who asked for less movement.
+
 ## [0.16.0] - 2026-09-09
 
 ### Added

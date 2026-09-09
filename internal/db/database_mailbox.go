@@ -50,6 +50,15 @@ type MailboxOperation interface {
 	CountThreads(folderId string, options *ItemOptions) (int64, error)
 	SetItemFlags(itemIds []string, flags models.MailboxItemFlags) (int64, error)
 
+	// SetItemImages remembers that the reader loaded a message's remote
+	// pictures, so that opening it again does not ask a question they have
+	// already answered.
+	SetItemImages(itemIds []string, show bool) error
+
+	// ImagesAllowedFor says whether this message's pictures may be shown
+	// without asking: allowed for the message, or for the list it came from.
+	ImagesAllowedFor(mailboxIds []string, mailId, listKey string) (bool, error)
+
 	// MoveItems puts items in another folder: new items with that folder's
 	// next UIDs, the old ones expunged, both folders' modseq bumped. Returns
 	// the new items.
@@ -192,18 +201,19 @@ type mailboxFolderModel struct {
 func (mailboxFolderModel) TableName() string { return "mailbox_folder" }
 
 type mailboxItemModel struct {
-	ID        string    `gorm:"column:id;primaryKey"`
-	FolderID  string    `gorm:"column:folder_id"`
-	MailID    string    `gorm:"column:mail_id"`
-	UID       int64     `gorm:"column:uid"`
-	ModSeq    int64     `gorm:"column:modseq"`
-	Seen      bool      `gorm:"column:seen"`
-	Flagged   bool      `gorm:"column:flagged"`
-	Answered  bool      `gorm:"column:answered"`
-	Forwarded bool      `gorm:"column:forwarded"`
-	Draft     bool      `gorm:"column:draft"`
-	Deleted   bool      `gorm:"column:deleted"`
-	AddedAt   time.Time `gorm:"column:added_at"`
+	ID        string     `gorm:"column:id;primaryKey"`
+	FolderID  string     `gorm:"column:folder_id"`
+	MailID    string     `gorm:"column:mail_id"`
+	UID       int64      `gorm:"column:uid"`
+	ModSeq    int64      `gorm:"column:modseq"`
+	Seen      bool       `gorm:"column:seen"`
+	Flagged   bool       `gorm:"column:flagged"`
+	Answered  bool       `gorm:"column:answered"`
+	Forwarded bool       `gorm:"column:forwarded"`
+	Draft     bool       `gorm:"column:draft"`
+	Deleted   bool       `gorm:"column:deleted"`
+	AddedAt   time.Time  `gorm:"column:added_at"`
+	ImagesAt  *time.Time `gorm:"column:images_at"`
 }
 
 func (mailboxItemModel) TableName() string { return "mailbox_item" }
@@ -332,6 +342,7 @@ func itemFromModel(model *mailboxItemModel) *models.MailboxItem {
 		Draft:     model.Draft,
 		Deleted:   model.Deleted,
 		AddedAt:   model.AddedAt.In(time.Local),
+		ImagesAt:  localTime(model.ImagesAt),
 	}
 }
 
@@ -1229,6 +1240,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			subscription.Failed = request.Failed
 			subscription.Error = request.Error
 			subscription.MutedAt = localTime(request.MutedAt)
+			subscription.ImagesAt = localTime(request.ImagesAt)
 		}
 		subscriptions = append(subscriptions, subscription)
 	}
@@ -1417,6 +1429,55 @@ func (self *transaction) SetItemFlags(itemIds []string, flags models.MailboxItem
 		changed += result.RowsAffected
 	}
 	return changed, nil
+}
+
+// SetItemImages records that the reader chose to load a message's remote
+// pictures, or takes that back.
+//
+// Not an IMAP flag: no mail program has a word for this, and inventing a
+// keyword would put it on the wire for every client to guess at.
+func (self *transaction) SetItemImages(itemIds []string, show bool) error {
+	if len(itemIds) == 0 {
+		return nil
+	}
+	var at *time.Time
+	if show {
+		now := time.Now().In(time.Local)
+		at = &now
+	}
+	return self.tx.Model(&mailboxItemModel{}).Where("\"id\" IN ?", itemIds).
+		Update("images_at", at).Error
+}
+
+// ImagesAllowedFor says whether this mail's pictures have already been asked
+// about and allowed, in any of these mailboxes: by the reader saying so for
+// this message, or by them saying so for the whole list it came from.
+func (self *transaction) ImagesAllowedFor(mailboxIds []string, mailId, listKey string) (bool, error) {
+	if len(mailboxIds) == 0 || mailId == "" {
+		return false, nil
+	}
+
+	var count int64
+	if err := self.tx.Model(&mailboxItemModel{}).
+		Joins("JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Where("\"mailbox_item\".\"mail_id\" = ? AND \"mailbox_item\".\"images_at\" IS NOT NULL", mailId).
+		Where("\"mailbox_folder\".\"mailbox_id\" IN ?", mailboxIds).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	if listKey == "" {
+		return false, nil
+	}
+	if err := self.tx.Model(&mailboxSubscriptionModel{}).
+		Where("\"mailbox_id\" IN ? AND \"list_key\" = ? AND \"images_at\" IS NOT NULL", mailboxIds, listKey).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (self *transaction) MoveItems(itemIds []string, folderId string) ([]*models.MailboxItem, error) {

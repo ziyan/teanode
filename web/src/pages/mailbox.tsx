@@ -30,6 +30,7 @@ import {
 import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
+import { Shortcut, useShortcuts } from '../shortcuts'
 import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
@@ -96,7 +97,7 @@ const THREAD = `
 const CONTENT = `
   query ($mailId: String!) {
     GetMailContent(mailId: $mailId) {
-      mailId available text html hasRemoteContent size rawHeaders
+      mailId available text html hasRemoteContent imagesAllowed size rawHeaders
       headers { key value }
       attachments { index filename contentType size inline }
     }
@@ -1044,6 +1045,56 @@ function Reader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
+  // The same actions the toolbar above offers, on the keys a person coming
+  // from another mail program already has in their fingers. Everything here
+  // is something the toolbar can do: a shortcut for something with no button
+  // is a feature only its author knows about.
+  const [showingKeys, setShowingKeys] = useState(false)
+  const shortcuts = useMemo<Shortcut[]>(() => {
+    // Derived here rather than read from below: everything under the early
+    // returns runs only once there is a conversation to show, and a hook has
+    // to run every time.
+    const items = view?.items ?? []
+    const inFolder = items.filter((entry) => entry.folderId === folder.id).map((entry) => entry.item.id)
+    const acting = inFolder.length > 0 ? inFolder : [itemId]
+    const anyUnread = items.some((entry) => !(marks[entry.item.id] ?? entry.item.seen))
+    const anyFlagged = items.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
+
+    const list: Shortcut[] = [
+      { key: 'u', label: t('shortcuts.back'), run: onBack },
+      { key: 'r', label: t('shortcuts.reply'), run: () => setWriting({ itemId: acting[0], kind: 'reply' }) },
+      { key: 'a', label: t('shortcuts.replyAll'), run: () => setWriting({ itemId: acting[0], kind: 'replyAll' }) },
+      { key: 'f', label: t('shortcuts.forward'), run: () => setWriting({ itemId: acting[0], kind: 'forward' }) },
+      {
+        key: 's',
+        label: t('shortcuts.flag'),
+        run: () => {
+          const next = !anyFlagged
+          setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
+          onFlag(acting, next)
+        },
+      },
+      {
+        key: 'm',
+        label: t('shortcuts.read'),
+        run: () => {
+          const seen = anyUnread
+          setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
+          onSeen(acting, seen)
+        },
+      },
+      { key: '!', shift: true, label: t('shortcuts.junk'), run: () => onJunk(acting, folder.kind === 'junk') },
+      { key: '#', shift: true, label: t('shortcuts.delete'), run: () => onDelete(acting) },
+      { key: '?', shift: true, label: t('shortcuts.help'), run: () => setShowingKeys(true) },
+    ]
+    if (archive) {
+      list.splice(1, 0, { key: 'e', label: t('shortcuts.archive'), run: () => onMove(acting, archive.id) })
+    }
+    return list
+  }, [view, itemId, marks, flags, archive, folder.id, folder.kind, onBack, onDelete, onFlag, onJunk, onMove, onSeen, t])
+
+  useShortcuts(shortcuts, !busy)
+
   if (thread.loading && !thread.data) {
     return <Loading />
   }
@@ -1071,6 +1122,7 @@ function Reader({
   const seenOf = (entry: MailboxThreadItem) => marks[entry.item.id] ?? entry.item.seen
   const anyUnread = entries.some((entry) => !seenOf(entry))
   const anyFlagged = entries.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
+
   const inTrash = folder.kind === 'trash'
   const toggle = (id: string) =>
     setOpen((previous) => {
@@ -1184,6 +1236,28 @@ function Reader({
           onClick={() => onDelete(acting)}
         />
       </div>
+
+      {showingKeys && (
+        <ConfirmDialog
+          title={t('shortcuts.title')}
+          body={
+            <>
+              <p className="muted">{t('shortcuts.intro')}</p>
+              <dl className="shortcut-list">
+                {shortcuts.map((shortcut) => (
+                  <div key={shortcut.key}>
+                    <dt>
+                      <kbd>{shortcut.key}</kbd>
+                    </dt>
+                    <dd>{shortcut.label}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          }
+          onClose={() => setShowingKeys(false)}
+        />
+      )}
 
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>
@@ -1360,6 +1434,7 @@ export function ThreadMessage({
               ) : (
                 <MessageContent
                   mailId={mail.id}
+                  itemId={entry.item.id}
                   content={content.data?.GetMailContent}
                   mode="mailbox"
                   menuContainer={menuSlot}
