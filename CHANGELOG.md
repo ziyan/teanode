@@ -76,6 +76,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A dropdown opens where there is room for it. The list is fixed to the
+  window, so one drawn past the bottom edge cannot be scrolled to — it is
+  simply gone, and the control that chooses how many rows a table shows sits
+  at the foot of the page, which is exactly where there is no room below. It
+  opens upward when there is more room above, is no taller than the room it
+  has, and stays inside the window sideways as well.
+
 - The name in a mailbox row gives way before the marks beside it. It was a bare
   run of text in a flex line, which cannot be shortened, so a long list of
   recipients pushed the count and the "Draft" badge out of the row instead —
