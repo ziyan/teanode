@@ -1345,9 +1345,13 @@ export function ThreadMessage({
   seen,
   open,
   onToggle,
+  allowImages,
 }: {
   entry: MailboxThreadItem
   folderId: string
+  // Pictures already allowed by something the message itself cannot see —
+  // the list it belongs to having been trusted a moment ago.
+  allowImages?: boolean
   // Read as the page has it, which is what arrived plus what opening it has
   // marked since — so a message does not stay bold after it was just read.
   seen: boolean
@@ -1435,6 +1439,7 @@ export function ThreadMessage({
                 <MessageContent
                   mailId={mail.id}
                   itemId={entry.item.id}
+                  allowImages={allowImages}
                   content={content.data?.GetMailContent}
                   mode="mailbox"
                   menuContainer={menuSlot}

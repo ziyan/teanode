@@ -307,6 +307,7 @@ export function MessageContent({
   menuContainer,
   menuExtra,
   itemId,
+  allowImages,
 }: {
   mailId: string
   content?: MailContent | null
@@ -326,6 +327,11 @@ export function MessageContent({
   // Loading the pictures is remembered against it, so the question is asked
   // once rather than every time the message is opened.
   itemId?: string
+  // Said by the page around it, for what it knows and this does not: the
+  // reader has just turned pictures on for the whole list. The message's own
+  // content was fetched before that and would go on saying they are blocked
+  // until it was fetched again.
+  allowImages?: boolean
 }) {
   const { t } = useTranslation()
   const session = useSession()
@@ -334,7 +340,7 @@ export function MessageContent({
   const canAudit = hasAnywhere(session.permissions, 'mail:audit')
   const [chosen, setChosen] = useState<Tab | null>(null)
   const [loadRemote, setLoadRemote] = useState(false)
-  const allowed = loadRemote || content?.imagesAllowed === true
+  const allowed = loadRemote || allowImages === true || content?.imagesAllowed === true
   const [showHeaders, setShowHeaders] = useState(false)
 
   // Loading them is the answer to the question; recording it is what stops the

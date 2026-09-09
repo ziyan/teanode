@@ -640,6 +640,7 @@ function SubscriptionReader({
             entry={entry}
             folderId={entry.folderId}
             seen={seenOf(entry)}
+            allowImages={!!subscription.imagesAt}
             open={opened.has(entry.item.id)}
             onToggle={() => {
               const opening = !opened.has(entry.item.id)
