@@ -646,6 +646,7 @@ func (self *exchange) checkSpam(
 		ReverseName:    envelope.RDNS,
 		Location:       envelope.Location,
 		HelloName:      envelope.Hello,
+		Encrypted:      envelope.TLS != nil,
 		ServerName:     self.config.Current().Server.Name,
 		Authenticated:  envelope.CredentialID != "",
 	}

@@ -804,9 +804,13 @@ so that a message full of links is not a burst of DNS queries.
 marked as spam or not spam in the dashboard. It is usually the most accurate
 part of a spam filter, because it learns the mail you actually get.
 
-**`minimumMessages`** — How many messages must have been learned before the
-classifier is allowed to contribute anything. A classifier trained on four
-messages is confidently wrong.
+**`minimumMessages`** — How many messages of each kind, spam and not spam,
+must have been learned before the classifier is allowed to contribute
+anything. A classifier trained on four messages is confidently wrong, and one
+trained on two hundred of one kind and forty of the other is confidently
+wrong about everything unlike those forty. Until both counts are reached the
+classifier is silent, and the dashboard's spam breakdown shows no `BAYES`
+line.
 
 **`rules`** — Public pattern rules, downloaded into the database and evaluated
 in this process. Off by default: an upgrade should not begin downloading and

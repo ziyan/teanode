@@ -51,6 +51,7 @@ func TestAWellConfiguredSenderScoresBelowZero(t *testing.T) {
 		ReverseName: "mail.example.com",
 		HelloName:   "mail.example.com",
 		ServerName:  "mail.example.net",
+		Encrypted:   true,
 		Authentication: &models.AuthenticationResults{
 			SPF:   &models.SPFResult{Result: "pass"},
 			DKIMs: []*models.DKIMResult{{Result: "pass"}},
@@ -180,7 +181,7 @@ func TestOneGoodSignatureBeatsOneBad(t *testing.T) {
 func TestNoAuthenticationResults(t *testing.T) {
 	t.Parallel()
 
-	total, fired := score(t, &spamfilter.Message{ReverseName: "mail.example.com"})
+	total, fired := score(t, &spamfilter.Message{ReverseName: "mail.example.com", HelloName: "mail.example.com", Encrypted: true})
 	if total != 0 {
 		t.Errorf("score = %v, want 0 with nothing known; fired = %v", total, fired)
 	}

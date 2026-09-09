@@ -806,9 +806,11 @@ type AntispamList struct {
 type AntispamBayes struct {
 	Enabled bool `yaml:"enabled"`
 
-	// MinimumMessages is how many messages must have been learned before the
-	// classifier is allowed to contribute. A classifier trained on four
-	// messages is confidently wrong.
+	// MinimumMessages is how many messages of each kind — spam, and not
+	// spam — must have been learned before the classifier is allowed to
+	// contribute. A classifier trained on four messages is confidently
+	// wrong, and one trained on two hundred of one kind and forty of the
+	// other is confidently wrong about everything unlike those forty.
 	MinimumMessages int64 `yaml:"minimumMessages,omitempty"`
 
 	// Weight scales its opinion, which it expresses between -1 and 1.
