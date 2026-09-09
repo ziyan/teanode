@@ -5,11 +5,12 @@
 // together without one looking heavier than the rest, and they take their
 // color from the text around them.
 
-type IconProps = { size?: number }
+type IconProps = { size?: number; className?: string }
 
-function Icon({ size = 18, children }: IconProps & { children: React.ReactNode }) {
+function Icon({ size = 18, className, children }: IconProps & { children: React.ReactNode }) {
   return (
     <svg
+      className={className}
       width={size}
       height={size}
       viewBox="0 0 24 24"

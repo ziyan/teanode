@@ -150,7 +150,7 @@ export function Select({
         onKeyDown={onKeyDown}
       >
         <span className="select-value">{chosen?.label ?? ''}</span>
-        <ChevronDownIcon size={14} />
+        <ChevronDownIcon size={14} className="chevron" />
       </button>
       {open &&
         createPortal(

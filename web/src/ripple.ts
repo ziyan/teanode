@@ -65,10 +65,21 @@ function pressable(target: EventTarget | null): HTMLElement | null {
     return null
   }
 
-  // An icon button with no border is an icon: there is nothing drawn for the
-  // mark to fill, so it appears as a box around a shape that never had one.
-  // The ones drawn with a border are buttons, and those take it.
-  if (element.classList.contains('icon-button') && !bordered(element)) {
+  // A control whose arrow turns has already said the press landed, and said
+  // it better: the turn shows which way the thing went. A mark as well is two
+  // answers to one press.
+  if (element.querySelector('.chevron')) {
+    return null
+  }
+
+  // The rule, rather than a list of exceptions kept by hand: a mark fills a
+  // box, so a control drawn without one has nothing to fill. A link-like
+  // button is a word, an icon button without a border is an icon, and a mark
+  // on either is a rectangle appearing around something that never had one.
+  //
+  // Rows and tiles are exempt because their box is the row or the tile, drawn
+  // by what they sit in rather than by themselves.
+  if (!element.matches(ALWAYS) && !drawn(element)) {
     return null
   }
 
@@ -87,16 +98,34 @@ function pressable(target: EventTarget | null): HTMLElement | null {
   return element
 }
 
-// bordered says whether a control is drawn with a border on any side.
-function bordered(element: HTMLElement): boolean {
+// Things whose box is drawn by what they sit in rather than by themselves, so
+// asking whether they have a border of their own answers the wrong question.
+const ALWAYS = '.subscription-row, .mailbox-row, tr.linked, a.tile, .sidebar a'
+
+// drawn says whether a control has a box: a border on any side, or a
+// background that is actually painted.
+function drawn(element: HTMLElement): boolean {
   const style = window.getComputedStyle(element)
+
   const sides = [
     [style.borderTopStyle, style.borderTopWidth],
     [style.borderRightStyle, style.borderRightWidth],
     [style.borderBottomStyle, style.borderBottomWidth],
     [style.borderLeftStyle, style.borderLeftWidth],
   ]
-  return sides.some(([kind, width]) => kind !== 'none' && kind !== 'hidden' && parseFloat(width) > 0)
+  if (sides.some(([kind, width]) => kind !== 'none' && kind !== 'hidden' && parseFloat(width) > 0)) {
+    return true
+  }
+
+  // A background counts only when it is painted. "transparent" and a colour
+  // with no alpha are both nothing on the screen, whatever they are written
+  // as, so the alpha is what is read.
+  const background = style.backgroundColor
+  if (!background || background === 'transparent') {
+    return false
+  }
+  const alpha = background.startsWith('rgba(') ? parseFloat(background.split(',')[3] ?? '1') : 1
+  return alpha > 0.01
 }
 
 export function startRipples() {
@@ -150,7 +179,44 @@ export function startRipples() {
 
       clip.appendChild(circle)
       surface().appendChild(clip)
-      window.setTimeout(() => clip.remove(), DURATION)
+
+      // The mark is drawn where the control was, not inside it, so it has to
+      // be taken away when the control stops being there. Plenty of presses
+      // end the thing that was pressed: a dialog button closes the dialog, a
+      // menu item closes the menu, "load the pictures" takes away the notice
+      // that asked, archiving a row removes the row. Without this the mark
+      // hangs in the air for half a second over whatever moved in underneath.
+      //
+      // Watched by frame rather than by mutation, because the control can also
+      // stay and simply move — the list scrolls, a banner above it closes —
+      // and a mark left at the old place is as wrong as one left over nothing.
+      // The backstop. Frames stop being served to a tab nobody is looking at,
+      // so the watch below can simply never run again — and a mark that is
+      // only ever removed by a frame would then still be there when the
+      // reader comes back to the tab.
+      const backstop = window.setTimeout(() => clip.remove(), DURATION + 100)
+
+      const start = performance.now()
+      const watch = () => {
+        if (!clip.isConnected) {
+          return
+        }
+        const now = element.getBoundingClientRect()
+        const gone =
+          !element.isConnected ||
+          now.width === 0 ||
+          Math.abs(now.left - box.left) > 1 ||
+          Math.abs(now.top - box.top) > 1 ||
+          Math.abs(now.width - box.width) > 1 ||
+          Math.abs(now.height - box.height) > 1
+        if (gone || performance.now() - start >= DURATION) {
+          window.clearTimeout(backstop)
+          clip.remove()
+          return
+        }
+        window.requestAnimationFrame(watch)
+      }
+      window.requestAnimationFrame(watch)
     },
     // Passive: this only draws, and must never delay what the press does.
     { passive: true },

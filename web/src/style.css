@@ -4582,6 +4582,26 @@ p.notice.domain-logo-note {
 }
 /* What was asked of this list, in the colour of an answer rather than of a
    warning: leaving one is a thing that went right. */
+/* An arrow that turns rather than being replaced.
+   A control that opens something shows which way it goes: down to open, and
+   the same arrow turned over once it is open. Swapping it for a different
+   arrow redraws the button at the moment it is pressed, which reads as a
+   flicker rather than as a movement — and leaves nothing on the screen that
+   shows the two states are one thing. */
+.chevron {
+  transition: transform 180ms ease;
+}
+
+[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
 /* Where presses are drawn. Above the page and untouchable, so nothing it
    contains can take a click meant for what is underneath. */
 .ripple-layer {
