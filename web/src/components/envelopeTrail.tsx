@@ -20,10 +20,12 @@ const HEIGHT = 190
 // picture in the same place every day stops being looked at; this way the
 // pane is recognisably itself without being identical.
 const MIDDLE = HEIGHT / 2
-const LEAST_RISE = 26
+const LEAST_RISE = 30
 const MOST_RISE = 62
-const LEAST_STEP = 200
-const MOST_STEP = 420
+// Long steps, so the line crosses in two or three easy turns rather than
+// rippling. A wave with many turns in a wide panel reads as a graph.
+const LEAST_STEP = 560
+const MOST_STEP = 900
 
 // between is a number in a range, which is all the randomness there is here.
 function between(least: number, most: number): number {
@@ -41,14 +43,24 @@ function serpentine(): string {
   let above = Math.random() < 0.5
   let path = `M ${x.toFixed(0)} ${MIDDLE.toFixed(0)}`
 
+  let first = true
   while (x < end) {
     const step = Math.min(between(LEAST_STEP, MOST_STEP), end - x)
     const next = x + step
     const rise = between(LEAST_RISE, MOST_RISE)
     const y = above ? MIDDLE - rise : MIDDLE + rise
-    // A smooth curve to the next crest, and its control points inside the
-    // step so the line never doubles back on itself.
-    path += ` C ${(x + step * 0.4).toFixed(0)} ${MIDDLE.toFixed(0)}, ${(x + step * 0.6).toFixed(0)} ${y.toFixed(0)}, ${next.toFixed(0)} ${y.toFixed(0)}`
+
+    // The first crest is a curve of its own; every one after it is a smooth
+    // curve, which reflects the previous control point through the crest it
+    // is leaving. That reflection is what makes the line continuous: giving
+    // each segment its own control points instead left a kink at every crest,
+    // because the line arrived at one angle and departed at another.
+    if (first) {
+      path += ` C ${(x + step * 0.4).toFixed(0)} ${MIDDLE.toFixed(0)}, ${(x + step * 0.6).toFixed(0)} ${y.toFixed(0)}, ${next.toFixed(0)} ${y.toFixed(0)}`
+      first = false
+    } else {
+      path += ` S ${(x + step * 0.6).toFixed(0)} ${y.toFixed(0)}, ${next.toFixed(0)} ${y.toFixed(0)}`
+    }
     x = next
     above = !above
   }
@@ -58,7 +70,17 @@ function serpentine(): string {
 export function EnvelopeTrail() {
   // Chosen once, when the pane appears. Not on every render: the line must not
   // change under somebody who has done nothing but click a folder.
-  const { path, duration } = useMemo(() => ({ path: serpentine(), duration: between(14, 22) }), [])
+  const { path, duration, begin } = useMemo(() => {
+    const seconds = between(14, 22)
+    return {
+      path: serpentine(),
+      duration: seconds,
+      // Part way along already. A negative begin winds the animation back, so
+      // the envelope is wherever it would have got to by now rather than
+      // setting off from the edge every time somebody opens a folder.
+      begin: -between(0, seconds),
+    }
+  }, [])
 
   // Somebody who has asked for less movement gets the line and the envelope,
   // standing still where the line begins. The drawing still says what it says;
@@ -84,7 +106,13 @@ export function EnvelopeTrail() {
             <path d="M 3 5 L 21 18 L 39 5" fill="none" stroke="currentColor" strokeWidth="2" />
           </g>
           {!still && (
-            <animateMotion dur={`${duration.toFixed(1)}s`} repeatCount="indefinite" path={path} rotate="auto" />
+            <animateMotion
+              dur={`${duration.toFixed(1)}s`}
+              begin={`${begin.toFixed(1)}s`}
+              repeatCount="indefinite"
+              path={path}
+              rotate="auto"
+            />
           )}
         </g>
       </g>
