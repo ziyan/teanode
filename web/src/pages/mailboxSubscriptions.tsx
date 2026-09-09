@@ -21,7 +21,7 @@ import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
-import { useTranslation } from '../i18n/i18n'
+import { Key, useTranslation } from '../i18n/i18n'
 import { folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMessage } from './mailbox'
 
@@ -228,6 +228,7 @@ export function MailboxSubscriptionsPage() {
       try {
         await graphql(MUTE, { mailboxId, key, muted })
         await query.reload()
+        toast.done(muted ? t('subscriptions.saidMuted') : t('subscriptions.saidUnmuted'))
       } catch (caught) {
         toast.failure(caught, t('domain.failed'))
       }
@@ -241,6 +242,7 @@ export function MailboxSubscriptionsPage() {
       try {
         await graphql(IMAGES, { mailboxId, key, show })
         await query.reload()
+        toast.done(show ? t('subscriptions.saidImagesAlways') : t('subscriptions.saidImagesAsk'))
       } catch (caught) {
         toast.failure(caught, t('domain.failed'))
       }
@@ -267,6 +269,7 @@ export function MailboxSubscriptionsPage() {
       await graphql(UNSUBSCRIBE, { mailboxId, key: leaving.key })
       setLeaving(null)
       await query.reload()
+      toast.done(t('subscriptions.saidLeft', { name: leaving.name }))
     } catch (caught) {
       toast.failure(caught, t('domain.failed'))
     } finally {
@@ -456,7 +459,7 @@ function SubscriptionReader({
   // and has to be told.
   onChanged: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const mailboxes = useMailboxes()
   const folders = mailboxes.current?.folders ?? []
@@ -480,19 +483,27 @@ function SubscriptionReader({
   const inJunk = (thread?.items ?? []).every((entry) => entry.folderKind === 'junk')
   const archive = folderOfKind(mailboxes.current, 'archive')
 
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>, said?: string) => {
     setBusy(true)
     setProblem(null)
     try {
       await action()
       await query.reload()
       onChanged()
+      if (said) {
+        toast.done(said)
+      }
     } catch (caught) {
       toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
   }
+
+  // How many messages an action is about, which is what the sentence needs:
+  // acting on a whole list is not the same size of act as acting on one.
+  const many = (one: Key, other: Key) =>
+    plural(acting.length, { one, other }, { count: acting.length })
   // Which messages are open, and which have been read here: the same two
   // things a conversation tracks, for the same reasons. Decided once from what
   // arrived — the newest, and anything unread — and then it is the reader's,
@@ -560,26 +571,46 @@ function SubscriptionReader({
           label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
           icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
           disabled={busy || acting.length === 0}
-          onClick={() => void run(() => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }))}
+          onClick={() =>
+            void run(
+              () => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }),
+              anyUnread ? many('mailbox.saidReadOne', 'mailbox.saidReadOther') : many('mailbox.saidUnreadOne', 'mailbox.saidUnreadOther'),
+            )
+          }
         />
         {archive && (
           <IconAction
             label={t('mailbox.archive')}
             icon={<ArchiveIcon size={16} />}
             disabled={busy || acting.length === 0}
-            onClick={() => void run(() => graphql(MOVE, { itemIds: acting, folderId: archive.id }))}
+            onClick={() =>
+              void run(
+                () => graphql(MOVE, { itemIds: acting, folderId: archive.id }),
+                many('mailbox.saidArchivedMessageOne', 'mailbox.saidArchivedMessageOther'),
+              )
+            }
           />
         )}
         <IconAction
           label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
           icon={<JunkIcon size={16} />}
           disabled={busy || acting.length === 0}
-          onClick={() => void run(() => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }))}
+          onClick={() =>
+            void run(
+              () => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }),
+              inJunk ? many('mailbox.saidNotJunkOne', 'mailbox.saidNotJunkOther') : many('mailbox.saidJunkOne', 'mailbox.saidJunkOther'),
+            )
+          }
         />
         <MoveToMenu
           targets={targets}
           disabled={busy || acting.length === 0}
-          onMove={(folderId) => void run(() => graphql(MOVE, { itemIds: acting, folderId }))}
+          onMove={(folderId) =>
+            void run(
+              () => graphql(MOVE, { itemIds: acting, folderId }),
+              many('mailbox.saidMovedMessageOne', 'mailbox.saidMovedMessageOther'),
+            )
+          }
         />
         <IconAction
           label={t('mailbox.delete')}
@@ -622,7 +653,10 @@ function SubscriptionReader({
           busy={busy}
           error={problem}
           onConfirm={async () => {
-            await run(() => graphql(DELETE, { itemIds: acting }))
+            await run(
+              () => graphql(DELETE, { itemIds: acting }),
+              many('mailbox.saidTrashedMessageOne', 'mailbox.saidTrashedMessageOther'),
+            )
             setEmptying(false)
           }}
           onClose={() => setEmptying(false)}

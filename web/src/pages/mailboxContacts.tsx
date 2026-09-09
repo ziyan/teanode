@@ -281,10 +281,14 @@ export function MailboxContactsPage() {
           busy={busy}
           error={problem}
           onConfirm={async () => {
+            const count = chosen.size
             const ok = await run(() => graphql(DELETE_CONTACTS, { mailboxId, addresses: [...chosen] }))
             if (ok) {
               setChosen(new Set())
               setForgetting(false)
+              toast.done(
+                plural(count, { one: 'contacts.saidForgotOne', other: 'contacts.saidForgotOther' }, { count }),
+              )
             }
           }}
           onClose={() => setForgetting(false)}
