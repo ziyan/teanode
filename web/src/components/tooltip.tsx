@@ -19,6 +19,11 @@ const DELAY = 350
 
 // Room kept between the tooltip and the edge of the window, and between it
 // and the thing it describes.
+// The widest a tooltip is drawn, matching .tooltip in the stylesheet, and the
+// gap kept between it and the edge of the window.
+const MAXIMUM_WIDTH = 280
+const EDGE = 8
+
 const MARGIN = 8
 
 type Position = { top: number; left: number; below: boolean }
@@ -65,9 +70,14 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
     // Above by default, because the thing being described is usually at the
     // end of a row and the pointer is coming from the left.
     const below = box.top < 40
+    // Kept on screen. The box is centred on this point, so the half-width is
+    // what can hang off either side; a label at the end of a row would
+    // otherwise be drawn partly past the edge of the window.
+    const half = Math.min(MAXIMUM_WIDTH, window.innerWidth - EDGE * 2) / 2
+    const centre = box.left + box.width / 2
     setPosition({
       top: below ? box.bottom + MARGIN : box.top - MARGIN,
-      left: box.left + box.width / 2,
+      left: Math.min(Math.max(centre, EDGE + half), window.innerWidth - EDGE - half),
       below,
     })
   }, [])

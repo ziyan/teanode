@@ -99,14 +99,17 @@ export function ConfirmDialog({
 }: {
   title: string
   body?: React.ReactNode
-  confirmLabel: string
+  // Left out when there is nothing to do about what the dialog says: it then
+  // has one button, which closes it. A dialog that explains why something
+  // cannot be done should not offer to do it.
+  confirmLabel?: string
   busy?: boolean
   // What went wrong, said here rather than on the page behind: a refused
   // delete used to leave this dialog silent, with the explanation off-screen
   // behind the scrim.
   error?: string | null
   destructive?: boolean
-  onConfirm: () => void
+  onConfirm?: () => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -129,16 +132,18 @@ export function ConfirmDialog({
         <ErrorMessage error={error} />
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>
-            {t('common.cancel')}
+            {onConfirm ? t('common.cancel') : t('common.close')}
           </button>
-          <button
-            className={destructive ? 'primary danger' : 'primary'}
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
+          {onConfirm && confirmLabel ? (
+            <button
+              className={destructive ? 'primary danger' : 'primary'}
+              type="button"
+              disabled={busy}
+              onClick={onConfirm}
+            >
+              {confirmLabel}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

@@ -21,7 +21,40 @@ func TestParseList(t *testing.T) {
 		listName    string
 		unsubscribe []string
 		oneClick    bool
+		stripped    bool
 	}{
+		{
+			// Apple's private relay rewrites the sender and takes the
+			// unsubscribe address out, leaving the promise about it behind.
+			// A sender never writes this header alone, so finding it alone
+			// says the address was removed rather than never offered.
+			name:     "an unsubscribe removed in transit, which is still a subscription",
+			headers:  []string{"List-Unsubscribe-Post: List-Unsubscribe=One-Click"},
+			from:     `"South China Morning Post" <news_at_e_scmp_com_trd2wntfxk@privaterelay.example.com>`,
+			key:      "news_at_e_scmp_com_trd2wntfxk@privaterelay.example.com",
+			listName: "South China Morning Post",
+			stripped: true,
+			// Nothing to post to, so nothing is promised that can be acted on.
+			oneClick: false,
+		},
+		{
+			name: "the same, from a list that publishes its own identity",
+			headers: []string{
+				"List-Id: Example Weekly <weekly.news.example.com>",
+				"List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+			},
+			from:     "Example Weekly <news@example.com>",
+			key:      "weekly.news.example.com",
+			listName: "Example Weekly",
+			stripped: true,
+		},
+		{
+			// Bulk mail that offers no way out is not the same thing as mail
+			// whose way out was removed, and neither is a subscription here.
+			name:    "bulk, with nothing said about a list",
+			headers: []string{"Precedence: bulk", "X-Auto-Response-Suppress: All"},
+			from:    "Trending on Nextdoor <no-reply@rs.email.example.com>",
+		},
 		{
 			name: "a list that publishes its own identity",
 			headers: []string{
@@ -131,6 +164,9 @@ func TestParseList(t *testing.T) {
 			}
 			if info.OneClick != test.oneClick {
 				t.Errorf("OneClick = %v, want %v", info.OneClick, test.oneClick)
+			}
+			if info.Stripped != test.stripped {
+				t.Errorf("Stripped = %v, want %v", info.Stripped, test.stripped)
 			}
 			if len(info.Unsubscribe) != len(test.unsubscribe) ||
 				(len(test.unsubscribe) > 0 && !reflect.DeepEqual(info.Unsubscribe, test.unsubscribe)) {

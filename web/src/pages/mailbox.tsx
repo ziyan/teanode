@@ -6,7 +6,6 @@ import {
   MailboxFolder,
   MailboxItem,
   MailboxThread,
-  Mail,
   MailboxThreadItem,
   MailboxThreadPage,
   MailboxThreadView,
@@ -17,10 +16,10 @@ import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../co
 import {
   ArchiveIcon,
   ArrowLeftIcon,
-  CloseIcon,
   FlagIcon,
   ForwardIcon,
   JunkIcon,
+  ListIcon,
   MailIcon,
   MailOpenIcon,
   MoveIcon,
@@ -92,11 +91,6 @@ const THREAD = `
         }
       }
     }
-  }`
-
-const UNSUBSCRIBE = `
-  mutation ($mailboxId: String!, $key: String!) {
-    UnsubscribeMailboxSubscription(mailboxId: $mailboxId, key: $key) { key failed error }
   }`
 
 const CONTENT = `
@@ -1011,11 +1005,7 @@ function Reader({
   // saves what was typed, so reopening it — Reply, then Reply to all — has to
   // continue that draft rather than start a second one of the same reply.
   const [draftId, setDraftId] = useState<string | null>(null)
-  // The list this conversation came from, while its way out is being asked
-  // about: leaving one is asked before it is done, because it tells the
-  // sender a person reads this address and cannot be taken back.
-  const [leaving, setLeaving] = useState<Mail | null>(null)
-  const [leaveFailed, setLeaveFailed] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const view = thread.data?.GetMailboxThread
   const entries = view?.items ?? []
@@ -1177,10 +1167,12 @@ function Reader({
             message. Only when the message named one. */}
         {newest.item.mail?.listKey && (
           <IconAction
-            label={t('subscriptions.leave')}
-            icon={<CloseIcon size={16} />}
+            label={t('subscriptions.openList')}
+            icon={<ListIcon size={16} />}
             disabled={busy}
-            onClick={() => setLeaving(newest.item.mail ?? null)}
+            onClick={() =>
+              navigate(`/mailbox/subscriptions?key=${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
+            }
           />
         )}
         <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
@@ -1192,33 +1184,6 @@ function Reader({
           onClick={() => onDelete(acting)}
         />
       </div>
-
-      {leaving && (
-        <ConfirmDialog
-          title={t('subscriptions.leaveTitle', { name: leaving.listName || leaving.from || '' })}
-          body={t(`subscriptions.leaveBody.${leaving.listOneClick ? 'oneClick' : 'mail'}`)}
-          confirmLabel={t('subscriptions.leave')}
-          busy={busy}
-          error={leaveFailed}
-          onConfirm={async () => {
-            const key = leaving.listKey
-            if (!key) {
-              return
-            }
-            setLeaveFailed(null)
-            try {
-              await graphql(UNSUBSCRIBE, { mailboxId: folder.mailboxId, key })
-              setLeaving(null)
-            } catch (caught) {
-              setLeaveFailed(caught instanceof Error ? caught.message : t('domain.failed'))
-            }
-          }}
-          onClose={() => {
-            setLeaving(null)
-            setLeaveFailed(null)
-          }}
-        />
-      )}
 
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>

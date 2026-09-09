@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
@@ -7,6 +8,7 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BellOffIcon,
+  InboxOffIcon,
   JunkIcon,
   MailIcon,
   MailOpenIcon,
@@ -20,15 +22,33 @@ import { useTranslation } from '../i18n/i18n'
 import { folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMessage } from './mailbox'
 
+// A page at a time, like the mailbox's own list. The count beside the heading
+// is the true total, so showing 200 of it and stopping without a word was the
+// page saying two different things at once.
+const PAGE_SIZE = 50
+
 const SUBSCRIPTIONS = `
-  query ($mailboxId: String!) {
-    ListMailboxSubscriptions(mailboxId: $mailboxId, first: 200) {
+  query ($mailboxId: String!, $first: Int, $offset: Int) {
+    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset) {
       total
       subscriptions {
         key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
-        requestedAt method failed error
+        requestedAt method failed error stripped mutedAt
       }
     }
+  }`
+
+const ONE = `
+  query ($mailboxId: String!, $key: String!) {
+    GetMailboxSubscription(mailboxId: $mailboxId, key: $key) {
+      key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+      requestedAt method failed error stripped mutedAt
+    }
+  }`
+
+const MUTE = `
+  mutation ($mailboxId: String!, $key: String!, $muted: Boolean!) {
+    MuteMailboxSubscription(mailboxId: $mailboxId, key: $key, muted: $muted) { key mutedAt }
   }`
 
 const READ = `
@@ -71,6 +91,10 @@ export type Subscription = {
   method?: string
   failed?: boolean
   error?: string
+  // The sender said how to leave and something on the way here removed it.
+  stripped?: boolean
+  // Set while the list is kept out of the Inbox.
+  mutedAt?: string | null
 }
 
 // Which of the three ways of leaving this list offers, which decides what the
@@ -103,25 +127,102 @@ export function MailboxSubscriptionsPage() {
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
 
+  const [search, setSearch] = useSearchParams()
+  const wanted = search.get('key')
+  const [rows, setRows] = useState<Subscription[]>([])
+  const [total, setTotal] = useState(0)
+  const [paging, setPaging] = useState(false)
+
   const query = useQuery(
     () =>
       mailboxId
         ? graphql<{ ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] } }>(SUBSCRIPTIONS, {
             mailboxId,
+            first: PAGE_SIZE,
           })
         : Promise.resolve(null),
     [mailboxId],
     { refresh: false },
   )
-  const subscriptions = query.data?.ListMailboxSubscriptions.subscriptions ?? []
+
+  // The first page comes from the query above and replaces what is held; the
+  // rest are appended. Reloading after an unsubscribe or a mute goes through
+  // the same path, so the list never shows a stale first page.
+  useEffect(() => {
+    const page = query.data?.ListMailboxSubscriptions
+    if (!page) {
+      return
+    }
+    setRows(page.subscriptions)
+    setTotal(page.total)
+  }, [query.data])
+
+  const loadMore = useCallback(async () => {
+    setPaging(true)
+    try {
+      const response = await graphql<{
+        ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] }
+      }>(SUBSCRIPTIONS, { mailboxId, first: PAGE_SIZE, offset: rows.length })
+      const page = response.ListMailboxSubscriptions
+      setRows((previous) => {
+        // Paged by offset, so a list that wrote since the last page shifts
+        // the rest down one: the overlap is dropped rather than shown twice.
+        const shown = new Set(previous.map((subscription) => subscription.key))
+        return [...previous, ...page.subscriptions.filter((subscription) => !shown.has(subscription.key))]
+      })
+      setTotal(page.total)
+    } catch (caught) {
+      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+    } finally {
+      setPaging(false)
+    }
+  }, [mailboxId, rows.length, t])
+
+  const subscriptions = rows
 
   // Which list is being read, and which is being left. Both are one at a
   // time: reading is a page and leaving is a question.
-  const [readingKey, setReadingKey] = useState<string | null>(null)
+  const [readingKey, setReadingKey] = useState<string | null>(wanted)
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  const reading = subscriptions.find((subscription) => subscription.key === readingKey) ?? null
+  // A list arrived at from one of its messages may be anywhere in the order,
+  // including past the page that has been loaded. So the row is fetched on its
+  // own rather than waiting for the reader to page down to it.
+  const [fetched, setFetched] = useState<Subscription | null>(null)
+  const reading =
+    subscriptions.find((subscription) => subscription.key === readingKey) ??
+    (fetched?.key === readingKey ? fetched : null)
+
+  useEffect(() => {
+    if (!mailboxId || !readingKey || subscriptions.some((subscription) => subscription.key === readingKey)) {
+      return
+    }
+    let cancelled = false
+    void graphql<{ GetMailboxSubscription: Subscription | null }>(ONE, { mailboxId, key: readingKey })
+      .then((response) => {
+        if (!cancelled) {
+          setFetched(response.GetMailboxSubscription)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [mailboxId, readingKey, subscriptions])
+
+  const mute = useCallback(
+    async (key: string, muted: boolean) => {
+      setProblem(null)
+      try {
+        await graphql(MUTE, { mailboxId, key, muted })
+        await query.reload()
+      } catch (caught) {
+        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      }
+    },
+    [mailboxId, query, t],
+  )
 
   const unsubscribe = useCallback(async () => {
     if (!leaving) {
@@ -159,7 +260,7 @@ export function MailboxSubscriptionsPage() {
           <div className="mailbox-actions">
             <span className="muted">
               {t('subscriptions.title')}
-              {query.data ? ` · ${query.data.ListMailboxSubscriptions.total}` : ''}
+              {query.data ? ` · ${total}` : ''}
             </span>
           </div>
 
@@ -179,7 +280,12 @@ export function MailboxSubscriptionsPage() {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => setReadingKey(subscription.key)}
+                onClick={() => {
+                  setReadingKey(subscription.key)
+                  if (wanted) {
+                    setSearch({}, { replace: true })
+                  }
+                }}
               >
                 <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
                 <Tooltip label={subscription.from}>
@@ -199,6 +305,7 @@ export function MailboxSubscriptionsPage() {
                         { count: subscription.count },
                       )}
                       {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
+                      {subscription.mutedAt ? ` · ${t('subscriptions.muted')}` : ''}
                     </span>
                     {subscription.requestedAt ? (
                       <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
@@ -215,6 +322,22 @@ export function MailboxSubscriptionsPage() {
               </li>
             ))}
           </ul>
+
+          {/* What is shown, and the rest of it. The count beside the heading
+              is the whole list; without this the page showed a fraction of it
+              and said nothing. */}
+          {query.data && subscriptions.length > 0 && (
+            <div className="mailbox-foot">
+              <span>
+                {paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}
+              </span>
+              {subscriptions.length < total && !paging && (
+                <button type="button" className="link" onClick={() => void loadMore()}>
+                  {t('mailbox.loadMore')}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mailbox-pane">
@@ -228,6 +351,7 @@ export function MailboxSubscriptionsPage() {
                 setProblem(null)
                 setLeaving(reading)
               }}
+              onMute={(muted) => mute(reading.key, muted)}
               onChanged={() => void query.reload()}
             />
           ) : (
@@ -236,17 +360,41 @@ export function MailboxSubscriptionsPage() {
         </div>
       </div>
 
-      {leaving && (
-        <ConfirmDialog
-          title={t('subscriptions.leaveTitle', { name: leaving.name })}
-          body={t(`subscriptions.leaveBody.${unsubscribeKind(leaving)}`)}
-          confirmLabel={t('subscriptions.leave')}
-          busy={busy}
-          error={problem}
-          onConfirm={unsubscribe}
-          onClose={() => setLeaving(null)}
-        />
-      )}
+      {leaving &&
+        (unsubscribeKind(leaving) === 'none' ? (
+          // Nothing to confirm: this says why, and offers the one thing that
+          // does work. The reason is not the same in both cases, and a reader
+          // told "no way to leave" would otherwise blame the sender for a
+          // relay's doing.
+          <ConfirmDialog
+            title={t('subscriptions.noWayOutTitle', { name: leaving.name })}
+            body={leaving.stripped ? t('subscriptions.stripped') : t('subscriptions.noWayOut')}
+            confirmLabel={leaving.mutedAt ? undefined : t('subscriptions.mute')}
+            destructive={false}
+            busy={busy}
+            error={problem}
+            onConfirm={
+              leaving.mutedAt
+                ? undefined
+                : () => {
+                    const key = leaving.key
+                    setLeaving(null)
+                    void mute(key, true)
+                  }
+            }
+            onClose={() => setLeaving(null)}
+          />
+        ) : (
+          <ConfirmDialog
+            title={t('subscriptions.leaveTitle', { name: leaving.name })}
+            body={t(`subscriptions.leaveBody.${unsubscribeKind(leaving)}`)}
+            confirmLabel={t('subscriptions.leave')}
+            busy={busy}
+            error={problem}
+            onConfirm={unsubscribe}
+            onClose={() => setLeaving(null)}
+          />
+        ))}
     </>
   )
 }
@@ -264,12 +412,14 @@ function SubscriptionReader({
   subscription,
   onBack,
   onLeave,
+  onMute,
   onChanged,
 }: {
   mailboxId: string
   subscription: Subscription
   onBack: () => void
   onLeave: () => void
+  onMute: (muted: boolean) => Promise<void>
   // Something was moved, deleted or marked: the list beside this shows counts
   // and has to be told.
   onChanged: () => void
@@ -406,12 +556,19 @@ function SubscriptionReader({
           onClick={() => setEmptying(true)}
         />
         <IconAction
+          label={subscription.mutedAt ? t('subscriptions.unmute') : t('subscriptions.mute')}
+          icon={<InboxOffIcon size={16} />}
+          className={subscription.mutedAt ? 'active' : undefined}
+          disabled={busy}
+          onClick={() => void onMute(!subscription.mutedAt)}
+        />
+        <IconAction
           label={t('subscriptions.leave')}
           icon={<BellOffIcon size={16} />}
-          disabled={unsubscribeKind(subscription) === 'none'}
           onClick={onLeave}
         />
       </div>
+
 
       <ErrorMessage error={problem} />
 

@@ -129,6 +129,7 @@ type mailModel struct {
 	ListName        string `gorm:"column:list_name;type:text"`
 	ListUnsubscribe string `gorm:"column:list_unsubscribe;type:text"`
 	ListOneClick    bool   `gorm:"column:list_one_click"`
+	ListStripped    bool   `gorm:"column:list_stripped"`
 	ListChecked     bool   `gorm:"column:list_checked"`
 }
 
@@ -145,6 +146,7 @@ func getMailFromMailModel(model mailModel) *models.Mail {
 		ListName:        model.ListName,
 		ListUnsubscribe: model.ListUnsubscribe,
 		ListOneClick:    model.ListOneClick,
+		ListStripped:    model.ListStripped,
 		ListChecked:     model.ListChecked,
 		ID:              model.ID,
 		CreatedAt:       model.CreatedAt.In(time.Local),
@@ -277,6 +279,10 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 	}
 	if model.ListOneClick != mail.ListOneClick {
 		model.ListOneClick = mail.ListOneClick
+		dirty = true
+	}
+	if model.ListStripped != mail.ListStripped {
+		model.ListStripped = mail.ListStripped
 		dirty = true
 	}
 	if model.ListChecked != mail.ListChecked {
@@ -621,6 +627,7 @@ func (self *transaction) SetMailList(mailId string, info mailparse.ListInfo) err
 		"list_name":        truncateRunes(info.Name, 255),
 		"list_unsubscribe": truncateRunes(strings.Join(info.Unsubscribe, ", "), 2000),
 		"list_one_click":   info.OneClick,
+		"list_stripped":    info.Stripped,
 		"list_checked":     true,
 	}).Error
 }
@@ -642,6 +649,7 @@ func applyListInfo(mail *models.Mail) {
 	mail.ListName = truncateRunes(info.Name, 255)
 	mail.ListUnsubscribe = truncateRunes(strings.Join(info.Unsubscribe, ", "), 2000)
 	mail.ListOneClick = info.OneClick
+	mail.ListStripped = info.Stripped
 	mail.ListChecked = true
 }
 

@@ -167,6 +167,7 @@ type Mail struct {
 	ListName        string `json:"listName,omitempty"`
 	ListUnsubscribe string `json:"listUnsubscribe,omitempty"`
 	ListOneClick    bool   `json:"listOneClick,omitempty"`
+	ListStripped    bool   `json:"listStripped,omitempty"`
 	ListChecked     bool   `json:"listChecked,omitempty"`
 
 	// LogoDomain is the sending domain whose published logo this server

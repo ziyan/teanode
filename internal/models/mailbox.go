@@ -236,6 +236,15 @@ type MailboxSubscription struct {
 	OneClick    bool     `json:"oneClick"`
 	Unsubscribe []string `json:"unsubscribe"`
 
+	// Stripped says the sender did offer a way out and something between them
+	// and here removed it — a relay that hides the reader's address. Worth
+	// saying, because "no way to leave" otherwise reads as the sender's doing.
+	Stripped bool `json:"stripped,omitempty"`
+
+	// MutedAt is when the reader asked for this list to stop arriving in the
+	// Inbox. It keeps coming and goes straight to the Archive, read.
+	MutedAt *time.Time `json:"mutedAt,omitempty"`
+
 	// What this person has already asked for. RequestedAt is when they asked
 	// to leave, nil while they have not; Method is how it was asked —
 	// oneClick, mail, or link for a page they were handed; Failed and Error

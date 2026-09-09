@@ -1209,6 +1209,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			LastItemID:  item.ID,
 			OneClick:    mail.ListOneClick,
 			Unsubscribe: splitUnsubscribe(mail.ListUnsubscribe),
+			Stripped:    mail.ListStripped,
 		}
 		if subscription.Name == "" {
 			subscription.Name = row.ListKey
@@ -1227,6 +1228,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			subscription.Method = request.Method
 			subscription.Failed = request.Failed
 			subscription.Error = request.Error
+			subscription.MutedAt = localTime(request.MutedAt)
 		}
 		subscriptions = append(subscriptions, subscription)
 	}
