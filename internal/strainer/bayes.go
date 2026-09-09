@@ -68,14 +68,7 @@ func (self *Strainer) bayesChecks(ctx context.Context, message *spamfilter.Messa
 		return nil
 	}
 
-	// A classifier trained on four messages is confidently wrong, so it says
-	// nothing until it has seen enough of both kinds. Both, because a corpus
-	// of spam alone would call everything spam.
-	minimum := self.settings.Bayes.MinimumMessages
-	if minimum <= 0 {
-		minimum = 200
-	}
-	if spamMessages+hamMessages < minimum || spamMessages == 0 || hamMessages == 0 {
+	if !corpusReady(spamMessages, hamMessages, self.settings.Bayes.MinimumMessages) {
 		return nil
 	}
 
@@ -95,15 +88,7 @@ func (self *Strainer) bayesChecks(ctx context.Context, message *spamfilter.Messa
 		return nil
 	}
 
-	// Expressed between -1 and 1 and then scaled, so that the weight setting
-	// means what it says: a certain verdict costs the full weight, and an
-	// uncertain one costs proportionally less.
-	weight := self.settings.Bayes.Weight
-	if weight <= 0 {
-		weight = 3.0
-	}
-	opinion := (probability - 0.5) * 2
-	score := opinion * weight
+	score := bayesScore(probability, self.settings.Bayes.Weight)
 
 	// Silent when it has no opinion, rather than adding a symbol worth
 	// nothing to every message.
@@ -115,6 +100,48 @@ func (self *Strainer) bayesChecks(ctx context.Context, message *spamfilter.Messa
 		score:       score,
 		description: fmt.Sprintf("resembles mail marked as spam here with probability %.2f", probability),
 	}}
+}
+
+// bayesMinimumMessagesDefault is how many messages of each kind the
+// classifier must have learned before it is allowed an opinion.
+const bayesMinimumMessagesDefault = 200
+
+// bayesHamShare is how much of the weight a verdict of "not spam" may be
+// worth. A verdict of "spam" costs the full weight.
+//
+// The two directions are not symmetric. The classifier is certain in the
+// ham direction whenever a message's words have simply not been seen in
+// spam yet — which, for a corpus a few weeks old, is most words — and it
+// was handing three points to every message on a server, the two phishes
+// of the day included. Certainty in the spam direction takes words that
+// were actually seen in spam, which is evidence.
+const bayesHamShare = 1.0 / 3.0
+
+// corpusReady is whether the classifier has learned enough to speak: the
+// minimum of each kind, not of both together. A corpus of two hundred ham
+// messages and forty spam is confidently wrong about everything that does
+// not resemble those forty, and that was most of what arrived.
+func corpusReady(spamMessages, hamMessages, minimum int64) bool {
+	if minimum <= 0 {
+		minimum = bayesMinimumMessagesDefault
+	}
+	return spamMessages >= minimum && hamMessages >= minimum
+}
+
+// bayesScore turns a probability into points. Expressed between -1 and 1
+// and then scaled, so that the weight setting means what it says: a certain
+// verdict of spam costs the full weight, and an uncertain one costs
+// proportionally less. A verdict of ham is worth bayesHamShare of that.
+func bayesScore(probability, weight float64) float64 {
+	if weight <= 0 {
+		weight = 3.0
+	}
+	opinion := (probability - 0.5) * 2
+	score := opinion * weight
+	if score < 0 {
+		score *= bayesHamShare
+	}
+	return score
 }
 
 // corpus reads how many messages have been learned, through a short cache.

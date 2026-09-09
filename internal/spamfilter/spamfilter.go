@@ -61,6 +61,11 @@ type Message struct {
 	// HelloName is the name the sending host gave in HELO or EHLO.
 	HelloName string
 
+	// Encrypted is whether the message arrived over TLS. Nearly every mail
+	// server offers it now, and the ones that do not are disproportionately
+	// the ones sending from a domain registered this afternoon.
+	Encrypted bool
+
 	// ServerName is this server's own name, for noticing a sender that
 	// claimed to be us.
 	ServerName string

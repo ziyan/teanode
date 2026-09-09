@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/op/go-logging"
+	"golang.org/x/net/publicsuffix"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -56,6 +57,22 @@ const (
 	symbolNoConfirmedReverseDNS = "NO_CONFIRMED_REVERSE_DNS"
 	symbolHelloNotQualified     = "HELO_NOT_FQDN"
 	symbolHelloIsOurName        = "HELO_IS_OUR_NAME"
+	symbolHelloNotReverseName   = "HELO_NOT_REVERSE_NAME"
+	symbolNoTLS                 = "NO_TLS"
+)
+
+// What authentication is worth. Small, because it is free: a domain
+// registered this afternoon signs its own mail and publishes a DMARC record
+// as easily as a bank does, so a pass says the sender is competent, not
+// honest. At a point each, DKIM and DMARC together handed every such
+// sender a two-point head start against a threshold of five, and two
+// brand-spoofing phishes cleared the filter on it in one day. ARC is worth
+// a little more: it says a forwarder this server can name vouched for the
+// message on its way, which a spammer sending direct does not get.
+const (
+	dkimValidScore = -0.3
+	dmarcPassScore = -0.3
+	arcPassScore   = -0.5
 )
 
 // Strainer scores messages. Safe for concurrent use.
@@ -184,7 +201,46 @@ func (self *Strainer) signalChecks(message *spamfilter.Message) []check {
 	}
 
 	checks = append(checks, helloChecks(message)...)
+
+	// A host that announces itself under one domain while its confirmed
+	// reverse name is in another. Legitimate senders do this too — a
+	// provider's outbound pool named for the provider, a HELO left at a
+	// default — so it is one point, not a verdict. Scored only when there
+	// is a confirmed reverse name to compare against; a host with none has
+	// already been scored for that.
+	if message.ReverseName != "" && !sameRegisteredDomain(message.HelloName, message.ReverseName) {
+		checks = append(checks, check{
+			symbol:      symbolHelloNotReverseName,
+			score:       1.0,
+			description: "announced itself under a different domain from its reverse DNS name",
+		})
+	}
+
+	if !message.Encrypted {
+		checks = append(checks, check{
+			symbol:      symbolNoTLS,
+			score:       0.5,
+			description: "delivered without TLS",
+		})
+	}
 	return capSignals(checks)
+}
+
+// sameRegisteredDomain is whether two host names fall under one registered
+// domain — mail-3.example.com and mx.example.com do; a name that is not a
+// name, such as an address literal or a bare word, never does. Compared at
+// the registered domain rather than the whole name, because a provider
+// names its outbound hosts however it likes below the domain it owns.
+func sameRegisteredDomain(hello, reverseName string) bool {
+	helloDomain, err := publicsuffix.EffectiveTLDPlusOne(strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hello), ".")))
+	if err != nil {
+		return false
+	}
+	reverseDomain, err := publicsuffix.EffectiveTLDPlusOne(strings.ToLower(strings.TrimSuffix(strings.TrimSpace(reverseName), ".")))
+	if err != nil {
+		return false
+	}
+	return helloDomain == reverseDomain
 }
 
 // maximumSignalScore is the most the signal checks together may contribute.
@@ -270,7 +326,7 @@ func dkimChecks(authentication *models.AuthenticationResults) []check {
 	case valid:
 		return []check{{
 			symbol:      symbolDKIMValid,
-			score:       -1.0,
+			score:       dkimValidScore,
 			description: "carries a valid DKIM signature",
 		}}
 	case invalid:
@@ -304,7 +360,7 @@ func dmarcChecks(authentication *models.AuthenticationResults) []check {
 	case authres.ResultPass:
 		return []check{{
 			symbol:      symbolDMARCPass,
-			score:       -1.0,
+			score:       dmarcPassScore,
 			description: "aligned with the sender domain's DMARC policy",
 		}}
 	case authres.ResultFail, authres.ResultHardFail:
@@ -324,7 +380,7 @@ func arcChecks(authentication *models.AuthenticationResults) []check {
 	if authres.ResultValue(authentication.ARC.Result) == authres.ResultPass {
 		return []check{{
 			symbol:      symbolARCPass,
-			score:       -1.0,
+			score:       arcPassScore,
 			description: "an intact chain of custody through a forwarder",
 		}}
 	}
