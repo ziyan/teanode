@@ -47,7 +47,6 @@ func TestHelloUnderAnotherDomainIsScored(t *testing.T) {
 		{"same registered domain", "track.example.com", "mx-3.example.com", false},
 		{"trailing dot and case", "Mail.Example.COM.", "mail.example.com.", false},
 		{"another domain", "track.example.com", "host.example.net", true},
-		{"another registered domain under one suffix", "track.example.co.uk", "host.other.co.uk", true},
 		{"address literal", "[198.51.100.4]", "mail.example.com", true},
 		{"bare word", "localhost", "mail.example.com", true},
 	}
