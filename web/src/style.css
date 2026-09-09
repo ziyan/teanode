@@ -4582,6 +4582,14 @@ p.notice.domain-logo-note {
 }
 /* What was asked of this list, in the colour of an answer rather than of a
    warning: leaving one is a thing that went right. */
+/* Writing a message, at the head of the folders. It is not one of them: the
+   folders below it hold mail and carry counts, and this makes a message. The
+   accent says so without a second shape in the rail. */
+.sidebar-compose {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* The monogram at the head of a row about a person, so a list of people is
    found by shape before it is read. Sized to the row rather than to a face:
    this sits beside one line of text, not above a card. */

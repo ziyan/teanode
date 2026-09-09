@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Key, useTranslation } from '../i18n/i18n'
 import {
   ChevronRightIcon,
+  ComposeIcon,
   DomainsIcon,
   GridIcon,
   RefreshIcon,
@@ -308,6 +309,20 @@ export function Sidebar({
                 }
                 return (
                   <>
+                    {/* Writing one, above reading them. Not a folder — there
+                        is nothing to count and nothing to open — so it is
+                        drawn as what it is: the one thing here that makes
+                        something rather than showing something. */}
+                    <NavLink
+                      className="sidebar-compose"
+                      to="/mailbox/compose"
+                      title={collapsed ? t('mailbox.newMessage') : undefined}
+                    >
+                      <span className="sidebar-icon">
+                        <ComposeIcon />
+                      </span>
+                      <span className="sidebar-label">{t('mailbox.newMessage')}</span>
+                    </NavLink>
                     {inbox.map(({ folder, depth }) => folderRow(folder, depth, folder.id))}
                     <NavLink to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
                       <span className="sidebar-icon">
