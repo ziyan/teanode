@@ -4697,6 +4697,142 @@ p.notice.domain-logo-note {
   }
 }
 
+/* What is attached, above the message rather than under it: one line of
+   names, wrapping when there are more than a line's worth. */
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-strip a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.attachment-strip a:hover {
+  border-color: var(--accent);
+}
+
+/* The name is what is being looked for, so it is the part that gets the room
+   and the part that is cut when there is not enough. */
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where the program says what just happened: at the foot of the window, out
+   of the way of what is being read, and never over the thing that was acted
+   on. Stacked upward, newest nearest the reader. */
+.toasts {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 80;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  /* The strip takes no clicks; each message does. Otherwise an invisible
+     column down the side of the window would swallow them. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(420px, calc(100vw - var(--space-4) * 2));
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text);
+  font-size: 13px;
+  pointer-events: auto;
+  animation: toast-in 140ms ease-out;
+}
+
+/* A failure is marked down the edge rather than by painting the whole thing
+   red: it is being told something, not being stopped. */
+.toast.failed {
+  border-left: 3px solid var(--bad);
+}
+
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The way back, and the only thing here worth a colour. */
+.toast-action {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  border-color: var(--border);
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+/* On a phone the strip is the width of the screen, because 420px of message
+   beside 30px of margin is neither. */
+@media (max-width: 600px) {
+  .toasts {
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+  }
+}
+
 /* Where presses are drawn. Above the page and untouchable, so nothing it
    contains can take a click meant for what is underneath. */
 .ripple-layer {

@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './style.css'
 import { App } from './app'
 import { initializeTheme } from './components/theme'
+import { ToastProvider } from './components/toast'
 import { TranslationProvider } from './i18n/i18n'
 import { startRipples } from './ripple'
 
@@ -26,7 +27,9 @@ createRoot(container).render(
   <React.StrictMode>
     <BrowserRouter>
       <TranslationProvider>
-        <App />
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </TranslationProvider>
     </BrowserRouter>
   </React.StrictMode>,
