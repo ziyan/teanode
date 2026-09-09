@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-09-09
+
+### Changed
+
+- The built-in spam filter's classifier now waits until it has learned `minimumMessages` of each kind, spam and not spam, before it contributes, rather than that many in total; and a verdict of "not spam" is worth at most a third of `bayes.weight`, where "spam" is worth all of it. A classifier with a small spam corpus was vouching for every message on the server, phishing included. (#64)
+- A valid DKIM signature and an aligned DMARC pass each count -0.3 rather than -1.0, and an ARC pass -0.5, since a throwaway domain gets all three for free. (#64)
+- Two more things the server already knows are scored: a host announcing itself under a different domain from its reverse DNS name (one point), and a delivery without TLS (half a point). Neither can reject a message on its own. (#64)
+
 ## [0.15.0] - 2026-09-08
 
 ### Added
