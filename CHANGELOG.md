@@ -41,6 +41,26 @@ Notable changes to TeaNode. The format follows
   For anything with a quoted thread beneath it, the file the message was sent
   to deliver was a screen of somebody else's words away.
 
+- Every action in the mailbox says what it did, not only the four that move a
+  conversation: acting on a subscription's mail, muting a list, trusting its
+  pictures, leaving it, and forgetting contacts all said nothing at all.
+
+- The list pages — roles, groups, users, tokens, sessions, passkeys,
+  templates — report through the same line instead of each keeping a red block
+  above its own list. Dialogs and forms keep theirs: a question on the screen
+  is still being asked, and a field that is wrong says so beside itself.
+
+- On a phone, a card is a band at the width of the screen rather than a box
+  inside a box inside a box. Measured at 390px, the page, the card and the row
+  together spent 104 pixels — a quarter of the screen — on the space between
+  three borders that say the same thing; the people list now gives its text 82%
+  of the width where it had 72%, and the profile form 94% where it had 84%.
+
+- A reply written inside a conversation starts at the height of a reply and
+  grows as one is written, instead of opening as 240 pixels of empty box above
+  the thread it answers. What is attached to it is a row of chips rather than a
+  list down the page.
+
 ## [0.17.3] - 2026-09-09
 
 ### Security
