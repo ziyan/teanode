@@ -13,7 +13,7 @@ import { Tooltip } from '../components/tooltip'
 const CHECK = `mutation ($domainId: String!) { CheckDomain(domainId: $domainId) { id } }`
 const DELETE_LOGO = `mutation ($domainId: String!) { DeleteDomainLogo(domainId: $domainId) }`
 const UPDATE_MAIL_SERVERS = `
-  mutation ($domainId: String!, $mailServers: [String]) {
+  mutation ($domainId: String!, $mailServers: [String!]) {
     UpdateDomain(domainId: $domainId, domainParameters: { mailServers: $mailServers }) {
       id mailServers mailHosts
     }

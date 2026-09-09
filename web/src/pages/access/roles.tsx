@@ -21,9 +21,12 @@ import {
   usePermissionLabel,
 } from './common'
 
+// permissions is required and a new role holds none: they are granted on the
+// page this opens, once the role exists. Leaving the argument out made every
+// creation fail before it reached the server.
 const CREATE = `
-  mutation ($name: String!, $description: String) {
-    CreateRole(name: $name, description: $description) ${ROLE_FIELDS}
+  mutation ($name: String!, $description: String, $permissions: [String!]!) {
+    CreateRole(name: $name, description: $description, permissions: $permissions) ${ROLE_FIELDS}
   }`
 
 const UPDATE = `
@@ -272,7 +275,7 @@ export function RolesTab() {
             const ok = editing
               ? await run(() => graphql(UPDATE, { roleId: editing.id, ...variables }))
               : await run(async () => {
-                  const created = await graphql<{ CreateRole: Role }>(CREATE, variables)
+                  const created = await graphql<{ CreateRole: Role }>(CREATE, { ...variables, permissions: [] })
                   choose(created.CreateRole.id)
                 })
             if (ok) {

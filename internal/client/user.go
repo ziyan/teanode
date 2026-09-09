@@ -1,6 +1,9 @@
 package client
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // User is an account that may administer a server.
 type User struct {
@@ -56,6 +59,34 @@ func CreateUser(ctx context.Context, connection *Client, username, password, ema
 	return result.CreateUser, nil
 }
 
+// userIdFor turns the username the command line speaks in into the identifier
+// the schema takes. There is no lookup by name in the schema, so this asks
+// the two questions that exist.
+//
+// The signed-in account first, because changing your own name and password is
+// allowed without user:manage and ListUsers is not: asking the other way round
+// would refuse an operation the server permits.
+func userIdFor(ctx context.Context, connection *Client, username string) (string, error) {
+	current, err := GetCurrentUser(ctx, connection)
+	if err != nil {
+		return "", err
+	}
+	if current != nil && current.Username == username {
+		return current.ID, nil
+	}
+
+	users, err := ListUsers(ctx, connection)
+	if err != nil {
+		return "", err
+	}
+	for _, user := range users {
+		if user.Username == username {
+			return user.ID, nil
+		}
+	}
+	return "", fmt.Errorf("client: there is no account called %q", username)
+}
+
 // UserParameters are what UpdateUser can change. A nil field is left alone.
 type UserParameters struct {
 	Name        *string
@@ -68,10 +99,14 @@ func UpdateUser(ctx context.Context, connection *Client, username string, parame
 	var result struct {
 		UpdateUser *User `json:"UpdateUser"`
 	}
-	query := `mutation ($username: String!, $name: String, $email: String, $newUsername: String) {
-		UpdateUser(username: $username, name: $name, email: $email, newUsername: $newUsername) ` + userFields + `
+	userId, err := userIdFor(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	query := `mutation ($userId: String!, $name: String, $email: String, $username: String) {
+		UpdateUser(userId: $userId, name: $name, email: $email, username: $username) ` + userFields + `
 	}`
-	variables := map[string]any{"username": username}
+	variables := map[string]any{"userId": userId}
 	if parameters.Name != nil {
 		variables["name"] = *parameters.Name
 	}
@@ -79,7 +114,7 @@ func UpdateUser(ctx context.Context, connection *Client, username string, parame
 		variables["email"] = *parameters.Email
 	}
 	if parameters.NewUsername != nil {
-		variables["newUsername"] = *parameters.NewUsername
+		variables["username"] = *parameters.NewUsername
 	}
 	if err := connection.Execute(ctx, query, variables, &result); err != nil {
 		return nil, err
@@ -92,10 +127,14 @@ func SetUserPassword(ctx context.Context, connection *Client, username, password
 	var result struct {
 		SetUserPassword *User `json:"SetUserPassword"`
 	}
-	query := `mutation ($username: String!, $password: String!) {
-		SetUserPassword(username: $username, password: $password) ` + userFields + `
+	userId, err := userIdFor(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	query := `mutation ($userId: String!, $password: String!) {
+		SetUserPassword(userId: $userId, password: $password) ` + userFields + `
 	}`
-	if err := connection.Execute(ctx, query, map[string]any{"username": username, "password": password}, &result); err != nil {
+	if err := connection.Execute(ctx, query, map[string]any{"userId": userId, "password": password}, &result); err != nil {
 		return nil, err
 	}
 	return result.SetUserPassword, nil
@@ -103,6 +142,10 @@ func SetUserPassword(ctx context.Context, connection *Client, username, password
 
 // DeleteUser removes an account and the tokens issued to it.
 func DeleteUser(ctx context.Context, connection *Client, username string) error {
-	query := `mutation ($username: String!) { DeleteUser(username: $username) }`
-	return connection.Execute(ctx, query, map[string]any{"username": username}, nil)
+	userId, err := userIdFor(ctx, connection, username)
+	if err != nil {
+		return err
+	}
+	query := `mutation ($userId: String!) { DeleteUser(userId: $userId) }`
+	return connection.Execute(ctx, query, map[string]any{"userId": userId}, nil)
 }
