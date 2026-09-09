@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-09
+
 ### Added
 
 - Loading a message's remote pictures is remembered. Blocking them by default
