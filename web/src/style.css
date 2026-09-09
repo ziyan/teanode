@@ -1034,6 +1034,26 @@ tr:has(.icon-button) > td {
   margin-left: auto;
 }
 
+/* None of these are sentences. "383 messages", "1-50 of 383" — each is one
+   fact, and breaking one across lines to save a few pixels makes it harder to
+   read than the crowding it was meant to relieve. They keep their line and
+   the bar wraps instead. */
+.table-bar > .muted,
+.table-pagination > .muted {
+  white-space: nowrap;
+}
+
+/* On a phone all of it does not fit on one line: the count, the rows control,
+   the range and the two arrows want about 340 pixels of a 356 pixel bar, and
+   flex answers that by shrinking the text rather than the control. So the bar
+   wraps — the count on its own line, the controls under it. */
+@media (max-width: 600px) {
+  .table-bar {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+}
+
 .table-pagination label,
 .table-rows {
   display: flex;
@@ -3775,6 +3795,17 @@ label.check-list-item {
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+}
+
+/* A select holding a number needs the width of a number. The 160px above is
+   for one holding words — "Every status", "The last seven days" — and on a
+   phone it is nearly half the screen, which is how the control that chooses
+   how many rows to show came to push "383 messages" and "1-50 of 383" onto
+   two lines each. Wide enough for the longest of its options, so choosing a
+   different one does not move what is beside it. */
+.select.select-number {
+  min-width: 0;
+  width: 4.75rem;
 }
 
 .select:hover {

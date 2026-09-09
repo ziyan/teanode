@@ -76,6 +76,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The foot of a table reads on a phone. The control that chooses how many rows
+  to show was as wide as one holding words rather than a number — 160 pixels,
+  nearly half the screen — and what it crowded out did not move aside but
+  broke: "383 messages" over two lines, "1-50 of 383" over three. The control
+  is the width of a number now, each of those is one fact on one line, and the
+  bar wraps instead of the words.
+
 - A dropdown opens where there is room for it. The list is fixed to the
   window, so one drawn past the bottom edge cannot be scrolled to — it is
   simply gone, and the control that chooses how many rows a table shows sits
