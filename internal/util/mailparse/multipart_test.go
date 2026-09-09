@@ -2,6 +2,7 @@ package mailparse_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/textproto"
 	"strings"
@@ -127,5 +128,53 @@ func TestComposeRefusesNothing(t *testing.T) {
 	var body bytes.Buffer
 	if _, err := mailparse.Compose(&body, nil, nil, nil); err == nil {
 		t.Fatalf("expected an empty message to be refused")
+	}
+}
+
+// A message can nest multipart bodies as deep as its sender likes, at about
+// fifty bytes a level, and each level wraps a reader around the one above
+// it. Walking a million levels is hours of work over a small message, and
+// the parts are read on receipt as well as in the dashboard.
+func TestTraverseRefusesAMessageNestedTooDeeply(t *testing.T) {
+	t.Parallel()
+
+	nested := func(depth int) ([]string, []byte) {
+		var body bytes.Buffer
+		for level := 1; level <= depth; level++ {
+			fmt.Fprintf(&body, "--b%d\r\nContent-Type: multipart/mixed; boundary=b%d\r\n\r\n", level-1, level)
+		}
+		fmt.Fprintf(&body, "--b%d\r\nContent-Type: text/plain\r\n\r\nhello\r\n--b%d--\r\n", depth, depth)
+		for level := depth - 1; level >= 0; level-- {
+			fmt.Fprintf(&body, "--b%d--\r\n", level)
+		}
+		return []string{"Content-Type: multipart/mixed; boundary=b0"}, body.Bytes()
+	}
+
+	const depth = 200
+	headers, body := nested(depth)
+	parts := 0
+	err := mailparse.TraverseParts(headers, body, func(header textproto.MIMEHeader, reader io.Reader) error {
+		parts++
+		_, _ = io.Copy(io.Discard, reader)
+		return nil
+	})
+	if err == nil {
+		t.Fatalf("a message nested %d deep was walked, %d parts", depth, parts)
+	}
+	if err != mailparse.ErrTooDeeplyNested {
+		t.Errorf("got %v, want %v", err, mailparse.ErrTooDeeplyNested)
+	}
+
+	// A few levels is what real mail does, and must still be read.
+	headers, body = nested(4)
+	parts = 0
+	if err := mailparse.TraverseParts(headers, body, func(header textproto.MIMEHeader, reader io.Reader) error {
+		parts++
+		return nil
+	}); err != nil {
+		t.Fatalf("a message nested four deep failed: %s", err)
+	}
+	if parts != 1 {
+		t.Errorf("got %d parts, want 1", parts)
 	}
 }

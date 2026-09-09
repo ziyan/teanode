@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/client"
@@ -52,5 +53,26 @@ func TestDomainName(t *testing.T) {
 	// A domain that has been deleted keeps its identifier in the list.
 	if got := domainName(names, "01GONE"); got != "01GONE" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A subject line is written by a stranger and a terminal obeys control
+// characters, so a message could rewrite the row above it or load the
+// clipboard. Each such character is shown as its escape instead.
+func TestOutputEscapesTerminalControlCharacters(t *testing.T) {
+	t.Parallel()
+
+	got := forTerminal("Invoice\x1b[1A\x1b[2Kpaid\u009bm\x07 done\tok")
+	if strings.ContainsAny(got, "\x1b\u009b\x07") {
+		t.Errorf("control characters survived: %q", got)
+	}
+	if !strings.Contains(got, `\x1b[1A`) || !strings.Contains(got, `\x9b`) || !strings.Contains(got, "\tok") {
+		t.Errorf("got %q, want the escapes spelled out and the tab kept", got)
+	}
+	if forTerminal("plain 日本語 text") != "plain 日本語 text" {
+		t.Error("ordinary text was changed")
+	}
+	if got := truncate("a\x1b[2Kb", 10); strings.Contains(got, "\x1b") {
+		t.Errorf("truncate left an escape in %q", got)
 	}
 }

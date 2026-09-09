@@ -68,9 +68,10 @@ func (self *graph) GetReport(ctx context.Context, arguments GetReportArguments) 
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, report.DomainID) {
-		return nil, api.ErrNotFound
+	// Over the report's domain, not just some domain. Not found either
+	// way, and when the domain is gone.
+	if _, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, report.DomainID); err != nil {
+		return nil, err
 	}
 
 	return report, nil

@@ -6,7 +6,7 @@ import { ErrorMessage, Loading, formatBytes, formatTime } from '../components/co
 import { SettingsEmpty } from '../components/settingsList'
 import { ConfirmDialog } from '../components/dialog'
 import { PaperclipIcon } from '../components/icons'
-import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
+import { RichTextEditor, htmlToText, quotableHtml, textToHtml } from '../components/richText'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
 import { UploadHandle, isCancelled, uploadFiles } from '../upload'
@@ -317,7 +317,7 @@ export function MailboxComposer({
           if (wroteTo) {
             setFrom(wroteTo)
           }
-          const originalHtml = content?.html || (content?.text ? textToHtml(content.text) : '')
+          const originalHtml = content?.html ? quotableHtml(content.html) : content?.text ? textToHtml(content.text) : ''
           const originalText = content?.text || (content?.html ? htmlToText(content.html) : '')
           if (replyTo) {
             const replyToHeader = content?.headers?.find((header) => header.key.toLowerCase() === 'reply-to')?.value

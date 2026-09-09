@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/aggregate"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 
 	"github.com/op/go-logging"
 )
@@ -50,6 +51,11 @@ type Settings struct {
 	// which case the API says restarting is unavailable rather than offering
 	// a button that takes the server down and leaves it there.
 	Restarter *Restarter
+
+	// AuthLimiter bounds how often one address may present a credential,
+	// shared with the submission listener so that a guess costs the same
+	// whichever door it comes through. Nil disables the limit.
+	AuthLimiter *ratelimit.Registry
 }
 
 // Aggregations is the filter, sort and distinct pipeline a list query can be
@@ -60,6 +66,10 @@ type Settings struct {
 // each of which is exactly one of a match, a sort, or a distinct, applied in
 // the order written.
 type Aggregations = []*aggregate.Stage
+
+// MaximumPageSize is the most rows one list query returns, however many
+// were asked for. The dashboard pages at a fraction of it.
+const MaximumPageSize = 1000
 
 // Pagination parameters, used to filter returned results.
 type Pagination struct {
@@ -93,7 +103,10 @@ func (self *Pagination) OptionsWith(aggregations Aggregations, columns aggregate
 	if self == nil {
 		return options
 	}
-	if self.First != nil {
+	// Bounded either way: a page is what the dashboard reads, and a caller
+	// asking for everything gets the largest page instead of the table.
+	options.Limit = MaximumPageSize
+	if self.First != nil && *self.First < MaximumPageSize {
 		options.Limit = *self.First
 	}
 	if self.Offset != nil {

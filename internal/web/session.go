@@ -70,6 +70,12 @@ type Authenticator interface {
 	// Logout ends the session this request carries and clears the cookie.
 	Logout(response http.ResponseWriter, request *http.Request)
 
+	// AllowLoginAttempt counts one attempt to sign in from wherever the
+	// request came from, and says whether it may go ahead. Login counts
+	// its own; this is for the other ways in — a passkey ceremony, say —
+	// so that they are limited the same way.
+	AllowLoginAttempt(request *http.Request) bool
+
 	// CurrentSessionID is the session this request is using, or empty when it
 	// is authenticated some other way. The dashboard needs it to mark one row
 	// in the list as the one you are reading it from.
@@ -194,6 +200,12 @@ func (self *authenticator) Required() bool {
 func (self *authenticator) Authenticate(request *http.Request) (string, bool) {
 	username, _, ok := self.authenticate(request)
 	return username, ok
+}
+
+// AllowLoginAttempt is the login limiter, for the sign-in paths that do not
+// go through Login.
+func (self *authenticator) AllowLoginAttempt(request *http.Request) bool {
+	return self.loginLimiter.Allow(api.RemoteAddress(request, self.trustedProxies()))
 }
 
 // CurrentSessionID is the session a request is using, or empty when it is
@@ -397,7 +409,7 @@ func (self *authenticator) startSession(response http.ResponseWriter, request *h
 		Path:     "/",
 		Expires:  expiry,
 		HttpOnly: true,
-		Secure:   isSecureRequest(request),
+		Secure:   self.isSecureRequest(request),
 		SameSite: http.SameSiteLaxMode,
 	})
 	log.Noticef("%s logged in from %s, session %s", user.Username, request.RemoteAddr, id)
@@ -422,7 +434,7 @@ func (self *authenticator) Logout(response http.ResponseWriter, request *http.Re
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecureRequest(request),
+		Secure:   self.isSecureRequest(request),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -445,19 +457,8 @@ func (self *authenticator) trustedProxies() []string {
 	return self.config.Current().Server.TrustedProxies
 }
 
-func isSecureRequest(request *http.Request) bool {
-	if request.TLS != nil {
-		return true
-	}
-	forwarded := request.Header.Get("X-Forwarded-Proto")
-	if forwarded == "" {
-		return false
-	}
-	// A chain of proxies appends, so the client's own protocol is first.
-	if index := strings.Index(forwarded, ","); index >= 0 {
-		forwarded = forwarded[:index]
-	}
-	return strings.EqualFold(strings.TrimSpace(forwarded), "https")
+func (self *authenticator) isSecureRequest(request *http.Request) bool {
+	return api.IsSecure(request, self.trustedProxies())
 }
 
 func (self *authenticator) CreateFirstUser(ctx context.Context, username, password string) error {

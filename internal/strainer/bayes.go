@@ -28,6 +28,10 @@ const (
 	// tokenized all of a ten megabyte body would spend the delivery doing it.
 	bayesMaximumTokens = 500
 
+	// headerValueLimit bounds how much of one header's value is
+	// tokenized. A subject is a line; one that is not is not worth more.
+	headerValueLimit = 4096
+
 	// bayesSignificantTokens is how many of the most opinionated tokens are
 	// combined into the verdict. Using every token lets a long message drown
 	// its own signal in filler that appears everywhere.
@@ -256,7 +260,12 @@ func tokenize(message *spamfilter.Message) []string {
 		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "subject", "from", "to", "reply-to", "content-type", "x-mailer", "list-unsubscribe":
 			prefix := strings.ToLower(strings.TrimSpace(name)) + ":"
-			for _, word := range tokenPattern.FindAllString(value, -1) {
+			// Bounded before tokenizing, as the body is below: the cap on
+			// tokens kept does not bound the scan that finds them.
+			if len(value) > headerValueLimit {
+				value = value[:headerValueLimit]
+			}
+			for _, word := range tokenPattern.FindAllString(value, bayesMaximumTokens) {
 				if !add(prefix, word) {
 					return tokens
 				}

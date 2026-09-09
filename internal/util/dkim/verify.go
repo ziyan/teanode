@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/util/deferutil"
@@ -41,20 +42,39 @@ type verifyReturnValue struct {
 	err          error
 }
 
+// MaximumSignatures bounds how many signatures one message is checked
+// for. Each costs a key lookup and a hash of the whole body, and a message
+// can carry as many as its sender likes; RFC 6376 §6.1 lets a verifier
+// limit the number it examines. The first ones in the header block are the
+// newest, so they are the ones kept.
+const MaximumSignatures = 8
+
 func Verify(ctx context.Context, headers []string, body []byte, resolver Resolver) ([]*Verification, error) {
 	signatures, err := findSignatures(headers)
 	if err != nil {
 		return nil, err
 	}
+	if len(signatures) > MaximumSignatures {
+		log.Warningf("message carries %d dkim signatures, verifying the first %d", len(signatures), MaximumSignatures)
+		signatures = signatures[:MaximumSignatures]
+	}
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	done := make(chan verifyReturnValue)
+	// Every signature hashes the body under its own canonicalization and
+	// algorithm, which for the usual case is the same hash over the same
+	// bytes as many times as there are signatures.
+	bodyHashes := newBodyHashCache(body)
+
+	// Buffered, and sent from a defer: a goroutine that panics still
+	// answers, so the loop below cannot wait for ever.
+	done := make(chan verifyReturnValue, len(signatures))
 	for _, signature := range signatures {
 		go func(signature dkimSignature) {
 			defer deferutil.Recover()
-			verification, err := signature.verifySignature(ctxWithCancel, headers, body, resolver)
-			done <- verifyReturnValue{verification, err}
+			var returnValue verifyReturnValue
+			defer func() { done <- returnValue }()
+			returnValue.verification, returnValue.err = signature.verifySignature(ctxWithCancel, headers, body, resolver, bodyHashes)
 		}(signature)
 	}
 	verifications := make([]*Verification, 0, len(signatures))
@@ -92,7 +112,7 @@ func findSignatures(headers []string) ([]dkimSignature, error) {
 	return signatures, nil
 }
 
-func (self dkimSignature) verifySignature(ctx context.Context, headers []string, body []byte, resolver Resolver) (*Verification, error) {
+func (self dkimSignature) verifySignature(ctx context.Context, headers []string, body []byte, resolver Resolver, bodyHashes *bodyHashCache) (*Verification, error) {
 	if err := verifyTags(self.parameters, []string{"v", "a", "b", "bh", "d", "h", "s"}, []string{"l"}); err != nil {
 		return nil, err
 	}
@@ -154,7 +174,7 @@ func (self dkimSignature) verifySignature(ctx context.Context, headers []string,
 		return nil, fmt.Errorf("dkim: malformed signature: %w", err)
 	}
 
-	if err := verifyBodyHash(self.parameters, bodyCanonicalizer, hash, body); err != nil {
+	if err := verifyBodyHash(self.parameters, bodyCanonicalizer, hash, body, bodyHashes); err != nil {
 		return &Verification{ //nolint:nilerr
 			Result:     ResultFail,
 			Domain:     domain,
@@ -197,8 +217,15 @@ func verifyTags(parameters map[string]string, requiredTags, disallowedTags []str
 	return nil
 }
 
+// maximumHeaderKeys bounds the h= list. Each name listed is a scan of the
+// header block, per signature; a signer lists a couple of dozen.
+const maximumHeaderKeys = 128
+
 func verifyHeaderKeys(parameters map[string]string) ([]string, error) {
 	headerKeys := mailparse.ParseTagList(parameters["h"])
+	if len(headerKeys) > maximumHeaderKeys {
+		return nil, fmt.Errorf("dkim: too many headers signed")
+	}
 	var fromFound bool
 	for _, key := range headerKeys {
 		if strings.EqualFold(key, "From") {
@@ -254,9 +281,9 @@ func verifyAlgorithms(parameters map[string]string, keyAlgorithm string) (crypto
 	switch algorithms[1] {
 	case "sha256":
 		return crypto.SHA256, nil
-	case "sha1":
-		return crypto.SHA1, nil
 	}
+	// No sha1: RFC 8301 §3.1 says a verifier must not accept it, and a
+	// signature over it is worth no more than none.
 	return 0, fmt.Errorf("dkim: inappropriate hash algorithm %q", algorithms[1])
 }
 
@@ -273,22 +300,50 @@ func verifyCanonicalizer(parameters map[string]string) (mailparse.Canonicalizer,
 	return headerCanonicalizer, bodyCanonicalizer, nil
 }
 
-func verifyBodyHash(parameters map[string]string, canonicalizer mailparse.Canonicalizer, hash crypto.Hash, body []byte) error {
+func verifyBodyHash(parameters map[string]string, canonicalizer mailparse.Canonicalizer, hash crypto.Hash, body []byte, bodyHashes *bodyHashCache) error {
 	bodyHash, err := mailparse.DecodeBase64String(parameters["bh"])
 	if err != nil {
 		return fmt.Errorf("dkim: malformed body hash: %w", err)
 	}
-	hasher := hash.New()
-	writerCloser := canonicalizer.CanonicalizeBody(hasher)
-	if _, err := writerCloser.Write(body); err != nil {
+	expectedBodyHash, err := bodyHashes.sum(parameters["c"], canonicalizer, hash, body)
+	if err != nil {
 		return err
 	}
-	if err := writerCloser.Close(); err != nil {
-		return err
-	}
-	expectedBodyHash := hasher.Sum(nil)
 	if subtle.ConstantTimeCompare(expectedBodyHash, bodyHash) != 1 {
 		return fmt.Errorf("dkim: body hash did not match, %q (bh) != %q (expected)", parameters["bh"], mailparse.EncodeBase64String(expectedBodyHash))
 	}
 	return nil
+}
+
+// bodyHashCache computes the hash of a body once per canonicalization and
+// algorithm, however many signatures ask for it.
+type bodyHashCache struct {
+	mutex  sync.Mutex
+	body   []byte
+	hashes map[string][]byte
+}
+
+func newBodyHashCache(body []byte) *bodyHashCache {
+	return &bodyHashCache{body: body, hashes: make(map[string][]byte)}
+}
+
+func (self *bodyHashCache) sum(canonicalization string, canonicalizer mailparse.Canonicalizer, hash crypto.Hash, body []byte) ([]byte, error) {
+	_, bodyCanonicalization := mailparse.ParseCanonicalization(canonicalization)
+	key := fmt.Sprintf("%s/%d", bodyCanonicalization, hash)
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if sum, ok := self.hashes[key]; ok {
+		return sum, nil
+	}
+	hasher := hash.New()
+	writerCloser := canonicalizer.CanonicalizeBody(hasher)
+	if _, err := writerCloser.Write(body); err != nil {
+		return nil, err
+	}
+	if err := writerCloser.Close(); err != nil {
+		return nil, err
+	}
+	sum := hasher.Sum(nil)
+	self.hashes[key] = sum
+	return sum, nil
 }

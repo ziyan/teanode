@@ -312,6 +312,13 @@ func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswor
 		return nil, translateError(err)
 	}
 	log.Noticef("%s set the password for %q", operatorName(ctx), updated.Username)
+	// An administrator resetting a password is taking the account back;
+	// whoever was signed in as it is signed out.
+	if self.authenticator != nil {
+		if _, err := self.authenticator.RevokeSessions(updated.Username, ""); err != nil {
+			log.Errorf("failed to end the sessions of %q after a password reset: %s", updated.Username, err)
+		}
+	}
 	return describeUser(updated), nil
 }
 

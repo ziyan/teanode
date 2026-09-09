@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"crypto/tls"
 	"net/http"
 	"testing"
 
@@ -124,5 +125,46 @@ func TestRemoteAddressWithoutARequest(t *testing.T) {
 	t.Parallel()
 	if got := api.RemoteAddress(nil, []string{"10.0.0.0/8"}); got != "" {
 		t.Errorf("RemoteAddress(nil) = %q, want the empty string", got)
+	}
+}
+
+// Whether the browser reached the server over HTTPS decides whether the
+// session cookie is marked Secure. A proxy that terminates TLS says so in
+// X-Forwarded-Proto, and the header is believed from a proxy the operator
+// listed and from nobody else — the same rule as X-Forwarded-For.
+func TestIsSecureBelievesForwardedProtoOnlyFromAProxy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		remote    string
+		forwarded string
+		trusted   []string
+		want      bool
+	}{
+		{"no proxy configured: the header is ignored", "203.0.113.7:44321", "https", nil, false},
+		{"from the listed proxy", "10.0.0.2:1234", "https", []string{"10.0.0.0/8"}, true},
+		{"from the listed proxy, plain", "10.0.0.2:1234", "http", []string{"10.0.0.0/8"}, false},
+		{"from somebody else while a proxy is listed", "203.0.113.7:44321", "https", []string{"10.0.0.0/8"}, false},
+		{"a chain: the client's own protocol is first", "10.0.0.2:1234", "https, http", []string{"10.0.0.0/8"}, true},
+		{"no header", "10.0.0.2:1234", "", []string{"10.0.0.0/8"}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := &http.Request{RemoteAddr: test.remote, Header: http.Header{}}
+			if test.forwarded != "" {
+				request.Header.Set("X-Forwarded-Proto", test.forwarded)
+			}
+			if got := api.IsSecure(request, test.trusted); got != test.want {
+				t.Errorf("IsSecure = %v, want %v", got, test.want)
+			}
+		})
+	}
+
+	// The server's own TLS listener needs nobody's word for it.
+	request := &http.Request{RemoteAddr: "203.0.113.7:44321", Header: http.Header{}, TLS: &tls.ConnectionState{}}
+	if !api.IsSecure(request, nil) {
+		t.Error("a TLS connection was not secure")
 	}
 }

@@ -20,13 +20,20 @@ var (
 )
 
 func Create(filename string) (*os.File, error) {
+	return CreateWithMode(filename, 0o666)
+}
+
+// CreateWithMode is Create with the file's mode set as it is created,
+// subject to the umask, for a file that must never be readable by anyone
+// else — not even between creation and a chmod.
+func CreateWithMode(filename string, mode os.FileMode) (*os.File, error) {
 	directory := path.Dir(filename)
 	if err := os.MkdirAll(directory, 0755); err != nil {
 		return nil, err
 	}
 	tempFilename := path.Join(directory, fmt.Sprintf(".%s.%s~", path.Base(filename), security.NewULID()))
 	log.Debugf("creating temp file at: %s", tempFilename)
-	return os.Create(tempFilename)
+	return os.OpenFile(tempFilename, os.O_RDWR|os.O_CREATE|os.O_EXCL, mode)
 }
 
 func CommitAs(file *os.File, filename string) error {

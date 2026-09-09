@@ -70,9 +70,10 @@ func (self *graph) GetLayout(ctx context.Context, arguments GetLayoutArguments) 
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, layout.DomainID) {
-		return nil, api.ErrNotFound
+	// Over this layout's domain, not just some domain. Not found either
+	// way, and when the domain is gone.
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, layout.DomainID); err != nil {
+		return nil, err
 	}
 
 	return layout, nil
@@ -190,9 +191,8 @@ func (self *graph) ModifyLayout(ctx context.Context, arguments ModifyLayoutArgum
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, layout.DomainID) {
-		return nil, api.ErrNotFound
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, layout.DomainID); err != nil {
+		return nil, err
 	}
 
 	translations, err := arguments.LayoutParameters.validate()
@@ -238,9 +238,8 @@ func (self *graph) DeleteLayout(ctx context.Context, arguments DeleteLayoutArgum
 		return api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, layout.DomainID) {
-		return api.ErrNotFound
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, layout.DomainID); err != nil {
+		return err
 	}
 
 	return api.ContextTransaction(ctx).DeleteLayout(layout.ID, nil)

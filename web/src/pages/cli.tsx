@@ -129,16 +129,24 @@ export function CommandLinePage({ username }: { username: string }) {
   }
 
   if (phase === 'manual') {
+    // The token is not part of the command: a command is pasted into a
+    // shell, and a shell keeps a history. "--token -" reads it from the
+    // terminal instead, without echo.
     const command =
       `teanode auth login --url ${window.location.origin}` +
       (profile ? ` --name ${profile}` : '') +
-      ` --token ${secret}`
+      ` --token -`
     return (
       <AuthCard purpose={t('cli.manualTitle')} onSubmit={(event) => event.preventDefault()}>
         <p className="muted">{t('cli.manualBody')}</p>
         <code className="auth-command">{command}</code>
         <div className="auth-actions">
           <CopyButton value={command} />
+        </div>
+        <p className="muted">{t('cli.manualToken')}</p>
+        <code className="auth-command">{secret}</code>
+        <div className="auth-actions">
+          <CopyButton value={secret} />
         </div>
       </AuthCard>
     )

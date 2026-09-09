@@ -119,16 +119,16 @@ func (self *Profiles) Save() error {
 	if err != nil {
 		return err
 	}
-	file, err := atomicfile.Create(path)
+	// Created private rather than made private afterwards: the token is
+	// written into it, and a file that is readable for a moment first is
+	// readable to whoever opened it during that moment.
+	file, err := atomicfile.CreateWithMode(path, 0o600)
 	if err != nil {
 		return fmt.Errorf("cannot write %s: %w", path, err)
 	}
 	defer func() {
 		_ = atomicfile.Discard(file)
 	}()
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
-	}
 	if _, err := file.Write(append(content, '\n')); err != nil {
 		return fmt.Errorf("cannot write %s: %w", path, err)
 	}

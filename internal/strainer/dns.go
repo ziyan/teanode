@@ -269,7 +269,13 @@ func messageDomains(message *spamfilter.Message, maximum int) []string {
 			return domains
 		}
 	}
-	for _, match := range linkPattern.FindAllSubmatch(message.Body, -1) {
+	// Bounded: the whole body is not scanned for links, and not every link
+	// is collected, because "maximum" domains are all that are looked up.
+	body := message.Body
+	if len(body) > bodyLimit {
+		body = body[:bodyLimit]
+	}
+	for _, match := range linkPattern.FindAllSubmatch(body, maximum*4) {
 		if len(match) < 2 {
 			continue
 		}

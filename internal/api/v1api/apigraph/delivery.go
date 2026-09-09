@@ -77,9 +77,11 @@ func (self *graph) GetDelivery(ctx context.Context, arguments GetDeliveryArgumen
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, mail.DomainID) {
-		return nil, api.ErrNotFound
+	// Over the mail's domain, not just some domain: an auditor of one
+	// domain must not read another's deliveries. Not found either way, and
+	// when the domain is gone.
+	if _, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, mail.DomainID); err != nil {
+		return nil, err
 	}
 
 	return delivery, nil
@@ -112,9 +114,8 @@ func (self *graph) RetryDelivery(ctx context.Context, arguments RetryDeliveryArg
 		return nil, api.ErrNotFound
 	}
 
-	// the domain has to still be configured
-	if !self.domainStillExists(ctx, mail.DomainID) {
-		return nil, api.ErrNotFound
+	if _, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, mail.DomainID); err != nil {
+		return nil, err
 	}
 
 	// only allow retrying deliveries that are in a retryable state
@@ -154,6 +155,9 @@ func (self *graph) ListDeliveriesByMail(ctx context.Context, arguments ListDeliv
 	}
 	if mail == nil {
 		return nil, api.ErrNotFound
+	}
+	if _, err := self.requireDomainPermission(ctx, models.PermissionMailAudit, mail.DomainID); err != nil {
+		return nil, err
 	}
 	deliveries, err := api.ContextTransaction(ctx).ListDeliveries([]string{mail.ID}, nil)
 	if err != nil {

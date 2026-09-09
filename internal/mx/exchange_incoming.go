@@ -22,6 +22,15 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	}
 
 	// extract some important headers
+	//
+	// Exactly one From: RFC 7489 §6.6.1 says a message with more than one
+	// is to be refused, because a verifier authenticates one of them and a
+	// mail program shows the other. DMARC here read the last, most
+	// programs show the first, so a sender who signed as themselves in the
+	// last and put somebody else in the first passed as the somebody else.
+	if mailparse.CountHeaders(envelope.Headers, "From") != 1 {
+		return nil, mailparse.ErrInvalidFromHeader
+	}
 	from, err := mailparse.ParseAddress(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "From")))
 	if err != nil {
 		return nil, mailparse.ErrInvalidFromHeader
@@ -46,9 +55,15 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 	receivedHeader := self.formatReceivedHeader(envelope)
 
 	// combine the headers
+	//
+	// An Authentication-Results header that claims to be this server's own
+	// is removed on the way in, as RFC 8601 §5 requires: what stays is what
+	// this server writes below, and a forged one above it would be read by
+	// whatever the message is forwarded to, and by the mail program of
+	// whoever it is filed for.
 	headers := mailparse.MergeHeaders([]string{
 		receivedHeader,
-	}, envelope.Headers)
+	}, self.withoutOwnAuthenticationResults(envelope))
 
 	// The conversation this message is part of, from what it answers.
 	threadId, err := ThreadIDFor(tx, envelope.Headers)

@@ -82,7 +82,15 @@ func New(options Options) (*Client, error) {
 
 	httpClient := options.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{}
+		httpClient = &http.Client{
+			// An API answers; it does not redirect. Following one would
+			// carry the token wherever the redirect pointed — to plain
+			// HTTP on the same host, which the standard library allows —
+			// so a redirect is reported as the answer it is.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 		if options.Insecure {
 			httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 		}

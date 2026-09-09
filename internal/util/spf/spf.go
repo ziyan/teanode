@@ -322,10 +322,17 @@ func (self *spf) resolveRdns() ([]string, error) {
 			// RFC explicitly says to skip domains which error here.
 			continue
 		}
-		if len(ips) > 0 {
-			// Append the lower-case variants so we do a case-insensitive
-			// lookup below.
-			rdns = append(rdns, strings.ToLower(name))
+		// A name is validated only when it resolves back to the connecting
+		// address. Whoever controls the reverse zone of an address chooses
+		// the name it claims, so a name that merely resolves to something
+		// proves nothing.
+		for _, resolved := range ips {
+			if resolved.IP.Equal(self.ip) {
+				// Append the lower-case variants so we do a case-insensitive
+				// lookup below.
+				rdns = append(rdns, strings.ToLower(name))
+				break
+			}
 		}
 	}
 	self.rdns = rdns
@@ -384,9 +391,11 @@ func (self *spf) handlePointerField(result Result, field, domain string) (bool, 
 		}
 		return false, "", err
 	}
-	pointerDomain = strings.ToLower(pointerDomain)
+	pointerDomain = strings.TrimSuffix(strings.ToLower(pointerDomain), ".") + "."
 	for _, name := range rdns {
-		if strings.HasSuffix(name, pointerDomain+".") {
+		// The domain itself or a subdomain of it, at a label boundary:
+		// "notexample.test." is not under "example.test.".
+		if name == pointerDomain || strings.HasSuffix(name, "."+pointerDomain) {
 			return true, result, nil
 		}
 	}

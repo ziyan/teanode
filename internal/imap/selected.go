@@ -165,7 +165,9 @@ func (self *session) Select(name string, options *goimap.SelectOptions) (*goimap
 	if err != nil {
 		return nil, err
 	}
-	selected.readOnly = options != nil && options.ReadOnly
+	// Read-only when asked for, and when the owner may only read: the
+	// flags, moves and expunges below all refuse on it.
+	selected.readOnly = (options != nil && options.ReadOnly) || !self.canWrite
 	self.view = selected
 	flags := []goimap.Flag{goimap.FlagSeen, goimap.FlagAnswered, goimap.FlagFlagged, goimap.FlagDeleted, goimap.FlagDraft, goimap.FlagForwarded}
 	return &goimap.SelectData{
@@ -600,6 +602,9 @@ func (self *session) dropFromView(removed []uint64, write func(seqNum uint32) er
 // --- COPY and MOVE --------------------------------------------------------------
 
 func (self *session) Copy(numSet goimap.NumSet, destination string) (*goimap.CopyData, error) {
+	if err := self.requireWrite(); err != nil {
+		return nil, err
+	}
 	current, err := self.requireSelected()
 	if err != nil {
 		return nil, err

@@ -11,13 +11,16 @@ import (
 	"net"
 	"net/textproto"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/deferutil"
 	"github.com/ziyan/teanode/internal/util/dmarc"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 func (self *exchange) handleRua(ctx context.Context, tx db.Transaction, envelope *mailparse.Envelope) ([]*models.Delivery, error) {
@@ -26,30 +29,54 @@ func (self *exchange) handleRua(ctx context.Context, tx db.Transaction, envelope
 	subject := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "Subject"))
 	messageId := mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "Message-ID"))
 
+	// The address the report came to names a domain: its report address is
+	// derived from the domain's identifier, and that is the domain whose
+	// reports arrive there. A report for any other domain is not this
+	// address's to take, whoever it is for.
+	reportedDomain := self.domainOfReportAddress(envelope.SpecialID)
+	if reportedDomain == nil {
+		return nil, mailparse.ErrMailBoxUnavailable
+	}
+
 	// parse dmarc feedback
 	feedbacks, err := self.decodeDmarcFeedbacks(envelope.Headers, envelope.Body)
 	if err != nil {
 		return nil, err
 	}
+	kept := feedbacks[:0]
+	for _, feedback := range feedbacks {
+		feedbackDomain := strings.Trim(strings.ToLower(feedback.Domain), ".")
+		if feedbackDomain != strings.ToLower(reportedDomain.Domain) {
+			log.Warningf("dropping a dmarc report for %q that arrived at the report address of %q", feedbackDomain, reportedDomain.Domain)
+			continue
+		}
+		kept = append(kept, feedback)
+	}
+	feedbacks = kept
 
-	// resolve rdns and location
+	// Resolve reverse names and locations, for the addresses the report
+	// names. Bounded and concurrent: a reporter lists the sources it saw,
+	// and a report written to be expensive lists as many as it likes, each
+	// a reverse lookup against a zone its author controls.
 	ipRdns := make(map[string]string)
 	ipLocation := make(map[string]*geoip.Location)
 	for _, feedback := range feedbacks {
-		for _, record := range feedback.Records {
+		for index := range feedback.Records {
+			record := &feedback.Records[index]
 			ip := net.ParseIP(record.SourceIP)
 			if ip == nil {
 				continue
 			}
 			record.SourceIP = ip.String()
-			if _, ok := ipRdns[record.SourceIP]; !ok {
-				ipRdns[record.SourceIP] = self.checkIp(ctx, ip, 5*time.Second)
-			}
 			if _, ok := ipLocation[record.SourceIP]; !ok {
 				ipLocation[record.SourceIP] = self.locator.Locate(ip)
 			}
+			if _, ok := ipRdns[record.SourceIP]; !ok && len(ipRdns) < maximumReportLookups {
+				ipRdns[record.SourceIP] = ""
+			}
 		}
 	}
+	self.resolveReportAddresses(ctx, ipRdns)
 
 	// add Received header
 	// combine the headers
@@ -82,20 +109,8 @@ func (self *exchange) handleRua(ctx context.Context, tx db.Transaction, envelope
 	}
 
 	var reports []*models.Report
-	domains := make(map[string]*models.Domain) // example.com -> configured domain
 	for _, feedback := range feedbacks {
-		feedbackDomain := strings.Trim(strings.ToLower(feedback.Domain), ".")
-		domain, ok := domains[feedbackDomain]
-		if !ok {
-			domain, err = tx.GetDomainByName(feedbackDomain)
-			if err != nil {
-				return nil, err
-			}
-			domains[feedbackDomain] = domain
-		}
-		if domain == nil {
-			continue
-		}
+		domain := reportedDomain
 
 		// save a report for each record
 		for _, record := range feedback.Records {
@@ -145,6 +160,75 @@ func (self *exchange) handleRua(ctx context.Context, tx db.Transaction, envelope
 	return nil, nil
 }
 
+// Bounds on an aggregate report. A report is compressed, so its size on the
+// wire says nothing about its size decoded; the largest reporters send a
+// few hundred kilobytes decoded. Each record becomes a row and a lookup.
+const (
+	maximumReportSize    = 16 * 1024 * 1024
+	maximumReportRecords = 10000
+	maximumReportFiles   = 16
+	maximumReportLookups = 256
+	reportLookupTimeout  = 30 * time.Second
+	reportLookupWorkers  = 8
+)
+
+// domainOfReportAddress is the domain whose report address a message came
+// to, from the identifier signed into that address. Nil when it is none of
+// them, which an address that verified should not be unless the domain has
+// since been removed.
+func (self *exchange) domainOfReportAddress(specialId string) *models.Domain {
+	for _, domain := range self.allDomains() {
+		if domain != nil && security.DerivedULID(self.settings.Secret, "rua:"+domain.ID) == specialId {
+			return domain
+		}
+	}
+	return nil
+}
+
+// resolveReportAddresses fills in the reverse name of each address, a few
+// at a time and all of them within one deadline.
+func (self *exchange) resolveReportAddresses(ctx context.Context, ipRdns map[string]string) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, reportLookupTimeout)
+	defer cancel()
+	addresses := make(chan string, len(ipRdns))
+	for address := range ipRdns {
+		addresses <- address
+	}
+	close(addresses)
+	var mutex sync.Mutex
+	var waitGroup sync.WaitGroup
+	for worker := 0; worker < reportLookupWorkers; worker++ {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			for address := range addresses {
+				if ctxWithTimeout.Err() != nil {
+					return
+				}
+				name := self.checkIp(ctxWithTimeout, net.ParseIP(address), 5*time.Second)
+				mutex.Lock()
+				ipRdns[address] = name
+				mutex.Unlock()
+			}
+		}()
+	}
+	waitGroup.Wait()
+}
+
+// decodeReport reads one decoded report, refusing one larger than any
+// reporter sends or with more records than are worth a row each.
+func decodeReport(reader io.Reader) (*dmarc.Feedback, error) {
+	feedback, err := dmarc.Decode(io.LimitReader(reader, maximumReportSize))
+	if err != nil {
+		return nil, err
+	}
+	if len(feedback.Records) > maximumReportRecords {
+		return nil, mailparse.ErrInvalidContentType
+	}
+	return feedback, nil
+}
+
 func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dmarc.Feedback, error) {
 	var feedbacks []*dmarc.Feedback
 	if err := mailparse.TraverseParts(headers, body, func(header textproto.MIMEHeader, reader io.Reader) error {
@@ -170,7 +254,7 @@ func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dm
 				}
 				defer func() { _ = gzipReader.Close() }()
 
-				feedback, err := dmarc.Decode(gzipReader)
+				feedback, err := decodeReport(gzipReader)
 				if err != nil {
 					return err
 				}
@@ -186,6 +270,9 @@ func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dm
 			if err != nil {
 				return err
 			}
+			if len(zipReader.File) > maximumReportFiles {
+				return mailparse.ErrInvalidContentType
+			}
 			for _, file := range zipReader.File {
 				if err := func(file *zip.File) error {
 					readerCloser, err := file.Open()
@@ -194,7 +281,7 @@ func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dm
 					}
 					defer func() { _ = readerCloser.Close() }()
 
-					feedback, err := dmarc.Decode(readerCloser)
+					feedback, err := decodeReport(readerCloser)
 					if err != nil {
 						return err
 					}

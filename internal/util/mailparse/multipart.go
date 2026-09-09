@@ -12,14 +12,26 @@ import (
 	"strings"
 )
 
+// ErrTooDeeplyNested is a message with multipart bodies nested past
+// maximumPartDepth.
+var ErrTooDeeplyNested = errors.New("mailparse: message is nested too deeply")
+
+// maximumPartDepth bounds how deep TraverseParts follows multipart bodies
+// into one another. Every level is a reader wrapped around the reader of
+// the level above, so reading a byte at depth N passes through N readers,
+// and a level costs a sender about fifty bytes: a message that nests a
+// million levels is small and would take hours to walk. Real mail nests a
+// handful.
+const maximumPartDepth = 32
+
 func TraverseParts(headers []string, body []byte, callback func(textproto.MIMEHeader, io.Reader) error) error {
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Type", FindHeaderValue(headers, "Content-Type"))
 	header.Set("Content-Transfer-Encoding", FindHeaderValue(headers, "Content-Transfer-Encoding"))
-	return traverseParts(header, bytes.NewReader(body), callback)
+	return traverseParts(header, bytes.NewReader(body), callback, 0)
 }
 
-func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(textproto.MIMEHeader, io.Reader) error) error {
+func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(textproto.MIMEHeader, io.Reader) error, depth int) error {
 	contentType := header.Get("Content-Type")
 	if contentType == "" {
 		return callback(header, reader)
@@ -31,6 +43,9 @@ func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(
 	if !strings.HasPrefix(mediaType, "multipart/") || parameters["boundary"] == "" {
 		return callback(header, reader)
 	}
+	if depth >= maximumPartDepth {
+		return ErrTooDeeplyNested
+	}
 
 	mr := multipart.NewReader(reader, parameters["boundary"])
 	for {
@@ -41,7 +56,7 @@ func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(
 		if err != nil {
 			return err
 		}
-		if err := traverseParts(part.Header, part, callback); err != nil {
+		if err := traverseParts(part.Header, part, callback, depth+1); err != nil {
 			return err
 		}
 	}

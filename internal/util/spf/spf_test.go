@@ -211,8 +211,12 @@ func TestIPv6(t *testing.T) {
 	dns.Ip["d6666"] = []net.IP{ip6666}
 	dns.Ip["d6660"] = []net.IP{ip6660}
 	dns.Mx["d6660"] = []*net.MX{mx("d6660", 5), mx("nothing", 10)}
-	dns.Addr["2001:db8::68"] = []string{"sonlas6.", "domain.", "d6666."}
+	// A name counts for "ptr" only when it resolves back to the connecting
+	// address, so "domain." itself, which does not, is not what makes the
+	// bare "ptr" pass; a name under it that does is.
+	dns.Addr["2001:db8::68"] = []string{"sonlas6.", "domain.", "mail.domain.", "d6666."}
 	dns.Ip["domain"] = []net.IP{ip1111}
+	dns.Ip["mail.domain"] = []net.IP{ip6666}
 	dns.Ip["sonlas6"] = []net.IP{ip6666}
 
 	for _, c := range cases {
@@ -631,5 +635,51 @@ func TestBadResolverResponse(t *testing.T) {
 	})
 	if res != spf.ResultFail {
 		t.Errorf("expected fail, got %q / %q", res, err)
+	}
+}
+
+// Whoever controls the reverse zone of an address chooses what name it
+// claims, so RFC 7208 §5.5 counts a PTR name only when it resolves back to
+// the connecting address — and a "ptr:example.com" match is on a label
+// boundary, so that "notexample.test" is not under it. A verifier that got
+// either wrong let a sender publish any name and pass SPF for it, and DMARC
+// with it.
+func TestPointerNamesAreValidatedAndMatchedOnLabels(t *testing.T) {
+	t.Parallel()
+	dns := newTestResolver()
+	dns.Addr["1.1.1.1"] = []string{"www.domain.", "xdomain.", "mail.domain."}
+	// Resolves, but not to the sender.
+	dns.Ip["www.domain"] = []net.IP{ip1110}
+	// Resolves to the sender, but is not under "domain".
+	dns.Ip["xdomain"] = []net.IP{ip1111}
+	// Resolves to the sender, under "domain".
+	dns.Ip["mail.domain"] = []net.IP{ip1111}
+
+	for _, c := range []struct {
+		txt string
+		res spf.Result
+	}{
+		{"v=spf1 ptr:domain -all", spf.ResultPass},
+		{"v=spf1 ptr:www.domain -all", spf.ResultFail},
+		{"v=spf1 ptr:xdomain -all", spf.ResultPass},
+		{"v=spf1 ptr:mail.domain -all", spf.ResultPass},
+	} {
+		dns.Txt["domain"] = []string{c.txt}
+		res, err := spf.Check(context.TODO(), ip1111, "domain", "", &spf.CheckOptions{Resolver: dns})
+		if err != nil {
+			t.Errorf("%q: %s", c.txt, err)
+		}
+		if res != c.res {
+			t.Errorf("%q: expected %q, got %q", c.txt, c.res, res)
+		}
+	}
+
+	// With no name resolving back, "ptr:domain" must not pass however
+	// many names claim to be under it.
+	dns.Ip["mail.domain"] = []net.IP{ip1110}
+	dns.Txt["domain"] = []string{"v=spf1 ptr:domain -all"}
+	res, err := spf.Check(context.TODO(), ip1111, "domain", "", &spf.CheckOptions{Resolver: dns})
+	if err != nil || res != spf.ResultFail {
+		t.Errorf("a name that does not resolve back gave %q, %v; want fail", res, err)
 	}
 }

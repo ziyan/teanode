@@ -210,13 +210,19 @@ directories were created by a process running as root, and uid 65532 cannot
 read them. `chown -R 65532:65532` on both, once, before starting the new
 image. The compose file says so and so does the getting-started guide.
 
-### SEC-7 — `X-Forwarded-Proto` is trusted from anyone (Low, open)
+### SEC-7 — `X-Forwarded-Proto` is trusted from anyone (Low, fixed)
 
-`isSecureRequest` believes the header without a trusted-proxy list. The
+`isSecureRequest` believed the header without a trusted-proxy list. The
 dangerous direction is not spoofing — a client claiming `https` only causes a
 *more* restrictive cookie — but omission: behind a TLS terminator that does
 not set the header, the session cookie is issued without `Secure` and will be
 sent over plaintext.
+
+Fixed in the second review (SEC-20): the header is now believed only from a
+proxy listed in `server.trustedProxies`, the same rule as `X-Forwarded-For`,
+and a server that terminates TLS itself redirects its plain listener to
+HTTPS and sends `Strict-Transport-Security`, which closes the omission case
+for the deployment this project ships.
 
 ### SEC-8 — Webhook aliases reach wherever the operator points them (Informational)
 
@@ -411,10 +417,12 @@ stripped.
 
 ## 7. What to do next
 
-1. Add a trusted-proxy setting, or default `Secure` on when TLS is configured
-   at all (SEC-7).
+1. ~~Add a trusted-proxy setting, or default `Secure` on when TLS is
+   configured at all (SEC-7).~~ Done; see SEC-20.
 2. Re-run `govulncheck` on a schedule. It found forty-three things nobody had
-   looked for; it will find more.
+   looked for; it will find more. (It now runs weekly; see SEC-12.)
+3. Sign releases (SEC-31).
+
 ## 8. What this review did not do
 
 No fuzzing of the MIME and header parsers, which is where a mail server's
@@ -422,3 +430,372 @@ remaining memory and complexity bugs usually live. No review of the DKIM, ARC
 and SPF implementations against their specifications beyond the existing
 tests. No penetration test against a running instance. No dependency license
 audit. Each is worth doing before this is recommended to anybody else.
+
+---
+
+# Second review
+
+- Date: 2026-09-08
+- Reviewed at: `main` at v0.15.0 (`2b3ca32`); remediation in the same pull
+  request
+- Status: second pass, over the whole program as it stands after the
+  mailbox, IMAP, single sign-on, self-upgrade and built-in spam filter work
+
+The first review did not look at the DKIM, SPF, DMARC and ARC
+implementations against their specifications, at the parsers for
+algorithmic complexity, at the self-upgrade mechanism, or at the command
+line client. This one did, along with a second look at everything the first
+covered. Nine reviewers, each over one surface, followed by verification of
+every finding against the code before it was fixed.
+
+## Summary
+
+Thirty-one findings, of which twenty-six are fixed here. Four of them
+mattered:
+
+- A domain manager could read, rewrite and delete another domain's
+  templates and layouts, and an auditor could resend another domain's
+  deliveries (SEC-13).
+- A credential restricted to one address could send as any address at its
+  domain, signed and aligned (SEC-14).
+- An SPF `ptr` mechanism passed for any name the sender's reverse zone
+  claimed, which is a DMARC bypass for every domain that uses one (SEC-15).
+- Four ways for one message from anyone on port 25 to cost the server hours
+  of CPU or unbounded memory (SEC-16 to SEC-19).
+
+What remains open is the trust in the release pipeline (SEC-31), the
+database password the compose file ships with (SEC-32), and three smaller
+items recorded at the end.
+
+## Findings
+
+### SEC-12 — Twenty-two standard library vulnerabilities reachable (High, fixed)
+
+`govulncheck` against Go 1.26.0 reported 22 vulnerabilities in the standard
+library that this code reaches, among them panics in `crypto/x509`
+certificate checking reached from passkey sign-in, and parsing faults in
+`net/mail`, `net/textproto`, `mime` and `net/url`, all fixed by 1.26.6. The
+`go` directive is now `1.26.6`, which is the floor the first review chose
+to enforce the same way, and the scan reports none. The weekly workflow
+would have found them on the next Monday.
+
+### SEC-13 — Rows scoped to "some domain" rather than their own (High, fixed)
+
+`GetTemplate`, `DeleteTemplate`, `GetLayout`, `ModifyLayout`,
+`DeleteLayout`, `GetDelivery`, `RetryDelivery`, `ListDeliveriesByMail`,
+`GetReport`, `GetMailOpens` and `ListMailOpens` checked that the caller
+held `domain:manage` or `mail:audit` over *some* domain, and then read
+whichever row was named. Identifiers are not secrets. A group granted
+`domain:manage` over one domain — which is what that permission kind is
+for — could rewrite another domain's layout with a phishing page that every
+template rendered through it would then carry, delete its templates, read
+its deliveries' recipients and error text, and re-trigger a failed delivery
+of its mail. `ModifyTemplate` did it right, which showed the intended
+pattern.
+
+Each now calls `requireDomainPermission` over the row's own domain after
+loading it, which answers not found for a domain the caller does not hold
+and for one that has been deleted, so nothing else changed. `ListMailOpens`
+filters to the domains the caller audits. Asserted by
+`TestRowsAreScopedToTheDomainThePermissionIsHeldOver`.
+
+`TestEveryOperationAuthorizes` did not catch this because it checks that a
+helper's *name* appears in each resolver, not what the helper is asked.
+
+### SEC-14 — A restricted credential could send as anyone at its domain (High, fixed)
+
+A credential's `alias` restriction — the thing that lets an operator hand a
+newsletter service a credential that can only send as `newsletter@` — was
+enforced on the envelope sender only. The `From` header, which is what the
+recipient reads, was parsed and stored and never compared. The message was
+then DKIM-signed for the domain and marked `auth=pass`, so the
+impersonation was aligned and authenticated. The mailbox submission path
+already checked both, which is now what the credential path does
+(`credentialMaySendAs`). An unrestricted credential is unchanged.
+
+### SEC-15 — SPF `ptr` validated any resolving name and matched on a bare suffix (High, fixed)
+
+RFC 7208 §5.5 validates a PTR name only when it resolves back to the
+connecting address; the evaluator kept any name that resolved to anything.
+Whoever controls an address's reverse zone chooses the name it claims, so a
+sender set their PTR to `www.victim.example`, and `ptr` passed for the
+victim's domain. `ptr:example.test` also matched `notexample.test`, with no
+label boundary. Both fixed, with fixtures for each; one existing fixture
+that relied on the lax behaviour was corrected.
+
+### SEC-16 — Quadratic header unfolding (High, fixed)
+
+`mailparse.Split` appended each continuation line to the header string it
+belonged to, copying the whole header every time. Two megabytes of ` x`
+lines took over a minute and the cost grew as the square; the largest
+message allowed was a day of CPU, and `Split` runs on every message before
+anything else is checked — no served domain is needed, only a connection.
+The header block is now built with a builder, and bounded at 4096 headers
+of 64 KiB each, past which the message is refused. The same loop in the
+DSN parser is fixed the same way.
+
+### SEC-17 — Unbounded multipart nesting (High, fixed)
+
+`TraverseParts` recursed through nested multipart bodies without limit,
+each level a reader wrapped around the one above, so reading a byte at
+depth N passed through N readers. A level costs a sender fifty bytes; a
+message that nests twenty thousand levels took most of a minute and one
+that nests a million is days. Reached on receipt for the content and virus
+checks, from anyone who can send to a served domain, and again in the
+dashboard. Bounded at 32 levels.
+
+### SEC-18 — DMARC aggregate report ingestion was unbounded (High, fixed)
+
+The `rua` address is published in every domain's DMARC record, so anyone
+can send to it, and no authentication check runs on what arrives. The
+report inside was inflated with no limit — a megabyte of gzip is a gigabyte
+of records — every record became a row, and every distinct source address
+in it was reverse-resolved, one at a time, five seconds each, inside the
+open transaction, before the report's domain was even looked at.
+
+Now: a decoded report is capped at 16 MiB and 10,000 records, a zip at 16
+files; the address the report came to is resolved to the domain whose
+report address it is, and a report for any other domain is dropped before
+any work; at most 256 addresses are resolved, eight at a time, all within
+thirty seconds. Asserted by `TestAnAggregateReportIsBounded`.
+
+### SEC-19 — Unbounded DKIM signatures, command lines, and connections (High, fixed)
+
+Three limits port 25 did not have:
+
+- Every `DKIM-Signature` header was verified, in its own goroutine, with
+  its own key lookup and its own hash of the whole body. A message can
+  carry a million of them. Now at most eight are examined, as RFC 6376
+  §6.1 permits, the body hash is computed once per canonicalization, the
+  `h=` list is capped, and a goroutine that panics still answers so the
+  verifier cannot wait for ever.
+- A command line was read until a newline arrived, however long that took;
+  a client that never sent one was buffered at line rate for the read
+  deadline. Lines are now refused past 8 KiB with `500 5.5.2`.
+- Connections were unbounded, each a goroutine and, once it sent DATA, a
+  buffer the size of the largest message, for up to an hour. Each listener
+  now serves 1000 at once and answers `421` past that. Handling an accepted
+  message is bounded at ten minutes.
+
+The GraphQL endpoint, which is reachable before authentication because
+logging in is a mutation, now caps its request body at 1 MiB, and both HTTP
+listeners have header, read and idle timeouts.
+
+### SEC-20 — The dashboard was served in plaintext on port 80 (Medium, fixed)
+
+Port 80 answered ACME challenges and then served the whole dashboard and
+API. A hostname typed into a browser goes there first, and a reader who
+signed in there sent their password in the clear and received a cookie
+without `Secure`, which the browser then kept sending that way. When this
+process serves HTTPS itself, the plain listener now redirects everything
+but the challenge path there, with a `308`; behind a proxy that terminates
+TLS, where there is no HTTPS listener here, it serves as before. Responses
+over TLS carry `Strict-Transport-Security`. `X-Forwarded-Proto` is believed
+only from a listed proxy (SEC-7), in the session cookie, the single sign-on
+cookie and the redirect URL given to the identity provider.
+
+### SEC-21 — Two `From` headers (Medium, fixed)
+
+DMARC was evaluated on the last `From` header and mail programs show the
+first, so a message signed by the attacker's own domain in the last and
+naming the victim in the first passed DMARC and displayed as the victim.
+RFC 7489 §6.6.1 says to refuse such a message; it is now refused with the
+invalid-From error.
+
+### SEC-22 — `<noscript>` carried markup past the sanitizer (Medium, fixed)
+
+The sanitizer parsed mail with scripting enabled, under which a parser
+keeps the inside of `<noscript>` as one piece of text and writes it back
+out untouched. The frame that shows the message runs without scripts, so
+the browser turned that text into elements — a `preconnect` to a tracking
+host, a `meta refresh`, a referrer policy — none of which the sanitizer had
+seen. It now parses the way the frame will, with scripting off, and removes
+`noscript` and the other raw-text elements outright.
+
+Reply and forward also pasted the sanitized message into the compose
+editor, which is part of the dashboard's own document rather than the
+frame: a `<style>` block in a message restyled the whole page while the
+reader wrote, and could lay a fake sign-in over it. The quote now loses
+style, link, meta and id before it reaches the editor, and the editor
+contains its own painting.
+
+### SEC-23 — IMAP ignored `mail:write` (Medium, fixed)
+
+Every dashboard mutation checks `mail:write`; nothing on the IMAP path
+did, so a user whose role allows only reading could flag, move, expunge,
+append and delete folders from a mail program. The permission is now read
+at sign-in and at each recheck; a folder opens read-only without it, and
+the commands that write refuse.
+
+### SEC-24 — A mailbox rule could forward a message in a loop (Medium, fixed)
+
+An alias forward adds `Delivered-To`, which is how a message is kept from
+being forwarded back; a rule forward did not, so two mailboxes forwarding
+to each other passed a message back and forth for ever, one `Received`
+longer each time. Rule forwards now add the header, and a rule does not
+forward a message to an address it has been delivered to or one that has
+crossed more than twenty-five hosts.
+
+### SEC-25 — Terminal control characters in the client's output (Medium, fixed)
+
+`teanode mail list` wrote subject lines and sender names to the terminal
+as they were. A terminal obeys control characters, so a message could move
+the cursor up and overwrite the row above — a rejected message reads as
+delivered — or load the clipboard with a command. Every cell, field, error
+and, when standard output is a terminal, message body now has such
+characters shown as their escapes. Output to a file or pipe is unchanged.
+
+### SEC-26 — Forwarding to a mail server sent its password over unverified TLS (Low, fixed)
+
+An alias of kind `mailserver` with a username and password connected with
+opportunistic, unverified TLS, so whoever answered at that name got the
+password. The relay path verified; this one now does the same when a
+password is present, requiring STARTTLS and checking the certificate
+against the configured host.
+
+### SEC-27 — Sign-in timing named the addresses with mailboxes (Low, fixed)
+
+An app-password sign-in for an address with no mailbox behind it was
+refused at once; one with a mailbox was refused after a bcrypt. Every
+refusal now costs one bcrypt, and a mailbox may hold at most twenty app
+passwords, each of which is one more on a sign-in. Starting a passkey
+ceremony, which anybody may do and which is held for five minutes, now
+counts against the login limiter. The send endpoint, which verifies a
+credential on every request, counts against the submission limiter.
+
+### SEC-28 — A password change left every other session valid (Low, fixed)
+
+Changing a password, or an administrator resetting one, is usually done
+because somebody else has it, and that somebody may already be signed in.
+Every other session of the account is now ended; the one making the change
+stays.
+
+### SEC-29 — The client followed redirects with its token, and wrote its profile world-readable for a moment (Low, fixed)
+
+The API client followed redirects and the standard library keeps the
+`Authorization` header on a redirect to the same host, including from
+`https` to `http`. It now reports a redirect as the answer it is. The
+profile file was created with the default mode and made private
+afterwards; it is created private. The fallback command the sign-in page
+offered put the token on the command line, where the shell's history keeps
+it; it now reads the token from the terminal without echo.
+
+### SEC-30 — Smaller items fixed
+
+- Incoming `Authentication-Results` headers naming this server are removed
+  on arrival, as RFC 8601 §5 requires; one that stayed sat above the real
+  one for everything downstream.
+- `rsa-sha1` signatures are refused, as RFC 8301 requires.
+- A `_dmarc` name with another TXT record beside the policy refused every
+  message from the domain, because the records were joined; only
+  `v=DMARC1` records are read now, and more than one is none.
+- An ARC chain that could not be validated refused the message with a
+  permanent error; it is now a failed chain, which is what the next hop is
+  told, as RFC 8617 §5.2 says.
+- The signed bounce address's signature is compared in constant time.
+- `safefetch` refuses the 6to4, Teredo and NAT64 prefixes, which carry an
+  IPv4 address inside them.
+- The spam filter's header scan, header tokenizer and link extraction are
+  bounded the way its body scan already was.
+- An out-of-office reply requires `mail:send`, as a rule forward does.
+- Every list query is capped at 1000 rows however many were asked for.
+- A disabled account that reached the GraphQL handler no longer has a
+  principal built from its old grants; the middleware already refused it,
+  so this was latent.
+
+### SEC-31 — Releases are verified by checksum, not signature (Medium, open)
+
+The self-upgrade downloads a release from GitHub over TLS and checks it
+against the `SHA256SUMS` published beside it. The checksum is produced by
+the same job that builds the binary, so it proves the bytes arrived intact
+and nothing about who produced them. Anyone who can publish a release —
+the maintainer's account, the release token, or the third-party action the
+release workflow uses at a mutable tag — can hand a hostile binary to every
+server with automatic upgrades on, which executes it with the database
+credentials in its environment. The fix is a signing key held outside the
+build: sign `SHA256SUMS` in the release job, ship the public key in the
+binary, and refuse a release without a valid signature. That is a change to
+the release process as much as to the code, and is left for its own change.
+Until then, the workflow's actions should be pinned to commits.
+
+### SEC-32 — The compose file ships a fixed database password (Low, open)
+
+`deploy/docker-compose.yml` sets `POSTGRES_PASSWORD: teanode` and publishes
+the database on `127.0.0.1:5432`, so any account on the host reads the
+server secret and every stored message. The review's trust model already
+places PostgreSQL inside the operator's network; on a single-purpose host
+that is the host's other users. Generating the password in `config env`
+and reading it from `.env` is the fix, and is a change existing
+deployments have to be walked through, so it is not made here.
+
+### Also open
+
+- A DSN for a delivery can be replayed by whoever received it: each one
+  rewrites the delivery's status, and for an outgoing original creates a
+  fresh delivery of the bounce to the sender's alias target. The holder is
+  the receiving server, so this is bounded; a window after which a delivery
+  no longer accepts notifications would close it.
+- The `dns-01` solver writes challenge records for every configured host
+  into the one hosted zone, so `perDomain` with `dns-01` and a domain
+  outside that zone fails the server's own order. An availability bug
+  rather than a security one.
+- The IMAP `SEARCH TEXT` reads and parses every message in the folder from
+  storage per command, and `APPEND` files a message as outgoing mail from
+  whatever `From` it carries, which an auditor of the domain then sees.
+- `PDF` attachments open inline on the dashboard's origin. No known
+  browser runs script from one, so this is hardening.
+
+## Controls verified this time
+
+Beyond the first review's list, and named so nobody repeats the work:
+
+- **DKIM**: `l=` refused; RSA under 1024 bits refused; empty `p=` is an
+  error not a pass; `k=` must match `a=`; `x=` enforced; `i=` must be under
+  `d=`; header selection bottom-up with oversigned absent headers
+  contributing nothing; a verification error never refuses a message on its
+  own.
+- **SPF**: the ten-lookup limit is counted for every mechanism that
+  resolves; more than one record, more than one `redirect=`, and more than
+  ten MX hosts are `permerror`; `%{p}` is never resolved; macro output
+  cannot carry a `/`.
+- **DMARC**: organizational domain from the public suffix list; `sp=`
+  applied only when the record came from above; no reports are *sent*, so
+  external destination verification does not arise; Go's XML has no entity
+  expansion.
+- **ARC**: not consulted by the verdict, so no trusted-sealer list is
+  needed; capped at fifty sets.
+- **IMAP**: every folder and item is resolved through the signed-in
+  mailbox, so a UID or name of another mailbox's is not found;
+  `LOGINDISABLED` and `AUTHENTICATE` both wait for TLS; literals are
+  bounded; `SEARCH` is evaluated in Go, so no client string reaches SQL.
+- **Passkeys and single sign-on**: ceremonies single-use and expiring;
+  registration bound to the caller; assertion verified for challenge,
+  origin, RP ID, signature and user handle; state and nonce sealed and
+  expiring; identities linked by `(provider, subject)` only, never by
+  email; the return path restricted to a same-site path; the identity
+  provider reached through a client that refuses private addresses at the
+  dial.
+- **Self-upgrade**: repository and endpoint compiled in; HTTPS only, no
+  downgrade on redirect; strictly newer versions only; staged binary
+  written private, ownership and mode checked before exec; `server:manage`
+  required; nothing reaches a shell.
+- **Storage**: identifiers refused if they carry a path character; every
+  one comes from a database row.
+- **The client**: loopback listener on `127.0.0.1`, random port, nonce
+  checked, token delivered by POST, one callback, five-minute timeout;
+  browser opened without a shell; TLS verified unless `--insecure`, which
+  is announced; passwords read without echo; `mail download` never
+  overwrites.
+- **Deployment**: non-root image with `NET_BIND_SERVICE` only; no Docker
+  socket; workflow permissions least-privilege; no `pull_request_target`;
+  untrusted fields passed through `env` rather than interpolated.
+- **Secrets at rest**: `gitleaks` over every commit finds nothing.
+- **Dashboard dependencies**: `npm audit --omit=dev` finds nothing.
+
+## What this review did not do
+
+No fuzzing, still. No penetration test against a running instance. The
+protocol implementations were reviewed against their specifications by
+reading, not by conformance suites. The findings above are what reading
+found; a fuzzer over `mailparse`, `dkim` and `dmarc` is the next thing
+worth doing.

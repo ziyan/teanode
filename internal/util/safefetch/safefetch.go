@@ -139,6 +139,21 @@ func isSharedAddressSpace(ip net.IP) bool {
 		}
 		return false
 	}
+	// The transition prefixes embed an IPv4 address: 6to4 (2002::/16),
+	// Teredo (2001::/32) and NAT64 (64:ff9b::/96). A host that speaks them
+	// would reach the embedded address, which is not checked here.
+	if len(ip) != net.IPv6len {
+		return false
+	}
+	if ip[0] == 0x20 && ip[1] == 0x02 {
+		return true
+	}
+	if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0 && ip[3] == 0 {
+		return true
+	}
+	if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 && ip[8] == 0 && ip[9] == 0 && ip[10] == 0 && ip[11] == 0 {
+		return true
+	}
 	// Unique local addresses, fc00::/7: private in every way that matters,
 	// and net.IP.IsPrivate already says so. Kept for the mapped case above.
 	return false

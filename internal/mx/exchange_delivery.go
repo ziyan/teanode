@@ -208,8 +208,12 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 	}
 
 	// add headers
+	//
+	// Delivered-To on every forward to an address, whether an alias's or a
+	// mailbox rule's: it is what says where a message has been, which is
+	// what stops it being forwarded there again.
 	var deliveryHeaders []string
-	if delivery.Kind == models.DeliveryKindForward && delivery.Alias != nil && delivery.Alias.Kind != models.AliasKindMailServer {
+	if delivery.Kind == models.DeliveryKindForward && (delivery.Alias == nil || delivery.Alias.Kind != models.AliasKindMailServer) {
 		deliveryHeaders = []string{
 			mailparse.UnsplitHeader("Delivered-To", delivery.Recipient),
 			mailparse.UnsplitHeader("Return-Path", fmt.Sprintf("<%s>", delivery.Mail.Sender)),
@@ -484,10 +488,22 @@ func (self *exchange) forwardMail(ctx context.Context, sender, recipient string,
 	data := buffer.Bytes()
 
 	// send
-	if err := smtpc.Send(ctx, conn, username, password, sender, []string{recipient}, data, &smtpc.Settings{
+	//
+	// Delivery to a stranger's MX is opportunistic: encrypted when offered,
+	// unverified, because the alternative is not delivering. A mail server
+	// the operator named with a password to give it is the relay's case
+	// instead: the password must not go to whoever answers at that name,
+	// so the certificate is verified against it and a server that will not
+	// encrypt is refused.
+	settings := &smtpc.Settings{
 		Hello:   self.settings.Server,
 		Timeout: time.Hour,
-	}); err != nil {
+	}
+	if username != "" || password != "" {
+		settings.TLS = smtpc.TLSRequired
+		settings.ServerName = host
+	}
+	if err := smtpc.Send(ctx, conn, username, password, sender, []string{recipient}, data, settings); err != nil {
 		log.Errorf("failed to deliver email to %q: %s", recipient, err)
 		return 0, err
 	}

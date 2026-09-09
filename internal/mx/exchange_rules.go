@@ -186,6 +186,15 @@ func (self *exchange) runRuleAction(tx db.Transaction, mailbox *models.Mailbox, 
 		}
 		return moved[0], nil
 	case "forward":
+		// Not back to where it has already been: a message that carries
+		// the forward's own address as a Delivered-To has been through it,
+		// and two mailboxes forwarding to each other would otherwise pass
+		// it back and forth, a Received header longer each time, until it
+		// outgrew the size limit — or for ever, without one.
+		if !forwardable(mail, action.Address) {
+			log.Warningf("not forwarding mail %q from mailbox %q to %q: it has been there, or has been forwarded too often", mail.ID, mailbox.ID, action.Address)
+			return item, nil
+		}
 		// A forward is a delivery like any alias's: signed, queued, recorded.
 		_, err := tx.CreateDelivery(&models.Delivery{
 			MailID:      mail.ID,
@@ -200,4 +209,32 @@ func (self *exchange) runRuleAction(tx db.Transaction, mailbox *models.Mailbox, 
 		return item, err
 	}
 	return item, nil
+}
+
+// maximumForwardHops is how many Received headers a message may carry and
+// still be forwarded by a rule. Real mail crosses a handful of hosts; one
+// that has crossed this many is going round in circles.
+const maximumForwardHops = 25
+
+// forwardable says whether a rule may forward a message to an address: not
+// one it has already been delivered to, and not one that has been forwarded
+// more times than any message has a reason to be.
+func forwardable(mail *models.Mail, address string) bool {
+	if mailparse.CountHeaders(mail.Headers, "Received") > maximumForwardHops {
+		return false
+	}
+	for _, header := range mail.Headers {
+		key, value := mailparse.SplitHeader(header)
+		if !strings.EqualFold(key, "Delivered-To") {
+			continue
+		}
+		delivered, err := mailparse.ParseAddress(strings.TrimSpace(value))
+		if err != nil {
+			delivered = strings.TrimSpace(value)
+		}
+		if strings.EqualFold(delivered, address) {
+			return false
+		}
+	}
+	return true
 }
