@@ -132,9 +132,15 @@ export function CommandLinePage({ username }: { username: string }) {
     // The token is not part of the command: a command is pasted into a
     // shell, and a shell keeps a history. "--token -" reads it from the
     // terminal instead, without echo.
+    //
+    // The name goes into that command too, so it is included only when it
+    // is made of characters a shell does nothing with. A link crafted to
+    // carry a command in the name would otherwise run it the moment the
+    // command was pasted. Without a name the client uses the server's
+    // host name, which is what it uses when none was given.
     const command =
       `teanode auth login --url ${window.location.origin}` +
-      (profile ? ` --name ${profile}` : '') +
+      (profile && isProfileName(profile) ? ` --name ${profile}` : '') +
       ` --token -`
     return (
       <AuthCard purpose={t('cli.manualTitle')} onSubmit={(event) => event.preventDefault()}>
@@ -174,4 +180,11 @@ export function CommandLinePage({ username }: { username: string }) {
       </button>
     </AuthCard>
   )
+}
+
+// isProfileName says whether a saved-profile name can be put in a shell
+// command as it is: a host name, or a word. The client refuses anything
+// else as a --name, so a name that fails here was never the client's.
+export function isProfileName(name: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(name)
 }

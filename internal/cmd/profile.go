@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -190,4 +191,15 @@ func (self *Profiles) Names() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// profileNamePattern is what a saved profile may be called: a host name,
+// or a word. The name is shown in the sign-in page and written into the
+// command that page offers when the browser cannot reach the client, so
+// it is kept to characters a shell does nothing with.
+var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9\[][A-Za-z0-9._:\[\]-]{0,63}$`)
+
+// isProfileName says whether a name may be a saved profile's.
+func isProfileName(name string) bool {
+	return profileNamePattern.MatchString(name)
 }

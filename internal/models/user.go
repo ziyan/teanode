@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -70,11 +71,26 @@ func (self *User) Disabled() bool {
 	return self != nil && self.DisabledAt != nil
 }
 
+// LocalUsername is the name the console — the command line run on the
+// server itself, with the server secret — acts as. It is not an account:
+// a request carrying it is handled as holding every permission, so no
+// account may have it as a name.
+const LocalUsername = "(local)"
+
+// IsReservedUsername says whether a name may not be given to an account,
+// whatever its case. A person who could rename their account to the
+// console's name would be the console from then on.
+func IsReservedUsername(username string) bool {
+	return strings.EqualFold(strings.TrimSpace(username), LocalUsername)
+}
+
 // Validate reports everything wrong with the user.
 func (self *User) Validate() error {
 	var errors ValidationErrors
 	if self.Username == "" {
 		errors.add("username", "required")
+	} else if IsReservedUsername(self.Username) {
+		errors.add("username", "%q is reserved", self.Username)
 	}
 	if self.PasswordHash != "" {
 		if _, err := bcrypt.Cost([]byte(self.PasswordHash)); err != nil {

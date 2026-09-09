@@ -245,6 +245,12 @@ func (self *authenticator) authenticate(request *http.Request) (string, string, 
 	if user == nil || user.Disabled() {
 		return "", "", false
 	}
+	// A stored account is never the console, whatever it is named: the
+	// name is what says "console" downstream, and an account may not be
+	// given it, but a row that somehow has it must not be believed.
+	if models.IsReservedUsername(user.Username) {
+		return "", "", false
+	}
 	return user.Username, session.ID, true
 }
 

@@ -210,7 +210,20 @@ func (self *graph) imagesAllowed(ctx context.Context, mail *models.Mail) (bool, 
 	for _, mailbox := range mailboxes {
 		mailboxIds = append(mailboxIds, mailbox.ID)
 	}
-	return tx.ImagesAllowedFor(mailboxIds, mail.ID, mail.ListKey)
+	return tx.ImagesAllowedFor(mailboxIds, mail.ID, listKeyForImages(mail))
+}
+
+// listKeyForImages is the list a message may borrow the reader's "always
+// load" answer from: the one it names, when the message is authenticated
+// as coming from there. A List-Id is a header anyone can write, and a
+// sender who guessed which list a reader trusts would otherwise have their
+// pictures loaded, and the reader's opening reported, without the question
+// ever being asked. The same rule decides whether a list's mark is shown.
+func listKeyForImages(mail *models.Mail) string {
+	if mail == nil || !mail.DMARCPassed() {
+		return ""
+	}
+	return mail.ListKey
 }
 
 func renderContent(mailId string, headers []string, body []byte) (*MailContent, error) {

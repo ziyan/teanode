@@ -359,5 +359,11 @@ func validateUsername(username string) error {
 	if username == "" || len(username) > 64 || strings.ContainsAny(username, " \t\r\n") {
 		return api.ErrInvalidArguments
 	}
+	// The console's name is not an account's to take: a request carrying
+	// it is handled as the console, with every permission, and an account
+	// renamed to it would be from then on.
+	if models.IsReservedUsername(username) {
+		return api.ErrInvalidArguments
+	}
 	return nil
 }

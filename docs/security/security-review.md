@@ -435,9 +435,10 @@ audit. Each is worth doing before this is recommended to anybody else.
 
 # Second review
 
-- Date: 2026-09-08
-- Reviewed at: `main` at v0.15.0 (`2b3ca32`); remediation in the same pull
-  request
+- Date: 2026-09-08, with a further pass on 2026-09-09 over what landed in
+  v0.16.0 and v0.17.0 (SEC-33 to SEC-35)
+- Reviewed at: `main` at v0.15.0 (`2b3ca32`), then at v0.17.0 (`a7be213`);
+  remediation in the same pull request
 - Status: second pass, over the whole program as it stands after the
   mailbox, IMAP, single sign-on, self-upgrade and built-in spam filter work
 
@@ -450,9 +451,12 @@ every finding against the code before it was fixed.
 
 ## Summary
 
-Thirty-one findings, of which twenty-six are fixed here. Four of them
+Thirty-four findings, of which twenty-nine are fixed here. Five of them
 mattered:
 
+- Once a person could rename their own account, they could rename it to
+  the console's name and hold every permission from the next request on
+  (SEC-33).
 - A domain manager could read, rewrite and delete another domain's
   templates and layouts, and an auditor could resend another domain's
   deliveries (SEC-13).
@@ -727,6 +731,49 @@ places PostgreSQL inside the operator's network; on a single-purpose host
 that is the host's other users. Generating the password in `config env`
 and reading it from `.env` is the fix, and is a change existing
 deployments have to be walked through, so it is not made here.
+
+### SEC-33 — An account renamed to the console's name became the console (Critical, fixed)
+
+The console — the command line run on the server with the server secret —
+is told apart from an account by its username alone: a request carrying
+`(local)` is handled as holding every permission, and is never looked up.
+v0.17.0 let a person edit their own account, including its username, and
+nothing reserved that name. A member with no permissions beyond signing in
+could call `UpdateUser` with `username: "(local)"`; their session, keyed by
+user id, then carried the console's name on every request, which reads
+every mailbox, changes every setting, and mints API tokens for any
+account — a takeover that outlives the rename.
+
+The name is now refused wherever an account is named — `User.Validate`,
+which the database, the command line and identity-provider provisioning
+all go through, and the API's own check — and an account that somehow
+carries it is refused at sign-in, so the row cannot be believed even if it
+exists. Asserted at each layer. Found the day after it shipped, in the
+pass over v0.17.0; the self-service test proved which *fields* a person
+may change and not which *values*.
+
+### SEC-34 — The sign-in page wrote a query parameter into a command to paste (Medium, fixed)
+
+The page the command line client opens to sign in takes the profile name
+from the URL and, when the browser cannot reach the client, offers a
+`teanode auth login --name <name> …` command to copy. Nothing checked the
+name, so a crafted link — sent to an operator, who presses Authorize and
+pastes what they are given — ran whatever the name held the moment it
+reached a shell. The page now includes a name only when it is a host name
+or a word, and the client refuses any other name as a `--name`, so a
+legitimate one never trips it.
+
+### SEC-35 — A spoofed `List-Id` borrowed the reader's "always load pictures" (Low, fixed)
+
+v0.17.0 lets a reader say once that a mailing list's pictures may be
+loaded without asking. The list is identified by its `List-Id`, which is a
+header anyone can write, so a stranger who guessed which lists a reader
+trusts had their tracking pictures loaded — through the proxy, so no
+address leaks, but the opening and its time do, which is what the question
+exists to withhold. The standing answer now applies only to a message
+that passed DMARC, which is the rule the list's mark already followed; the
+server applies it, and so does the list's own reader, which had applied
+the answer to every message on screen.
 
 ### Also open
 

@@ -74,3 +74,21 @@ func TestSelfService(t *testing.T) {
 		})
 	}
 }
+
+// The console — the command line run on the server, with the server secret
+// — is told apart from an account by its name alone, and a request carrying
+// that name holds every permission. Once a person could rename their own
+// account, the name had to be one no account can take: a member who renamed
+// themselves to it was the console from the next request on.
+func TestNoAccountMayTakeTheConsolesName(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{localUsername, "(LOCAL)", " (local) "} {
+		if err := validateUsername(name); err == nil {
+			t.Errorf("%q was accepted as a username", name)
+		}
+	}
+	if err := validateUsername("local"); err != nil {
+		t.Errorf("an ordinary name was refused: %s", err)
+	}
+}
