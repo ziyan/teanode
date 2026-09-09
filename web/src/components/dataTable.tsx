@@ -268,12 +268,10 @@ export function DataTable<Row>({
               )}
             </>
           )}
-          {chosen.length > 0 && (
-            <>
-              <span className="muted">{t('table.chosen', { count: chosen.length })}</span>
-              {selectionActions?.(chosen)}
-            </>
-          )}
+          {/* The count is not said here: what can be done with the chosen
+              rows says how many it will act on, and saying it twice in one
+              row is a row that repeats itself. */}
+          {chosen.length > 0 && selectionActions?.(chosen)}
         </div>
       )}
 

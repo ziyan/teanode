@@ -588,7 +588,6 @@ export const ja: Catalog = {
   'filter.nothingMatches': 'この条件に一致するものはありません。',
   'table.choose': 'この行を選択',
   'table.chooseAll': '表示中のすべての行を選択',
-  'table.chosen': '{count} 件を選択',
   'table.rowsPerPage': '表示件数',
   'table.range': '{total} 件中 {first}–{last} 件',
   'table.previous': '前のページ',

@@ -597,7 +597,6 @@ export const en = {
   'filter.nothingMatches': 'Nothing matches these filters.',
   'table.choose': 'Choose this row',
   'table.chooseAll': 'Choose every row shown',
-  'table.chosen': '{count} chosen',
   'table.rowsPerPage': 'Rows',
   'table.range': '{first}–{last} of {total}',
   'table.previous': 'Previous page',

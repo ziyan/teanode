@@ -576,7 +576,6 @@ export const zh: Catalog = {
   'filter.nothingMatches': '没有符合当前筛选条件的记录。',
   'table.choose': '选择此行',
   'table.chooseAll': '选择显示的所有行',
-  'table.chosen': '已选择 {count} 项',
   'table.rowsPerPage': '每页',
   'table.range': '第 {first}–{last} 条，共 {total} 条',
   'table.previous': '上一页',
