@@ -27,6 +27,18 @@ const MOST_RISE = 62
 const LEAST_STEP = 560
 const MOST_STEP = 900
 
+// How far past each edge the line runs. Enough that it arrives from somewhere
+// and leaves for somewhere, and no more: everything out here is line the
+// envelope travels along where nobody can see it.
+const OVERHANG = 110
+
+// The stretch of the journey that happens where it can be seen, as a share of
+// the whole. The line is WIDTH wide with OVERHANG at each end, so the visible
+// part begins a little way in and ends a little way before the finish; a
+// little further in again, so the envelope is not half off the edge.
+const VISIBLE_FROM = (OVERHANG + 60) / (WIDTH + OVERHANG * 2)
+const VISIBLE_TO = (OVERHANG + WIDTH - 60) / (WIDTH + OVERHANG * 2)
+
 // between is a number in a range, which is all the randomness there is here.
 function between(least: number, most: number): number {
   return least + Math.random() * (most - least)
@@ -37,8 +49,8 @@ function between(least: number, most: number): number {
 // and stops inside the panel reads as a diagram of itself rather than as
 // something passing through.
 function serpentine(): string {
-  const start = -240
-  const end = WIDTH + 240
+  const start = -OVERHANG
+  const end = WIDTH + OVERHANG
   let x = start
   let above = Math.random() < 0.5
   let path = `M ${x.toFixed(0)} ${MIDDLE.toFixed(0)}`
@@ -78,7 +90,12 @@ export function EnvelopeTrail() {
       // Part way along already. A negative begin winds the animation back, so
       // the envelope is wherever it would have got to by now rather than
       // setting off from the edge every time somebody opens a folder.
-      begin: -between(0, seconds),
+      //
+      // Not anywhere along it, though: the line runs past both edges, and a
+      // start chosen from the whole of it put the envelope out of sight about
+      // a third of the time — which looked like a drawing with no envelope in
+      // it. The range is the part of the journey that is on the screen.
+      begin: -between(seconds * VISIBLE_FROM, seconds * VISIBLE_TO),
     }
   }, [])
 
