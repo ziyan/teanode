@@ -595,8 +595,11 @@ process serves HTTPS itself, the plain listener now redirects everything
 but the challenge path there, with a `308`; behind a proxy that terminates
 TLS, where there is no HTTPS listener here, it serves as before. Responses
 over TLS carry `Strict-Transport-Security`. `X-Forwarded-Proto` is believed
-only from a listed proxy (SEC-7), in the session cookie, the single sign-on
-cookie and the redirect URL given to the identity provider.
+only from a listed proxy (SEC-7), in the session cookie and the redirect
+URL given to the identity provider. The single sign-on state cookie is
+`Secure` unconditionally: the flow only ever completes over HTTPS, since
+the issuer must be one and a provider accepts no other redirect address
+but a loopback one, so there is no plain-HTTP case to allow for.
 
 ### SEC-21 — Two `From` headers (Medium, fixed)
 

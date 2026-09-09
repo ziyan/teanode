@@ -105,13 +105,19 @@ func (self *component) start(response http.ResponseWriter, request *http.Request
 		http.Error(response, "the identity provider could not be reached", http.StatusBadGateway)
 		return
 	}
+	// Secure, whatever the request looked like: a sign-in through an
+	// identity provider only ever happens over HTTPS — the issuer has to
+	// be one, and a provider accepts no other redirect address but a
+	// loopback one, which a browser treats as secure anyway — so a browser
+	// that reached this page in the clear cannot finish, and the state it
+	// was handed should not travel in the clear either.
 	http.SetCookie(response, &http.Cookie{
 		Name:     cookieName,
 		Value:    cookie,
 		Path:     "/api/v1/sso/",
 		MaxAge:   int((10 * time.Minute).Seconds()),
 		HttpOnly: true,
-		Secure:   self.isSecure(request),
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(response, request, authURL, http.StatusFound)
