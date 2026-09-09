@@ -6,6 +6,26 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-09-09
+
+### Security
+
+- A person who could edit their own account (new in v0.17.0) could rename it to the console's reserved name and hold every permission from then on. The name is refused everywhere an account is named. (#66)
+- The command line sign-in page put an unchecked query parameter into a command it offered to paste; a crafted link could carry a shell command in it. The name is checked at both ends now. (#66)
+- A spoofed `List-Id` borrowed a reader's "always load pictures" answer for a list they trust; the answer now applies only to messages that passed DMARC. (#66)
+- Twenty-two standard library vulnerabilities reachable from this code, among them panics in certificate checking reached from passkey sign-in, are cleared by requiring Go 1.26.6. (#66)
+- A permission over one domain opened templates, layouts, deliveries, reports and open-tracking of every domain to whoever held it. Each is now scoped to the row's own domain. (#66)
+- A credential restricted to one address could send as anyone at its domain by writing a different `From` line; the header is now held to the restriction too. (#66)
+- SPF `ptr` passed for any name the sender's reverse zone claimed, which bypassed DMARC for every domain using it. A name now has to resolve back to the connecting address, and match on a label boundary. (#66)
+- One message from anyone on port 25 could cost hours of CPU through folded headers, nested multipart bodies, DKIM signatures or a DMARC report; each is bounded, and so are command lines, connections and the time spent handling a message. (#66)
+- The dashboard is no longer served in the clear on port 80 when the server serves HTTPS; it redirects, and sends `Strict-Transport-Security`. `X-Forwarded-Proto` is believed only from a listed proxy. (#66)
+- A message with two `From` headers, which DMARC checked one of and mail programs show the other of, is refused. (#66)
+- `<noscript>` carried markup past the message sanitizer into the frame; it and the other raw-text elements are removed. A quoted message no longer brings its stylesheet into the compose editor. (#66)
+- IMAP enforces `mail:write`; a mailbox rule cannot forward a message in a loop; a forwarded message's `Delivered-To` is added on rule forwards too. (#66)
+- Forwarding to a mail server with a password verifies its certificate; the send endpoint and passkey sign-in count against the rate limiter; a refused app-password sign-in takes as long as a checked one; a password change ends the other sessions. (#66)
+- The command line client escapes terminal control characters in mail it prints, does not follow redirects with its token, creates its profile file private, and keeps the token off the command line. (#66)
+- Smaller: forged `Authentication-Results` naming this server are removed on arrival; `rsa-sha1` is refused; a `_dmarc` name with another TXT record beside the policy no longer refuses the domain's mail; an ARC chain that cannot be validated is a failed chain rather than a refusal; signed bounce addresses compare in constant time; `safefetch` refuses the 6to4, Teredo and NAT64 prefixes; list queries are capped at 1000 rows. (#66)
+
 ## [0.17.0] - 2026-09-09
 
 ### Added
