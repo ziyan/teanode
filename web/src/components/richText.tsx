@@ -180,14 +180,15 @@ export function RichTextEditor({
             <EraserIcon size={16} />
           </button>
         </Tooltip>
+        {/* Not a form, though it behaves like one.
+            This editor is used inside the composer, which is itself a form,
+            and a form inside a form is not allowed: the browser drops the
+            inner tag while parsing, which left the insert button submitting
+            the composer — so adding a link sent the message's form and the
+            page reloaded. Enter does what Enter does in a form, and the
+            button says what it does, without the tag that cannot be there. */}
         {linking !== null && (
-          <form
-            className="richtext-link"
-            onSubmit={(event) => {
-              event.preventDefault()
-              finishLink()
-            }}
-          >
+          <div className="richtext-link">
             <input
               autoFocus
               value={linking}
@@ -195,12 +196,19 @@ export function RichTextEditor({
               onChange={(event) => setLinking(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
+                  event.preventDefault()
                   setLinking(null)
+                }
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  finishLink()
                 }
               }}
             />
-            <button type="submit">{t('richText.insertLink')}</button>
-          </form>
+            <button type="button" onClick={finishLink}>
+              {t('richText.insertLink')}
+            </button>
+          </div>
         )}
       </div>
       <div

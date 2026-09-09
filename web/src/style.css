@@ -45,6 +45,10 @@
   --accent: #1f1f22;
   --accent-text: #ffffff;
   --accent-hover: #000000;
+  /* The leaf from the mark, and from the front page. Not an accent: the
+     accent here is deliberately not a color. This is for the one drawing that
+     is decoration rather than interface. */
+  --leaf: #729d39;
   --good: #16a34a;
   --bad: #dc2626;
   --warn: #d97706;
@@ -126,6 +130,8 @@
     --accent: #f4f4f5;
     --accent-text: #18181b;
     --accent-hover: #ffffff;
+    /* Lifted off the leaf, which is too dark to read on this ground. */
+    --leaf: #9fca63;
     --good: #4ade80;
     --bad: #f87171;
     --warn: #fbbf24;
@@ -147,6 +153,7 @@
   --accent: #f4f4f5;
   --accent-text: #18181b;
   --accent-hover: #ffffff;
+  --leaf: #9fca63;
   --good: #4ade80;
   --bad: #f87171;
   --warn: #fbbf24;
@@ -2178,6 +2185,10 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Room under the last row. Without it the final item — mailbox settings,
+     at the foot of a long list — sat against the edge of the scrolling area
+     and touched the line under it. */
+  padding-bottom: var(--space-3);
 }
 
 /* The label over a group. Sentence case and quiet: it separates, it is not
@@ -4582,6 +4593,48 @@ p.notice.domain-logo-note {
 }
 /* What was asked of this list, in the colour of an answer rather than of a
    warning: leaving one is a thing that went right. */
+/* The empty reading pane: a sentence with the drawing above it, both held in
+   the middle of the space rather than at the top of it. */
+.mailbox-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-height: 240px;
+  /* None: the line runs to the edges of the pane, and a sentence under it
+     carries its own room. */
+  padding: 0;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+}
+
+/* The pane gives up its padding for a placeholder, so the line reaches the
+   sides. It keeps it for a message, which should not be against the edge. */
+.mailbox-pane:has(> .mailbox-placeholder) {
+  padding: 0;
+}
+
+/* Edge to edge, and no taller than the line it holds. The box was the
+   drawing's own proportions, which left a band of nothing under the wave and
+   pushed the sentence away from it; this crops to the wave instead. */
+.envelope-trail {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 190;
+  max-height: 40%;
+  color: var(--leaf);
+  pointer-events: none;
+}
+
+/* Under the line rather than over it: the drawing is the thing to look at,
+   and the sentence says what to do about it. */
+.mailbox-placeholder > span {
+  padding: 0 var(--space-4);
+}
+
 /* Writing a message, at the head of the folders. It is not one of them: the
    folders below it hold mail and carry counts, and this makes a message. The
    accent says so without a second shape in the rail. */

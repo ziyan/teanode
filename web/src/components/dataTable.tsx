@@ -106,6 +106,9 @@ export function DataTable<Row>({
   emptyMessage,
   initialFilters,
   countLabel,
+  selected,
+  onSelect,
+  selectionActions,
 }: {
   columns: Column<Row>[]
   rows: Row[]
@@ -128,6 +131,15 @@ export function DataTable<Row>({
   // it can pluralise. `filtering` says whether the count is a subset, so the
   // caller can say "84 of 256" rather than the uninformative "256 of 256".
   countLabel: (count: number, filtering: boolean) => React.ReactNode
+
+  // Choosing rows to act on together. Absent on a table that is only read,
+  // which is most of them, and nothing about such a table changes.
+  selected?: Set<string>
+  onSelect?: (next: Set<string>) => void
+  // What can be done to the rows that are chosen, drawn where the filter
+  // button sits — and only while something is chosen, so a list at rest is a
+  // list rather than a row of controls that do nothing.
+  selectionActions?: (chosen: string[]) => React.ReactNode
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -230,25 +242,37 @@ export function DataTable<Row>({
     }
   }, [visible.length])
   const filtering = Object.values(filters).some((filter) => filter.length > 0)
+  const selecting = onSelect !== undefined
+  const chosen = selected ? [...selected] : []
   const filterable = columns.some((column) => column.filter)
 
   return (
     <>
-      {filterable && (
+      {(filterable || chosen.length > 0) && (
         <div className="table-tools">
-          <button
-            type="button"
-            className={filtersOpen || filtering ? 'active' : undefined}
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((previous) => !previous)}
-          >
-            <FilterIcon size={16} />
-            {t('filter.toggle')}
-          </button>
-          {filtering && (
-            <button type="button" className="link" onClick={() => setFilters({})}>
-              {t('filter.clearAll')}
-            </button>
+          {filterable && (
+            <>
+              <button
+                type="button"
+                className={filtersOpen || filtering ? 'active' : undefined}
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen((previous) => !previous)}
+              >
+                <FilterIcon size={16} />
+                {t('filter.toggle')}
+              </button>
+              {filtering && (
+                <button type="button" className="link" onClick={() => setFilters({})}>
+                  {t('filter.clearAll')}
+                </button>
+              )}
+            </>
+          )}
+          {chosen.length > 0 && (
+            <>
+              <span className="muted">{t('table.chosen', { count: chosen.length })}</span>
+              {selectionActions?.(chosen)}
+            </>
           )}
         </div>
       )}
@@ -257,6 +281,34 @@ export function DataTable<Row>({
         <table>
           <thead>
             <tr>
+              {selecting && (
+                <th className="table-choose">
+                  <input
+                    type="checkbox"
+                    aria-label={t('table.chooseAll')}
+                    checked={visible.length > 0 && visible.every((row) => selected?.has(rowKey(row)))}
+                    ref={(input) => {
+                      if (input) {
+                        // Some but not all: the box says so rather than
+                        // looking empty when half the list is chosen.
+                        input.indeterminate =
+                          chosen.length > 0 && !visible.every((row) => selected?.has(rowKey(row)))
+                      }
+                    }}
+                    onChange={(event) => {
+                      const next = new Set(selected)
+                      for (const row of visible) {
+                        if (event.target.checked) {
+                          next.add(rowKey(row))
+                        } else {
+                          next.delete(rowKey(row))
+                        }
+                      }
+                      onSelect?.(next)
+                    }}
+                  />
+                </th>
+              )}
               {columns.map((column) => (
                 <th
                   key={column.key}
@@ -291,6 +343,7 @@ export function DataTable<Row>({
             </tr>
             {filterable && filtersOpen && (
               <tr className="filter-row">
+                {selecting && <td className="table-choose" />}
                 {columns.map((column) => (
                   <td key={column.key} className={column.optional ? 'optional' : undefined}>
                     <ColumnFilter
@@ -333,6 +386,24 @@ export function DataTable<Row>({
                       : undefined
                   }
                 >
+                  {selecting && (
+                    <td className="table-choose">
+                      <input
+                        type="checkbox"
+                        aria-label={t('table.choose')}
+                        checked={selected?.has(rowKey(row)) ?? false}
+                        onChange={(event) => {
+                          const next = new Set(selected)
+                          if (event.target.checked) {
+                            next.add(rowKey(row))
+                          } else {
+                            next.delete(rowKey(row))
+                          }
+                          onSelect?.(next)
+                        }}
+                      />
+                    </td>
+                  )}
                   {columns.map((column) => (
                     <td
                       key={column.key}

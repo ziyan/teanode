@@ -6,7 +6,6 @@ import {
   ChevronRightIcon,
   ComposeIcon,
   DomainsIcon,
-  GridIcon,
   RefreshIcon,
   KeyIcon,
   LogoutIcon,
@@ -25,6 +24,7 @@ import {
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
+import { Permissions as ApiPermissions } from '../api'
 import { hasAnywhere, hasPermission, useSession } from '../session'
 import { folderLabel, railRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from './folderIcon'
@@ -75,6 +75,16 @@ const ACCOUNT_GROUP: Group = {
 // more click to reach a page is one more click every time. What configures the
 // person signed in is not here: it hangs off their name at the foot, which is
 // where people look for it.
+// Where "Manage" goes: the first management row this person may open, or
+// nothing when they may open none. Exported because the account menu offers
+// the way in, and should not have to know how the management side is
+// arranged to do it.
+export function firstManagementPath(permissions: ApiPermissions | undefined | null): string | undefined {
+  const allowed = (item: Item) =>
+    !item.anyOf || item.anyOf.some((key) => hasPermission(permissions, key) || hasAnywhere(permissions, key))
+  return GROUPS.flatMap((group) => group.items).find(allowed)?.to
+}
+
 const GROUPS: Group[] = [
   {
     label: 'nav.groupMail',
@@ -189,8 +199,6 @@ export function Sidebar({
     .map((group) => ({ ...group, items: group.items.filter(permitted) }))
     .filter((group) => group.items.length > 0)
 
-  // Where "Manage" goes: the first management row this person may open.
-  const firstManagementRow = GROUPS.flatMap((group) => group.items).find(permitted)
   // Somebody whose only permission is over their own mailbox has no
   // management side, and a person with no mailbox at all (the console, or a
   // group with no mail:read) has no mailbox side.
@@ -406,25 +414,6 @@ export function Sidebar({
             when you use it is a trap. */}
         {(onToggle || account) && (
           <div className="sidebar-account">
-            {/* Into management mode. Beside the account menu because the two
-                are the same kind of thing: a mode about something other than
-                the mailbox, entered on purpose and left by the row at the
-                top. Only for somebody who has anything to manage. */}
-            {!inManagement && firstManagementRow && (
-              <Tooltip label={t('nav.manageTooltip')}>
-                <button
-                  type="button"
-                  className="sidebar-collapse"
-                  aria-label={t('nav.manage')}
-                  onClick={() => navigate(firstManagementRow.to)}
-                >
-                  <span className="sidebar-icon">
-                    <GridIcon />
-                  </span>
-                  <span className="sidebar-label">{t('nav.manage')}</span>
-                </button>
-              </Tooltip>
-            )}
             {onToggle && (
               <Tooltip label={collapsed ? t('nav.expand') : t('nav.collapse')}>
                 <button

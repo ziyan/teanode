@@ -380,6 +380,12 @@ type MailboxContact struct {
 	LastSeenAt    time.Time  `json:"lastSeenAt"`
 	Count         int        `json:"count"`
 	AutoRepliedAt *time.Time `json:"autoRepliedAt,omitempty"`
+
+	// LogoDomain is the sending domain whose published mark this server
+	// holds, empty unless there is one to show. Set only when mail from this
+	// address proved it came from that domain: a mark beside an address whose
+	// mail failed its checks is an aid to whoever is pretending to be them.
+	LogoDomain string `json:"logoDomain,omitempty"`
 }
 
 // MailboxAppPassword is what a mail program signs in with. It belongs to a

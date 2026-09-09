@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
+import { EnvelopeTrail } from '../components/envelopeTrail'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -377,7 +378,10 @@ export function MailboxSubscriptionsPage() {
               onChanged={() => void query.reload()}
             />
           ) : (
-            <p className="mailbox-placeholder">{t('subscriptions.choose')}</p>
+            <div className="mailbox-placeholder">
+              <EnvelopeTrail />
+              <span>{t('subscriptions.choose')}</span>
+            </div>
           )}
         </div>
       </div>

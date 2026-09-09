@@ -30,6 +30,7 @@ import {
 import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
 import { ConfirmDialog } from '../components/dialog'
+import { EnvelopeTrail } from '../components/envelopeTrail'
 import { Shortcut, useShortcuts } from '../shortcuts'
 import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
@@ -826,7 +827,10 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onBack={() => navigate(`/mailbox/${folder.id}`)}
           />
         ) : (
-          <div className="mailbox-placeholder">{t('mailbox.chooseMessage')}</div>
+          <div className="mailbox-placeholder">
+            <EnvelopeTrail />
+            <span>{t('mailbox.chooseMessage')}</span>
+          </div>
         )}
       </div>
 

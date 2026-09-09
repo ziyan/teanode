@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 
 import { LanguageItems, useTranslation } from '../i18n/i18n'
 import { ConfirmDialog } from './dialog'
-import { LogoutIcon, SettingsIcon, SortIcon } from './icons'
+import { GridIcon, LogoutIcon, SettingsIcon, SortIcon } from './icons'
 import { MenuButton } from './menuButton'
 import { ThemeItems } from './theme'
 import { SETTINGS_LANDING } from '../pages/settings/nav'
+import { useSession } from '../session'
+import { firstManagementPath } from './sidebar'
 
 // AccountMenu is who you are, at the foot of the rail, and everything that
 // belongs to you rather than to a page: which language, light or dark, the way
@@ -38,6 +40,8 @@ export function AccountMenu({
   onLogout: () => void
 }) {
   const { t } = useTranslation()
+  const session = useSession()
+  const managePath = firstManagementPath(session.permissions)
   const [signingOut, setSigningOut] = useState(false)
   const displayed = name?.trim() || username
 
@@ -69,6 +73,18 @@ export function AccountMenu({
               <SettingsIcon />
               {t('nav.settings')}
             </Link>
+            {/* The way into the management side, beside the account's own
+                settings because the two are the same kind of thing: places
+                that are not the mailbox, entered on purpose. It was a row at
+                the foot of the rail, where it sat among the mailbox's folders
+                looking like one more of them. Only for somebody who has
+                anything to manage. */}
+            {managePath && (
+              <Link to={managePath} role="menuitem" onClick={close}>
+                <GridIcon />
+                {t('nav.manage')}
+              </Link>
+            )}
             <div className="menu-separator" role="separator" />
             <button
               type="button"

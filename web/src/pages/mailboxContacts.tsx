@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
+import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -13,7 +14,7 @@ import { useMailboxes } from '../mailboxes'
 
 const CONTACTS = `
   query ($mailboxId: String!, $first: Int) {
-    ListMailboxContacts(mailboxId: $mailboxId, first: $first) { address name lastSeenAt count }
+    ListMailboxContacts(mailboxId: $mailboxId, first: $first) { address name lastSeenAt count logoDomain }
   }`
 
 const SAVE_CONTACT = `
@@ -21,12 +22,17 @@ const SAVE_CONTACT = `
     SaveMailboxContact(mailboxId: $mailboxId, address: $address, name: $name) { address }
   }`
 
+const DELETE_CONTACTS = `
+  mutation ($mailboxId: String!, $addresses: [String!]!) {
+    DeleteMailboxContacts(mailboxId: $mailboxId, addresses: $addresses)
+  }`
+
 const DELETE_CONTACT = `
   mutation ($mailboxId: String!, $address: String!) {
     DeleteMailboxContact(mailboxId: $mailboxId, address: $address)
   }`
 
-type Contact = { address: string; name?: string; lastSeenAt: string; count: number }
+type Contact = { address: string; name?: string; lastSeenAt: string; count: number; logoDomain?: string }
 
 // Everyone the mailbox has written to or heard from, and anyone added by
 // hand: the list the compose page completes addresses from, and a rule can
@@ -52,6 +58,10 @@ export function MailboxContactsPage() {
   const [editing, setEditing] = useState<Contact | null>(null)
   const [editName, setEditName] = useState('')
   const [deleting, setDeleting] = useState<Contact | null>(null)
+  // Rows chosen to be acted on together, held by address because that is what
+  // names a contact.
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  const [forgetting, setForgetting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -79,7 +89,12 @@ export function MailboxContactsPage() {
         filter: 'text',
         value: (contact) => contact.name ?? '',
         sort: (first, second) => (first.name ?? '').localeCompare(second.name ?? ''),
-        render: (contact) => contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>,
+        render: (contact) => (
+          <span className="sender-row">
+            <SenderLogo name={contact.name || contact.address} logoDomain={contact.logoDomain} size={24} />
+            {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+          </span>
+        ),
       },
       {
         key: 'address',
@@ -179,6 +194,25 @@ export function MailboxContactsPage() {
       {query.error ? <ErrorMessage error={query.error} /> : null}
       <DataTable
         columns={columns}
+        selected={chosen}
+        onSelect={setChosen}
+        selectionActions={(addresses) => (
+          <Tooltip label={t('common.delete')}>
+            <button
+              type="button"
+              className="icon-action danger"
+              aria-label={plural(
+                addresses.length,
+                { one: 'contacts.forgetChosenOne', other: 'contacts.forgetChosenOther' },
+                { count: addresses.length },
+              )}
+              disabled={busy}
+              onClick={() => setForgetting(true)}
+            >
+              <TrashIcon size={16} />
+            </button>
+          </Tooltip>
+        )}
         rows={contacts}
         rowKey={(contact) => contact.address}
         loading={query.loading && !query.data}
@@ -233,6 +267,28 @@ export function MailboxContactsPage() {
             <input value={editName} onChange={(event) => setEditName(event.target.value)} />
           </label>
         </FormDialog>
+      )}
+
+      {forgetting && (
+        <ConfirmDialog
+          title={plural(
+            chosen.size,
+            { one: 'contacts.forgetChosenTitleOne', other: 'contacts.forgetChosenTitleOther' },
+            { count: chosen.size },
+          )}
+          body={t('contacts.forgetChosenBody', { count: chosen.size })}
+          confirmLabel={t('common.delete')}
+          busy={busy}
+          error={problem}
+          onConfirm={async () => {
+            const ok = await run(() => graphql(DELETE_CONTACTS, { mailboxId, addresses: [...chosen] }))
+            if (ok) {
+              setChosen(new Set())
+              setForgetting(false)
+            }
+          }}
+          onClose={() => setForgetting(false)}
+        />
       )}
 
       {deleting && (

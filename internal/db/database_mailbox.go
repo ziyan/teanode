@@ -1690,7 +1690,82 @@ func (self *transaction) ListContacts(mailboxId string, prefix string, limit int
 	for index := range rows {
 		contacts = append(contacts, contactFromModel(&rows[index]))
 	}
+	if err := self.attachContactLogos(mailboxId, contacts); err != nil {
+		// A missing mark is a missing picture, not a missing contact.
+		log.Warningf("failed to read the marks for the contacts of %q: %s", mailboxId, err)
+	}
 	return contacts, nil
+}
+
+// attachContactLogos gives each contact the mark its domain publishes, when
+// this server holds one and the mail proves the address is that domain's.
+//
+// The proof matters: the cache is filled from whatever writes to this server,
+// and a mark drawn beside an address whose mail failed its checks would be
+// this program vouching for whoever is pretending to be them. So the newest
+// message from each address is read, and the mark is shown only where that
+// message passed DMARC — the same rule the subscriptions list uses.
+func (self *transaction) attachContactLogos(mailboxId string, contacts []*models.MailboxContact) error {
+	if len(contacts) == 0 {
+		return nil
+	}
+
+	addresses := make([]string, 0, len(contacts))
+	domains := make([]string, 0, len(contacts))
+	for _, contact := range contacts {
+		addresses = append(addresses, contact.Address)
+		if _, domain, found := strings.Cut(contact.Address, "@"); found && domain != "" {
+			domains = append(domains, strings.ToLower(domain))
+		}
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+
+	logos, err := self.ListBimiLogos(domains, "default")
+	if err != nil {
+		return err
+	}
+	if len(logos) == 0 {
+		return nil
+	}
+
+	// The newest message from each of these addresses that this mailbox
+	// holds: one row per address, which is what decides whether the mark is
+	// shown.
+	var newest []mailModel
+	if err := self.tx.Raw(`
+		SELECT DISTINCT ON (lower("mail"."from")) "mail".*
+		FROM "mail"
+		JOIN "mailbox_item" ON "mailbox_item"."mail_id" = "mail"."id"
+		JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
+		WHERE "mailbox_folder"."mailbox_id" = ? AND lower("mail"."from") IN ?
+		ORDER BY lower("mail"."from"), "mail"."received_at" DESC`,
+		mailboxId, addresses).Scan(&newest).Error; err != nil {
+		return err
+	}
+
+	authenticated := make(map[string]bool, len(newest))
+	for index := range newest {
+		mail := getMailFromMailModel(newest[index])
+		if mail.DMARCPassed() {
+			authenticated[strings.ToLower(mail.From)] = true
+		}
+	}
+
+	for _, contact := range contacts {
+		if !authenticated[strings.ToLower(contact.Address)] {
+			continue
+		}
+		_, domain, found := strings.Cut(strings.ToLower(contact.Address), "@")
+		if !found {
+			continue
+		}
+		if logo := logos[domain]; logo != nil && logo.ContentType != "" {
+			contact.LogoDomain = domain
+		}
+	}
+	return nil
 }
 
 func (self *transaction) GetContact(mailboxId, address string) (*models.MailboxContact, error) {
