@@ -30,12 +30,33 @@ function surface(): HTMLElement {
 // What takes a ripple: the things a person presses. Not every clickable thing
 // — a link inside a sentence is read, not operated — and nothing disabled,
 // which is a press that does nothing and should look like it.
+const PRESSABLE =
+  'button, [role="menuitem"], .sidebar a, .tabs a, .tab, .icon-button, .subscription-row, .mailbox-row'
+
+// Rows where the whole width is the thing being pressed.
+const ROWS = '.subscription-row, .mailbox-row'
+
+// The part of such a row that is the row's own label rather than a separate
+// control sitting inside it.
+const ROW_LABELS = '.subscription-row-link, .mailbox-row-link'
+
 function pressable(target: EventTarget | null): HTMLElement | null {
-  const element = (target as HTMLElement | null)?.closest?.(
-    'button, [role="menuitem"], .sidebar a, .tabs a, .tab, .icon-button, .subscription-row',
-  ) as HTMLElement | null
+  const element = (target as HTMLElement | null)?.closest?.(PRESSABLE) as HTMLElement | null
   if (!element || element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true') {
     return null
+  }
+
+  // A row's label is the row. The label is a button, so the nearest match is
+  // the label — and the mark then stopped at the label's edge, two thirds of
+  // the way across, which reads as the row having been half pressed. What the
+  // press means is "open this row", and that is the whole row.
+  //
+  // A control that is its own thing inside the row — the star, a checkbox, an
+  // action — is still itself: pressing it does something to the row rather
+  // than opening it, and it should look like the smaller act it is.
+  const row = element.closest(ROWS) as HTMLElement | null
+  if (row && (element === row || element.matches(ROW_LABELS))) {
+    return row
   }
   return element
 }
