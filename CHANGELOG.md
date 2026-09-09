@@ -6,6 +6,41 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The mailbox says what it just did, and offers the way back. Archiving,
+  moving, reporting junk and deleting each raise a line at the foot of the
+  window — "Conversation archived" — with Undo beside it, and the clock stops
+  while the pointer is on it so reaching for undo does not lose it. Undo works
+  from what the destination gained rather than from the identifiers the action
+  was given, because moving a message makes a new item and retires the old
+  one; asking for the old ones is how an undo can fail while appearing to
+  work.
+
+- Failures are said the same way, in one place, instead of a red block above
+  a list that stays until something replaces it. What describes the state of a
+  page — a query that failed, a field that is wrong, a question in a dialog —
+  stays where it is: a message that takes itself away is no use for something
+  that has to be dealt with.
+
+- More keys, and every control that has one says so. "Archive (E)" rather than
+  "Archive", because a shortcut nobody is told about belongs to whoever wrote
+  it. `j` and `k` move down and up the list.
+
+### Changed
+
+- Archiving what you are reading opens the next conversation instead of
+  emptying the pane. The reason somebody archives what is in front of them is
+  to get to the next one.
+
+- A draft opens inside its conversation rather than on a page of its own —
+  the one place in the program where a half-written reply was shown without
+  the thing it replies to.
+
+- What is attached is a line above the message rather than a table under it.
+  For anything with a quoted thread beneath it, the file the message was sent
+  to deliver was a screen of somebody else's words away.
+
 ## [0.17.3] - 2026-09-09
 
 ### Security

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
+import { useToast } from '../components/toast'
 import { EnvelopeTrail } from '../components/envelopeTrail'
 import {
   ArchiveIcon,
@@ -132,6 +133,7 @@ export function unsubscribeKind(subscription: {
 // is that, as a page.
 export function MailboxSubscriptionsPage() {
   const { t, plural } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
@@ -181,7 +183,7 @@ export function MailboxSubscriptionsPage() {
       })
       setTotal(page.total)
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setPaging(false)
     }
@@ -227,7 +229,7 @@ export function MailboxSubscriptionsPage() {
         await graphql(MUTE, { mailboxId, key, muted })
         await query.reload()
       } catch (caught) {
-        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+        toast.failure(caught, t('domain.failed'))
       }
     },
     [mailboxId, query, t],
@@ -240,7 +242,7 @@ export function MailboxSubscriptionsPage() {
         await graphql(IMAGES, { mailboxId, key, show })
         await query.reload()
       } catch (caught) {
-        setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+        toast.failure(caught, t('domain.failed'))
       }
     },
     [mailboxId, query, t],
@@ -266,7 +268,7 @@ export function MailboxSubscriptionsPage() {
       setLeaving(null)
       await query.reload()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
@@ -274,7 +276,9 @@ export function MailboxSubscriptionsPage() {
 
   return (
     <>
-      <ErrorMessage error={problem} />
+      {/* The query's failure stays on the page: it describes what is not
+          there, and a message that takes itself away is no use for that. What
+          an action did is said in a toast instead. */}
       {query.error ? <ErrorMessage error={query.error} /> : null}
 
       <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
@@ -453,6 +457,7 @@ function SubscriptionReader({
   onChanged: () => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const folders = mailboxes.current?.folders ?? []
   const [busy, setBusy] = useState(false)
@@ -483,7 +488,7 @@ function SubscriptionReader({
       await query.reload()
       onChanged()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
+      toast.failure(caught, t('domain.failed'))
     } finally {
       setBusy(false)
     }
