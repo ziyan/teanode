@@ -50,6 +50,21 @@ func ListReports(ctx context.Context, connection *Client, domainId string, first
 	return result.ListReports, nil
 }
 
+// feedbackFields is the parsed report itself, spelled out. It is a structure
+// rather than a scalar, so a selection is not optional: asking for "feedback"
+// on its own is not a query the server will run, which is what this asked for
+// until now.
+const feedbackFields = `{
+	organizationName email extraContactInfo reportId begin end errors
+	domain dkimAlignment spfAlignment policy subdomainPolicy percent failureOptions
+	records {
+		sourceIp count disposition dkim spf reasonType reasonComment
+		headerFrom envelopeFrom envelopeTo
+		dkims { domain selector result humanResult }
+		spfs { domain scope result }
+	}
+}`
+
 // GetReport returns one report with the original feedback it was parsed
 // from, which is what "report get --json" prints in full.
 func GetReport(ctx context.Context, connection *Client, reportId string) (*Report, error) {
@@ -59,7 +74,8 @@ func GetReport(ctx context.Context, connection *Client, reportId string) (*Repor
 	query := `query ($reportId: String!) {
 		GetReport(reportId: $reportId) {
 			id createdAt mailId domainId beginAt endAt count ip rdns
-			fromDomain senderDomain disposition dkimAligned spfAligned feedback
+			fromDomain senderDomain disposition dkimAligned spfAligned
+			feedback ` + feedbackFields + `
 		}
 	}`
 	if err := connection.Execute(ctx, query, map[string]any{"reportId": reportId}, &result); err != nil {
