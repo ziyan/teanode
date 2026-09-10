@@ -160,6 +160,11 @@ type MailboxItem struct {
 	// pictures. Set once and kept, so the choice is not asked for again every
 	// time the message is opened.
 	ImagesAt *time.Time `json:"imagesAt,omitempty"`
+
+	// SubscriptionID is the list this arrived from, when it arrived from one.
+	// Written at delivery, so asking what a list has sent is an index lookup
+	// rather than a join through the message to group by its list key.
+	SubscriptionID string `json:"subscriptionId,omitempty"`
 }
 
 // MailboxThread is a conversation as a folder's list shows one: the newest of
@@ -211,6 +216,12 @@ type MailboxThread struct {
 // that named the same list — so it exists for as long as there is mail from
 // it. What is stored is the request to leave, which outlives the mail.
 type MailboxSubscription struct {
+	// ID is the row's own, made when the first message from this list is
+	// delivered. It is what a link to a list names: the key is an identifier
+	// the sender chose, often an address, and putting one of those in a URL
+	// spells it out for anybody who sees the address bar.
+	ID string `json:"id"`
+
 	// Key identifies the list: the identifier the list publishes for itself,
 	// or the address it sends from when it publishes none.
 	Key string `json:"key"`
@@ -247,7 +258,7 @@ type MailboxSubscription struct {
 	Stripped bool `json:"stripped,omitempty"`
 
 	// MutedAt is when the reader asked for this list to stop arriving in the
-	// Inbox. It keeps coming and goes straight to the Archive, read.
+	// Inbox. It keeps coming and goes straight to the Archive.
 	MutedAt *time.Time `json:"mutedAt,omitempty"`
 
 	// ImagesAt is when the reader said this list's pictures may be loaded

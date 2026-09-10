@@ -32,11 +32,29 @@ type ListMailboxSubscriptionsArguments struct {
 	// How many to return, and where to start
 	First  *int `json:"first"`
 	Offset *int `json:"offset"`
+
+	// Left asks for the lists already left instead of the ones still
+	// subscribed to. One or the other, not both: a list somebody has left is
+	// not one they are subscribed to, and a page called Subscriptions that
+	// shows both is answering two questions at once. Default false.
+	//
+	// A request that failed is not a list left — nothing was accepted and the
+	// mail keeps coming — so those are with the subscribed.
+	Left *bool `json:"left"`
+
+	// Matching narrows to the lists whose name, sending address or key
+	// contains it. Empty is all of them.
+	Matching *string `json:"matching"`
 }
 
 type MailboxSubscriptionPage struct {
 	Subscriptions []*models.MailboxSubscription `json:"subscriptions"`
 	Total         int64                         `json:"total"`
+
+	// How many there are on each side, whichever side is being shown, so the
+	// switch between them can say what it would show.
+	Subscribed int64 `json:"subscribed"`
+	Left       int64 `json:"left"`
 }
 
 // ListMailboxSubscriptions is every mailing list this mailbox receives: who
@@ -56,16 +74,43 @@ func (self *graph) ListMailboxSubscriptions(ctx context.Context,
 	if arguments.Offset != nil && *arguments.Offset > 0 {
 		offset = *arguments.Offset
 	}
+	side := db.SubscribedTo
+	if arguments.Left != nil && *arguments.Left {
+		side = db.Left
+	}
+	matching := ""
+	if arguments.Matching != nil {
+		matching = *arguments.Matching
+	}
 	tx := self.transaction(ctx)
-	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset)
+	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, side, matching)
 	if err != nil {
 		return nil, err
 	}
-	total, err := tx.CountSubscriptions(mailbox.ID)
+	// Both counts, whichever side is being read: the switch says how many are
+	// on the other side as well, and a number nobody can see is how somebody
+	// comes to wonder where a list they remember has gone.
+	// Counted through the same words that are being searched for, so the
+	// switch says how many of what is being looked for are on each side
+	// rather than how many exist.
+	subscribed, err := tx.CountSubscriptions(mailbox.ID, db.SubscribedTo, matching)
 	if err != nil {
 		return nil, err
 	}
-	return &MailboxSubscriptionPage{Subscriptions: subscriptions, Total: total}, nil
+	left, err := tx.CountSubscriptions(mailbox.ID, db.Left, matching)
+	if err != nil {
+		return nil, err
+	}
+	total := subscribed
+	if side == db.Left {
+		total = left
+	}
+	return &MailboxSubscriptionPage{
+		Subscriptions: subscriptions,
+		Total:         total,
+		Subscribed:    subscribed,
+		Left:          left,
+	}, nil
 }
 
 type ReadMailboxSubscriptionArguments struct {
@@ -150,8 +195,9 @@ type MuteMailboxSubscriptionArguments struct {
 // The other answer to a newsletter, and often the better one. Leaving tells
 // the sender that a person reads this address and cannot be taken back; some
 // lists offer no way out at all; and a reader may want the mail without
-// wanting it first thing. A muted list is filed in the Archive, already read,
-// and is still there to search and to read as a group.
+// wanting it first thing. A muted list is filed in the Archive, unread, and is
+// still there to search and to read as a group — the unread count on the list
+// is how somebody comes back to what they have not read yet.
 //
 // Muting also clears what the Inbox is holding from that list, because a
 // reader muting a list while its mail sits in front of them means both.
@@ -216,10 +262,9 @@ func (self *graph) archiveInboxMail(tx db.Transaction, mailbox *models.Mailbox, 
 	for _, item := range items {
 		itemIds = append(itemIds, item.ID)
 	}
-	seen := true
-	if _, err := tx.SetItemFlags(itemIds, models.MailboxItemFlags{Seen: &seen}); err != nil {
-		return 0, err
-	}
+	// Moved, and left as they were found. Muting a list is a reader saying
+	// where its mail belongs, not that they have read it; marking it read on
+	// the way past is answering a question nobody asked.
 	if _, err := tx.MoveItems(itemIds, archive.ID); err != nil {
 		return 0, err
 	}
@@ -273,8 +318,14 @@ type GetMailboxSubscriptionArguments struct {
 	// MailboxID of the mailbox to read
 	MailboxID string `json:"mailboxId"`
 
-	// Key of the subscription, as ListMailboxSubscriptions gives it
-	Key string `json:"key"`
+	// ID of the subscription, as a link to one names it. Either this or the
+	// key; this is what the dashboard sends.
+	ID *string `json:"id"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it. Still
+	// answered, so that a link made when the key was the identity keeps
+	// working.
+	Key *string `json:"key"`
 }
 
 // GetMailboxSubscription is one list: the same row the list gives, for a page
@@ -285,7 +336,20 @@ func (self *graph) GetMailboxSubscription(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	subscription, err := self.transaction(ctx).GetSubscription(mailbox.ID, arguments.Key)
+	tx := self.transaction(ctx)
+	identity, key := "", ""
+	if arguments.ID != nil {
+		identity = strings.TrimSpace(*arguments.ID)
+	}
+	if arguments.Key != nil {
+		key = strings.TrimSpace(*arguments.Key)
+	}
+	var subscription *models.MailboxSubscription
+	if identity != "" {
+		subscription, err = tx.GetSubscriptionByID(mailbox.ID, identity)
+	} else {
+		subscription, err = tx.GetSubscription(mailbox.ID, key)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -63,7 +63,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		if _, err := tx.AddItem(folder.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
+		if _, err := tx.AddItem(folder.ID, mail.ID, "", models.MailboxItemFlags{Seen: &seen}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
 	}
@@ -83,7 +83,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 	})
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		subscriptions, err := tx.ListSubscriptions(mailbox.ID, 0, 0)
+		subscriptions, err := tx.ListSubscriptions(mailbox.ID, 0, 0, db.EitherSide, "")
 		if err != nil {
 			t.Fatalf("ListSubscriptions: %s", err)
 		}
@@ -127,7 +127,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 			t.Errorf("the second subscription reads %+v", shop)
 		}
 
-		count, err := tx.CountSubscriptions(mailbox.ID)
+		count, err := tx.CountSubscriptions(mailbox.ID, db.EitherSide, "")
 		if err != nil {
 			t.Fatalf("CountSubscriptions: %s", err)
 		}
@@ -169,7 +169,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 		if subscription.Method != models.UnsubscribeOneClick {
 			t.Errorf("Method = %q", subscription.Method)
 		}
-		count, err := tx.CountSubscriptions(mailbox.ID)
+		count, err := tx.CountSubscriptions(mailbox.ID, db.EitherSide, "")
 		if err != nil {
 			t.Fatalf("CountSubscriptions: %s", err)
 		}

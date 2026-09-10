@@ -46,7 +46,7 @@ func TestImagesAllowedFor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		item, err := tx.AddItem(inbox.ID, mail.ID, models.MailboxItemFlags{})
+		item, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{})
 		if err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
@@ -144,7 +144,7 @@ func TestASubscriptionsMailLeavesOutTrashAndJunk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateMail: %s", err)
 			}
-			item, err := tx.AddItem(folder(kind).ID, mail.ID, models.MailboxItemFlags{})
+			item, err := tx.AddItem(folder(kind).ID, mail.ID, "", models.MailboxItemFlags{})
 			if err != nil {
 				t.Fatalf("AddItem: %s", err)
 			}

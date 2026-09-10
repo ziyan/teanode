@@ -17,7 +17,7 @@ import {
   MailOpenIcon,
   TrashIcon,
 } from '../components/icons'
-import { RelativeTime } from '../components/relativeTime'
+import { RelativeTime, formatRelative, hasTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
@@ -31,23 +31,39 @@ import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMes
 const PAGE_SIZE = 50
 
 const SUBSCRIPTIONS = `
-  query ($mailboxId: String!, $first: Int, $offset: Int) {
-    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset) {
+  query ($mailboxId: String!, $first: Int, $offset: Int, $left: Boolean, $matching: String) {
+    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, left: $left, matching: $matching) {
       total
+      subscribed
+      left
       subscriptions {
-        key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+        id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
         requestedAt method failed error stripped mutedAt imagesAt
       }
     }
   }`
 
 const ONE = `
-  query ($mailboxId: String!, $key: String!) {
-    GetMailboxSubscription(mailboxId: $mailboxId, key: $key) {
-      key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+  query ($mailboxId: String!, $id: String, $key: String) {
+    GetMailboxSubscription(mailboxId: $mailboxId, id: $id, key: $key) {
+      id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
       requestedAt method failed error stripped mutedAt imagesAt
     }
   }`
+
+// When leaving was asked for, in the words the rest of the page uses for a
+// time — "3 days ago" rather than a date to compare against today's.
+function whenAsked(value: string | null | undefined, language: string): string {
+  if (!hasTime(value)) {
+    return ''
+  }
+  return formatRelative(new Date(value as string), language)
+}
+
+// A ULID as this server writes them: twenty-six characters of Crockford's
+// base32, lowercased — no i, l, o or u, which is what keeps it from being
+// misread aloud.
+const IDENTITY = /^[0-9abcdefghjkmnpqrstvwxyz]{26}$/
 
 const IMAGES = `
   mutation ($mailboxId: String!, $key: String!, $show: Boolean!) {
@@ -84,7 +100,13 @@ const UNSUBSCRIBE = `
     }
   }`
 
+type Page = { total: number; subscribed: number; left: number; subscriptions: Subscription[] }
+
 export type Subscription = {
+  // What a link to this list names. The key is the sender's own identifier,
+  // often an address, and an address in a URL is an address on the screen of
+  // anybody looking over a shoulder.
+  id: string
   key: string
   name: string
   from: string
@@ -132,41 +154,85 @@ export function unsubscribeKind(subscription: {
 // at the bottom, and hope. A newsletter says how to leave in its headers; this
 // is that, as a page.
 export function MailboxSubscriptionsPage() {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const toast = useToast()
   const mailboxes = useMailboxes()
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
 
-  // A subscription is named by its list key rather than by a row id: the
-  // lists come from the mail, grouped by that key, and the row in
-  // mailbox_subscription exists only once something has been done to one —
-  // muted, pictures allowed, unsubscribe asked for. Most lists have no row,
-  // so there is no id to put here.
+  // A list is named in the address by its own identity, made when its first
+  // message arrived. Not by its key: the key is the identifier the sender
+  // chose for itself, usually an address, and an address in the address bar
+  // is an address on the screen of anybody looking over a shoulder.
   const navigate = useNavigate()
-  const wanted = useParams().key ?? null
-
-  // Links made when this was a query parameter still work.
   const [search] = useSearchParams()
-  const legacy = search.get('key')
-  useEffect(() => {
-    if (legacy) {
-      navigate(`/mailbox/subscriptions/${encodeURIComponent(legacy)}`, { replace: true })
-    }
-  }, [legacy, navigate])
+  const asked = useParams().key ?? search.get('key')
+
+  // Which it is, told apart by shape. A ULID is twenty-six characters of
+  // Crockford's base32; a list key is a domain or an address, and looks
+  // nothing like one. Anything that is not an identity is a key from a link
+  // made before lists had identities, and is answered and then corrected.
+  const readingId = asked && IDENTITY.test(asked) ? asked : null
+  const legacyKey = asked && !IDENTITY.test(asked) ? asked : null
   const [rows, setRows] = useState<Subscription[]>([])
   const [total, setTotal] = useState(0)
+  // How many on each side, so the switch can say what the other one holds.
+  const [counts, setCounts] = useState({ subscribed: 0, left: 0 })
   const [paging, setPaging] = useState(false)
 
+  // One side or the other. A list somebody has left is not one they are
+  // subscribed to, so the page shows the lists writing to them or the ones
+  // they have dealt with, and says how many are on the side they are not
+  // looking at. Kept rather than gone: mail from a list often keeps arriving
+  // for a while after the asking, and seeing that is the point of having
+  // asked.
+  //
+  // In the address, like everything else that says what a list is showing, so
+  // it survives a reload and the back button leads out of it.
+  const showingLeft = search.get('left') === 'true'
+
+  // What is being looked for, in the address like the side, so a search can
+  // be linked and comes back with the back button. The box holds what is
+  // being typed; the address holds what is being asked.
+  const matching = search.get('matching') ?? ''
+  const [typed, setTyped] = useState(matching)
+  useEffect(() => {
+    setTyped(matching)
+  }, [matching])
+  const look = (words: string) => {
+    const written = new URLSearchParams(search)
+    if (words.trim() === '') {
+      written.delete('matching')
+    } else {
+      written.set('matching', words.trim())
+    }
+    // Searching again replaces the search rather than stacking one entry per
+    // word: the way back is to the list, not through every letter typed.
+    navigate({ pathname: '/mailbox/subscriptions', search: written.toString() }, { replace: matching !== '' })
+  }
+  const showSide = (left: boolean) => {
+    const written = new URLSearchParams(search)
+    // What is being looked for stays: switching sides asks the same question
+    // of the other one.
+
+    if (left) {
+      written.set('left', 'true')
+    } else {
+      written.delete('left')
+    }
+    navigate({ pathname: '/mailbox/subscriptions', search: written.toString() })
+  }
   const query = useQuery(
     () =>
       mailboxId
-        ? graphql<{ ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] } }>(SUBSCRIPTIONS, {
+        ? graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
             mailboxId,
             first: PAGE_SIZE,
+            left: showingLeft,
+            matching,
           })
         : Promise.resolve(null),
-    [mailboxId],
+    [mailboxId, showingLeft, matching],
     { refresh: false },
   )
 
@@ -180,14 +246,19 @@ export function MailboxSubscriptionsPage() {
     }
     setRows(page.subscriptions)
     setTotal(page.total)
+    setCounts({ subscribed: page.subscribed ?? 0, left: page.left ?? 0 })
   }, [query.data])
 
   const loadMore = useCallback(async () => {
     setPaging(true)
     try {
-      const response = await graphql<{
-        ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] }
-      }>(SUBSCRIPTIONS, { mailboxId, first: PAGE_SIZE, offset: rows.length })
+      const response = await graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
+        mailboxId,
+        first: PAGE_SIZE,
+        offset: rows.length,
+        left: showingLeft,
+        matching,
+      })
       const page = response.ListMailboxSubscriptions
       setRows((previous) => {
         // Paged by offset, so a list that wrote since the last page shifts
@@ -201,7 +272,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setPaging(false)
     }
-  }, [mailboxId, rows.length, t])
+  }, [mailboxId, rows.length, showingLeft, matching, t])
 
   const subscriptions = rows
 
@@ -210,9 +281,13 @@ export function MailboxSubscriptionsPage() {
   // opening a list left no trace: the back button went to whatever came
   // before this page, and there was no way forward to the list just left.
   // Reading one is a place, and a place has a URL.
-  const readingKey = wanted
-  const read = (key: string | null) =>
-    navigate(key ? `/mailbox/subscriptions/${encodeURIComponent(key)}` : '/mailbox/subscriptions')
+  const read = (subscription: Subscription | null) =>
+    navigate({
+      pathname: subscription ? `/mailbox/subscriptions/${subscription.id}` : '/mailbox/subscriptions',
+      // The side travels with it: coming back from a list lands on the side
+      // it was found on.
+      search: showingLeft ? 'left=true' : '',
+    })
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -221,25 +296,40 @@ export function MailboxSubscriptionsPage() {
   // own rather than waiting for the reader to page down to it.
   const [fetched, setFetched] = useState<Subscription | null>(null)
   const reading =
-    subscriptions.find((subscription) => subscription.key === readingKey) ??
-    (fetched?.key === readingKey ? fetched : null)
+    subscriptions.find((subscription) => subscription.id === readingId) ??
+    (fetched?.id === readingId ? fetched : null)
 
   useEffect(() => {
-    if (!mailboxId || !readingKey || subscriptions.some((subscription) => subscription.key === readingKey)) {
+    if (!mailboxId || (!readingId && !legacyKey)) {
+      return
+    }
+    if (readingId && subscriptions.some((subscription) => subscription.id === readingId)) {
       return
     }
     let cancelled = false
-    void graphql<{ GetMailboxSubscription: Subscription | null }>(ONE, { mailboxId, key: readingKey })
+    void graphql<{ GetMailboxSubscription: Subscription | null }>(ONE, {
+      mailboxId,
+      id: readingId,
+      key: legacyKey,
+    })
       .then((response) => {
-        if (!cancelled) {
-          setFetched(response.GetMailboxSubscription)
+        if (cancelled) {
+          return
+        }
+        const found = response.GetMailboxSubscription
+        setFetched(found)
+        // A link made when the key was the identity: answered, and then the
+        // address is put right, so what gets copied from here afterwards is
+        // the identity rather than the address of a mailing list.
+        if (found && legacyKey) {
+          navigate(`/mailbox/subscriptions/${found.id}`, { replace: true })
         }
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [mailboxId, readingKey, subscriptions])
+  }, [mailboxId, readingId, legacyKey, subscriptions, navigate])
 
   const mute = useCallback(
     async (key: string, muted: boolean) => {
@@ -305,16 +395,84 @@ export function MailboxSubscriptionsPage() {
 
       <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
         <div className="mailbox-list">
+          {/* Before the switch, because it narrows both sides of it: the
+              counts on the switch are counts of what was asked for. */}
+          <form
+            className="mailbox-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault()
+              look(typed)
+            }}
+          >
+            <input
+              type="search"
+              value={typed}
+              placeholder={t('subscriptions.search')}
+              aria-label={t('subscriptions.search')}
+              onChange={(event) => {
+                setTyped(event.target.value)
+                // Emptying the box is asking for all of them again, and
+                // nobody presses Enter to say "never mind".
+                if (event.target.value === '') {
+                  look('')
+                }
+              }}
+              onBlur={() => look(typed)}
+            />
+          </form>
+
           <div className="mailbox-actions">
-            <span className="muted">
-              {t('subscriptions.title')}
-              {query.data ? ` · ${total}` : ''}
-            </span>
+            {/* The name and the count, until the switch says both — "
+                Subscriptions · 3" beside "Subscribed · 2 | Unsubscribed · 1"
+                is the same fact twice, and the second telling is the one
+                somebody can act on. */}
+            {!showingLeft && counts.left === 0 && matching === '' && (
+              <span className="muted">
+                {t('subscriptions.title')}
+                {query.data ? ` · ${total}` : ''}
+              </span>
+            )}
+            {/* Shown once there is a second side to go to. Until somebody
+                has left a list there is only one answer, and a switch with
+                one side is a control that does nothing.
+                
+                While something is being searched for it stays, even at zero:
+                "Unsubscribed · 0" answers "is it over there?", and a switch
+                that disappears mid-search leaves that question open. */}
+            {(showingLeft || counts.left > 0 || matching !== '') && (
+              <div className="segmented" role="group" aria-label={t('subscriptions.sides')}>
+                <button
+                  type="button"
+                  className={showingLeft ? undefined : 'active'}
+                  aria-pressed={!showingLeft}
+                  onClick={() => showSide(false)}
+                >
+                  {t('subscriptions.sideSubscribed', { count: counts.subscribed })}
+                </button>
+                <button
+                  type="button"
+                  className={showingLeft ? 'active' : undefined}
+                  aria-pressed={showingLeft}
+                  onClick={() => showSide(true)}
+                >
+                  {t('subscriptions.sideLeft', { count: counts.left })}
+                </button>
+              </div>
+            )}
           </div>
 
           {query.loading && !query.data && <Loading />}
           {query.data && subscriptions.length === 0 && (
-            <p className="mailbox-placeholder">{t('subscriptions.empty')}</p>
+            <p className="mailbox-placeholder">
+              {/* "No mailing lists have written to this mailbox" is untrue
+                  when some have and none of them match, or when they are all
+                  on the other side of the switch. */}
+              {matching !== ''
+                ? t('subscriptions.noneMatch')
+                : showingLeft
+                  ? t('subscriptions.noneLeft')
+                  : t('subscriptions.empty')}
+            </p>
           )}
 
           <ul className="mailbox-rows">
@@ -324,11 +482,11 @@ export function MailboxSubscriptionsPage() {
                 className={[
                   'subscription-row',
                   subscription.unread > 0 ? 'unread' : '',
-                  subscription.key === readingKey ? 'active' : '',
+                  subscription.id === readingId ? 'active' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => read(subscription.key)}
+                onClick={() => read(subscription)}
               >
                 <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
                 <Tooltip label={subscription.from}>
@@ -337,7 +495,7 @@ export function MailboxSubscriptionsPage() {
                     className="subscription-row-link"
                     onClick={(event) => {
                       event.stopPropagation()
-                      read(subscription.key)
+                      read(subscription)
                     }}
                   >
                     <span className="subscription-row-name">{subscription.name}</span>
@@ -352,9 +510,20 @@ export function MailboxSubscriptionsPage() {
                     </span>
                     {subscription.requestedAt ? (
                       <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
+                        {/* When, because the sentence was written to be
+                            finished by it and never was: it ended on a comma
+                            and stopped. When it was asked matters as well as
+                            that it was — a list often keeps writing for a
+                            while afterwards, and the date is how somebody
+                            decides whether "a while" has gone on too long. */}
                         {subscription.failed
-                          ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
-                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}
+                          ? t('subscriptions.leftFailed', {
+                              when: whenAsked(subscription.requestedAt, language),
+                              reason: subscription.error ?? '',
+                            })
+                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`, {
+                              when: whenAsked(subscription.requestedAt, language),
+                            })}
                       </span>
                     ) : null}
                   </button>

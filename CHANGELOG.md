@@ -6,6 +6,67 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A list you have left says when, and says it in a finished sentence.
+  "Asked to leave, in one request," ended on a comma with nothing after it —
+  the phrase was written to be completed by a time that was never rendered —
+  and "in one request" was the name of a protocol rather than anything a
+  reader wants: it is RFC 8058, where the sender undertakes to honour a single
+  request. It reads "Unsubscribed 2 days ago" now, and when the asking went by
+  mail or through the sender's own page it says so, because those take longer
+  to take effect.
+
+- Subscriptions has a search box, above the switch because it narrows both
+  sides of it: the counts on the switch are counts of what was asked for, so
+  "Unsubscribed · 0" answers "is the one I am looking for over there?". It
+  matches the name a list calls itself, the address its mail comes from, and
+  its own key, in the query rather than over the rows already fetched — the
+  list is paged, and filtering afterwards would leave a page of fifty showing
+  three and a count that disagreed. What is being looked for is in the address
+  with the side, so a search can be linked and comes back with the back
+  button.
+
+- The subscriptions page knows its own name. It was missing from the list the
+  breadcrumb reads, so the trail, the heading and the tab all called it
+  Mailbox — the section it is in.
+
+- Subscriptions has two sides, and shows one of them: the lists writing to you
+  and the lists you have left, with a switch between that says how many are on
+  each — and nothing beside it, because the switch already says the name and
+  the number, and "Subscriptions · 3" next to "Subscribed · 2 | Unsubscribed ·
+  1" is the same fact twice. The rows carry no badge either: on that side
+  every row is one, and each already says how it was left. A list already left said "Asked to leave" and stayed where it was, so
+  the ones dealt with crowded the ones still to deal with. Which side is being
+  read is in the address, and it travels with a list you open, so coming back
+  lands where you were. A link to a list opens it from either side, because
+  mail can keep arriving after the asking and seeing that is the point of
+  having asked. An attempt that failed is not a list left: nothing was
+  accepted, the mail keeps coming, and that row is the one somebody needs in
+  order to try again.
+
+- A subscription exists as soon as a list writes to you. The row was made only
+  when something was done about a list — muted, pictures allowed, unsubscribe
+  asked for — so until then a list had no identity of its own: nothing to link
+  to, and nowhere to keep anything about it. Delivery makes it now, and the
+  message names it, so what a list has sent is a lookup rather than a grouping
+  over a text key. The lists that arrived before this did are given rows and
+  their mail is joined to them by the migration.
+
+- A list is linked to by its own identity: `/mailbox/subscriptions/<id>`
+  rather than the list's key. The key is the identifier the sender chose for
+  itself, usually an address, and an address in the address bar is an address
+  on the screen of anybody looking over a shoulder. Links carrying a key still
+  arrive where they meant to, and are put right as they land.
+
+- A list kept out of the Inbox arrives unread. It was filed in the Archive and
+  marked read on the way, which said it had been dealt with when it had only
+  been put somewhere else — and left every subscription showing nothing to
+  read. Muting says where a list's mail waits, not that it is finished with,
+  and the unread count beside a list is how somebody comes back to it when
+  they have time. Muting a list still moves what the Inbox is holding from it;
+  it no longer marks that read either.
+
 ## [0.18.1] - 2026-09-10
 
 ### Fixed

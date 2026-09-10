@@ -364,7 +364,7 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 		return nil
 	}
 	seen := true
-	if _, err := tx.AddItem(sent.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
+	if _, err := tx.AddItem(sent.ID, mail.ID, "", models.MailboxItemFlags{Seen: &seen}); err != nil {
 		return err
 	}
 	names := mailparse.AttachmentNames(mail.Headers, mail.Body)

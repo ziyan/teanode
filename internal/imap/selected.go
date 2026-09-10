@@ -625,7 +625,7 @@ func (self *session) Copy(numSet goimap.NumSet, destination string) (*goimap.Cop
 		}
 		data.UIDValidity = uint32(target.folder.UIDValidity)
 		for _, item := range items {
-			created, err := tx.AddItem(target.folder.ID, item.MailID, flagsOf(item))
+			created, err := tx.AddItem(target.folder.ID, item.MailID, item.SubscriptionID, flagsOf(item))
 			if err != nil {
 				return err
 			}

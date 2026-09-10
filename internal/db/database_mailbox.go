@@ -39,7 +39,9 @@ type MailboxOperation interface {
 	DeleteFolder(folderId string) error
 
 	// AddItem places a message in a folder, with the folder's next UID.
-	AddItem(folderId, mailId string, flags models.MailboxItemFlags) (*models.MailboxItem, error)
+	// AddItem puts a message in a folder. subscriptionId names the list it
+	// arrived from, for the delivery that knows; "" everywhere else.
+	AddItem(folderId, mailId, subscriptionId string, flags models.MailboxItemFlags) (*models.MailboxItem, error)
 	GetItem(itemId string) (*models.MailboxItem, error)
 	ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error)
 	CountItems(folderId string, options *ItemOptions) (int64, error)
@@ -222,6 +224,8 @@ type mailboxItemModel struct {
 	Deleted   bool       `gorm:"column:deleted"`
 	AddedAt   time.Time  `gorm:"column:added_at"`
 	ImagesAt  *time.Time `gorm:"column:images_at"`
+
+	SubscriptionID string `gorm:"column:subscription_id"`
 }
 
 func (mailboxItemModel) TableName() string { return "mailbox_item" }
@@ -351,6 +355,8 @@ func itemFromModel(model *mailboxItemModel) *models.MailboxItem {
 		Deleted:   model.Deleted,
 		AddedAt:   model.AddedAt.In(time.Local),
 		ImagesAt:  localTime(model.ImagesAt),
+
+		SubscriptionID: model.SubscriptionID,
 	}
 }
 
@@ -804,13 +810,14 @@ func (self *transaction) notifyFolder(folderId string) error {
 	return self.tx.Exec("SELECT pg_notify(?, ?)", FolderChangedChannel, folderId).Error
 }
 
-func (self *transaction) AddItem(folderId, mailId string, flags models.MailboxItemFlags) (*models.MailboxItem, error) {
+func (self *transaction) AddItem(folderId, mailId, subscriptionId string, flags models.MailboxItemFlags) (*models.MailboxItem, error) {
 	uid, modseq, err := self.nextUIDAndModSeq(folderId)
 	if err != nil {
 		return nil, err
 	}
 	model := &mailboxItemModel{
 		ID: newID(), FolderID: folderId, MailID: mailId, UID: uid, ModSeq: modseq, AddedAt: time.Now(),
+		SubscriptionID: subscriptionId,
 	}
 	applyFlags(model, flags)
 	if err := self.tx.Create(model).Error; err != nil {
@@ -1125,14 +1132,44 @@ type subscriptionCount struct {
 // thrown away should not be presented as a subscription you have; and mail in
 // Junk is mail nobody agreed to receive, where pressing unsubscribe tells a
 // sender that guessed your address that a person reads it.
-func (self *transaction) subscriptionQuery(mailboxId string) *gorm.DB {
-	return self.tx.Model(&mailboxItemModel{}).
+func (self *transaction) subscriptionQuery(mailboxId string, side SubscriptionSide, matching string) *gorm.DB {
+	query := self.tx.Model(&mailboxItemModel{}).
 		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
 		Where("\"mailbox_item\".\"folder_id\" IN ("+
 			"SELECT \"id\" FROM \"mailbox_folder\" WHERE \"mailbox_id\" = ? AND \"kind\" NOT IN (?, ?))",
 			mailboxId, string(models.MailboxFolderKindTrash), string(models.MailboxFolderKindJunk)).
 		Where("\"mail\".\"list_key\" <> ''").
 		Where("NOT \"mailbox_item\".\"deleted\"")
+	// A list is left when leaving it was asked for and the asking worked. An
+	// attempt that failed is not: nothing was accepted, the mail keeps
+	// coming, and that row is the one somebody needs in order to try again,
+	// so it belongs with the lists they are still subscribed to.
+	const wasLeft = "EXISTS (" +
+		"SELECT 1 FROM \"mailbox_subscription\" " +
+		"WHERE \"mailbox_subscription\".\"mailbox_id\" = ? " +
+		"AND \"mailbox_subscription\".\"list_key\" = \"mail\".\"list_key\" " +
+		"AND \"mailbox_subscription\".\"requested_at\" IS NOT NULL " +
+		"AND NOT \"mailbox_subscription\".\"failed\")"
+	switch side {
+	case SubscribedTo:
+		query = query.Where("NOT "+wasLeft, mailboxId)
+	case Left:
+		query = query.Where(wasLeft, mailboxId)
+	case EitherSide:
+	}
+
+	// Typed into the box above the list: the name the list calls itself, the
+	// address its mail comes from, or its own key. Matched here rather than
+	// over the rows already fetched, because the list is paged and counted —
+	// filtering afterwards would shorten a page of fifty to whatever matched
+	// and leave the count disagreeing with it.
+	if matching = strings.TrimSpace(matching); matching != "" {
+		like := "%" + strings.ReplaceAll(strings.ReplaceAll(matching, "\\", "\\\\"), "%", "\\%") + "%"
+		query = query.Where(
+			"\"mail\".\"list_name\" ILIKE ? OR \"mail\".\"from\" ILIKE ? OR \"mail\".\"list_key\" ILIKE ?",
+			like, like, like)
+	}
+	return query
 }
 
 // ListSubscriptions is the mailing lists a mailbox receives, one row each,
@@ -1142,8 +1179,8 @@ func (self *transaction) subscriptionQuery(mailboxId string) *gorm.DB {
 // picks the newest message of each list in one sort, and a second query counts
 // the rest. One statement would need a window function over every message in
 // the mailbox to carry both.
-func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) ([]*models.MailboxSubscription, error) {
-	inner := self.subscriptionQuery(mailboxId).
+func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int, side SubscriptionSide, matching string) ([]*models.MailboxSubscription, error) {
+	inner := self.subscriptionQuery(mailboxId, side, matching).
 		Select("DISTINCT ON (\"mail\".\"list_key\") \"mail\".\"list_key\" AS list_key, " +
 			"\"mailbox_item\".\"id\" AS item_id, \"mail\".\"received_at\" AS received_at").
 		Order("\"mail\".\"list_key\", \"mail\".\"received_at\" DESC")
@@ -1193,7 +1230,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 	}
 
 	var counts []subscriptionCount
-	if err := self.subscriptionQuery(mailboxId).
+	if err := self.subscriptionQuery(mailboxId, side, matching).
 		Select("\"mail\".\"list_key\" AS list_key, COUNT(DISTINCT \"mailbox_item\".\"mail_id\") AS count, "+
 			"COUNT(DISTINCT \"mailbox_item\".\"mail_id\") FILTER (WHERE NOT \"mailbox_item\".\"seen\") AS unread").
 		Where("\"mail\".\"list_key\" IN ?", keys).
@@ -1260,6 +1297,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			subscription.Unread = count.Unread
 		}
 		if request := requests[row.ListKey]; request != nil {
+			subscription.ID = request.ID
 			subscription.RequestedAt = request.RequestedAt
 			subscription.Method = request.Method
 			subscription.Failed = request.Failed
@@ -1274,9 +1312,9 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 
 // CountSubscriptions is how many lists the mailbox receives, for the count
 // under the list.
-func (self *transaction) CountSubscriptions(mailboxId string) (int64, error) {
+func (self *transaction) CountSubscriptions(mailboxId string, side SubscriptionSide, matching string) (int64, error) {
 	var count int64
-	err := self.subscriptionQuery(mailboxId).Distinct("\"mail\".\"list_key\"").Count(&count).Error
+	err := self.subscriptionQuery(mailboxId, side, matching).Distinct("\"mail\".\"list_key\"").Count(&count).Error
 	return count, err
 }
 

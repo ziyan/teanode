@@ -55,17 +55,19 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	} else if muted, err := tx.SubscriptionIsMuted(mailbox.ID, mail.ListKey); err != nil {
 		return nil, err
 	} else if muted {
-		// A muted list keeps arriving and stops being in the way: the Archive,
-		// already read. Asked second, because what the filter called spam does
-		// not become a tidy archive — Junk is still where that belongs.
+		// A muted list keeps arriving and stops being in the way: the Archive
+		// rather than the Inbox. It arrives unread, because muting a list says
+		// where its mail should wait, not that it has been dealt with — and an
+		// unread count is how somebody finds the ones they have not read when
+		// they have time for them. Asked second, because what the filter
+		// called spam does not become a tidy archive — Junk is still where
+		// that belongs.
 		archive, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindArchive)
 		if err != nil {
 			return nil, err
 		}
 		if archive != nil {
-			seen := true
 			target = archive
-			flags.Seen = &seen
 		}
 	}
 	// One copy per mailbox, however many aliases point at it. A domain with a
@@ -85,7 +87,19 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 		return nil, nil
 	}
 
-	item, err := tx.AddItem(target.ID, mail.ID, flags)
+	// A list this mailbox now receives. The row is made on the first message
+	// rather than the first time somebody acts on one, so that every list has
+	// an identity — something to link to, and something to keep what is known
+	// about it — and the item names it, so asking what a list has sent is a
+	// lookup rather than a grouping over the mail's list key.
+	subscriptionId := ""
+	if mail.ListKey != "" {
+		if subscriptionId, err = tx.EnsureSubscription(mailbox.ID, mail.ListKey); err != nil {
+			return nil, err
+		}
+	}
+
+	item, err := tx.AddItem(target.ID, mail.ID, subscriptionId, flags)
 	if err != nil {
 		return nil, err
 	}

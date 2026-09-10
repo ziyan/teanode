@@ -40,7 +40,7 @@ func TestMailboxItemsReferenceOneMessage(t *testing.T) {
 				t.Fatalf("a new mailbox has no Inbox: %v", err)
 			}
 			inboxes = append(inboxes, inbox)
-			if _, err := tx.AddItem(inbox.ID, mailId, models.MailboxItemFlags{}); err != nil {
+			if _, err := tx.AddItem(inbox.ID, mailId, "", models.MailboxItemFlags{}); err != nil {
 				t.Fatalf("AddItem: %s", err)
 			}
 		}
@@ -92,7 +92,7 @@ func TestMailboxItemsReferenceOneMessage(t *testing.T) {
 			t.Errorf("the expunge log did not record the move: %+v, %v", expunged, err)
 		}
 		// The next item in the Inbox gets UID 2, never 1 again.
-		next, err := tx.AddItem(inboxes[0].ID, mailId, models.MailboxItemFlags{})
+		next, err := tx.AddItem(inboxes[0].ID, mailId, "", models.MailboxItemFlags{})
 		if err != nil || next.UID != 2 {
 			t.Errorf("the next UID is %d, want 2", next.UID)
 		}
@@ -122,7 +122,7 @@ func TestMailboxItemsReferenceOneMessage(t *testing.T) {
 		if mail.UnreferencedAt == nil {
 			t.Error("the clock did not start when the last item let go")
 		}
-		if _, err := tx.AddItem(inboxes[1].ID, mailId, models.MailboxItemFlags{}); err != nil {
+		if _, err := tx.AddItem(inboxes[1].ID, mailId, "", models.MailboxItemFlags{}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
 		mail, _ = tx.GetMail(mailId, nil)
@@ -158,7 +158,7 @@ func TestFlagsMoveTheModSeq(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateMail: %s", err)
 			}
-			item, err := tx.AddItem(inbox.ID, mail.ID, models.MailboxItemFlags{})
+			item, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{})
 			if err != nil {
 				t.Fatalf("AddItem: %s", err)
 			}

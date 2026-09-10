@@ -4818,6 +4818,7 @@ p.notice.domain-logo-note {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .subscription-row-meta {
   color: var(--muted);
   font-size: 12px;
