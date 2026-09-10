@@ -10,7 +10,9 @@ Notable changes to TeaNode. The format follows
 
 - Subscriptions has two sides, and shows one of them: the lists writing to you
   and the lists you have left, with a switch between that says how many are on
-  each. A list already left said "Asked to leave" and stayed where it was, so
+  each — and nothing beside it, because the switch already says the name and
+  the number, and "Subscriptions · 3" next to "Subscribed · 2 | Unsubscribed ·
+  1" is the same fact twice. A list already left said "Asked to leave" and stayed where it was, so
   the ones dealt with crowded the ones still to deal with. Which side is being
   read is in the address, and it travels with a list you open, so coming back
   lands where you were. A link to a list opens it from either side, because

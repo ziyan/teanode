@@ -362,10 +362,16 @@ export function MailboxSubscriptionsPage() {
       <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
         <div className="mailbox-list">
           <div className="mailbox-actions">
-            <span className="muted">
-              {t('subscriptions.title')}
-              {query.data ? ` · ${total}` : ''}
-            </span>
+            {/* The name and the count, until the switch says both — "
+                Subscriptions · 3" beside "Subscribed · 2 | Unsubscribed · 1"
+                is the same fact twice, and the second telling is the one
+                somebody can act on. */}
+            {!showingLeft && counts.left === 0 && (
+              <span className="muted">
+                {t('subscriptions.title')}
+                {query.data ? ` · ${total}` : ''}
+              </span>
+            )}
             {/* Shown once there is a second side to go to. Until somebody
                 has left a list there is only one answer, and a switch with
                 one side is a control that does nothing. */}
