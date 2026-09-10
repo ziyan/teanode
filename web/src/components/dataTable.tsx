@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import { ChevronRightIcon, FilterIcon, SortIcon } from './icons'
@@ -154,14 +154,49 @@ export function DataTable<Row>({
   const [filtersOpen, setFiltersOpen] = useState(() =>
     Object.values(initialFilters ?? {}).some((filter) => filter.length > 0),
   )
-  const [pageSize, setPageSize] = useState(
-    PAGE_SIZES.includes(remembered.current.pageSize ?? 0) ? (remembered.current.pageSize as number) : 50,
-  )
-  const [page, setPage] = useState(remembered.current.page ?? 0)
+  // Which page, and how many rows on it, are in the address. They were state
+  // kept in session storage, so a list opened at page four could not be sent
+  // to anybody, came back as page one after a reload, and gave the back
+  // button nothing to return to.
+  //
+  // The page is counted from one here because it is written for a person to
+  // read; inside it is counted from zero, as the slice needs.
+  const [parameters, setParameters] = useSearchParams()
+  const asked = Number(parameters.get('rows'))
+  const pageSize = PAGE_SIZES.includes(asked)
+    ? asked
+    : PAGE_SIZES.includes(remembered.current.pageSize ?? 0)
+      ? (remembered.current.pageSize as number)
+      : 50
+  const page = Math.max(0, (Number(parameters.get('page')) || 1) - 1)
+
+  // Writing one of them leaves everything else in the address alone: the
+  // filters that brought somebody to this list are in there too.
+  const setParameter = (name: string, value: string | null) => {
+    const written = new URLSearchParams(parameters)
+    if (value === null) {
+      written.delete(name)
+    } else {
+      written.set(name, value)
+    }
+    setParameters(written)
+  }
+  const setPage = (next: number) => setParameter('page', next <= 0 ? null : String(next + 1))
+  const setPageSize = (next: number) => {
+    const written = new URLSearchParams(parameters)
+    written.set('rows', String(next))
+    // A different page size means different pages; page four of fifty is not
+    // page four of two hundred.
+    written.delete('page')
+    setParameters(written)
+    // Remembered as well as written down, so the size somebody chose is
+    // still theirs on the next list they open.
+    writeRemembered(pathname, { pageSize: next })
+  }
 
   useEffect(() => {
-    writeRemembered(pathname, { pageSize, page, order })
-  }, [pathname, pageSize, page, order])
+    writeRemembered(pathname, { order })
+  }, [pathname, order])
 
   const filtered = useMemo(
     () =>
@@ -203,6 +238,7 @@ export function DataTable<Row>({
       return
     }
     setPage(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pageSize, order])
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))

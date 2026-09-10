@@ -8,6 +8,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- What a list is narrowed to, and which page of it you are on, are in the
+  address too. A mailbox search, the filter on the audit log, and every
+  table's page and page size were state — so a search could not be sent to
+  anybody, came back empty after a reload, was lost the moment a message was
+  opened from it, and gave the back button nothing to return to. Opening a
+  message found by a search and coming back now finds the search still there.
+
 - What a page is showing is in the path, not beside it. A subscription being
   read, a group being looked at and a role being edited were each held in a
   variable or in a query parameter written with `replace`, so choosing one
