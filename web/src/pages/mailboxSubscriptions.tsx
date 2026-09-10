@@ -385,7 +385,7 @@ export function MailboxSubscriptionsPage() {
               onChanged={() => void query.reload()}
             />
           ) : (
-            <div className="mailbox-placeholder">
+            <div className="mailbox-pane-placeholder">
               <EnvelopeTrail />
               <span>{t('subscriptions.choose')}</span>
             </div>

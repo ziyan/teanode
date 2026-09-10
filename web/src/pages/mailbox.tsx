@@ -1055,10 +1055,15 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onMove={(itemIds, target) => moveTo(itemIds, target)}
             onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
+            onDiscarded={(discarded) => {
+              remove([discarded])
+              openNext([discarded])
+              void mailboxes.refresh()
+            }}
             onBack={() => navigate(`/mailbox/${folder.id}`)}
           />
         ) : (
-          <div className="mailbox-placeholder">
+          <div className="mailbox-pane-placeholder">
             <EnvelopeTrail />
             <span>{t('mailbox.chooseMessage')}</span>
           </div>
@@ -1206,6 +1211,7 @@ function Reader({
   onMove,
   onJunk,
   onDelete,
+  onDiscarded,
   onBack,
 }: {
   itemId: string
@@ -1218,6 +1224,9 @@ function Reader({
   onMove: (itemIds: string[], folderId: string) => void
   onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
+  // A draft thrown away from the composer below. The list is the folder's,
+  // not this pane's, so taking the row out of it belongs to the folder.
+  onDiscarded: (itemId: string) => void
   onBack: () => void
 }) {
   const { t } = useTranslation()
@@ -1548,9 +1557,18 @@ function Reader({
               setDraftId(null)
               void thread.reload()
             }}
-            onCancel={() => {
+            // Discarding is not closing. The draft is gone from the server,
+            // so the row that showed it has to go from the list and from the
+            // conversation as well — otherwise it sits there until something
+            // else reloads the page, and opening it asks for a message that
+            // is not there any more.
+            onDiscarded={(discarded) => {
               setWriting(null)
               setDraftId(null)
+              if (discarded) {
+                onDiscarded(discarded)
+              }
+              void thread.reload()
             }}
           />
         </div>

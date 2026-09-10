@@ -6,6 +6,26 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A discarded draft is gone from the screen as well as from the server. The
+  composer told the page it had closed, and the page treated that as somebody
+  closing the composer — which keeps the draft — so the row stayed in the list
+  and in the conversation, and opening it asked the server for a message that
+  had been deleted: "api: not found".
+
+- The empty list says so with room around it. The pane that offers the
+  envelope trail and the empty list next to it were the same class, and the
+  rule for the pane — which gives up its padding so the drawing can reach the
+  edges — came later in the stylesheet, so it took the padding from the list
+  as well and left the sentence against both borders.
+
+- The number in the tab counts what the tab says. The rest of the title is
+  where you are — "Drafts · Mailbox" — while the count in front of it was
+  always the Inbox's, so the two halves described two different places. It is
+  the folder's own count while a folder is open, and the count across every
+  mailbox everywhere else, which is what a tab in the background is for.
+
 ## [0.18.0] - 2026-09-09
 
 ### Added

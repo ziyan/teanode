@@ -150,7 +150,7 @@ export function MailboxComposer({
   draftOf,
   initialTo = '',
   onSent,
-  onCancel,
+  onDiscarded,
   onDraft,
 }: {
   replyTo?: string | null
@@ -161,8 +161,11 @@ export function MailboxComposer({
   // Told when the message has gone, so a conversation can show it. Without
   // one the composer says so itself, which is what the page does.
   onSent?: () => void
-  // Offered as a way out when there is somewhere to go back to.
-  onCancel?: () => void
+  // Told that the draft has been thrown away, and which one it was, so a
+  // conversation showing it can stop showing it. This fires only for
+  // discarding: closing the composer keeps what was typed, and is the page's
+  // own business.
+  onDiscarded?: (itemId: string | null) => void
   // Told the id of the draft this has been saved as, each time it is saved.
   //
   // A conversation that closes and reopens the composer — Reply, then Reply
@@ -636,8 +639,8 @@ export function MailboxComposer({
     }
     dirty.current = false
     void mailboxes.refresh()
-    if (onCancel) {
-      onCancel()
+    if (onDiscarded) {
+      onDiscarded(draftItemId)
       return
     }
     navigate('/mailbox')

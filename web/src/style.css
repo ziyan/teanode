@@ -4811,7 +4811,12 @@ p.notice.domain-logo-note {
    warning: leaving one is a thing that went right. */
 /* The empty reading pane: a sentence with the drawing above it, both held in
    the middle of the space rather than at the top of it. */
-.mailbox-placeholder {
+/* The empty reading pane, which is a drawing and a line under it — not the
+   same thing as the empty list next door, which is a sentence in a box and
+   wants the padding a sentence wants. They shared a class, and this rule,
+   being the later of the two, took that padding away: the sentence in the
+   list ended up against both edges. */
+.mailbox-pane-placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4829,7 +4834,7 @@ p.notice.domain-logo-note {
 
 /* The pane gives up its padding for a placeholder, so the line reaches the
    sides. It keeps it for a message, which should not be against the edge. */
-.mailbox-pane:has(> .mailbox-placeholder) {
+.mailbox-pane:has(> .mailbox-pane-placeholder) {
   padding: 0;
 }
 
@@ -4847,7 +4852,7 @@ p.notice.domain-logo-note {
 
 /* Under the line rather than over it: the drawing is the thing to look at,
    and the sentence says what to do about it. */
-.mailbox-placeholder > span {
+.mailbox-pane-placeholder > span {
   padding: 0 var(--space-4);
 }
 

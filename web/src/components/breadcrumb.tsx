@@ -156,10 +156,30 @@ function DocumentTitle() {
   const { t } = useTranslation()
   const trail = useTrail()
 
-  // What is unread across every mailbox, in front of everything else: the
-  // one number a tab can show from behind another tab.
+  // The number in front of the title, which has to be counting the same
+  // thing the title names. The rest of it is where you are — "Drafts ·
+  // Mailbox" — so a count of the Inbox in front of the word Drafts is two
+  // statements about two different places sitting next to each other.
+  //
+  // So: the folder being read, when a folder is being read. Everywhere else
+  // — another page, or the mailbox before a folder is chosen — it is what is
+  // unread across every mailbox, which is the one number a tab can show from
+  // behind another tab.
   const { views } = useMailboxes()
-  const unread = views.reduce((sum, view) => sum + view.unread, 0)
+  const location = useLocation()
+  const unread = useMemo(() => {
+    const [, section, folderId] = location.pathname.split('/')
+    if (section === 'mailbox' && folderId) {
+      const folder = views.flatMap((view) => view.folders).find((candidate) => candidate.id === folderId)
+      // Not every path under /mailbox names a folder — contacts and
+      // subscriptions live there too, and Starred is a view over all of
+      // them. Those fall through to the count across every mailbox.
+      if (folder) {
+        return folder.unread
+      }
+    }
+    return views.reduce((sum, view) => sum + view.unread, 0)
+  }, [location.pathname, views])
 
   useEffect(() => {
     // Reversed: a row of tabs is read left to right and truncated from the
