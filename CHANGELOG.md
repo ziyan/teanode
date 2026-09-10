@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-09-10
+
 ### Fixed
 
 - A target on a phone has two dimensions. Every control was given a height of
