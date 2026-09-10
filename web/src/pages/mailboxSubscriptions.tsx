@@ -31,8 +31,8 @@ import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMes
 const PAGE_SIZE = 50
 
 const SUBSCRIPTIONS = `
-  query ($mailboxId: String!, $first: Int, $offset: Int, $left: Boolean) {
-    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, left: $left) {
+  query ($mailboxId: String!, $first: Int, $offset: Int, $left: Boolean, $matching: String) {
+    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, left: $left, matching: $matching) {
       total
       subscribed
       left
@@ -181,8 +181,31 @@ export function MailboxSubscriptionsPage() {
   // In the address, like everything else that says what a list is showing, so
   // it survives a reload and the back button leads out of it.
   const showingLeft = search.get('left') === 'true'
+
+  // What is being looked for, in the address like the side, so a search can
+  // be linked and comes back with the back button. The box holds what is
+  // being typed; the address holds what is being asked.
+  const matching = search.get('matching') ?? ''
+  const [typed, setTyped] = useState(matching)
+  useEffect(() => {
+    setTyped(matching)
+  }, [matching])
+  const look = (words: string) => {
+    const written = new URLSearchParams(search)
+    if (words.trim() === '') {
+      written.delete('matching')
+    } else {
+      written.set('matching', words.trim())
+    }
+    // Searching again replaces the search rather than stacking one entry per
+    // word: the way back is to the list, not through every letter typed.
+    navigate({ pathname: '/mailbox/subscriptions', search: written.toString() }, { replace: matching !== '' })
+  }
   const showSide = (left: boolean) => {
     const written = new URLSearchParams(search)
+    // What is being looked for stays: switching sides asks the same question
+    // of the other one.
+
     if (left) {
       written.set('left', 'true')
     } else {
@@ -197,9 +220,10 @@ export function MailboxSubscriptionsPage() {
             mailboxId,
             first: PAGE_SIZE,
             left: showingLeft,
+            matching,
           })
         : Promise.resolve(null),
-    [mailboxId, showingLeft],
+    [mailboxId, showingLeft, matching],
     { refresh: false },
   )
 
@@ -224,6 +248,7 @@ export function MailboxSubscriptionsPage() {
         first: PAGE_SIZE,
         offset: rows.length,
         left: showingLeft,
+        matching,
       })
       const page = response.ListMailboxSubscriptions
       setRows((previous) => {
@@ -238,7 +263,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setPaging(false)
     }
-  }, [mailboxId, rows.length, showingLeft, t])
+  }, [mailboxId, rows.length, showingLeft, matching, t])
 
   const subscriptions = rows
 
@@ -361,12 +386,38 @@ export function MailboxSubscriptionsPage() {
 
       <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
         <div className="mailbox-list">
+          {/* Before the switch, because it narrows both sides of it: the
+              counts on the switch are counts of what was asked for. */}
+          <form
+            className="mailbox-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault()
+              look(typed)
+            }}
+          >
+            <input
+              type="search"
+              value={typed}
+              placeholder={t('subscriptions.search')}
+              aria-label={t('subscriptions.search')}
+              onChange={(event) => {
+                setTyped(event.target.value)
+                // Emptying the box is asking for all of them again, and
+                // nobody presses Enter to say "never mind".
+                if (event.target.value === '') {
+                  look('')
+                }
+              }}
+              onBlur={() => look(typed)}
+            />
+          </form>
+
           <div className="mailbox-actions">
             {/* The name and the count, until the switch says both — "
                 Subscriptions · 3" beside "Subscribed · 2 | Unsubscribed · 1"
                 is the same fact twice, and the second telling is the one
                 somebody can act on. */}
-            {!showingLeft && counts.left === 0 && (
+            {!showingLeft && counts.left === 0 && matching === '' && (
               <span className="muted">
                 {t('subscriptions.title')}
                 {query.data ? ` · ${total}` : ''}
@@ -374,8 +425,12 @@ export function MailboxSubscriptionsPage() {
             )}
             {/* Shown once there is a second side to go to. Until somebody
                 has left a list there is only one answer, and a switch with
-                one side is a control that does nothing. */}
-            {(showingLeft || counts.left > 0) && (
+                one side is a control that does nothing.
+                
+                While something is being searched for it stays, even at zero:
+                "Unsubscribed · 0" answers "is it over there?", and a switch
+                that disappears mid-search leaves that question open. */}
+            {(showingLeft || counts.left > 0 || matching !== '') && (
               <div className="segmented" role="group" aria-label={t('subscriptions.sides')}>
                 <button
                   type="button"
@@ -399,7 +454,16 @@ export function MailboxSubscriptionsPage() {
 
           {query.loading && !query.data && <Loading />}
           {query.data && subscriptions.length === 0 && (
-            <p className="mailbox-placeholder">{t('subscriptions.empty')}</p>
+            <p className="mailbox-placeholder">
+              {/* "No mailing lists have written to this mailbox" is untrue
+                  when some have and none of them match, or when they are all
+                  on the other side of the switch. */}
+              {matching !== ''
+                ? t('subscriptions.noneMatch')
+                : showingLeft
+                  ? t('subscriptions.noneLeft')
+                  : t('subscriptions.empty')}
+            </p>
           )}
 
           <ul className="mailbox-rows">

@@ -41,12 +41,13 @@ type SubscriptionQuery interface {
 	// first, with how much of each it holds and what has been asked of it.
 	//
 	// side chooses which of them: the ones still subscribed to, the ones
-	// left, or either.
-	ListSubscriptions(mailboxId string, limit, offset int, side SubscriptionSide) ([]*models.MailboxSubscription, error)
+	// left, or either. matching narrows to the lists whose name, sending
+	// address or key contains it; empty is all of them.
+	ListSubscriptions(mailboxId string, limit, offset int, side SubscriptionSide, matching string) ([]*models.MailboxSubscription, error)
 
 	// CountSubscriptions is how many there are on one side, for the count
-	// beside the switch between them.
-	CountSubscriptions(mailboxId string, side SubscriptionSide) (int64, error)
+	// beside the switch between them, narrowed the same way.
+	CountSubscriptions(mailboxId string, side SubscriptionSide, matching string) (int64, error)
 
 	// GetSubscription is one of them, or nil when the mailbox has no mail
 	// from that list.
@@ -130,7 +131,7 @@ func (self *transaction) GetSubscription(mailboxId, listKey string) (*models.Mai
 	// Either side: a link to a list opens it whether or not the person has
 	// since asked to leave, and the page that shows one is how they see that
 	// they did.
-	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0, EitherSide)
+	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0, EitherSide, "")
 	if err != nil {
 		return nil, err
 	}

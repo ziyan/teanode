@@ -8,6 +8,20 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Subscriptions has a search box, above the switch because it narrows both
+  sides of it: the counts on the switch are counts of what was asked for, so
+  "Unsubscribed · 0" answers "is the one I am looking for over there?". It
+  matches the name a list calls itself, the address its mail comes from, and
+  its own key, in the query rather than over the rows already fetched — the
+  list is paged, and filtering afterwards would leave a page of fifty showing
+  three and a count that disagreed. What is being looked for is in the address
+  with the side, so a search can be linked and comes back with the back
+  button.
+
+- The subscriptions page knows its own name. It was missing from the list the
+  breadcrumb reads, so the trail, the heading and the tab all called it
+  Mailbox — the section it is in.
+
 - Subscriptions has two sides, and shows one of them: the lists writing to you
   and the lists you have left, with a switch between that says how many are on
   each — and nothing beside it, because the switch already says the name and

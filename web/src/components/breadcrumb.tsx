@@ -59,6 +59,9 @@ const SECTION_PAGES: { path: string; label: Key }[] = [
   { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
   { path: '/mailbox/contacts', label: 'nav.contacts' },
   { path: '/mailbox/compose', label: 'nav.compose' },
+  // Missing, so this page fell back to the section it is in and called
+  // itself Mailbox — in the trail, in the heading, and in the tab.
+  { path: '/mailbox/subscriptions', label: 'nav.subscriptions' },
 ]
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)

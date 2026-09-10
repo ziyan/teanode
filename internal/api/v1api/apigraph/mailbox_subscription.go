@@ -41,6 +41,10 @@ type ListMailboxSubscriptionsArguments struct {
 	// A request that failed is not a list left — nothing was accepted and the
 	// mail keeps coming — so those are with the subscribed.
 	Left *bool `json:"left"`
+
+	// Matching narrows to the lists whose name, sending address or key
+	// contains it. Empty is all of them.
+	Matching *string `json:"matching"`
 }
 
 type MailboxSubscriptionPage struct {
@@ -74,19 +78,26 @@ func (self *graph) ListMailboxSubscriptions(ctx context.Context,
 	if arguments.Left != nil && *arguments.Left {
 		side = db.Left
 	}
+	matching := ""
+	if arguments.Matching != nil {
+		matching = *arguments.Matching
+	}
 	tx := self.transaction(ctx)
-	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, side)
+	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, side, matching)
 	if err != nil {
 		return nil, err
 	}
 	// Both counts, whichever side is being read: the switch says how many are
 	// on the other side as well, and a number nobody can see is how somebody
 	// comes to wonder where a list they remember has gone.
-	subscribed, err := tx.CountSubscriptions(mailbox.ID, db.SubscribedTo)
+	// Counted through the same words that are being searched for, so the
+	// switch says how many of what is being looked for are on each side
+	// rather than how many exist.
+	subscribed, err := tx.CountSubscriptions(mailbox.ID, db.SubscribedTo, matching)
 	if err != nil {
 		return nil, err
 	}
-	left, err := tx.CountSubscriptions(mailbox.ID, db.Left)
+	left, err := tx.CountSubscriptions(mailbox.ID, db.Left, matching)
 	if err != nil {
 		return nil, err
 	}
