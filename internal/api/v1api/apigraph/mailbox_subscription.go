@@ -32,11 +32,21 @@ type ListMailboxSubscriptionsArguments struct {
 	// How many to return, and where to start
 	First  *int `json:"first"`
 	Offset *int `json:"offset"`
+
+	// IncludeLeft brings back the lists already left as well. Default false:
+	// a list of subscriptions is a list of what somebody is subscribed to, and
+	// one they have left is one they have dealt with. A request that failed is
+	// not a list left, and is always here.
+	IncludeLeft *bool `json:"includeLeft"`
 }
 
 type MailboxSubscriptionPage struct {
 	Subscriptions []*models.MailboxSubscription `json:"subscriptions"`
 	Total         int64                         `json:"total"`
+
+	// Left is how many are being kept out of this answer, so the page can
+	// offer to show them and say how many there are.
+	Left int64 `json:"left"`
 }
 
 // ListMailboxSubscriptions is every mailing list this mailbox receives: who
@@ -56,16 +66,27 @@ func (self *graph) ListMailboxSubscriptions(ctx context.Context,
 	if arguments.Offset != nil && *arguments.Offset > 0 {
 		offset = *arguments.Offset
 	}
+	includeLeft := arguments.IncludeLeft != nil && *arguments.IncludeLeft
 	tx := self.transaction(ctx)
-	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset)
+	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, includeLeft)
 	if err != nil {
 		return nil, err
 	}
-	total, err := tx.CountSubscriptions(mailbox.ID)
+	total, err := tx.CountSubscriptions(mailbox.ID, includeLeft)
 	if err != nil {
 		return nil, err
 	}
-	return &MailboxSubscriptionPage{Subscriptions: subscriptions, Total: total}, nil
+	// How many are being left out, so the page can offer them rather than
+	// leave somebody wondering where a list they remember has gone.
+	left := int64(0)
+	if !includeLeft {
+		everything, err := tx.CountSubscriptions(mailbox.ID, true)
+		if err != nil {
+			return nil, err
+		}
+		left = everything - total
+	}
+	return &MailboxSubscriptionPage{Subscriptions: subscriptions, Total: total, Left: left}, nil
 }
 
 type ReadMailboxSubscriptionArguments struct {

@@ -31,9 +31,10 @@ import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMes
 const PAGE_SIZE = 50
 
 const SUBSCRIPTIONS = `
-  query ($mailboxId: String!, $first: Int, $offset: Int) {
-    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset) {
+  query ($mailboxId: String!, $first: Int, $offset: Int, $includeLeft: Boolean) {
+    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, includeLeft: $includeLeft) {
       total
+      left
       subscriptions {
         id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
         requestedAt method failed error stripped mutedAt imagesAt
@@ -88,6 +89,8 @@ const UNSUBSCRIBE = `
       key requestedAt method failed error
     }
   }`
+
+type Page = { total: number; left: number; subscriptions: Subscription[] }
 
 export type Subscription = {
   // What a link to this list names. The key is the sender's own identifier,
@@ -163,17 +166,25 @@ export function MailboxSubscriptionsPage() {
   const legacyKey = asked && !IDENTITY.test(asked) ? asked : null
   const [rows, setRows] = useState<Subscription[]>([])
   const [total, setTotal] = useState(0)
+  // How many are being kept out, so the button can say what it would show.
+  const [left, setLeft] = useState(0)
   const [paging, setPaging] = useState(false)
 
+  // A list already left is one that has been dealt with, so it is not in the
+  // list of what somebody is subscribed to. Kept out rather than removed:
+  // mail from it may keep arriving for a while, and knowing that is the point
+  // of having asked to leave.
+  const [includeLeft, setIncludeLeft] = useState(false)
   const query = useQuery(
     () =>
       mailboxId
-        ? graphql<{ ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] } }>(SUBSCRIPTIONS, {
+        ? graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
             mailboxId,
             first: PAGE_SIZE,
+            includeLeft,
           })
         : Promise.resolve(null),
-    [mailboxId],
+    [mailboxId, includeLeft],
     { refresh: false },
   )
 
@@ -187,14 +198,18 @@ export function MailboxSubscriptionsPage() {
     }
     setRows(page.subscriptions)
     setTotal(page.total)
+    setLeft(page.left ?? 0)
   }, [query.data])
 
   const loadMore = useCallback(async () => {
     setPaging(true)
     try {
-      const response = await graphql<{
-        ListMailboxSubscriptions: { total: number; subscriptions: Subscription[] }
-      }>(SUBSCRIPTIONS, { mailboxId, first: PAGE_SIZE, offset: rows.length })
+      const response = await graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
+        mailboxId,
+        first: PAGE_SIZE,
+        offset: rows.length,
+        includeLeft,
+      })
       const page = response.ListMailboxSubscriptions
       setRows((previous) => {
         // Paged by offset, so a list that wrote since the last page shifts
@@ -208,7 +223,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setPaging(false)
     }
-  }, [mailboxId, rows.length, t])
+  }, [mailboxId, rows.length, includeLeft, t])
 
   const subscriptions = rows
 
@@ -331,6 +346,19 @@ export function MailboxSubscriptionsPage() {
               {t('subscriptions.title')}
               {query.data ? ` · ${total}` : ''}
             </span>
+            {/* Offered only when there is something to show, and saying how
+                many: a button that might do nothing is a question about
+                whether it is broken. */}
+            {(includeLeft || left > 0) && (
+              <button
+                type="button"
+                className={includeLeft ? 'active' : undefined}
+                aria-pressed={includeLeft}
+                onClick={() => setIncludeLeft((previous) => !previous)}
+              >
+                {includeLeft ? t('subscriptions.hideLeft') : t('subscriptions.showLeft', { count: left })}
+              </button>
+            )}
           </div>
 
           {query.loading && !query.data && <Loading />}
@@ -345,6 +373,7 @@ export function MailboxSubscriptionsPage() {
                 className={[
                   'subscription-row',
                   subscription.unread > 0 ? 'unread' : '',
+                  subscription.requestedAt && !subscription.failed ? 'left' : '',
                   subscription.id === readingId ? 'active' : '',
                 ]
                   .filter(Boolean)
@@ -362,6 +391,12 @@ export function MailboxSubscriptionsPage() {
                     }}
                   >
                     <span className="subscription-row-name">{subscription.name}</span>
+                    {/* Said plainly, beside the name, because the sentence
+                        underneath says how it was left and this says that it
+                        was. */}
+                    {subscription.requestedAt && !subscription.failed ? (
+                      <span className="subscription-row-status">{t('subscriptions.unsubscribed')}</span>
+                    ) : null}
                     <span className="subscription-row-meta">
                       {plural(
                         subscription.count,

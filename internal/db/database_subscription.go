@@ -19,10 +19,15 @@ import (
 type SubscriptionQuery interface {
 	// ListSubscriptions is the mailing lists a mailbox receives, newest
 	// first, with how much of each it holds and what has been asked of it.
-	ListSubscriptions(mailboxId string, limit, offset int) ([]*models.MailboxSubscription, error)
+	//
+	// includeLeft brings back the ones already left. They are left out by
+	// default: a list of subscriptions is a list of what somebody is
+	// subscribed to, and the ones they have dealt with are the ones they do
+	// not need to see. A request that failed is not a list left.
+	ListSubscriptions(mailboxId string, limit, offset int, includeLeft bool) ([]*models.MailboxSubscription, error)
 
 	// CountSubscriptions is how many there are, for the count under the list.
-	CountSubscriptions(mailboxId string) (int64, error)
+	CountSubscriptions(mailboxId string, includeLeft bool) (int64, error)
 
 	// GetSubscription is one of them, or nil when the mailbox has no mail
 	// from that list.
@@ -103,7 +108,10 @@ func (self *transaction) GetSubscription(mailboxId, listKey string) (*models.Mai
 	// One list is the listing narrowed to it: the same grouping, the same
 	// counts, and the same record of what was asked, rather than a second
 	// query that could answer differently.
-	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0)
+	// Left ones included: a link to a list opens it whether or not the person
+	// has since asked to leave, and the page that shows one is how they see
+	// that they did.
+	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0, true)
 	if err != nil {
 		return nil, err
 	}

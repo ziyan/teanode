@@ -83,7 +83,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 	})
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		subscriptions, err := tx.ListSubscriptions(mailbox.ID, 0, 0)
+		subscriptions, err := tx.ListSubscriptions(mailbox.ID, 0, 0, true)
 		if err != nil {
 			t.Fatalf("ListSubscriptions: %s", err)
 		}
@@ -127,7 +127,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 			t.Errorf("the second subscription reads %+v", shop)
 		}
 
-		count, err := tx.CountSubscriptions(mailbox.ID)
+		count, err := tx.CountSubscriptions(mailbox.ID, true)
 		if err != nil {
 			t.Fatalf("CountSubscriptions: %s", err)
 		}
@@ -169,7 +169,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 		if subscription.Method != models.UnsubscribeOneClick {
 			t.Errorf("Method = %q", subscription.Method)
 		}
-		count, err := tx.CountSubscriptions(mailbox.ID)
+		count, err := tx.CountSubscriptions(mailbox.ID, true)
 		if err != nil {
 			t.Fatalf("CountSubscriptions: %s", err)
 		}

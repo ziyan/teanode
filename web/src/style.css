@@ -4818,6 +4818,24 @@ p.notice.domain-logo-note {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A list that has been left, said beside its name. Quiet: it is a fact about
+   a row somebody asked to see, not a warning. */
+.subscription-row-status {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* And the name reads as done with rather than current. */
+.subscription-row.left .subscription-row-name {
+  color: var(--muted);
+}
 .subscription-row-meta {
   color: var(--muted);
   font-size: 12px;
