@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { CheckIcon, CopyIcon, ShieldIcon } from './icons'
 import { Tooltip } from './tooltip'
+import { useToast } from './toast'
 import { Mail } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
 
@@ -223,6 +224,27 @@ export function ErrorMessage({ error }: { error: unknown }) {
 // The note is a prop because it is not always the same sentence: some
 // settings take effect as soon as they are saved and some wait for a
 // restart, and that is the one thing the reader needs to be told here.
+// useSaySaved says a save happened, once, at the moment it happens.
+//
+// That it saved belongs at the foot of the window with everything else that
+// has just happened, rather than being a word beside the button that stays
+// there until something takes it back. What the note says beyond "saved" —
+// "this needs a restart" — travels with it.
+//
+// Only on the change from not-saved to saved, because the form above this
+// renders again for every keystroke, and a toast per keystroke is not a thing
+// anybody wants.
+export function useSaySaved(saved: boolean, note: string) {
+  const toast = useToast()
+  const said = useRef(false)
+  useEffect(() => {
+    if (saved && !said.current) {
+      toast.done(note)
+    }
+    said.current = saved
+  }, [saved, note, toast])
+}
+
 export function SaveRow({
   busy,
   saved,
@@ -239,6 +261,7 @@ export function SaveRow({
   canSave?: boolean
 }) {
   const { t } = useTranslation()
+  useSaySaved(saved, note)
 
   return (
     <>
@@ -247,7 +270,6 @@ export function SaveRow({
         <button className="primary" type="submit" disabled={busy || !canSave}>
           {busy ? t('common.saving') : t('common.save')}
         </button>
-        {saved && <span className="muted">{note}</span>}
       </div>
     </>
   )

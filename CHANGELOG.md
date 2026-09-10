@@ -8,6 +8,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Everything that has just happened is said in the same place. "Saved.",
+  "Saved, and in use now", "It came back." — each was a word beside a button
+  or a green line above a form, which had to be taken back the moment anything
+  was typed. They join the mail actions in the line at the foot of the window.
+  What is still true stays where it is: a setting waiting for a restart, a
+  server nobody is supervising, a field that is wrong.
+
 - What a list is narrowed to, and which page of it you are on, are in the
   address too. A mailbox search, the filter on the audit log, and every
   table's page and page size were state — so a search could not be sent to

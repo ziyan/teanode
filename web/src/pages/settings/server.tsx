@@ -5,6 +5,7 @@ import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
+import { useToast } from '../../components/toast'
 import { Markdown } from '../../components/markdown'
 import { RelativeTime } from '../../components/relativeTime'
 import { useTranslation } from '../../i18n/i18n'
@@ -97,13 +98,13 @@ export function ServerAboutPage() {
   // server that cannot reach the release list is a server with an out-of-date
   // answer to one question, not a broken page.
   const upgrade = useQuery(() => graphql<{ GetUpgrade: UpgradeStatus }>(UPGRADE, { check: false }), [])
+  const toast = useToast()
   const [checking, setChecking] = useState(false)
   const [upgrading, setUpgrading] = useState(false)
 
   const [confirming, setConfirming] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  const [cameBack, setCameBack] = useState(false)
 
   if (loading && !data) {
     return <Loading />
@@ -122,7 +123,6 @@ export function ServerAboutPage() {
     setProblem(null)
     setConfirming(false)
     setRestarting(true)
-    setCameBack(false)
 
     try {
       await graphql(RESTART)
@@ -146,7 +146,7 @@ export function ServerAboutPage() {
       try {
         await graphql(STATUS)
         setRestarting(false)
-        setCameBack(true)
+        toast.done(t('server.cameBack'))
         await reload()
         await upgrade.reload()
         return
@@ -230,7 +230,6 @@ export function ServerAboutPage() {
   // is the reply the reader needs.
   async function applyUpgrade(version?: string) {
     setProblem(null)
-    setCameBack(false)
     setUpgrading(true)
     try {
       await graphql(APPLY, { version })
@@ -314,7 +313,7 @@ export function ServerAboutPage() {
         // old version, no confirmation, and nothing to explain either.
         setUpgrading(false)
         if (was && status.current && status.current !== was) {
-          setCameBack(true)
+          toast.done(t('server.cameBack'))
           await Promise.all([upgrade.reload(), reload()])
           return
         }
@@ -336,7 +335,6 @@ export function ServerAboutPage() {
   return (
     <>
       <ErrorMessage error={problem} />
-      {cameBack && <p className="notice good">{t('server.cameBack')}</p>}
 
       <div className="card">
         <h3>{t('server.thisInstance')}</h3>

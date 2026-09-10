@@ -7,6 +7,7 @@ import { Tooltip } from '../components/tooltip'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { useToast } from '../components/toast'
 import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -117,21 +118,26 @@ export function MailboxSettingsPage() {
   )
 }
 
-// useSave is the save button's state: busy, failed, or saved.
+// useSave is the save button's state: busy, or failed.
+//
+// That it worked is said by the toast at the foot of the window, like every
+// other thing that has just happened, rather than by a word beside the button
+// that has to be taken back the moment anything is typed. What failed stays
+// here, next to the form it is about.
 function useSave() {
+  const { t } = useTranslation()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
-  const [saved, setSaved] = useState(false)
   // Whether it worked, so a form closes only on success.
   const save = async (mutation: string, variables: Record<string, unknown>): Promise<boolean> => {
     setBusy(true)
-    setSaved(false)
     try {
       await graphql(mutation, variables)
       await mailboxes.refresh()
       setError(null)
-      setSaved(true)
+      toast.done(t('common.saved'))
       return true
     } catch (failure) {
       setError(failure)
@@ -140,7 +146,7 @@ function useSave() {
       setBusy(false)
     }
   }
-  return { busy, error, saved, save, touch: () => setSaved(false) }
+  return { busy, error, save }
 }
 
 function GeneralTab({ view }: { view: MailboxView }) {
@@ -155,7 +161,7 @@ function GeneralTab({ view }: { view: MailboxView }) {
   // box is what actually goes out, so leaving it empty quietly meant the
   // signature only appeared on plain messages.
   const [editor, setEditor] = useState<'rich' | 'plain'>(mailbox.signatureHtml ? 'rich' : 'plain')
-  const { busy, error, saved, save, touch } = useSave()
+  const { busy, error, save } = useSave()
 
   // What will be sent, which is the editor in front of you and the other form
   // derived from it. A signature written as rich text keeps a plain rendering
@@ -191,7 +197,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
               value={name}
               onChange={(event) => {
                 setName(event.target.value)
-                touch()
               }}
               required
             />
@@ -208,7 +213,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
                   setSignatureHtml(textToHtml(signatureText))
                 }
                 setEditor('rich')
-                touch()
               }}
             >
               {t('compose.mailbox.richText')}
@@ -221,7 +225,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
                   setSignatureText(htmlToText(signatureHtml))
                 }
                 setEditor('plain')
-                touch()
               }}
             >
               {t('compose.mailbox.plainText')}
@@ -233,7 +236,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
                 value={signatureHtml}
                 onChange={(next) => {
                   setSignatureHtml(next)
-                  touch()
                 }}
               />
             ) : (
@@ -243,7 +245,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
                 value={signatureText}
                 onChange={(event) => {
                   setSignatureText(event.target.value)
-                  touch()
                 }}
               />
             )}
@@ -255,7 +256,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
             <button className="primary" type="submit" disabled={busy || !changed || !name.trim()}>
               {t('common.save')}
             </button>
-            {saved && !changed && <span className="muted">{t('common.saved')}</span>}
           </div>
         </div>
       </form>
@@ -1041,7 +1041,7 @@ function fromLocalInput(value: string): string | null {
 
 function AutoReplyTab({ view }: { view: MailboxView }) {
   const { t } = useTranslation()
-  const { busy, error, saved, save, touch } = useSave()
+  const { busy, error, save } = useSave()
   const existing: MailboxAutoReply | null | undefined = view.mailbox.autoReply
   const [enabled, setEnabled] = useState(existing?.enabled ?? false)
   const [from, setFrom] = useState(toLocalInput(existing?.from))
@@ -1062,7 +1062,6 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
     (value: T) => {
       set(value)
       setDirty(true)
-      touch()
     }
 
   return (
@@ -1154,7 +1153,6 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
           <button className="primary" type="submit" disabled={busy || !dirty}>
             {t('common.save')}
           </button>
-          {saved && !dirty && <span className="muted">{t('common.saved')}</span>}
         </div>
       </div>
     </form>
