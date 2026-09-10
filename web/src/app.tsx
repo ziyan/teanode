@@ -188,6 +188,7 @@ export function App() {
                   <Route path="/mailbox/compose" element={<MailboxComposePage />} />
                   <Route path="/mailbox/contacts" element={<MailboxContactsPage />} />
                   <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
+                  <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                   <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/:folderId" element={<MailboxPage />} />
@@ -227,6 +228,9 @@ export function App() {
                   before knowing which one held the thing they wanted. */}
                   <Route path="/access" element={<AccessPage />} />
                   <Route path="/access/:tab" element={<AccessPage />} />
+                  {/* The row a tab is showing, in the path beside the tab: it
+                      is a place, so it can be linked to and gone back to. */}
+                  <Route path="/access/:tab/:selected" element={<AccessPage />} />
                   <Route path="/server" element={<ServerPage />} />
                   <Route path="/server/:tab" element={<ServerPage />} />
 

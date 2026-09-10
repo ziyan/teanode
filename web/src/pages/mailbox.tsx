@@ -1486,7 +1486,7 @@ function Reader({
             icon={<ListIcon size={16} />}
             disabled={busy}
             onClick={() =>
-              navigate(`/mailbox/subscriptions?key=${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
+              navigate(`/mailbox/subscriptions/${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
             }
           />
         )}

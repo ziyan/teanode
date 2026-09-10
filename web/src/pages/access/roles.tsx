@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
@@ -71,8 +71,21 @@ export function RolesTab() {
 
   // Which role is being read, in the query string, so it can be linked to and
   // survives a reload.
-  const [parameters, setParameters] = useSearchParams()
-  const asked = parameters.get('role') ?? ''
+  // Which row is open is in the path, beside the tab. It was a query
+  // parameter written with replace, so choosing one left no history entry:
+  // the back button left the page rather than going to the row read before.
+  const navigate = useNavigate()
+  const asked = useParams().selected ?? ''
+
+  // Links made before the row moved into the path still work, and become the
+  // new shape as they arrive.
+  const [parameters] = useSearchParams()
+  const legacy = parameters.get('role') ?? ''
+  useEffect(() => {
+    if (legacy) {
+      navigate(`/access/roles/${legacy}`, { replace: true })
+    }
+  }, [legacy, navigate])
 
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Role | null>(null)
@@ -101,7 +114,7 @@ export function RolesTab() {
   const permissions = data?.permissions ?? []
 
   const chosen = roles.find((role) => role.id === asked) ?? roles[0] ?? null
-  const choose = (roleId: string) => setParameters(roleId ? { role: roleId } : {}, { replace: true })
+  const choose = (roleId: string) => navigate(roleId ? `/access/roles/${roleId}` : '/access/roles')
 
   function startAdding() {
     setProblem(null)

@@ -8,6 +8,16 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- What a page is showing is in the path, not beside it. A subscription being
+  read, a group being looked at and a role being edited were each held in a
+  variable or in a query parameter written with `replace`, so choosing one
+  made no history: the back button left the page rather than returning to the
+  one read before, and nothing led forward again. They are
+  `/mailbox/subscriptions/<list>`, `/access/groups/<id>` and
+  `/access/roles/<id>` now — places, so they can be linked to, gone back to,
+  and come forward from. Older links carrying `?key=`, `?group=` or `?role=`
+  still arrive where they meant to.
+
 - A discarded draft is gone from the screen as well as from the server. The
   composer told the page it had closed, and the page treated that as somebody
   closing the composer — which keeps the draft — so the row stayed in the list
