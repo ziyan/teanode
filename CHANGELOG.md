@@ -8,6 +8,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Sending a message opens the message. The compose page used to become a card
+  saying "Sent." with a link to go and find it in the Sent folder; it goes
+  there now, to the message itself, and says "Sent." in the line at the foot
+  of the window with everything else. `SendMailboxMessage` returns the copy
+  that landed in Sent, so the dashboard opens the message rather than a folder
+  to look through — and falls back to the folder when there is no copy.
+
 - Everything that has just happened is said in the same place. "Saved.",
   "Saved, and in use now", "It came back." — each was a word beside a button
   or a green line above a form, which had to be taken back the moment anything

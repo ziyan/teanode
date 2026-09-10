@@ -1359,7 +1359,6 @@ export const ja: Catalog = {
   'compose.mailbox.draftSaved': '下書きを保存しました {time}',
   'compose.mailbox.saving': '保存中…',
   'compose.mailbox.sent': '送信しました。',
-  'compose.mailbox.sentHint': '送信済みフォルダーにあります。',
   'compose.mailbox.noAddress': 'このメールボックスにはまだ送信元にできるアドレスがありません。',
   'compose.mailbox.quotedOn': '{date}、{from} さんは書きました:',
   'compose.mailbox.forwardedHeader': '転送メッセージ',

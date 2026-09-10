@@ -1370,7 +1370,6 @@ export const en = {
   'compose.mailbox.draftSaved': 'Draft saved {time}',
   'compose.mailbox.saving': 'Saving…',
   'compose.mailbox.sent': 'Sent.',
-  'compose.mailbox.sentHint': 'It is in your Sent folder.',
   'compose.mailbox.noAddress': 'This mailbox has no address to send from yet.',
   'compose.mailbox.quotedOn': 'On {date}, {from} wrote:',
   'compose.mailbox.forwardedHeader': 'Forwarded message',
