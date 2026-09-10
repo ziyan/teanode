@@ -2105,6 +2105,24 @@ pre.message-text {
     min-height: 40px;
   }
 
+  /* A height was not enough for the ones that are only a picture. Nothing
+     gave them a width, so they stayed as wide as the icon inside them: the
+     cross that dismisses a toast was 22 pixels across in a 40 pixel row, and
+     the star on a conversation 28. A target has two dimensions.
+     
+     The icon stays the size it was — this widens the box around it and
+     centres it there, rather than drawing anything bigger. Not .icon-button:
+     the rule below keeps those at the size they are on the bar, deliberately,
+     and this is not the place to overturn that. */
+  .toast-close,
+  .mailbox-star {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
   /* iOS zooms the whole page in when a field smaller than 16px takes focus,
      and does not zoom back out. Sizing the fields at 16px is the only way to
      prevent it without disabling zoom altogether, which would be worse. */

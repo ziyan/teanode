@@ -8,6 +8,12 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A target on a phone has two dimensions. Every control was given a height of
+  forty pixels there, and nothing gave the ones that are only a picture a
+  width, so they stayed as wide as the icon inside: the cross that dismisses a
+  toast was 22 pixels across in a 40 pixel row, and the star on a conversation
+  28. The icons are drawn the same size; the box around them is not.
+
 - Sending a message opens the message. The compose page used to become a card
   saying "Sent." with a link to go and find it in the Sent folder; it goes
   there now, to the message itself, and says "Sent." in the line at the foot
