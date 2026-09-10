@@ -8,6 +8,20 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A subscription exists as soon as a list writes to you. The row was made only
+  when something was done about a list — muted, pictures allowed, unsubscribe
+  asked for — so until then a list had no identity of its own: nothing to link
+  to, and nowhere to keep anything about it. Delivery makes it now, and the
+  message names it, so what a list has sent is a lookup rather than a grouping
+  over a text key. The lists that arrived before this did are given rows and
+  their mail is joined to them by the migration.
+
+- A list is linked to by its own identity: `/mailbox/subscriptions/<id>`
+  rather than the list's key. The key is the identifier the sender chose for
+  itself, usually an address, and an address in the address bar is an address
+  on the screen of anybody looking over a shoulder. Links carrying a key still
+  arrive where they meant to, and are put right as they land.
+
 - A list kept out of the Inbox arrives unread. It was filed in the Archive and
   marked read on the way, which said it had been dealt with when it had only
   been put somewhere else — and left every subscription showing nothing to

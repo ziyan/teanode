@@ -39,7 +39,9 @@ type MailboxOperation interface {
 	DeleteFolder(folderId string) error
 
 	// AddItem places a message in a folder, with the folder's next UID.
-	AddItem(folderId, mailId string, flags models.MailboxItemFlags) (*models.MailboxItem, error)
+	// AddItem puts a message in a folder. subscriptionId names the list it
+	// arrived from, for the delivery that knows; "" everywhere else.
+	AddItem(folderId, mailId, subscriptionId string, flags models.MailboxItemFlags) (*models.MailboxItem, error)
 	GetItem(itemId string) (*models.MailboxItem, error)
 	ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error)
 	CountItems(folderId string, options *ItemOptions) (int64, error)
@@ -222,6 +224,8 @@ type mailboxItemModel struct {
 	Deleted   bool       `gorm:"column:deleted"`
 	AddedAt   time.Time  `gorm:"column:added_at"`
 	ImagesAt  *time.Time `gorm:"column:images_at"`
+
+	SubscriptionID string `gorm:"column:subscription_id"`
 }
 
 func (mailboxItemModel) TableName() string { return "mailbox_item" }
@@ -351,6 +355,8 @@ func itemFromModel(model *mailboxItemModel) *models.MailboxItem {
 		Deleted:   model.Deleted,
 		AddedAt:   model.AddedAt.In(time.Local),
 		ImagesAt:  localTime(model.ImagesAt),
+
+		SubscriptionID: model.SubscriptionID,
 	}
 }
 
@@ -804,13 +810,14 @@ func (self *transaction) notifyFolder(folderId string) error {
 	return self.tx.Exec("SELECT pg_notify(?, ?)", FolderChangedChannel, folderId).Error
 }
 
-func (self *transaction) AddItem(folderId, mailId string, flags models.MailboxItemFlags) (*models.MailboxItem, error) {
+func (self *transaction) AddItem(folderId, mailId, subscriptionId string, flags models.MailboxItemFlags) (*models.MailboxItem, error) {
 	uid, modseq, err := self.nextUIDAndModSeq(folderId)
 	if err != nil {
 		return nil, err
 	}
 	model := &mailboxItemModel{
 		ID: newID(), FolderID: folderId, MailID: mailId, UID: uid, ModSeq: modseq, AddedAt: time.Now(),
+		SubscriptionID: subscriptionId,
 	}
 	applyFlags(model, flags)
 	if err := self.tx.Create(model).Error; err != nil {
@@ -1260,6 +1267,7 @@ func (self *transaction) ListSubscriptions(mailboxId string, limit, offset int) 
 			subscription.Unread = count.Unread
 		}
 		if request := requests[row.ListKey]; request != nil {
+			subscription.ID = request.ID
 			subscription.RequestedAt = request.RequestedAt
 			subscription.Method = request.Method
 			subscription.Failed = request.Failed

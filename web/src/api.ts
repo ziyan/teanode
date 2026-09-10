@@ -639,6 +639,8 @@ export interface MailboxItem {
   forwarded: boolean
   draft: boolean
   addedAt: string
+  // The list this arrived from, when it arrived from one.
+  subscriptionId?: string
 }
 
 export interface MailboxItemPage {

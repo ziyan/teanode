@@ -273,8 +273,14 @@ type GetMailboxSubscriptionArguments struct {
 	// MailboxID of the mailbox to read
 	MailboxID string `json:"mailboxId"`
 
-	// Key of the subscription, as ListMailboxSubscriptions gives it
-	Key string `json:"key"`
+	// ID of the subscription, as a link to one names it. Either this or the
+	// key; this is what the dashboard sends.
+	ID *string `json:"id"`
+
+	// Key of the subscription, as ListMailboxSubscriptions gives it. Still
+	// answered, so that a link made when the key was the identity keeps
+	// working.
+	Key *string `json:"key"`
 }
 
 // GetMailboxSubscription is one list: the same row the list gives, for a page
@@ -285,7 +291,20 @@ func (self *graph) GetMailboxSubscription(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	subscription, err := self.transaction(ctx).GetSubscription(mailbox.ID, arguments.Key)
+	tx := self.transaction(ctx)
+	identity, key := "", ""
+	if arguments.ID != nil {
+		identity = strings.TrimSpace(*arguments.ID)
+	}
+	if arguments.Key != nil {
+		key = strings.TrimSpace(*arguments.Key)
+	}
+	var subscription *models.MailboxSubscription
+	if identity != "" {
+		subscription, err = tx.GetSubscriptionByID(mailbox.ID, identity)
+	} else {
+		subscription, err = tx.GetSubscription(mailbox.ID, key)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,8 @@ package db
 import (
 	"time"
 
+	"gorm.io/gorm/clause"
+
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -43,6 +45,15 @@ type SubscriptionQuery interface {
 	// SetSubscriptionImages says that this list's pictures may be loaded
 	// without asking, every time, or takes that back.
 	SetSubscriptionImages(mailboxId, listKey string, show bool) error
+
+	// EnsureSubscription is the row for a list this mailbox has heard from,
+	// made the first time it writes. Delivery calls it for every message that
+	// names a list, so it is one lookup by the unique key and an insert only
+	// on the first.
+	EnsureSubscription(mailboxId, listKey string) (string, error)
+
+	// GetSubscriptionByID is one list by the identity a link names.
+	GetSubscriptionByID(mailboxId, subscriptionId string) (*models.MailboxSubscription, error)
 }
 
 type mailboxSubscriptionModel struct {
@@ -151,6 +162,72 @@ func (self *transaction) setSubscriptionTime(mailboxId, listKey, column string, 
 		row.ImagesAt = at
 	}
 	return self.tx.Create(row).Error
+}
+
+// EnsureSubscription makes the row that says this mailbox receives this list.
+//
+// A subscription used to be made only when something was done about one —
+// muted, pictures allowed, unsubscribe asked for — and until then a list was
+// whatever the mail said, grouped by its key. That left a list with no
+// identity of its own: nothing to link to, and nowhere to keep anything about
+// it. It is made on delivery now.
+//
+// Insert-if-absent under the unique key on (mailbox_id, list_key), so two
+// messages from the same list arriving at once make one row rather than an
+// error.
+func (self *transaction) EnsureSubscription(mailboxId, listKey string) (string, error) {
+	if mailboxId == "" || listKey == "" {
+		return "", nil
+	}
+	var existing []mailboxSubscriptionModel
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"list_key\" = ?", mailboxId, listKey).
+		Limit(1).Find(&existing).Error; err != nil {
+		return "", err
+	}
+	if len(existing) > 0 {
+		return existing[0].ID, nil
+	}
+
+	now := time.Now().In(time.Local)
+	row := &mailboxSubscriptionModel{
+		ID:         security.NewULID(),
+		CreatedAt:  now,
+		ModifiedAt: now,
+		MailboxID:  mailboxId,
+		ListKey:    listKey,
+	}
+	if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error; err != nil {
+		return "", err
+	}
+	// Nothing was written when another delivery got there first, and that
+	// one's id is the answer.
+	var written []mailboxSubscriptionModel
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"list_key\" = ?", mailboxId, listKey).
+		Limit(1).Find(&written).Error; err != nil {
+		return "", err
+	}
+	if len(written) == 0 {
+		return "", nil
+	}
+	return written[0].ID, nil
+}
+
+// GetSubscriptionByID is one list named the way a link names it. The listing
+// is still what describes a list — this only turns an identity into the key
+// that listing is grouped by.
+func (self *transaction) GetSubscriptionByID(mailboxId, subscriptionId string) (*models.MailboxSubscription, error) {
+	if subscriptionId == "" {
+		return nil, nil
+	}
+	var rows []mailboxSubscriptionModel
+	if err := self.tx.Where("\"id\" = ? AND \"mailbox_id\" = ?", subscriptionId, mailboxId).
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return self.GetSubscription(mailboxId, rows[0].ListKey)
 }
 
 // SetSubscriptionImages says the pictures in this list's mail may be loaded

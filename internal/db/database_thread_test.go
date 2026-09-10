@@ -100,7 +100,7 @@ func TestListThreadsGroupsAFolderByConversation(t *testing.T) {
 			{replies[1], models.MailboxItemFlags{}},
 		}
 		for _, entry := range filing {
-			if _, err := tx.AddItem(inbox.ID, entry.mail.ID, entry.flags); err != nil {
+			if _, err := tx.AddItem(inbox.ID, entry.mail.ID, "", entry.flags); err != nil {
 				t.Fatalf("AddItem: %s", err)
 			}
 		}
@@ -206,10 +206,10 @@ func TestThreadItemsSpanFolders(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		if _, err := tx.AddItem(inbox.ID, question.ID, models.MailboxItemFlags{}); err != nil {
+		if _, err := tx.AddItem(inbox.ID, question.ID, "", models.MailboxItemFlags{}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
-		if _, err := tx.AddItem(sent.ID, answer.ID, models.MailboxItemFlags{}); err != nil {
+		if _, err := tx.AddItem(sent.ID, answer.ID, "", models.MailboxItemFlags{}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
 

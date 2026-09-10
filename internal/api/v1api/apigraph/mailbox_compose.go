@@ -351,7 +351,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 		return nil, err
 	}
 	yes := true
-	item, err := tx.AddItem(drafts.ID, created.ID, models.MailboxItemFlags{Draft: &yes, Seen: &yes})
+	item, err := tx.AddItem(drafts.ID, created.ID, "", models.MailboxItemFlags{Draft: &yes, Seen: &yes})
 	if err != nil {
 		return nil, translateError(err)
 	}

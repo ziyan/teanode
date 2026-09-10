@@ -68,7 +68,7 @@ const THREADS = `
       threads {
         threadId count unread flagged participants itemIds hasDraft
         item {
-          id folderId mailId uid seen flagged answered forwarded draft addedAt
+          id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
           mail {
             id from fromName sender subject recipients receivedAt size kind status logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
@@ -85,7 +85,7 @@ const THREAD = `
       items {
         folderId folderName folderKind
         item {
-          id folderId mailId uid seen flagged answered forwarded draft addedAt
+          id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
             listKey listName listOneClick logoDomain
@@ -1554,7 +1554,13 @@ function Reader({
             icon={<ListIcon size={16} />}
             disabled={busy}
             onClick={() =>
-              navigate(`/mailbox/subscriptions/${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
+              // The item knows which list it came from, so this is the list
+              // itself rather than a name to look one up by.
+              navigate(
+                newest.item.subscriptionId
+                  ? `/mailbox/subscriptions/${newest.item.subscriptionId}`
+                  : `/mailbox/subscriptions/${encodeURIComponent(newest.item.mail?.listKey ?? '')}`,
+              )
             }
           />
         )}

@@ -641,7 +641,7 @@ func (self *session) Append(name string, reader goimap.LiteralReader, options *g
 		if err := self.settings.Storage.Put(context.Background(), created.ID, headers, body); err != nil {
 			return err
 		}
-		item, err := tx.AddItem(entry.folder.ID, created.ID, flags)
+		item, err := tx.AddItem(entry.folder.ID, created.ID, "", flags)
 		if err != nil {
 			return err
 		}

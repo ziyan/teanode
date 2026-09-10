@@ -87,7 +87,19 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 		return nil, nil
 	}
 
-	item, err := tx.AddItem(target.ID, mail.ID, flags)
+	// A list this mailbox now receives. The row is made on the first message
+	// rather than the first time somebody acts on one, so that every list has
+	// an identity — something to link to, and something to keep what is known
+	// about it — and the item names it, so asking what a list has sent is a
+	// lookup rather than a grouping over the mail's list key.
+	subscriptionId := ""
+	if mail.ListKey != "" {
+		if subscriptionId, err = tx.EnsureSubscription(mailbox.ID, mail.ListKey); err != nil {
+			return nil, err
+		}
+	}
+
+	item, err := tx.AddItem(target.ID, mail.ID, subscriptionId, flags)
 	if err != nil {
 		return nil, err
 	}

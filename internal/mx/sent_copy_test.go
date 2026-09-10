@@ -42,7 +42,7 @@ func TestASentMessageIsFiledOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		first, err := tx.AddItem(sent.ID, uploaded.ID, models.MailboxItemFlags{})
+		first, err := tx.AddItem(sent.ID, uploaded.ID, "", models.MailboxItemFlags{})
 		if err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}

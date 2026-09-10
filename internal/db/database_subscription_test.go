@@ -63,7 +63,7 @@ func TestSubscriptionsGroupTheMailOfEachList(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		if _, err := tx.AddItem(folder.ID, mail.ID, models.MailboxItemFlags{Seen: &seen}); err != nil {
+		if _, err := tx.AddItem(folder.ID, mail.ID, "", models.MailboxItemFlags{Seen: &seen}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
 	}

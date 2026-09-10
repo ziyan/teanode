@@ -35,19 +35,24 @@ const SUBSCRIPTIONS = `
     ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset) {
       total
       subscriptions {
-        key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+        id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
         requestedAt method failed error stripped mutedAt imagesAt
       }
     }
   }`
 
 const ONE = `
-  query ($mailboxId: String!, $key: String!) {
-    GetMailboxSubscription(mailboxId: $mailboxId, key: $key) {
-      key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
+  query ($mailboxId: String!, $id: String, $key: String) {
+    GetMailboxSubscription(mailboxId: $mailboxId, id: $id, key: $key) {
+      id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
       requestedAt method failed error stripped mutedAt imagesAt
     }
   }`
+
+// A ULID as this server writes them: twenty-six characters of Crockford's
+// base32, lowercased — no i, l, o or u, which is what keeps it from being
+// misread aloud.
+const IDENTITY = /^[0-9abcdefghjkmnpqrstvwxyz]{26}$/
 
 const IMAGES = `
   mutation ($mailboxId: String!, $key: String!, $show: Boolean!) {
@@ -85,6 +90,10 @@ const UNSUBSCRIBE = `
   }`
 
 export type Subscription = {
+  // What a link to this list names. The key is the sender's own identifier,
+  // often an address, and an address in a URL is an address on the screen of
+  // anybody looking over a shoulder.
+  id: string
   key: string
   name: string
   from: string
@@ -138,22 +147,20 @@ export function MailboxSubscriptionsPage() {
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
 
-  // A subscription is named by its list key rather than by a row id: the
-  // lists come from the mail, grouped by that key, and the row in
-  // mailbox_subscription exists only once something has been done to one —
-  // muted, pictures allowed, unsubscribe asked for. Most lists have no row,
-  // so there is no id to put here.
+  // A list is named in the address by its own identity, made when its first
+  // message arrived. Not by its key: the key is the identifier the sender
+  // chose for itself, usually an address, and an address in the address bar
+  // is an address on the screen of anybody looking over a shoulder.
   const navigate = useNavigate()
-  const wanted = useParams().key ?? null
-
-  // Links made when this was a query parameter still work.
   const [search] = useSearchParams()
-  const legacy = search.get('key')
-  useEffect(() => {
-    if (legacy) {
-      navigate(`/mailbox/subscriptions/${encodeURIComponent(legacy)}`, { replace: true })
-    }
-  }, [legacy, navigate])
+  const asked = useParams().key ?? search.get('key')
+
+  // Which it is, told apart by shape. A ULID is twenty-six characters of
+  // Crockford's base32; a list key is a domain or an address, and looks
+  // nothing like one. Anything that is not an identity is a key from a link
+  // made before lists had identities, and is answered and then corrected.
+  const readingId = asked && IDENTITY.test(asked) ? asked : null
+  const legacyKey = asked && !IDENTITY.test(asked) ? asked : null
   const [rows, setRows] = useState<Subscription[]>([])
   const [total, setTotal] = useState(0)
   const [paging, setPaging] = useState(false)
@@ -210,9 +217,8 @@ export function MailboxSubscriptionsPage() {
   // opening a list left no trace: the back button went to whatever came
   // before this page, and there was no way forward to the list just left.
   // Reading one is a place, and a place has a URL.
-  const readingKey = wanted
-  const read = (key: string | null) =>
-    navigate(key ? `/mailbox/subscriptions/${encodeURIComponent(key)}` : '/mailbox/subscriptions')
+  const read = (subscription: Subscription | null) =>
+    navigate(subscription ? `/mailbox/subscriptions/${subscription.id}` : '/mailbox/subscriptions')
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -221,25 +227,40 @@ export function MailboxSubscriptionsPage() {
   // own rather than waiting for the reader to page down to it.
   const [fetched, setFetched] = useState<Subscription | null>(null)
   const reading =
-    subscriptions.find((subscription) => subscription.key === readingKey) ??
-    (fetched?.key === readingKey ? fetched : null)
+    subscriptions.find((subscription) => subscription.id === readingId) ??
+    (fetched?.id === readingId ? fetched : null)
 
   useEffect(() => {
-    if (!mailboxId || !readingKey || subscriptions.some((subscription) => subscription.key === readingKey)) {
+    if (!mailboxId || (!readingId && !legacyKey)) {
+      return
+    }
+    if (readingId && subscriptions.some((subscription) => subscription.id === readingId)) {
       return
     }
     let cancelled = false
-    void graphql<{ GetMailboxSubscription: Subscription | null }>(ONE, { mailboxId, key: readingKey })
+    void graphql<{ GetMailboxSubscription: Subscription | null }>(ONE, {
+      mailboxId,
+      id: readingId,
+      key: legacyKey,
+    })
       .then((response) => {
-        if (!cancelled) {
-          setFetched(response.GetMailboxSubscription)
+        if (cancelled) {
+          return
+        }
+        const found = response.GetMailboxSubscription
+        setFetched(found)
+        // A link made when the key was the identity: answered, and then the
+        // address is put right, so what gets copied from here afterwards is
+        // the identity rather than the address of a mailing list.
+        if (found && legacyKey) {
+          navigate(`/mailbox/subscriptions/${found.id}`, { replace: true })
         }
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [mailboxId, readingKey, subscriptions])
+  }, [mailboxId, readingId, legacyKey, subscriptions, navigate])
 
   const mute = useCallback(
     async (key: string, muted: boolean) => {
@@ -324,11 +345,11 @@ export function MailboxSubscriptionsPage() {
                 className={[
                   'subscription-row',
                   subscription.unread > 0 ? 'unread' : '',
-                  subscription.key === readingKey ? 'active' : '',
+                  subscription.id === readingId ? 'active' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => read(subscription.key)}
+                onClick={() => read(subscription)}
               >
                 <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
                 <Tooltip label={subscription.from}>
@@ -337,7 +358,7 @@ export function MailboxSubscriptionsPage() {
                     className="subscription-row-link"
                     onClick={(event) => {
                       event.stopPropagation()
-                      read(subscription.key)
+                      read(subscription)
                     }}
                   >
                     <span className="subscription-row-name">{subscription.name}</span>
