@@ -31,9 +31,10 @@ import { DELETE, IconAction, MOVE, MoveToMenu, REPORT_JUNK, SET_FLAGS, ThreadMes
 const PAGE_SIZE = 50
 
 const SUBSCRIPTIONS = `
-  query ($mailboxId: String!, $first: Int, $offset: Int, $includeLeft: Boolean) {
-    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, includeLeft: $includeLeft) {
+  query ($mailboxId: String!, $first: Int, $offset: Int, $left: Boolean) {
+    ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, left: $left) {
       total
+      subscribed
       left
       subscriptions {
         id key name from count unread lastAt lastItemId oneClick unsubscribe logoDomain
@@ -90,7 +91,7 @@ const UNSUBSCRIBE = `
     }
   }`
 
-type Page = { total: number; left: number; subscriptions: Subscription[] }
+type Page = { total: number; subscribed: number; left: number; subscriptions: Subscription[] }
 
 export type Subscription = {
   // What a link to this list names. The key is the sender's own identifier,
@@ -166,25 +167,39 @@ export function MailboxSubscriptionsPage() {
   const legacyKey = asked && !IDENTITY.test(asked) ? asked : null
   const [rows, setRows] = useState<Subscription[]>([])
   const [total, setTotal] = useState(0)
-  // How many are being kept out, so the button can say what it would show.
-  const [left, setLeft] = useState(0)
+  // How many on each side, so the switch can say what the other one holds.
+  const [counts, setCounts] = useState({ subscribed: 0, left: 0 })
   const [paging, setPaging] = useState(false)
 
-  // A list already left is one that has been dealt with, so it is not in the
-  // list of what somebody is subscribed to. Kept out rather than removed:
-  // mail from it may keep arriving for a while, and knowing that is the point
-  // of having asked to leave.
-  const [includeLeft, setIncludeLeft] = useState(false)
+  // One side or the other. A list somebody has left is not one they are
+  // subscribed to, so the page shows the lists writing to them or the ones
+  // they have dealt with, and says how many are on the side they are not
+  // looking at. Kept rather than gone: mail from a list often keeps arriving
+  // for a while after the asking, and seeing that is the point of having
+  // asked.
+  //
+  // In the address, like everything else that says what a list is showing, so
+  // it survives a reload and the back button leads out of it.
+  const showingLeft = search.get('left') === 'true'
+  const showSide = (left: boolean) => {
+    const written = new URLSearchParams(search)
+    if (left) {
+      written.set('left', 'true')
+    } else {
+      written.delete('left')
+    }
+    navigate({ pathname: '/mailbox/subscriptions', search: written.toString() })
+  }
   const query = useQuery(
     () =>
       mailboxId
         ? graphql<{ ListMailboxSubscriptions: Page }>(SUBSCRIPTIONS, {
             mailboxId,
             first: PAGE_SIZE,
-            includeLeft,
+            left: showingLeft,
           })
         : Promise.resolve(null),
-    [mailboxId, includeLeft],
+    [mailboxId, showingLeft],
     { refresh: false },
   )
 
@@ -198,7 +213,7 @@ export function MailboxSubscriptionsPage() {
     }
     setRows(page.subscriptions)
     setTotal(page.total)
-    setLeft(page.left ?? 0)
+    setCounts({ subscribed: page.subscribed ?? 0, left: page.left ?? 0 })
   }, [query.data])
 
   const loadMore = useCallback(async () => {
@@ -208,7 +223,7 @@ export function MailboxSubscriptionsPage() {
         mailboxId,
         first: PAGE_SIZE,
         offset: rows.length,
-        includeLeft,
+        left: showingLeft,
       })
       const page = response.ListMailboxSubscriptions
       setRows((previous) => {
@@ -223,7 +238,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setPaging(false)
     }
-  }, [mailboxId, rows.length, includeLeft, t])
+  }, [mailboxId, rows.length, showingLeft, t])
 
   const subscriptions = rows
 
@@ -233,7 +248,12 @@ export function MailboxSubscriptionsPage() {
   // before this page, and there was no way forward to the list just left.
   // Reading one is a place, and a place has a URL.
   const read = (subscription: Subscription | null) =>
-    navigate(subscription ? `/mailbox/subscriptions/${subscription.id}` : '/mailbox/subscriptions')
+    navigate({
+      pathname: subscription ? `/mailbox/subscriptions/${subscription.id}` : '/mailbox/subscriptions',
+      // The side travels with it: coming back from a list lands on the side
+      // it was found on.
+      search: showingLeft ? 'left=true' : '',
+    })
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -346,18 +366,28 @@ export function MailboxSubscriptionsPage() {
               {t('subscriptions.title')}
               {query.data ? ` · ${total}` : ''}
             </span>
-            {/* Offered only when there is something to show, and saying how
-                many: a button that might do nothing is a question about
-                whether it is broken. */}
-            {(includeLeft || left > 0) && (
-              <button
-                type="button"
-                className={includeLeft ? 'active' : undefined}
-                aria-pressed={includeLeft}
-                onClick={() => setIncludeLeft((previous) => !previous)}
-              >
-                {includeLeft ? t('subscriptions.hideLeft') : t('subscriptions.showLeft', { count: left })}
-              </button>
+            {/* Shown once there is a second side to go to. Until somebody
+                has left a list there is only one answer, and a switch with
+                one side is a control that does nothing. */}
+            {(showingLeft || counts.left > 0) && (
+              <div className="segmented" role="group" aria-label={t('subscriptions.sides')}>
+                <button
+                  type="button"
+                  className={showingLeft ? undefined : 'active'}
+                  aria-pressed={!showingLeft}
+                  onClick={() => showSide(false)}
+                >
+                  {t('subscriptions.sideSubscribed', { count: counts.subscribed })}
+                </button>
+                <button
+                  type="button"
+                  className={showingLeft ? 'active' : undefined}
+                  aria-pressed={showingLeft}
+                  onClick={() => showSide(true)}
+                >
+                  {t('subscriptions.sideLeft', { count: counts.left })}
+                </button>
+              </div>
             )}
           </div>
 

@@ -16,18 +16,37 @@ import (
 // person did about it — and it outlives the mail, so that somebody who
 // unsubscribes and then deletes every message still sees that they asked.
 
+// SubscriptionSide is which side of a subscription list somebody is looking
+// at. A list they have left is not one they are subscribed to, and the page
+// shows one or the other rather than both at once — so the counts beside each
+// are counts of that side.
+//
+// A request that failed is not a list left: nothing was accepted and the mail
+// keeps coming, so it belongs with the subscribed.
+type SubscriptionSide int
+
+const (
+	// SubscribedTo is every list still writing that has not been left.
+	SubscribedTo SubscriptionSide = iota
+
+	// Left is the ones asked to stop, and honoured.
+	Left
+
+	// EitherSide is both, for looking one up rather than listing them.
+	EitherSide
+)
+
 type SubscriptionQuery interface {
 	// ListSubscriptions is the mailing lists a mailbox receives, newest
 	// first, with how much of each it holds and what has been asked of it.
 	//
-	// includeLeft brings back the ones already left. They are left out by
-	// default: a list of subscriptions is a list of what somebody is
-	// subscribed to, and the ones they have dealt with are the ones they do
-	// not need to see. A request that failed is not a list left.
-	ListSubscriptions(mailboxId string, limit, offset int, includeLeft bool) ([]*models.MailboxSubscription, error)
+	// side chooses which of them: the ones still subscribed to, the ones
+	// left, or either.
+	ListSubscriptions(mailboxId string, limit, offset int, side SubscriptionSide) ([]*models.MailboxSubscription, error)
 
-	// CountSubscriptions is how many there are, for the count under the list.
-	CountSubscriptions(mailboxId string, includeLeft bool) (int64, error)
+	// CountSubscriptions is how many there are on one side, for the count
+	// beside the switch between them.
+	CountSubscriptions(mailboxId string, side SubscriptionSide) (int64, error)
 
 	// GetSubscription is one of them, or nil when the mailbox has no mail
 	// from that list.
@@ -108,10 +127,10 @@ func (self *transaction) GetSubscription(mailboxId, listKey string) (*models.Mai
 	// One list is the listing narrowed to it: the same grouping, the same
 	// counts, and the same record of what was asked, rather than a second
 	// query that could answer differently.
-	// Left ones included: a link to a list opens it whether or not the person
-	// has since asked to leave, and the page that shows one is how they see
-	// that they did.
-	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0, true)
+	// Either side: a link to a list opens it whether or not the person has
+	// since asked to leave, and the page that shows one is how they see that
+	// they did.
+	subscriptions, err := self.ListSubscriptions(mailboxId, 0, 0, EitherSide)
 	if err != nil {
 		return nil, err
 	}

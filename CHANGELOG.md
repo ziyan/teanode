@@ -8,14 +8,16 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
-- A list you have left is out of the list of what you are subscribed to. It
-  said "Asked to leave" and stayed where it was, so the ones already dealt
-  with crowded the ones still to deal with. They are marked Unsubscribed and
-  kept out, with a button that says how many there are and shows them; a link
-  to one still opens it, because mail from a list can keep arriving after the
-  asking and seeing that is the point of having asked. An attempt that failed
-  is not a list left: nothing was accepted, the mail keeps coming, and that
-  row is the one somebody needs in order to try again.
+- Subscriptions has two sides, and shows one of them: the lists writing to you
+  and the lists you have left, with a switch between that says how many are on
+  each. A list already left said "Asked to leave" and stayed where it was, so
+  the ones dealt with crowded the ones still to deal with. Which side is being
+  read is in the address, and it travels with a list you open, so coming back
+  lands where you were. A link to a list opens it from either side, because
+  mail can keep arriving after the asking and seeing that is the point of
+  having asked. An attempt that failed is not a list left: nothing was
+  accepted, the mail keeps coming, and that row is the one somebody needs in
+  order to try again.
 
 - A subscription exists as soon as a list writes to you. The row was made only
   when something was done about a list — muted, pictures allowed, unsubscribe

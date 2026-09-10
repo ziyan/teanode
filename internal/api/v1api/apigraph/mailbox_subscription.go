@@ -33,20 +33,24 @@ type ListMailboxSubscriptionsArguments struct {
 	First  *int `json:"first"`
 	Offset *int `json:"offset"`
 
-	// IncludeLeft brings back the lists already left as well. Default false:
-	// a list of subscriptions is a list of what somebody is subscribed to, and
-	// one they have left is one they have dealt with. A request that failed is
-	// not a list left, and is always here.
-	IncludeLeft *bool `json:"includeLeft"`
+	// Left asks for the lists already left instead of the ones still
+	// subscribed to. One or the other, not both: a list somebody has left is
+	// not one they are subscribed to, and a page called Subscriptions that
+	// shows both is answering two questions at once. Default false.
+	//
+	// A request that failed is not a list left — nothing was accepted and the
+	// mail keeps coming — so those are with the subscribed.
+	Left *bool `json:"left"`
 }
 
 type MailboxSubscriptionPage struct {
 	Subscriptions []*models.MailboxSubscription `json:"subscriptions"`
 	Total         int64                         `json:"total"`
 
-	// Left is how many are being kept out of this answer, so the page can
-	// offer to show them and say how many there are.
-	Left int64 `json:"left"`
+	// How many there are on each side, whichever side is being shown, so the
+	// switch between them can say what it would show.
+	Subscribed int64 `json:"subscribed"`
+	Left       int64 `json:"left"`
 }
 
 // ListMailboxSubscriptions is every mailing list this mailbox receives: who
@@ -66,27 +70,36 @@ func (self *graph) ListMailboxSubscriptions(ctx context.Context,
 	if arguments.Offset != nil && *arguments.Offset > 0 {
 		offset = *arguments.Offset
 	}
-	includeLeft := arguments.IncludeLeft != nil && *arguments.IncludeLeft
+	side := db.SubscribedTo
+	if arguments.Left != nil && *arguments.Left {
+		side = db.Left
+	}
 	tx := self.transaction(ctx)
-	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, includeLeft)
+	subscriptions, err := tx.ListSubscriptions(mailbox.ID, limit, offset, side)
 	if err != nil {
 		return nil, err
 	}
-	total, err := tx.CountSubscriptions(mailbox.ID, includeLeft)
+	// Both counts, whichever side is being read: the switch says how many are
+	// on the other side as well, and a number nobody can see is how somebody
+	// comes to wonder where a list they remember has gone.
+	subscribed, err := tx.CountSubscriptions(mailbox.ID, db.SubscribedTo)
 	if err != nil {
 		return nil, err
 	}
-	// How many are being left out, so the page can offer them rather than
-	// leave somebody wondering where a list they remember has gone.
-	left := int64(0)
-	if !includeLeft {
-		everything, err := tx.CountSubscriptions(mailbox.ID, true)
-		if err != nil {
-			return nil, err
-		}
-		left = everything - total
+	left, err := tx.CountSubscriptions(mailbox.ID, db.Left)
+	if err != nil {
+		return nil, err
 	}
-	return &MailboxSubscriptionPage{Subscriptions: subscriptions, Total: total, Left: left}, nil
+	total := subscribed
+	if side == db.Left {
+		total = left
+	}
+	return &MailboxSubscriptionPage{
+		Subscriptions: subscriptions,
+		Total:         total,
+		Subscribed:    subscribed,
+		Left:          left,
+	}, nil
 }
 
 type ReadMailboxSubscriptionArguments struct {
