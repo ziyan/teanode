@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-09-10
+
 ### Fixed
 
 - A list you have left says when, and says it in a finished sentence.
