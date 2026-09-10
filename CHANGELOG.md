@@ -8,6 +8,15 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A list you have left says when, and says it in a finished sentence.
+  "Asked to leave, in one request," ended on a comma with nothing after it —
+  the phrase was written to be completed by a time that was never rendered —
+  and "in one request" was the name of a protocol rather than anything a
+  reader wants: it is RFC 8058, where the sender undertakes to honour a single
+  request. It reads "Unsubscribed 2 days ago" now, and when the asking went by
+  mail or through the sender's own page it says so, because those take longer
+  to take effect.
+
 - Subscriptions has a search box, above the switch because it narrows both
   sides of it: the counts on the switch are counts of what was asked for, so
   "Unsubscribed · 0" answers "is the one I am looking for over there?". It

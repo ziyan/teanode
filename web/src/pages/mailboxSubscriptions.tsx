@@ -17,7 +17,7 @@ import {
   MailOpenIcon,
   TrashIcon,
 } from '../components/icons'
-import { RelativeTime } from '../components/relativeTime'
+import { RelativeTime, formatRelative, hasTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
@@ -50,6 +50,15 @@ const ONE = `
       requestedAt method failed error stripped mutedAt imagesAt
     }
   }`
+
+// When leaving was asked for, in the words the rest of the page uses for a
+// time — "3 days ago" rather than a date to compare against today's.
+function whenAsked(value: string | null | undefined, language: string): string {
+  if (!hasTime(value)) {
+    return ''
+  }
+  return formatRelative(new Date(value as string), language)
+}
 
 // A ULID as this server writes them: twenty-six characters of Crockford's
 // base32, lowercased — no i, l, o or u, which is what keeps it from being
@@ -145,7 +154,7 @@ export function unsubscribeKind(subscription: {
 // at the bottom, and hope. A newsletter says how to leave in its headers; this
 // is that, as a page.
 export function MailboxSubscriptionsPage() {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const toast = useToast()
   const mailboxes = useMailboxes()
   const view = mailboxes.current
@@ -501,9 +510,20 @@ export function MailboxSubscriptionsPage() {
                     </span>
                     {subscription.requestedAt ? (
                       <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
+                        {/* When, because the sentence was written to be
+                            finished by it and never was: it ended on a comma
+                            and stopped. When it was asked matters as well as
+                            that it was — a list often keeps writing for a
+                            while afterwards, and the date is how somebody
+                            decides whether "a while" has gone on too long. */}
                         {subscription.failed
-                          ? t('subscriptions.leftFailed', { reason: subscription.error ?? '' })
-                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`)}
+                          ? t('subscriptions.leftFailed', {
+                              when: whenAsked(subscription.requestedAt, language),
+                              reason: subscription.error ?? '',
+                            })
+                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`, {
+                              when: whenAsked(subscription.requestedAt, language),
+                            })}
                       </span>
                     ) : null}
                   </button>
