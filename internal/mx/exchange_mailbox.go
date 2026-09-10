@@ -55,17 +55,19 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	} else if muted, err := tx.SubscriptionIsMuted(mailbox.ID, mail.ListKey); err != nil {
 		return nil, err
 	} else if muted {
-		// A muted list keeps arriving and stops being in the way: the Archive,
-		// already read. Asked second, because what the filter called spam does
-		// not become a tidy archive — Junk is still where that belongs.
+		// A muted list keeps arriving and stops being in the way: the Archive
+		// rather than the Inbox. It arrives unread, because muting a list says
+		// where its mail should wait, not that it has been dealt with — and an
+		// unread count is how somebody finds the ones they have not read when
+		// they have time for them. Asked second, because what the filter
+		// called spam does not become a tidy archive — Junk is still where
+		// that belongs.
 		archive, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindArchive)
 		if err != nil {
 			return nil, err
 		}
 		if archive != nil {
-			seen := true
 			target = archive
-			flags.Seen = &seen
 		}
 	}
 	// One copy per mailbox, however many aliases point at it. A domain with a

@@ -12,9 +12,13 @@ import (
 // A muted list keeps arriving and stops being in the way.
 //
 // The whole feature is this one choice at delivery: the Archive instead of the
-// Inbox, already read. Everything else about muting is a button and a row, and
-// both are worth nothing if this does not hold — a reader who mutes a list and
-// then finds it in the Inbox anyway has been told something untrue.
+// Inbox. Everything else about muting is a button and a row, and both are
+// worth nothing if this does not hold — a reader who mutes a list and then
+// finds it in the Inbox anyway has been told something untrue.
+//
+// It arrives unread. Muting says where a list's mail waits, not that it has
+// been read, and the unread count is how somebody finds what is still waiting
+// when they have time for it.
 func TestAMutedListSkipsTheInbox(t *testing.T) {
 	t.Parallel()
 	database, release := dbtest.AcquireDatabase(t)
@@ -90,8 +94,8 @@ func TestAMutedListSkipsTheInbox(t *testing.T) {
 		if item.FolderID != archive.ID {
 			t.Errorf("a muted list was filed in %q, want the Archive", item.FolderID)
 		}
-		if !item.Seen {
-			t.Error("a muted list's mail should arrive read; it is not being put in front of anybody")
+		if item.Seen {
+			t.Error("a muted list's mail should arrive unread; it is waiting to be read, not dealt with")
 		}
 
 		// Spam from a muted list is still spam. Muting is a reader saying

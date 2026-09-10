@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A list kept out of the Inbox arrives unread. It was filed in the Archive and
+  marked read on the way, which said it had been dealt with when it had only
+  been put somewhere else — and left every subscription showing nothing to
+  read. Muting says where a list's mail waits, not that it is finished with,
+  and the unread count beside a list is how somebody comes back to it when
+  they have time. Muting a list still moves what the Inbox is holding from it;
+  it no longer marks that read either.
+
 ## [0.18.1] - 2026-09-10
 
 ### Fixed

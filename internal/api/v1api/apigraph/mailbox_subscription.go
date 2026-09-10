@@ -150,8 +150,9 @@ type MuteMailboxSubscriptionArguments struct {
 // The other answer to a newsletter, and often the better one. Leaving tells
 // the sender that a person reads this address and cannot be taken back; some
 // lists offer no way out at all; and a reader may want the mail without
-// wanting it first thing. A muted list is filed in the Archive, already read,
-// and is still there to search and to read as a group.
+// wanting it first thing. A muted list is filed in the Archive, unread, and is
+// still there to search and to read as a group — the unread count on the list
+// is how somebody comes back to what they have not read yet.
 //
 // Muting also clears what the Inbox is holding from that list, because a
 // reader muting a list while its mail sits in front of them means both.
@@ -216,10 +217,9 @@ func (self *graph) archiveInboxMail(tx db.Transaction, mailbox *models.Mailbox, 
 	for _, item := range items {
 		itemIds = append(itemIds, item.ID)
 	}
-	seen := true
-	if _, err := tx.SetItemFlags(itemIds, models.MailboxItemFlags{Seen: &seen}); err != nil {
-		return 0, err
-	}
+	// Moved, and left as they were found. Muting a list is a reader saying
+	// where its mail belongs, not that they have read it; marking it read on
+	// the way past is answering a question nobody asked.
 	if _, err := tx.MoveItems(itemIds, archive.ID); err != nil {
 		return 0, err
 	}
