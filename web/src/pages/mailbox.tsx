@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import {
   MailContent,
@@ -165,6 +165,22 @@ const NOTHING_NARROWED: Narrowing = {
   since: '',
   before: '',
   attachment: 'any',
+}
+
+const FILTERS: Filter[] = ['all', 'unread', 'flagged']
+
+// A narrowing read back out of the address. Anything absent is not asked.
+function narrowingFromParameters(parameters: URLSearchParams): Narrowing {
+  const attachment = parameters.get('attachment')
+  return {
+    everywhere: parameters.get('everywhere') === 'true',
+    from: parameters.get('from') ?? '',
+    to: parameters.get('to') ?? '',
+    subject: parameters.get('subject') ?? '',
+    since: parameters.get('since') ?? '',
+    before: parameters.get('before') ?? '',
+    attachment: attachment === 'with' || attachment === 'without' ? attachment : 'any',
+  }
 }
 
 function narrowed(value: Narrowing): boolean {
@@ -344,12 +360,65 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const managesDomains = hasAnywhere(session.permissions, 'domain:manage')
   useBreadcrumbDetail(folderLabel(t, folder))
 
-  const [filter, setFilter] = useState<Filter>('all')
-  const [search, setSearch] = useState('')
-  const [applied, setApplied] = useState('')
-  const [narrowing, setNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
-  const [appliedNarrowing, setAppliedNarrowing] = useState<Narrowing>(NOTHING_NARROWED)
-  const [showNarrowing, setShowNarrowing] = useState(false)
+  // What the list is narrowed to lives in the address. It was state, so a
+  // search could not be linked to, survived neither a reload nor the back
+  // button, and was lost the moment a message was opened from it.
+  //
+  // In the query rather than the path, because none of this is a place: it
+  // is what the place is being shown through. The path still says which
+  // folder and which conversation.
+  const [parameters, setParameters] = useSearchParams()
+  const applied = parameters.get('q') ?? ''
+  const filter = FILTERS.includes(parameters.get('filter') as Filter) ? (parameters.get('filter') as Filter) : 'all'
+  const appliedNarrowing = useMemo(() => narrowingFromParameters(parameters), [parameters])
+
+  // The form's own values, which are what is being typed rather than what is
+  // being asked. They follow the address, so arriving at a link — or coming
+  // back to one — fills the form in with the search it describes.
+  const [search, setSearch] = useState(applied)
+  const [narrowing, setNarrowing] = useState<Narrowing>(appliedNarrowing)
+  const [showNarrowing, setShowNarrowing] = useState(() => narrowed(appliedNarrowing) || appliedNarrowing.everywhere)
+  useEffect(() => {
+    setSearch(applied)
+    setNarrowing(appliedNarrowing)
+  }, [applied, appliedNarrowing])
+
+  // Every move inside this folder keeps the query. A search is part of what
+  // you are looking at, so opening a message found by one — and coming back
+  // from it — has to find the search still there.
+  const within = (path: string) => {
+    const query = parameters.toString()
+    return query === '' ? path : `${path}?${query}`
+  }
+
+  // One writer for all of it, so the address always describes the whole of
+  // what the list is showing rather than the last thing that changed.
+  const applyFilters = (next: { q?: string; filter?: Filter; narrowing?: Narrowing }) => {
+    const wanted = next.q ?? applied
+    const chosen = next.filter ?? filter
+    const narrow = next.narrowing ?? appliedNarrowing
+    const written = new URLSearchParams()
+    if (wanted !== '') {
+      written.set('q', wanted)
+    }
+    if (chosen !== 'all') {
+      written.set('filter', chosen)
+    }
+    if (narrow.everywhere) {
+      written.set('everywhere', 'true')
+    }
+    for (const field of ['from', 'to', 'subject', 'since', 'before'] as const) {
+      if (narrow[field] !== '') {
+        written.set(field, narrow[field])
+      }
+    }
+    if (narrow.attachment !== 'any') {
+      written.set('attachment', narrow.attachment)
+    }
+    // Nothing to go back to when nothing changed: retyping the same search,
+    // or leaving the field without touching it, should not fill up history.
+    setParameters(written, { replace: written.toString() === parameters.toString() })
+  }
   const starred = folder.kind === STARRED
   const everywhere =
     starred || (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
@@ -510,7 +579,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     const at = shown.indexOf(itemId)
     const remaining = shown.filter((id) => !itemIds.includes(id))
     if (remaining.length === 0 || at < 0) {
-      navigate(`/mailbox/${folder.id}`)
+      navigate(within(`/mailbox/${folder.id}`))
       return
     }
     // The first one after it that is still there, and failing that the
@@ -532,7 +601,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     }
     const at = itemId ? shown.indexOf(itemId) : -1
     const to = at < 0 ? (by > 0 ? 0 : shown.length - 1) : Math.min(Math.max(at + by, 0), shown.length - 1)
-    navigate(`/mailbox/${folder.id}/${shown[to]}`)
+    navigate(within(`/mailbox/${folder.id}/${shown[to]}`))
   }
 
   useShortcuts(
@@ -640,7 +709,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
         // Unstarred is gone from Starred.
         remove(itemIds)
         if (itemIds.includes(itemId ?? '')) {
-          navigate(`/mailbox/${folder.id}`)
+          navigate(within(`/mailbox/${folder.id}`))
         }
       }
     })
@@ -768,8 +837,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
           className="mailbox-toolbar"
           onSubmit={(event) => {
             event.preventDefault()
-            setApplied(search.trim())
-            setAppliedNarrowing(narrowing)
+            applyFilters({ q: search.trim(), narrowing })
           }}
         >
           <input
@@ -778,13 +846,13 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             aria-label={t('mailbox.search')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            onBlur={() => setApplied(search.trim())}
+            onBlur={() => applyFilters({ q: search.trim() })}
           />
           <div className="segmented" role="group">
             <button
               type="button"
               className={filter === 'unread' ? 'active' : ''}
-              onClick={() => setFilter(filter === 'unread' ? 'all' : 'unread')}
+              onClick={() => applyFilters({ filter: filter === 'unread' ? 'all' : 'unread' })}
             >
               {t('mailbox.unreadOnly')}
             </button>
@@ -792,7 +860,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               <button
                 type="button"
                 className={filter === 'flagged' ? 'active' : ''}
-                onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')}
+                onClick={() => applyFilters({ filter: filter === 'flagged' ? 'all' : 'flagged' })}
               >
                 {t('mailbox.flaggedOnly')}
               </button>
@@ -876,7 +944,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                   type="button"
                   onClick={() => {
                     setNarrowing(NOTHING_NARROWED)
-                    setAppliedNarrowing(NOTHING_NARROWED)
+                    applyFilters({ narrowing: NOTHING_NARROWED })
                     setShowNarrowing(false)
                   }}
                 >
@@ -1001,8 +1069,8 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               // it is replying to — the composer opens inside the
               // conversation instead, which is where it opens when the reply
               // is started.
-              href={`/mailbox/${folder.id}/${thread.item.id}`}
-              onOpen={() => navigate(`/mailbox/${folder.id}/${thread.item.id}`)}
+              href={within(`/mailbox/${folder.id}/${thread.item.id}`)}
+              onOpen={() => navigate(within(`/mailbox/${folder.id}/${thread.item.id}`))}
               onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
             />
           ))}
@@ -1055,10 +1123,15 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onMove={(itemIds, target) => moveTo(itemIds, target)}
             onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
-            onBack={() => navigate(`/mailbox/${folder.id}`)}
+            onDiscarded={(discarded) => {
+              remove([discarded])
+              openNext([discarded])
+              void mailboxes.refresh()
+            }}
+            onBack={() => navigate(within(`/mailbox/${folder.id}`))}
           />
         ) : (
-          <div className="mailbox-placeholder">
+          <div className="mailbox-pane-placeholder">
             <EnvelopeTrail />
             <span>{t('mailbox.chooseMessage')}</span>
           </div>
@@ -1078,7 +1151,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               setTotal(0)
               setEmptying(false)
               if (itemId) {
-                navigate(`/mailbox/${folder.id}`)
+                navigate(within(`/mailbox/${folder.id}`))
               }
             })
           }
@@ -1206,6 +1279,7 @@ function Reader({
   onMove,
   onJunk,
   onDelete,
+  onDiscarded,
   onBack,
 }: {
   itemId: string
@@ -1218,6 +1292,9 @@ function Reader({
   onMove: (itemIds: string[], folderId: string) => void
   onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
+  // A draft thrown away from the composer below. The list is the folder's,
+  // not this pane's, so taking the row out of it belongs to the folder.
+  onDiscarded: (itemId: string) => void
   onBack: () => void
 }) {
   const { t } = useTranslation()
@@ -1477,7 +1554,7 @@ function Reader({
             icon={<ListIcon size={16} />}
             disabled={busy}
             onClick={() =>
-              navigate(`/mailbox/subscriptions?key=${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
+              navigate(`/mailbox/subscriptions/${encodeURIComponent(newest.item.mail?.listKey ?? '')}`)
             }
           />
         )}
@@ -1548,9 +1625,18 @@ function Reader({
               setDraftId(null)
               void thread.reload()
             }}
-            onCancel={() => {
+            // Discarding is not closing. The draft is gone from the server,
+            // so the row that showed it has to go from the list and from the
+            // conversation as well — otherwise it sits there until something
+            // else reloads the page, and opening it asks for a message that
+            // is not there any more.
+            onDiscarded={(discarded) => {
               setWriting(null)
               setDraftId(null)
+              if (discarded) {
+                onDiscarded(discarded)
+              }
+              void thread.reload()
             }}
           />
         </div>

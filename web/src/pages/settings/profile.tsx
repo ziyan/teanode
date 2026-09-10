@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
+import { useToast } from '../../components/toast'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
 
@@ -35,9 +36,9 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const [editedName, setEditedName] = useState<string | null>(null)
   const [editedUsername, setEditedUsername] = useState<string | null>(null)
   const [editedEmail, setEditedEmail] = useState<string | null>(null)
+  const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
   const [confirmingRename, setConfirmingRename] = useState(false)
 
   if (loading && !data) {
@@ -65,7 +66,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   async function save() {
     setBusy(true)
     setProblem(null)
-    setSaved(false)
     try {
       await graphql(UPDATE, {
         userId: user!.id,
@@ -76,7 +76,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
       setEditedName(null)
       setEditedUsername(null)
       setEditedEmail(null)
-      setSaved(true)
+      toast.done(t('profile.saved'))
       await reload()
       // Always, not only on a rename. The rail greets you by your name, so
       // changing it and watching the rail keep the old one is the change
@@ -125,8 +125,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
               placeholder={t('profile.namePlaceholder')}
               onChange={(event) => {
                 setEditedName(event.target.value)
-                setSaved(false)
-              }}
+                          }}
             />
           </label>
           <p className='muted field-hint'>{t('profile.nameHint')}</p>
@@ -139,8 +138,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
               autoComplete='username'
               onChange={(event) => {
                 setEditedUsername(event.target.value)
-                setSaved(false)
-              }}
+                          }}
             />
           </label>
           <p className='muted field-hint'>{t('profile.usernameHint')}</p>
@@ -153,15 +151,13 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
               placeholder={t('profile.emailPlaceholder')}
               onChange={(event) => {
                 setEditedEmail(event.target.value)
-                setSaved(false)
-              }}
+                          }}
             />
           </label>
           <p className='muted field-hint'>{t('profile.emailHint')}</p>
         </div>
 
         {problem && <p className='error'>{problem}</p>}
-        {saved && !changed && <p className='notice good'>{t('profile.saved')}</p>}
         <button className='primary' type='submit' disabled={!ready}>
           {t('common.save')}
         </button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
@@ -138,8 +138,22 @@ export function MailboxSubscriptionsPage() {
   const view = mailboxes.current
   const mailboxId = view?.mailbox.id ?? ''
 
-  const [search, setSearch] = useSearchParams()
-  const wanted = search.get('key')
+  // A subscription is named by its list key rather than by a row id: the
+  // lists come from the mail, grouped by that key, and the row in
+  // mailbox_subscription exists only once something has been done to one —
+  // muted, pictures allowed, unsubscribe asked for. Most lists have no row,
+  // so there is no id to put here.
+  const navigate = useNavigate()
+  const wanted = useParams().key ?? null
+
+  // Links made when this was a query parameter still work.
+  const [search] = useSearchParams()
+  const legacy = search.get('key')
+  useEffect(() => {
+    if (legacy) {
+      navigate(`/mailbox/subscriptions/${encodeURIComponent(legacy)}`, { replace: true })
+    }
+  }, [legacy, navigate])
   const [rows, setRows] = useState<Subscription[]>([])
   const [total, setTotal] = useState(0)
   const [paging, setPaging] = useState(false)
@@ -191,9 +205,14 @@ export function MailboxSubscriptionsPage() {
 
   const subscriptions = rows
 
-  // Which list is being read, and which is being left. Both are one at a
-  // time: reading is a page and leaving is a question.
-  const [readingKey, setReadingKey] = useState<string | null>(wanted)
+  // Which list is being read is in the address, not in a variable beside it.
+  // It was state, and the row that set it cleared the address as it went, so
+  // opening a list left no trace: the back button went to whatever came
+  // before this page, and there was no way forward to the list just left.
+  // Reading one is a place, and a place has a URL.
+  const readingKey = wanted
+  const read = (key: string | null) =>
+    navigate(key ? `/mailbox/subscriptions/${encodeURIComponent(key)}` : '/mailbox/subscriptions')
   const [leaving, setLeaving] = useState<Subscription | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -309,12 +328,7 @@ export function MailboxSubscriptionsPage() {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => {
-                  setReadingKey(subscription.key)
-                  if (wanted) {
-                    setSearch({}, { replace: true })
-                  }
-                }}
+                onClick={() => read(subscription.key)}
               >
                 <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
                 <Tooltip label={subscription.from}>
@@ -323,7 +337,7 @@ export function MailboxSubscriptionsPage() {
                     className="subscription-row-link"
                     onClick={(event) => {
                       event.stopPropagation()
-                      setReadingKey(subscription.key)
+                      read(subscription.key)
                     }}
                   >
                     <span className="subscription-row-name">{subscription.name}</span>
@@ -375,7 +389,7 @@ export function MailboxSubscriptionsPage() {
               key={reading.key}
               mailboxId={mailboxId}
               subscription={reading}
-              onBack={() => setReadingKey(null)}
+              onBack={() => read(null)}
               onLeave={() => {
                 setProblem(null)
                 setLeaving(reading)
@@ -385,7 +399,7 @@ export function MailboxSubscriptionsPage() {
               onChanged={() => void query.reload()}
             />
           ) : (
-            <div className="mailbox-placeholder">
+            <div className="mailbox-pane-placeholder">
               <EnvelopeTrail />
               <span>{t('subscriptions.choose')}</span>
             </div>

@@ -1346,7 +1346,6 @@ export const zh: Catalog = {
   'compose.mailbox.draftSaved': '草稿已保存 {time}',
   'compose.mailbox.saving': '正在保存…',
   'compose.mailbox.sent': '已发送。',
-  'compose.mailbox.sentHint': '它在你的已发送文件夹中。',
   'compose.mailbox.noAddress': '此邮箱还没有可用于发信的地址。',
   'compose.mailbox.quotedOn': '{from} 在 {date} 写道：',
   'compose.mailbox.forwardedHeader': '转发的邮件',

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
@@ -84,7 +84,16 @@ const RESOURCE_TYPES = [
 // and the row before and after.
 export function AuditTab() {
   const { t } = useTranslation()
-  const [resourceType, setResourceType] = useState('')
+  // What the log is filtered to is in the address: this is the page somebody
+  // comes to in order to find one event, and finding it is no use if what
+  // found it cannot be sent to anybody or returned to.
+  const [parameters, setParameters] = useSearchParams()
+  const resourceType = parameters.get('resource') ?? ''
+  const chooseResource = (kind: string) => setParameters(kind ? { resource: kind } : {})
+
+  // How much has been asked for stays local. "Show more" is not a filter,
+  // and a back button that shrank the list again would be a strange thing to
+  // have built.
   const [limit, setLimit] = useState(PAGE)
   const [open, setOpen] = useState<string | null>(null)
   const { data, error, loading } = useQuery(
@@ -107,7 +116,7 @@ export function AuditTab() {
         <Select
           label={t('access.audit.filter')}
           value={resourceType}
-          onChange={setResourceType}
+          onChange={chooseResource}
           options={RESOURCE_TYPES.map((candidate) => ({
             value: candidate,
             label: candidate === '' ? t('access.audit.everything') : candidate,

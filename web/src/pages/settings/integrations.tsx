@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { graphql } from '../../api'
-import { ErrorMessage, Loading, SaveRow, Tag } from '../../components/common'
+import { ErrorMessage, Loading, SaveRow, Tag, useSaySaved } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
 import {
@@ -1152,6 +1152,9 @@ type EditedProvider = SSOProvider & { clientSecret: string }
 function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => Promise<unknown> | unknown }) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
+  // This form lays its own buttons out rather than using SaveRow, so it says
+  // the same thing the same way for itself.
+  useSaySaved(saved, t('common.saved'))
   const [providers, setProviders] = useState<EditedProvider[]>(() =>
     settings.providers.map((provider) => ({ ...provider, clientSecret: '' })),
   )
@@ -1265,7 +1268,6 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
         <button className="primary" type="submit" disabled={busy}>
           {t('common.save')}
         </button>
-        {saved && <span className="muted">{t('common.saved')}</span>}
       </div>
     </form>
   )

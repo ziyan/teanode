@@ -6,6 +6,63 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A target on a phone has two dimensions. Every control was given a height of
+  forty pixels there, and nothing gave the ones that are only a picture a
+  width, so they stayed as wide as the icon inside: the cross that dismisses a
+  toast was 22 pixels across in a 40 pixel row, and the star on a conversation
+  28. The icons are drawn the same size; the box around them is not.
+
+- Sending a message opens the message. The compose page used to become a card
+  saying "Sent." with a link to go and find it in the Sent folder; it goes
+  there now, to the message itself, and says "Sent." in the line at the foot
+  of the window with everything else. `SendMailboxMessage` returns the copy
+  that landed in Sent, so the dashboard opens the message rather than a folder
+  to look through — and falls back to the folder when there is no copy.
+
+- Everything that has just happened is said in the same place. "Saved.",
+  "Saved, and in use now", "It came back." — each was a word beside a button
+  or a green line above a form, which had to be taken back the moment anything
+  was typed. They join the mail actions in the line at the foot of the window.
+  What is still true stays where it is: a setting waiting for a restart, a
+  server nobody is supervising, a field that is wrong.
+
+- What a list is narrowed to, and which page of it you are on, are in the
+  address too. A mailbox search, the filter on the audit log, and every
+  table's page and page size were state — so a search could not be sent to
+  anybody, came back empty after a reload, was lost the moment a message was
+  opened from it, and gave the back button nothing to return to. Opening a
+  message found by a search and coming back now finds the search still there.
+
+- What a page is showing is in the path, not beside it. A subscription being
+  read, a group being looked at and a role being edited were each held in a
+  variable or in a query parameter written with `replace`, so choosing one
+  made no history: the back button left the page rather than returning to the
+  one read before, and nothing led forward again. They are
+  `/mailbox/subscriptions/<list>`, `/access/groups/<id>` and
+  `/access/roles/<id>` now — places, so they can be linked to, gone back to,
+  and come forward from. Older links carrying `?key=`, `?group=` or `?role=`
+  still arrive where they meant to.
+
+- A discarded draft is gone from the screen as well as from the server. The
+  composer told the page it had closed, and the page treated that as somebody
+  closing the composer — which keeps the draft — so the row stayed in the list
+  and in the conversation, and opening it asked the server for a message that
+  had been deleted: "api: not found".
+
+- The empty list says so with room around it. The pane that offers the
+  envelope trail and the empty list next to it were the same class, and the
+  rule for the pane — which gives up its padding so the drawing can reach the
+  edges — came later in the stylesheet, so it took the padding from the list
+  as well and left the sentence against both borders.
+
+- The number in the tab counts what the tab says. The rest of the title is
+  where you are — "Drafts · Mailbox" — while the count in front of it was
+  always the Inbox's, so the two halves described two different places. It is
+  the folder's own count while a folder is open, and the count across every
+  mailbox everywhere else, which is what a tab in the background is for.
+
 ## [0.18.0] - 2026-09-09
 
 ### Added

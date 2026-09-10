@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Attachment, MailContent, MailboxItem, graphql } from '../api'
 import { ErrorMessage, Loading, formatBytes, formatTime } from '../components/common'
@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../components/dialog'
 import { PaperclipIcon } from '../components/icons'
 import { RichTextEditor, htmlToText, quotableHtml, textToHtml } from '../components/richText'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 import { UploadHandle, isCancelled, uploadFiles } from '../upload'
 import { folderOfKind, useMailboxes } from '../mailboxes'
@@ -48,7 +49,10 @@ const DRAFT = `
 
 const SEND = `
   mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) {
-    SendMailboxMessage(mailboxId: $mailboxId, message: $message) { mail { id } }
+    SendMailboxMessage(mailboxId: $mailboxId, message: $message) {
+      mail { id }
+      item { id folderId }
+    }
   }`
 
 const SAVE = `
@@ -150,7 +154,7 @@ export function MailboxComposer({
   draftOf,
   initialTo = '',
   onSent,
-  onCancel,
+  onDiscarded,
   onDraft,
 }: {
   replyTo?: string | null
@@ -161,8 +165,11 @@ export function MailboxComposer({
   // Told when the message has gone, so a conversation can show it. Without
   // one the composer says so itself, which is what the page does.
   onSent?: () => void
-  // Offered as a way out when there is somewhere to go back to.
-  onCancel?: () => void
+  // Told that the draft has been thrown away, and which one it was, so a
+  // conversation showing it can stop showing it. This fires only for
+  // discarding: closing the composer keeps what was typed, and is the page's
+  // own business.
+  onDiscarded?: (itemId: string | null) => void
   // Told the id of the draft this has been saved as, each time it is saved.
   //
   // A conversation that closes and reopens the composer — Reply, then Reply
@@ -173,6 +180,7 @@ export function MailboxComposer({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const toast = useToast()
   const mailboxes = useMailboxes()
   // The mailbox this message belongs to: the one holding the item replied
   // to, forwarded or continued, when there is one, else the one the rail
@@ -598,13 +606,25 @@ export function MailboxComposer({
         await inFlight.current?.promise.catch(() => {})
       }
       const message = await buildMessage()
-      await graphql(SEND, { mailboxId: view.mailbox.id, message })
+      const answer = await graphql<{ SendMailboxMessage: { item: { id: string; folderId: string } | null } }>(SEND, {
+        mailboxId: view.mailbox.id,
+        message,
+      })
       dirty.current = false
       setSent(true)
       void mailboxes.refresh()
       if (onSent) {
         onSent()
+        return
       }
+      // On a page of its own, sending is the end of the page. Rather than
+      // leave a card saying it worked and a link to go and find the message,
+      // this opens the message — which is where somebody who just sent one
+      // wants to be, and is the same thing the link offered a click later.
+      toast.done(t('compose.mailbox.sent'))
+      const landed = answer.SendMailboxMessage?.item
+      const sentFolderId = landed?.folderId ?? folderOfKind(view, 'sent')?.id
+      navigate(landed ? `/mailbox/${landed.folderId}/${landed.id}` : sentFolderId ? `/mailbox/${sentFolderId}` : '/mailbox')
     } catch (failure) {
       setProblem(failure)
     } finally {
@@ -636,8 +656,8 @@ export function MailboxComposer({
     }
     dirty.current = false
     void mailboxes.refresh()
-    if (onCancel) {
-      onCancel()
+    if (onDiscarded) {
+      onDiscarded(draftItemId)
       return
     }
     navigate('/mailbox')
@@ -660,30 +680,11 @@ export function MailboxComposer({
     )
   }
 
-  const sentFolder = folderOfKind(view, 'sent')
-  if (sent && onSent) {
-    // Whoever asked for it is showing it now — at the top of the
-    // conversation it belongs to — so there is nothing to say here.
-    return null
-  }
   if (sent) {
-    return (
-      <div className="card">
-        <h3>{t('compose.mailbox.sent')}</h3>
-        <p className="muted">
-          {sentFolder ? (
-            <Link to={`/mailbox/${sentFolder.id}`}>{t('compose.mailbox.sentHint')}</Link>
-          ) : (
-            t('compose.mailbox.sentHint')
-          )}
-        </p>
-        <div className="page-actions">
-          <Link className="button" to="/mailbox">
-            {t('nav.backToMailbox')}
-          </Link>
-        </div>
-      </div>
-    )
+    // Gone, and the page has gone with it: inline, whoever asked for it is
+    // showing the conversation; on its own page, the message it sent is
+    // already opening.
+    return null
   }
 
   const ready =

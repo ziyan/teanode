@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
@@ -69,8 +69,21 @@ export function GroupsTab() {
 
   // Which group is being read, in the query string: a person's group chip on
   // the users tab links to it, and the link has to arrive at the group.
-  const [parameters, setParameters] = useSearchParams()
-  const asked = parameters.get('group') ?? ''
+  // Which row is open is in the path, beside the tab. It was a query
+  // parameter written with replace, so choosing one left no history entry:
+  // the back button left the page rather than going to the row read before.
+  const navigate = useNavigate()
+  const asked = useParams().selected ?? ''
+
+  // Links made before the row moved into the path still work, and become the
+  // new shape as they arrive.
+  const [parameters] = useSearchParams()
+  const legacy = parameters.get('group') ?? ''
+  useEffect(() => {
+    if (legacy) {
+      navigate(`/access/groups/${legacy}`, { replace: true })
+    }
+  }, [legacy, navigate])
 
   const [addingGroup, setAddingGroup] = useState(false)
   const [editingGroup, setEditingGroup] = useState<Group | null>(null)
@@ -106,7 +119,7 @@ export function GroupsTab() {
   // The first group when none is asked for, so the page opens on something to
   // read rather than on an instruction to pick.
   const chosen = groups.find((group) => group.id === asked) ?? groups[0] ?? null
-  const choose = (groupId: string) => setParameters(groupId ? { group: groupId } : {}, { replace: true })
+  const choose = (groupId: string) => navigate(groupId ? `/access/groups/${groupId}` : '/access/groups')
 
   const memberOf = (group: Group) => users.filter((user) => group.userIds.includes(user.id))
   const describePerson = (user: User) => (user.name ? `${user.username} (${user.name})` : user.username)

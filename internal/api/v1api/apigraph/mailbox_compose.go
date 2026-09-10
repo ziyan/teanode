@@ -84,6 +84,12 @@ type SendMailboxMessageArguments struct {
 type SendMailboxMessageReturnValue struct {
 	// The message as stored, once accepted
 	Mail *models.Mail `json:"mail"`
+
+	// Where the copy of it landed in this mailbox, when there is a Sent
+	// folder to land in. The dashboard opens the message that was just sent,
+	// and an item is what it takes to open one — a mail identifier names the
+	// message, not the copy of it in front of this person.
+	Item *models.MailboxItem `json:"item"`
 }
 
 type SaveMailboxDraftArguments struct {
@@ -205,7 +211,28 @@ func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailbox
 		log.Warningf("sent envelope %q but found no stored mail for it", envelope.ID)
 		return &SendMailboxMessageReturnValue{}, nil
 	}
-	return &SendMailboxMessageReturnValue{Mail: mails[0]}, nil
+
+	// The copy in Sent, if the delivery has filed one by now. Not an error
+	// when it is missing: the message has gone, which is what was asked for,
+	// and the caller has a folder to fall back to.
+	value := &SendMailboxMessageReturnValue{Mail: mails[0]}
+	sent, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindSent)
+	if err != nil {
+		return nil, err
+	}
+	if sent != nil {
+		items, err := tx.ListItemsByMail(mails[0].ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.FolderID == sent.ID {
+				value.Item = item
+				break
+			}
+		}
+	}
+	return value, nil
 }
 
 // SaveMailboxDraft stores what is being written as a message in Drafts,
