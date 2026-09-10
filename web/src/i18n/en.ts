@@ -1189,7 +1189,6 @@ export const en = {
   'subscriptions.openList': 'Show this subscription',
   'subscriptions.stripped': 'This list did say how to leave it, and the address was removed before the mail reached here — which is what a relay that hides your address does. Leave it from the sender’s own page, or stop the mail here by keeping it out of the Inbox.',
   'subscriptions.unmute': 'Let back into the Inbox',
-  'subscriptions.unsubscribed': 'Unsubscribed',
   'subscriptions.sides': 'Which subscriptions to show',
   'subscriptions.sideSubscribed': 'Subscribed · {count}',
   'subscriptions.sideLeft': 'Unsubscribed · {count}',

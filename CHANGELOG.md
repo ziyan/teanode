@@ -12,7 +12,8 @@ Notable changes to TeaNode. The format follows
   and the lists you have left, with a switch between that says how many are on
   each — and nothing beside it, because the switch already says the name and
   the number, and "Subscriptions · 3" next to "Subscribed · 2 | Unsubscribed ·
-  1" is the same fact twice. A list already left said "Asked to leave" and stayed where it was, so
+  1" is the same fact twice. The rows carry no badge either: on that side
+  every row is one, and each already says how it was left. A list already left said "Asked to leave" and stayed where it was, so
   the ones dealt with crowded the ones still to deal with. Which side is being
   read is in the address, and it travels with a list you open, so coming back
   lands where you were. A link to a list opens it from either side, because

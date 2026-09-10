@@ -409,7 +409,6 @@ export function MailboxSubscriptionsPage() {
                 className={[
                   'subscription-row',
                   subscription.unread > 0 ? 'unread' : '',
-                  subscription.requestedAt && !subscription.failed ? 'left' : '',
                   subscription.id === readingId ? 'active' : '',
                 ]
                   .filter(Boolean)
@@ -427,12 +426,6 @@ export function MailboxSubscriptionsPage() {
                     }}
                   >
                     <span className="subscription-row-name">{subscription.name}</span>
-                    {/* Said plainly, beside the name, because the sentence
-                        underneath says how it was left and this says that it
-                        was. */}
-                    {subscription.requestedAt && !subscription.failed ? (
-                      <span className="subscription-row-status">{t('subscriptions.unsubscribed')}</span>
-                    ) : null}
                     <span className="subscription-row-meta">
                       {plural(
                         subscription.count,

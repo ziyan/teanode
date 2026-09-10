@@ -1178,7 +1178,6 @@ export const ja: Catalog = {
   'subscriptions.openList': 'この購読を表示',
   'subscriptions.stripped': 'この配信元は解除方法を示していましたが、そのアドレスは届く前に取り除かれました。差出人のページから解除するか、受信トレイに入れない設定にしてください。',
   'subscriptions.unmute': '受信トレイに戻す',
-  'subscriptions.unsubscribed': '配信停止済み',
   'subscriptions.sides': 'どの購読を表示するか',
   'subscriptions.sideSubscribed': '購読中 · {count}',
   'subscriptions.sideLeft': '配信停止済み · {count}',

@@ -1165,7 +1165,6 @@ export const zh: Catalog = {
   'subscriptions.openList': '查看该订阅',
   'subscriptions.stripped': '该列表确实说明了退订方式，但地址在邮件到达前已被移除——隐藏你地址的中继就会这样做。请在发件方自己的页面退订，或让这些邮件不再进入收件箱。',
   'subscriptions.unmute': '恢复进入收件箱',
-  'subscriptions.unsubscribed': '已退订',
   'subscriptions.sides': '显示哪些订阅',
   'subscriptions.sideSubscribed': '已订阅 · {count}',
   'subscriptions.sideLeft': '已退订 · {count}',
