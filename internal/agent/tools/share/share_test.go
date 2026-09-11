@@ -54,7 +54,7 @@ func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time
 	if strings.Contains(string(encoded), "missing") {
 		return json.RawMessage(`{"error":"no such file"}`), nil
 	}
-	return json.RawMessage(`{"path":"/home/alice/Pictures/cat.png","name":"cat.png","bytes":33,"content_type":"image/png","base64":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"}`), nil
+	return json.RawMessage(`{"path":"~/Pictures/cat.png","name":"cat.png","bytes":33,"content_type":"image/png","base64":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"}`), nil
 }
 func (self *fakeComputer) Name() string   { return "laptop" }
 func (self *fakeComputer) System() string { return "linux" }

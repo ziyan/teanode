@@ -13,6 +13,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -282,11 +283,8 @@ func (self *Client) Listen(ctx context.Context, onMessage func(*Message)) error 
 			return ctx.Err()
 		}
 		address := self.gateway
-		if sessionId != "" && resumeAt != "" {
-			address = resumeAt
-			if !strings.Contains(address, "encoding=") {
-				address += "/?v=10&encoding=json"
-			}
+		if resume := self.resumeAddress(resumeAt); sessionId != "" && resume != "" {
+			address = resume
 		}
 		newSessionId, newResumeAt, newSequence, err := self.session(ctx, address, sessionId, sequence, onMessage)
 		if newSessionId != "" {
@@ -321,6 +319,32 @@ func (self *Client) Listen(ctx context.Context, onMessage func(*Message)) error 
 }
 
 var errNewSession = errors.New("discord: the session cannot be resumed")
+
+// resumeAddress is the address Discord said to resume at, when it is
+// Discord's — a secure socket on one of its own names, or the gateway's
+// own host, which a test's fake gateway is — and "" otherwise: what came
+// over the socket does not get to send the next one anywhere.
+func (self *Client) resumeAddress(resumeAt string) string {
+	if resumeAt == "" {
+		return ""
+	}
+	parsed, err := url.Parse(resumeAt)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	own, _ := url.Parse(self.gateway)
+	host := strings.ToLower(parsed.Hostname())
+	discords := parsed.Scheme == "wss" && (host == "discord.gg" || strings.HasSuffix(host, ".discord.gg") || host == "discord.com" || strings.HasSuffix(host, ".discord.com"))
+	sameAsGateway := own != nil && parsed.Scheme == own.Scheme && strings.EqualFold(parsed.Host, own.Host)
+	if !discords && !sameAsGateway {
+		return ""
+	}
+	address := parsed.Scheme + "://" + parsed.Host + parsed.Path
+	if !strings.Contains(parsed.RawQuery, "encoding=") {
+		return address + "/?v=10&encoding=json"
+	}
+	return address + "?" + parsed.RawQuery
+}
 
 // session is one connection: hello, identify or resume, heartbeats, and
 // events until it closes.

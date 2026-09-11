@@ -222,3 +222,21 @@ func TestIncomingReadsAMention(t *testing.T) {
 		t.Fatalf("a direct message: %+v", got)
 	}
 }
+
+// A resume address is followed only when it is Discord's own, or the
+// gateway's host; anything else said over the socket is ignored.
+func TestResumeAddressIsDiscordsOrNothing(t *testing.T) {
+	client := New("TOKEN", nil, "", "wss://gateway.discord.gg/?v=10&encoding=json")
+	if got := client.resumeAddress("wss://gateway-us-east1-b.discord.gg"); got != "wss://gateway-us-east1-b.discord.gg/?v=10&encoding=json" {
+		t.Fatalf("Discord's own: %q", got)
+	}
+	for _, bad := range []string{"wss://evil.example/", "ws://gateway.discord.gg/", "https://discord.com/", "wss://discord.gg.evil.example/", "://nonsense", ""} {
+		if got := client.resumeAddress(bad); got != "" {
+			t.Fatalf("%q should not be followed, got %q", bad, got)
+		}
+	}
+	local := New("TOKEN", nil, "", "ws://127.0.0.1:4000")
+	if got := local.resumeAddress("ws://127.0.0.1:4000"); got != "ws://127.0.0.1:4000/?v=10&encoding=json" {
+		t.Fatalf("the gateway's own host: %q", got)
+	}
+}

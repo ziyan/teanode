@@ -33,4 +33,8 @@ regexes = [
   # internal/api/v1api/apigraph/mailbox_apppassword.go. It is the alphabet and
   # not a password; the letters that read alike are missing from it.
   '''^abcdefghijkmnpqrstuvwxyz23456789$''',
+  # Two test secrets that lived in one commit of the personal-agents branch
+  # before the scanner met them and they were reworded; the history keeps
+  # them, and they never opened anything.
+  '''^a-secret-long-enough-to-(sign|seal)-with-1234567890$''',
 ]

@@ -54,7 +54,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
         ) : mail ? (
           // The agent cites a message as mail:ITEM_ID; Starred opens any
           // item by id whichever folder it is in.
-          <Link key={key} to={`/mailbox/starred/${mail[1]}`}>
+          <Link key={key} to={`/mailbox/starred/${encodeURIComponent(mail[1])}`}>
             {match[5]}
           </Link>
         ) : /^https?:\/\//i.test(href) ? (
