@@ -491,7 +491,7 @@ func runMailSearch(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -528,7 +528,7 @@ func runMailSearch(ctx context.Context, call *Call) (*Result, error) {
 			variables[key] = *value
 		}
 	}
-	location := Location(call.Run.Owner())
+	location := Location(runOf(ctx).Owner())
 	if arguments.Since != "" {
 		since, err := parseTime(arguments.Since, location, time.Now())
 		if err != nil {
@@ -594,8 +594,8 @@ func runMailSearch(ctx context.Context, call *Call) (*Result, error) {
 		threads := result.ListMailboxThreads.Threads
 		// By meaning as well, where the mailbox has vectors: what the words
 		// missed, after what they hit.
-		if query := strings.TrimSpace(arguments.Query); query != "" && searchMode(call.Run.agent.settings.Configuration(), view.Mailbox.Agent) == "meaning" {
-			ids, err := call.Run.agent.meaningSearch(ctx, call.Run.settings.Agent, view.Mailbox.ID, query, limit)
+		if query := strings.TrimSpace(arguments.Query); query != "" && searchMode(runOf(ctx).agent.settings.Configuration(), view.Mailbox.Agent) == "meaning" {
+			ids, err := runOf(ctx).agent.meaningSearch(ctx, runOf(ctx).settings.Agent, view.Mailbox.ID, query, limit)
 			if err != nil {
 				log.Warningf("search by meaning failed in mailbox %q: %s", view.Mailbox.ID, err)
 			} else if len(ids) > 0 {
@@ -766,7 +766,7 @@ func runMailRead(ctx context.Context, call *Call) (*Result, error) {
 	if arguments.ItemID == "" {
 		return nil, fmt.Errorf("which message? give item_id")
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	thread, err := getThread(ctx, operations, arguments.ItemID)
 	if err != nil {
 		return nil, err
@@ -775,7 +775,7 @@ func runMailRead(ctx context.Context, call *Call) (*Result, error) {
 	if limit <= 0 {
 		limit = 12000
 	}
-	location := Location(call.Run.Owner())
+	location := Location(runOf(ctx).Owner())
 	type message struct {
 		ItemID      string   `json:"item_id"`
 		Folder      string   `json:"folder"`
@@ -868,7 +868,7 @@ func runMailAct(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	itemIds := append([]string{}, arguments.ItemIDs...)
 	var thread *threadView
 	if arguments.ThreadItemID != "" {
@@ -1033,7 +1033,7 @@ func runMailDraft(ctx context.Context, call *Call) (*Result, error) {
 	if strings.TrimSpace(arguments.Text) == "" {
 		return nil, fmt.Errorf("a draft needs text")
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1171,7 +1171,7 @@ func runMailSend(ctx context.Context, call *Call) (*Result, error) {
 	if !call.Confirmed {
 		return nil, fmt.Errorf("sending needs the person's confirmation")
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1250,7 +1250,7 @@ func runMailComposeHelp(ctx context.Context, call *Call) (*Result, error) {
 	if arguments.InReplyTo == "" {
 		return nil, fmt.Errorf("which message? give in_reply_to")
 	}
-	run := call.Run
+	run := runOf(ctx)
 	views, err := grantedMailboxes(ctx, run.settings.Operations)
 	if err != nil {
 		return nil, err
@@ -1301,7 +1301,7 @@ func runFolderList(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	views, err := grantedMailboxes(ctx, call.Run.settings.Operations)
+	views, err := grantedMailboxes(ctx, runOf(ctx).settings.Operations)
 	if err != nil {
 		return nil, err
 	}
@@ -1343,7 +1343,7 @@ func runFolderManage(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1597,7 +1597,7 @@ func runRuleList(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	views, err := grantedMailboxes(ctx, call.Run.settings.Operations)
+	views, err := grantedMailboxes(ctx, runOf(ctx).settings.Operations)
 	if err != nil {
 		return nil, err
 	}
@@ -1659,7 +1659,7 @@ func runRuleAdd(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1698,7 +1698,7 @@ func runRuleUpdate(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1739,7 +1739,7 @@ func runRuleRemove(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1778,7 +1778,7 @@ func runRuleTest(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1821,7 +1821,7 @@ func runRuleApply(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1866,7 +1866,7 @@ func runMailboxSettings(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1903,7 +1903,7 @@ func runContactSearch(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
@@ -1970,7 +1970,7 @@ func runReplyQueue(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	location := Location(run.Owner())
 	switch arguments.Action {
 	case "", "list":
@@ -2024,7 +2024,8 @@ func runReplyQueue(ctx context.Context, call *Call) (*Result, error) {
 // pendingOverlay says what is about to go out, so "anything going out?" is
 // answered from the prompt and a second reply to the same conversation is
 // not drafted.
-func pendingOverlay(ctx context.Context, run *AskRun) string {
+func pendingOverlay(ctx context.Context) string {
+	run := runOf(ctx)
 	held, err := heldReplies(ctx, run)
 	if err != nil || len(held) == 0 {
 		return ""
@@ -2058,7 +2059,7 @@ func runSubscription(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	operations := call.Run.settings.Operations
+	operations := runOf(ctx).settings.Operations
 	views, err := grantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err

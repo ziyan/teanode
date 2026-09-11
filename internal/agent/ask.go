@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"sort"
 	"strings"
 	"sync"
@@ -310,6 +311,19 @@ func (self *AskRun) Conversation() *models.AgentConversation {
 func (self *AskRun) Owner() *models.User {
 	return self.settings.Owner
 }
+
+// The run as the tool kit sees it (tools.Run).
+
+func (self *AskRun) Agent() *models.Agent                 { return self.settings.Agent }
+func (self *AskRun) Operations() tools.Operations         { return self.settings.Operations }
+func (self *AskRun) Database() db.Database                { return self.agent.settings.Database }
+func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
+func (self *AskRun) Surface() string                      { return self.settings.Surface }
+func (self *AskRun) Headless() bool                       { return self.settings.Headless }
+func (self *AskRun) ReadOnly() bool                       { return self.settings.ReadOnly }
+func (self *AskRun) Offered() []*tools.Tool               { return self.offered }
+func (self *AskRun) Loaded() map[string]bool              { return self.loaded }
+func (self *AskRun) Load(name string)                     { self.loaded[name] = true }
 
 // Resolve answers a confirmation card. It says whether there was one.
 func (self *AskRun) Resolve(callId string, approve bool) bool {
@@ -699,8 +713,8 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		}
 		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "there is no tool named %s"}`, toolCall.Name))
 	}
-	call := &Call{ID: toolCall.ID, Run: self, Arguments: json.RawMessage(toolCall.Arguments)}
-	if self.settings.ReadOnly && tool.riskOf(call.Arguments) != RiskRead {
+	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
+	if self.settings.ReadOnly && tool.RiskFor(call.Arguments) != RiskRead {
 		return self.toolAnswer(toolCall, `{"error": "this conversation may only read; the call would change something"}`)
 	}
 	if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
@@ -716,7 +730,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		}
 		call.Confirmed = true
 	}
-	result, err := tool.Run(ctx, call)
+	result, err := tool.Run(tools.WithRun(ctx, self), call)
 	if err != nil {
 		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": %q}`, err.Error()))
 	}
@@ -745,7 +759,7 @@ func (self *AskRun) confirm(ctx context.Context, tool *Tool, call *Call) (bool, 
 	self.mutex.Lock()
 	self.confirmations[call.ID] = channel
 	self.mutex.Unlock()
-	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: string(tool.riskOf(call.Arguments)), Note: tool.preview(call.Arguments)})
+	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: string(tool.RiskFor(call.Arguments)), Note: tool.PreviewLine(call.Arguments)})
 	timer := time.NewTimer(confirmationWait)
 	defer timer.Stop()
 	select {
@@ -1124,7 +1138,7 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	}
 	for _, tool := range self.offered {
 		if tool.Overlay != nil {
-			if block := strings.TrimSpace(tool.Overlay(ctx, self)); block != "" {
+			if block := strings.TrimSpace(tool.Overlay(tools.WithRun(ctx, self))); block != "" {
 				blocks = append(blocks, block)
 			}
 		}

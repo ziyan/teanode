@@ -78,7 +78,7 @@ func runChart(ctx context.Context, call *Call) (*Result, error) {
 	default:
 		return nil, fmt.Errorf("%q is not bar, line or pie", arguments.Kind)
 	}
-	run := call.Run
+	run := runOf(ctx)
 	store := run.agent.settings.Storage
 	if store == nil {
 		return nil, fmt.Errorf("nowhere to keep a chart")

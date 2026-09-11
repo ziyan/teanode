@@ -199,7 +199,7 @@ func runBrowser(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	configuration := run.agent.settings.Configuration()
 	if !FeatureAllowed(configuration, "browser") || !configuration.Agent.Browser.Enabled {
 		return nil, fmt.Errorf("the browser is off on this server")
@@ -210,7 +210,7 @@ func runBrowser(ctx context.Context, call *Call) (*Result, error) {
 			return nil, fmt.Errorf("at most fifty steps")
 		}
 		for index, step := range arguments.Steps {
-			result, err := runBrowser(ctx, &Call{ID: call.ID, Run: run, Arguments: step, Confirmed: call.Confirmed})
+			result, err := runBrowser(ctx, &Call{ID: call.ID, Arguments: step, Confirmed: call.Confirmed})
 			if err != nil {
 				results = append(results, map[string]any{"step": index + 1, "error": err.Error()})
 				break
@@ -343,7 +343,8 @@ func browserTarget(ref int, selector string) browser.Target {
 }
 
 // browserOverlay says a tab is attached, when one is.
-func browserOverlay(ctx context.Context, run *AskRun) string {
+func browserOverlay(ctx context.Context) string {
+	run := runOf(ctx)
 	attached := run.agent.tabFor(run.settings.Agent.ID)
 	if attached == nil || run.settings.Headless {
 		return ""

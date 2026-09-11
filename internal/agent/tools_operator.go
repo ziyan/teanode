@@ -30,7 +30,7 @@ func registerOperatorTools(catalog *Catalog) {
 // execute runs a document and discards the shape of the answer.
 func execute(ctx context.Context, call *Call, document string, variables map[string]any) (map[string]any, error) {
 	var result map[string]any
-	if err := call.Run.settings.Operations.Execute(ctx, document, variables, &result); err != nil {
+	if err := runOf(ctx).settings.Operations.Execute(ctx, document, variables, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -73,7 +73,7 @@ func listDomains(ctx context.Context, call *Call) ([]*domainView, error) {
 	var result struct {
 		ListDomains []*domainView `json:"ListDomains"`
 	}
-	if err := call.Run.settings.Operations.Execute(ctx, documentListDomains, nil, &result); err != nil {
+	if err := runOf(ctx).settings.Operations.Execute(ctx, documentListDomains, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.ListDomains, nil
@@ -158,7 +158,7 @@ func registerDomainTools(catalog *Catalog) {
 			var result struct {
 				CreateDomain *domainView `json:"CreateDomain"`
 			}
-			if err := call.Run.settings.Operations.Execute(ctx, `mutation ($domainParameters: DomainParametersInput!) { CreateDomain(domainParameters: $domainParameters) { id domain } }`, map[string]any{"domainParameters": parameters}, &result); err != nil {
+			if err := runOf(ctx).settings.Operations.Execute(ctx, `mutation ($domainParameters: DomainParametersInput!) { CreateDomain(domainParameters: $domainParameters) { id domain } }`, map[string]any{"domainParameters": parameters}, &result); err != nil {
 				return nil, err
 			}
 			answer, err := jsonResult(map[string]any{"domain_id": result.CreateDomain.ID, "domain": result.CreateDomain.Domain, "note": "added; run domain_dns_check for the records to publish"})
@@ -335,7 +335,7 @@ func registerDomainTools(catalog *Catalog) {
 					ID string `json:"id"`
 				} `json:"CreateAlias"`
 			}
-			if err := call.Run.settings.Operations.Execute(ctx, `mutation ($domainId: String!, $aliasParameters: AliasParametersInput!) { CreateAlias(domainId: $domainId, aliasParameters: $aliasParameters) { id } }`, map[string]any{"domainId": domain.ID, "aliasParameters": parameters}, &result); err != nil {
+			if err := runOf(ctx).settings.Operations.Execute(ctx, `mutation ($domainId: String!, $aliasParameters: AliasParametersInput!) { CreateAlias(domainId: $domainId, aliasParameters: $aliasParameters) { id } }`, map[string]any{"domainId": domain.ID, "aliasParameters": parameters}, &result); err != nil {
 				return nil, err
 			}
 			answer, err := jsonResult(map[string]any{"alias_id": result.CreateAlias.ID, "address": arguments.Pattern + "@" + domain.Domain})
@@ -655,7 +655,7 @@ func registerAuditTools(catalog *Catalog) {
 				filters = append(filters, map[string]any{"operation": "equal", "field": "kind", "value": arguments.Kind})
 			}
 			if arguments.Since != "" {
-				since, err := parseTime(arguments.Since, Location(call.Run.Owner()), time.Now())
+				since, err := parseTime(arguments.Since, Location(runOf(ctx).Owner()), time.Now())
 				if err != nil {
 					return nil, err
 				}
@@ -723,7 +723,7 @@ func registerAuditTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			content, err := getContent(ctx, call.Run.settings.Operations, arguments.MailID)
+			content, err := getContent(ctx, runOf(ctx).settings.Operations, arguments.MailID)
 			if err != nil {
 				return nil, err
 			}
@@ -1111,7 +1111,7 @@ func registerPeopleTools(catalog *Catalog) {
 				}
 			}
 			if arguments.Since != "" {
-				since, err := parseTime(arguments.Since, Location(call.Run.Owner()), time.Now())
+				since, err := parseTime(arguments.Since, Location(runOf(ctx).Owner()), time.Now())
 				if err != nil {
 					return nil, err
 				}
@@ -1155,7 +1155,7 @@ func registerServerTools(catalog *Catalog) {
 			// Read from the configuration itself, redacted: the same view the
 			// settings page shows, and the person holds server:manage or the
 			// tool is not offered.
-			redacted, err := call.Run.agent.settings.Configuration().Redact()
+			redacted, err := runOf(ctx).agent.settings.Configuration().Redact()
 			if err != nil {
 				return nil, err
 			}
@@ -1278,7 +1278,7 @@ func registerAccountTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			variables := map[string]any{"userId": call.Run.Owner().ID}
+			variables := map[string]any{"userId": runOf(ctx).Owner().ID}
 			for key, value := range map[string]*string{"name": arguments.Name, "email": arguments.Email, "locale": arguments.Locale, "timezone": arguments.Timezone, "timezoneMode": arguments.TimezoneMode} {
 				if value != nil {
 					variables[key] = *value
@@ -1384,7 +1384,7 @@ func registerAccountTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			views, err := grantedMailboxes(ctx, call.Run.settings.Operations)
+			views, err := grantedMailboxes(ctx, runOf(ctx).settings.Operations)
 			if err != nil {
 				return nil, err
 			}
@@ -1437,7 +1437,7 @@ func registerAccountTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			run := call.Run
+			run := runOf(ctx)
 			permissions := run.settings.Operations.Permissions()
 			configuration := run.agent.settings.Configuration()
 			if name := strings.TrimSpace(arguments.Tool); name != "" {

@@ -130,7 +130,7 @@ func runMemory(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	agentId := run.settings.Agent.ID
 	database := run.agent.settings.Database
 	describe := func(memory *models.AgentMemory) map[string]any {
@@ -246,7 +246,7 @@ func runMemory(ctx context.Context, call *Call) (*Result, error) {
 	case "batch":
 		var results []any
 		for _, item := range arguments.Items {
-			inner := &Call{ID: call.ID, Run: run, Arguments: mustJSON(map[string]any{"action": item.Action, "id": item.ID, "title": item.Title, "content": item.Content, "tags": item.Tags, "applies_to": item.AppliesTo, "pinned": item.Pinned}), Confirmed: call.Confirmed}
+			inner := &Call{ID: call.ID, Arguments: mustJSON(map[string]any{"action": item.Action, "id": item.ID, "title": item.Title, "content": item.Content, "tags": item.Tags, "applies_to": item.AppliesTo, "pinned": item.Pinned}), Confirmed: call.Confirmed}
 			result, err := runMemory(ctx, inner)
 			if err != nil {
 				results = append(results, map[string]any{"action": item.Action, "error": err.Error()})
@@ -276,7 +276,8 @@ func (self *AskRun) recall(line string) {
 
 // recalledOverlay is what memory searches found this turn, so the model
 // does not search again for what it just saw.
-func recalledOverlay(ctx context.Context, run *AskRun) string {
+func recalledOverlay(ctx context.Context) string {
+	run := runOf(ctx)
 	run.mutex.Lock()
 	lines := append([]string{}, run.recalled...)
 	run.mutex.Unlock()

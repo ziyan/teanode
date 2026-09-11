@@ -47,7 +47,7 @@ func runAskUser(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	if strings.TrimSpace(arguments.Question) == "" {
 		return nil, fmt.Errorf("ask something")
 	}
@@ -115,7 +115,7 @@ func runTodo(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	database := run.agent.settings.Database
 	conversationId := run.settings.Conversation.ID
 	list := func() (*Result, error) {
@@ -177,7 +177,8 @@ func runTodo(ctx context.Context, call *Call) (*Result, error) {
 }
 
 // todoOverlay is the open items, oldest first, capped, with counts.
-func todoOverlay(ctx context.Context, run *AskRun) string {
+func todoOverlay(ctx context.Context) string {
+	run := runOf(ctx)
 	var todos []*models.AgentTodo
 	if err := run.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		todos, err = tx.ListAgentTodos(run.settings.Conversation.ID)

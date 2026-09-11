@@ -123,7 +123,7 @@ func runDatetime(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	location := Location(call.Run.Owner())
+	location := Location(runOf(ctx).Owner())
 	if arguments.Timezone != "" {
 		if loaded, err := time.LoadLocation(arguments.Timezone); err == nil {
 			location = loaded
@@ -408,7 +408,7 @@ func runWebSearch(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	configuration := call.Run.agent.settings.Configuration()
+	configuration := runOf(ctx).agent.settings.Configuration()
 	search := configuration.Agent.Search
 	if search.Kind == "" || search.APIKey == "" {
 		return nil, fmt.Errorf("no search service is configured on this server")
@@ -485,7 +485,7 @@ func runToolSearch(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	_, deferred := Split(run.offered, run.loaded, false)
 	if len(deferred) == 0 {
 		_, deferred = Split(run.offered, run.loaded, true)
@@ -547,7 +547,7 @@ func runArtifact(ctx context.Context, call *Call) (*Result, error) {
 	default:
 		return nil, fmt.Errorf("%q is not html, svg or markdown", arguments.Kind)
 	}
-	run := call.Run
+	run := runOf(ctx)
 	store := run.agent.settings.Storage
 	if store == nil {
 		return nil, fmt.Errorf("nowhere to keep an artifact")

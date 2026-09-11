@@ -398,7 +398,7 @@ func runScheduleTool(ctx context.Context, call *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	run := call.Run
+	run := runOf(ctx)
 	if !FeatureAllowed(run.agent.settings.Configuration(), "schedules") {
 		return nil, fmt.Errorf("schedules are off on this server")
 	}

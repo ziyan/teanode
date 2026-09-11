@@ -376,7 +376,7 @@ func nameListed(names []string, name string) bool {
 // remoteRunner calls one remote tool as the person.
 func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string) func(context.Context, *Call) (*Result, error) {
 	return func(ctx context.Context, call *Call) (*Result, error) {
-		entry, err := self.connection(ctx, server, call.Run.settings.Agent.ID)
+		entry, err := self.connection(ctx, server, runOf(ctx).settings.Agent.ID)
 		if err != nil {
 			return nil, fmt.Errorf("%s is not answering: %w", server.Name, err)
 		}

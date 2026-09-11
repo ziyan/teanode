@@ -11,6 +11,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"sync"
 	"time"
 
@@ -165,15 +166,23 @@ func New(settings *Settings) *Agent {
 // policy narrow it: what the worker runs with, and what the operator's
 // tool policy lists.
 func FullCatalog() *Catalog {
-	catalog := NewCatalog()
-	registerGeneralTools(catalog)
-	registerMemoryTools(catalog)
-	registerConversationTools(catalog)
-	registerScheduleTools(catalog)
-	registerMailboxTools(catalog)
-	registerOperatorTools(catalog)
-	registerBrowserTools(catalog)
-	return catalog
+	return tools.Build()
+}
+
+// The tools still in this package register the way a tool package does:
+// one factory, from init, into the kit's registry.
+func init() {
+	tools.Register(func() []*Tool {
+		catalog := NewCatalog()
+		registerGeneralTools(catalog)
+		registerMemoryTools(catalog)
+		registerConversationTools(catalog)
+		registerScheduleTools(catalog)
+		registerMailboxTools(catalog)
+		registerOperatorTools(catalog)
+		registerBrowserTools(catalog)
+		return catalog.All()
+	})
 }
 
 // SetMailer hands the worker the mailer, once there is one.
