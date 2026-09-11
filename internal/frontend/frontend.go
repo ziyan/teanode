@@ -58,6 +58,10 @@ func Handler() http.Handler {
 				// cached indefinitely.
 				if looksHashed(name) {
 					response.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else if strings.HasPrefix(name, "assets/") {
+					// What an agent's page links by a fixed name: kept for
+					// an hour, so a new build reaches it soon enough.
+					response.Header().Set("Cache-Control", "public, max-age=3600")
 				}
 				fileServer.ServeHTTP(response, request)
 				return

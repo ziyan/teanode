@@ -217,6 +217,8 @@ type AgentFeatures struct {
 	Schedules        *bool `yaml:"schedules,omitempty"`
 	Browser          *bool `yaml:"browser,omitempty"`
 	ConnectedServers *bool `yaml:"connectedServers,omitempty"`
+	Computer         *bool `yaml:"computer,omitempty"`
+	ChatApps         *bool `yaml:"chatApps,omitempty"`
 }
 
 // featureOn resolves an unset feature to on.
@@ -492,6 +494,10 @@ func (self *Agent) FeatureOn(feature string) bool {
 		return featureOn(self.Features.Browser)
 	case "connectedServers":
 		return featureOn(self.Features.ConnectedServers)
+	case "computer":
+		return featureOn(self.Features.Computer)
+	case "chatApps":
+		return featureOn(self.Features.ChatApps)
 	}
 	return false
 }

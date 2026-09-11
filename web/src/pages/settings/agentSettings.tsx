@@ -114,7 +114,7 @@ export const AGENT_SELECTION = `agent {
   enabled instructions
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
-  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
+  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
   retention { runs corrections }
   search { kind hasApiKey }
@@ -138,6 +138,8 @@ const FEATURES = [
   'schedules',
   'browser',
   'connectedServers',
+  'computer',
+  'chatApps',
 ] as const
 
 const BASE_MODELS = ['default', 'fast', 'embedding'] as const

@@ -97,8 +97,9 @@ type AgentConversation struct {
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 	LastAt     time.Time  `json:"lastAt"`
 
-	// CompactedThrough is the message a compaction summary stands in for
-	// everything up to; the verbatim transcript resumes after it.
+	// CompactedThrough is the last message the latest compaction note
+	// stands in for; the verbatim transcript resumes after it. The note
+	// itself is a later message with the compaction role.
 	CompactedThrough string `json:"compactedThrough,omitempty"`
 }
 

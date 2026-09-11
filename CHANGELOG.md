@@ -135,9 +135,15 @@ Notable changes to TeaNode. The format follows
   conversations by words in the title, the summary or what was said, and
   deletes one after asking. The transcript shows when each message was
   said, the day changing, the agent thinking, and stays at the end while
-  you type. The agent can draw a chart from data and make a page, a
-  drawing or a document to open beside the conversation, shown under the
-  line that made it. Memories and schedules can be edited; a schedule can
+  you type. The agent can make a page, a drawing or a document to open
+  beside the conversation, shown under the line that made it; a page may
+  draw its charts with ECharts, which the server serves to it along with
+  the dashboard's own look, so a chart reads like the page around it and
+  follows your theme. A conversation that outgrows what a round carries
+  is compacted into a note, and the recent turns stay with it: the next
+  turn gets the note and the turns after the point it stands in for, a
+  long stretch is read in parts, and a request the provider refuses for
+  its size is compacted harder and sent once more. Memories and schedules can be edited; a schedule can
   be one moment (`@at 2026-09-12 09:00`) or a distance from now (`@in
   20m`) for a reminder — "check this in twenty minutes" is one. Your
   agent's page is under Settings, beside a Preferences page that holds how
@@ -169,6 +175,48 @@ Notable changes to TeaNode. The format follows
   for the messages chosen in the list or for the conversation open in the
   reader, and the agent is told, as a correction it learns from. An
   artifact opens in a tab of its own from one mark. (#73)
+
+- Your agent on Telegram and Discord. Make a bot of your own in the app,
+  hand its token to your agent on the agent page under "Chat apps", and
+  send the bot the code the page shows; from then on that chat is your
+  primary conversation. The bot shows it is typing, streams its answer
+  into a message it keeps editing, sends what the agent made — a picture
+  or a document as a file, a page as a link that opens in the browser
+  without a sign-in for thirty days, since the apps show an attached page
+  as a file and never draw it — takes files and photos sent to it, asks
+  for your yes on the same cards the drawer shows, and knows `/new`,
+  `/stop`, `/status`, `/unlink` and `/help`; in a group it answers a
+  reply to it or `/ask`. The bots run on the server, one instance each;
+  the operator can keep chat apps off with `agent.features.chatApps`.
+  `teanode agent channel` does the same from a terminal. (#73)
+- The drawer follows the conversation, not only its own turns: a
+  question sent from Telegram, a phone, a terminal or another browser
+  appears in the open drawer as it happens, words, tools and answer,
+  whichever server instance runs it, and its stop button, its cards and
+  its questions reach that instance too. A drawer whose connection
+  dropped — a closed lid, a phone in a pocket, a server restarted —
+  reconnects on its own and reads what it missed. (#73)
+- Your own computer, attached to your agent. `teanode computer start`
+  runs a small program on your machine that signs in as you and stays
+  connected; while it runs, the agent can run a command there and read,
+  write, list, search and grep your files, as you, anywhere on the
+  machine — only in a conversation you are present in, asking first for
+  anything that changes the machine or reaches out of it. Several
+  computers can be attached at once, told apart by name; the drawer shows
+  what is attached as a mark in its head, with the names on hover. `status` says whether the server sees it, `stop`
+  ends it, `daemon` runs it in the foreground for a service manager. The
+  operator can keep computers off with `agent.features.computer`. The
+  browser extension signs in the way the command line does: its options
+  page opens the server's authorization page and keeps the token it is
+  handed, so it no longer needs a dashboard session in the same browser;
+  and an attached tab can be driven on a server that has no headless
+  browser of its own. The extension's button now opens the dashboard's own
+  drawer on whatever page you are on — the same drawer, framed from the
+  server and signed in by the extension — or, on the dashboard itself, the
+  built-in one; and the agent can open tabs beside yours, grouped under
+  "TeaNode", list them, switch between them and close the ones it opened.
+  The extension is built with webpack into `web/extension/dist`, and its
+  options page wears the dashboard's own tokens. (#73)
 
 ### Changed
 

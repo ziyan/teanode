@@ -23,9 +23,9 @@ func (self *fakeTab) Send(message []byte) error {
 	go func() {
 		ok, data := self.answers(decoded.Action, decoded.Args)
 		if ok {
-			self.agent.TabAnswered(self.agentId, decoded.ID, true, json.RawMessage(data), "")
+			self.agent.TabAnswered(self.agentId, self, decoded.ID, true, json.RawMessage(data), "")
 		} else {
-			self.agent.TabAnswered(self.agentId, decoded.ID, false, nil, data)
+			self.agent.TabAnswered(self.agentId, self, decoded.ID, false, nil, data)
 		}
 	}()
 	return nil

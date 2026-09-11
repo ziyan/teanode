@@ -102,6 +102,8 @@ type AgentFeaturesSettings struct {
 	Schedules        bool `json:"schedules"`
 	Browser          bool `json:"browser"`
 	ConnectedServers bool `json:"connectedServers"`
+	Computer         bool `json:"computer"`
+	ChatApps         bool `json:"chatApps"`
 }
 
 // AgentLimitsSettings are the operator's limits.
@@ -205,6 +207,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Schedules:        agent.FeatureOn("schedules"),
 			Browser:          agent.FeatureOn("browser"),
 			ConnectedServers: agent.FeatureOn("connectedServers"),
+			Computer:         agent.FeatureOn("computer"),
+			ChatApps:         agent.FeatureOn("chatApps"),
 		},
 		Limits: &AgentLimitsSettings{
 			MaxBodyCharacters:      agent.Limits.MaxBodyCharacters,
@@ -358,6 +362,8 @@ type AgentFeaturesParameters struct {
 	Schedules        *bool `json:"schedules"`
 	Browser          *bool `json:"browser"`
 	ConnectedServers *bool `json:"connectedServers"`
+	Computer         *bool `json:"computer"`
+	ChatApps         *bool `json:"chatApps"`
 }
 
 // AgentLimitsParameters change the limits.
@@ -496,6 +502,8 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyFeature(&features.Schedules, parameters.Features.Schedules)
 		applyFeature(&features.Browser, parameters.Features.Browser)
 		applyFeature(&features.ConnectedServers, parameters.Features.ConnectedServers)
+		applyFeature(&features.Computer, parameters.Features.Computer)
+		applyFeature(&features.ChatApps, parameters.Features.ChatApps)
 	}
 	if parameters.Limits != nil {
 		limits := &agent.Limits

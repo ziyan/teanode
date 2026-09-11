@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TeaNode agent tab</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="card">
+      <div class="header"><span class="mark">TN</span><strong>TeaNode agent tab</strong></div>
+      <p class="muted">The server your agent lives on. The extension signs in there the way the command line does: it opens the server's authorization page, you press Authorize, and a token comes back here. Nothing is typed into this page.</p>
+      <label class="field"><span>Server address</span><input id="server" placeholder="https://mail.example.com" /></label>
+      <div class="actions"><button id="save">Save</button></div>
+      <div class="status" id="saved"></div>
+      <hr />
+      <p id="who"></p>
+      <div class="actions"><button id="signin" class="primary">Sign in</button><button id="signout" hidden>Sign out</button></div>
+      <div class="status" id="status"></div>
+      <hr />
+      <p class="how muted">Click the extension's button on a tab to attach it; click again to detach. While attached the badge says <b>on</b>, and your agent can read and act in that tab with your session, in front of you. It never types into a password or card field, and never submits a form that pays or changes credentials without your word.</p>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

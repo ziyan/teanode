@@ -83,6 +83,11 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	audiencesOf := memoryAudiences
 	switch arguments.Action {
 	case "add":
+		// A fact without a name is named by its first words rather than
+		// refused: a refusal here was answered with the same call again.
+		if strings.TrimSpace(arguments.Title) == "" {
+			arguments.Title = tools.FirstWords(arguments.Content, 8)
+		}
 		var created *models.AgentMemory
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentMemory(&models.AgentMemory{AgentID: agentId, Title: arguments.Title, Content: arguments.Content, Tags: arguments.Tags, AppliesTo: audiencesOf(arguments.AppliesTo), Pinned: arguments.Pinned != nil && *arguments.Pinned})

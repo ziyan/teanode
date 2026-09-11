@@ -44,6 +44,34 @@ function locationHeaders(): Record<string, string> {
   }
 }
 
+// A page framed by another site — the drawer the browser extension puts
+// on whatever page the person is on — has no session cookie of this
+// origin to send. It signs in with the token the extension posts to it,
+// sent as an Authorization header on every call and in the websocket's
+// first message.
+let bearerToken = ''
+
+export function signInWithToken(token: string) {
+  bearerToken = token
+}
+
+// framedDrawer says whether this document is the drawer framed by the
+// browser extension into another site, decided once when it loaded: a
+// route change never turns the frame into the whole dashboard.
+export const framedDrawer = typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
+
+export function authorization(): Record<string, string> {
+  return bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}
+}
+
+// withToken is an address a browser fetches on its own — a picture, a
+// framed artifact — with the token added where a header cannot go; the
+// address is unchanged when a session cookie will do.
+export function withToken(url: string): string {
+  if (!bearerToken) return url
+  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(bearerToken)}`
+}
+
 async function send(
   query: string,
   variables: Record<string, unknown>,
@@ -52,7 +80,7 @@ async function send(
   const request = () =>
     fetch('/api/v1/graphql', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...locationHeaders() },
+      headers: { 'Content-Type': 'application/json', ...locationHeaders(), ...authorization() },
       body: JSON.stringify({ query, variables }),
       // Given by useQuery, so a request nobody is waiting for any more is
       // dropped rather than left to finish and report.
@@ -761,66 +789,147 @@ export interface ThreadSummary {
 // function stops it. The socket speaks the same small protocol the server
 // does: connection_init with the CSRF token, start with the document, data
 // per result, ka to keep alive, stop to end.
+//
+// A socket that drops — a laptop lid, a phone in a pocket, a server
+// restarted — comes back on its own, a little later each time, and at
+// once when the network or the tab returns. Before each start, the first
+// included, `beforeStart` runs and is waited for: a chance to read what
+// was missed while away, so that what the subscription then replays
+// lands on a fresh picture. The subscription ends for good only when the
+// server says so — an error for the document, or complete — or when the
+// returned function is called.
+export interface SubscribeOptions {
+  beforeStart?: (reconnecting: boolean) => Promise<void> | void
+}
+
+// A socket that says nothing for this long — the server says "ka" every
+// second — is dead, whatever the browser thinks, and is replaced.
+const SUBSCRIBE_SILENCE = 15000
+
 export function subscribe<T>(
   query: string,
   variables: Record<string, unknown>,
   onData: (data: T) => void,
   onEnd?: (error?: Error) => void,
+  options?: SubscribeOptions,
 ): () => void {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocket(`${protocol}//${window.location.host}/api/v1/graphql`)
-  const id = String(Date.now()) + Math.random().toString(36).slice(2)
+  const address = `${protocol}//${window.location.host}/api/v1/graphql`
   let ended = false
+  let socket: WebSocket | null = null
+  let retry: number | undefined
+  let silence: number | undefined
+  let attempts = 0
+  let connections = 0
+  let started = ''
   const end = (error?: Error) => {
     if (ended) {
       return
     }
     ended = true
+    window.removeEventListener('online', wake)
+    document.removeEventListener('visibilitychange', wake)
+    window.clearTimeout(retry)
+    window.clearTimeout(silence)
     onEnd?.(error)
   }
   const csrf = () => {
     const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/)
     return match ? decodeURIComponent(match[1]) : ''
   }
-  socket.onopen = () => {
-    socket.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders() } }))
-  }
-  socket.onmessage = (event) => {
-    let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[] } }
-    try {
-      message = JSON.parse(String(event.data))
-    } catch {
+  const connect = () => {
+    if (ended) {
       return
     }
-    switch (message.type) {
-      case 'connection_ack':
-        socket.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
-        break
-      case 'data':
-        if (message.payload?.errors && message.payload.errors.length > 0) {
-          end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
-          socket.close()
-          return
-        }
-        if (message.payload?.data) {
-          onData(message.payload.data)
-        }
-        break
-      case 'complete':
-        end()
-        socket.close()
-        break
-      default:
-        break
+    retry = undefined
+    const id = String(Date.now()) + Math.random().toString(36).slice(2)
+    const current = new WebSocket(address)
+    socket = current
+    connections += 1
+    const reconnecting = connections > 1
+    const heard = () => {
+      window.clearTimeout(silence)
+      silence = window.setTimeout(() => {
+        if (socket === current) current.close()
+      }, SUBSCRIBE_SILENCE)
+    }
+    current.onopen = () => {
+      heard()
+      current.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() } }))
+    }
+    current.onmessage = async (event) => {
+      heard()
+      let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[]; message?: string } }
+      try {
+        message = JSON.parse(String(event.data))
+      } catch {
+        return
+      }
+      switch (message.type) {
+        case 'connection_ack':
+          attempts = 0
+          try {
+            await options?.beforeStart?.(reconnecting)
+          } catch {
+            // What could not be read now is read when the next event
+            // asks for it; the subscription starts regardless.
+          }
+          if (ended || socket !== current || current.readyState !== WebSocket.OPEN) return
+          started = id
+          current.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
+          break
+        case 'data':
+          if (message.payload?.errors && message.payload.errors.length > 0) {
+            end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
+            current.close()
+            return
+          }
+          if (message.payload?.data) {
+            onData(message.payload.data)
+          }
+          break
+        case 'error':
+          // The document itself was refused: no socket will change that.
+          end(new APIError(message.payload?.message ?? 'the subscription was refused'))
+          current.close()
+          break
+        case 'complete':
+          end()
+          current.close()
+          break
+        default:
+          break
+      }
+    }
+    current.onerror = () => {
+      // The close that follows says what to do.
+    }
+    current.onclose = () => {
+      window.clearTimeout(silence)
+      if (ended || socket !== current) return
+      socket = null
+      attempts += 1
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempts - 1, 5)) + Math.random() * 500
+      retry = window.setTimeout(connect, delay)
     }
   }
-  socket.onerror = () => end(new APIError('the connection to the server was lost'))
-  socket.onclose = () => end()
+  // Back on the network, or back to the tab: no reason to keep waiting.
+  const wake = () => {
+    if (ended || socket || retry === undefined) return
+    if (document.visibilityState === 'hidden') return
+    window.clearTimeout(retry)
+    connect()
+  }
+  window.addEventListener('online', wake)
+  document.addEventListener('visibilitychange', wake)
+  connect()
   return () => {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ id, type: 'stop' }))
+    const current = socket
+    socket = null
+    if (current && current.readyState === WebSocket.OPEN) {
+      current.send(JSON.stringify({ id: started, type: 'stop' }))
     }
-    socket.close()
+    current?.close()
     end()
   }
 }

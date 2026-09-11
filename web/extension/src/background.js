@@ -1,27 +1,41 @@
-// The extension attaches one tab to the person's agent over the
-// dashboard's websocket. The server never touches the page: every action
+// The extension attaches one tab to the person's agent over the server's
+// websocket, saying who it is with the token the options page signed in
+// with. The server never touches the page: every action
 // arrives here as a request, is done by the content script in the page,
 // and its answer goes back. The refusals that matter — a password or card
 // field, a form that pays or changes credentials — are enforced in the
 // content script, whatever the server asked for.
 
-const PROTOCOL = 1
+const PROTOCOL = 2
 
 let socket = null
-let attached = null // { tabId, title, url }
+// attached is the person's tab and, while the agent has opened tabs of
+// its own, which of them is current: ownTabId is theirs, tabId the one
+// actions go to.
+let attached = null // { tabId, ownTabId, title, url }
+// groups are the "TeaNode" tab groups the agent's tabs live in, by window.
+const groups = new Map()
+// opened are the tabs the agent opened, by id: what it may switch to and
+// close. Kept in the session's storage, so that a worker started again
+// still knows them; a tab the person moved into the group is not one.
+const opened = new Set()
+chrome.storage.session.get('opened').then(({ opened: kept }) => {
+  for (const id of kept || []) opened.add(id)
+})
+const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
+// A worker starts with nothing attached, whatever the badge said before.
+setBadge('')
+let pings = null
 
 async function serverOrigin() {
   const { server } = await chrome.storage.sync.get('server')
   return (server || '').replace(/\/+$/, '')
 }
 
-async function csrfToken(origin) {
-  try {
-    const cookie = await chrome.cookies.get({ url: origin, name: 'csrftoken' })
-    return cookie ? cookie.value : ''
-  } catch {
-    return ''
-  }
+// The token the options page signed in with: what the tab says it is.
+async function token() {
+  const { token } = await chrome.storage.local.get('token')
+  return token || ''
 }
 
 function setBadge(text, color) {
@@ -31,16 +45,23 @@ function setBadge(text, color) {
 
 async function attach(tab) {
   const origin = await serverOrigin()
-  if (!origin) {
+  const secret = await token()
+  if (!origin || !secret) {
     chrome.runtime.openOptionsPage()
     return
   }
   detach()
   const address = origin.replace(/^http/, 'ws') + '/api/v1/agent/tab'
   socket = new WebSocket(address)
-  attached = { tabId: tab.id, title: tab.title || '', url: tab.url || '' }
+  attached = { tabId: tab.id, ownTabId: tab.id, title: tab.title || '', url: tab.url || '' }
   socket.onopen = async () => {
-    socket.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, csrf: await csrfToken(origin), title: attached.title, url: attached.url }))
+    socket.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url }))
+    // A word every so often keeps this worker, and the socket, alive
+    // while nothing else is said.
+    clearInterval(pings)
+    pings = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }))
+    }, 20000)
   }
   socket.onmessage = async (event) => {
     let message
@@ -56,11 +77,14 @@ async function attach(tab) {
         return
       }
       setBadge('on', '#2a7')
+      tellPanels()
       return
     }
     if (message.type === 'refused') {
       setBadge('!', '#c33')
       detach()
+      // A token the server no longer takes: sign in again.
+      if (/token|sign in/i.test(message.reason || '')) chrome.runtime.openOptionsPage()
       return
     }
     if (message.type === 'act') {
@@ -69,9 +93,11 @@ async function attach(tab) {
     }
   }
   socket.onclose = () => {
+    clearInterval(pings)
     setBadge('')
     socket = null
     attached = null
+    tellPanels()
   }
   socket.onerror = () => setBadge('!', '#c33')
 }
@@ -84,9 +110,76 @@ function detach() {
       // Already gone.
     }
   }
+  clearInterval(pings)
   socket = null
   attached = null
   setBadge('')
+  tellPanels()
+}
+
+// tellPanels says to the open panels whether a tab is attached, so their
+// button reads right; a page without a panel does not mind.
+async function tellPanels() {
+  const tabs = await chrome.tabs.query({})
+  for (const tab of tabs) {
+    chrome.tabs.sendMessage(tab.id, { type: 'state', attached: !!attached && attached.ownTabId === tab.id }).catch(() => {})
+  }
+}
+
+// current is what the tab the actions go to shows now, told to the server
+// so the agent's overlay names it.
+async function current() {
+  const tab = await chrome.tabs.get(attached.tabId)
+  attached.title = tab.title || ''
+  attached.url = tab.url || ''
+  socket?.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url }))
+  return { tab: tab.id, url: attached.url, title: attached.title }
+}
+
+// groupFor is the TeaNode tab group of a window, made when there is none.
+async function groupFor(windowId, tabId) {
+  const known = groups.get(windowId)
+  if (known !== undefined) {
+    try {
+      await chrome.tabGroups.get(known)
+      await chrome.tabs.group({ tabIds: [tabId], groupId: known })
+      return known
+    } catch {
+      groups.delete(windowId)
+    }
+  }
+  const groupId = await chrome.tabs.group({ tabIds: [tabId] })
+  await chrome.tabGroups.update(groupId, { title: 'TeaNode', color: 'green' })
+  groups.set(windowId, groupId)
+  return groupId
+}
+
+// pickTab is the tab an action means: the number tabs gave, a piece of an
+// address or a title, or the fallback when nothing was said. Only the
+// person's own tab and the ones the agent opened count.
+async function pickTab(args, fallback) {
+  const own = await chrome.tabs.get(attached.ownTabId).catch(() => null)
+  const candidates = [...(own ? [own] : []), ...(await agentTabs())]
+  if (args.tab !== undefined && args.tab !== null && args.tab !== '') {
+    const wanted = Number(args.tab)
+    return candidates.some((tab) => tab.id === wanted) ? wanted : 0
+  }
+  const words = String(args.url || args.text || '').trim().toLowerCase()
+  if (words) {
+    const match = candidates.find((tab) => (tab.url || '').toLowerCase().includes(words) || (tab.title || '').toLowerCase().includes(words))
+    return match ? match.id : 0
+  }
+  return candidates.some((tab) => tab.id === fallback) ? fallback : 0
+}
+
+// agentTabs are the tabs the agent opened, of those still open.
+async function agentTabs() {
+  const tabs = await chrome.tabs.query({})
+  const listed = tabs.filter((tab) => opened.has(tab.id))
+  for (const id of opened) {
+    if (!tabs.some((tab) => tab.id === id)) opened.delete(id)
+  }
+  return listed
 }
 
 // act does one action in the attached tab: navigation here, everything
@@ -105,6 +198,50 @@ async function act(action, args) {
       attached.url = updated.url || ''
       socket?.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url }))
       return { ok: true, data: { url: attached.url, title: attached.title } }
+    }
+    if (action === 'open') {
+      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      const made = await chrome.tabs.create({ url: args.url, windowId: tab.windowId, active: true })
+      opened.add(made.id)
+      await rememberOpened()
+      await groupFor(tab.windowId, made.id)
+      attached.tabId = made.id
+      await waitForLoad(made.id)
+      return { ok: true, data: await current() }
+    }
+    if (action === 'tabs') {
+      const own = await chrome.tabs.get(attached.ownTabId).catch(() => null)
+      const listed = []
+      if (own) listed.push({ tab: own.id, title: own.title || '', url: own.url || '', own: true, current: own.id === attached.tabId })
+      for (const opened of await agentTabs()) {
+        listed.push({ tab: opened.id, title: opened.title || '', url: opened.url || '', own: false, current: opened.id === attached.tabId })
+      }
+      return { ok: true, data: { tabs: listed } }
+    }
+    if (action === 'switch') {
+      // By number from tabs, by a piece of its address, or, given nothing,
+      // back to the person's own tab.
+      const wanted = await pickTab(args, attached.ownTabId)
+      if (!wanted) return { ok: false, error: 'not a tab of this conversation: the person\'s own, or one you opened; tabs lists them' }
+      await chrome.tabs.update(wanted, { active: true })
+      attached.tabId = wanted
+      return { ok: true, data: await current() }
+    }
+    if (action === 'close') {
+      // By number, by a piece of its address, or, given nothing, the tab
+      // the actions go to; never the person's own.
+      const mine = await agentTabs()
+      const last = mine.length > 0 ? mine[mine.length - 1].id : 0
+      const wanted = await pickTab(args, attached.tabId !== attached.ownTabId ? attached.tabId : last)
+      if (!wanted || wanted === attached.ownTabId) return { ok: false, error: "the person's own tab is theirs to close; name one you opened, from tabs" }
+      await chrome.tabs.remove(wanted)
+      opened.delete(wanted)
+      await rememberOpened()
+      if (attached.tabId === wanted) {
+        attached.tabId = attached.ownTabId
+        await chrome.tabs.update(attached.ownTabId, { active: true })
+      }
+      return { ok: true, data: await current() }
     }
     if (action === 'back') {
       await chrome.tabs.goBack(tab.id)
@@ -129,6 +266,13 @@ async function act(action, args) {
 
 function waitForLoad(tabId) {
   return new Promise((resolve) => {
+    // Already there: a page that loaded before anybody looked.
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab && tab.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(done)
+        resolve()
+      }
+    }).catch(() => {})
     const done = (id, info) => {
       if (id === tabId && info.status === 'complete') {
         chrome.tabs.onUpdated.removeListener(done)
@@ -338,12 +482,38 @@ async function inPage(action, args) {
   return { ok: false, error: 'unknown action ' + action }
 }
 
+// The button opens the agent's panel on the page: the dashboard's own
+// drawer, framed, or the dashboard's drawer itself when the page is the
+// dashboard. Where nothing can be put on the page, the options open.
 chrome.action.onClicked.addListener(async (tab) => {
-  if (attached && attached.tabId === tab.id) {
-    detach()
-    return
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['panel.js'] })
+  } catch {
+    chrome.runtime.openOptionsPage()
   }
-  await attach(tab)
+})
+
+// What the panel asks of this worker.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const tab = sender.tab
+  switch (message && message.type) {
+    case 'panel:token':
+      Promise.all([serverOrigin(), token(), chrome.storage.local.get('username')]).then(([server, secret, { username }]) => {
+        sendResponse({ server, token: secret, username: username || '', attached: !!attached && !!tab && attached.ownTabId === tab.id })
+      })
+      return true
+    case 'panel:options':
+      chrome.runtime.openOptionsPage()
+      return false
+    case 'panel:attach':
+      if (tab) attach(tab).then(() => sendResponse({ attached: !!attached && attached.ownTabId === tab.id }))
+      return true
+    case 'panel:detach':
+      detach()
+      sendResponse({ attached: false })
+      return false
+  }
+  return false
 })
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
@@ -355,5 +525,15 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (attached && attached.tabId === tabId) detach()
+  if (opened.delete(tabId)) rememberOpened()
+  if (!attached) return
+  if (attached.ownTabId === tabId) {
+    detach()
+    return
+  }
+  // A tab the agent opened, closed by the person: back to their own.
+  if (attached.tabId === tabId) {
+    attached.tabId = attached.ownTabId
+    current().catch(() => {})
+  }
 })

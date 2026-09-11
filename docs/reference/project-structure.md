@@ -174,6 +174,13 @@ tool discovery and calls, and OAuth 2.1 with PKCE for the servers that want
 a person's authorization. Only tools are consumed; what a server answers is
 data. Tests speak to in-process servers.
 
+**`internal/computer`** — the person's own computer as their agent reaches
+it: the program `teanode computer` runs there, which signs in with the
+person's token, keeps a websocket to the server and answers the shell and
+filesystem tools' requests inside the directory the person allowed; and
+the rule over commands both ends apply (what never runs, what asks first).
+Tests speak to a fake connection.
+
 **`internal/browser`** — a DevTools client for the Chrome the operator runs
 beside the server: an isolated context per run, the page read as a tree the
 model can point into, click, type, scroll, wait, screenshot, with every

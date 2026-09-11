@@ -29,6 +29,11 @@ type ChatMessage struct {
 	// everything up to and including this message. Ignored by the ones
 	// that cannot.
 	CacheBreakpoint bool
+
+	// SourceID is the stored message this one was loaded from, when it
+	// was: what a compaction records to say where the verbatim transcript
+	// resumes. Never sent to a provider.
+	SourceID string
 }
 
 // ContentPart is one piece of a multimodal message.

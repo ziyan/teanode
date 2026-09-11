@@ -20,6 +20,10 @@ const (
 	// through, for the person's agent.
 	PathAgentTab = Prefix + "/agent/tab"
 
+	// PathAgentComputer is the websocket `teanode computer` attaches the
+	// person's computer through.
+	PathAgentComputer = Prefix + "/agent/computer"
+
 	// PathAgentAttachments takes files for a conversation with the agent,
 	// as a multipart body; PathAgentAttachment hands one back to its owner.
 	PathAgentAttachments = Prefix + "/agent/attachments"
@@ -146,7 +150,7 @@ const ()
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
-	return []string{PathGraphQL, PathAgentTab}
+	return []string{PathGraphQL, PathAgentTab, PathAgentComputer}
 }
 
 // PublicPrefixes are reachable without the middleware turning them away, for

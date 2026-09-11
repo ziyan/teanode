@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -33,6 +34,15 @@ type AgentAttachmentUploadResult struct {
 // two file endpoints, settled before a byte of the body is read.
 func (self *graph) agentAttachmentPerson(response http.ResponseWriter, request *http.Request) (*models.User, *models.Agent, bool) {
 	username := api.UsernameFromRequest(request)
+	// The drawer framed into another site has no session cookie of this
+	// origin, and a picture or a framed artifact cannot carry a header:
+	// those come with the token in the address, verified as a header
+	// would be.
+	if username == "" && request.Method == http.MethodGet {
+		if token := request.URL.Query().Get("token"); token != "" {
+			username = self.usernameOfToken(request, token)
+		}
+	}
 	var user *models.User
 	if username != "" && username != config.LocalUsername {
 		found, err := self.database.GetUserByUsername(username)
@@ -129,23 +139,59 @@ func contentTypeOf(name, declared string, content []byte) string {
 }
 
 func (self *graph) agentAttachmentView(response http.ResponseWriter, request *http.Request) {
+	attachmentId := mux.Vars(request)["attachmentId"]
+	// A shared artifact opens without a sign-in: the address itself is
+	// signed, names this one artifact, and expires. A chat app hands
+	// it to a browser that has no session here.
+	if share := request.URL.Query().Get("share"); share != "" && request.Method == http.MethodGet {
+		worker := self.agentWorker()
+		if worker == nil || !worker.SharedArtifact(attachmentId, share) {
+			writeJSON(response, http.StatusNotFound, map[string]string{"error": "the link is not good, or no longer"})
+			return
+		}
+		attachment, ok := self.agentAttachmentRow(response, attachmentId)
+		if !ok {
+			return
+		}
+		if attachment == nil || attachment.MessageID != "artifact" {
+			writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such page"})
+			return
+		}
+		self.serveAgentAttachment(response, request, attachment)
+		return
+	}
 	_, found, ok := self.agentAttachmentPerson(response, request)
 	if !ok {
 		return
 	}
-	attachmentId := mux.Vars(request)["attachmentId"]
-	var attachment *models.AgentAttachment
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
-		attachment, err = tx.GetAgentAttachment(attachmentId)
-		return err
-	}); err != nil {
-		writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "failed to read the file"})
+	attachment, ok := self.agentAttachmentRow(response, attachmentId)
+	if !ok {
 		return
 	}
 	if attachment == nil || attachment.AgentID != found.ID {
 		writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such file"})
 		return
 	}
+	self.serveAgentAttachment(response, request, attachment)
+}
+
+// agentAttachmentRow is the attachment's row, nil when there is none; the
+// second value is false when the database failed and the answer is sent.
+func (self *graph) agentAttachmentRow(response http.ResponseWriter, attachmentId string) (*models.AgentAttachment, bool) {
+	var attachment *models.AgentAttachment
+	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		attachment, err = tx.GetAgentAttachment(attachmentId)
+		return err
+	}); err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "failed to read the file"})
+		return nil, false
+	}
+	return attachment, true
+}
+
+// serveAgentAttachment writes the file, as a page, a picture or a
+// download by what it is.
+func (self *graph) serveAgentAttachment(response http.ResponseWriter, request *http.Request, attachment *models.AgentAttachment) {
 	content, err := self.storage.GetFile(request.Context(), attachment.ID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -170,7 +216,7 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 		disposition = "inline"
 	case attachment.MessageID == "artifact":
 		disposition = "inline"
-		response.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data:")
+		response.Header().Set("Content-Security-Policy", artifactPolicy(request.Host))
 	default:
 		contentType = "application/octet-stream"
 	}
@@ -181,4 +227,23 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 	response.Header().Set("Cache-Control", "private, max-age=3600")
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(content)
+}
+
+// hostName is what a host header may look like to be written into a policy:
+// a name or an address, with a port.
+var hostName = regexp.MustCompile(`^[A-Za-z0-9.:\[\]-]+$`)
+
+// artifactPolicy is the sandbox an artifact is shown in: an origin that is
+// nobody's, no request to anywhere, so a script in it can draw and reach
+// nothing else — except this server's /assets/, where the chart library
+// and the dashboard's look for a page live. The host is the request's
+// own, without a scheme, which the policy takes as "the page's or safer";
+// anything that is not a host name is left out rather than written into
+// a header.
+func artifactPolicy(host string) string {
+	assets := ""
+	if hostName.MatchString(host) {
+		assets = " " + host + "/assets/"
+	}
+	return "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'" + assets + "; style-src 'unsafe-inline'" + assets + "; img-src data: blob:; font-src data:" + assets + "; media-src data:"
 }

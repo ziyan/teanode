@@ -94,10 +94,28 @@ type Agent struct {
 
 	// tabs are the browser tabs people attached; contextsOpen counts the
 	// headless browser contexts in use under the operator's cap.
-	tabsMutex     sync.Mutex
-	tabs          map[string]*attachedTab
-	contextsMutex sync.Mutex
-	contextsOpen  int
+	tabsMutex sync.Mutex
+	tabs      map[string]*attachedTab
+	// feeds are the subscribers to each conversation's events, by
+	// conversation; the relay queue is what this instance's runs emitted
+	// and the others have not heard yet.
+	feedsMutex sync.Mutex
+	feeds      map[string]map[int]chan Event
+	nextFeed   int
+	relayMutex sync.Mutex
+	relaying   bool
+	relayQueue []Event
+	relayWake  chan struct{}
+	// foreignRuns are the runs heard of through the feed that other
+	// instances run, by run id.
+	foreignMutex sync.Mutex
+	foreignRuns  map[string]foreignRun
+
+	// computers are the computers people attached with `teanode computer`.
+	computersMutex sync.Mutex
+	computers      map[string]map[string]*attachedComputer
+	contextsMutex  sync.Mutex
+	contextsOpen   int
 }
 
 // Catalog is every tool the server knows.
@@ -172,6 +190,12 @@ func FullCatalog() *Catalog {
 	return tools.Build()
 }
 
+// OperationsFor is what a run made for a person outside a request — a
+// scheduled run, a turn from a chat app — may do: what the person may.
+func (self *Agent) OperationsFor(ctx context.Context, owner *models.User) (Operations, error) {
+	return self.operations(ctx, owner)
+}
+
 // SetMailer hands the worker the mailer, once there is one.
 func (self *Agent) SetMailer(sender mailer.Mailer) {
 	self.settings.Mailer = sender
@@ -191,6 +215,7 @@ func (self *Agent) Start() {
 		Name:     "agent:worker",
 	})
 	self.worker.Start()
+	self.startFeed()
 }
 
 // Stop ends the worker and waits for the runs in flight.

@@ -1131,6 +1131,12 @@ connected servers.
 **`connectedServers`** — Servers speaking the Model Context Protocol. Needs
 one declared.
 
+**`computer`** — A person's own computer, attached with `teanode computer`,
+reached by the `shell` and `filesystem` tools while they are present.
+
+**`chatApps`** — A person's own Telegram or Discord bot, through which they
+talk to their agent's primary conversation.
+
 ### `agent.limits`
 
 **`maxBodyCharacters`** — How much of a message a model is given; the rest

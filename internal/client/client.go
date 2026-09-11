@@ -110,6 +110,12 @@ func (self *Client) URL() string {
 	return self.url
 }
 
+// Token is what this client signs in with, for a connection made beside
+// it, such as a websocket.
+func (self *Client) Token() string {
+	return self.token
+}
+
 // ReadOnly says whether this client refuses mutations.
 func (self *Client) ReadOnly() bool {
 	return self.readOnly

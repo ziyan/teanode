@@ -83,6 +83,18 @@ type AgentSubscription interface {
 	// Every event of a run, from the start, then live until it is done.
 	// Needs agent:use.
 	AgentRunEvents(ctx context.Context, arguments ReadAgentRunArguments) (<-chan *agent.Event, error)
+
+	// Every event of every turn of a conversation, wherever the turn was
+	// started — this drawer, a phone, a terminal, a chat app, another
+	// instance: the turns in flight are replayed, then it is live until
+	// the subscription ends. A turn begins with an "asked" event carrying
+	// what was said. Needs agent:use.
+	AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error)
+}
+
+// ReadAgentConversationEventsArguments name the conversation to follow.
+type ReadAgentConversationEventsArguments struct {
+	ConversationID string `json:"conversationId"`
 }
 
 // ListAgentConversationsArguments say whether archived ones are wanted.
@@ -509,12 +521,36 @@ func (self *graph) ResolveAgentConfirmation(ctx context.Context, arguments Resol
 	if worker == nil {
 		return false, agent.ErrUnavailable
 	}
-	run := worker.FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
+	log.Noticef("%s %s what their agent asked to do", operatorName(ctx), map[bool]string{true: "approved", false: "declined"}[arguments.Approve])
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandResolve, CallID: arguments.CallID, Approve: arguments.Approve})
+}
+
+// commandAgentRun gives a run the person's word: applied here when the
+// run is here; forwarded to the instance running it when the run is one
+// this instance has heard of through the feed. Either way the run must
+// be this agent's.
+func (self *graph) commandAgentRun(ctx context.Context, found *models.Agent, worker *agent.Agent, command agent.RunCommand) (bool, error) {
+	if run := worker.FindRun(command.RunID); run != nil {
+		if run.Conversation().AgentID != found.ID {
+			return false, api.ErrNotFound
+		}
+		return worker.Apply(run, command), nil
+	}
+	conversationId, ok := worker.ForeignRun(command.RunID)
+	if !ok {
 		return false, api.ErrNotFound
 	}
-	log.Noticef("%s %s what their agent asked to do", operatorName(ctx), map[bool]string{true: "approved", false: "declined"}[arguments.Approve])
-	return run.Resolve(arguments.CallID, arguments.Approve), nil
+	conversation, err := self.transaction(ctx).GetAgentConversation(conversationId)
+	if err != nil {
+		return false, err
+	}
+	if conversation == nil || conversation.AgentID != found.ID {
+		return false, api.ErrNotFound
+	}
+	if err := worker.Forward(command); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error) {
@@ -526,12 +562,7 @@ func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArgum
 	if worker == nil {
 		return false, agent.ErrUnavailable
 	}
-	run := worker.FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
-		return false, api.ErrNotFound
-	}
-	run.Stop()
-	return true, nil
+	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandStop})
 }
 
 func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error) {
@@ -710,6 +741,59 @@ func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArg
 					return
 				}
 				if event.Kind == agent.EventDone {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return channel, nil
+}
+
+func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error) {
+	// The lookup needs a transaction of its own, as AgentRunEvents does.
+	var found *models.Agent
+	var conversation *models.AgentConversation
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		var err error
+		if _, found, err = self.requireAgentPerson(api.ContextWithTransaction(ctx, tx)); err != nil {
+			return err
+		}
+		conversation, err = tx.GetAgentConversation(arguments.ConversationID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if conversation == nil || conversation.AgentID != found.ID {
+		return nil, api.ErrNotFound
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	events, unsubscribe := worker.SubscribeConversation(conversation.ID)
+	channel := make(chan *agent.Event)
+	go func() {
+		defer close(channel)
+		defer unsubscribe()
+		// An event replayed and then published again is told by its
+		// sequence: the feed delivers each of a run's events once.
+		delivered := map[string]int{}
+		for {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
+					continue
+				}
+				delivered[event.RunID] = event.Sequence
+				copied := event
+				select {
+				case channel <- &copied:
+				case <-ctx.Done():
 					return
 				}
 			case <-ctx.Done():

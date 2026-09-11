@@ -18,181 +18,7 @@
    chrome that competed with it would make it just another colored thing —
    which is what an accent taken from the logo did: every button, link and
    active row was the brand color, so none of them meant anything. */
-
-:root {
-  --background: #ffffff;
-  /* The rail, one step off the page so the two read as separate surfaces
-     without a rule between them. */
-  --rail: #f7f7f6;
-  /* What sits on the page: cards, menus, the selected pill. Level with the
-     page in light, so a card is told apart by its outline rather than by a
-     wash — which is why everything using it carries a border. */
-  --surface: #ffffff;
-  --border: #e7e7e4;
-  /* What you type into inside the rail: filled rather than outlined, because
-     it is a place to type and not a value being edited. */
-  --field: #eeeeea;
-  /* A row in the rail under the pointer. One step further from the page than
-     the rail itself, so hovering reads as pressing in rather than lifting. */
-  --sidebar-hover: #efefec;
-  /* The border under a pointer. One step darker, so a field says it can be
-     interacted with before it is focused. */
-  --border-strong: #d8d8d4;
-  --text: #18181b;
-  --muted: #6f6f76;
-  /* What you press. Near-black rather than true black, which reads as heavy.
-     This is the accent, and it is deliberately not a color. */
-  --accent: #1f1f22;
-  --accent-text: #ffffff;
-  --accent-hover: #000000;
-  /* The leaf from the mark, and from the front page. Not an accent: the
-     accent here is deliberately not a color. This is for the one drawing that
-     is decoration rather than interface. */
-  --leaf: #729d39;
-  --good: #16a34a;
-  --bad: #dc2626;
-  --warn: #d97706;
-
-  /* Spacing, on an 8px unit. Quarter steps below one unit, half steps above;
-     anything between these is drift, not a finer scale.
-       1  icon and label pairs, chip to chip
-       2  button clusters, card content
-       3  toolbar internals, rows in a card list
-       4  panel to panel, page section gaps
-       6  page level separation */
-  --space-1: 6px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  /* Was referenced in three places and never defined, so every one of them
-     had no margin at all: a section's intro ran straight into its first
-     row. */
-  --space-5: 20px;
-  --space-6: 24px;
-
-  /* Corner radius derives from one unit rather than a literal per rule.
-       1  a chip, a tag, something the size of a word
-       2  a control: button, input, the selected pill
-       3  a panel: card, menu, dialog */
-  --radius-1: 6px;
-  --radius-2: 8px;
-  --radius-3: 12px;
-  --radius-round: 999px;
-
-  /* Type roles, not sizes. A new role is a token here, never a number at a
-     call site.
-       title      the page title and the current breadcrumb
-       body       running text and values, the default
-       label      field labels, timestamps, secondary metadata
-       overline   the label over a group, in the rail and over a section */
-  --text-title: 15px;
-  --text-body: 14px;
-  --text-label: 12px;
-  /* Not small caps. At this size the letter-spacing does the separating, and
-     uppercase only makes it harder to read. */
-  --text-overline: 12.5px;
-
-  /* How wide prose is allowed to get. One number, because two paragraphs on
-     one page wrapping in different places is the kind of thing that looks
-     like a bug and is one. Controls, tables and panels are not prose and are
-     not capped. */
-  --measure: 74ch;
-
-  /* Shadow means "this responds to you". Menus float above the page and cast
-     one; a static panel is an outline and a background, never a shadow.
-
-     The one exception is the selected pill in the rail, which lifts by a
-     single pixel — enough to read as raised off the gray without becoming a
-     second floating thing. */
-  --shadow-floating: 0 8px 28px rgb(0 0 0 / 22%);
-  --shadow-raised: 0 1px 2px rgb(0 0 0 / 6%);
-}
-
-/* Light is the palette above, and is what a reader gets unless something says
-   otherwise. Dark is defined once and applied twice: for somebody whose system
-   asks for it and who has not overridden it, and for somebody who chose it
-   outright. Written this way so that choosing light wins over a dark system,
-   and choosing dark wins over a light one — a toggle that only worked in one
-   direction would be worse than no toggle. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --background: #141416;
-    --rail: #0c0c0e;
-    --surface: #1a1a1d;
-    --border: #2a2a2e;
-    --field: #18181b;
-    --sidebar-hover: #17171a;
-    --border-strong: #3a3a40;
-    --text: #f4f4f5;
-    --muted: #a0a0a8;
-    /* Inverted, not dimmed: the near-black button becomes a near-white one,
-       and the text on it becomes near-black. */
-    --accent: #f4f4f5;
-    --accent-text: #18181b;
-    --accent-hover: #ffffff;
-    /* Lifted off the leaf, which is too dark to read on this ground. */
-    --leaf: #9fca63;
-    --good: #4ade80;
-    --bad: #f87171;
-    --warn: #fbbf24;
-  }
-}
-
-:root[data-theme='dark'] {
-  --background: #141416;
-  --rail: #0c0c0e;
-  --surface: #1a1a1d;
-  --border: #2a2a2e;
-  --field: #18181b;
-  --sidebar-hover: #17171a;
-  --border-strong: #3a3a40;
-  --text: #f4f4f5;
-  --muted: #a0a0a8;
-  /* Inverted, not dimmed: the near-black button becomes a near-white one,
-     and the text on it becomes near-black. */
-  --accent: #f4f4f5;
-  --accent-text: #18181b;
-  --accent-hover: #ffffff;
-  --leaf: #9fca63;
-  --good: #4ade80;
-  --bad: #f87171;
-  --warn: #fbbf24;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-/* A scrollbar that does not draw a gray slab down the side of a quiet page. */
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background-color: var(--border);
-  border-radius: var(--radius-2);
-  border: 3px solid var(--background);
-}
-*::-webkit-scrollbar-thumb:hover {
-  background-color: var(--border-strong);
-}
-
-html {
-  /* Landscape on iOS inflates text in a way that breaks the table layouts. */
-  -webkit-text-size-adjust: 100%;
-  /* Tells the browser which form controls and scrollbars to draw. */
-  color-scheme: light dark;
-}
-
-:root[data-theme='light'] {
-  color-scheme: light;
-}
-:root[data-theme='dark'] {
-  color-scheme: dark;
-}
+@import './tokens.css';
 
 body {
   margin: 0;
@@ -4699,6 +4525,14 @@ label.check-list-item {
   text-decoration: line-through;
 }
 
+/* The marks in the head for what of the person's own is attached. */
+.agent-drawer-device {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--muted);
+}
+
 .agent-drawer-tab {
   padding: 4px 12px;
   border-bottom: 1px solid var(--border);
@@ -4731,6 +4565,25 @@ label.check-list-item {
 /* The drawer floats over the page at the corner where its button was: a
    panel the page keeps its own shape under, rather than a column that
    squeezes the reader. On a phone it takes the screen. */
+/* The drawer as a page of its own, framed by the browser extension: it is
+   the frame, so nothing floats and nothing is rounded. */
+.drawer-page {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+}
+.agent-drawer.standalone {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .agent-drawer {
   position: fixed;
   right: 20px;
@@ -6365,10 +6218,14 @@ p.notice.domain-logo-note {
 .agent-artifact-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.agent-artifact-head .icon-button {
+  padding: 3px;
 }
 
 .agent-artifact-title {

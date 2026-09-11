@@ -46,6 +46,7 @@ retried.
       mcp/                  a client for connected servers (Model Context
                             Protocol): HTTP and stdio transports, OAuth 2.1
       browser/              the DevTools client behind the agent's browser tool
+      computer/             the program `teanode computer` runs on a person's machine, and the rule over commands
       models/               structs shared across packages
       spamfilter/           the seam between the server and whatever scores mail
       strainer/             the built-in spam filter, which scores it here

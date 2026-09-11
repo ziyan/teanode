@@ -53,6 +53,11 @@ export function CommandLinePage({ username }: { username: string }) {
   const state = query.get('state') ?? ''
   const profile = query.get('name') ?? ''
   const preset = query.has('lifetime') ? (query.get('lifetime') ?? '') : DEFAULT_LIFETIME
+  // The browser extension asks the same way, but has no port to post to:
+  // it gives an address of its own that only it receives, and the token
+  // goes there in the fragment, which never leaves the browser.
+  const redirect = query.get('redirect') ?? ''
+  const forExtension = isExtensionCallback(redirect)
 
   const [phase, setPhase] = useState<Phase>('consent')
   const [lifetime, setLifetime] = useState(preset)
@@ -64,7 +69,7 @@ export function CommandLinePage({ username }: { username: string }) {
     document.title = `${t('cli.title')} · ${t('app.name')}`
   }, [t])
 
-  if (!/^\d+$/.test(port) || !state) {
+  if ((!/^\d+$/.test(port) && !forExtension) || !state) {
     return (
       <AuthCard purpose={t('cli.title')} onSubmit={(event) => event.preventDefault()}>
         <p className="muted">{t('cli.notOpenedByCommand')}</p>
@@ -73,7 +78,7 @@ export function CommandLinePage({ username }: { username: string }) {
     )
   }
 
-  const tokenName = profile ? `teanode (${profile})` : 'teanode'
+  const tokenName = forExtension ? 'teanode extension' : profile ? `teanode (${profile})` : 'teanode'
   const lifetimes: { value: string; label: string }[] = LIFETIMES.map((option) => ({
     value: option.value,
     label: t(option.label),
@@ -107,6 +112,13 @@ export function CommandLinePage({ username }: { username: string }) {
       return
     }
     setSecret(issued)
+
+    if (forExtension) {
+      const fragment = new URLSearchParams({ state, token: issued, tokenId, username })
+      window.location.assign(`${redirect}#${fragment.toString()}`)
+      setPhase('delivered')
+      return
+    }
 
     // Hand it over. The client checks the nonce before accepting it.
     try {
@@ -160,7 +172,7 @@ export function CommandLinePage({ username }: { username: string }) {
   }
 
   return (
-    <AuthCard purpose={t('cli.intro')} onSubmit={(event) => void authorize(event)}>
+    <AuthCard purpose={forExtension ? t('cli.extensionIntro', { id: extensionIdOf(redirect) }) : t('cli.intro')} onSubmit={(event) => void authorize(event)}>
       <AuthField label={t('cli.signedInAs')} value={username} readOnly />
       <AuthField label={t('cli.tokenLabel')} value={tokenName} readOnly />
       <label className="auth-field">
@@ -188,4 +200,19 @@ export function CommandLinePage({ username }: { username: string }) {
 // else as a --name, so a name that fails here was never the client's.
 export function isProfileName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(name)
+}
+
+// isExtensionCallback says whether an address is one a browser extension
+// receives for a web sign-in flow: Chrome gives each extension exactly one
+// such origin, made of its id, and hands what lands there to that extension
+// alone. Nothing else is accepted as a redirect.
+export function isExtensionCallback(address: string): boolean {
+  return /^https:\/\/[a-p]{32}\.chromiumapp\.org\/[A-Za-z0-9._/-]*$/.test(address)
+}
+
+// extensionIdOf is the extension's id in its callback address, for the
+// card to name whom the token goes to.
+export function extensionIdOf(address: string): string {
+  const match = /^https:\/\/([a-p]{32})\.chromiumapp\.org\//.exec(address)
+  return match ? match[1] : ''
 }

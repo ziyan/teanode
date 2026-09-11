@@ -5,7 +5,8 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "NODE_ENV=production webpack",
+    "build": "NODE_ENV=production webpack && npm run build:extension",
+    "build:extension": "webpack --config webpack.extension.config.js",
     "dev": "webpack serve",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write 'src/**/*.{ts,tsx,css}'",
@@ -35,5 +36,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "echarts": "5.6.0"
   }
 }

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { framedDrawer } from '../api'
 
 import { CodeBlock } from './codeBlock'
 
@@ -44,7 +45,13 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
       const href = match[6]
       const mail = /^mail:([A-Za-z0-9]+)$/.exec(href)
       nodes.push(
-        mail ? (
+        mail && framedDrawer ? (
+          // Framed into another site, the drawer sends the person to the
+          // dashboard itself: nothing of it but the drawer is drawn here.
+          <a key={key} href={`${window.location.origin}/mailbox/starred/${mail[1]}`} target="_blank" rel="noopener noreferrer">
+            {match[5]}
+          </a>
+        ) : mail ? (
           // The agent cites a message as mail:ITEM_ID; Starred opens any
           // item by id whichever folder it is in.
           <Link key={key} to={`/mailbox/starred/${mail[1]}`}>

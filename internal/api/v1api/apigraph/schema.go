@@ -32,7 +32,9 @@ type Query interface {
 	AgentAskQuery
 	AgentMemoryQuery
 	AgentConnectionQuery
+	AgentChannelQuery
 	AgentTabQuery
+	AgentComputerQuery
 	ServerQuery
 	UpgradeQuery
 	CredentialQuery
@@ -67,6 +69,7 @@ type Mutation interface {
 	AgentAskMutation
 	AgentMemoryMutation
 	AgentConnectionMutation
+	AgentChannelMutation
 	ServerMutation
 	UpgradeMutation
 	CredentialMutation

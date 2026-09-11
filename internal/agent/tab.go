@@ -1,54 +1,27 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"sync"
-	"time"
 )
 
 // The tab relay: the person's own browser tab, attached through the
-// extension over the dashboard's websocket. The extension does the acting
-// in the page; the server only carries a request across and waits for the
-// answer. Ask only — nobody is watching a run with nobody present — and
-// the refusals that matter are the extension's, not the model's.
+// extension over the server's websocket. The extension does the acting in
+// the page; the server only carries a request across and waits for the
+// answer (device.go). Ask only — nobody is watching a run with nobody
+// present — and the refusals that matter are the extension's, not the
+// model's.
 
-// TabConnection is what the relay needs of a websocket: a way to send a
-// request to the extension and a way to receive its answers.
-type TabConnection interface {
-	Send(message []byte) error
-}
+// TabConnection is what the relay needs of the extension's websocket.
+type TabConnection = DeviceConnection
+
+// tabMessage is what goes over the relay, either way.
+type tabMessage = deviceMessage
 
 // attachedTab is one person's attached tab.
 type attachedTab struct {
-	connection TabConnection
-	title      string
-	url        string
-	attachedAt time.Time
-
-	mutex   sync.Mutex
-	next    int64
-	pending map[int64]chan tabAnswer
-}
-
-type tabAnswer struct {
-	OK    bool            `json:"ok"`
-	Data  json.RawMessage `json:"data,omitempty"`
-	Error string          `json:"error,omitempty"`
-}
-
-// tabMessage is what goes over the relay, either way.
-type tabMessage struct {
-	Type   string          `json:"type"`
-	ID     int64           `json:"id,omitempty"`
-	Action string          `json:"action,omitempty"`
-	Args   json.RawMessage `json:"args,omitempty"`
-	Title  string          `json:"title,omitempty"`
-	URL    string          `json:"url,omitempty"`
-	OK     bool            `json:"ok,omitempty"`
-	Data   json.RawMessage `json:"data,omitempty"`
-	Error  string          `json:"error,omitempty"`
+	*deviceLink
+	title string
+	url   string
 }
 
 // AttachTab records a person's tab; a second attach replaces the first.
@@ -61,14 +34,9 @@ func (self *Agent) AttachTab(agentId string, connection TabConnection, title, ur
 	// A tab replacing another answers for nothing the other was asked:
 	// whoever waits on the old one is told it went.
 	if previous := self.tabs[agentId]; previous != nil {
-		previous.mutex.Lock()
-		for id, channel := range previous.pending {
-			close(channel)
-			delete(previous.pending, id)
-		}
-		previous.mutex.Unlock()
+		previous.drop()
 	}
-	self.tabs[agentId] = &attachedTab{connection: connection, title: title, url: url, attachedAt: time.Now(), pending: map[int64]chan tabAnswer{}}
+	self.tabs[agentId] = &attachedTab{deviceLink: newDeviceLink("the attached tab", connection), title: title, url: url}
 }
 
 // UpdateTab is the tab saying where it went.
@@ -85,32 +53,16 @@ func (self *Agent) DetachTab(agentId string, connection TabConnection) {
 	self.tabsMutex.Lock()
 	defer self.tabsMutex.Unlock()
 	if tab := self.tabs[agentId]; tab != nil && (connection == nil || tab.connection == connection) {
-		tab.mutex.Lock()
-		for id, channel := range tab.pending {
-			delete(tab.pending, id)
-			close(channel)
-		}
-		tab.mutex.Unlock()
+		tab.drop()
 		delete(self.tabs, agentId)
 	}
 }
 
-// TabAnswered is the extension answering a request.
-func (self *Agent) TabAnswered(agentId string, id int64, ok bool, data json.RawMessage, failure string) {
-	self.tabsMutex.Lock()
-	tab := self.tabs[agentId]
-	self.tabsMutex.Unlock()
-	if tab == nil {
-		return
-	}
-	tab.mutex.Lock()
-	channel, found := tab.pending[id]
-	if found {
-		delete(tab.pending, id)
-	}
-	tab.mutex.Unlock()
-	if found {
-		channel <- tabAnswer{OK: ok, Data: data, Error: failure}
+// TabAnswered is the extension answering a request: the extension on this
+// connection, so that a replaced tab's late answers reach nobody.
+func (self *Agent) TabAnswered(agentId string, connection TabConnection, id int64, ok bool, data json.RawMessage, failure string) {
+	if tab := self.tabFor(agentId); tab != nil && (connection == nil || tab.connection == connection) {
+		tab.answered(id, ok, data, failure)
 	}
 }
 
@@ -127,49 +79,6 @@ func (self *Agent) TabAttached(agentId string) (bool, string, string) {
 		return false, "", ""
 	}
 	return true, tab.title, tab.url
-}
-
-// Ask sends an action to the tab and waits for its answer.
-func (self *attachedTab) Ask(ctx context.Context, action string, args any) (json.RawMessage, error) {
-	encoded, err := json.Marshal(args)
-	if err != nil {
-		return nil, err
-	}
-	self.mutex.Lock()
-	self.next++
-	id := self.next
-	channel := make(chan tabAnswer, 1)
-	self.pending[id] = channel
-	self.mutex.Unlock()
-	message, _ := json.Marshal(tabMessage{Type: "act", ID: id, Action: action, Args: encoded})
-	if err := self.connection.Send(message); err != nil {
-		self.mutex.Lock()
-		delete(self.pending, id)
-		self.mutex.Unlock()
-		return nil, fmt.Errorf("the attached tab is gone: %w", err)
-	}
-	timer := time.NewTimer(60 * time.Second)
-	defer timer.Stop()
-	select {
-	case answer, ok := <-channel:
-		if !ok {
-			return nil, fmt.Errorf("the tab was detached")
-		}
-		if !answer.OK {
-			return nil, fmt.Errorf("the tab refused: %s", answer.Error)
-		}
-		return answer.Data, nil
-	case <-timer.C:
-		self.mutex.Lock()
-		delete(self.pending, id)
-		self.mutex.Unlock()
-		return nil, fmt.Errorf("the tab did not answer within a minute")
-	case <-ctx.Done():
-		self.mutex.Lock()
-		delete(self.pending, id)
-		self.mutex.Unlock()
-		return nil, ctx.Err()
-	}
 }
 
 // Title and URL are what the tab said it shows, for the tool and the

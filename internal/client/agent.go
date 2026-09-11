@@ -145,6 +145,94 @@ const (
 	DocumentRetryAgentJob = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) ` + agentJobSelection + ` }`
 )
 
+// AgentComputersView is which computers the caller has attached.
+type AgentComputersView struct {
+	Allowed   bool                `json:"allowed"`
+	Computers []AgentComputerView `json:"computers"`
+}
+
+// AgentComputerView is one attached computer.
+type AgentComputerView struct {
+	Name   string    `json:"name"`
+	System string    `json:"system,omitempty"`
+	Since  time.Time `json:"since"`
+}
+
+// ReadAgentComputers says which computers the server sees for the caller.
+func ReadAgentComputers(ctx context.Context, connection *Client) (*AgentComputersView, error) {
+	var result struct {
+		ReadAgentComputers *AgentComputersView `json:"ReadAgentComputers"`
+	}
+	if err := connection.Execute(ctx, `query { ReadAgentComputers { allowed computers { name system since } } }`, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadAgentComputers, nil
+}
+
+// AgentChannel is one chat app of the caller's, as the API shows it.
+type AgentChannel struct {
+	Kind       string     `json:"kind"`
+	HasToken   bool       `json:"hasToken"`
+	BotName    string     `json:"botName,omitempty"`
+	Linked     bool       `json:"linked"`
+	LinkedName string     `json:"linkedName,omitempty"`
+	LinkCode   string     `json:"linkCode,omitempty"`
+	Enabled    bool       `json:"enabled"`
+	Running    bool       `json:"running"`
+	LastError  string     `json:"lastError,omitempty"`
+	LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
+}
+
+const agentChannelSelection = `{ kind hasToken botName linked linkedName linkCode enabled running lastError lastSeenAt }`
+
+// ListAgentChannels is the caller's chat apps.
+func ListAgentChannels(ctx context.Context, connection *Client) ([]*AgentChannel, error) {
+	var result struct {
+		ListAgentChannels []*AgentChannel `json:"ListAgentChannels"`
+	}
+	if err := connection.Execute(ctx, `query { ListAgentChannels `+agentChannelSelection+` }`, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentChannels, nil
+}
+
+// SetAgentChannel sets a chat app's bot token, or whether it runs.
+func SetAgentChannel(ctx context.Context, connection *Client, kind, token string, enabled *bool) (*AgentChannel, error) {
+	var result struct {
+		SetAgentChannel *AgentChannel `json:"SetAgentChannel"`
+	}
+	variables := map[string]any{"kind": kind}
+	if token != "" {
+		variables["token"] = token
+	}
+	if enabled != nil {
+		variables["enabled"] = *enabled
+	}
+	if err := connection.Execute(ctx, `mutation ($kind: String!, $token: String, $enabled: Boolean) { SetAgentChannel(kind: $kind, token: $token, enabled: $enabled) `+agentChannelSelection+` }`, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentChannel, nil
+}
+
+// UnlinkAgentChannel drops the linked chat and draws a new code.
+func UnlinkAgentChannel(ctx context.Context, connection *Client, kind string) (*AgentChannel, error) {
+	var result struct {
+		UnlinkAgentChannel *AgentChannel `json:"UnlinkAgentChannel"`
+	}
+	if err := connection.Execute(ctx, `mutation ($kind: String!) { UnlinkAgentChannel(kind: $kind) `+agentChannelSelection+` }`, map[string]any{"kind": kind}, &result); err != nil {
+		return nil, err
+	}
+	return result.UnlinkAgentChannel, nil
+}
+
+// RemoveAgentChannel forgets a chat app's bot.
+func RemoveAgentChannel(ctx context.Context, connection *Client, kind string) error {
+	var result struct {
+		RemoveAgentChannel bool `json:"RemoveAgentChannel"`
+	}
+	return connection.Execute(ctx, `mutation ($kind: String!) { RemoveAgentChannel(kind: $kind) }`, map[string]any{"kind": kind}, &result)
+}
+
 // ReadAgent returns the caller's agent and sources.
 func ReadAgent(ctx context.Context, connection *Client) (*AgentView, error) {
 	var result struct {

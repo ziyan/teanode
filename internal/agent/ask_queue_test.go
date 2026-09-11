@@ -83,6 +83,10 @@ func TestAskQueuesASecondTurnBehindTheFirst(t *testing.T) {
 		t.Fatalf("Ask: %s", err)
 	}
 	secondEvents, unsubscribeSecond := second.Subscribe()
+	// A turn begins with what was said; a queued one says so next.
+	if asked := <-secondEvents; asked.Kind != agent.EventAsked || asked.Text != "and what about the invoice?" || asked.Note != "cli" {
+		t.Fatalf("the second turn should begin with what was said, got %+v", asked)
+	}
 	queued := <-secondEvents
 	if queued.Kind != agent.EventNote || queued.Note != "queued behind the turn before it" {
 		t.Fatalf("the second turn should say it is queued, got %+v", queued)

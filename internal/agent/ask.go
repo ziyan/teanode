@@ -86,6 +86,7 @@ type EventKind string
 
 // The events a run emits, in the order a drawer shows them.
 const (
+	EventAsked        EventKind = "asked"        // a turn began: what the person said, and where from
 	EventText         EventKind = "text"         // a piece of the answer
 	EventMessage      EventKind = "message"      // the whole answer, once it is
 	EventToolCall     EventKind = "tool_call"    // the model asked for a tool
@@ -124,6 +125,7 @@ type AskRun struct {
 
 	mutex          sync.Mutex
 	events         []Event
+	nextSequence   int
 	subscribers    map[int]chan Event
 	nextSubscriber int
 	finished       bool
@@ -349,6 +351,16 @@ func (self *AskRun) TabsAllowed() bool {
 	attach := self.agent.settings.Configuration().Agent.Browser.AttachTabs
 	return attach == nil || *attach
 }
+func (self *AskRun) AttachedComputers() []tools.Computer {
+	var computers []tools.Computer
+	for _, computer := range self.agent.computersFor(self.settings.Agent.ID) {
+		computers = append(computers, computer)
+	}
+	return computers
+}
+func (self *AskRun) ComputersAllowed() bool {
+	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
+}
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)
 }
@@ -384,11 +396,12 @@ func (self *AskRun) emit(event Event) {
 	event.ConversationID = self.settings.Conversation.ID
 	event.At = time.Now()
 	self.mutex.Lock()
-	defer self.mutex.Unlock()
 	if self.finished {
+		self.mutex.Unlock()
 		return
 	}
-	event.Sequence = len(self.events)
+	event.Sequence = self.nextSequence
+	self.nextSequence++
 	if len(self.events) < askEventBacklog {
 		self.events = append(self.events, event)
 	}
@@ -400,6 +413,10 @@ func (self *AskRun) emit(event Event) {
 			// run; it will miss this one.
 		}
 	}
+	self.mutex.Unlock()
+	// The conversation's feed, after the run's own lock is released: the
+	// feed replays runs under a lock of its own, and takes theirs too.
+	self.agent.publish(event, true)
 }
 
 func (self *AskRun) finish() {
@@ -434,6 +451,9 @@ func (self *AskRun) finish() {
 // loop is the turn: history, then rounds until the model answers.
 func (self *AskRun) loop() {
 	defer self.finish()
+	// The turn begins with what was said, so that a drawer following the
+	// conversation shows the words a phone or a chat app sent.
+	self.emit(Event{Kind: EventAsked, Text: self.settings.Message, Note: self.settings.Surface})
 	if previous := self.previous; previous != nil && !previous.isFinished() {
 		self.emit(Event{Kind: EventNote, Note: "queued behind the turn before it"})
 		select {
@@ -477,6 +497,7 @@ func (self *AskRun) turn() error {
 
 	// The person's turn, kept before anything is asked.
 	var history []llm.ChatMessage
+	var savedTurn *models.AgentMessage
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := RequireBudget(tx, configuration, settings.Agent, settings.Owner, time.Now()); err != nil {
 			return err
@@ -497,6 +518,7 @@ func (self *AskRun) turn() error {
 		if err := tx.ClaimAgentAttachments(attachmentIds, settings.Conversation.ID, saved.ID); err != nil {
 			return err
 		}
+		savedTurn = saved
 		_, err = tx.UpdateAgentConversation(settings.Conversation.ID, func(conversation *models.AgentConversation) error {
 			conversation.LastAt = time.Now()
 			if conversation.Surface == "" {
@@ -509,6 +531,7 @@ func (self *AskRun) turn() error {
 		return err
 	}
 	history = append(history, userTurn(ctx, self.agent.settings.Storage, settings.Message, settings.Attachments, settings.References))
+	history[len(history)-1].SourceID = savedTurn.ID
 
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
@@ -518,7 +541,12 @@ func (self *AskRun) turn() error {
 			self.offered = append(self.offered, tool)
 		}
 	}
-	if !configuration.Agent.Browser.Enabled || !FeatureAllowed(configuration, "browser") {
+	// The browser tool goes when the operator switched the browser off,
+	// and when there is neither a headless browser nor an attached tab to
+	// drive; a person's attached tab needs no Chrome beside the server,
+	// and while one is attached the tool is in the round from the start.
+	tabAttached := !settings.Headless && self.TabsAllowed() && self.AttachedTab() != nil
+	if !FeatureAllowed(configuration, "browser") || (!configuration.Agent.Browser.Enabled && !tabAttached) {
 		withoutBrowser := self.offered[:0:0]
 		for _, tool := range self.offered {
 			if tool.Family != FamilyBrowser {
@@ -526,6 +554,31 @@ func (self *AskRun) turn() error {
 			}
 		}
 		self.offered = withoutBrowser
+	} else if tabAttached {
+		for _, tool := range self.offered {
+			if tool.Family == FamilyBrowser {
+				self.loaded[tool.Name] = true
+			}
+		}
+	}
+	// The computer's tools are offered only where a person may attach one:
+	// a switched-off family is not in the catalog the model is shown. And
+	// while a computer is attached they are in the round from the start,
+	// not behind tool_search: the person attached it to be used.
+	if !FeatureAllowed(configuration, "computer") {
+		withoutComputer := self.offered[:0:0]
+		for _, tool := range self.offered {
+			if tool.Family != FamilyComputer {
+				withoutComputer = append(withoutComputer, tool)
+			}
+		}
+		self.offered = withoutComputer
+	} else if len(self.AttachedComputers()) > 0 && !settings.Headless {
+		for _, tool := range self.offered {
+			if tool.Family == FamilyComputer {
+				self.loaded[tool.Name] = true
+			}
+		}
 	}
 	if settings.ReadOnly || settings.Allow != nil {
 		kept := self.offered[:0:0]
@@ -554,6 +607,13 @@ func (self *AskRun) turn() error {
 	if settings.MaxRounds > 0 {
 		maximumRounds = settings.MaxRounds
 	}
+	// A compaction that failed is not tried again this turn, and a request
+	// the provider refused for its size is compacted hard and sent once
+	// more.
+	compactFailed, overflowed := false, false
+	// A call that failed the same way three times is not going to work
+	// the fourth: the turn stops rather than spending its rounds on it.
+	failures := map[string]int{}
 	for round := 0; round < maximumRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -576,10 +636,11 @@ func (self *AskRun) turn() error {
 				return nil
 			}
 		}
-		if llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
-			compacted, err := self.compact(ctx, provider, model, modelName, history)
+		if !compactFailed && llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
+			compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
 			if err != nil {
 				log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
+				compactFailed = true
 			} else {
 				history = compacted
 			}
@@ -607,6 +668,17 @@ func (self *AskRun) turn() error {
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
 		}
 		if err != nil {
+			if llm.IsContextLengthError(err) && !overflowed {
+				overflowed = true
+				compacted, compactErr := self.compact(ctx, provider, model, modelName, history, compactOverflowTail)
+				if compactErr != nil {
+					log.Warningf("cannot compact the conversation %q after the provider refused its size: %s", settings.Conversation.ID, compactErr)
+				} else if len(compacted) < len(history) {
+					history = compacted
+					round--
+					continue
+				}
+			}
 			if errors.Is(err, context.Canceled) && response != nil && strings.TrimSpace(response.Message.Content) != "" {
 				// Stopped mid-sentence: the words that had come stay in
 				// the conversation, so what was seen is what is kept.
@@ -621,7 +693,7 @@ func (self *AskRun) turn() error {
 		answer.Role = llm.RoleAssistant
 		history = append(history, answer)
 		if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			_, err := tx.AppendAgentMessage(&models.AgentMessage{
+			saved, err := tx.AppendAgentMessage(&models.AgentMessage{
 				ConversationID: settings.Conversation.ID,
 				Role:           string(llm.RoleAssistant),
 				Content:        answer.Content,
@@ -630,7 +702,11 @@ func (self *AskRun) turn() error {
 					CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
 					Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens)},
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			history[len(history)-1].SourceID = saved.ID
+			return nil
 		}); err != nil {
 			return err
 		}
@@ -660,12 +736,25 @@ func (self *AskRun) turn() error {
 				return ctx.Err()
 			}
 			result := self.runTool(ctx, configuration, sent, deferred, toolCall)
+			stuck := false
+			if strings.HasPrefix(result, `{"error"`) {
+				failures[toolCall.Name+" "+toolCall.Arguments]++
+				stuck = failures[toolCall.Name+" "+toolCall.Arguments] >= 3
+			}
 			history = append(history, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: toolCall.ID, Name: toolCall.Name, Content: result})
 			if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: string(llm.RoleTool), ToolCallID: toolCall.ID, Name: toolCall.Name, Content: result})
-				return err
+				saved, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: string(llm.RoleTool), ToolCallID: toolCall.ID, Name: toolCall.Name, Content: result})
+				if err != nil {
+					return err
+				}
+				history[len(history)-1].SourceID = saved.ID
+				return nil
 			}); err != nil {
 				return err
+			}
+			if stuck {
+				self.emit(Event{Kind: EventNote, Note: "stopped: the same call failed three times"})
+				return nil
 			}
 		}
 	}
@@ -813,44 +902,14 @@ func (self *AskRun) confirm(ctx context.Context, tool *Tool, call *Call) (bool, 
 	}
 }
 
-// loadHistory is the conversation as the model gets it: the compaction
-// note, if there is one, and every message since.
+// loadHistory is the conversation as the model gets it.
 func (self *AskRun) loadHistory(tx db.Transaction) ([]llm.ChatMessage, error) {
 	stored, err := tx.ListAgentMessages(self.settings.Conversation.ID, nil)
 	if err != nil {
 		return nil, err
 	}
-	compactedThrough := self.settings.Conversation.CompactedThrough
-	var history []llm.ChatMessage
-	skipping := compactedThrough != ""
-	for _, message := range stored {
-		if skipping {
-			if message.ID == compactedThrough {
-				skipping = false
-			}
-			if message.Role != roleCompaction {
-				continue
-			}
-		}
-		switch message.Role {
-		case string(llm.RoleUser):
-			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: historyTurn(message)})
-		case string(llm.RoleAssistant):
-			history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: message.Content, ToolCalls: toolCallsFrom(message.ToolCalls)})
-		case string(llm.RoleTool):
-			history = append(history, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: message.ToolCallID, Name: message.Name, Content: message.Content})
-		case roleCompaction:
-			if message.ID == compactedThrough || compactedThrough == "" {
-				history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: "Note on the earlier conversation, which was compacted:\n\n" + message.Content})
-			}
-		}
-	}
-	return repairHistory(history), nil
+	return historyOf(stored, self.settings.Conversation.CompactedThrough), nil
 }
-
-// roleCompaction is the role of the note that stands in for the compacted
-// turns.
-const roleCompaction = "compaction"
 
 // repairHistory drops a tool message whose call is not in the history and
 // an assistant call without its answer, which a provider refuses.
@@ -907,81 +966,6 @@ func toolCallsFrom(stored []models.AgentToolCall) []llm.ToolCall {
 		calls = append(calls, llm.ToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments})
 	}
 	return calls
-}
-
-// renderHistory is the history as text, for measuring and for compaction.
-func renderHistory(history []llm.ChatMessage) string {
-	var builder strings.Builder
-	for _, message := range history {
-		builder.WriteString(string(message.Role))
-		if message.Name != "" {
-			builder.WriteString(" (" + message.Name + ")")
-		}
-		builder.WriteString(": ")
-		builder.WriteString(message.Content)
-		for _, call := range message.ToolCalls {
-			builder.WriteString("\n  → " + call.Name + " " + call.Arguments)
-		}
-		builder.WriteString("\n\n")
-	}
-	return builder.String()
-}
-
-// compact asks the model for a note that stands in for the older turns,
-// keeps the recent tail, and records where the verbatim history resumes.
-func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, modelName string, history []llm.ChatMessage) ([]llm.ChatMessage, error) {
-	if len(history) <= askTailMessages+1 {
-		return history, nil
-	}
-	cut := len(history) - askTailMessages
-	// Never cut between a call and its answer.
-	for cut > 0 && history[cut].Role == llm.RoleTool {
-		cut--
-	}
-	if cut <= 0 {
-		return history, nil
-	}
-	older, tail := history[:cut], history[cut:]
-	prompt, err := render("compact.txt", map[string]any{"Conversation": renderHistory(older)})
-	if err != nil {
-		return nil, err
-	}
-	registry := self.agent.settings.Registry
-	compactProvider, compactModel, err := registry.ForWork(config.AgentWorkCompact)
-	if err != nil {
-		compactProvider, compactModel = provider, model
-	}
-	callContext, cancel := context.WithTimeout(ctx, self.agent.settings.Configuration().Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := compactProvider.Chat(callContext, &llm.ChatRequest{Model: compactModel, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 800})
-	if response != nil {
-		RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", modelName, "compact", response.Usage)
-	}
-	if err != nil {
-		return nil, err
-	}
-	note := strings.TrimSpace(response.Message.Content)
-	if note == "" {
-		return history, nil
-	}
-	var stored *models.AgentMessage
-	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		stored, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: roleCompaction, Content: note})
-		if err != nil {
-			return err
-		}
-		_, err = tx.UpdateAgentConversation(self.settings.Conversation.ID, func(conversation *models.AgentConversation) error {
-			conversation.CompactedThrough = stored.ID
-			return nil
-		})
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	self.settings.Conversation.CompactedThrough = stored.ID
-	self.emit(Event{Kind: EventNote, Note: "the earlier conversation was compacted into a note"})
-	compacted := []llm.ChatMessage{{Role: llm.RoleUser, Content: "Note on the earlier conversation, which was compacted:\n\n" + note}}
-	return append(compacted, tail...), nil
 }
 
 // systemPrompt is layers 0 to 4: identity and conduct, the operator's
@@ -1145,6 +1129,8 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 		blocks = append(blocks, "<surface>\nA terminal: plain text, no markdown tables wider than eighty columns, no suggestions of what to click.\n</surface>")
 	case "mail":
 		blocks = append(blocks, "<surface>\nThe answer goes out as a mail message: plain paragraphs, and the first line is its subject.\n</surface>")
+	case "telegram", "discord":
+		blocks = append(blocks, "<surface>\nA chat app on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Something you make (a page, a chart) reaches them as a file.\n</surface>")
 	}
 	for _, tool := range self.offered {
 		if tool.Overlay != nil {

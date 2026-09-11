@@ -27,15 +27,16 @@ const (
 	RiskDestructive = tools.RiskDestructive
 	RiskOutward     = tools.RiskOutward
 
-	FamilyMailbox = tools.FamilyMailbox
-	FamilyDomains = tools.FamilyDomains
-	FamilyAudit   = tools.FamilyAudit
-	FamilyPeople  = tools.FamilyPeople
-	FamilyServer  = tools.FamilyServer
-	FamilyAccount = tools.FamilyAccount
-	FamilyGeneral = tools.FamilyGeneral
-	FamilyServers = tools.FamilyServers
-	FamilyBrowser = tools.FamilyBrowser
+	FamilyMailbox  = tools.FamilyMailbox
+	FamilyDomains  = tools.FamilyDomains
+	FamilyAudit    = tools.FamilyAudit
+	FamilyPeople   = tools.FamilyPeople
+	FamilyServer   = tools.FamilyServer
+	FamilyAccount  = tools.FamilyAccount
+	FamilyGeneral  = tools.FamilyGeneral
+	FamilyServers  = tools.FamilyServers
+	FamilyBrowser  = tools.FamilyBrowser
+	FamilyComputer = tools.FamilyComputer
 )
 
 var (

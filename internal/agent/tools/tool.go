@@ -44,15 +44,16 @@ type Family string
 
 // The families.
 const (
-	FamilyMailbox Family = "mailbox"
-	FamilyDomains Family = "domains"
-	FamilyAudit   Family = "audit"
-	FamilyPeople  Family = "people"
-	FamilyServer  Family = "server"
-	FamilyAccount Family = "account"
-	FamilyGeneral Family = "general"
-	FamilyServers Family = "servers"
-	FamilyBrowser Family = "browser"
+	FamilyMailbox  Family = "mailbox"
+	FamilyDomains  Family = "domains"
+	FamilyAudit    Family = "audit"
+	FamilyPeople   Family = "people"
+	FamilyServer   Family = "server"
+	FamilyAccount  Family = "account"
+	FamilyGeneral  Family = "general"
+	FamilyServers  Family = "servers"
+	FamilyBrowser  Family = "browser"
+	FamilyComputer Family = "computer"
 )
 
 // Tool is one entry of the catalog.

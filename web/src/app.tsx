@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
-import { Session, getSession, logout } from './api'
+import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
 import { MailPage } from './pages/mail'
 import { MailDetailPage } from './pages/mailDetail'
@@ -49,6 +49,23 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null)
   const location = useLocation()
 
+  // The drawer on a page of its own, framed by the browser extension into
+  // whatever site the person is on. It has no session: it signs in with
+  // the token the extension put in its address when it made the frame —
+  // in the fragment, which never reaches the server and which the page
+  // around the frame cannot read — and takes no token from a message,
+  // since the page around it is its parent too.
+  const framed = framedDrawer
+  const [framedToken] = useState(() => {
+    if (!framed) return ''
+    const token = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token') ?? ''
+    if (token) {
+      signInWithToken(token)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    return token
+  })
+
   const refresh = useCallback(async () => {
     try {
       setSession(await getSession())
@@ -61,14 +78,36 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    if (framed && !framedToken) return
     void refresh()
-  }, [refresh])
+  }, [refresh, framed, framedToken])
+
+  // The panel around the frame is told who this drawer is signed in as,
+  // so that it can tell a frame somebody else navigated.
+  useEffect(() => {
+    if (framed && session?.authenticated) window.parent.postMessage({ teanode: 'signedIn', username: session.username }, '*')
+  }, [framed, session])
 
   if (session === null) {
     // Nothing, not a word. Asking the server who you are takes a few
     // milliseconds, and "loading…" that appears and vanishes in that time is
     // a flicker on top of every page load.
     return <div className="content" />
+  }
+
+  if (framed) {
+    if (!session.authenticated) {
+      return <div className="drawer-page muted">{t('agentDrawer.framedNotSignedIn')}</div>
+    }
+    return (
+      <SessionProvider value={session}>
+        <MailboxesProvider>
+          <div className="drawer-page">
+            <AgentDrawer standalone />
+          </div>
+        </MailboxesProvider>
+      </SessionProvider>
+    )
   }
 
   // The language and appearance controls follow onto the pages that have no

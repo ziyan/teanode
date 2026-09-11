@@ -56,3 +56,8 @@ sources one at a time), `20260910-embeddings-without-pgvector.md`,
 contacts plans will act on. Their narrative is
 `docs/planning/done/20260910-personal-agents.md`; the roadmap that follows
 it is `docs/planning/active/20260910-personal-agents-roadmap.md`.
+
+`20260911-the-computer-is-a-device-the-person-runs.md` adds the person's
+own computer beside the attached tab: reached through a program they run,
+signed in as them, only while they talk. Its narrative is
+`docs/planning/active/20260911-personal-devices.md`.

@@ -105,6 +105,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathGraphQL).Methods(http.MethodGet).HandlerFunc(self.webSocketView)
 	router.Path(api.PathGraphQL).Methods(http.MethodPost).HandlerFunc(self.withLocation(self.graphView))
 	router.Path(api.PathAgentTab).Methods(http.MethodGet).HandlerFunc(self.tabView)
+	router.Path(api.PathAgentComputer).Methods(http.MethodGet).HandlerFunc(self.computerView)
 	// Files for a draft go up as multipart bodies, not inside a query: a
 	// browser can stream them and show how far along each is.
 	router.Path(api.PathDraftAttachments).Methods(http.MethodPut).HandlerFunc(self.draftAttachmentsView)

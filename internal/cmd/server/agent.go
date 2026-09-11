@@ -5,8 +5,12 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/channel"
+	"github.com/ziyan/teanode/internal/channel/discord"
+	"github.com/ziyan/teanode/internal/channel/telegram"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // openAgent builds the model registry, or returns nil when the agent is
@@ -53,6 +57,14 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 	self.exchange.SetAgentHook(self.agentWorker)
 	self.agentWorker.Start()
 	self.onClose(self.agentWorker.Stop)
+	// The chat apps: one bot per person and app, run on one instance.
+	channels := channel.New(&channel.Settings{
+		Worker: self.agentWorker, Database: self.database, Storage: self.storage,
+		Configuration: self.store.Current, Instance: self.instance,
+		Openers: map[models.AgentChannelKind]channel.Opener{models.AgentChannelTelegram: telegram.Open, models.AgentChannelDiscord: discord.Open},
+	})
+	channels.Start()
+	self.onClose(channels.Stop)
 	return nil
 }
 

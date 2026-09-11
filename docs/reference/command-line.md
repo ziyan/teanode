@@ -349,6 +349,7 @@ have made.
 | `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
 | `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone |
 | `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
+| `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
 | `teanode agent mcp list\|connect\|disconnect` | the connected servers the operator declared and your connections to them; `connect tracker --credential -` reads your credential from standard input, and an authorizing server prints the address to open |
 | `teanode agent settings show\|set` | your agent: `set enabled=true name=Bertie instructions=-` reads the long value from standard input; keys are listed by `set --help` |
 | `teanode agent settings categories add\|remove` | your own categories beside the fixed ones |
@@ -363,3 +364,32 @@ have made.
 Every command sends the shell's time zone and language with the request,
 the way the dashboard sends the browser's, so a person who lives in the
 terminal is placed as well as one who lives in the browser.
+
+### teanode computer
+
+Your own computer, attached to your agent. While the program runs, the
+agent has two more tools — `shell`, which runs a command here, and
+`filesystem`, which reads, edits, writes, copies, lists, searches and greps your files —
+as you, anywhere on the machine, the way a terminal of yours would. Only a
+conversation you are present in may use them: a scheduled run, a sorting
+run, anything with nobody watching, never sees your computer. A command
+that changes the machine or reaches out of it (removing, moving,
+installing, sudo, pushing, ssh, and the graver shapes) asks you first, on
+the card in the drawer or on the terminal, and so do a file moved or
+deleted and a write into what the machine runs on its own (a shell's
+startup file, keys, autostart); nothing is refused on your behalf — your
+yes is the last word. The card is the server's: the program runs what
+the server sends, so it trusts the server the way a terminal trusts the
+person at it. The program signs in as you, with the active profile's
+token, never as the server. Several computers can be attached at once,
+told apart by name.
+
+| Command | What it does |
+| --- | --- |
+| `teanode computer start [--name NAME]` | run the program in the background; `--name` is what to call this computer (the host name by default). Its log is `~/.config/teanode/computer.log` |
+| `teanode computer status` | whether the program runs here, and which computers of yours the server sees |
+| `teanode computer stop` | end the program |
+| `teanode computer daemon [--name NAME]` | the same program in the foreground, reconnecting when the connection drops, until interrupted — for a terminal, or a service manager |
+
+The operator can keep computers off for the whole server with
+`agent.features.computer`.

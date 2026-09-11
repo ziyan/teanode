@@ -8,6 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,14 +151,28 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			for key, value := range headers {
 				httpHeader.Add(key, value)
 			}
-			csrfCookie := ""
-			if cookie, _ := self.request.Cookie("csrftoken"); cookie != nil {
-				csrfCookie = cookie.Value
-			}
-			csrfToken := httpHeader.Get("X-CSRFToken")
-			if csrfToken != csrfCookie {
-				log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
-				return fmt.Errorf("apigraph: csrf token mismatch")
+			// A token in the first message is the sign-in of a page that
+			// has no session — the dashboard's drawer framed by another
+			// site — verified as an Authorization header would be. A
+			// token is nothing a cookie sent by itself, so the CSRF check
+			// is for sessions alone.
+			if token := httpHeader.Get("Authorization"); token != "" {
+				username := self.graph.usernameOfToken(self.request, strings.TrimPrefix(token, "Bearer "))
+				if username == "" {
+					log.Warningf("the token a websocket at %q opened with is not one this server takes", self.conn.RemoteAddr())
+					return fmt.Errorf("apigraph: the token is not one this server takes")
+				}
+				self.request.Header.Set(api.AuthenticatedUsernameHeader, username)
+			} else {
+				csrfCookie := ""
+				if cookie, _ := self.request.Cookie("csrftoken"); cookie != nil {
+					csrfCookie = cookie.Value
+				}
+				csrfToken := httpHeader.Get("X-CSRFToken")
+				if csrfToken != csrfCookie {
+					log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
+					return fmt.Errorf("apigraph: csrf token mismatch")
+				}
 			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err

@@ -205,6 +205,7 @@ export function AgentPage() {
       <MemoryCard />
       <SchedulesCard />
       <ServersCard />
+      <ChatAppsCard />
       <RepliesCard />
       <ActivityCard />
       <CorrectionsCard />
@@ -578,6 +579,160 @@ interface AgentServer {
 // ServersCard is the connected servers the operator declared, and the
 // person's way into each: a credential, or an authorization that leaves
 // the page and comes back to it with a code.
+type ChatApp = {
+  kind: string
+  hasToken: boolean
+  botName?: string
+  linked: boolean
+  linkedName?: string
+  linkCode?: string
+  enabled: boolean
+  running: boolean
+  lastError?: string
+}
+
+const CHAT_APPS = `
+  query {
+    ListAgentChannels { kind hasToken botName linked linkedName linkCode enabled running lastError }
+  }`
+const SET_CHAT_APP = `
+  mutation ($kind: String!, $token: String, $enabled: Boolean) {
+    SetAgentChannel(kind: $kind, token: $token, enabled: $enabled) { kind hasToken botName linked linkedName linkCode enabled running lastError }
+  }`
+const UNLINK_CHAT_APP = `mutation ($kind: String!) { UnlinkAgentChannel(kind: $kind) { kind } }`
+const REMOVE_CHAT_APP = `mutation ($kind: String!) { RemoveAgentChannel(kind: $kind) }`
+const CHAT_APP_KINDS = ['telegram', 'discord'] as const
+
+// The chat apps: the person's own bot in each, its token handed over
+// once, the code a chat sends to link itself, and whether it runs.
+function ChatAppsCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, reload } = useQuery(() => graphql<{ ListAgentChannels: ChatApp[] }>(CHAT_APPS, {}), [], { refresh: false })
+  const [editing, setEditing] = useState<string | null>(null)
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const apps = data?.ListAgentChannels ?? []
+  const byKind = new Map(apps.map((app) => [app.kind, app]))
+  const nameOf = (kind: string) => (kind === 'discord' ? t('agent.chatApp.discord') : t('agent.chatApp.telegram'))
+  const howOf = (kind: string) => (kind === 'discord' ? t('agent.chatAppHow.discord') : t('agent.chatAppHow.telegram'))
+  const setApp = async (kind: string, secret: string, enabled?: boolean) => {
+    setBusy(kind)
+    setProblem(null)
+    try {
+      await graphql(SET_CHAT_APP, { kind, token: secret || undefined, enabled })
+      setEditing(null)
+      setToken('')
+      toast.done(t('agent.chatAppSet', { name: nameOf(kind) }))
+      await reload()
+    } catch (caught) {
+      if (editing) {
+        setProblem(messageOf(caught))
+      } else {
+        toast.failed(messageOf(caught))
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+  const unlink = async (kind: string) => {
+    setBusy(kind)
+    try {
+      await graphql(UNLINK_CHAT_APP, { kind })
+      await reload()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const remove = async (kind: string) => {
+    setBusy(kind)
+    try {
+      await graphql(REMOVE_CHAT_APP, { kind })
+      await reload()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+  if (error) return null
+  const stateOf = (app: ChatApp | undefined) => {
+    if (!app) return <Tag value={t('agent.chatAppNotSet')} />
+    if (!app.enabled) return <Tag value={t('agent.scheduleOff')} />
+    if (app.lastError) return <Tag value={t('agent.serverError')} tone="bad" />
+    if (app.running) return <Tag value={t('agent.chatAppRunning')} tone="good" />
+    return <Tag value={t('agent.chatAppStarting')} tone="warn" />
+  }
+  return (
+    <>
+      <SettingsSection card title={t('agent.chatApps')} description={t('agent.chatAppsHint')}>
+        {CHAT_APP_KINDS.map((kind) => {
+          const app = byKind.get(kind)
+          const detail: string[] = []
+          if (app?.botName) detail.push(app.botName)
+          if (app?.linked) detail.push(t('agent.chatAppLinked', { name: app.linkedName || '' }))
+          else if (app?.linkCode) detail.push(t('agent.chatAppLink', { code: app.linkCode }))
+          if (app?.lastError) detail.push(app.lastError)
+          return (
+            <SettingsRow
+              key={kind}
+              title={nameOf(kind)}
+              badge={stateOf(app)}
+              subtitle={detail.length > 0 ? detail.join(' · ') : howOf(kind)}
+              actions={
+                <>
+                  {app && (
+                    <button type="button" disabled={busy === kind} onClick={() => void setApp(kind, '', !app.enabled)}>
+                      {app.enabled ? t('agent.chatAppTurnOff') : t('agent.chatAppTurnOn')}
+                    </button>
+                  )}
+                  {app?.linked && (
+                    <button type="button" disabled={busy === kind} onClick={() => void unlink(kind)}>
+                      {t('agent.chatAppUnlink')}
+                    </button>
+                  )}
+                  <button type="button" disabled={busy === kind} onClick={() => setEditing(kind)}>
+                    {app ? t('agent.chatAppReplaceToken') : t('agent.chatAppSetToken')}
+                  </button>
+                  {app && (
+                    <button type="button" className="danger" disabled={busy === kind} onClick={() => void remove(kind)}>
+                      {t('common.remove')}
+                    </button>
+                  )}
+                </>
+              }
+            />
+          )
+        })}
+      </SettingsSection>
+      {editing && (
+        <FormDialog
+          title={t('agent.chatAppTokenTitle', { name: nameOf(editing) })}
+          submitLabel={t('common.save')}
+          busy={busy === editing}
+          error={problem}
+          canSubmit={token.trim() !== ''}
+          onClose={() => {
+            setEditing(null)
+            setToken('')
+            setProblem(null)
+          }}
+          onSubmit={() => void setApp(editing, token.trim())}
+        >
+          <p className="muted">{howOf(editing)}</p>
+          <label>
+            <span>{t('agent.chatAppToken')}</span>
+            <input type="password" value={token} autoComplete="off" onChange={(event) => setToken(event.target.value)} />
+          </label>
+        </FormDialog>
+      )}
+    </>
+  )
+}
+
 function ServersCard() {
   const { t } = useTranslation()
   const toast = useToast()

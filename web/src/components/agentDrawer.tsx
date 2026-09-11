@@ -12,11 +12,14 @@ import {
   announceMailChanged,
   graphql,
   subscribe,
+  withToken,
 } from '../api'
 import { uploadFiles } from '../upload'
 import { formatCount, formatTime } from './common'
+import { useResolvedTheme } from './theme'
+import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, GlobeIcon, PaperclipIcon, PencilIcon, ServerIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
@@ -25,9 +28,11 @@ import { useTranslation } from '../i18n/i18n'
 
 // The drawer: the person talking to their agent from any page, in the one
 // continuous conversation or a named one, with what they have open told to
-// the agent so "this" means it. A turn streams back over the websocket:
-// the words as they come, the tools as they run, and a card when the agent
-// needs the person's word before it does something it cannot undo. A
+// the agent so "this" means it. The conversation's turns stream back over
+// the websocket, whichever surface started them — this drawer, a phone, a
+// terminal, a chat app: the words as they come, the tools as they run,
+// and a card when the agent needs the person's word before it does
+// something it cannot undo. A
 // second turn sent while one runs queues behind it on the server, so the
 // person never waits to type; files come with a turn, and a thread can be
 // pointed at from the reader.
@@ -50,7 +55,7 @@ interface Artifact {
 
 // artifactOf reads what the artifact tool answered, if this is its line.
 function artifactOf(line: { tool: string; result?: string }): Artifact | null {
-  if ((line.tool !== 'artifact' && line.tool !== 'chart') || !line.result) return null
+  if (line.tool !== 'artifact' || !line.result) return null
   try {
     const parsed = JSON.parse(line.result) as Partial<Artifact>
     if (parsed.artifact_id && parsed.url && parsed.title) return parsed as Artifact
@@ -87,7 +92,7 @@ interface StoredMessage {
 }
 
 interface RunEvent {
-  kind: 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
+  kind: 'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
   runId: string
   sequence: number
   at?: string
@@ -135,6 +140,7 @@ const AGENT = `
 const TAB = `
   query {
     ReadAgentTab { attached title url }
+    ReadAgentComputers { computers { name } }
   }`
 
 const CONVERSATIONS = `
@@ -162,9 +168,9 @@ const ASK = `
     AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
   }`
 
-const EVENTS = `
-  subscription ($runId: String!) {
-    AgentRunEvents(runId: $runId) { kind runId sequence at text tool callId arguments risk note error }
+const FEED = `
+  subscription ($conversationId: String!) {
+    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note error }
   }`
 
 const ANSWER = `
@@ -276,7 +282,7 @@ function isImage(contentType: string): boolean {
 }
 
 function attachmentHref(attachment: Attachment): string {
-  return `/api/v1/agent/attachments/${encodeURIComponent(attachment.id)}`
+  return withToken(`/api/v1/agent/attachments/${encodeURIComponent(attachment.id)}`)
 }
 
 // linesOf turns stored messages into what the drawer draws: the person's
@@ -427,12 +433,27 @@ function ReferenceChips({ references, onRemove }: { references: AgentReference[]
 // a page or a drawing in a frame of its own with no way out of it, a
 // document as text. It opens larger, and in a tab of its own.
 function ArtifactCard({ artifact }: { artifact: Artifact }) {
+  // The page is told which theme the drawer is in, since its sandbox cannot
+  // see the dashboard's choice.
+  const shownTheme = useResolvedTheme()
+  // The page says how tall it is, and the frame follows, within reason.
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState<number | null>(null)
+  useEffect(() => {
+    const listen = (event: MessageEvent) => {
+      if (!frame.current || event.source !== frame.current.contentWindow) return
+      const told = (event.data as { teanodeArtifact?: { height?: unknown } } | null)?.teanodeArtifact?.height
+      if (typeof told === 'number' && Number.isFinite(told)) setHeight(Math.min(640, Math.max(120, Math.ceil(told))))
+    }
+    window.addEventListener('message', listen)
+    return () => window.removeEventListener('message', listen)
+  }, [])
   const { t } = useTranslation()
   const [markdown, setMarkdown] = useState<string | null>(null)
   useEffect(() => {
     if (artifact.kind !== 'markdown') return
     let cancelled = false
-    fetch(artifact.url, { credentials: 'same-origin' })
+    fetch(withToken(artifact.url), { credentials: 'same-origin' })
       .then((response) => (response.ok ? response.text() : Promise.reject(new Error(response.statusText))))
       .then((text) => {
         if (!cancelled) setMarkdown(text)
@@ -447,11 +468,11 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
   return (
     <div className="agent-artifact">
       <div className="agent-artifact-head">
-        <SparkIcon size={12} />
+        <SparkIcon size={11} />
         <span className="agent-artifact-title">{artifact.title}</span>
         <a
           className="icon-button agent-artifact-open"
-          href={artifact.url}
+          href={withToken(artifact.url)}
           target="_blank"
           rel="noreferrer"
           aria-label={t('agentDrawer.openArtifact')}
@@ -463,19 +484,29 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       {artifact.kind === 'markdown' ? (
         <div className="agent-artifact-body">{markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}</div>
       ) : (
-        <iframe className="agent-artifact-frame" title={artifact.title} src={artifact.url} sandbox="allow-scripts" />
+        <iframe
+          ref={frame}
+          className="agent-artifact-frame"
+          title={artifact.title}
+          src={`${withToken(artifact.url)}#theme=${shownTheme}`}
+          sandbox="allow-scripts"
+          style={height === null ? undefined : { height }}
+        />
       )}
     </div>
   )
 }
 
-export function AgentDrawer() {
+// standalone is the drawer as a page of its own, framed by the browser
+// extension into another site: always open, filling its frame, and its
+// close mark telling the framing page to hide it.
+export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {}) {
   const { t } = useTranslation()
   const toast = useToast()
   const location = useLocation()
   const [available, setAvailable] = useState(false)
   const [agentName, setAgentName] = useState('')
-  const [open, setOpen] = useState(() => remembered(OPEN_KEY) === '1')
+  const [open, setOpen] = useState(() => standalone || remembered(OPEN_KEY) === '1')
   const [conversations, setConversations] = useState<Conversation[]>([])
   // Words typed into the picker find conversations by title, summary or
   // what was said; the list shows the matches while there are any.
@@ -507,7 +538,14 @@ export function AgentDrawer() {
   // pointer to hover with.
   const [timed, setTimed] = useState<Set<string>>(() => new Set())
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
-  const streams = useRef(new Map<string, () => void>())
+  const [computers, setComputers] = useState<string[]>([])
+  // How many turns this drawer has sent and not yet been handed the run
+  // of: the feed's "asked" for one of those is the drawer's own words,
+  // already on the page.
+  const sending = useRef(0)
+  // The transcript being read, so that the feed's first start waits for
+  // it rather than reading it again.
+  const loading = useRef<Promise<void> | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
@@ -564,14 +602,76 @@ export function AgentDrawer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const readConversation = useCallback(
+    (id: string) => {
+      const reading = loadConversation(id).finally(() => {
+        if (loading.current === reading) loading.current = null
+      })
+      loading.current = reading
+      return reading
+    },
+    [loadConversation],
+  )
+
   useEffect(() => {
     if (!open || !available) return
     void loadConversations().catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
-    void loadConversation(conversationId).catch((caught) =>
+    void readConversation(conversationId).catch((caught) =>
       toast.failed(caught instanceof Error ? caught.message : String(caught)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, available])
+
+  // The conversation's events while the drawer is open — every turn,
+  // wherever it was started: here, a phone, a terminal, a chat app. The
+  // turns in flight are replayed once the transcript has been read, and
+  // a socket that drops comes back on its own, reading the transcript
+  // again first so that the replay lands on a fresh one.
+  useEffect(() => {
+    if (!open || !available || !conversationId) return
+    const followed = conversationId
+    let stopped = false
+    const stop = subscribe<{ AgentConversationEvents: RunEvent }>(
+      FEED,
+      { conversationId: followed },
+      (data) => {
+        const event = data.AgentConversationEvents
+        if (event.kind === 'asked') {
+          asked(event)
+          return
+        }
+        if (event.kind !== 'note' || event.note !== 'queued behind the turn before it') {
+          // The first event of a turn that is running: its queued line
+          // has served.
+          setLines((previous) => previous.filter((line) => line.key !== `${event.runId}-queued`))
+        }
+        applyEvent(event)
+        if (event.kind === 'done') {
+          setRuns((previous) => previous.filter((candidate) => candidate !== event.runId))
+          void loadConversations().catch(() => undefined)
+          void readConversation(followed).catch(() => undefined)
+        }
+      },
+      (error) => {
+        if (error && !stopped) toast.failed(error.message)
+      },
+      {
+        beforeStart: async (reconnecting) => {
+          if (!reconnecting && loading.current) {
+            await loading.current
+            return
+          }
+          setRuns([])
+          await readConversation(followed)
+        },
+      },
+    )
+    return () => {
+      stopped = true
+      stop()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, available, conversationId])
 
   // The list is read again each time it is opened: a conversation started
   // from a terminal since is there too.
@@ -611,7 +711,7 @@ export function AgentDrawer() {
   // Escape toggles the drawer from anywhere on the page — unless a dialog
   // or a list is open, which Escape closes first.
   useEffect(() => {
-    if (!available) return
+    if (!available || standalone) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list')) return
@@ -648,9 +748,15 @@ export function AgentDrawer() {
   // and again before each turn.
   useEffect(() => {
     if (!open || !available) return
-    graphql<{ ReadAgentTab: { attached: boolean; title?: string; url?: string } }>(TAB)
-      .then((response) => setTab(response.ReadAgentTab))
-      .catch(() => setTab(null))
+    graphql<{ ReadAgentTab: { attached: boolean; title?: string; url?: string }; ReadAgentComputers: { computers: { name: string }[] } }>(TAB)
+      .then((response) => {
+        setTab(response.ReadAgentTab)
+        setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
+      })
+      .catch(() => {
+        setTab(null)
+        setComputers([])
+      })
   }, [open, available, runs.length])
 
   useEffect(() => {
@@ -671,14 +777,6 @@ export function AgentDrawer() {
     observer.observe(element)
     return () => observer.disconnect()
   }, [atBottom, open])
-
-  useEffect(
-    () => () => {
-      for (const stop of streams.current.values()) stop()
-      streams.current.clear()
-    },
-    [],
-  )
 
   // A page pointing the agent at a thread: the drawer opens with a chip
   // for it, and the next turn carries it.
@@ -731,11 +829,35 @@ export function AgentDrawer() {
   }, [location.pathname, told])
 
   const toggle = () => {
+    if (standalone) {
+      window.parent.postMessage({ teanode: 'close' }, '*')
+      return
+    }
     setOpen((previous) => {
       remember(OPEN_KEY, previous ? '0' : '1')
       return !previous
     })
   }
+
+  // Framed by the extension, the drawer tells the panel around it which
+  // theme it wears, so the panel's bar wears the same.
+  const drawerTheme = useResolvedTheme()
+  useEffect(() => {
+    if (standalone) window.parent.postMessage({ teanode: 'theme', theme: drawerTheme }, '*')
+  }, [standalone, drawerTheme])
+
+  // The browser extension, on this dashboard's own pages, opens this
+  // drawer rather than a copy of it: it raises this event from its
+  // content script.
+  useEffect(() => {
+    if (standalone) return
+    const onAgentEvent = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === 'toggle') toggle()
+    }
+    window.addEventListener('teanode:agent', onAgentEvent)
+    return () => window.removeEventListener('teanode:agent', onAgentEvent)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standalone])
 
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
@@ -832,35 +954,33 @@ export function AgentDrawer() {
     })
   }
 
-  const follow = (id: string, conversation: string) => {
-    setRuns((previous) => [...previous, id])
-    const stop = subscribe<{ AgentRunEvents: RunEvent }>(
-      EVENTS,
-      { runId: id },
-      (data) => {
-        const event = data.AgentRunEvents
-        if (event.kind !== 'note' || event.note !== 'queued behind the turn before it') {
-          // The first event of a turn that is running: its queued line
-          // has served.
-          setLines((previous) => previous.filter((line) => line.key !== `${id}-queued`))
-        }
-        applyEvent(event)
-        if (event.kind === 'done') {
-          streams.current.get(id)?.()
-          streams.current.delete(id)
-          setRuns((previous) => previous.filter((candidate) => candidate !== id))
-          void loadConversations()
-          void loadConversation(conversation).catch(() => undefined)
-        }
-      },
-      (error) => {
-        if (error) toast.failed(error.message)
-        streams.current.delete(id)
-        setRuns((previous) => previous.filter((candidate) => candidate !== id))
-      },
-    )
-    streams.current.set(id, stop)
+  // A turn begins: the feed says what was said and where from. The
+  // drawer's own words are on the page already. Anyone else's — a phone,
+  // a chat app, a terminal — go on it now; and a turn replayed after the
+  // transcript was read is already there from its words on, which the
+  // events draw again.
+  const asked = (event: RunEvent) => {
+    setRuns((previous) => (previous.includes(event.runId) ? previous : [...previous, event.runId]))
+    if (sending.current > 0 && event.note === surface()) return
+    setLines((previous) => {
+      let kept = previous
+      for (let index = previous.length - 1; index >= 0; index--) {
+        const line = previous[index]
+        if (line.kind !== 'user') continue
+        if (line.text === (event.text ?? '')) kept = previous.slice(0, index)
+        break
+      }
+      return [...kept, { kind: 'user', key: `${event.runId}-asked`, text: event.text ?? '', at: event.at }]
+    })
   }
+
+  // The run a turn sent from here got: followed through the feed like
+  // any other, and noted so that the stop button knows it.
+  const follow = (id: string) => {
+    setRuns((previous) => (previous.includes(id) ? previous : [...previous, id]))
+  }
+
+  const surface = () => (standalone ? 'extension' : window.innerWidth < 720 ? 'phone' : 'drawer')
 
   const addFiles = (files: FileList | File[] | null | undefined) => {
     if (!files) return
@@ -909,21 +1029,26 @@ export function AgentDrawer() {
           previous.map((line) => (line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line)),
         )
       }
-      const response = await graphql<{ AskAgent: { runId: string; conversationId: string } }>(ASK, {
-        conversationId: conversationId || undefined,
-        message: message || (files.length > 0 ? t('agentDrawer.filesOnly') : ''),
-        viewing,
-        surface: window.innerWidth < 720 ? 'phone' : 'drawer',
-        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
-        references: pointed.length > 0 ? pointed : undefined,
-      })
-      let conversation = conversationId
+      sending.current += 1
+      let response: { AskAgent: { runId: string; conversationId: string } }
+      try {
+        response = await graphql<{ AskAgent: { runId: string; conversationId: string } }>(ASK, {
+          conversationId: conversationId || undefined,
+          message: message || (files.length > 0 ? t('agentDrawer.filesOnly') : ''),
+          viewing,
+          surface: surface(),
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          references: pointed.length > 0 ? pointed : undefined,
+        })
+      } finally {
+        sending.current -= 1
+      }
       if (!conversationId) {
-        conversation = response.AskAgent.conversationId
+        const conversation = response.AskAgent.conversationId
         setConversationId(conversation)
         remember(CONVERSATION_KEY, conversation)
       }
-      follow(response.AskAgent.runId, conversation)
+      follow(response.AskAgent.runId)
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
@@ -974,10 +1099,8 @@ export function AgentDrawer() {
 
   const switchTo = async (id: string) => {
     setShowingList(false)
-    for (const stopStream of streams.current.values()) stopStream()
-    streams.current.clear()
     setRuns([])
-    await loadConversation(id)
+    await readConversation(id)
   }
 
   const startNew = async () => {
@@ -1176,7 +1299,7 @@ export function AgentDrawer() {
 
   return (
     <>
-      {!open && (
+      {!open && !standalone && (
         <button
           type="button"
           className="agent-drawer-toggle"
@@ -1189,7 +1312,7 @@ export function AgentDrawer() {
       )}
       {open && (
         <aside
-          className={['agent-drawer', dragging ? 'dragging' : ''].filter(Boolean).join(' ')}
+          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : ''].filter(Boolean).join(' ')}
           aria-label={agentName || t('agent.title')}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -1217,6 +1340,22 @@ export function AgentDrawer() {
               <span className="agent-drawer-title">{title}</span>
               <ChevronDownIcon size={14} className="chevron" />
             </button>
+            {/* What of the person's own is attached, as a mark with the
+                details on hover: the transcript is for the conversation. */}
+            {tab?.attached && (
+              <Tooltip label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
+                <span className="agent-drawer-device" aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
+                  <GlobeIcon size={14} />
+                </span>
+              </Tooltip>
+            )}
+            {computers.length > 0 && (
+              <Tooltip label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
+                <span className="agent-drawer-device" aria-label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
+                  <ServerIcon size={14} />
+                </span>
+              </Tooltip>
+            )}
             <button
               type="button"
               className="icon-button"
@@ -1347,11 +1486,6 @@ export function AgentDrawer() {
                 ))}
               </div>
             </>
-          )}
-          {tab?.attached && (
-            <div className="agent-drawer-tab muted" title={tab.url}>
-              {t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
-            </div>
           )}
           <div
             className="agent-drawer-transcript"
