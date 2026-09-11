@@ -1,4 +1,4 @@
-package agent
+package artifact
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -39,8 +40,8 @@ const (
 // chartColours are the series colours, in order; readable on white.
 var chartColours = []string{"#2f6db5", "#d97706", "#16a34a", "#dc2626", "#7c3aed", "#0891b2"}
 
-func runChart(ctx context.Context, call *Call) (*Result, error) {
-	arguments, err := decodeArguments[chartArguments](call)
+func runChart(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[chartArguments](call)
 	if err != nil {
 		return nil, err
 	}
@@ -78,16 +79,19 @@ func runChart(ctx context.Context, call *Call) (*Result, error) {
 	default:
 		return nil, fmt.Errorf("%q is not bar, line or pie", arguments.Kind)
 	}
-	run := runOf(ctx)
-	store := run.agent.settings.Storage
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	store := run.Storage()
 	if store == nil {
 		return nil, fmt.Errorf("nowhere to keep a chart")
 	}
 	var created *models.AgentAttachment
-	if err := run.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
-			AgentID:        run.settings.Agent.ID,
-			ConversationID: run.settings.Conversation.ID,
+			AgentID:        run.Agent().ID,
+			ConversationID: run.Conversation().ID,
 			MessageID:      artifactMessage,
 			Name:           safeFilename(title) + ".svg",
 			ContentType:    "image/svg+xml",
@@ -100,7 +104,7 @@ func runChart(ctx context.Context, call *Call) (*Result, error) {
 	}); err != nil {
 		return nil, err
 	}
-	result, err := jsonResult(map[string]any{
+	result, err := tools.JSONResult(map[string]any{
 		"artifact_id": created.ID, "title": title, "kind": "svg",
 		"url": "/api/v1/agent/attachments/" + created.ID,
 	})

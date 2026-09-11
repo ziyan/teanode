@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/version"
 )
@@ -324,6 +325,16 @@ func (self *AskRun) ReadOnly() bool                       { return self.settings
 func (self *AskRun) Offered() []*tools.Tool               { return self.offered }
 func (self *AskRun) Loaded() map[string]bool              { return self.loaded }
 func (self *AskRun) Load(name string)                     { self.loaded[name] = true }
+func (self *AskRun) Storage() storage.Storage             { return self.agent.settings.Storage }
+func (self *AskRun) Recalled() []string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return append([]string{}, self.recalled...)
+}
+func (self *AskRun) Enqueue(tx db.Transaction, kind models.AgentJobKind, mailboxId, subjectId string) error {
+	_, err := self.agent.Enqueue(tx, kind, self.settings.Agent.ID, mailboxId, subjectId)
+	return err
+}
 
 // Resolve answers a confirmation card. It says whether there was one.
 func (self *AskRun) Resolve(callId string, approve bool) bool {
@@ -1152,4 +1163,62 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	})
 	blocks = append(blocks, "<now>\n"+time.Now().In(Location(settings.Owner)).Format("Monday, 2 January 2006 15:04 MST")+"\n</now>")
 	return strings.Join(blocks, "\n")
+}
+
+// Ask shows the question card and waits for the person's words.
+func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []string) (string, error) {
+	channel := make(chan string, 1)
+	self.mutex.Lock()
+	if self.questions == nil {
+		self.questions = map[string]chan string{}
+	}
+	self.questions[callId] = channel
+	self.mutex.Unlock()
+	self.emit(Event{Kind: EventQuestion, CallID: callId, Tool: "ask_user", Note: question, Text: strings.Join(choices, "\n")})
+	timer := time.NewTimer(confirmationWait)
+	defer timer.Stop()
+	select {
+	case answer, ok := <-channel:
+		if !ok {
+			return "", ctx.Err()
+		}
+		return answer, nil
+	case <-timer.C:
+		self.mutex.Lock()
+		delete(self.questions, callId)
+		self.mutex.Unlock()
+		return "", fmt.Errorf("the person did not answer within %s", confirmationWait)
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// Answer answers a question card. It says whether there was one.
+func (self *AskRun) Answer(callId, answer string) bool {
+	self.mutex.Lock()
+	channel, ok := self.questions[callId]
+	if ok {
+		delete(self.questions, callId)
+	}
+	self.mutex.Unlock()
+	if !ok {
+		return false
+	}
+	channel <- answer
+	return true
+}
+
+// Recall keeps what a memory search found, for the overlay.
+func (self *AskRun) Recall(line string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, existing := range self.recalled {
+		if existing == line {
+			return
+		}
+	}
+	self.recalled = append(self.recalled, line)
+	if len(self.recalled) > 10 {
+		self.recalled = self.recalled[len(self.recalled)-10:]
+	}
 }

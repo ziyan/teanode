@@ -33,9 +33,16 @@ golden prompt tests and the catalog schema test hold in place.
   `RunFrom` carry it; `AskRun` implements `tools.Run`; the old families
   register as one factory from `agent`'s init and reach the run through
   `runOf(ctx)` until each moves. Same catalog, golden prompts unchanged.
-- [ ] Milestone 2 — the general family moved: datetime, webfetch,
-  websearch, toolsearch, artifact, chart, memory, schedule, askuser, todo,
-  conversation.
+- [x] (2026-09-11 15:00Z) Milestone 2 — the general family moved:
+  `tools/datetime`, `tools/webfetch`, `tools/websearch`, `tools/toolsearch`,
+  `tools/artifact` (artifact and chart), `tools/memory`, `tools/askuser`
+  (ask_user and todo), `tools/schedule`. The time, text, cron and feature
+  helpers they share went into the kit (`timeparse.go`, `text.go`,
+  `cron.go`, `policy.go`); `tools.Run` grew `Storage`, `Recall`,
+  `Recalled`, `Ask` and `Enqueue`. The question card and the recall list
+  stay on `AskRun` as `Ask` and `Recall`; `memoryLines` and the worker's
+  schedule code stay in `agent`. `tools_general.go`, `chart.go` and
+  `askuser.go` are gone.
 - [ ] Milestone 3 — the mailbox family moved: mailsearch, mailread,
   mailact, maildraft, mailsend, mailcomposehelp, folder, rule,
   mailboxsettings, contact, subscription, replyqueue.

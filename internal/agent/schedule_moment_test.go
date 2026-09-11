@@ -30,14 +30,6 @@ func TestNextCronAtOneMoment(t *testing.T) {
 	}
 }
 
-func TestSafeFilename(t *testing.T) {
-	for input, want := range map[string]string{"Mooring fees, Q3 2026": "mooring-fees-q3-2026", "  ": "artifact", "Chart/Plot!": "chartplot"} {
-		if got := safeFilename(input); got != want {
-			t.Fatalf("safeFilename(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
 // "@in 5m" is a distance from now, stored as the moment it means, so that
 // it does not move with every look at it.
 func TestResolveRelative(t *testing.T) {

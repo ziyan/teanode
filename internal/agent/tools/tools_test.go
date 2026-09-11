@@ -7,6 +7,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 // fakeRun is the least a run can be, for a tool under test.
@@ -27,6 +28,14 @@ func (self *fakeRun) ReadOnly() bool                          { return false }
 func (self *fakeRun) Offered() []*Tool                        { return nil }
 func (self *fakeRun) Loaded() map[string]bool                 { return self.loaded }
 func (self *fakeRun) Load(name string)                        { self.loaded[name] = true }
+
+func (self *fakeRun) Storage() storage.Storage { return nil }
+func (self *fakeRun) Recall(string)            {}
+func (self *fakeRun) Recalled() []string       { return nil }
+func (self *fakeRun) Ask(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
+func (self *fakeRun) Enqueue(db.Transaction, models.AgentJobKind, string, string) error { return nil }
 
 // A run in the context is the run a tool gets back; none is an error a
 // tool can report, never a nil to fall over.

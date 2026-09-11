@@ -1,4 +1,4 @@
-package agent
+package artifact
 
 import (
 	"strings"
@@ -40,5 +40,13 @@ func TestReachesOut(t *testing.T) {
 	}
 	if reachesOut(`<link rel="stylesheet" href="https://x/y.css">`) == "" {
 		t.Fatal("a stylesheet from elsewhere never loads")
+	}
+}
+
+func TestSafeFilename(t *testing.T) {
+	for input, want := range map[string]string{"Mooring fees, Q3 2026": "mooring-fees-q3-2026", "  ": "artifact", "Chart/Plot!": "chartplot"} {
+		if got := safeFilename(input); got != want {
+			t.Fatalf("safeFilename(%q) = %q, want %q", input, got, want)
+		}
 	}
 }

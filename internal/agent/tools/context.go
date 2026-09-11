@@ -7,6 +7,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 // Operations is the API as the person, for a tool: every call runs in its
@@ -46,6 +47,20 @@ type Run interface {
 	Offered() []*Tool
 	Loaded() map[string]bool
 	Load(name string)
+
+	// Storage is where a file the agent makes is kept.
+	Storage() storage.Storage
+
+	// Recall keeps a line a memory search found, for the <recalled>
+	// overlay; Recalled is what has been kept this turn.
+	Recall(line string)
+	Recalled() []string
+
+	// Ask puts a question to the person and waits for the answer.
+	Ask(ctx context.Context, callId, question string, choices []string) (string, error)
+
+	// Enqueue queues a job of the agent's, in the transaction given.
+	Enqueue(tx db.Transaction, kind models.AgentJobKind, mailboxId, subjectId string) error
 }
 
 type runKey struct{}

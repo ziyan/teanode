@@ -54,7 +54,17 @@ var (
 	arrayProperty   = tools.ArrayProperty
 	jsonResult      = tools.JSONResult
 	textResult      = tools.TextResult
-	mustJSON        = tools.MustJSON
+
+	// Location and the time helpers moved to the kit with the datetime tool.
+	Location  = tools.Location
+	parseTime = tools.ParseTime
+
+	// The text and cron helpers moved to the kit too.
+	HTMLToText      = tools.HTMLToText
+	normalizeText   = tools.NormalizeText
+	stripQuoted     = tools.StripQuoted
+	nextCron        = tools.NextCron
+	resolveRelative = tools.ResolveRelative
 )
 
 func decodeArguments[T any](call *Call) (T, error) {

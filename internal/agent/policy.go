@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -23,25 +24,12 @@ var ErrNotGranted = errors.New("agent: not granted for this mailbox")
 // the page before it offers a switch.
 
 // FeatureAllowed says whether the deployment offers a feature at all.
-func FeatureAllowed(configuration *config.Configuration, feature string) bool {
-	return configuration != nil && configuration.Agent.Enabled && configuration.Agent.FeatureOn(feature)
-}
+var FeatureAllowed = tools.FeatureAllowed
 
 // SourceActive says whether a mailbox is a source anything happens for:
 // granted, of an agent that is on and not switched off by an operator.
 func SourceActive(agent *models.Agent, mailbox *models.Mailbox) bool {
 	return agent.Active() && mailbox != nil && mailbox.Agent != nil && mailbox.Agent.Granted
-}
-
-// Location is the zone a person's times are told in: their own, or the
-// server's when they have none yet.
-func Location(user *models.User) *time.Location {
-	if user != nil && user.Timezone != "" {
-		if location, err := time.LoadLocation(user.Timezone); err == nil {
-			return location
-		}
-	}
-	return time.Local
 }
 
 // Language is what the agent writes in for a person: the agent's own

@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
+	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"sync"
 	"time"
 
@@ -174,10 +175,6 @@ func FullCatalog() *Catalog {
 func init() {
 	tools.Register(func() []*Tool {
 		catalog := NewCatalog()
-		registerGeneralTools(catalog)
-		registerMemoryTools(catalog)
-		registerConversationTools(catalog)
-		registerScheduleTools(catalog)
 		registerMailboxTools(catalog)
 		registerOperatorTools(catalog)
 		registerBrowserTools(catalog)
