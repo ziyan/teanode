@@ -161,7 +161,10 @@ Notable changes to TeaNode. The format follows
   tokens, from the provider's pricing. The primary conversation heads the
   picker with a star; any named conversation can be made primary. The
   operator's token-use table takes a date range, and names agents and
-  mailboxes rather than showing their ids. (#73)
+  mailboxes rather than showing their ids. Escape opens and closes the
+  drawer from anywhere; what is typed in its box survives a refresh. The
+  tools a person wants asked about first are picked from the same list
+  by family, not typed. (#73)
 
 ### Changed
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, SaveRow, Tag, formatCount, formatTime } from '../components/common'
@@ -10,6 +10,7 @@ import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { Select } from '../components/select'
+import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
@@ -1327,32 +1328,45 @@ function RepliesCard() {
   )
 }
 
-// ConfirmForm: the tools the agent must always ask about first.
+const TOOLS = `{ ListAgentTools { name family risk description confirms core } }`
+
+// ConfirmForm: the tools the agent must always ask about first, by
+// family, each with a word — as usual, or ask me first — and a word for
+// the whole family its tools inherit.
 function ConfirmForm({ agent, busy, onSave }: SaveProps) {
   const { t } = useTranslation()
-  const [value, setValue] = useState(joinList(agent.confirm))
-  useEffect(() => setValue(joinList(agent.confirm)), [agent.confirm.join(',')])
+  const { data } = useQuery(() => graphql<{ ListAgentTools: PolicyTool[] }>(TOOLS), [], { refresh: false })
+  const tools = data?.ListAgentTools ?? []
+  const families = useMemo(() => Array.from(new Set(tools.map((tool) => tool.family))), [tools])
+  const [policy, setPolicy] = useState<Record<string, string>>({})
+  useEffect(() => {
+    setPolicy(Object.fromEntries(agent.confirm.map((name) => [name, 'confirm'])))
+  }, [agent.confirm.join(',')])
+  const options = [
+    { value: 'allow', label: t('agent.policyUsual') },
+    { value: 'confirm', label: t('agent.policyAsk') },
+  ]
   return (
     <form
       className="settings-subform"
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave({ confirm: splitList(value) }, t('agent.saved'))
+        void onSave(
+          { confirm: Object.entries(policy).filter(([, word]) => word === 'confirm').map(([name]) => name) },
+          t('agent.saved'),
+        )
       }}
     >
       <h4>{t('agent.confirmTools')}</h4>
       <p className="muted">{t('agent.confirmToolsHint')}</p>
-      <div className="form-narrow">
-        <label>
-          <span>{t('agent.confirmToolsField')}</span>
-          <input
-            value={value}
-            disabled={busy}
-            placeholder="mail_act, folder_manage"
-            onChange={(event) => setValue(event.target.value)}
-          />
-        </label>
-      </div>
+      <ToolPolicyAccordion
+        families={families}
+        tools={tools}
+        options={options}
+        policy={policy}
+        defaultWord="allow"
+        onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
+      />
       <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
     </form>
   )

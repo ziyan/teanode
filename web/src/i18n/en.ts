@@ -1125,6 +1125,8 @@ export const en = {
   'agent.removeCategoryConfirm': 'Remove {name}? Mail already sorted into it keeps the label; new mail is sorted without it.',
   'agent.revokeConfirm': 'Take {name} away from the agent? Queued work for it is cancelled; what it has sorted stays.',
   'agent.forgetHint': 'Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.',
+  'agent.policyUsual': 'As usual',
+  'agent.policyAsk': 'Ask me first',
   'agent.confirmToolsHint': 'Beyond what always needs a yes — sending, deleting, anything outward — the tools it must ask about every time.',
   'agent.confirmToolsField': 'Tools, comma-separated',
   'agent.answeringHint': 'Under the policy here it sends replies on your behalf. Each waits in Drafts for the hold, where you can stop it.',

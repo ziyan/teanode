@@ -1121,6 +1121,8 @@ export const ja: Catalog = {
   'agent.removeCategoryConfirm': '{name} を削除しますか？仕分け済みのメールはラベルを保ち、新しいメールはそれなしで仕分けられます。',
   'agent.revokeConfirm': '{name} をエージェントから外しますか？待機中の作業は取り消され、仕分け済みのものは残ります。',
   'agent.forgetHint': 'エージェントを記憶、会話、予定、接続ごと削除します。メールはそのままです。',
+  'agent.policyUsual': '通常どおり',
+  'agent.policyAsk': '先に確認',
   'agent.confirmToolsHint': '常に確認が要るもの（送信、削除、外への働きかけ）に加えて、毎回尋ねるべきツール。',
   'agent.confirmToolsField': 'ツール、カンマ区切り',
   'agent.answeringHint': 'ここの方針のもとで、あなたの代わりに返信を送ります。各返信は保留の間ドラフトに置かれ、止められます。',

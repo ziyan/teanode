@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { graphql } from '../../api'
 import { SaveRow } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
-import { ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../../components/icons'
+import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { Tag } from '../../components/common'
 import { useToast } from '../../components/toast'
+import { ToolPolicyAccordion } from '../../components/toolPolicy'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import { UPDATE, useSaver } from './integrations'
@@ -854,10 +855,8 @@ function LimitsForm({ settings, onSaved }: Props) {
   )
 }
 
-type Policy = 'allow' | 'confirm' | 'off'
-
 // policyOf reads the two lists as one word per name.
-function policyOf(name: string, tools: Agent['tools']): Policy {
+function policyOf(name: string, tools: Agent['tools']): string {
   if (tools.disabled.includes(name)) return 'off'
   if (tools.confirm.includes(name)) return 'confirm'
   return 'allow'
@@ -873,8 +872,7 @@ function ToolsForm({ settings, onSaved }: Props) {
     () => [...settings.families, ...settings.tools.catalog.map((tool) => tool.name)],
     [settings.families, settings.tools.catalog],
   )
-  const [policy, setPolicy] = useState<Record<string, Policy>>({})
-  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [policy, setPolicy] = useState<Record<string, string>>({})
   useEffect(() => {
     setPolicy(Object.fromEntries(names.map((name) => [name, policyOf(name, settings.tools)])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -904,63 +902,14 @@ function ToolsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.tools')}</h3>
       <p className="muted">{t('agentSettings.toolsDescription')}</p>
-      <div className="tool-policy">
-      {settings.families.map((family) => {
-        const tools = settings.tools.catalog.filter((tool) => tool.family === family)
-        const familyWord = wordFor(family)
-        return (
-          <div className="tool-policy-family" key={family}>
-            <div className="tool-policy-head">
-              <button
-                type="button"
-                className="tool-policy-toggle"
-                aria-expanded={!!open[family]}
-                onClick={() => setOpen({ ...open, [family]: !open[family] })}
-              >
-                {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-                <strong>{family}</strong>
-                <span className="muted">{t('agentSettings.familyTools', { count: String(tools.length) })}</span>
-              </button>
-              <Select
-                value={familyWord}
-                label={`${family}: ${t('agentSettings.policy')}`}
-                options={options}
-                onChange={(value) => setPolicy({ ...policy, [family]: value as Policy })}
-              />
-            </div>
-            {open[family] && (
-              <div className="tool-policy-tools">
-                {tools.map((tool) => (
-                  <SettingsRow
-                    key={tool.name}
-                    title={tool.name}
-                    badge={tool.confirms ? <Tag value={t('agentSettings.asksByRisk')} /> : undefined}
-                    subtitle={tool.description}
-                    actions={
-                      <Select
-                        value={wordFor(tool.name)}
-                        label={`${tool.name}: ${t('agentSettings.policy')}`}
-                        options={
-                          familyWord === 'allow'
-                            ? options
-                            : options.map((option) =>
-                                option.value === 'allow'
-                                  ? { ...option, label: t('agentSettings.policyInherits', { word: t(`agentSettings.policy${familyWord === 'off' ? 'Off' : 'Confirm'}`) }) }
-                                  : option,
-                              )
-                        }
-                        onChange={(value) => setPolicy({ ...policy, [tool.name]: value as Policy })}
-                      />
-                    }
-                  />
-                ))}
-                {tools.length === 0 ? <p className="muted">{t('agentSettings.familyDynamic')}</p> : null}
-              </div>
-            )}
-          </div>
-        )
-      })}
-      </div>
+      <ToolPolicyAccordion
+        families={settings.families}
+        tools={settings.tools.catalog}
+        options={options}
+        policy={policy}
+        defaultWord="allow"
+        onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
+      />
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )

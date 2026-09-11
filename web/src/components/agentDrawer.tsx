@@ -503,6 +503,7 @@ export function AgentDrawer() {
   const streams = useRef(new Map<string, () => void>())
   const transcript = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  const draftLoadedFor = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
 
   // Whether there is an agent to talk to at all. Asked once; the button
@@ -551,6 +552,7 @@ export function AgentDrawer() {
     setLines(linesOf(response.ReadAgentConversation.messages, t))
     setTodos(response.ReadAgentConversation.todos ?? [])
     setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
+    draftLoadedFor.current = response.ReadAgentConversation.conversation.id
     setAtBottom(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -591,10 +593,29 @@ export function AgentDrawer() {
   }, [search])
 
   // The draft is the conversation's: kept while the person is away and
-  // back when they return.
+  // back when they return. Kept only once this conversation's draft has
+  // been read back, or the empty box of a fresh page would overwrite what
+  // was typed before the refresh.
   useEffect(() => {
+    if (draftLoadedFor.current !== conversationId) return
     remember(draftKey(conversationId), draft)
   }, [draft, conversationId])
+
+  // Escape toggles the drawer from anywhere on the page — unless a dialog
+  // or a list is open, which Escape closes first.
+  useEffect(() => {
+    if (!available) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (document.querySelector('.dialog-scrim, .select-list, .combobox-list')) return
+      event.preventDefault()
+      toggle()
+      if (!open) setTimeout(() => input.current?.focus(), 50)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [available, open])
 
   // Another page asking for a conversation to be opened here: a run's
   // transcript from the agent page.

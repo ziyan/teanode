@@ -381,7 +381,7 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 		return nil, err
 	}
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
-		"modified_at": time.Now(), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
+		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
 	}).Error; err != nil {
 		return nil, err

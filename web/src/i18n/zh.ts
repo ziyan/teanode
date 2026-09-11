@@ -1084,6 +1084,8 @@ export const zh: Catalog = {
   'agent.removeCategoryConfirm': '移除 {name}？已归入的邮件保留标签；新邮件不再归入。',
   'agent.revokeConfirm': '收回 {name}？排队中的工作会取消；已整理的内容保留。',
   'agent.forgetHint': '删除代理及其记忆、对话、计划和连接。你的邮件不受影响。',
+  'agent.policyUsual': '照常',
+  'agent.policyAsk': '先问我',
   'agent.confirmToolsHint': '除了总是需要确认的操作（发送、删除、任何外发），这里列出的工具每次都会先问你。',
   'agent.confirmToolsField': '工具，以逗号分隔',
   'agent.answeringHint': '按此处策略代你回信。每封回信先在草稿箱等待，你可以在此期间叫停。',
