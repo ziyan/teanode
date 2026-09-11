@@ -255,6 +255,11 @@ func normalizeFinish(reason string) string {
 }
 
 type openAIChunk struct {
+	// Error is what a gateway sends inside a 200 stream when the model
+	// fails midway: no choices, and a stream that must not end as "stop".
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
 	ID      string `json:"id"`
 	Model   string `json:"model"`
 	Choices []struct {
@@ -296,6 +301,7 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 		response.Message.Role = RoleAssistant
 		var text strings.Builder
 		calls := map[int]*ToolCall{}
+		var failed error
 		err := eventStream(body, func(data string) bool {
 			if data == "[DONE]" {
 				return false
@@ -304,6 +310,10 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				log.Debugf("skipping a chunk that is not JSON: %s", err)
 				return true
+			}
+			if chunk.Error != nil {
+				failed = fmt.Errorf("llm: the provider answered mid-stream: %s", chunk.Error.Message)
+				return false
 			}
 			if chunk.ID != "" {
 				response.ID = chunk.ID
@@ -320,6 +330,7 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 					select {
 					case events <- StreamEvent{Kind: StreamText, Text: choice.Delta.Content}:
 					case <-ctx.Done():
+						failed = ctx.Err()
 						return false
 					}
 				}
@@ -343,6 +354,11 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 			}
 			return true
 		})
+		if err == nil && failed != nil {
+			// A cut stream is not a finished answer: cancelled, or failed
+			// midway, it is reported as such rather than kept as complete.
+			err = failed
+		}
 		if err != nil {
 			events <- StreamEvent{Kind: StreamError, Err: fmt.Errorf("llm: reading the stream: %w", err)}
 			return

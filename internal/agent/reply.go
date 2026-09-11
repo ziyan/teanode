@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	netmail "net/mail"
 	"strings"
@@ -72,6 +73,10 @@ func ReplyPrompt(input *DraftInput, guidance string) ([]llm.ChatMessage, error) 
 // replyRefusal is why the agent must not answer this message, or empty
 // when it may: the out-of-office ladder first, then the source's policy.
 // A refusal is a reason, never an error.
+// errAlreadyHeld is a reply that lost the race to another of the same
+// conversation.
+var errAlreadyHeld = errors.New("a reply to this conversation is already held")
+
 func (self *Agent) replyRefusal(tx db.Transaction, run *Run, policy *models.AgentAutoReply, mail *models.Mail, item *models.MailboxItem, recipient string, insight *models.MailInsight, now time.Time, atSend bool) (string, error) {
 	mailbox := run.Mailbox
 	if self.settings.Exchange == nil {
@@ -469,6 +474,15 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		if err != nil {
 			return err
 		}
+		// Asked once more here, where the row is made: two messages of one
+		// conversation answered at the same time both passed the ladder.
+		held, err := tx.CountAgentReplies(&db.AgentReplyFilter{MailboxID: mailbox.ID, ThreadID: threadIdOf(mail), Statuses: []models.AgentReplyStatus{models.AgentReplyHeld, models.AgentReplySending}})
+		if err != nil {
+			return err
+		}
+		if held > 0 {
+			return errAlreadyHeld
+		}
 		draftItem, err := self.storeDraft(ctx, tx, mailbox, recipient, mail, composed)
 		if err != nil {
 			return err
@@ -485,6 +499,9 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		_, err = tx.EnqueueAgentJob(&models.AgentJob{AgentID: run.Agent.ID, MailboxID: mailbox.ID, Kind: models.AgentJobSend, SubjectID: reply.ID, NotBefore: &sendAfter})
 		return err
 	}); err != nil {
+		if errors.Is(err, errAlreadyHeld) {
+			return self.recordRefusal(ctx, run, mail, "a reply to this conversation is already held")
+		}
 		return err
 	}
 	return nil

@@ -93,8 +93,8 @@ const UPDATE_AGENT = `
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
 
-export function useAgent() {
-  return useQuery(() => graphql<{ ReadAgent: AgentView }>(READ_AGENT), [])
+export function useAgent(options: { refresh?: boolean } = {}) {
+  return useQuery(() => graphql<{ ReadAgent: AgentView }>(READ_AGENT), [], options)
 }
 
 function joinList(values?: string[] | null): string {
@@ -581,7 +581,7 @@ interface AgentServer {
 function ServersCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, reload } = useQuery(() => graphql<{ ListAgentServers: AgentServer[] }>(SERVERS, {}), [])
+  const { data, error, reload } = useQuery(() => graphql<{ ListAgentServers: AgentServer[] }>(SERVERS, {}), [], { refresh: false })
   const [connecting, setConnecting] = useState<AgentServer | null>(null)
   const [credential, setCredential] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
@@ -769,7 +769,7 @@ const AUDIENCES = ['ask', 'triage', 'reply', 'summaries', 'research'] as const
 function MemoryCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentMemories: Memory[] }>(MEMORIES, {}), [])
+  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentMemories: Memory[] }>(MEMORIES, {}), [], { refresh: false })
   // The dialog makes a memory or changes one: editing is the id it keeps.
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
@@ -1163,7 +1163,7 @@ type Run = { id: string; title: string; jobKind: string; lastAt: string }
 
 function ActivityCard() {
   const { t, plural } = useTranslation()
-  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [])
+  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [], { refresh: false })
   const runs = data?.ListAgentRuns ?? []
   if (error) {
     return null
@@ -1673,13 +1673,20 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(policy.autoReply)])
   const setReply = (change: Partial<AgentAutoReply>) => setReplyState({ ...reply, ...change })
+  // The three lists as typed, commas and all; split when saved, or a
+  // comma would vanish under the cursor.
+  const [lists, setLists] = useState({ allow: joinList(policy.autoReply?.allow), never: joinList(policy.autoReply?.never), categories: joinList(policy.autoReply?.categories) })
+  useEffect(() => {
+    setLists({ allow: joinList(policy.autoReply?.allow), never: joinList(policy.autoReply?.never), categories: joinList(policy.autoReply?.categories) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(policy.autoReply)])
 
   return (
     <form
       className="settings-subform"
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave({ autoReply: reply })
+        void onSave({ autoReply: { ...reply, allow: splitList(lists.allow), never: splitList(lists.never), categories: splitList(lists.categories) } })
       }}
     >
       <h4>{t('agent.answering')}</h4>
@@ -1762,18 +1769,18 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
         ) : null}
         <label>
           <span>{t('agent.allow')}</span>
-          <input value={joinList(reply.allow)} onChange={(event) => setReply({ allow: splitList(event.target.value) })} />
+          <input value={lists.allow} onChange={(event) => setLists({ ...lists, allow: event.target.value })} />
         </label>
         <label>
           <span>{t('agent.never')}</span>
-          <input value={joinList(reply.never)} onChange={(event) => setReply({ never: splitList(event.target.value) })} />
+          <input value={lists.never} onChange={(event) => setLists({ ...lists, never: event.target.value })} />
         </label>
         <label>
           <span>{t('agent.replyCategories')}</span>
           <input
-            value={joinList(reply.categories)}
+            value={lists.categories}
             placeholder={t('agent.replyCategoriesAny')}
-            onChange={(event) => setReply({ categories: splitList(event.target.value) })}
+            onChange={(event) => setLists({ ...lists, categories: event.target.value })}
           />
         </label>
         <div className="row">

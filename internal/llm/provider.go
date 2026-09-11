@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -189,6 +190,10 @@ func eventStream(reader io.Reader, yield func(data string) bool) error {
 // lineScanner reads lines of any length, which bufio.Scanner will not
 // without being told a limit: a streamed tool call can carry a long
 // argument on one line.
+// streamLineBytes bounds one line of an event stream; a line that long is
+// not an event, and reading on would only grow the buffer.
+const streamLineBytes = 4 << 20
+
 type lineScanner struct {
 	reader io.Reader
 	buffer []byte
@@ -201,10 +206,13 @@ func newLineScanner(reader io.Reader) *lineScanner {
 
 func (self *lineScanner) next() (string, error) {
 	for {
-		if index := strings.IndexByte(string(self.buffer), '\n'); index >= 0 {
+		if index := bytes.IndexByte(self.buffer, '\n'); index >= 0 {
 			line := strings.TrimRight(string(self.buffer[:index]), "\r")
 			self.buffer = self.buffer[index+1:]
 			return line, nil
+		}
+		if len(self.buffer) > streamLineBytes {
+			return "", fmt.Errorf("llm: a line of the stream is longer than %d bytes", streamLineBytes)
 		}
 		if self.done {
 			if len(self.buffer) == 0 {

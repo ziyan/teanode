@@ -216,6 +216,7 @@ func init() {
 			},
 			{
 				Name: "alias_add", Family: tools.FamilyDomains, Risk: tools.RiskWrite, Permissions: manage,
+				RiskOf:      aliasRisk,
 				Description: "Add an address to a domain: what arrives at the pattern goes to a mailbox, is forwarded, is posted to a webhook, or is dropped.",
 				Parameters:  tools.Object(aliasFields, "domain", "pattern", "kind"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -263,6 +264,7 @@ func init() {
 			},
 			{
 				Name: "alias_update", Family: tools.FamilyDomains, Risk: tools.RiskWrite, Permissions: manage,
+				RiskOf:      aliasRisk,
 				Description: "Change an address: its pattern, what it does, its note, or switch it off and on.",
 				Parameters:  tools.Object(mailbox.MergeProperties(aliasFields, map[string]any{"alias_id": tools.StringProperty("the alias, from alias_list")}), "alias_id"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -517,4 +519,26 @@ func init() {
 			},
 		}
 	})
+}
+
+// aliasRisk is what an address would do: one that forwards to an outside
+// address or a webhook sends mail out of the server for as long as it
+// exists, so making or changing it asks first.
+func aliasRisk(arguments json.RawMessage) tools.Risk {
+	var call struct {
+		Kind    string `json:"kind"`
+		Email   string `json:"email"`
+		Webhook string `json:"webhook"`
+	}
+	if json.Unmarshal(arguments, &call) != nil {
+		return tools.RiskWrite
+	}
+	switch strings.ToLower(call.Kind) {
+	case "email", "webhook", "forward":
+		return tools.RiskOutward
+	}
+	if call.Email != "" || call.Webhook != "" {
+		return tools.RiskOutward
+	}
+	return tools.RiskWrite
 }

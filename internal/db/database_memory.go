@@ -50,7 +50,7 @@ type MemoryOperation interface {
 
 	CreateAgentTodo(todo *models.AgentTodo) (*models.AgentTodo, error)
 	UpdateAgentTodo(todoId string, modify func(*models.AgentTodo) error) (*models.AgentTodo, error)
-	DeleteAgentTodo(todoId string) error
+	DeleteAgentTodo(conversationId, todoId string) error
 	ListAgentTodos(conversationId string) ([]*models.AgentTodo, error)
 }
 
@@ -434,8 +434,8 @@ func (self *transaction) UpdateAgentTodo(todoId string, modify func(*models.Agen
 	return todo, nil
 }
 
-func (self *transaction) DeleteAgentTodo(todoId string) error {
-	return self.tx.Where("\"id\" = ?", todoId).Delete(&agentTodoModel{}).Error
+func (self *transaction) DeleteAgentTodo(conversationId, todoId string) error {
+	return self.tx.Where("\"id\" = ? AND \"conversation_id\" = ?", todoId, conversationId).Delete(&agentTodoModel{}).Error
 }
 
 func (self *transaction) ListAgentTodos(conversationId string) ([]*models.AgentTodo, error) {

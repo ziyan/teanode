@@ -405,7 +405,11 @@ type AgentBrowserParameters struct {
 // as name=value lines; a value left blank keeps the one stored under that
 // name.
 type AgentMCPServerParameters struct {
-	Name          string   `json:"name"`
+	Name string `json:"name"`
+
+	// PreviousName is what the server was called until this save, so a
+	// rename carries its stored secrets along.
+	PreviousName  string   `json:"previousName" graphapi:"nullable"`
 	Transport     string   `json:"transport" graphapi:"nullable"`
 	URL           string   `json:"url" graphapi:"nullable"`
 	Command       string   `json:"command" graphapi:"nullable"`
@@ -553,7 +557,10 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				continue
 			}
 			name := strings.TrimSpace(given.Name)
-			stored := previous[name]
+			stored, known := previous[name]
+			if before := strings.TrimSpace(given.PreviousName); !known && before != "" {
+				stored = previous[before]
+			}
 			enabled := given.Enabled
 			server := config.AgentMCPServer{
 				Name:          name,

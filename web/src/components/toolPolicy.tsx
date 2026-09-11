@@ -30,7 +30,7 @@ export function ToolPolicyAccordion({
   defaultWord: string
   onChange: (name: string, word: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const wordFor = (name: string) => policy[name] ?? defaultWord
   const labelOf = (word: string) => options.find((option) => option.value === word)?.label ?? word
@@ -51,7 +51,7 @@ export function ToolPolicyAccordion({
               >
                 {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
                 <strong>{family}</strong>
-                <span className="muted">{t('agentSettings.familyTools', { count: String(members.length) })}</span>
+                <span className="muted">{plural(members.length, { one: 'agentSettings.familyToolsOne', other: 'agentSettings.familyToolsOther' })}</span>
               </button>
               <Select
                 value={familyWord}

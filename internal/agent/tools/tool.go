@@ -392,3 +392,16 @@ func MustJSON(value any) json.RawMessage {
 	}
 	return encoded
 }
+
+// ActionOf is the "action" of a call's arguments, lowercased, for a tool
+// whose risk depends on it. Read from the JSON, never by looking for the
+// word inside it: a name or a title containing "delete" is not a delete.
+func ActionOf(arguments json.RawMessage) string {
+	var call struct {
+		Action string `json:"action"`
+	}
+	if len(arguments) == 0 || json.Unmarshal(arguments, &call) != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(call.Action))
+}

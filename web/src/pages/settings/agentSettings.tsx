@@ -1267,11 +1267,11 @@ function ServersSection({ settings, onSaved }: Props) {
           onChange={(draft) => setEditing({ ...editing, draft })}
           onClose={() => setEditing(null)}
           onSubmit={() => {
-            const values = settings.mcpServers.map(serverValues)
+            const values: (ReturnType<typeof serverValues> & { previousName?: string })[] = settings.mcpServers.map(serverValues)
             if (editing.index < 0) {
               values.push(serverDraftValues(editing.draft))
             } else {
-              values[editing.index] = serverDraftValues(editing.draft)
+              values[editing.index] = { ...serverDraftValues(editing.draft), previousName: settings.mcpServers[editing.index].name }
             }
             void saveList(values).then((ok) => ok && setEditing(null))
           }}

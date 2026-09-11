@@ -28,7 +28,7 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
-	if reply == nil || reply.Status != models.AgentReplyHeld {
+	if reply == nil || (reply.Status != models.AgentReplyHeld && reply.Status != models.AgentReplySending) {
 		return nil // cancelled, or already sent
 	}
 	if reply.SendAfter != nil && now.Before(*reply.SendAfter) {
@@ -48,6 +48,12 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 			})
 			return err
 		})
+	}
+	if reply.Status == models.AgentReplySending {
+		// The mailer had it and the record of the send never happened —
+		// the process stopped between the two. Sending again could send
+		// twice, so it is left, and the person is told to look in Sent.
+		return settle(models.AgentReplyFailed, "the send was interrupted before it was recorded; look in Sent before answering by hand")
 	}
 	source := run.Source
 	if mailbox == nil || source == nil || !source.Granted || source.AutoReply == nil || !source.AutoReply.Enabled || !FeatureAllowed(run.Configuration(), "autoReply") {
@@ -124,8 +130,25 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 			mailparse.UnsplitHeader("X-Auto-Response-Suppress", "All"),
 		),
 	}
+	// Marked as with the mailer before it goes, so a retry after a crash
+	// between the send and its record does not send it again.
+	mark := func(status models.AgentReplyStatus) error {
+		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
+				reply.Status = status
+				return nil
+			})
+			return err
+		})
+	}
+	if err := mark(models.AgentReplySending); err != nil {
+		return err
+	}
 	if err := self.settings.Mailer.Send(acting, envelope, message); err != nil {
-		if run.Job.Attempts+1 >= len(retryLadder) {
+		if markErr := mark(models.AgentReplyHeld); markErr != nil {
+			log.Warningf("cannot put the reply %q back on hold: %s", reply.ID, markErr)
+		}
+		if run.Job.Attempts+1 > len(retryLadder) {
 			// The last try: the reply stays unsent, and the person is told
 			// why in the activity rather than left with a draft that never
 			// went.

@@ -67,7 +67,7 @@ func init() {
 				},
 			},
 			{
-				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskWrite, Permissions: manage,
+				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskDestructive, Permissions: manage,
 				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them; a secret left out or shown redacted is kept.",
 				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
 				Preview: func(arguments json.RawMessage) string {

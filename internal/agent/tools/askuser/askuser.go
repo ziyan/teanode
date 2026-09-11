@@ -132,7 +132,7 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return list()
 	case "remove":
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-			return tx.DeleteAgentTodo(arguments.ID)
+			return tx.DeleteAgentTodo(conversationId, arguments.ID)
 		}); err != nil {
 			return nil, err
 		}

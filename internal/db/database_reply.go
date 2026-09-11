@@ -196,7 +196,7 @@ func (self *transaction) agentReplyQuery(filter *AgentReplyFilter) *gorm.DB {
 
 func (self *transaction) ListAgentReplies(filter *AgentReplyFilter, options *Options) ([]*models.AgentReply, error) {
 	var found []agentReplyModel
-	query := self.agentReplyQuery(filter).Order("\"created_at\" DESC")
+	query := self.agentReplyQuery(filter).Order("\"created_at\" DESC, \"id\" DESC")
 	if options != nil && options.Limit > 0 {
 		query = query.Limit(int(options.Limit)).Offset(int(options.Offset))
 	}

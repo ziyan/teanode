@@ -102,7 +102,7 @@ func tabOf(run tools.Run) tools.Tab {
 var browserReadingActions = map[string]bool{"navigate": true, "snapshot": true, "screenshot": true, "click": true, "select": true, "hover": true, "scroll": true, "wait": true, "back": true, "tabs": true}
 
 // browserWritingActions are the ones that change a page or run code.
-var browserWritingActions = map[string]bool{"click": true, "select": true, "type": true, "press": true, "scroll": true, "evaluate": true, "hover": true}
+var browserWritingActions = map[string]bool{"click": true, "select": true, "type": true, "press": true, "scroll": true, "evaluate": true, "hover": true, "fetch": true, "storage": true}
 
 type browserArguments struct {
 	Action        string            `json:"action"`

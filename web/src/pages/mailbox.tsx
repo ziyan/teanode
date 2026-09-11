@@ -1356,9 +1356,9 @@ function Row({
 // a reply is needed — each left as it is unless changed. The agent is told
 // what the person chose, as a correction it learns from.
 function SortDialog({ itemIds, onClose }: { itemIds: string[]; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
-  const agent = useAgent()
+  const agent = useAgent({ refresh: false })
   const [category, setCategory] = useState('')
   const [priority, setPriority] = useState('')
   const [needsReply, setNeedsReply] = useState('')
@@ -1366,8 +1366,8 @@ function SortDialog({ itemIds, onClose }: { itemIds: string[]; onClose: () => vo
   const categories = agent.data?.ReadAgent.categories ?? Object.keys(CATEGORY_LABELS)
   return (
     <FormDialog
-      title={t('mailbox.sortTitle', { count: String(itemIds.length) })}
-      submitLabel={t('mailbox.sortAs')}
+      title={plural(itemIds.length, { one: 'mailbox.sortTitleOne', other: 'mailbox.sortTitleOther' })}
+      submitLabel={t('mailbox.sort')}
       busy={busy}
       canSubmit={category !== '' || priority !== '' || needsReply !== ''}
       onClose={onClose}
@@ -1761,7 +1761,8 @@ function Reader({
     // The conversation is gone from here — the agent, or another window,
     // moved it — so the list is the place to be, not a blank reader.
     if (/not found/i.test(thread.error instanceof Error ? thread.error.message : String(thread.error))) {
-      onBack()
+      // After this render, not during it: leaving is the parent's state.
+      setTimeout(onBack, 0)
       return null
     }
     return <ErrorMessage error={thread.error} />

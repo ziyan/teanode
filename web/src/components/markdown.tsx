@@ -18,7 +18,10 @@ import { CodeBlock } from './codeBlock'
 // inline renders `code`, **bold**, *italic* and [text](url) inside one line.
 function inline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
-  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
+  // No lookbehind: what precedes an italic run is captured and put back,
+  // since a lookbehind is a syntax error for a browser that predates it and
+  // takes the whole bundle down with it.
+  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
   let index = 0
   let match: RegExpExecArray | null
   let count = 0
@@ -32,26 +35,27 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(<code key={key}>{match[1]}</code>)
     } else if (match[2] !== undefined) {
       nodes.push(<strong key={key}>{match[2]}</strong>)
-    } else if (match[3] !== undefined) {
-      nodes.push(<em key={key}>{match[3]}</em>)
+    } else if (match[4] !== undefined) {
+      if (match[3]) nodes.push(match[3])
+      nodes.push(<em key={key}>{match[4]}</em>)
     } else {
       // Only http and https. A link in a release note is a link somebody
       // else wrote, and javascript: is a scheme nothing here should follow.
-      const href = match[5]
+      const href = match[6]
       const mail = /^mail:([A-Za-z0-9]+)$/.exec(href)
       nodes.push(
         mail ? (
           // The agent cites a message as mail:ITEM_ID; Starred opens any
           // item by id whichever folder it is in.
           <Link key={key} to={`/mailbox/starred/${mail[1]}`}>
-            {match[4]}
+            {match[5]}
           </Link>
         ) : /^https?:\/\//i.test(href) ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
-            {match[4]}
+            {match[5]}
           </a>
         ) : (
-          match[4]
+          match[5]
         ),
       )
     }

@@ -106,6 +106,12 @@ func (self *Agent) runResearch(ctx context.Context, run *Run) error {
 	defer unsubscribe()
 	notes, failure := "", ""
 	for event := range events {
+		// The job's own deadline, not the agent's: a turn past its time is
+		// stopped here, before another instance is handed the job.
+		if ctx.Err() != nil {
+			turn.Stop()
+			break
+		}
 		switch event.Kind {
 		case EventMessage:
 			notes = event.Text

@@ -180,6 +180,19 @@ sources (B, C, D), the connected-server adapter as a package, a CLI
 `--until` for usage, and a triage that can ask for research when it is
 unsure of a message rather than only when a fact is missing.
 
+A review of the whole branch before it merged found forty-five things and
+most were fixed on the branch (the job queue's claim is guarded by who
+claimed it, usage buckets add up under one statement, a reply that was
+being sent when the server stopped is settled rather than sent twice,
+every agent row now belongs to its agent by a foreign key, and a dozen
+dashboard edges). Four were judged not worth their change at this point
+and are noted here so that they are not found again as new: discovery of
+a connected server's tools runs without a lock, so two conversations
+starting at once may both refresh it; a long poll for an answer waits
+inside the request's transaction; what a provider charges for writing to
+its cache is not in the cost shown; and a mid-stream error from Gemini is
+read as the end of the answer rather than as a failure.
+
 ## Context and Orientation
 
 This is a mail server written in Go with a React dashboard. Mail arrives

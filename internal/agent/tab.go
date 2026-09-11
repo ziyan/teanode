@@ -58,6 +58,16 @@ func (self *Agent) AttachTab(agentId string, connection TabConnection, title, ur
 	if self.tabs == nil {
 		self.tabs = map[string]*attachedTab{}
 	}
+	// A tab replacing another answers for nothing the other was asked:
+	// whoever waits on the old one is told it went.
+	if previous := self.tabs[agentId]; previous != nil {
+		previous.mutex.Lock()
+		for id, channel := range previous.pending {
+			close(channel)
+			delete(previous.pending, id)
+		}
+		previous.mutex.Unlock()
+	}
 	self.tabs[agentId] = &attachedTab{connection: connection, title: title, url: url, attachedAt: time.Now(), pending: map[int64]chan tabAnswer{}}
 }
 
@@ -155,6 +165,9 @@ func (self *attachedTab) Ask(ctx context.Context, action string, args any) (json
 		self.mutex.Unlock()
 		return nil, fmt.Errorf("the tab did not answer within a minute")
 	case <-ctx.Done():
+		self.mutex.Lock()
+		delete(self.pending, id)
+		self.mutex.Unlock()
 		return nil, ctx.Err()
 	}
 }

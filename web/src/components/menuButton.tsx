@@ -92,6 +92,7 @@ export function MenuButton({
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        event.preventDefault()
         setOpen(false)
       }
     }

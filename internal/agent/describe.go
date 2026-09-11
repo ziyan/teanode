@@ -44,6 +44,22 @@ type describeAnswer struct {
 
 // describeDue describes the conversations that have gone quiet, at most
 // once a minute.
+// describeInBackground runs describeDue beside the tick rather than in it:
+// twenty model calls of thirty seconds each would otherwise hold the
+// worker from claiming jobs. One at a time; a tick that finds the last
+// still going leaves it.
+func (self *Agent) describeInBackground(ctx context.Context, now time.Time) {
+	if !self.describing.CompareAndSwap(false, true) {
+		return
+	}
+	self.waitGroup.Add(1)
+	go func() {
+		defer self.waitGroup.Done()
+		defer self.describing.Store(false)
+		self.describeDue(ctx, now)
+	}()
+}
+
 func (self *Agent) describeDue(ctx context.Context, now time.Time) {
 	if now.Sub(self.lastDescribe) < describeEvery || self.settings.Registry == nil {
 		return

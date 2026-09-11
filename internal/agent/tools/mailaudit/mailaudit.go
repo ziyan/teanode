@@ -84,7 +84,10 @@ func init() {
 					if limit <= 0 {
 						limit = 20
 					}
-					result, err := operator.Execute(ctx, `query ($domainId: String!, $aggregations: [StageInput!]) { ListMails(domainId: $domainId, aggregations: $aggregations) { id sender recipients from subject status kind size receivedAt } }`, map[string]any{"domainId": domain.ID, "aggregations": stages})
+					// The server cuts the page; asking for everything and
+					// keeping the first few would read a busy domain's whole
+					// log.
+					result, err := operator.Execute(ctx, `query ($domainId: String!, $aggregations: [StageInput!], $pagination: PaginationInput) { ListMails(domainId: $domainId, aggregations: $aggregations, pagination: $pagination) { id sender recipients from subject status kind size receivedAt } }`, map[string]any{"domainId": domain.ID, "aggregations": stages, "pagination": map[string]any{"first": limit}})
 					if err != nil {
 						return nil, err
 					}
@@ -200,7 +203,7 @@ func init() {
 					if limit <= 0 {
 						limit = 20
 					}
-					result, err := operator.Execute(ctx, `query ($domainId: String!) { ListReports(domainId: $domainId) { id domainId beginAt endAt count ip rdns fromDomain senderDomain } }`, map[string]any{"domainId": domain.ID})
+					result, err := operator.Execute(ctx, `query ($domainId: String!, $pagination: PaginationInput) { ListReports(domainId: $domainId, pagination: $pagination) { id domainId beginAt endAt count ip rdns fromDomain senderDomain } }`, map[string]any{"domainId": domain.ID, "pagination": map[string]any{"first": limit}})
 					if err != nil {
 						return nil, err
 					}

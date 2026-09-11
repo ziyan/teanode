@@ -53,7 +53,13 @@ func runMailRead(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, fmt.Errorf("which message? give item_id")
 	}
 	operations := run.Operations()
-	thread, err := mailbox.GetThread(ctx, operations, arguments.ItemID)
+	// Only a mailbox the person granted: the item id names any of theirs,
+	// and a mailbox kept back from the agent stays kept back.
+	views, err := mailbox.GrantedMailboxes(ctx, operations)
+	if err != nil {
+		return nil, err
+	}
+	_, thread, err := mailbox.MailboxOfItem(ctx, operations, views, arguments.ItemID)
 	if err != nil {
 		return nil, err
 	}

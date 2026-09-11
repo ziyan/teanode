@@ -220,12 +220,15 @@ export function ErrorMessage({ error }: { error: unknown }) {
       : error instanceof Error
         ? error.message
         : String(error)
+  // Once per error, not per wording: a form renders on every keystroke
+  // with the same error object, and a second failure with the same words
+  // is a new object and a new toast.
+  const shown = useRef<unknown>(null)
   useEffect(() => {
-    if (message) toast.failed(message)
-    // Once per distinct message: the toast is the same whatever rendered
-    // it, and a form renders on every keystroke.
+    if (message && error !== shown.current) toast.failed(message)
+    shown.current = error
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [message])
+  }, [error])
   return null
 }
 

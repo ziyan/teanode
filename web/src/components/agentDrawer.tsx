@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
@@ -387,7 +387,11 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
   return (
     <div className="agent-attachments">
       {attachments.map((attachment) =>
-        isImage(attachment.contentType) ? (
+        attachment.id.startsWith('pending-') ? (
+          <span key={attachment.id} className="agent-attachment-chip">
+            <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
+          </span>
+        ) : isImage(attachment.contentType) ? (
           <a key={attachment.id} href={attachmentHref(attachment)} target="_blank" rel="noreferrer" title={attachment.name}>
             <img src={attachmentHref(attachment)} alt={attachment.name} className="agent-attachment-image" />
           </a>
@@ -610,7 +614,7 @@ export function AgentDrawer() {
     if (!available) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('.dialog-scrim, .select-list, .combobox-list')) return
+      if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list')) return
       event.preventDefault()
       toggle()
       if (!open) setTimeout(() => input.current?.focus(), 50)
@@ -734,6 +738,14 @@ export function AgentDrawer() {
   }
 
   const applyEvent = (event: RunEvent) => {
+    // What an event does beyond the transcript happens here, once: the
+    // updater below may run twice under StrictMode.
+    if (event.kind === 'tool_result' && event.tool && MAIL_TOOLS.has(event.tool) && !(event.text ?? '').startsWith('{"error"')) {
+      announceMailChanged()
+    }
+    if (event.kind === 'error') {
+      toast.failed(event.error ?? t('agentDrawer.failed'))
+    }
     setLines((previous) => {
       const next = [...previous]
       const last = next[next.length - 1]
@@ -769,9 +781,6 @@ export function AgentDrawer() {
           })
           return next
         case 'tool_result': {
-          if (event.tool && MAIL_TOOLS.has(event.tool) && !(event.text ?? '').startsWith('{"error"')) {
-            announceMailChanged()
-          }
           const index = next.findIndex((line) => line.kind === 'tool' && line.key === `${event.runId}-${event.callId}`)
           if (index >= 0) {
             const line = next[index]
@@ -816,7 +825,6 @@ export function AgentDrawer() {
           return withoutQueued
         }
         case 'error':
-          toast.failed(event.error ?? t('agentDrawer.failed'))
           return next
         default:
           return next
@@ -1275,7 +1283,10 @@ export function AgentDrawer() {
                           onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
                           onBlur={() => void rename()}
                           onKeyDown={(event) => {
-                            if (event.key === 'Escape') setRenaming(null)
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setRenaming(null)
+                            }
                           }}
                         />
                       </form>
@@ -1370,10 +1381,10 @@ export function AgentDrawer() {
                 ) : null
               const drawn = drawLine(line)
               return divider ? (
-                <>
+                <Fragment key={`day-${line.key}`}>
                   {divider}
                   {drawn}
-                </>
+                </Fragment>
               ) : (
                 drawn
               )

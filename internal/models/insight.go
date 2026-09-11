@@ -195,6 +195,7 @@ type AgentReplyStatus string
 // at sending, with the reason; failed to send after the ladder let it go.
 const (
 	AgentReplyHeld      AgentReplyStatus = "held"
+	AgentReplySending   AgentReplyStatus = "sending"
 	AgentReplySent      AgentReplyStatus = "sent"
 	AgentReplyCancelled AgentReplyStatus = "cancelled"
 	AgentReplyRefused   AgentReplyStatus = "refused"

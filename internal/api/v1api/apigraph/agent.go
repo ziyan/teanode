@@ -443,6 +443,22 @@ func (self *graph) forgetAgent(ctx context.Context, tx db.Transaction, found *mo
 			return err
 		}
 	}
+	// A reply held for sending is cancelled, not sent by an agent that no
+	// longer exists; its draft stays in Drafts as the person's own.
+	held, err := tx.ListAgentReplies(&db.AgentReplyFilter{AgentID: found.ID, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld, models.AgentReplySending}}, nil)
+	if err != nil {
+		return err
+	}
+	for _, reply := range held {
+		if _, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
+			reply.Status = models.AgentReplyCancelled
+			reply.Reason = "the agent was forgotten"
+			reply.DraftItemID = ""
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.DeleteAgentMemories(found.ID); err != nil {
 		return err
 	}
@@ -724,7 +740,7 @@ func (self *graph) RetryAgentJob(ctx context.Context, arguments RetryAgentJobArg
 	if job.Status != models.AgentJobDead && job.Status != models.AgentJobCancelled {
 		return nil, api.ErrInvalidArguments
 	}
-	if err := tx.FinishAgentJob(job.ID, models.AgentJobQueued, "", nil); err != nil {
+	if err := tx.FinishAgentJob(job.ID, "", models.AgentJobQueued, "", nil); err != nil {
 		return nil, err
 	}
 	return tx.GetAgentJob(job.ID)

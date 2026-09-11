@@ -198,7 +198,7 @@ export function AgentAdminPage() {
             <table className="numbers-table">
               <thead>
                 <tr>
-                  <th>{t('agentAdmin.key')}</th>
+                  <th>{{ day: t('agentAdmin.byDay'), kind: t('agentAdmin.byKind'), model: t('agentAdmin.byModel'), agent: t('agentAdmin.byAgent'), mailbox: t('agentAdmin.byMailbox') }[by as 'day' | 'kind' | 'model' | 'agent' | 'mailbox'] ?? t('agentAdmin.key')}</th>
                   <th className="numeric">{t('agentAdmin.prompt')}</th>
                   <th className="numeric">{t('agentAdmin.completion')}</th>
                   <th className="numeric">{t('agentAdmin.cached')}</th>

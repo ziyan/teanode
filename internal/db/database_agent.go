@@ -33,7 +33,7 @@ type AgentOperation interface {
 
 	// FinishAgentJob records how a run ended. A retry is status queued with
 	// a not_before; anything else is final.
-	FinishAgentJob(jobId string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error
+	FinishAgentJob(jobId, claimedBy string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error
 
 	// ReleaseStaleAgentJobs puts back jobs claimed before the given time
 	// whose instance never finished them.
@@ -403,13 +403,25 @@ func (self *transaction) EnqueueAgentJob(job *models.AgentJob) (*models.AgentJob
 	if job.AgentID == "" || job.Kind == "" {
 		return nil, fmt.Errorf("db: a job needs an agent and a kind")
 	}
-	var existing agentJobModel
-	result := self.tx.Where("\"agent_id\" = ? AND \"kind\" = ? AND \"subject_id\" = ? AND \"status\" IN ?", job.AgentID, string(job.Kind), job.SubjectID, []string{string(models.AgentJobQueued), string(models.AgentJobRunning)}).Limit(1).Find(&existing)
-	if result.Error != nil {
-		return nil, result.Error
+	// One open job per agent, kind and subject: the index agent_job_open
+	// is unique over the open statuses, so two deliveries of one thread
+	// queuing at once insert one row between them, and the loser reads it.
+	open := func() (*agentJobModel, error) {
+		var existing agentJobModel
+		result := self.tx.Where("\"agent_id\" = ? AND \"kind\" = ? AND \"subject_id\" = ? AND \"status\" IN ?", job.AgentID, string(job.Kind), job.SubjectID, []string{string(models.AgentJobQueued), string(models.AgentJobRunning)}).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected > 0 {
+			return &existing, nil
+		}
+		return nil, nil
 	}
-	if result.RowsAffected > 0 {
-		return agentJobFromModel(&existing), nil
+	if existing, err := open(); err != nil || existing != nil {
+		if err != nil {
+			return nil, err
+		}
+		return agentJobFromModel(existing), nil
 	}
 	model := &agentJobModel{
 		ID:        newID(),
@@ -421,8 +433,17 @@ func (self *transaction) EnqueueAgentJob(job *models.AgentJob) (*models.AgentJob
 		Status:    string(models.AgentJobQueued),
 		NotBefore: job.NotBefore,
 	}
-	if err := self.tx.Create(model).Error; err != nil {
-		return nil, err
+	result := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(model)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		if existing, err := open(); err != nil || existing != nil {
+			if err != nil {
+				return nil, err
+			}
+			return agentJobFromModel(existing), nil
+		}
 	}
 	return agentJobFromModel(model), nil
 }
@@ -453,7 +474,7 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 	return jobs, nil
 }
 
-func (self *transaction) FinishAgentJob(jobId string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error {
+func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error {
 	updates := map[string]any{"status": string(status), "error": errorMessage, "not_before": notBefore}
 	if status == models.AgentJobQueued {
 		updates["claimed_at"] = nil
@@ -461,7 +482,14 @@ func (self *transaction) FinishAgentJob(jobId string, status models.AgentJobStat
 	} else {
 		updates["finished_at"] = time.Now()
 	}
-	return self.tx.Model(&agentJobModel{}).Where("\"id\" = ?", jobId).Updates(updates).Error
+	// Only the instance that holds the job finishes it: a run that outlived
+	// its claim and was handed to another instance must not overwrite what
+	// that instance is doing. An empty claimant is a retry by hand.
+	query := self.tx.Model(&agentJobModel{}).Where("\"id\" = ?", jobId)
+	if claimedBy != "" {
+		query = query.Where("\"status\" = ? AND \"claimed_by\" = ?", string(models.AgentJobRunning), claimedBy)
+	}
+	return query.Updates(updates).Error
 }
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
@@ -519,7 +547,7 @@ func (self *transaction) agentJobQuery(filter *AgentJobFilter) *gorm.DB {
 
 func (self *transaction) ListAgentJobs(filter *AgentJobFilter, options *Options) ([]*models.AgentJob, error) {
 	var found []agentJobModel
-	query := self.agentJobQuery(filter).Order("\"created_at\" DESC")
+	query := self.agentJobQuery(filter).Order("\"created_at\" DESC, \"id\" DESC")
 	if options != nil && options.Limit > 0 {
 		query = query.Limit(int(options.Limit)).Offset(int(options.Offset))
 	}
@@ -555,37 +583,17 @@ func (self *transaction) PutAgentUsage(usage *AgentUsage) error {
 			values[index] = int64(value)
 		}
 	}
-	var existing agentUsageModel
-	result := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-		"\"backend_id\" = ? AND \"agent_id\" = ? AND \"mailbox_id\" = ? AND \"model\" = ? AND \"kind\" = ? AND \"interval\" = ? AND \"timestamp\" = ?",
-		self.database.settings.BackendID, usage.AgentID, usage.MailboxID, usage.Model, usage.Kind, models.HourlyInterval, timestamp,
-	).Limit(1).Find(&existing)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected > 0 {
-		for index := range values {
-			if index < len(existing.Values) {
-				existing.Values[index] += values[index]
-			} else {
-				existing.Values = append(existing.Values, values[index])
-			}
-		}
-		return self.tx.Model(&agentUsageModel{}).Where(
-			"\"backend_id\" = ? AND \"agent_id\" = ? AND \"mailbox_id\" = ? AND \"model\" = ? AND \"kind\" = ? AND \"interval\" = ? AND \"timestamp\" = ?",
-			self.database.settings.BackendID, usage.AgentID, usage.MailboxID, usage.Model, usage.Kind, models.HourlyInterval, timestamp,
-		).Update("values", existing.Values).Error
-	}
-	return self.tx.Create(&agentUsageModel{
-		BackendID: self.database.settings.BackendID,
-		AgentID:   usage.AgentID,
-		MailboxID: usage.MailboxID,
-		Model:     usage.Model,
-		Kind:      usage.Kind,
-		Interval:  models.HourlyInterval,
-		Timestamp: timestamp,
-		Values:    values,
-	}).Error
+	// One statement, so two runs writing the same hour add up rather than
+	// one of them failing: the row is inserted, or its values are summed
+	// element by element with what arrived.
+	return self.tx.Exec(`INSERT INTO "agent_usage" ("backend_id", "agent_id", "mailbox_id", "model", "kind", "interval", "timestamp", "values")
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT ("backend_id", "agent_id", "mailbox_id", "model", "kind", "interval", "timestamp") DO UPDATE SET "values" = ARRAY(
+			SELECT COALESCE(mine.value, 0) + COALESCE(theirs.value, 0)
+			FROM unnest("agent_usage"."values") WITH ORDINALITY AS mine(value, position)
+			FULL OUTER JOIN unnest(EXCLUDED."values") WITH ORDINALITY AS theirs(value, position) USING (position)
+			ORDER BY position)`,
+		self.database.settings.BackendID, usage.AgentID, usage.MailboxID, usage.Model, usage.Kind, models.HourlyInterval, timestamp, values).Error
 }
 
 func totalsFromOrdinals(rows []struct {

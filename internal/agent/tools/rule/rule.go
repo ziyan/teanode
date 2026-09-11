@@ -47,6 +47,7 @@ func init() {
 			},
 			{
 				Name: "rule_add", Family: tools.FamilyMailbox, Risk: tools.RiskWrite,
+				RiskOf:      ruleRisk,
 				Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "Add a rule. Rules run on every message that arrives; the ones reading category, priority or needs-reply run once the agent has sorted it. The answer says what the rule would have matched among the newest fifty in the Inbox.",
 				Parameters:  tools.Object(ruleFields, "name", "conditions", "actions"),
@@ -55,6 +56,7 @@ func init() {
 			},
 			{
 				Name: "rule_update", Family: tools.FamilyMailbox, Risk: tools.RiskWrite,
+				RiskOf:      ruleRisk,
 				Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "Change a rule: give its current name as rule, and the fields to change.",
 				Parameters:  tools.Object(mailbox.MergeProperties(ruleFields, map[string]any{"rule": tools.StringProperty("the rule to change, by name or position")}), "rule"),
@@ -545,4 +547,29 @@ func runRuleApply(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	answer.Note = "applied the rules"
 	return answer, nil
+}
+
+// ruleRisk is what a rule would do once it runs on its own: a rule that
+// forwards sends mail out of the server for as long as it exists, and one
+// that deletes throws mail away — neither is a write the person can undo,
+// so both ask first, whatever the model was told by a message.
+func ruleRisk(arguments json.RawMessage) tools.Risk {
+	var call struct {
+		Actions []struct {
+			Kind string `json:"kind"`
+		} `json:"actions"`
+	}
+	if json.Unmarshal(arguments, &call) != nil {
+		return tools.RiskWrite
+	}
+	risk := tools.RiskWrite
+	for _, action := range call.Actions {
+		switch strings.ToLower(action.Kind) {
+		case "forward":
+			return tools.RiskOutward
+		case "delete":
+			risk = tools.RiskDestructive
+		}
+	}
+	return risk
 }

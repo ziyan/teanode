@@ -4006,6 +4006,7 @@ label.check-list-item {
 }
 
 .select-list {
+  max-width: calc(100vw - 16px);
   position: fixed;
   z-index: 60;
   max-height: 320px;
@@ -5294,11 +5295,21 @@ label.check-list-item {
 /* What the agent worked out, in the width of a word: the category, whether
    an answer is waited for, and a mark when it said the message matters
    today. Quiet, because every row may carry one. */
+/* Whole chips or none: what does not fit wraps onto a second line that
+   the box is too short to show, so a narrow row ends in a chip and not in
+   half a word. */
 .mailbox-row-insight {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  align-content: flex-start;
+  row-gap: 18px;
+  max-height: 18px;
   min-width: 0;
   overflow: hidden;
+  /* And when even the first chip is too wide for what is left, it fades
+     out at the edge rather than stopping at a cut letter. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
 }
 
 /* The chips give way before the name does: a row that reads "M…" beside

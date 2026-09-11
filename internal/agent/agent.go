@@ -14,6 +14,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/op/go-logging"
@@ -84,6 +85,7 @@ type Agent struct {
 	operations   OperationsFactory
 	lastScavenge time.Time
 	lastDescribe time.Time
+	describing   atomic.Bool
 
 	// connections are the sessions with connected servers, per server and
 	// person.
@@ -302,7 +304,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		log.Warningf("cannot queue the schedules that are due: %s", err)
 	}
 	self.scavenge(ctx, now)
-	self.describeDue(ctx, now)
+	self.describeInBackground(ctx, now)
 	self.sweepBrowsers()
 	var jobs []*models.AgentJob
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -379,7 +381,7 @@ func (self *Agent) execute(job *models.AgentJob, now time.Time) {
 		}
 	}
 	if err := self.settings.Database.Transaction(func(tx db.Transaction) error {
-		return tx.FinishAgentJob(job.ID, status, message, notBefore)
+		return tx.FinishAgentJob(job.ID, job.ClaimedBy, status, message, notBefore)
 	}); err != nil {
 		log.Errorf("cannot record how job %s ended: %s", job.ID, err)
 	}

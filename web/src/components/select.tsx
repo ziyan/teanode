@@ -230,6 +230,7 @@ export function Select({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
+        aria-activedescendant={open && shown[active] ? `${id}-option-${active}` : undefined}
         aria-label={label}
         disabled={disabled}
         onClick={() => setOpen((previous) => !previous)}
@@ -261,6 +262,7 @@ export function Select({
               {shown.map((option, index) => (
                 <button
                   key={option.value}
+                  id={`${id}-option-${index}`}
                   type="button"
                   role="option"
                   aria-selected={option.value === value}
@@ -314,7 +316,21 @@ export function Combobox({
   const place = useCallback(() => {
     const box = input.current?.getBoundingClientRect()
     if (!box) return
-    setPosition({ left: box.left, top: box.bottom + 4, minWidth: box.width, maxHeight: 280 })
+    // Below the box where there is room, above it where there is more
+    // room above: a recipient near the foot of a phone screen would
+    // otherwise get its suggestions off the screen.
+    const gap = 4
+    const margin = 8
+    const below = window.innerHeight - box.bottom - gap - margin
+    const above = box.top - gap - margin
+    const upward = below < 160 && above > below
+    const room = Math.max(80, Math.min(280, upward ? above : below))
+    setPosition({
+      left: box.left,
+      minWidth: box.width,
+      maxHeight: room,
+      ...(upward ? { bottom: window.innerHeight - box.top + gap } : { top: box.bottom + gap }),
+    })
   }, [])
 
   useLayoutEffect(() => {

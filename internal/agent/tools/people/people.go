@@ -153,7 +153,7 @@ func init() {
 					"domain_ids":  tools.ArrayProperty("the domains, replacing the current ones", tools.StringProperty("a domain id")),
 				}, "action"),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					if strings.Contains(string(arguments), `"delete"`) {
+					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
 					}
 					return tools.RiskWrite
@@ -234,7 +234,7 @@ func init() {
 					"permissions": tools.ArrayProperty("the permissions, replacing the current ones", tools.StringProperty("a permission such as mail:read")),
 				}, "action"),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					if strings.Contains(string(arguments), `"delete"`) {
+					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
 					}
 					return tools.RiskWrite

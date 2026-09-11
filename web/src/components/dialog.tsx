@@ -37,7 +37,9 @@ export function FormDialog({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      // An Escape a list inside the dialog already took closes the list,
+      // not the dialog.
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         onClose()
       }
     }
@@ -45,7 +47,7 @@ export function FormDialog({
 
     // Put the cursor where the reader is about to type. Opening a dialog and
     // then having to click into it is a step nobody wants.
-    form.current?.querySelector<HTMLInputElement>('input, select, textarea')?.focus()
+    form.current?.querySelector<HTMLInputElement>('input, select, textarea, [role="combobox"]')?.focus()
 
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
@@ -116,7 +118,9 @@ export function ConfirmDialog({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      // An Escape a list inside the dialog already took closes the list,
+      // not the dialog.
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         onClose()
       }
     }

@@ -959,7 +959,13 @@ const authLimiterAddresses = 8192
 // worth an hour of somebody's afternoon.
 func startupOnly(configuration *config.Configuration) map[string]any {
 	return map[string]any{
-		"listen":               configuration.Listen,
+		"listen": configuration.Listen,
+		// The model registry and the agent worker are built once from
+		// these; a provider, a key or a model changed on the settings page
+		// waits for a restart, and the page says so.
+		"agent.enabled":        configuration.Agent.Enabled,
+		"agent.providers":      configuration.Agent.Providers,
+		"agent.models":         configuration.Agent.Models,
 		"tls":                  configuration.TLS,
 		"smtp.relay":           configuration.SMTP.Relay,
 		"storage":              configuration.Storage,

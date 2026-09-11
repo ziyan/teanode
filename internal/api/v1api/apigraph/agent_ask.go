@@ -364,8 +364,9 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	start := len(messages) - limit - arguments.Offset
-	end := len(messages) - arguments.Offset
+	offset := max(arguments.Offset, 0)
+	start := len(messages) - limit - offset
+	end := len(messages) - offset
 	if start < 0 {
 		start = 0
 	}
@@ -611,6 +612,9 @@ func (self *graph) SetAgentMainConversation(ctx context.Context, arguments SetAg
 	// names it from what was said; never archived, so it stays in the list.
 	if _, err := tx.UpdateAgentConversation(previous.ID, func(conversation *models.AgentConversation) error {
 		conversation.Kind = models.AgentConversationNamed
+		// Described as the main one, which takes no title; due again so
+		// that it gets one.
+		conversation.DescribedAt = nil
 		return nil
 	}); err != nil {
 		return nil, translateError(err)

@@ -69,7 +69,7 @@ func init() {
 				Description: "The person's API tokens: make one (shown once, to them, exactly) or revoke one.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("create or revoke", "create", "revoke"), "name": tools.StringProperty("for create: what the token is for"), "token_id": tools.StringProperty("for revoke: the token"), "lifetime": tools.StringProperty("for create: how long it lives, such as 30d")}, "action"),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					if strings.Contains(string(arguments), `"revoke"`) {
+					if tools.ActionOf(arguments) == "revoke" {
 						return tools.RiskDestructive
 					}
 					return tools.RiskWrite
@@ -137,10 +137,10 @@ func init() {
 				Description: "App passwords for a mailbox, which mail programs sign in with: list, make (shown once, exactly) or remove.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("what to do", "list", "create", "remove"), "mailbox": tools.StringProperty("the mailbox, by name or id"), "name": tools.StringProperty("for create: which program"), "app_password_id": tools.StringProperty("for remove: the app password")}, "action"),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					if strings.Contains(string(arguments), `"remove"`) {
+					if tools.ActionOf(arguments) == "remove" {
 						return tools.RiskDestructive
 					}
-					if strings.Contains(string(arguments), `"list"`) {
+					if tools.ActionOf(arguments) == "list" {
 						return tools.RiskRead
 					}
 					return tools.RiskWrite

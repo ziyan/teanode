@@ -157,9 +157,13 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 	_ = self.connection.call(ctx, attached.SessionID, "Page.enable", nil, nil)
 	_ = self.connection.call(ctx, attached.SessionID, "Runtime.enable", nil, nil)
 	_ = self.connection.call(ctx, attached.SessionID, "Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": created.BrowserContextID}, nil)
-	if err := self.connection.call(ctx, attached.SessionID, "Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err == nil {
-		go page.guardRequests()
+	// Without the guard nothing is checked, so a page that cannot be
+	// guarded is a page that is not opened.
+	if err := self.connection.call(ctx, attached.SessionID, "Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
+		_ = self.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": created.BrowserContextID}, nil)
+		return nil, fmt.Errorf("browser: cannot guard the page's requests: %w", err)
 	}
+	go page.guardRequests()
 	self.mutex.Lock()
 	self.contexts[created.BrowserContextID] = page
 	self.mutex.Unlock()

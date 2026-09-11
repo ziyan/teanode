@@ -81,7 +81,7 @@ func TestAgentQueueAndUsage(t *testing.T) {
 			t.Fatalf("a running job must not be claimed twice: %+v", again)
 		}
 		retry := time.Now().Add(time.Minute)
-		if err := tx.FinishAgentJob(first.ID, models.AgentJobQueued, "provider was busy", &retry); err != nil {
+		if err := tx.FinishAgentJob(first.ID, "", models.AgentJobQueued, "provider was busy", &retry); err != nil {
 			t.Fatalf("FinishAgentJob: %s", err)
 		}
 		if due, _ := tx.ClaimAgentJobs("instance-a", 10, time.Now()); len(due) != 0 {
@@ -91,7 +91,7 @@ func TestAgentQueueAndUsage(t *testing.T) {
 		if err != nil || len(due) != 1 || due[0].Attempts != 2 {
 			t.Fatalf("the retry must be claimable once due, on its second attempt: %v %+v", err, due)
 		}
-		if err := tx.FinishAgentJob(first.ID, models.AgentJobDead, "gave up", nil); err != nil {
+		if err := tx.FinishAgentJob(first.ID, "", models.AgentJobDead, "gave up", nil); err != nil {
 			t.Fatalf("FinishAgentJob: %s", err)
 		}
 		dead, err := tx.CountAgentJobs(&db.AgentJobFilter{AgentID: agent.ID, Statuses: []models.AgentJobStatus{models.AgentJobDead}})

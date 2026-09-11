@@ -83,6 +83,8 @@ func TestQuietConversationsAreDescribed(t *testing.T) {
 	if err := worker.TickAt(context.Background(), time.Now()); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
+	// Describing runs beside the tick, not inside it.
+	worker.Wait()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		described, _ := tx.GetAgentConversation(quiet.ID)
 		if described.Summary != "Finding the plumber's invoice." || described.DescribedAt == nil {

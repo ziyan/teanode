@@ -196,11 +196,6 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	if run.Source.Research && FeatureAllowed(configuration, "research") {
-		// Until research memories exist the notes list is empty, and the
-		// prompt says to answer false unless the message plainly asks.
-		researchNotes = nil
-	}
 	messages, err := TriagePrompt(&TriageInput{
 		Configuration: configuration,
 		Agent:         run.Agent,

@@ -46,36 +46,47 @@ func (self *Agent) browserFor(ctx context.Context, run *AskRun) (*browser.Contex
 	if !configuration.Agent.Browser.Enabled || configuration.Agent.Browser.CDPEndpoint == "" {
 		return nil, fmt.Errorf("no browser is configured on this server")
 	}
-	if !self.roomForContext(configuration) {
+	if !self.reserveContext(configuration) {
 		return nil, fmt.Errorf("the browser is busy with other runs; try again in a moment")
+	}
+	release := func() {
+		self.contextsMutex.Lock()
+		if self.contextsOpen > 0 {
+			self.contextsOpen--
+		}
+		self.contextsMutex.Unlock()
 	}
 	opened, err := browser.Connect(ctx, &browser.Settings{Endpoint: configuration.Agent.Browser.CDPEndpoint, AllowPrivate: configuration.Agent.Browser.AllowPrivateAddresses})
 	if err != nil {
+		release()
 		return nil, err
 	}
 	page, err := opened.NewContext(ctx)
 	if err != nil {
 		_ = opened.Close()
+		release()
 		return nil, err
 	}
 	runner.browser = opened
 	runner.page = page
-	self.contextsMutex.Lock()
-	self.contextsOpen++
-	self.contextsMutex.Unlock()
 	return page, nil
 }
 
-// roomForContext says whether another context may be opened under the
-// operator's cap.
-func (self *Agent) roomForContext(configuration *config.Configuration) bool {
+// reserveContext takes a place under the operator's cap, or says there is
+// none: counted in the same breath as checked, so that several turns
+// opening their first page at once cannot all find room.
+func (self *Agent) reserveContext(configuration *config.Configuration) bool {
 	limit := configuration.Agent.Browser.MaxContexts
 	if limit <= 0 {
 		limit = 4
 	}
 	self.contextsMutex.Lock()
 	defer self.contextsMutex.Unlock()
-	return self.contextsOpen < limit
+	if self.contextsOpen >= limit {
+		return false
+	}
+	self.contextsOpen++
+	return true
 }
 
 // close ends the turn's browser.
