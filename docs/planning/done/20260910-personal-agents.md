@@ -155,7 +155,30 @@ Timestamps are UTC.
 
 ## Outcomes & Retrospective
 
-(Written at the end of each half.)
+Done 2026-09-11, on one branch and one pull request (#73), after two days
+of building and one of reviewing with the owner on their own mail. Every
+milestone shipped; the personal agent has run on the owner's production
+server since 2026-09-10 evening, sorting real mail, and the owner's
+conversations with it drove the last day's changes: the prompt lost the
+time that defeated caching, the sorter learned about padded scams and
+service notices, memory reaches the conversation, a run's transcript can
+be talked into, a message can be sorted by hand and the agent told.
+
+What held up: one `Operations` seam between the tools and the API, so a
+tool can do exactly what the person can do and nothing else; the refusal
+ladder reused from the out-of-office reply rather than written again;
+the golden prompts, which caught every drift while the tools moved into
+packages of their own (`20260911-one-tool-one-package.md`).
+
+What was learned: what the model is told in the system prompt must not
+change between rounds; a rule the prompt states is a rule the code must
+enforce; a memory the person gives the agent must reach the agent they
+gave it to; the operator's screenshots find what the tests cannot, and a
+headless Chrome driven over the DevTools protocol finds most of what the
+screenshots do. Left for the plans that follow: contacts and calendar as
+sources (B, C, D), the connected-server adapter as a package, a CLI
+`--until` for usage, and a triage that can ask for research when it is
+unsure of a message rather than only when a fact is missing.
 
 ## Context and Orientation
 

@@ -17,8 +17,9 @@ comes, written in accordance with `~/.claude/PLAN.md` where that file exists
 and otherwise with the shape this repository's planning documents already
 have. They are:
 
-**A — the LLM core and the personal agent.**
-`20260910-personal-agents.md`. Talking to models; the agent as a row per
+**A — the LLM core and the personal agent.** Done 2026-09-11:
+`../done/20260910-personal-agents.md`, and its tools as packages in
+`../done/20260911-one-tool-one-package.md`. Talking to models; the agent as a row per
 account; a mailbox as a source with its own processing policy; the worker and
 the runs it executes — triage, research, summarize, embed, reply, send,
 schedule; the tool catalog over everything the person may do; connected

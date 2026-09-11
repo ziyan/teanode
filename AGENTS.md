@@ -93,9 +93,11 @@ deliberately deferred, and which decisions are settled.
 
 The personal agent — a language model, when an operator configures one,
 that sorts, summarizes, drafts and answers a person's mail and talks to
-them through a drawer and the command line — is being built under
-`docs/planning/active/20260910-personal-agents.md`, with its roadmap and
-the calendar and contacts that follow beside it. Its words are fixed:
+them through a drawer and the command line — was built under
+`docs/planning/done/20260910-personal-agents.md`; its roadmap and the
+calendar and contacts that follow are under `docs/planning/active/`, and
+its tools became packages of their own under
+`docs/planning/done/20260911-one-tool-one-package.md`. Its words are fixed:
 *rules* are the mailbox's rules and nothing else; the prompt is the
 *conduct*; the person's standing words are *instructions*; the operator's
 are *house instructions*; the auto-reply policy's text is *guidance*.

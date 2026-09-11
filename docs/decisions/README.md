@@ -46,3 +46,13 @@ self-hostable open-source server. The full narrative is in
 `20260902-mail-is-composed-in-the-dashboard.md` covers what came after:
 sending from the dashboard, and templates in more than one language. Its
 narrative is `docs/planning/done/20260902-compose-and-templates-in-the-dashboard.md`.
+
+The five records dated 2026-09-10 belong to the personal agent —
+`20260910-agents-belong-to-people.md` (an agent per person, opt-in, granted
+sources one at a time), `20260910-embeddings-without-pgvector.md`,
+`20260910-stdio-servers-are-the-operators.md`,
+`20260910-the-attached-tab-is-the-persons.md`, and
+`20260910-dav-signs-in-with-app-passwords.md`, which the calendar and
+contacts plans will act on. Their narrative is
+`docs/planning/done/20260910-personal-agents.md`; the roadmap that follows
+it is `docs/planning/active/20260910-personal-agents-roadmap.md`.

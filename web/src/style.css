@@ -6627,13 +6627,23 @@ button.with-icon {
 
 .tool-policy-tools {
   margin: 0;
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  padding: 0;
   background: var(--background);
   border-top: 1px solid var(--border);
 }
 
-.tool-policy-tools .settings-row:last-child {
-  margin-bottom: 0;
+/* A tool is a line of the family, not a card of its own: rows divided by
+   rules that run the whole width, indented under the family's name. */
+.tool-policy-tools .settings-row {
+  margin: 0;
+  padding: 8px 14px 8px calc(14px + 24px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-policy-tools .settings-row + .settings-row {
+  border-top: 1px solid var(--border);
 }
 
 .tool-policy-tools .settings-row {
