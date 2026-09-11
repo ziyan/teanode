@@ -1320,7 +1320,7 @@ export const en = {
   'agentSettings.policyInherits': 'As the family: {word}',
   'agentSettings.familyToolsOne': '1 tool',
   'agentSettings.familyToolsOther': '{count} tools',
-  'agentSettings.familyDynamic': 'Tools here come from connected servers and are named as they connect; the family word covers them.',
+  'agentSettings.familyDynamic': 'Connected servers add their own tools to this family as they connect, named the way they name themselves; the family word covers all of them.',
   'agentSettings.asksByRisk': 'always asks',
   'agentSettings.tools': 'Tool policy',
   'agentSettings.toolsDescription': "What the agent may reach for, by family and by tool. Off is never offered; ask first raises a tool to a confirmation card every time; a tool marked as always asking does so by its risk whatever is set here. A family's word covers its tools unless one says otherwise.",

@@ -1316,7 +1316,7 @@ export const ja: Catalog = {
   'agentSettings.policyInherits': 'ファミリーと同じ: {word}',
   'agentSettings.familyToolsOne': '1 個のツール',
   'agentSettings.familyToolsOther': '{count} 個のツール',
-  'agentSettings.familyDynamic': 'ここのツールは接続サーバーから来て、接続時に名前が決まります。ファミリーの方針が適用されます。',
+  'agentSettings.familyDynamic': '接続サーバーは接続時に自分のツールをこのファミリーに加え、名前もそれぞれが決めます。ファミリーの方針はそのすべてに及びます。',
   'agentSettings.asksByRisk': '常に確認',
   'agentSettings.tools': 'ツールポリシー',
   'agentSettings.toolsDescription': 'エージェントが使えるツールを、ファミリーごと・ツールごとに。オフは提供しない、先に確認は毎回確認カードを出す。常に確認と印のあるツールはここでの設定によらずリスクゆえに確認します。ファミリーの方針は、個別に指定しない限りそのツールに及びます。',

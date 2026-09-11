@@ -6666,6 +6666,19 @@ button.with-icon {
   font-size: 13px;
 }
 
+/* The note about a family whose tools arrive as they connect. It sits on
+   the same indent as a tool's row, so it lines up with the names it
+   stands beside instead of against the edge. */
+.tool-policy-tools > .muted {
+  margin: 0;
+  padding: 10px 14px 10px calc(14px + 24px);
+  max-width: 68ch;
+}
+
+.tool-policy-tools .settings-row + .muted {
+  border-top: 1px solid var(--border);
+}
+
 /* The usage card's range and grouping, on one line. */
 .usage-range {
   display: flex;

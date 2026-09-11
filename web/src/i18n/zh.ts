@@ -1276,7 +1276,7 @@ export const zh: Catalog = {
   'agentSettings.policyInherits': '同所属类别：{word}',
   'agentSettings.familyToolsOne': '1 个工具',
   'agentSettings.familyToolsOther': '{count} 个工具',
-  'agentSettings.familyDynamic': '此类工具来自已连接的服务器，连接时才有名字；类别策略覆盖它们。',
+  'agentSettings.familyDynamic': '已连接的服务器会在连接时把自己的工具加入此类别，名字由它们自己决定；类别策略覆盖所有这些工具。',
   'agentSettings.asksByRisk': '总是询问',
   'agentSettings.tools': '工具策略',
   'agentSettings.toolsDescription': '代理可使用的工具，按类别和单个工具设置。关闭表示永不提供；先询问表示每次都弹出确认卡；标为总是询问的工具按其风险始终询问。类别的策略覆盖其中的工具，除非工具单独设置。',

@@ -31,7 +31,7 @@ func init() {
 			},
 			{
 				Name: "settings_get", Family: tools.FamilyServer, Risk: tools.RiskRead, Permissions: manage,
-				Description: "The server's settings, with secrets redacted, by section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, agent and the rest.",
+				Description: "The server's settings, with secrets redacted, by section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, agent and the rest. The agent section is where the model providers and their prices, the model chosen for each kind of work, the tool policy, the limits, the retention and the connected servers all are: read it before answering what this server is configured to use.",
 				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("one section; all when absent")}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -68,7 +68,7 @@ func init() {
 			},
 			{
 				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskDestructive, Permissions: manage,
-				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them; a secret left out or shown redacted is kept.",
+				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them; a secret left out or shown redacted is kept. The agent section holds the providers, the models, the tool policy and the limits. A connected server is easier to add with connected_server, which declares and connects it in one place.",
 				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
 				Preview: func(arguments json.RawMessage) string {
 					return "Change the server settings: " + strings.TrimSpace(string(arguments))

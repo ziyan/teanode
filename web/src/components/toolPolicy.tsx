@@ -86,7 +86,9 @@ export function ToolPolicyAccordion({
                     }
                   />
                 ))}
-                {members.length === 0 ? <p className="muted">{t('agentSettings.familyDynamic')}</p> : null}
+                {members.length === 0 || family === 'servers' ? (
+                  <p className="muted">{t('agentSettings.familyDynamic')}</p>
+                ) : null}
               </div>
             )}
           </div>
