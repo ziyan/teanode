@@ -605,9 +605,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // it rather than reading it again.
   const loading = useRef<Promise<void> | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
-  // atBottom as the watchers below read it, so that they are set up once
-  // rather than again on every scroll.
+  // Whether the transcript is to follow its end, as the watchers below
+  // read it. Not the same thing as atBottom, which says where it is now
+  // and draws the button back to the end: this says where it belongs,
+  // and only a deliberate act changes it — a scroll the person made, a
+  // conversation opened, something said, the button pressed.
   const sticking = useRef(true)
+  // When the person last moved the transcript with their own hands: a
+  // wheel, a finger, a key, the scrollbar. A transcript that leaves its
+  // end without one of those did not leave it on purpose — a picture
+  // grew above, a phone's keyboard closed under it — and is put back.
+  const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
@@ -659,6 +667,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setTodos(response.ReadAgentConversation.todos ?? [])
     setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
     draftLoadedFor.current = response.ReadAgentConversation.conversation.id
+    sticking.current = true
     setAtBottom(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -820,12 +829,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       })
   }, [open, available, runs.length])
 
+  // A line arriving, when the transcript is following its end.
   useEffect(() => {
     const element = transcript.current
-    if (element && atBottom) {
+    if (element && sticking.current) {
       element.scrollTop = element.scrollHeight
     }
-  }, [lines, atBottom])
+  }, [lines])
 
   // A person at the end stays at the end while the transcript grows
   // under them. Most of what makes it grow is not a line arriving: a
@@ -836,20 +846,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // conversation would open at its end and then sit part way up it a
   // moment later.
   //
-  // What a person did with their own hands is left alone: growth just
-  // after a click inside the transcript is a tool line they opened to
-  // read, not the conversation moving on without them.
-  useEffect(() => {
-    sticking.current = atBottom
-  }, [atBottom])
-
+  // One thing is left alone: a tool line opened to look inside it. That
+  // growth is the person's own doing and reading it is why they opened
+  // it, so the end is not chased for a moment afterwards.
   useEffect(() => {
     const element = transcript.current
     if (!element || !open) return
     let frame = 0
-    let clicked = 0
+    let opened = 0
     const pin = () => {
-      if (!sticking.current || Date.now() - clicked < 500) return
+      if (!sticking.current || Date.now() - opened < 500) return
       // On the next frame, once what grew has been laid out, so the
       // height is the one the person is about to see.
       cancelAnimationFrame(frame)
@@ -857,8 +863,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         element.scrollTop = element.scrollHeight
       })
     }
-    const noteClick = () => {
-      clicked = Date.now()
+    const noteOpened = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('.agent-tool-toggle')) {
+        opened = Date.now()
+      }
+    }
+    const noteMoved = () => {
+      movedAt.current = Date.now()
     }
     const observers: { disconnect: () => void }[] = []
     if (typeof ResizeObserver !== 'undefined') {
@@ -881,12 +893,18 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // bubble, so it is caught on the way down.
     element.addEventListener('load', pin, true)
     element.addEventListener('loadedmetadata', pin, true)
-    element.addEventListener('click', noteClick, true)
+    element.addEventListener('click', noteOpened, true)
+    for (const gesture of ['wheel', 'touchmove', 'keydown', 'pointerdown'] as const) {
+      element.addEventListener(gesture, noteMoved, { capture: true, passive: true })
+    }
     return () => {
       cancelAnimationFrame(frame)
       element.removeEventListener('load', pin, true)
       element.removeEventListener('loadedmetadata', pin, true)
-      element.removeEventListener('click', noteClick, true)
+      element.removeEventListener('click', noteOpened, true)
+      for (const gesture of ['wheel', 'touchmove', 'keydown', 'pointerdown'] as const) {
+        element.removeEventListener(gesture, noteMoved, true)
+      }
       for (const observer of observers) {
         observer.disconnect()
       }
@@ -1114,6 +1132,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setPending([])
     setReferences([])
     if (input.current) input.current.style.height = 'auto'
+    // Saying something is meaning to see it: wherever the transcript was
+    // being read, it goes back to its end for the turn that follows.
+    sticking.current = true
+    setAtBottom(true)
     const key = `user-${Date.now()}`
     setLines((previous) => [
       ...previous,
@@ -1610,7 +1632,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             ref={transcript}
             onScroll={(event) => {
               const element = event.currentTarget
-              setAtBottom(element.scrollHeight - element.scrollTop - element.clientHeight < 40)
+              const ended = element.scrollHeight - element.scrollTop - element.clientHeight < 40
+              setAtBottom(ended)
+              if (ended) {
+                sticking.current = true
+              } else if (Date.now() - movedAt.current < 1500) {
+                // Theirs, and still theirs while it carries on: a flick
+                // on a phone goes on scrolling after the finger is up,
+                // and a scrollbar is dragged without a wheel or a key.
+                movedAt.current = Date.now()
+                sticking.current = false
+              }
             }}
           >
             {lines.length === 0 && <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>}
@@ -1660,6 +1692,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onClick={() => {
                 const element = transcript.current
                 if (element) element.scrollTop = element.scrollHeight
+                sticking.current = true
                 setAtBottom(true)
               }}
             >

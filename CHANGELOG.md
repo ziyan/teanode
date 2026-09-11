@@ -249,9 +249,11 @@ Notable changes to TeaNode. The format follows
   end and then, a moment later, sat part way up it: a picture finishing, a
   chart saying how tall it is, a document fetched and drawn all make the
   transcript taller without being a line arriving or a scroll happening, so
-  nothing put it back. A person who has scrolled up to read is still left
-  where they are, and so is one who has just opened a tool line to look
-  inside it. (#73)
+  nothing put it back. A transcript that leaves its end without the person
+  moving it is put back there; saying something returns to the end, since
+  you sent it to see it. A person who has scrolled up to read is still
+  left where they are, and so is one who has just opened a tool line to
+  look inside it. (#73)
 
 - A list you have left says when, and says it in a finished sentence.
   "Asked to leave, in one request," ended on a comma with nothing after it —
