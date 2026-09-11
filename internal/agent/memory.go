@@ -106,14 +106,14 @@ func registerMemoryTools(catalog *Catalog) {
 	}
 	catalog.Register(&Tool{
 		Name: "memory", Family: FamilyGeneral, Core: true, Risk: RiskWrite,
-		Description: "What you remember about the person, kept between conversations: add a fact, change or delete one, look one up, list or search them. Address a memory to the runs that should read it — triage, reply, summaries, research — or leave it for the conversation only. Search before adding, so nothing is kept twice.",
+		Description: "What you remember about the person, kept between conversations: add a fact, change or delete one, look one up, list or search them. The conversation always reads a memory; name the runs that should read it too — triage, reply, summaries, research. Search before adding, so nothing is kept twice.",
 		Parameters: object(map[string]any{
 			"action":     enumProperty("what to do", "add", "update", "delete", "get", "list", "search", "batch"),
 			"id":         stringProperty("for update, delete and get: the memory"),
 			"title":      stringProperty("a short name for the fact"),
 			"content":    stringProperty("the fact, in a sentence or two"),
 			"tags":       arrayProperty("words to find it by", stringProperty("a tag")),
-			"applies_to": arrayProperty("which runs read it; any of "+strings.Join(audiences, ", ")+"; none for the conversation only", stringProperty("an audience")),
+			"applies_to": arrayProperty("which runs read it besides the conversation; any of "+strings.Join(audiences, ", "), stringProperty("an audience")),
 			"pinned":     booleanProperty("always in the prompt"),
 			"query":      stringProperty("for search: words"),
 			"limit":      integerProperty("for list and search: how many, 20 by default"),
@@ -136,13 +136,7 @@ func runMemory(ctx context.Context, call *Call) (*Result, error) {
 	describe := func(memory *models.AgentMemory) map[string]any {
 		return map[string]any{"id": memory.ID, "title": memory.Title, "content": memory.Content, "tags": memory.Tags, "applies_to": memory.AppliesTo, "pinned": memory.Pinned}
 	}
-	audiencesOf := func(names []string) []models.AgentAudience {
-		audiences := make([]models.AgentAudience, 0, len(names))
-		for _, name := range names {
-			audiences = append(audiences, models.AgentAudience(strings.ToLower(strings.TrimSpace(name))))
-		}
-		return audiences
-	}
+	audiencesOf := memoryAudiences
 	switch arguments.Action {
 	case "add":
 		var created *models.AgentMemory
@@ -290,4 +284,26 @@ func recalledOverlay(ctx context.Context, run *AskRun) string {
 		return ""
 	}
 	return "<recalled>\n" + strings.Join(lines, "\n") + "\n</recalled>"
+}
+
+// memoryAudiences is the audiences a memory is addressed to, as the model
+// named them: lowercased, unknown names dropped, and always the
+// conversation. A person who says "remember this" expects the agent they
+// said it to to remember it; a memory kept for sorting alone was one the
+// conversation never saw again, and the agent then said it had nothing.
+func memoryAudiences(names []string) []models.AgentAudience {
+	audiences := []models.AgentAudience{models.AudienceAsk}
+	for _, name := range names {
+		audience := models.AgentAudience(strings.ToLower(strings.TrimSpace(name)))
+		if audience == models.AudienceAsk {
+			continue
+		}
+		for _, known := range models.AgentAudiences {
+			if audience == known {
+				audiences = append(audiences, audience)
+				break
+			}
+		}
+	}
+	return audiences
 }
