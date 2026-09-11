@@ -716,6 +716,11 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 	}
 }
 
+// artifactMessage marks an attachment as an artifact of the conversation
+// rather than a file somebody handed over, which is what the server will
+// serve from a signed address.
+const artifactMessage = "artifact"
+
 // artifactIn is the id of an artifact a tool's answer made, or of a file
 // it handed the person, if one.
 func artifactIn(result string) string {
@@ -750,7 +755,11 @@ func (self *chatState) sendArtifacts(ctx context.Context, chat Chat, ids []strin
 		}); err != nil || attachment == nil {
 			continue
 		}
-		if strings.HasPrefix(attachment.ContentType, "text/html") {
+		// Only a page the agent made opens from a link: that is what the
+		// address the server signs will serve. A page handed over from
+		// somewhere else goes as a file, which is what the apps do with
+		// one anyway.
+		if strings.HasPrefix(attachment.ContentType, "text/html") && attachment.MessageID == artifactMessage {
 			if link := self.manager.artifactLink(attachment.ID); link != "" {
 				if _, err := chat.Send(ctx, attachment.Name+"\n"+link, ""); err != nil {
 					log.Warningf("cannot send the link to %s to the chat: %s", attachment.Name, err)

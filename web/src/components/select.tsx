@@ -151,10 +151,17 @@ export function Select({
     const follow = (event: Event) => {
       // Scrolling inside the list itself moves nothing it must follow.
       if (event.target instanceof Node && list.current?.contains(event.target)) return
-      const box = trigger.current?.getBoundingClientRect()
-      if (!box || box.bottom < 0 || box.top > window.innerHeight) {
-        setOpen(false)
-        return
+      // A window that changed size is not a page that moved: a phone
+      // shrinks the window when its keyboard slides up, which would put
+      // a control in the lower half of the screen "off" it and close the
+      // list the person is typing into. The list is placed again and
+      // stays open; only a scroll can carry its button out of sight.
+      if (event.type !== 'resize') {
+        const box = trigger.current?.getBoundingClientRect()
+        if (!box || box.bottom < 0 || box.top > window.innerHeight) {
+          setOpen(false)
+          return
+        }
       }
       place()
     }

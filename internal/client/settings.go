@@ -36,7 +36,7 @@ const settingsSelection = `{
 	geoip { enabled databaseFile }
 	agent {
 		enabled instructions currency
-		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead modelPricing { model input output cacheRead } }
+		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
 		models { default fast embedding triage research summarize reply ask schedule compact choices }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }

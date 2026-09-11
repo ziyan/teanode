@@ -77,7 +77,11 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	var used []string
 	seen := map[string]bool{}
 	for _, memory := range found {
-		if kept >= recalled || seen[memory.ID] || self.inPrompt(memory.ID) {
+		// Addressed to this conversation, as the prompt's own list is. A
+		// memory a person wrote for sorting their mail and not for
+		// talking to is not read out here because a word of it happened
+		// to appear in what they said.
+		if kept >= recalled || seen[memory.ID] || self.inPrompt(memory.ID) || !memory.Addressed(models.AudienceAsk) {
 			continue
 		}
 		seen[memory.ID] = true

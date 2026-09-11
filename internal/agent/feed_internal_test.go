@@ -25,4 +25,17 @@ func TestFitForRelayCutsWhatIsTooLong(t *testing.T) {
 	if short.Text != "hello" {
 		t.Fatalf("what fits is left alone: %q", short.Text)
 	}
+	// An error is whatever the other end wrote, and a note is a line the
+	// drawer shows; both are cut rather than letting the payload go over
+	// the limit, which would send nothing at all.
+	failed := fitForRelay(Event{Kind: EventError, Error: strings.Repeat("e", 9000)})
+	encoded, _ = json.Marshal(relayed{Instance: "here", Event: failed})
+	if len(encoded) > relayPayloadLimit {
+		t.Fatalf("an error is cut too: %d bytes", len(encoded))
+	}
+	noted := fitForRelay(Event{Kind: EventToolResult, Note: strings.Repeat("n", 9000)})
+	encoded, _ = json.Marshal(relayed{Instance: "here", Event: noted})
+	if len(encoded) > relayPayloadLimit {
+		t.Fatalf("a note is cut too: %d bytes", len(encoded))
+	}
 }

@@ -64,16 +64,17 @@ type AgentSettings struct {
 
 // AgentProviderSettings is one provider, without its key.
 type AgentProviderSettings struct {
-	Name             string   `json:"name"`
-	Kind             string   `json:"kind"`
-	BaseURL          string   `json:"baseUrl"`
-	HasAPIKey        bool     `json:"hasApiKey"`
-	Enabled          bool     `json:"enabled"`
-	Allow            []string `json:"allow"`
-	Deny             []string `json:"deny"`
-	PricingInput     float64  `json:"pricingInput"`
-	PricingOutput    float64  `json:"pricingOutput"`
-	PricingCacheRead float64  `json:"pricingCacheRead"`
+	Name              string   `json:"name"`
+	Kind              string   `json:"kind"`
+	BaseURL           string   `json:"baseUrl"`
+	HasAPIKey         bool     `json:"hasApiKey"`
+	Enabled           bool     `json:"enabled"`
+	Allow             []string `json:"allow"`
+	Deny              []string `json:"deny"`
+	PricingInput      float64  `json:"pricingInput"`
+	PricingOutput     float64  `json:"pricingOutput"`
+	PricingCacheRead  float64  `json:"pricingCacheRead"`
+	PricingCacheWrite float64  `json:"pricingCacheWrite"`
 	// ModelPricing prices particular models of this provider, in order:
 	// the first entry that matches a model is the one used.
 	ModelPricing []*AgentModelPricingSettings `json:"modelPricing"`
@@ -81,10 +82,11 @@ type AgentProviderSettings struct {
 
 // AgentModelPricingSettings is one model's prices, per million tokens.
 type AgentModelPricingSettings struct {
-	Model     string  `json:"model"`
-	Input     float64 `json:"input"`
-	Output    float64 `json:"output"`
-	CacheRead float64 `json:"cacheRead"`
+	Model      string  `json:"model"`
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cacheRead"`
+	CacheWrite float64 `json:"cacheWrite"`
 }
 
 // modelPricingSettings is a provider's per-model prices as they are read
@@ -92,7 +94,7 @@ type AgentModelPricingSettings struct {
 func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricingSettings {
 	settings := []*AgentModelPricingSettings{}
 	for _, entry := range priced {
-		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead})
+		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead, CacheWrite: entry.CacheWrite})
 	}
 	return settings
 }
@@ -271,17 +273,18 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 	}
 	for _, provider := range agent.Providers {
 		settings.Providers = append(settings.Providers, &AgentProviderSettings{
-			Name:             provider.Name,
-			Kind:             provider.Kind,
-			BaseURL:          provider.BaseURL,
-			HasAPIKey:        provider.APIKey != "",
-			Enabled:          provider.IsEnabled(),
-			Allow:            nonNil(provider.Models.Allow),
-			Deny:             nonNil(provider.Models.Deny),
-			PricingInput:     provider.Pricing.Input,
-			PricingOutput:    provider.Pricing.Output,
-			PricingCacheRead: provider.Pricing.CacheRead,
-			ModelPricing:     modelPricingSettings(provider.ModelPricing),
+			Name:              provider.Name,
+			Kind:              provider.Kind,
+			BaseURL:           provider.BaseURL,
+			HasAPIKey:         provider.APIKey != "",
+			Enabled:           provider.IsEnabled(),
+			Allow:             nonNil(provider.Models.Allow),
+			Deny:              nonNil(provider.Models.Deny),
+			PricingInput:      provider.Pricing.Input,
+			PricingOutput:     provider.Pricing.Output,
+			PricingCacheRead:  provider.Pricing.CacheRead,
+			PricingCacheWrite: provider.Pricing.CacheWrite,
+			ModelPricing:      modelPricingSettings(provider.ModelPricing),
 		})
 	}
 	for _, server := range agent.MCP.Servers {
@@ -355,13 +358,14 @@ type AgentProviderParameters struct {
 	// rename carries its stored key along.
 	PreviousName string `json:"previousName" graphapi:"nullable"`
 
-	Enabled          bool                         `json:"enabled"`
-	Allow            []string                     `json:"allow" graphapi:"nullable"`
-	Deny             []string                     `json:"deny" graphapi:"nullable"`
-	PricingInput     float64                      `json:"pricingInput" graphapi:"nullable"`
-	PricingOutput    float64                      `json:"pricingOutput" graphapi:"nullable"`
-	PricingCacheRead float64                      `json:"pricingCacheRead" graphapi:"nullable"`
-	ModelPricing     []*AgentModelPricingSettings `json:"modelPricing" graphapi:"nullable"`
+	Enabled           bool                         `json:"enabled"`
+	Allow             []string                     `json:"allow" graphapi:"nullable"`
+	Deny              []string                     `json:"deny" graphapi:"nullable"`
+	PricingInput      float64                      `json:"pricingInput" graphapi:"nullable"`
+	PricingOutput     float64                      `json:"pricingOutput" graphapi:"nullable"`
+	PricingCacheRead  float64                      `json:"pricingCacheRead" graphapi:"nullable"`
+	PricingCacheWrite float64                      `json:"pricingCacheWrite" graphapi:"nullable"`
+	ModelPricing      []*AgentModelPricingSettings `json:"modelPricing" graphapi:"nullable"`
 }
 
 // AgentModelsParameters assign work to models; each given field replaces
@@ -502,14 +506,14 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				APIKey:  kept,
 				Enabled: &enabled,
 				Models:  config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
-				Pricing: config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead},
+				Pricing: config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite},
 			}
 			for _, priced := range given.ModelPricing {
 				if priced == nil || strings.TrimSpace(priced.Model) == "" {
 					continue
 				}
 				provider.ModelPricing = append(provider.ModelPricing, config.AgentModelPricing{
-					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead,
+					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite,
 				})
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {

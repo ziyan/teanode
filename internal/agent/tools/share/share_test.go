@@ -41,6 +41,9 @@ func (self *fakeRun) ComputersAllowed() bool              { return true }
 func (self *fakeRun) AttachedComputers() []tools.Computer { return []tools.Computer{self.computer} }
 func (self *fakeRun) Offered() []*tools.Tool              { return nil }
 
+// lookBytesForTest is the tool's own cap on a picture it may look at.
+const lookBytesForTest = 5 << 20
+
 // A one-pixel PNG.
 var pixel = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89}
 
@@ -139,6 +142,25 @@ func TestShareFileHandsOverAndLooks(t *testing.T) {
 	if _, _, err := call(`{"source":"conversation","attachment_id":"nothing"}`); err == nil {
 		t.Fatal("an unknown attachment is an error")
 	}
+
+	// A file of another conversation of the same agent is not this
+	// conversation's to hand over: the ids of files in other
+	// conversations are readable, and a turn here can be started by
+	// somebody else in a linked group chat.
+	var elsewhere *models.AgentAttachment
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		other, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationNamed, Title: "Elsewhere", LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		elsewhere, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: run.agent.ID, ConversationID: other.ID, MessageID: "m1", Name: "private.pdf", ContentType: "application/pdf", Size: 4})
+		if err != nil {
+			t.Fatalf("CreateAgentAttachment: %s", err)
+		}
+	})
+	if _, _, err := call(`{"source":"conversation","attachment_id":"` + elsewhere.ID + `"}`); err == nil {
+		t.Fatal("another conversation's file is not this one's to hand over")
+	}
 	// Not a picture: handed over, not looked at.
 	if err := store.PutFile(ctx, "doc1", []byte("%PDF-1.4")); err != nil {
 		t.Fatalf("PutFile: %s", err)
@@ -153,6 +175,26 @@ func TestShareFileHandsOverAndLooks(t *testing.T) {
 	answer, result, err = call(`{"source":"conversation","attachment_id":"` + document.ID + `","look":true}`)
 	if err != nil || len(result.Images) != 0 || !strings.Contains(answer["look"].(string), "not a picture") {
 		t.Fatalf("a document is not looked at: %v %v", answer, err)
+	}
+
+	// A picture in the conversation too large to look at is handed over
+	// and not shown: an empty picture sent to a provider ends the turn.
+	var huge *models.AgentAttachment
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		huge, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: run.agent.ID, ConversationID: run.conversation.ID, Name: "huge.png", ContentType: "image/png", Size: lookBytesForTest + 1})
+		if err != nil {
+			t.Fatalf("CreateAgentAttachment: %s", err)
+		}
+	})
+	answer, result, err = call(`{"source":"conversation","attachment_id":"` + huge.ID + `","look":true}`)
+	if err != nil {
+		t.Fatalf("a large picture is still handed over: %s", err)
+	}
+	if len(result.Images) != 0 {
+		t.Fatal("and never shown as an empty picture")
+	}
+	if !strings.Contains(answer["look"].(string), "too large") {
+		t.Fatalf("and says why: %v", answer["look"])
 	}
 
 	// What the computer has not: its words, as an error.

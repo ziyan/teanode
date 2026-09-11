@@ -140,7 +140,7 @@ const (
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`
 
-	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int!, $dailyCost: Float) {
+	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int, $dailyCost: Float) {
 		SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ` + agentSummarySelection + `
 	}`
 
@@ -348,11 +348,20 @@ func ListAgentDeadLetters(ctx context.Context, connection *Client) ([]*AgentJob,
 }
 
 // SetAgentLimit sets one person's daily budget.
-func SetAgentLimit(ctx context.Context, connection *Client, agentId string, dailyTokens int64, dailyCost float64) (*AgentSummary, error) {
+// SetAgentLimit changes a person's daily budget. A nil budget is left as
+// it is, so one can be set without clearing the other.
+func SetAgentLimit(ctx context.Context, connection *Client, agentId string, dailyTokens *int64, dailyCost *float64) (*AgentSummary, error) {
 	var result struct {
 		SetAgentLimit *AgentSummary `json:"SetAgentLimit"`
 	}
-	if err := connection.Execute(ctx, DocumentSetAgentLimit, map[string]any{"agentId": agentId, "dailyTokens": dailyTokens, "dailyCost": dailyCost}, &result); err != nil {
+	arguments := map[string]any{"agentId": agentId}
+	if dailyTokens != nil {
+		arguments["dailyTokens"] = *dailyTokens
+	}
+	if dailyCost != nil {
+		arguments["dailyCost"] = *dailyCost
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentLimit, arguments, &result); err != nil {
 		return nil, err
 	}
 	return result.SetAgentLimit, nil

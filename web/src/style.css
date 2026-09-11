@@ -2333,21 +2333,20 @@ body,
   margin-bottom: 10px;
 }
 
-.priced-models-head,
+/* A model takes its own line and its four prices share the next: four
+   fields and a name across one line of a dialog leaves no room for the
+   name, and a header cannot sit over a row that wraps, so the columns
+   are named inside the fields. */
 .priced-models-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.5rem 4.5rem 4.5rem 30px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 30px;
   gap: 6px;
   align-items: center;
+  margin-bottom: 6px;
 }
 
-.priced-models-head {
-  font-size: var(--text-label);
-  color: var(--muted);
-}
-
-.priced-models-head span + span {
-  text-align: right;
+.priced-models-row input:first-child {
+  grid-column: 1 / -1;
 }
 
 .priced-models-row input {
@@ -2366,18 +2365,6 @@ body,
    name: the name takes the line, the three prices share the next, and
    the column names move into the fields, since a header cannot sit over
    two rows at once. */
-@media (max-width: 560px) {
-  .priced-models-head {
-    display: none;
-  }
-  .priced-models-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) 30px;
-    margin-bottom: 6px;
-  }
-  .priced-models-row input:first-child {
-    grid-column: 1 / -1;
-  }
-}
 
 /* A control standing on its own rather than inside its label — the zone
    box that appears under "always this zone" — carries the bottom margin

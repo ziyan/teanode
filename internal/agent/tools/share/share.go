@@ -138,11 +138,17 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	var images []llm.ContentPart
 	if arguments.Look {
+		// The size is the row's, not the bytes in hand: a file already in
+		// the conversation is not read unless it can be looked at, and an
+		// empty picture sent to a provider is a refused request that ends
+		// the turn rather than an answer about a picture.
 		switch {
 		case !tools.IsImage(attachment.ContentType):
 			answer["look"] = "not a picture; only a picture can be shown to you"
-		case len(file.content) > lookBytes:
-			answer["look"] = fmt.Sprintf("the picture is %d bytes, too large to show you", len(file.content))
+		case attachment.Size > lookBytes || len(file.content) > lookBytes:
+			answer["look"] = fmt.Sprintf("the picture is %d bytes, too large to show you", attachment.Size)
+		case len(file.content) == 0:
+			answer["look"] = "the picture could not be read to show you"
 		default:
 			images = append(images, llm.ContentPart{Type: "image", MediaType: attachment.ContentType, Data: file.content})
 			answer["look"] = "the picture follows for you to look at"
@@ -281,7 +287,14 @@ func fromConversation(ctx context.Context, run tools.Run, arguments shareArgumen
 	}); err != nil {
 		return nil, err
 	}
-	if attachment == nil || attachment.AgentID != run.Agent().ID {
+	// This conversation's, not merely this agent's. A file belongs to the
+	// conversation it was handed to, and the ids of files in other ones
+	// are readable — the conversation tool quotes what was said there —
+	// so agent-wide would let a turn in one conversation fetch a file out
+	// of another, which matters most where a turn can be started by
+	// somebody else: a linked group chat.
+	if attachment == nil || attachment.AgentID != run.Agent().ID ||
+		(attachment.ConversationID != "" && attachment.ConversationID != run.Conversation().ID) {
 		return nil, fmt.Errorf("there is no attachment %q in this conversation", id)
 	}
 	file := &fetched{name: attachment.Name, contentType: attachment.ContentType, existing: attachment}

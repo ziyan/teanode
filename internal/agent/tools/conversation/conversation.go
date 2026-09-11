@@ -125,6 +125,11 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			if conversation, err = tx.GetAgentConversation(id); err != nil || conversation == nil {
 				return err
 			}
+			// Whose it is, before a word of it is read: an id somebody
+			// else's conversation has should not so much as load it.
+			if conversation.AgentID != agentId {
+				return nil
+			}
 			// All of them, and the tail kept below: the end of a
 			// conversation is what somebody asking about it wants, and
 			// the store hands them back oldest first. This is how the
@@ -150,10 +155,17 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				entry["tool"] = message.Name
 			}
 			if content := strings.TrimSpace(message.Content); content != "" {
-				if len(content) > messageCharacters {
-					content = content[:messageCharacters] + "\n[cut here]"
+				// A secret shown once is shown once. A tool that hands
+				// over a password or a token says so on its answer, and
+				// that answer is in the transcript; it is not read back
+				// here, where the conversation asking is not the
+				// conversation the person asked in.
+				if strings.HasPrefix(content, verbatimPrefix) {
+					entry["said"] = "[a secret was shown here once; it is not read back]"
+					said = append(said, entry)
+					continue
 				}
-				entry["said"] = content
+				entry["said"] = cutRunes(content, messageCharacters)
 			}
 			said = append(said, entry)
 		}
@@ -178,6 +190,20 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		return result, nil
 	}
 	return nil, fmt.Errorf("%q is not search, list or read", arguments.Action)
+}
+
+// verbatimPrefix is what a tool's answer carries when it holds a secret
+// the person asked to see. It is defined by the loop that writes it.
+const verbatimPrefix = "show_verbatim:"
+
+// cutRunes shortens text to a number of characters without cutting one
+// in half, which would leave the model reading a replacement character.
+func cutRunes(text string, characters int) string {
+	runes := []rune(text)
+	if len(runes) <= characters {
+		return text
+	}
+	return string(runes[:characters]) + "\n[cut here]"
 }
 
 // describe names a conversation for the line the drawer shows.

@@ -37,6 +37,10 @@ const (
 	// likely copy of the other when it is written.
 	memoryTwins = 0.92
 
+	// memoryCandidates is how many vectors one turn ranks against, which
+	// is every memory an agent has any business keeping.
+	memoryCandidates = 1000
+
 	// memoryBackfill is how many memories without a vector are given one
 	// on a turn, so an agent that has been remembering for months catches
 	// up over a few conversations rather than in one long pause.
@@ -50,10 +54,7 @@ func memoryText(memory *models.AgentMemory) string {
 	if len(memory.Tags) > 0 {
 		text += "\n" + strings.Join(memory.Tags, " ")
 	}
-	if len(text) > memoryEmbedCharacters {
-		text = text[:memoryEmbedCharacters]
-	}
-	return text
+	return cutRunes(text, memoryEmbedCharacters)
 }
 
 // EmbedMemories gives vectors to memories that have none, or whose vector
@@ -75,9 +76,19 @@ func (self *Agent) EmbedMemories(ctx context.Context, agent *models.Agent, limit
 		return 0, nil
 	}
 	texts := make([]string, 0, len(waiting))
+	kept := make([]*models.AgentMemory, 0, len(waiting))
 	for _, memory := range waiting {
-		texts = append(texts, memoryText(memory))
+		// A memory with nothing in it cannot be embedded, and asking a
+		// provider about it again every turn is worse than skipping it.
+		if text := memoryText(memory); strings.TrimSpace(text) != "" {
+			texts = append(texts, text)
+			kept = append(kept, memory)
+		}
 	}
+	if len(texts) == 0 {
+		return 0, nil
+	}
+	waiting = kept
 	configuration := self.settings.Configuration()
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
@@ -92,7 +103,7 @@ func (self *Agent) EmbedMemories(ctx context.Context, agent *models.Agent, limit
 			if index >= len(vectors) || len(vectors[index]) == 0 {
 				continue
 			}
-			if err := tx.PutAgentMemoryVector(memory.ID, modelName, vectors[index]); err != nil {
+			if err := tx.PutAgentMemoryVector(agent.ID, memory.ID, modelName, vectors[index]); err != nil {
 				return err
 			}
 			written++
@@ -129,7 +140,7 @@ func (self *AskRun) nearestMemories(ctx context.Context, words string) []*models
 	}
 	var candidates []*models.AgentMemory
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		candidates, err = tx.ListAgentMemoriesWithVector(self.settings.Agent.ID, modelName)
+		candidates, err = tx.ListAgentMemoriesWithVector(self.settings.Agent.ID, modelName, memoryCandidates)
 		return err
 	}); err != nil {
 		log.Warningf("cannot read the memories of %q: %s", self.settings.Owner.Username, err)
@@ -138,9 +149,7 @@ func (self *AskRun) nearestMemories(ctx context.Context, words string) []*models
 	if len(candidates) == 0 {
 		return nil
 	}
-	if len(words) > memoryEmbedCharacters {
-		words = words[:memoryEmbedCharacters]
-	}
+	words = cutRunes(words, memoryEmbedCharacters)
 	configuration := self.agent.settings.Configuration()
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
@@ -216,11 +225,11 @@ func (self *AskRun) NoteMemory(ctx context.Context, memory *models.AgentMemory) 
 	}
 	var candidates []*models.AgentMemory
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		if err := tx.PutAgentMemoryVector(memory.ID, modelName, vectors[0]); err != nil {
+		if err := tx.PutAgentMemoryVector(self.settings.Agent.ID, memory.ID, modelName, vectors[0]); err != nil {
 			return err
 		}
 		var err error
-		candidates, err = tx.ListAgentMemoriesWithVector(self.settings.Agent.ID, modelName)
+		candidates, err = tx.ListAgentMemoriesWithVector(self.settings.Agent.ID, modelName, memoryCandidates)
 		return err
 	}); err != nil {
 		log.Warningf("cannot keep a memory's vector: %s", err)
@@ -257,4 +266,15 @@ func similarity(left, right []float32) float64 {
 		dot += float64(left[index]) * float64(right[index])
 	}
 	return dot / (leftNorm * rightNorm)
+}
+
+// cutRunes shortens text to a number of characters without cutting one
+// in half: a byte cut through a character embeds a replacement mark
+// instead of the word it was part of.
+func cutRunes(text string, characters int) string {
+	runes := []rune(text)
+	if len(runes) <= characters {
+		return text
+	}
+	return string(runes[:characters])
 }

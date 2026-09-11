@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"math"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -113,6 +115,25 @@ func Money(amount float64, currency string) string {
 	return fmt.Sprintf("%.2f %s", amount, currency)
 }
 
+// NearlySpent is a line about the budget for the model, once four
+// fifths of whichever cap binds first is gone, and "" while there is
+// room. Money and tokens are said the way they are counted.
+func (self *Budget) NearlySpent() string {
+	if self.Limit > 0 && self.Used*5 >= self.Limit*4 {
+		return fmt.Sprintf("%d tokens remain of today's %d.", max(self.Limit-self.Used, 0), self.Limit)
+	}
+	if self.CostLimit > 0 && self.Cost*5 >= self.CostLimit*4 {
+		return fmt.Sprintf("%s remains of today's %s.", Money(math.Max(self.CostLimit-self.Cost, 0), self.Currency), Money(self.CostLimit, self.Currency))
+	}
+	if self.ServerLimit > 0 && self.ServerUsed*5 >= self.ServerLimit*4 {
+		return fmt.Sprintf("%d tokens remain of this server's month.", max(self.ServerLimit-self.ServerUsed, 0))
+	}
+	if self.ServerCostLimit > 0 && self.ServerCost*5 >= self.ServerCostLimit*4 {
+		return fmt.Sprintf("%s remains of this server's month.", Money(math.Max(self.ServerCostLimit-self.ServerCost, 0), self.Currency))
+	}
+	return ""
+}
+
 // Remaining is what is left of the smaller of the two caps, or -1 when
 // there is none.
 func (self *Budget) Remaining() int64 {
@@ -160,7 +181,7 @@ func CheckBudget(tx db.Transaction, configuration *config.Configuration, agent *
 	// otherwise price the whole server's day before every call.
 	if budget.ServerLimit > 0 || budget.ServerCostLimit > 0 {
 		monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location)
-		if budget.ServerUsed, budget.ServerCost, err = SumSpend(tx, configuration, "", monthStart); err != nil {
+		if budget.ServerUsed, budget.ServerCost, err = serverSpend(tx, configuration, monthStart); err != nil {
 			return nil, err
 		}
 		if budget.ServerLimit > 0 && budget.ServerUsed*5 >= budget.ServerLimit*4 {
@@ -171,6 +192,37 @@ func CheckBudget(tx db.Transaction, configuration *config.Configuration, agent *
 		}
 	}
 	return budget, nil
+}
+
+// serverMonth is the whole server's month as it was last added up, and
+// when. Every agent's rows for a month is the one expensive query in a
+// budget check, and the check runs before every round of every turn; a
+// month does not move quickly enough to be worth that. The cap can
+// therefore be passed by at most a minute's spending, which is the
+// price of not scanning the table sixty times a minute.
+var serverMonth struct {
+	sync.Mutex
+	at     time.Time
+	from   time.Time
+	tokens int64
+	cost   float64
+}
+
+// serverMonthFor is how long a server total is reused.
+const serverMonthFor = time.Minute
+
+func serverSpend(tx db.Transaction, configuration *config.Configuration, monthStart time.Time) (int64, float64, error) {
+	serverMonth.Lock()
+	defer serverMonth.Unlock()
+	if serverMonth.from.Equal(monthStart) && time.Since(serverMonth.at) < serverMonthFor {
+		return serverMonth.tokens, serverMonth.cost, nil
+	}
+	tokens, cost, err := SumSpend(tx, configuration, "", monthStart)
+	if err != nil {
+		return 0, 0, err
+	}
+	serverMonth.at, serverMonth.from, serverMonth.tokens, serverMonth.cost = time.Now(), monthStart, tokens, cost
+	return tokens, cost, nil
 }
 
 // SumSpend is what a period came to, in tokens and in money. Usage is
@@ -187,7 +239,7 @@ func SumSpend(tx db.Transaction, configuration *config.Configuration, agentId st
 	tokens, cost := int64(0), 0.0
 	for _, row := range rows {
 		tokens += row.Totals.Total()
-		cost += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
+		cost += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
 	}
 	return tokens, cost, nil
 }

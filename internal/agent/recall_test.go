@@ -98,3 +98,16 @@ func TestMemoryText(t *testing.T) {
 		t.Fatalf("a long memory is cut: %d", len(long))
 	}
 }
+
+// A memory a person addressed to sorting alone is not read out in a
+// conversation because a word of it turned up in what they said.
+func TestRecallKeepsToItsAudience(t *testing.T) {
+	forSorting := &models.AgentMemory{ID: "m1", Title: "Newsletters", AppliesTo: []models.AgentAudience{models.AudienceTriage}}
+	forTalking := &models.AgentMemory{ID: "m2", Title: "Newsletters", AppliesTo: []models.AgentAudience{models.AudienceAsk}}
+	if forSorting.Addressed(models.AudienceAsk) {
+		t.Fatal("a memory for sorting is not for the conversation")
+	}
+	if !forTalking.Addressed(models.AudienceAsk) {
+		t.Fatal("and one for the conversation is")
+	}
+}

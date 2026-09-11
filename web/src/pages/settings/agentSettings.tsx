@@ -34,7 +34,8 @@ export type AgentProvider = {
   allow: string[]
   deny: string[]
   pricingInput: number
-  modelPricing: { model: string; input: number; output: number; cacheRead: number }[]
+  pricingCacheWrite: number
+  modelPricing: { model: string; input: number; output: number; cacheRead: number; cacheWrite: number }[]
   pricingOutput: number
   pricingCacheRead: number
 }
@@ -116,7 +117,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions
-  providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead modelPricing { model input output cacheRead } }
+  providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
@@ -282,7 +283,8 @@ type ProviderDraft = {
   pricingInput: string
   pricingOutput: string
   pricingCacheRead: string
-  modelPricing: { model: string; input: string; output: string; cacheRead: string }[]
+  pricingCacheWrite: string
+  modelPricing: { model: string; input: string; output: string; cacheRead: string; cacheWrite: string }[]
 }
 
 function providerDraft(provider?: AgentProvider): ProviderDraft {
@@ -299,11 +301,13 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingInput: provider.pricingInput ? String(provider.pricingInput) : '',
         pricingOutput: provider.pricingOutput ? String(provider.pricingOutput) : '',
         pricingCacheRead: provider.pricingCacheRead ? String(provider.pricingCacheRead) : '',
+        pricingCacheWrite: provider.pricingCacheWrite ? String(provider.pricingCacheWrite) : '',
         modelPricing: (provider.modelPricing ?? []).map((priced) => ({
           model: priced.model,
           input: priced.input ? String(priced.input) : '',
           output: priced.output ? String(priced.output) : '',
           cacheRead: priced.cacheRead ? String(priced.cacheRead) : '',
+          cacheWrite: priced.cacheWrite ? String(priced.cacheWrite) : '',
         })),
       }
     : {
@@ -318,6 +322,7 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingInput: '',
         pricingOutput: '',
         pricingCacheRead: '',
+        pricingCacheWrite: '',
         modelPricing: [],
       }
 }
@@ -336,6 +341,7 @@ function providerValues(provider: AgentProvider) {
     pricingInput: provider.pricingInput,
     pricingOutput: provider.pricingOutput,
     pricingCacheRead: provider.pricingCacheRead,
+    pricingCacheWrite: provider.pricingCacheWrite,
     modelPricing: provider.modelPricing ?? [],
   }
 }
@@ -352,6 +358,7 @@ function draftValues(draft: ProviderDraft) {
     pricingInput: Number(draft.pricingInput) || 0,
     pricingOutput: Number(draft.pricingOutput) || 0,
     pricingCacheRead: Number(draft.pricingCacheRead) || 0,
+    pricingCacheWrite: Number(draft.pricingCacheWrite) || 0,
     modelPricing: draft.modelPricing
       .filter((priced) => priced.model.trim())
       .map((priced) => ({
@@ -359,6 +366,7 @@ function draftValues(draft: ProviderDraft) {
         input: Number(priced.input) || 0,
         output: Number(priced.output) || 0,
         cacheRead: Number(priced.cacheRead) || 0,
+        cacheWrite: Number(priced.cacheWrite) || 0,
       })),
   }
 }
@@ -606,7 +614,7 @@ function ProviderDialog({
           <input
             value={draft.pricingInput}
             inputMode="decimal"
-            onChange={(event) => set({ pricingInput: event.target.value })}
+            onChange={(event) => set({ pricingInput: asPrice(event.target.value) })}
           />
         </label>
         <label>
@@ -614,7 +622,7 @@ function ProviderDialog({
           <input
             value={draft.pricingOutput}
             inputMode="decimal"
-            onChange={(event) => set({ pricingOutput: event.target.value })}
+            onChange={(event) => set({ pricingOutput: asPrice(event.target.value) })}
           />
         </label>
         <label>
@@ -622,7 +630,15 @@ function ProviderDialog({
           <input
             value={draft.pricingCacheRead}
             inputMode="decimal"
-            onChange={(event) => set({ pricingCacheRead: event.target.value })}
+            onChange={(event) => set({ pricingCacheRead: asPrice(event.target.value) })}
+          />
+        </label>
+        <label>
+          <span>{t('agentSettings.pricingCacheWrite')}</span>
+          <input
+            value={draft.pricingCacheWrite}
+            inputMode="decimal"
+            onChange={(event) => set({ pricingCacheWrite: asPrice(event.target.value) })}
           />
         </label>
       </div>
@@ -630,13 +646,6 @@ function ProviderDialog({
       <p className="muted field-hint">{t('agentSettings.modelPricingHint')}</p>
       {draft.modelPricing.length > 0 && (
         <div className="priced-models">
-          <div className="priced-models-head">
-            <span>{t('agentSettings.pricingModel')}</span>
-            <span>{t('agentSettings.pricingIn')}</span>
-            <span>{t('agentSettings.pricingOut')}</span>
-            <span>{t('agentSettings.pricingCached')}</span>
-            <span />
-          </div>
           {draft.modelPricing.map((priced, index) => {
             const change = (fields: Partial<(typeof draft.modelPricing)[number]>) =>
               set({ modelPricing: draft.modelPricing.map((row, at) => (at === index ? { ...row, ...fields } : row)) })
@@ -654,21 +663,28 @@ function ProviderDialog({
                   inputMode="decimal"
                   placeholder={t('agentSettings.pricingIn')}
                   aria-label={`${named}: ${t('agentSettings.pricingIn')}`}
-                  onChange={(event) => change({ input: event.target.value })}
+                  onChange={(event) => change({ input: asPrice(event.target.value) })}
                 />
                 <input
                   value={priced.output}
                   inputMode="decimal"
                   placeholder={t('agentSettings.pricingOut')}
                   aria-label={`${named}: ${t('agentSettings.pricingOut')}`}
-                  onChange={(event) => change({ output: event.target.value })}
+                  onChange={(event) => change({ output: asPrice(event.target.value) })}
                 />
                 <input
                   value={priced.cacheRead}
                   inputMode="decimal"
                   placeholder={t('agentSettings.pricingCached')}
                   aria-label={`${named}: ${t('agentSettings.pricingCached')}`}
-                  onChange={(event) => change({ cacheRead: event.target.value })}
+                  onChange={(event) => change({ cacheRead: asPrice(event.target.value) })}
+                />
+                <input
+                  value={priced.cacheWrite}
+                  inputMode="decimal"
+                  placeholder={t('agentSettings.pricingCaching')}
+                  aria-label={`${named}: ${t('agentSettings.pricingCaching')}`}
+                  onChange={(event) => change({ cacheWrite: asPrice(event.target.value) })}
                 />
                 <button
                   type="button"
@@ -687,7 +703,7 @@ function ProviderDialog({
       <div className="priced-models-add">
         <button
           type="button"
-          onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '' }] })}
+          onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '', cacheWrite: '' }] })}
         >
           {t('agentSettings.addModelPricing')}
         </button>
@@ -865,6 +881,16 @@ function FeaturesForm({ settings, onSaved }: Props) {
   )
 }
 
+// asPrice keeps a price a number as it is typed. A comma for a decimal
+// point is what half the world writes, and Number("1,50") is NaN, which
+// was quietly saved as nothing at all — a model priced at zero, a money
+// budget that never stops the day, and no complaint anywhere.
+function asPrice(typed: string): string {
+  const digits = typed.replace(/,/g, '.').replace(/[^0-9.]/g, '')
+  const [whole, ...rest] = digits.split('.')
+  return rest.length > 0 ? `${whole}.${rest.join('')}` : whole
+}
+
 function limitFields(settings: Agent) {
   return {
     maxBodyCharacters: String(settings.limits.maxBodyCharacters),
@@ -892,7 +918,7 @@ function LimitsForm({ settings, onSaved }: Props) {
     setRetention(settings.retention)
     setCurrency(settings.currency || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(settings.limits), JSON.stringify(settings.retention)])
+  }, [JSON.stringify(settings.limits), JSON.stringify(settings.retention), settings.currency])
 
   const number = (value: string) => Number(value) || 0
   const numeric = (field: keyof typeof limits) => (

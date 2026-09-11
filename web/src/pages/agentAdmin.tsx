@@ -66,7 +66,7 @@ const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
 }`
-const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
+const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
 const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
 const RETRY = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }`
 
@@ -360,7 +360,13 @@ export function AgentAdminPage() {
               placeholder={
                 limiting.today && limiting.today.costLimit > 0 ? String(limiting.today.costLimit) : t('agentAdmin.unlimited')
               }
-              onChange={(event) => setCost(event.target.value.replace(/[^0-9.]/g, ''))}
+              onChange={(event) => {
+                // A comma for a decimal point, and one point at most:
+                // Number("1,50") is NaN and was saved as no limit.
+                const digits = event.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '')
+                const [whole, ...rest] = digits.split('.')
+                setCost(rest.length > 0 ? `${whole}.${rest.join('')}` : whole)
+              }}
             />
           </label>
         </FormDialog>

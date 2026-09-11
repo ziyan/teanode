@@ -1247,6 +1247,8 @@ export const ja: Catalog = {
   'agentSettings.pricingIn': '入力',
   'agentSettings.pricingOut': '出力',
   'agentSettings.pricingCached': 'キャッシュ',
+  'agentSettings.pricingCaching': 'キャッシュ書込',
+  'agentSettings.pricingCacheWrite': '…キャッシュへの書き込み',
   'agentSettings.addModelPricing': "モデルの価格を追加",
   'agentSettings.secretKept': '(設定済み。空欄で保持)',
   'agentSettings.test': 'テスト',

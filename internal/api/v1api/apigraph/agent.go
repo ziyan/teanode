@@ -223,9 +223,12 @@ type AgentSummary struct {
 // SetAgentLimitArguments name the agent and the budget, in tokens, in
 // money, or in both. Zero for either returns that one to the server's.
 type SetAgentLimitArguments struct {
-	AgentID     string  `json:"agentId"`
-	DailyTokens int64   `json:"dailyTokens"`
-	DailyCost   float64 `json:"dailyCost" graphapi:"nullable"`
+	AgentID string `json:"agentId"`
+	// DailyTokens and DailyCost are each left alone when not given, so
+	// setting one does not quietly clear the other; zero means no limit
+	// of that kind and returns the person to the server's.
+	DailyTokens *int64   `json:"dailyTokens" graphapi:"nullable"`
+	DailyCost   *float64 `json:"dailyCost" graphapi:"nullable"`
 }
 
 // SetAgentDisabledArguments name the agent and the switch.
@@ -359,7 +362,7 @@ func (self *graph) pricedUsage(tx db.Transaction, agentId string, arguments Agen
 		into.Totals.CacheReadTokens += row.Totals.CacheReadTokens
 		into.Totals.CacheWriteTokens += row.Totals.CacheWriteTokens
 		into.Totals.Calls += row.Totals.Calls
-		into.Cost += configuration.Agent.CostOf(row.Model, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
+		into.Cost += configuration.Agent.CostOf(row.Model, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
 	}
 	result := make([]models.AgentUsageRow, 0, len(order))
 	for _, key := range order {
@@ -726,20 +729,24 @@ func (self *graph) SetAgentLimit(ctx context.Context, arguments SetAgentLimitArg
 	if _, err := self.requirePermission(ctx, models.PermissionAgentAudit); err != nil {
 		return nil, err
 	}
-	if arguments.DailyTokens < 0 || arguments.DailyCost < 0 {
+	if (arguments.DailyTokens != nil && *arguments.DailyTokens < 0) || (arguments.DailyCost != nil && *arguments.DailyCost < 0) {
 		return nil, api.ErrInvalidArguments
 	}
 	tx := self.transaction(ctx)
 	updated, err := tx.UpdateAgent(arguments.AgentID, func(found *models.Agent) error {
-		found.DailyTokens = arguments.DailyTokens
-		found.DailyCost = arguments.DailyCost
+		if arguments.DailyTokens != nil {
+			found.DailyTokens = *arguments.DailyTokens
+		}
+		if arguments.DailyCost != nil {
+			found.DailyCost = *arguments.DailyCost
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, translateError(err)
 	}
 	log.Noticef("%s set the daily budget of agent %s to %d tokens and %s", operatorName(ctx), updated.ID,
-		arguments.DailyTokens, agent.Money(arguments.DailyCost, self.config.Current().Agent.CurrencyOf()))
+		updated.DailyTokens, agent.Money(updated.DailyCost, self.config.Current().Agent.CurrencyOf()))
 	return self.summarize(tx, updated)
 }
 

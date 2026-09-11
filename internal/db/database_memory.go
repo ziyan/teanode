@@ -38,9 +38,9 @@ type MemoryOperation interface {
 	// ListAgentMemoriesWithVector is every memory this model has given a
 	// vector to, for ranking a turn against; ListAgentMemoriesWithoutVector
 	// is the ones still waiting for one. PutAgentMemoryVector writes it.
-	ListAgentMemoriesWithVector(agentId, model string) ([]*models.AgentMemory, error)
+	ListAgentMemoriesWithVector(agentId, model string, limit int) ([]*models.AgentMemory, error)
 	ListAgentMemoriesWithoutVector(agentId, model string, limit int) ([]*models.AgentMemory, error)
-	PutAgentMemoryVector(memoryId, model string, vector []float32) error
+	PutAgentMemoryVector(agentId, memoryId, model string, vector []float32) error
 
 	// TouchAgentMemories marks memories used now.
 	TouchAgentMemories(memoryIds []string, at time.Time) error
@@ -166,11 +166,21 @@ func (self *transaction) UpdateAgentMemory(memoryId string, modify func(*models.
 	if err != nil {
 		return nil, err
 	}
+	wasSaying := memory.Title + "\n" + memory.Content + "\n" + strings.Join(memory.Tags, " ")
 	if err := modify(memory); err != nil {
 		return nil, err
 	}
 	if err := memory.Validate(); err != nil {
 		return nil, err
+	}
+	// A memory whose words changed no longer means what its vector says
+	// it means. Dropping it here puts the memory back in the queue for
+	// one, whoever changed it: the agent embeds the new words at once,
+	// and a person editing it in the dashboard has it done on their next
+	// turn. Leaving it would have the agent finding the memory by the
+	// words the person deleted, for good.
+	if memory.Title+"\n"+memory.Content+"\n"+strings.Join(memory.Tags, " ") != wasSaying {
+		memory.Vector, memory.VectorModel = nil, ""
 	}
 	memory.ID = memoryId
 	memory.ModifiedAt = time.Now()
@@ -221,7 +231,7 @@ func (self *transaction) SearchAgentMemories(agentId, query string, limit int) (
 	words := strings.Fields(strings.ToLower(query))
 	statement := self.tx.Where("\"agent_id\" = ?", agentId)
 	for _, word := range words {
-		pattern := "%" + strings.ReplaceAll(strings.ReplaceAll(word, "%", "\\%"), "_", "\\_") + "%"
+		pattern := "%" + likeEscaped(word) + "%"
 		statement = statement.Where("(LOWER(\"title\") LIKE ? OR LOWER(\"content\") LIKE ? OR LOWER(\"tags\"::text) LIKE ?)", pattern, pattern, pattern)
 	}
 	statement = statement.Order("\"pinned\" DESC, \"used_at\" DESC NULLS LAST, \"modified_at\" DESC")
@@ -239,11 +249,15 @@ func (self *transaction) RecallAgentMemories(agentId string, words []string, lim
 	var clauses []string
 	var arguments []any
 	for _, word := range words {
-		pattern := "%" + strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(word), "%", "\\%"), "_", "\\_") + "%"
+		pattern := "%" + likeEscaped(strings.ToLower(word)) + "%"
 		clauses = append(clauses, "(LOWER(\"title\") LIKE ? OR LOWER(\"content\") LIKE ? OR LOWER(\"tags\"::text) LIKE ?)")
 		arguments = append(arguments, pattern, pattern, pattern)
 	}
-	statement = statement.Where(strings.Join(clauses, " OR "), arguments...)
+	// Parenthesised here rather than trusting the query builder to see
+	// that this is a group: without them the agent's own predicate would
+	// bind to the first word alone and every agent's memories would
+	// match the rest.
+	statement = statement.Where("("+strings.Join(clauses, " OR ")+")", arguments...)
 	statement = statement.Order("\"pinned\" DESC, \"used_at\" DESC NULLS LAST, \"modified_at\" DESC")
 	if limit <= 0 {
 		limit = 20
@@ -251,9 +265,21 @@ func (self *transaction) RecallAgentMemories(agentId string, words []string, lim
 	return self.memoriesFrom(statement.Limit(limit))
 }
 
-func (self *transaction) ListAgentMemoriesWithVector(agentId, model string) ([]*models.AgentMemory, error) {
+// likeEscaped is a word as a LIKE pattern matches it literally: the
+// wildcards, and the backslash that escapes them, which was being left
+// to eat the character after it.
+func likeEscaped(word string) string {
+	word = strings.ReplaceAll(word, "\\", "\\\\")
+	word = strings.ReplaceAll(word, "%", "\\%")
+	return strings.ReplaceAll(word, "_", "\\_")
+}
+
+func (self *transaction) ListAgentMemoriesWithVector(agentId, model string, limit int) ([]*models.AgentMemory, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
 	statement := self.tx.Where("\"agent_id\" = ? AND \"vector_model\" = ? AND \"vector\" IS NOT NULL", agentId, model)
-	return self.memoriesFrom(statement.Order("\"pinned\" DESC, \"modified_at\" DESC"))
+	return self.memoriesFrom(statement.Order("\"pinned\" DESC, \"modified_at\" DESC").Limit(limit))
 }
 
 func (self *transaction) ListAgentMemoriesWithoutVector(agentId, model string, limit int) ([]*models.AgentMemory, error) {
@@ -264,11 +290,14 @@ func (self *transaction) ListAgentMemoriesWithoutVector(agentId, model string, l
 	return self.memoriesFrom(statement.Order("\"pinned\" DESC, \"modified_at\" DESC").Limit(limit))
 }
 
-func (self *transaction) PutAgentMemoryVector(memoryId, model string, vector []float32) error {
-	if memoryId == "" || model == "" || len(vector) == 0 {
-		return fmt.Errorf("db: a memory's vector needs the memory, the model and the vector")
+func (self *transaction) PutAgentMemoryVector(agentId, memoryId, model string, vector []float32) error {
+	if agentId == "" || memoryId == "" || model == "" || len(vector) == 0 {
+		return fmt.Errorf("db: a memory's vector needs the agent, the memory, the model and the vector")
 	}
-	return self.tx.Model(&agentMemoryModel{}).Where("\"id\" = ?", memoryId).
+	// Scoped to the agent as every other write here is, so a caller that
+	// forgets to check whose memory it is cannot write onto somebody
+	// else's.
+	return self.tx.Model(&agentMemoryModel{}).Where("\"id\" = ? AND \"agent_id\" = ?", memoryId, agentId).
 		Updates(map[string]any{"vector": pq.Float32Array(vector), "vector_model": model}).Error
 }
 

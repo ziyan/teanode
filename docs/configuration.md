@@ -1075,7 +1075,11 @@ after allow. Only admitted models may be assigned work.
 `input`, `output` and `cacheRead`. Optional; it lets the usage view show
 money beside tokens, which is the number an operator budgets.
 
-**`input`**, **`output`**, **`cacheRead`** — The three prices.
+**`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`** — The four
+prices. `cacheWrite` is what putting a prompt into the cache costs, which some
+services bill above the input price and report apart from it; left unset it
+costs nothing, which is right for a service that does not charge for it and
+wrong for one that does.
 
 **`modelPricing`** — Prices for particular models of this provider, since
 one service's models rarely cost alike: a small model and a large one behind

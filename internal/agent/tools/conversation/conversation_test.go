@@ -3,6 +3,7 @@ package conversation_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +140,27 @@ func TestConversationSearchesReadsAndRefuses(t *testing.T) {
 	}
 	if tail["earlier_messages"] != float64(2) {
 		t.Fatalf("and it says how many came before: %v", tail["earlier_messages"])
+	}
+
+	// A secret a tool showed once is not read back out of another
+	// conversation: the answer said to relay it once and keep nothing.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{
+			ConversationID: elsewhere.ID, Role: "tool", Name: "account",
+			Content: "show_verbatim: relay the following to the person once, exactly, and never keep it.\nthe-password-itself",
+		}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
+	secret, _, err := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":50}`)
+	if err != nil {
+		t.Fatalf("read: %s", err)
+	}
+	if strings.Contains(fmt.Sprint(secret["messages"]), "the-password-itself") {
+		t.Fatal("a secret shown once is not read back later")
+	}
+	if !strings.Contains(fmt.Sprint(secret["messages"]), "a secret was shown here once") {
+		t.Fatalf("and the transcript says one was there: %v", secret["messages"])
 	}
 
 	if listed, _, err := call(`{"action":"list"}`); err != nil || len(listed["conversations"].([]any)) != 2 {

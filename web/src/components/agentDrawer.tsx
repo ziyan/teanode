@@ -677,6 +677,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // it rather than reading it again.
   const loading = useRef<Promise<void> | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
+  // The transcript as state as well as a ref, so what watches it is set
+  // up when the element appears rather than when the drawer is opened.
+  // A drawer remembered open has no element on its first render — the
+  // agent has not answered whether there is one to talk to — and an
+  // effect keyed on "open" would then never run again.
+  const [transcriptElement, setTranscriptElement] = useState<HTMLDivElement | null>(null)
   // Whether the transcript is to follow its end, as the watchers below
   // read it. Not the same thing as atBottom, which says where it is now
   // and draws the button back to the end: this says where it belongs,
@@ -739,13 +745,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setTodos(response.ReadAgentConversation.todos ?? [])
     setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
     draftLoadedFor.current = response.ReadAgentConversation.conversation.id
-    sticking.current = true
-    setAtBottom(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // readConversation is loadConversation with the promise kept, so the
+  // feed's first start can wait for it. Reading is not by itself a
+  // reason to follow the end again: a turn finishing and a socket coming
+  // back both read, and a person who scrolled up to read stays where
+  // they are through either. Opening a conversation is a deliberate act,
+  // and says so.
   const readConversation = useCallback(
-    (id: string) => {
+    (id: string, deliberate = false) => {
+      if (deliberate) {
+        sticking.current = true
+        setAtBottom(true)
+      }
       const reading = loadConversation(id).finally(() => {
         if (loading.current === reading) loading.current = null
       })
@@ -758,7 +772,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     if (!open || !available) return
     void loadConversations().catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
-    void readConversation(conversationId).catch((caught) =>
+    void readConversation(conversationId, true).catch((caught) =>
       toast.failed(caught instanceof Error ? caught.message : String(caught)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -928,8 +942,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // growth is the person's own doing and reading it is why they opened
   // it, so the end is not chased for a moment afterwards.
   useEffect(() => {
-    const element = transcript.current
-    if (!element || !open) return
+    const element = transcriptElement
+    if (!element) return
     let frame = 0
     let opened = 0
     const pin = () => {
@@ -944,7 +958,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const noteOpened = (event: Event) => {
       const target = event.target
       if (target instanceof Element && target.closest('.agent-tool-toggle')) {
+        // Opening a tool line is reading it, and reading is not
+        // following: the words that arrive next would otherwise take the
+        // person to the end a moment after they looked inside. Scrolling
+        // back to the end starts the following again.
         opened = Date.now()
+        sticking.current = false
       }
     }
     const noteMoved = () => {
@@ -987,7 +1006,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         observer.disconnect()
       }
     }
-  }, [open])
+  }, [transcriptElement])
 
   // A page pointing the agent at a thread: the drawer opens with a chip
   // for it, and the next turn carries it.
@@ -1332,7 +1351,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const switchTo = async (id: string) => {
     setShowingList(false)
     setRuns([])
-    await readConversation(id)
+    await readConversation(id, true)
   }
 
   const startNew = async () => {
@@ -1731,7 +1750,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           )}
           <div
             className="agent-drawer-transcript"
-            ref={transcript}
+            ref={(node) => {
+              transcript.current = node
+              setTranscriptElement(node)
+            }}
             onScroll={(event) => {
               const element = event.currentTarget
               const ended = element.scrollHeight - element.scrollTop - element.clientHeight < 40

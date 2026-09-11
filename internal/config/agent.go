@@ -112,10 +112,12 @@ type AgentModelPricing struct {
 	// Model is the name after the provider's, or a pattern for it.
 	Model string `yaml:"model"`
 
-	// Input, Output and CacheRead, per million tokens, as on a provider.
-	Input     float64 `yaml:"input,omitempty"`
-	Output    float64 `yaml:"output,omitempty"`
-	CacheRead float64 `yaml:"cacheRead,omitempty"`
+	// Input, Output, CacheRead and CacheWrite, per million tokens, as on
+	// a provider.
+	Input      float64 `yaml:"input,omitempty"`
+	Output     float64 `yaml:"output,omitempty"`
+	CacheRead  float64 `yaml:"cacheRead,omitempty"`
+	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
 }
 
 // PricingFor is what a model of this provider costs: the first entry
@@ -124,7 +126,7 @@ func (self *AgentProvider) PricingFor(model string) AgentPricing {
 	for index := range self.ModelPricing {
 		priced := &self.ModelPricing[index]
 		if matchesAny([]string{priced.Model}, model) {
-			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead}
+			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite}
 		}
 	}
 	return self.Pricing
@@ -154,6 +156,13 @@ func matchesAny(patterns []string, value string) bool {
 		if matched, err := path.Match(pattern, value); err == nil && matched {
 			return true
 		}
+		// A model name is not a path, and some services write theirs
+		// with a slash in it. path.Match refuses to let * cross one, so
+		// "*" alone matched nothing at all for those, which silently
+		// priced them at zero. Matched again without that rule.
+		if globMatch(pattern, value) {
+			return true
+		}
 		if pattern == value {
 			return true
 		}
@@ -161,11 +170,51 @@ func matchesAny(patterns []string, value string) bool {
 	return false
 }
 
+// globMatch is path.Match without the path: * and ? match any
+// character, a slash included.
+func globMatch(pattern, value string) bool {
+	if !strings.ContainsAny(pattern, "*?") {
+		return pattern == value
+	}
+	return globFrom([]rune(pattern), []rune(value))
+}
+
+func globFrom(pattern, value []rune) bool {
+	for len(pattern) > 0 {
+		switch pattern[0] {
+		case '*':
+			// The shortest match first, then longer ones, as a glob does.
+			for at := 0; at <= len(value); at++ {
+				if globFrom(pattern[1:], value[at:]) {
+					return true
+				}
+			}
+			return false
+		case '?':
+			if len(value) == 0 {
+				return false
+			}
+		default:
+			if len(value) == 0 || value[0] != pattern[0] {
+				return false
+			}
+		}
+		pattern, value = pattern[1:], value[1:]
+	}
+	return len(value) == 0
+}
+
 // AgentPricing is what a provider charges, per million tokens.
 type AgentPricing struct {
 	Input     float64 `yaml:"input,omitempty"`
 	Output    float64 `yaml:"output,omitempty"`
 	CacheRead float64 `yaml:"cacheRead,omitempty"`
+
+	// CacheWrite is what putting a prompt into the cache costs, which
+	// some services bill above the input price and report apart from it.
+	// Left at zero it costs nothing, which is right for a service that
+	// does not charge for it and wrong for one that does.
+	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
 }
 
 // AgentModels assigns work to models. Every value is "provider:model".
@@ -524,16 +573,20 @@ func (self *Agent) CurrencyOf() string {
 
 // CostOf is what a call cost, from the prices per million tokens that
 // the model's own entry gives, or its provider's where it has none:
-// input, output and cached input priced apart. Zero where neither
-// prices it.
-func (self *Agent) CostOf(model string, promptTokens, completionTokens, cacheReadTokens int) float64 {
+// input, output, cached input and writing to the cache priced apart,
+// since a service that charges for one rarely charges the same for the
+// others. Zero where neither prices it.
+func (self *Agent) CostOf(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) float64 {
 	name, rest, _ := strings.Cut(model, ":")
 	provider := self.Provider(name)
 	if provider == nil {
 		return 0
 	}
 	pricing := provider.PricingFor(rest)
-	return (float64(promptTokens)*pricing.Input + float64(completionTokens)*pricing.Output + float64(cacheReadTokens)*pricing.CacheRead) / 1e6
+	return (float64(promptTokens)*pricing.Input +
+		float64(completionTokens)*pricing.Output +
+		float64(cacheReadTokens)*pricing.CacheRead +
+		float64(cacheWriteTokens)*pricing.CacheWrite) / 1e6
 }
 
 // FeatureOn says whether a deployment offers a feature, by its

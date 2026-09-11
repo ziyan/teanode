@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"strings"
 	"time"
 )
@@ -149,7 +148,7 @@ func (self *Agent) Validate() error {
 		}
 	}
 	if self.DailyCost < 0 {
-		return fmt.Errorf("a daily cost cannot be negative")
+		errors.add("dailyCost", "cannot be negative")
 	}
 	if self.DailyTokens < 0 {
 		errors.add("dailyTokens", "must not be negative")

@@ -201,19 +201,24 @@ func (self *Agent) runRelay() {
 	}
 }
 
-// fitForRelay cuts what is too long for a notification: the text first,
-// then the arguments. The drawer shows the cut piece until the turn is
-// over and it reads the transcript.
+// fitForRelay cuts what is too long for a notification, longest-lived
+// field last: the text first, then the arguments, then a provider's
+// error, then the line for the drawer. Every one of them can be long —
+// an error is whatever the other end wrote — and a payload over the
+// limit is not sent at all, which would lose the event rather than
+// shorten it. The drawer shows the cut piece until the turn is over and
+// it reads the transcript.
 func fitForRelay(event Event) Event {
 	over := func() int {
 		encoded, _ := json.Marshal(relayed{Instance: "", Event: event})
 		return len(encoded) + 64 - relayPayloadLimit
 	}
-	if excess := over(); excess > 0 {
-		event.Text = cutBytes(event.Text, excess)
-	}
-	if excess := over(); excess > 0 {
-		event.Arguments = cutBytes(event.Arguments, excess)
+	for _, field := range []*string{&event.Text, &event.Arguments, &event.Error, &event.Note} {
+		excess := over()
+		if excess <= 0 {
+			break
+		}
+		*field = cutBytes(*field, excess)
 	}
 	return event
 }

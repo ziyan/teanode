@@ -1251,6 +1251,8 @@ export const en = {
   'agentSettings.pricingIn': 'In',
   'agentSettings.pricingOut': 'Out',
   'agentSettings.pricingCached': 'Cached',
+  'agentSettings.pricingCaching': 'Caching',
+  'agentSettings.pricingCacheWrite': '… writing to the cache',
   'agentSettings.addModelPricing': "Price another model",
   'agentSettings.secretKept': '(set; leave blank to keep)',
   'agentSettings.test': 'Test',

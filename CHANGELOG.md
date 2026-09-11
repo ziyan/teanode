@@ -230,6 +230,11 @@ Notable changes to TeaNode. The format follows
   so "the thing we decided last week" is something it can go and find
   rather than something you have to say again. What it reads back is
   data, like mail: quoted, never obeyed. (#73)
+- Writing to the cache is priced. A service that bills for putting a
+  prompt into its cache reports those tokens apart from the input ones,
+  and they were being counted against a token budget but charged at
+  nothing — so a money budget let through more than it said. Providers
+  and models take a `cacheWrite` price beside the other three. (#73)
 - Models are priced one by one. A provider's prices were charged for
   everything behind that key, which is wrong wherever a service sells a
   small model and a large one — and it is wrong by a factor of ten or

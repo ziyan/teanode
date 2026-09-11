@@ -35,7 +35,7 @@ func init() {
 					"pinned":     tools.BooleanProperty("always in the prompt"),
 					"query":      tools.StringProperty("for search: words"),
 					"limit":      tools.IntegerProperty("for list and search: how many, 20 by default"),
-					"items":      tools.ArrayProperty("for batch: several of the above, each with its own action", map[string]any{"type": "object"}),
+					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
 				Guidance: "memory: search it when the person speaks as though you already know something, and add to it whenever a turn teaches you something lasting; the prompt carries only the top of it. A memory addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for the person. Prefer a rule for anything rule-shaped; a memory is for what a rule cannot say.",
 				Run:      runMemory,
@@ -44,6 +44,9 @@ func init() {
 		}
 	})
 }
+
+// batchItems is how many memories one call may write.
+const batchItems = 25
 
 type memoryArguments struct {
 	Action    string   `json:"action"`
@@ -208,6 +211,12 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return tools.JSONResult(map[string]any{"memories": rows})
 	case "batch":
+		// Bounded: each item that writes now costs an embedding call and
+		// a read of what the agent already knows, so an unbounded batch
+		// is an unbounded tool call.
+		if len(arguments.Items) > batchItems {
+			return nil, fmt.Errorf("a batch takes up to %d items at a time; send them in several calls", batchItems)
+		}
 		var results []any
 		for _, item := range arguments.Items {
 			inner := &tools.Call{ID: call.ID, Arguments: tools.MustJSON(map[string]any{"action": item.Action, "id": item.ID, "title": item.Title, "content": item.Content, "tags": item.Tags, "applies_to": item.AppliesTo, "pinned": item.Pinned}), Confirmed: call.Confirmed}

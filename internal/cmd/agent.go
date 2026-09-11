@@ -911,19 +911,29 @@ func runAgentAdminLimit(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 || command.Args().Len() > 2 {
 		return fmt.Errorf("usage: limit <username> <tokens> [--cost amount]")
 	}
-	tokens := int64(0)
+	// Only what was given changes: setting a money budget leaves a token
+	// budget where it was, and the other way about.
+	var tokens *int64
 	if command.Args().Len() == 2 {
 		parsed, err := strconv.ParseInt(command.Args().Get(1), 10, 64)
 		if err != nil {
 			return fmt.Errorf("%q is not a number of tokens", command.Args().Get(1))
 		}
-		tokens = parsed
+		tokens = &parsed
+	}
+	var cost *float64
+	if command.IsSet("cost") {
+		given := command.Float64("cost")
+		cost = &given
+	}
+	if tokens == nil && cost == nil {
+		return fmt.Errorf("usage: limit <username> <tokens> [--cost amount]; give a number of tokens, --cost, or both")
 	}
 	summary, err := agentByUsername(ctx, connection, command.Args().Get(0))
 	if err != nil {
 		return describeError(command, err)
 	}
-	updated, err := client.SetAgentLimit(ctx, connection, summary.AgentID, tokens, command.Float64("cost"))
+	updated, err := client.SetAgentLimit(ctx, connection, summary.AgentID, tokens, cost)
 	if err != nil {
 		return describeError(command, err)
 	}
