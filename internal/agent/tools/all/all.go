@@ -8,6 +8,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/account"
 	_ "github.com/ziyan/teanode/internal/agent/tools/artifact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/askuser"
+	_ "github.com/ziyan/teanode/internal/agent/tools/browser"
 	_ "github.com/ziyan/teanode/internal/agent/tools/contact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/datetime"
 	_ "github.com/ziyan/teanode/internal/agent/tools/domain"

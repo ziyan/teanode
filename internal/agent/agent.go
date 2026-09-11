@@ -170,16 +170,6 @@ func FullCatalog() *Catalog {
 	return tools.Build()
 }
 
-// The tools still in this package register the way a tool package does:
-// one factory, from init, into the kit's registry.
-func init() {
-	tools.Register(func() []*Tool {
-		catalog := NewCatalog()
-		registerBrowserTools(catalog)
-		return catalog.All()
-	})
-}
-
 // SetMailer hands the worker the mailer, once there is one.
 func (self *Agent) SetMailer(sender mailer.Mailer) {
 	self.settings.Mailer = sender

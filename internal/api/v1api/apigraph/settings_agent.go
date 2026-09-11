@@ -314,8 +314,13 @@ type AgentProviderParameters struct {
 	Kind    string `json:"kind"`
 	BaseURL string `json:"baseUrl" graphapi:"nullable"`
 
-	// Blank keeps the key already stored for this name.
+	// Blank keeps the key already stored for this name — or for
+	// PreviousName, when the provider is being renamed.
 	APIKey string `json:"apiKey" graphapi:"nullable"`
+
+	// PreviousName is what the provider was called until this save, so a
+	// rename carries its stored key along.
+	PreviousName string `json:"previousName" graphapi:"nullable"`
 
 	Enabled          bool     `json:"enabled"`
 	Allow            []string `json:"allow" graphapi:"nullable"`
@@ -441,11 +446,15 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				continue
 			}
 			enabled := given.Enabled
+			kept := previous[strings.TrimSpace(given.Name)]
+			if before := strings.TrimSpace(given.PreviousName); before != "" && kept == "" {
+				kept = previous[before]
+			}
 			provider := config.AgentProvider{
 				Name:    strings.TrimSpace(given.Name),
 				Kind:    strings.TrimSpace(given.Kind),
 				BaseURL: strings.TrimSpace(given.BaseURL),
-				APIKey:  previous[strings.TrimSpace(given.Name)],
+				APIKey:  kept,
 				Enabled: &enabled,
 				Models:  config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
 				Pricing: config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead},

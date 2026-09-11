@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
+	"github.com/ziyan/teanode/internal/browser"
 	"strings"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ const (
 	askTailMessages = 12
 
 	// askResultCharacters bounds a tool's answer in the history.
-	askResultCharacters = 24000
+	askResultCharacters = tools.ResultCharacters
 )
 
 // Ask starts a turn. It returns at once; the run streams what happens.
@@ -334,6 +335,19 @@ func (self *AskRun) Recalled() []string {
 func (self *AskRun) Enqueue(tx db.Transaction, kind models.AgentJobKind, mailboxId, subjectId string) error {
 	_, err := self.agent.Enqueue(tx, kind, self.settings.Agent.ID, mailboxId, subjectId)
 	return err
+}
+func (self *AskRun) BrowserPage(ctx context.Context) (*browser.Context, error) {
+	return self.agent.browserFor(ctx, self)
+}
+func (self *AskRun) AttachedTab() tools.Tab {
+	if tab := self.agent.tabFor(self.settings.Agent.ID); tab != nil {
+		return tab
+	}
+	return nil
+}
+func (self *AskRun) TabsAllowed() bool {
+	attach := self.agent.settings.Configuration().Agent.Browser.AttachTabs
+	return attach == nil || *attach
 }
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)

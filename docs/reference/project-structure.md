@@ -152,14 +152,21 @@ claimed with `SKIP LOCKED` and a worker that runs them: triage (`triage.go`),
 summaries, drafts, the reply that answers on the person's behalf and the
 send that follows the hold, embeddings for search by meaning, backfills. The
 delivery hook (`mx.AgentHook`) only queues; no model is ever called in the
-SMTP path. `tool.go` is the catalog — every tool with a family, a risk class
-and a schema, filtered by the person's permissions and the operator's
-policy — and `ask.go` is the loop that talks to the person: the prompt in
+SMTP path. `ask.go` is the loop that talks to the person: the prompt in
 layers, overlays rebuilt each round, compaction, and the confirmation pause
-that a destructive or outward tool never gets past on its own. Tools reach
-the server only through `Operations`, which the API package implements by
-executing its own operations as the person. Prompts are templates under
-`prompts/`, with golden files in `testdata/prompts`.
+that a destructive or outward tool never gets past on its own. The tools
+live under `agent/tools/`: the kit (`tools`) says what a tool is — a
+family, a risk class, a schema, a run reached through the context — and
+holds the catalog, filtered by the person's permissions and the operator's
+policy; every tool is a package of its own beside it (`tools/datetime`,
+`tools/mailread`, `tools/browser`, one per family where the tools share a
+body, such as `tools/rule` and `tools/domain`), registering from its
+`init`; `tools/all` imports them all. Tools reach the server only through
+`Operations`, which the API package implements by executing its own
+operations as the person. The adapter that makes tools of a connected
+server's tools stays in `agent`, since it is not a tool but a bridge to
+many. Prompts are templates under `prompts/`, with golden files in
+`testdata/prompts`.
 
 **`internal/mcp`** — a client for servers that speak the Model Context
 Protocol: JSON-RPC over streamable HTTP or a subprocess's standard streams,

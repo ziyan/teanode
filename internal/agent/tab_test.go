@@ -44,11 +44,11 @@ func TestTabRelayCarriesRequestsAndAnswers(t *testing.T) {
 	if !attached || title != "Portal" {
 		t.Fatalf("attached %v %q", attached, title)
 	}
-	answer, err := worker.tabFor("a1").ask(context.Background(), "snapshot", map[string]any{"mode": "text"})
+	answer, err := worker.tabFor("a1").Ask(context.Background(), "snapshot", map[string]any{"mode": "text"})
 	if err != nil || !json.Valid(answer) {
 		t.Fatalf("snapshot %s %v", answer, err)
 	}
-	if _, err := worker.tabFor("a1").ask(context.Background(), "type", map[string]any{"ref": 1, "text": "4111"}); err == nil {
+	if _, err := worker.tabFor("a1").Ask(context.Background(), "type", map[string]any{"ref": 1, "text": "4111"}); err == nil {
 		t.Fatal("the extension's refusal should come back as an error")
 	}
 	worker.UpdateTab("a1", "Statements", "https://portal.example/statements")
@@ -72,7 +72,7 @@ func TestTabRelayCarriesRequestsAndAnswers(t *testing.T) {
 	worker.AttachTab("a1", silent, "Silent", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := worker.tabFor("a1").ask(ctx, "snapshot", nil); err == nil {
+	if _, err := worker.tabFor("a1").Ask(ctx, "snapshot", nil); err == nil {
 		t.Fatal("a silent tab should time out")
 	}
 	worker.DetachTab("a1", nil)

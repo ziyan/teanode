@@ -39,8 +39,10 @@ retried.
                             Anthropic and Gemini clients, the registry that
                             picks a model per kind of work, structured output
       agent/                the personal agent: the job queue and worker, the
-                            runs (triage, summaries, replies, embeddings), the
-                            tool catalog and the Ask loop. Knows mail, not HTTP
+                            runs (triage, summaries, replies, embeddings) and
+                            the Ask loop. Knows mail, not HTTP
+      agent/tools/          the tool kit, and one package per tool beside it;
+                            a new tool is a new directory, imported in tools/all
       mcp/                  a client for connected servers (Model Context
                             Protocol): HTTP and stdio transports, OAuth 2.1
       browser/              the DevTools client behind the agent's browser tool

@@ -45,14 +45,6 @@ var (
 	Search            = tools.Search
 	listed            = tools.Listed
 
-	object          = tools.Object
-	stringProperty  = tools.StringProperty
-	enumProperty    = tools.EnumProperty
-	integerProperty = tools.IntegerProperty
-	booleanProperty = tools.BooleanProperty
-	arrayProperty   = tools.ArrayProperty
-	jsonResult      = tools.JSONResult
-
 	// Location and the time helpers moved to the kit with the datetime tool.
 	Location = tools.Location
 
@@ -63,10 +55,6 @@ var (
 	nextCron        = tools.NextCron
 	resolveRelative = tools.ResolveRelative
 )
-
-func decodeArguments[T any](call *Call) (T, error) {
-	return tools.DecodeArguments[T](call)
-}
 
 // runOf is the turn a tool was called in, as this package's own run. The
 // tools still in this package reach it this way; a tool package reaches

@@ -119,8 +119,8 @@ func (self *Agent) TabAttached(agentId string) (bool, string, string) {
 	return true, tab.title, tab.url
 }
 
-// ask sends an action to the tab and waits for its answer.
-func (self *attachedTab) ask(ctx context.Context, action string, args any) (json.RawMessage, error) {
+// Ask sends an action to the tab and waits for its answer.
+func (self *attachedTab) Ask(ctx context.Context, action string, args any) (json.RawMessage, error) {
 	encoded, err := json.Marshal(args)
 	if err != nil {
 		return nil, err
@@ -159,30 +159,7 @@ func (self *attachedTab) ask(ctx context.Context, action string, args any) (json
 	}
 }
 
-// runBrowserOnTab carries a browser action to the person's tab.
-func runBrowserOnTab(ctx context.Context, run *AskRun, arguments *browserArguments) (*Result, error) {
-	if run.settings.Headless {
-		return nil, fmt.Errorf("a run with nobody present cannot use the person's tab")
-	}
-	if attach := run.agent.settings.Configuration().Agent.Browser.AttachTabs; attach != nil && !*attach {
-		return nil, fmt.Errorf("attaching a tab is off on this server")
-	}
-	tab := run.agent.tabFor(run.settings.Agent.ID)
-	if tab == nil {
-		return nil, fmt.Errorf("no tab is attached; ask the person to attach one with the extension, or use the headless browser")
-	}
-	switch arguments.Action {
-	case "navigate", "snapshot", "screenshot", "click", "hover", "select", "type", "press", "scroll", "wait", "back", "evaluate", "fetch", "storage":
-	default:
-		return nil, fmt.Errorf("%q is not an action a tab does", arguments.Action)
-	}
-	data, err := tab.ask(ctx, arguments.Action, arguments)
-	if err != nil {
-		return nil, err
-	}
-	text := string(data)
-	if len(text) > askResultCharacters {
-		text = text[:askResultCharacters] + "\n[cut here: the answer goes on]"
-	}
-	return &Result{Content: text, Untrusted: true, Note: "in the attached tab: " + arguments.Action}, nil
-}
+// Title and URL are what the tab said it shows, for the tool and the
+// overlay.
+func (self *attachedTab) Title() string { return self.title }
+func (self *attachedTab) URL() string   { return self.url }

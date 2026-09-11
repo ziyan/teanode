@@ -73,3 +73,13 @@ func StripQuoted(text string) string {
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
+
+// FirstWords is the first few words of a text, with a mark where it
+// goes on.
+func FirstWords(text string, count int) string {
+	words := strings.Fields(text)
+	if len(words) <= count {
+		return strings.Join(words, " ")
+	}
+	return strings.Join(words[:count], " ") + "…"
+}

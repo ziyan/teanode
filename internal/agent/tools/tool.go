@@ -257,6 +257,10 @@ func NeedsConfirmation(tool *Tool, arguments json.RawMessage, policy *config.Age
 	return false
 }
 
+// ResultCharacters bounds a tool's answer as the history keeps it and as
+// a tab's answer is cut.
+const ResultCharacters = 24000
+
 // DeferralThreshold is how many definitions go in a request before the
 // rest wait behind tool_search: forty is what a model keeps straight.
 const DeferralThreshold = 40

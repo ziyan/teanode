@@ -65,12 +65,16 @@ golden prompt tests and the catalog schema test hold in place.
   permission words joined the kit; `tools.MustRun` is the run for a tool
   the loop calls. The schema test walks every tool package.
   `tools_operator.go` is gone.
-- [ ] Milestone 5 — browser and connected servers moved: `tools/browser`
-  (the tool and the attached-tab relay's tool face), `tools/mcp` (the
-  adapter that makes tools of a connected server's tools).
-- [ ] Milestone 6 — the old files gone, the docs and the project structure
-  updated, `make test` and `make lint-ci` green, the same catalog listed by
-  `teanode agent tools` before and after.
+- [x] (2026-09-11 18:30Z) Milestone 5 — `tools/browser` moved, with the
+  tab half of the tool; the kit gained `tools.Browsing` and `tools.Tab`,
+  which the run satisfies from the browser runner and the attached-tab
+  relay that stay in `agent` (`browser.go`, `tab.go`). The connected-server
+  adapter stays in `agent` by decision (see the log).
+- [x] (2026-09-11 18:45Z) Milestone 6 — the five tool files are gone;
+  `tool.go` in `agent` is the handful of kit names the loop still uses;
+  `docs/reference/project-structure.md` and `AGENTS.md` say a tool is a
+  directory; `make test` and `make lint-ci` green; the golden prompts and
+  the schema test held throughout, which is the catalog held.
 
 ## Surprises & Discoveries
 
@@ -107,13 +111,35 @@ golden prompt tests and the catalog schema test hold in place.
   `agent` keeps the import graph honest: `agent` imports `agent/tools`,
   each tool package imports `agent/tools`, and nothing imports `agent` from
   below.
+- **The connected-server adapter is not a tool package.** `tools_mcp.go`
+  makes tools of a connected server's tools per person, with the
+  connection cache, the sealed credentials and the OAuth flow the API also
+  uses; it is a bridge that yields many tools at run time, not a tool that
+  registers once. It stays in `agent` as the one exception, reaching the
+  run the old way.
+- **`tools.MustRun` beside `RunFrom`.** A tool the loop calls always has a
+  run; the operator tools, written as closures inside one factory, take it
+  with `MustRun` rather than an error check per closure. `RunFrom` is for
+  a tool that wants to report the absence.
 - **The prompt overlay stays a function of the context.** A tool's
   `Overlay(ctx)` reads the run from the context; the `<pending>`, `<todo>`,
   `<tab>` overlays move with their tools.
 
 ## Outcomes & Retrospective
 
-(filled in when the plan is done)
+Done 2026-09-11, in six commits, one per milestone. 6,300 lines of tools
+in one package became 27 packages under `internal/agent/tools` — a kit,
+two helper packages with no tool of their own (`mailbox`, `operator`), and
+twenty-four tool packages — with the same catalog before and after, which
+the golden prompts and the schema test held at every step. The kit grew
+what the tools needed of the loop, one interface method at a time, and
+the run's optional faces (`Browsing`) kept the browser out of the core
+`Run`. What was not obvious going in: how much the tools shared (the
+person's zone, the time parsers, HTML to text, the subject helpers, the
+permission words), all of which had to find a home in the kit before a
+single tool could leave; and that a moving tool's tests must move with
+it, which the artifact and memory tests did. The one exception —
+connected servers — is a bridge, not a tool, and the plan says so.
 
 ## Context and Orientation
 

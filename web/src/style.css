@@ -6576,17 +6576,70 @@ button.with-icon {
   font-weight: 600;
 }
 
-/* The tool policy: a family, its tools, and one word for each. */
-.tool-policy-family {
-  margin-top: var(--space-4);
+/* The tool policy is an accordion: one bordered list, a family per
+   row — the chevron, its name, how many tools, the word for the whole —
+   and, opened, its tools indented under it, each with a word of its own. */
+.tool-policy {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  overflow: hidden;
 }
 
-.tool-policy-family > .settings-row {
-  background: var(--field);
+.tool-policy-family + .tool-policy-family {
+  border-top: 1px solid var(--border);
+}
+
+.tool-policy-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 14px;
+  background: var(--surface);
+}
+
+.tool-policy-head:hover {
+  background: var(--sidebar-hover);
+}
+
+.tool-policy-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tool-policy-toggle:hover:not(:disabled) {
+  background: none;
+}
+
+.tool-policy-toggle svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.tool-policy-toggle .muted {
+  font-weight: 400;
+  font-size: var(--text-label);
 }
 
 .tool-policy-tools {
-  margin-left: var(--space-4);
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  background: var(--background);
+  border-top: 1px solid var(--border);
+}
+
+.tool-policy-tools .settings-row:last-child {
+  margin-bottom: 0;
 }
 
 .tool-policy-tools .settings-row {

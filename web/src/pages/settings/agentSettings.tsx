@@ -447,12 +447,12 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
           onChange={(draft) => setEditing({ ...editing, draft })}
           onClose={() => setEditing(null)}
           onSubmit={() => {
-            const values = settings.providers.map(providerValues)
+            const values: (ReturnType<typeof providerValues> & { previousName?: string })[] = settings.providers.map(providerValues)
             const section: Record<string, unknown> = {}
             if (editing.index < 0) {
               values.push(draftValues(editing.draft))
             } else {
-              values[editing.index] = draftValues(editing.draft)
+              values[editing.index] = { ...draftValues(editing.draft), previousName: settings.providers[editing.index].name }
               // A renamed provider takes its models with it: every
               // assignment written provider:model is rewritten, or the
               // server would refuse the settings for naming a provider
@@ -904,32 +904,30 @@ function ToolsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.tools')}</h3>
       <p className="muted">{t('agentSettings.toolsDescription')}</p>
+      <div className="tool-policy">
       {settings.families.map((family) => {
         const tools = settings.tools.catalog.filter((tool) => tool.family === family)
         const familyWord = wordFor(family)
         return (
           <div className="tool-policy-family" key={family}>
-            <SettingsRow
-              title={
-                <button
-                  type="button"
-                  className="tool-policy-toggle"
-                  aria-expanded={!!open[family]}
-                  onClick={() => setOpen({ ...open, [family]: !open[family] })}
-                >
-                  {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />} {family}
-                </button>
-              }
-              subtitle={t('agentSettings.familyTools', { count: String(tools.length) })}
-              actions={
-                <Select
-                  value={familyWord}
-                  label={`${family}: ${t('agentSettings.policy')}`}
-                  options={options}
-                  onChange={(value) => setPolicy({ ...policy, [family]: value as Policy })}
-                />
-              }
-            />
+            <div className="tool-policy-head">
+              <button
+                type="button"
+                className="tool-policy-toggle"
+                aria-expanded={!!open[family]}
+                onClick={() => setOpen({ ...open, [family]: !open[family] })}
+              >
+                {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+                <strong>{family}</strong>
+                <span className="muted">{t('agentSettings.familyTools', { count: String(tools.length) })}</span>
+              </button>
+              <Select
+                value={familyWord}
+                label={`${family}: ${t('agentSettings.policy')}`}
+                options={options}
+                onChange={(value) => setPolicy({ ...policy, [family]: value as Policy })}
+              />
+            </div>
             {open[family] && (
               <div className="tool-policy-tools">
                 {tools.map((tool) => (
@@ -962,6 +960,7 @@ function ToolsForm({ settings, onSaved }: Props) {
           </div>
         )
       })}
+      </div>
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
