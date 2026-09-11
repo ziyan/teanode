@@ -36,7 +36,13 @@ the photo Maria sent".
 
 ## Surprises & Discoveries
 
-- (none yet)
+- The daemon on the owner's computer is the binary it was started from:
+  rebuilding the file changes nothing for the process. The first real
+  ask on production ("show me my last screenshot") found the file and
+  was told "fetch is not something the filesystem does" by the daemon
+  running since the morning. `teanode computer stop` and `start` on the
+  new binary fixed it; a daemon that is older than the server answers
+  a new action with that error, which the tool relays as it should.
 
 ## Decision Log
 

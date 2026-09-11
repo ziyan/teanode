@@ -235,8 +235,11 @@ func TestResumeAddressIsDiscordsOrNothing(t *testing.T) {
 			t.Fatalf("%q should not be followed, got %q", bad, got)
 		}
 	}
-	local := New("TOKEN", nil, "", "ws://127.0.0.1:4000")
+	local := New("TOKEN", nil, "", "ws://127.0.0.1:4000/?v=10&encoding=json")
 	if got := local.resumeAddress("ws://127.0.0.1:4000"); got != "ws://127.0.0.1:4000/?v=10&encoding=json" {
 		t.Fatalf("the gateway's own host: %q", got)
+	}
+	if got := client.resumeAddress("wss://gateway.discord.gg:8443/"); got != "" {
+		t.Fatalf("a port that is not 443 should not be followed, got %q", got)
 	}
 }

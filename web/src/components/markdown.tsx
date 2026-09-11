@@ -17,6 +17,24 @@ import { CodeBlock } from './codeBlock'
 // tag.
 
 // inline renders `code`, **bold**, *italic* and [text](url) inside one line.
+// webAddress is a written link as it may be followed: parsed, and put
+// together again from its parts when it is http or https, so what the
+// href carries is what the browser itself made of it — and '' for
+// anything else, a javascript: scheme above all, which is then drawn as
+// the words it was written as.
+function webAddress(written: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(written)
+  } catch {
+    return ''
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
+  // Put together from the parts the browser parsed, which leaves out
+  // anything a name and password were written into the address as.
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
 function inline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
   // No lookbehind: what precedes an italic run is captured and put back,
@@ -42,8 +60,8 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
     } else {
       // Only http and https. A link in a release note is a link somebody
       // else wrote, and javascript: is a scheme nothing here should follow.
-      const href = match[6]
-      const mail = /^mail:([A-Za-z0-9]+)$/.exec(href)
+      const href = webAddress(match[6])
+      const mail = /^mail:([A-Za-z0-9]+)$/.exec(match[6])
       nodes.push(
         mail && framedDrawer ? (
           // Framed into another site, the drawer sends the person to the
@@ -57,7 +75,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
           <Link key={key} to={`/mailbox/starred/${encodeURIComponent(mail[1])}`}>
             {match[5]}
           </Link>
-        ) : /^https?:\/\//i.test(href) ? (
+        ) : href ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
             {match[5]}
           </a>

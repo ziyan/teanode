@@ -332,18 +332,34 @@ func (self *Client) resumeAddress(resumeAt string) string {
 	if err != nil || parsed.Host == "" {
 		return ""
 	}
-	own, _ := url.Parse(self.gateway)
+	// The host is looked up in what Discord's edges are called, and the
+	// address is then built from this package's own constants and that
+	// name: nothing of what came over the socket is carried into the
+	// dial but the name it matched.
 	host := strings.ToLower(parsed.Hostname())
-	discords := parsed.Scheme == "wss" && (host == "discord.gg" || strings.HasSuffix(host, ".discord.gg") || host == "discord.com" || strings.HasSuffix(host, ".discord.com"))
-	sameAsGateway := own != nil && parsed.Scheme == own.Scheme && strings.EqualFold(parsed.Host, own.Host)
-	if !discords && !sameAsGateway {
-		return ""
+	if parsed.Scheme == "wss" && (parsed.Port() == "" || parsed.Port() == "443") && discordsOwn(host) {
+		return "wss://" + host + resumeQuery
 	}
-	address := parsed.Scheme + "://" + parsed.Host + parsed.Path
-	if !strings.Contains(parsed.RawQuery, "encoding=") {
-		return address + "/?v=10&encoding=json"
+	// A gateway this client was configured with is its own to return to,
+	// whatever it is called: that address came from the operator, or from
+	// a test, never from the socket.
+	if own, err := url.Parse(self.gateway); err == nil && own.Host != "" && parsed.Scheme == own.Scheme && strings.EqualFold(parsed.Host, own.Host) {
+		return self.gateway
 	}
-	return address + "?" + parsed.RawQuery
+	return ""
+}
+
+// resumeQuery is the version and encoding every gateway address carries.
+const resumeQuery = "/?v=10&encoding=json"
+
+// discordsOwn says whether a name is one of Discord's gateway names.
+func discordsOwn(host string) bool {
+	for _, own := range []string{"discord.gg", "discord.com", "discordapp.com"} {
+		if host == own || strings.HasSuffix(host, "."+own) {
+			return true
+		}
+	}
+	return false
 }
 
 // session is one connection: hello, identify or resume, heartbeats, and

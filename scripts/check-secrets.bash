@@ -94,9 +94,11 @@ readonly ALLOWED_HOSTS=(
   .chromiumapp.org
 
   # The chat apps a person's own bot talks to, at their published API
-  # addresses.
+  # addresses, and the names Discord's gateways answer on.
   .telegram.org
   .discord.com
+  .discord.gg
+  .discordapp.com
 
   # The model services and the search service the agent can be pointed at,
   # as the defaults a provider of that kind is given when no base URL is
