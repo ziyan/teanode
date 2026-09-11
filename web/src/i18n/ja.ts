@@ -1002,7 +1002,7 @@ export const ja: Catalog = {
   'cli.lifetime': '有効期間',
   'compose.locale': '言語',
   'agentDrawer.failed': 'エージェントは応答できませんでした。',
-  'agentDrawer.runTranscript': 'エージェントが自分で行った実行の記録です。質問するには会話に戻ってください。',
+  'agentDrawer.runTranscript': 'エージェントが自分で行った実行の記録です。ここで質問するか、',
   'agentDrawer.backToConversation': '会話に戻る',
   'agentDrawer.search': '会話を探す…',
   'agentDrawer.nothingFound': '一致する会話はありません。',

@@ -129,7 +129,9 @@ Notable changes to TeaNode. The format follows
 - The conversation, looked after. A named conversation titles itself after
   the first exchange, and every conversation gets a line of summary once it
   has been quiet for a few minutes with something new said; a name you
-  give it is yours and stays. The picker finds old
+  give it is yours and stays. What the agent did on its own — a message
+  sorted, a reply written — opens as a transcript that can be talked into,
+  with the message and the decision as the history. The picker finds old
   conversations by words in the title, the summary or what was said, and
   deletes one after asking. The transcript shows when each message was
   said, the day changing, the agent thinking, and stays at the end while

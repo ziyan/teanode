@@ -1107,9 +1107,10 @@ export function AgentDrawer() {
       ? t('agentDrawer.main')
       : current.title || t('agentDrawer.untitled')
     : t('agentDrawer.main')
-  // A run's transcript is read, never talked into: what it did is asked
-  // about in the conversation.
-  const readOnly = current?.kind === 'run'
+  // A run's transcript can be talked into: the person reading what the
+  // agent did on its own asks about it right there, with the run as the
+  // history. A line above the box says what they are looking at.
+  const isRun = current?.kind === 'run'
   const running = runs.length > 0
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
 
@@ -1363,7 +1364,7 @@ export function AgentDrawer() {
               )}
             </div>
           )}
-          {readOnly ? (
+          {isRun ? (
             <div className="agent-drawer-readonly muted">
               {t('agentDrawer.runTranscript')}{' '}
               <button type="button" className="agent-artifact-action" onClick={() => void switchTo('')}>
@@ -1373,7 +1374,6 @@ export function AgentDrawer() {
           ) : null}
           <form
             className="agent-drawer-input"
-            hidden={readOnly}
             onSubmit={(event) => {
               event.preventDefault()
               void send()

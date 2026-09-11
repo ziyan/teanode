@@ -967,7 +967,7 @@ export const zh: Catalog = {
   'cli.lifetime': '有效期',
   'compose.locale': '语言',
   'agentDrawer.failed': '代理无法回答。',
-  'agentDrawer.runTranscript': '代理自行运行的记录。要就此提问，请回到对话。',
+  'agentDrawer.runTranscript': '代理自行运行的记录。可以在这里就此提问，或者',
   'agentDrawer.backToConversation': '回到对话',
   'agentDrawer.search': '查找对话…',
   'agentDrawer.nothingFound': '没有匹配的对话。',

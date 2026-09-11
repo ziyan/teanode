@@ -150,6 +150,7 @@ Timestamps are UTC.
 - Decision: the plan ships in two halves, A1 (milestones 1–6) and A2
   (7–11). Rationale: plan B need not wait for the agent you talk to.
   Date/Author: 2026-09-10, Ziyan Zhou.
+- **A run's transcript can be talked into** (2026-09-11). The design had run transcripts read-only, with "Ask about this" bringing a run into the main conversation. The owner opened a sorting transcript, typed "This looks like spam" under it, and asked why not: the composer was still drawn (the `hidden` attribute lost to `display: flex`) and the server refused the turn. The natural thing is what they did — the message and the decision are the best possible context for "why this?" or "mark it junk" — so `AskAgent` accepts a run conversation now and the drawer says what the transcript is and lets them ask. The run keeps its kind, stays under Activity, and is the drawer's current conversation until they switch.
 
 ## Outcomes & Retrospective
 

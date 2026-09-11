@@ -444,7 +444,10 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		return nil, agent.ErrUnavailable
 	}
 	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, false)
+	// A run's transcript can be talked into: the person reading what the
+	// agent did on its own — sorted a message, wrote a reply — asks about
+	// it right there, with the message and the decision as the history.
+	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
 	}

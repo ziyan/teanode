@@ -1006,7 +1006,7 @@ export const en = {
   'cli.lifetime': 'Lifetime',
   'compose.locale': 'Language',
   'agentDrawer.failed': 'Your agent could not answer.',
-  'agentDrawer.runTranscript': 'What your agent did on its own, as it happened. To ask about it, go back to the conversation.',
+  'agentDrawer.runTranscript': 'What your agent did on its own, as it happened. Ask about it here, or',
   'agentDrawer.backToConversation': 'Back to the conversation',
   'agentDrawer.search': 'Find a conversation…',
   'agentDrawer.nothingFound': 'Nothing matches.',
