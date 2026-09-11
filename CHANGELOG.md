@@ -324,6 +324,9 @@ Notable changes to TeaNode. The format follows
 - The zone box on the preferences page has room under it. The hint below
   it is drawn tight under a field's label, and this box has none, so the
   words rode up over the box itself. (#73)
+- The hour a budget starts again is said in your agent's own time zone,
+  named, rather than in the zone of whatever browser you happen to be
+  reading from. (#73)
 - The agent's conversation opens at its end and stays there. It went to the
   end and then, a moment later, sat part way up it: a picture finishing, a
   chart saying how tall it is, a document fetched and drawn all make the

@@ -184,7 +184,7 @@ export function AgentPage() {
           />
           {t('agent.enabled')}
         </label>
-        <BudgetBar budget={view.budget} />
+        <BudgetBar budget={view.budget} zone={view.timezone} />
         <p className="muted">
           {t('agent.timezone', { zone: view.timezone })} · {t('agent.language', { language: view.language || '—' })}
         </p>
@@ -267,7 +267,7 @@ type SaveProps = {
 // when the day starts again. A budget can be set in tokens or in money;
 // where both are, the one nearer its end is the one drawn, since that is
 // the one that will stop the day.
-function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
+function BudgetBar({ budget, zone }: { budget: AgentView['budget']; zone: string }) {
   const { t } = useTranslation()
   if (!budget) return null
   const tokens = budget.limit > 0 ? budget.used / budget.limit : -1
@@ -293,7 +293,7 @@ function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
               number of tokens is not something anybody can act on. */}
           {!byMoney && budget.cost > 0 ? <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span> : null}
         </span>
-        <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt) })}</span>
+        <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt, zone) })}</span>
       </div>
       <div
         className="agent-budget-bar"

@@ -134,24 +134,6 @@ func (self *Budget) NearlySpent() string {
 	return ""
 }
 
-// Remaining is what is left of the smaller of the two caps, or -1 when
-// there is none.
-func (self *Budget) Remaining() int64 {
-	remaining := int64(-1)
-	if self.Limit > 0 {
-		remaining = self.Limit - self.Used
-	}
-	if self.ServerLimit > 0 {
-		if serverRemaining := self.ServerLimit - self.ServerUsed; remaining < 0 || serverRemaining < remaining {
-			remaining = serverRemaining
-		}
-	}
-	if remaining < 0 && (self.Limit > 0 || self.ServerLimit > 0) {
-		return 0
-	}
-	return remaining
-}
-
 // CheckBudget reads today's spend for a person against their limit, and the
 // month's against the server's. "Today" is midnight to midnight in the
 // person's own zone, which is when the panel says it resets.

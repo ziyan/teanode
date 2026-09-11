@@ -311,11 +311,22 @@ export function Field({ label, mono, children }: { label: string; mono?: boolean
 // formatClock is a time of day, for a moment whose date the reader
 // already knows: a budget that starts again within the day does not need
 // the date, the seconds and the zone said back to them.
-export function formatClock(value?: string): string {
+export function formatClock(value?: string, zone?: string): string {
   if (!value) return '—'
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  // In the zone the moment belongs to, named. A budget turns over at
+  // the agent's midnight, and a person reading from another zone was
+  // shown their own clock with nothing to say whose hour it was.
+  const shape: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }
+  if (zone) {
+    try {
+      return parsed.toLocaleTimeString(undefined, { ...shape, timeZone: zone })
+    } catch {
+      // A zone this browser does not know: the reader's own, named.
+    }
+  }
+  return parsed.toLocaleTimeString(undefined, shape)
 }
 
 // formatMoney is an amount in the currency the operator says the

@@ -187,7 +187,7 @@ const TAB = `
   query {
     ReadAgentTab { attached title url }
     ReadAgentComputers { computers { name } }
-    ReadAgent { budget { used limit resetsAt cost costLimit currency } }
+    ReadAgent { budget { used limit resetsAt cost costLimit currency } timezone }
   }`
 
 const CONVERSATIONS = `
@@ -578,7 +578,7 @@ function FileCard({ file }: { file: SharedFile }) {
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
 // page a click away. Nothing is drawn where there is no limit to be near.
-function BudgetRing({ budget, framed, onLeaving }: { budget: Budget; framed: boolean; onLeaving: () => void }) {
+function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone: string; framed: boolean; onLeaving: () => void }) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
   if (!shown) return null
@@ -592,7 +592,7 @@ function BudgetRing({ budget, framed, onLeaving }: { budget: Budget; framed: boo
   const spent = shown.money ? '' : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
   const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })}${spent} ${t(
     'agentDrawer.budgetResets',
-    { at: formatClock(budget.resetsAt) },
+    { at: formatClock(budget.resetsAt, zone) },
   )}`
   const ring = (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -669,6 +669,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The day's tokens against the budget, read with the rest and so kept
   // current as turns start and finish.
   const [budget, setBudget] = useState<Budget | null>(null)
+  // The zone the agent counts its day in, which is the zone the budget
+  // starts again in and not always the zone the reader is sitting in.
+  const [agentZone, setAgentZone] = useState('')
   // How many turns this drawer has sent and not yet been handed the run
   // of: the feed's "asked" for one of those is the drawer's own words,
   // already on the page.
@@ -907,12 +910,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     graphql<{
       ReadAgentTab: { attached: boolean; title?: string; url?: string }
       ReadAgentComputers: { computers: { name: string }[] }
-      ReadAgent: { budget: Budget | null }
+      ReadAgent: { budget: Budget | null; timezone: string }
     }>(TAB)
       .then((response) => {
         setTab(response.ReadAgentTab)
         setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
         setBudget(response.ReadAgent.budget)
+        setAgentZone(response.ReadAgent.timezone)
       })
       .catch(() => {
         setTab(null)
@@ -1613,6 +1617,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {budget && (
               <BudgetRing
                 budget={budget}
+                zone={agentZone}
                 framed={standalone}
                 onLeaving={leaving}
               />
