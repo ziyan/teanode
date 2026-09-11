@@ -44,6 +44,12 @@ type AgentMemory struct {
 	// UsedAt is when a prompt last carried it or a search last found it,
 	// which is what orders the rest.
 	UsedAt *time.Time `json:"usedAt,omitempty"`
+
+	// Vector is what the memory means, for finding it by meaning rather
+	// than by the words it happens to use, and VectorModel is what said
+	// so: two vectors are comparable only when one model made them both.
+	Vector      []float32 `json:"-"`
+	VectorModel string    `json:"-"`
 }
 
 // Validate reports everything wrong with a memory.

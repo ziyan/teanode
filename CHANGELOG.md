@@ -216,6 +216,14 @@ Notable changes to TeaNode. The format follows
   what a turn teaches it rather than only what you order it to remember,
   to look before saying it does not know, and to update what is there
   instead of keeping a second copy beside it. (#73)
+- Your agent finds what it remembers by meaning, not only by the words
+  you happen to use: asked about "the boat", it finds what it knows about
+  Kittiwake. Each memory gets a vector when it is written, on the
+  embedding model the operator already configures for search by meaning,
+  and every turn is ranked against them beside the word search. A
+  deployment with no embedding model recalls by words alone, as before.
+  Writing a memory that means much the same as one already kept says so,
+  so the same fact is updated rather than stored twice. (#73)
 - Your agent can read its own past. A `conversation` tool searches
   everything said in your other conversations with it and in the runs
   that happened without you, lists the recent ones and reads one through,

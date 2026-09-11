@@ -95,7 +95,15 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}); err != nil {
 			return nil, err
 		}
-		result, err := tools.JSONResult(describe(created))
+		answer := describe(created)
+		// What it means is worked out as it is written, which is also
+		// how a fact kept twice is caught: the prompt asks the model to
+		// search first, and this is for the times it does not.
+		if twins := noteMeaning(ctx, run, created); len(twins) > 0 {
+			answer["already_remembered"] = twins
+			answer["warning"] = "this may be something you already remember; update that one instead of keeping both"
+		}
+		result, err := tools.JSONResult(answer)
 		if err != nil {
 			return nil, err
 		}
@@ -133,6 +141,8 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}); err != nil {
 			return nil, err
 		}
+		// What it means has changed with it.
+		noteMeaning(ctx, run, updated)
 		result, err := tools.JSONResult(describe(updated))
 		if err != nil {
 			return nil, err
@@ -210,6 +220,20 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 
 // recalledOverlay is what memory searches found this turn, so the model
 // does not search again for what it just saw.
+// noteMeaning gives a memory its vector and names whatever it may be a
+// copy of, where the deployment can say what a memory means at all.
+func noteMeaning(ctx context.Context, run tools.Run, memory *models.AgentMemory) []map[string]any {
+	remembering, ok := run.(tools.Remembering)
+	if !ok || memory == nil {
+		return nil
+	}
+	var twins []map[string]any
+	for _, twin := range remembering.NoteMemory(ctx, memory) {
+		twins = append(twins, map[string]any{"id": twin.ID, "title": twin.Title, "content": twin.Content})
+	}
+	return twins
+}
+
 func recalledOverlay(ctx context.Context) string {
 	run, err := tools.RunFrom(ctx)
 	if err != nil {

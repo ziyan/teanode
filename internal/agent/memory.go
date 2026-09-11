@@ -45,6 +45,11 @@ const (
 // round-trip to the model, which is why it happens every turn instead of
 // being asked for.
 func (self *AskRun) recallForTurn(ctx context.Context) {
+	// Memories written before there was an embedding model, or before
+	// this one, catch up a few at a time rather than all at once.
+	if _, err := self.agent.EmbedMemories(ctx, self.settings.Agent, memoryBackfill); err != nil {
+		log.Warningf("cannot give the memories of %q their vectors: %s", self.settings.Owner.Username, err)
+	}
 	words := recallWords(self.settings.Message)
 	if len(words) == 0 {
 		return
@@ -62,12 +67,20 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	sort.SliceStable(found, func(left, right int) bool {
 		return recallScore(found[left], words) > recallScore(found[right], words)
 	})
+	// And whatever the turn is about, which is not the same question: a
+	// person asking about "the boat" means the memory that says
+	// "Kittiwake", and no word of theirs appears in it. Nearest first,
+	// then the word matches, so the closest thing comes first where
+	// there is an embedding model and nothing changes where there is not.
+	found = append(self.nearestMemories(ctx, self.settings.Message), found...)
 	kept := 0
 	var used []string
+	seen := map[string]bool{}
 	for _, memory := range found {
-		if kept >= recalled || self.inPrompt(memory.ID) {
+		if kept >= recalled || seen[memory.ID] || self.inPrompt(memory.ID) {
 			continue
 		}
+		seen[memory.ID] = true
 		self.Recall(memory.Line() + " (memory " + memory.ID + ")")
 		used = append(used, memory.ID)
 		kept++

@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/lib/pq"
 	"strings"
 	"time"
 
@@ -33,6 +34,13 @@ type MemoryOperation interface {
 	// search above narrows with every word, this widens: a sentence is a
 	// handful of chances to remember, not a filter.
 	RecallAgentMemories(agentId string, words []string, limit int) ([]*models.AgentMemory, error)
+
+	// ListAgentMemoriesWithVector is every memory this model has given a
+	// vector to, for ranking a turn against; ListAgentMemoriesWithoutVector
+	// is the ones still waiting for one. PutAgentMemoryVector writes it.
+	ListAgentMemoriesWithVector(agentId, model string) ([]*models.AgentMemory, error)
+	ListAgentMemoriesWithoutVector(agentId, model string, limit int) ([]*models.AgentMemory, error)
+	PutAgentMemoryVector(memoryId, model string, vector []float32) error
 
 	// TouchAgentMemories marks memories used now.
 	TouchAgentMemories(memoryIds []string, at time.Time) error
@@ -71,6 +79,10 @@ type agentMemoryModel struct {
 	AppliesTo  []byte     `gorm:"column:applies_to;type:jsonb"`
 	Pinned     bool       `gorm:"column:pinned"`
 	UsedAt     *time.Time `gorm:"column:used_at"`
+	// Vector is what the memory means, and VectorModel what said so: a
+	// vector is only comparable with others from the same model.
+	Vector      pq.Float32Array `gorm:"column:vector;type:real[]"`
+	VectorModel string          `gorm:"column:vector_model"`
 }
 
 func (agentMemoryModel) TableName() string { return "agent_memory" }
@@ -92,11 +104,11 @@ func memoryToModel(memory *models.AgentMemory) (*agentMemoryModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &agentMemoryModel{ID: memory.ID, CreatedAt: memory.CreatedAt, ModifiedAt: memory.ModifiedAt, AgentID: memory.AgentID, Title: memory.Title, Content: memory.Content, Tags: encodedTags, AppliesTo: encodedAudiences, Pinned: memory.Pinned, UsedAt: memory.UsedAt}, nil
+	return &agentMemoryModel{ID: memory.ID, CreatedAt: memory.CreatedAt, ModifiedAt: memory.ModifiedAt, AgentID: memory.AgentID, Title: memory.Title, Content: memory.Content, Tags: encodedTags, AppliesTo: encodedAudiences, Pinned: memory.Pinned, UsedAt: memory.UsedAt, Vector: pq.Float32Array(memory.Vector), VectorModel: memory.VectorModel}, nil
 }
 
 func (self *agentMemoryModel) toModel() (*models.AgentMemory, error) {
-	memory := &models.AgentMemory{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Title: self.Title, Content: self.Content, Pinned: self.Pinned, UsedAt: self.UsedAt, Tags: []string{}, AppliesTo: []models.AgentAudience{}}
+	memory := &models.AgentMemory{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Title: self.Title, Content: self.Content, Pinned: self.Pinned, UsedAt: self.UsedAt, Vector: []float32(self.Vector), VectorModel: self.VectorModel, Tags: []string{}, AppliesTo: []models.AgentAudience{}}
 	if len(self.Tags) > 0 {
 		if err := json.Unmarshal(self.Tags, &memory.Tags); err != nil {
 			return nil, err
@@ -237,6 +249,27 @@ func (self *transaction) RecallAgentMemories(agentId string, words []string, lim
 		limit = 20
 	}
 	return self.memoriesFrom(statement.Limit(limit))
+}
+
+func (self *transaction) ListAgentMemoriesWithVector(agentId, model string) ([]*models.AgentMemory, error) {
+	statement := self.tx.Where("\"agent_id\" = ? AND \"vector_model\" = ? AND \"vector\" IS NOT NULL", agentId, model)
+	return self.memoriesFrom(statement.Order("\"pinned\" DESC, \"modified_at\" DESC"))
+}
+
+func (self *transaction) ListAgentMemoriesWithoutVector(agentId, model string, limit int) ([]*models.AgentMemory, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	statement := self.tx.Where("\"agent_id\" = ? AND (\"vector\" IS NULL OR \"vector_model\" <> ?)", agentId, model)
+	return self.memoriesFrom(statement.Order("\"pinned\" DESC, \"modified_at\" DESC").Limit(limit))
+}
+
+func (self *transaction) PutAgentMemoryVector(memoryId, model string, vector []float32) error {
+	if memoryId == "" || model == "" || len(vector) == 0 {
+		return fmt.Errorf("db: a memory's vector needs the memory, the model and the vector")
+	}
+	return self.tx.Model(&agentMemoryModel{}).Where("\"id\" = ?", memoryId).
+		Updates(map[string]any{"vector": pq.Float32Array(vector), "vector_model": model}).Error
 }
 
 func (self *transaction) TouchAgentMemories(memoryIds []string, at time.Time) error {
