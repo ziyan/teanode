@@ -1133,6 +1133,8 @@ export const ja: Catalog = {
     'エージェントと学んだことすべて — 記憶、会話、実行記録、各メールボックスの分析と要約 — を削除します。メールはそのままです。',
   'agent.forgotten': '忘れました。',
   'agentAdmin.usage': 'トークン使用量',
+  'agentAdmin.since': '開始',
+  'agentAdmin.until': '終了',
   'agentAdmin.by': '集計',
   'agentAdmin.byDay': '日',
   'agentAdmin.byKind': '実行の種類',

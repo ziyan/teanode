@@ -1137,6 +1137,8 @@ export const en = {
     "This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox's insights and summaries. Your mail is untouched.",
   'agent.forgotten': 'Forgotten.',
   'agentAdmin.usage': 'Token use',
+  'agentAdmin.since': 'From',
+  'agentAdmin.until': 'To',
   'agentAdmin.by': 'By',
   'agentAdmin.byDay': 'Day',
   'agentAdmin.byKind': 'Kind of run',

@@ -6651,3 +6651,15 @@ button.with-icon {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 13px;
 }
+
+/* The usage card's range and grouping, on one line. */
+.usage-range {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.usage-range input[type='date'] {
+  min-width: 9.5rem;
+}

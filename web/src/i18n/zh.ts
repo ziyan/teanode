@@ -1096,6 +1096,8 @@ export const zh: Catalog = {
     '这会删除你的代理及其学到的一切：记忆、对话、运行记录，以及每个邮箱的洞察和摘要。你的邮件不受影响。',
   'agent.forgotten': '已忘记。',
   'agentAdmin.usage': 'Token 用量',
+  'agentAdmin.since': '从',
+  'agentAdmin.until': '到',
   'agentAdmin.by': '按',
   'agentAdmin.byDay': '日',
   'agentAdmin.byKind': '运行类型',

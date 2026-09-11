@@ -159,7 +159,9 @@ Notable changes to TeaNode. The format follows
   reason on chat completions; the client repeats the call with reasoning
   off and remembers the model. Each turn shows what it cost beside its
   tokens, from the provider's pricing. The primary conversation heads the
-  picker with a star; any named conversation can be made primary. (#73)
+  picker with a star; any named conversation can be made primary. The
+  operator's token-use table takes a date range, and names agents and
+  mailboxes rather than showing their ids. (#73)
 
 ### Changed
 

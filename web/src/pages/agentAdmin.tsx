@@ -58,14 +58,20 @@ type Job = {
 const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt dailyTokens dead queued lastRunAt
   sources { mailboxId name policy { granted } } today { used limit resetsAt }
   totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }`
-const ADMIN = `query ($by: String) {
+const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
-  AgentServerUsage(by: $by) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+  AgentServerUsage(by: $by, since: $since, until: $until) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
 }`
 const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens) ${SUMMARY} }`
 const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
 const RETRY = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }`
+
+// dayOf is a date as a date input wants it, in the person's own zone.
+function dayOf(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
 function total(totals: UsageRow['totals']): number {
   return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens
@@ -75,9 +81,18 @@ export function AgentAdminPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const [by, setBy] = useState('day')
+  // The range, as dates the person picks; thirty days back by default,
+  // and the end date inclusive, so "to today" means through tonight.
+  const [since, setSince] = useState(() => dayOf(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
+  const [until, setUntil] = useState(() => dayOf(new Date()))
   const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListAgents: Summary[]; AgentServerUsage: UsageRow[]; ListAgentDeadLetters: Job[] }>(ADMIN, { by }),
-    [by],
+    () =>
+      graphql<{ ListAgents: Summary[]; AgentServerUsage: UsageRow[]; ListAgentDeadLetters: Job[] }>(ADMIN, {
+        by,
+        since: since ? new Date(since + 'T00:00:00').toISOString() : undefined,
+        until: until ? new Date(new Date(until + 'T00:00:00').getTime() + 24 * 60 * 60 * 1000).toISOString() : undefined,
+      }),
+    [by, since, until],
   )
   // The agent whose limit is being set, and the number typed for it.
   const [limiting, setLimiting] = useState<Summary | null>(null)
@@ -90,6 +105,23 @@ export function AgentAdminPage() {
   const agents = data!.ListAgents
   const usage = data!.AgentServerUsage
   const dead = data!.ListAgentDeadLetters
+
+  // keyLabel is a row's key as a person reads it: an agent by whose it
+  // is, a mailbox by its name, never an id.
+  const keyLabel = (key: string): string => {
+    if (!key) return t('agentAdmin.total')
+    if (by === 'agent') {
+      const agent = agents.find((candidate) => candidate.agentId === key)
+      return agent ? agent.name || agent.username : key
+    }
+    if (by === 'mailbox') {
+      for (const agent of agents) {
+        const source = agent.sources.find((candidate) => candidate.mailboxId === key)
+        if (source) return `${source.name} (${agent.username})`
+      }
+    }
+    return key
+  }
 
   async function act(work: () => Promise<unknown>, done: string) {
     try {
@@ -132,6 +164,15 @@ export function AgentAdminPage() {
         card
         title={t('agentAdmin.usage')}
         action={
+          <div className="usage-range">
+            <label className="shrink">
+              <span>{t('agentAdmin.since')}</span>
+              <input type="date" value={since} max={until || undefined} onChange={(event) => setSince(event.target.value)} />
+            </label>
+            <label className="shrink">
+              <span>{t('agentAdmin.until')}</span>
+              <input type="date" value={until} min={since || undefined} onChange={(event) => setUntil(event.target.value)} />
+            </label>
           <label className="shrink">
             <span>{t('agentAdmin.by')}</span>
             <Select
@@ -147,6 +188,7 @@ export function AgentAdminPage() {
               onChange={setBy}
             />
           </label>
+          </div>
         }
       >
         {usage.length === 0 ? (
@@ -167,7 +209,7 @@ export function AgentAdminPage() {
               <tbody>
                 {usage.map((row) => (
                   <tr key={row.key}>
-                    <td>{row.key || t('agentAdmin.total')}</td>
+                    <td>{keyLabel(row.key)}</td>
                     <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
                     <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
                     <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>

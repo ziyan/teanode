@@ -121,11 +121,11 @@ func TestAgentQueueAndUsage(t *testing.T) {
 		if totals.PromptTokens != 157 || totals.CompletionTokens != 33 || totals.CacheReadTokens != 30 || totals.Calls != 3 {
 			t.Fatalf("totals %+v", totals)
 		}
-		byKind, err := tx.QueryAgentUsage("", now.Add(-24*time.Hour), "kind")
+		byKind, err := tx.QueryAgentUsage("", now.Add(-24*time.Hour), time.Time{}, "kind")
 		if err != nil || len(byKind) != 2 || byKind[0].Key != "ask" || byKind[1].Totals.PromptTokens != 150 {
 			t.Fatalf("by kind: %v %+v", err, byKind)
 		}
-		if _, err := tx.QueryAgentUsage("", now, "planet"); err == nil {
+		if _, err := tx.QueryAgentUsage("", now, time.Time{}, "planet"); err == nil {
 			t.Fatal("an unknown grouping must be refused")
 		}
 	})

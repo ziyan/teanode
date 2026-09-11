@@ -148,8 +148,10 @@ type AgentBudget struct {
 
 // AgentUsageArguments say what period and what grouping.
 type AgentUsageArguments struct {
-	// Since when; the last thirty days when left out.
+	// Since when; the last thirty days when left out. Until when; now
+	// when left out.
 	Since *time.Time `json:"since"`
+	Until *time.Time `json:"until"`
 
 	// By is day, kind, mailbox or model; the total when left out.
 	By *string `json:"by"`
@@ -312,7 +314,7 @@ func (self *graph) AgentUsage(ctx context.Context, arguments AgentUsageArguments
 	if found == nil {
 		return []models.AgentUsageRow{}, nil
 	}
-	rows, err := tx.QueryAgentUsage(found.ID, usageSince(arguments.Since), usageBy(arguments.By))
+	rows, err := tx.QueryAgentUsage(found.ID, usageSince(arguments.Since), usageUntil(arguments.Until), usageBy(arguments.By))
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -324,6 +326,13 @@ func usageSince(since *time.Time) time.Time {
 		return *since
 	}
 	return time.Now().Add(-30 * 24 * time.Hour)
+}
+
+func usageUntil(until *time.Time) time.Time {
+	if until != nil {
+		return *until
+	}
+	return time.Time{}
 }
 
 func usageBy(by *string) string {
@@ -632,7 +641,7 @@ func (self *graph) AgentServerUsage(ctx context.Context, arguments AgentUsageArg
 	if _, err := self.requirePermission(ctx, models.PermissionAgentAudit); err != nil {
 		return nil, err
 	}
-	rows, err := self.transaction(ctx).QueryAgentUsage("", usageSince(arguments.Since), usageBy(arguments.By))
+	rows, err := self.transaction(ctx).QueryAgentUsage("", usageSince(arguments.Since), usageUntil(arguments.Until), usageBy(arguments.By))
 	if err != nil {
 		return nil, translateError(err)
 	}

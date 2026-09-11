@@ -60,7 +60,7 @@ type AgentOperation interface {
 
 	// QueryAgentUsage totals rows since a time under one key: "day",
 	// "kind", "mailbox" or "model". An empty agentId is the whole server.
-	QueryAgentUsage(agentId string, since time.Time, by string) ([]models.AgentUsageRow, error)
+	QueryAgentUsage(agentId string, since, until time.Time, by string) ([]models.AgentUsageRow, error)
 
 	// ScavengeAgentUsage removes rows older than the retention.
 	ScavengeAgentUsage(before time.Time) (int64, error)
@@ -614,7 +614,7 @@ func totalsFromOrdinals(rows []struct {
 }
 
 func (self *transaction) SumAgentUsage(agentId string, since time.Time) (models.AgentUsageTotals, error) {
-	rows, err := self.QueryAgentUsage(agentId, since, "")
+	rows, err := self.QueryAgentUsage(agentId, since, time.Time{}, "")
 	if err != nil {
 		return models.AgentUsageTotals{}, err
 	}
@@ -629,7 +629,7 @@ func (self *transaction) SumAgentUsage(agentId string, since time.Time) (models.
 	return totals, nil
 }
 
-func (self *transaction) QueryAgentUsage(agentId string, since time.Time, by string) ([]models.AgentUsageRow, error) {
+func (self *transaction) QueryAgentUsage(agentId string, since, until time.Time, by string) ([]models.AgentUsageRow, error) {
 	keyExpression := "''"
 	switch by {
 	case "day":
@@ -650,6 +650,10 @@ func (self *transaction) QueryAgentUsage(agentId string, since time.Time, by str
 	var arguments []any
 	where = append(where, `"interval" = ?`, `"timestamp" >= ?`)
 	arguments = append(arguments, models.HourlyInterval, models.DiscretizeTimestamp(models.HourlyInterval, uint64(since.Unix())))
+	if !until.IsZero() {
+		where = append(where, `"timestamp" < ?`)
+		arguments = append(arguments, uint64(until.Unix()))
+	}
 	if agentId != "" {
 		where = append(where, `"agent_id" = ?`)
 		arguments = append(arguments, agentId)
