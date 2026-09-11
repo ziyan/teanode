@@ -121,6 +121,26 @@ func TestConversationSearchesReadsAndRefuses(t *testing.T) {
 		t.Fatalf("what was said: %v", said[0])
 	}
 
+	// Reading gives the end of a conversation, not its beginning.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, words := range []string{"one", "two", "three"} {
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: elsewhere.ID, Role: "user", Content: words}); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+	})
+	tail, _, err := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":2}`)
+	if err != nil {
+		t.Fatalf("read the tail: %s", err)
+	}
+	ending, _ := tail["messages"].([]any)
+	if len(ending) != 2 || ending[1].(map[string]any)["said"] != "three" {
+		t.Fatalf("the last two, ending where the conversation does: %v", ending)
+	}
+	if tail["earlier_messages"] != float64(2) {
+		t.Fatalf("and it says how many came before: %v", tail["earlier_messages"])
+	}
+
 	if listed, _, err := call(`{"action":"list"}`); err != nil || len(listed["conversations"].([]any)) != 2 {
 		t.Fatalf("both of this agent's own: %v %v", listed, err)
 	}

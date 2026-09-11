@@ -26,7 +26,7 @@ func init() {
 					"action":          tools.EnumProperty("what to do", "search", "list", "read"),
 					"query":           tools.StringProperty("for search: the words to look for, in titles and in what was said"),
 					"conversation_id": tools.StringProperty("for read: which conversation"),
-					"limit":           tools.IntegerProperty("how many conversations, or how many messages when reading; 20 by default"),
+					"limit":           tools.IntegerProperty("how many conversations, or how many messages when reading — the last that many, since that is where a conversation ends up; 20 by default"),
 				}, "action"),
 				Guidance: "conversation: the person's memory of what you agreed is in here, and so is yours. Search it before answering \"I do not know\" about something they clearly told you, and before asking them to repeat themselves.",
 				Run:      runConversation,
@@ -125,7 +125,11 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			if conversation, err = tx.GetAgentConversation(id); err != nil || conversation == nil {
 				return err
 			}
-			messages, err = tx.ListAgentMessages(id, &db.Options{Limit: uint64(limit)})
+			// All of them, and the tail kept below: the end of a
+			// conversation is what somebody asking about it wants, and
+			// the store hands them back oldest first. This is how the
+			// dashboard reads one too.
+			messages, err = tx.ListAgentMessages(id, nil)
 			return err
 		}); err != nil {
 			return nil, err
@@ -137,8 +141,7 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}
 		said := make([]map[string]any, 0, len(messages))
 		for _, message := range messages {
-			// The system's own words are the prompt, which the model has;
-			// a tool result is in here by its name, not its whole answer.
+			// The system's own words are the prompt, which the model has.
 			if message.Role == "system" {
 				continue
 			}
@@ -154,13 +157,19 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			}
 			said = append(said, entry)
 		}
-		result, err := tools.JSONResult(map[string]any{
+		answer := map[string]any{
 			"conversation_id": conversation.ID,
 			"kind":            string(conversation.Kind),
 			"title":           conversation.Title,
 			"summary":         conversation.Summary,
-			"messages":        said,
-		})
+		}
+		if earlier := len(said) - limit; earlier > 0 {
+			said = said[earlier:]
+			answer["earlier_messages"] = earlier
+			answer["note"] = fmt.Sprintf("the last %d of %d; ask again with a larger limit for what came before", limit, earlier+limit)
+		}
+		answer["messages"] = said
+		result, err := tools.JSONResult(answer)
 		if err != nil {
 			return nil, err
 		}
