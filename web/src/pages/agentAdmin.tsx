@@ -22,8 +22,9 @@ type Summary = {
   enabled: boolean
   operatorDisabledAt?: string | null
   dailyTokens: number
+  dailyCost: number
   sources: { mailboxId: string; name: string; policy?: { granted: boolean } | null }[]
-  today: { used: number; limit: number; resetsAt: string } | null
+  today: { used: number; limit: number; resetsAt: string; cost: number; costLimit: number; currency: string } | null
   lastRunAt?: string | null
   dead: number
   queued: number
@@ -55,15 +56,15 @@ type Job = {
   finishedAt?: string | null
 }
 
-const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt dailyTokens dead queued lastRunAt
-  sources { mailboxId name policy { granted } } today { used limit resetsAt }
+const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt dailyTokens dailyCost dead queued lastRunAt
+  sources { mailboxId name policy { granted } } today { used limit resetsAt cost costLimit currency }
   totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }`
 const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
   AgentServerUsage(by: $by, since: $since, until: $until) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
 }`
-const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens) ${SUMMARY} }`
+const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
 const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
 const RETRY = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }`
 
@@ -97,6 +98,7 @@ export function AgentAdminPage() {
   // The agent whose limit is being set, and the number typed for it.
   const [limiting, setLimiting] = useState<Summary | null>(null)
   const [limit, setLimit] = useState('')
+  const [cost, setCost] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -243,6 +245,7 @@ export function AgentAdminPage() {
                     aria-label={`${summary.username}: ${t('agentAdmin.setLimit')}`}
                     onClick={() => {
                       setLimit(summary.dailyTokens > 0 ? String(summary.dailyTokens) : '')
+                      setCost(summary.dailyCost > 0 ? String(summary.dailyCost) : '')
                       setProblem(null)
                       setLimiting(summary)
                     }}
@@ -312,10 +315,9 @@ export function AgentAdminPage() {
           error={problem}
           onClose={() => setLimiting(null)}
           onSubmit={() => {
-            const value = Number(limit) || 0
             setBusy(true)
             setProblem(null)
-            graphql(SET_LIMIT, { agentId: limiting.agentId, dailyTokens: value })
+            graphql(SET_LIMIT, { agentId: limiting.agentId, dailyTokens: Number(limit) || 0, dailyCost: Number(cost) || 0 })
               .then(async () => {
                 setLimiting(null)
                 toast.done(t('agentAdmin.limitSet'))
@@ -336,6 +338,17 @@ export function AgentAdminPage() {
                 limiting.today && limiting.today.limit > 0 ? String(limiting.today.limit) : t('agentAdmin.unlimited')
               }
               onChange={(event) => setLimit(event.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </label>
+          <label>
+            <span>{t('agentAdmin.costLimit', { currency: limiting.today?.currency || 'USD' })}</span>
+            <input
+              inputMode="decimal"
+              value={cost}
+              placeholder={
+                limiting.today && limiting.today.costLimit > 0 ? String(limiting.today.costLimit) : t('agentAdmin.unlimited')
+              }
+              onChange={(event) => setCost(event.target.value.replace(/[^0-9.]/g, ''))}
             />
           </label>
         </FormDialog>

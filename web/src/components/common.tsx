@@ -308,6 +308,36 @@ export function Field({ label, mono, children }: { label: string; mono?: boolean
 // formatCount says a count the way a person reads one: 59, 13.5k, 1.2M.
 // For tokens and anything else that runs into the thousands and is read
 // for its size rather than its exact value.
+// formatMoney is an amount in the currency the operator says the
+// providers' prices are written in. A turn can cost a fraction of a
+// cent, so small amounts are given the places they need rather than
+// rounded away to nothing.
+export function formatMoney(amount: number, currency?: string | null): string {
+  const code = (currency || 'USD').toUpperCase()
+  const places = amount !== 0 && Math.abs(amount) < 0.01 ? 4 : 2
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(amount)
+  } catch {
+    // A code the browser does not know: the number, then the code.
+    return `${amount.toFixed(places)} ${code}`
+  }
+}
+
+// budgetNearness is how close the day's tokens are to the day's limit,
+// as the ring in the drawer's head and the bar on the agent's page both
+// colour it: room, worth knowing, and the next turn may be refused.
+export function budgetNearness(used: number, limit: number): 'good' | 'warn' | 'bad' {
+  const fraction = limit > 0 ? used / limit : 0
+  if (fraction >= 0.85) return 'bad'
+  if (fraction >= 0.6) return 'warn'
+  return 'good'
+}
+
 export function formatCount(count?: number | null): string {
   const value = count ?? 0
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`

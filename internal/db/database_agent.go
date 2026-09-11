@@ -104,6 +104,7 @@ type agentModel struct {
 	Confirm            []byte     `gorm:"column:confirm;type:jsonb"`
 	AskModel           string     `gorm:"column:ask_model"`
 	DailyTokens        int64      `gorm:"column:daily_tokens"`
+	DailyCost          float64    `gorm:"column:daily_cost"`
 	OperatorDisabledAt *time.Time `gorm:"column:operator_disabled_at"`
 }
 
@@ -154,6 +155,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		Confirm:      []string{},
 		AskModel:     model.AskModel,
 		DailyTokens:  model.DailyTokens,
+		DailyCost:    model.DailyCost,
 	}
 	if model.OperatorDisabledAt != nil {
 		at := model.OperatorDisabledAt.In(time.Local)
@@ -192,6 +194,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		Language:           agent.Language,
 		AskModel:           agent.AskModel,
 		DailyTokens:        agent.DailyTokens,
+		DailyCost:          agent.DailyCost,
 		OperatorDisabledAt: agent.OperatorDisabledAt,
 	}
 	var err error
@@ -354,7 +357,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"modified_at": model.ModifiedAt, "name": model.Name, "enabled": model.Enabled,
 			"instructions": model.Instructions, "language": model.Language,
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
-			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens,
+			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
 		}).Error
 	}); err != nil {

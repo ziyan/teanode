@@ -4526,6 +4526,75 @@ label.check-list-item {
 }
 
 /* The marks in the head for what of the person's own is attached. */
+/* The day's budget as a ring in the drawer's head, and as a bar on the
+   agent's page. One colour rule for both, in the tokens' own words. */
+.agent-drawer-budget {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--muted);
+}
+
+.agent-budget-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2.5;
+}
+
+.agent-budget-fill {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 200ms ease;
+}
+.agent-budget-fill.good {
+  stroke: var(--good);
+}
+.agent-budget-fill.warn {
+  stroke: var(--warn);
+}
+.agent-budget-fill.bad {
+  stroke: var(--bad);
+}
+
+.agent-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 10px;
+  max-width: 420px;
+}
+
+.agent-budget-said {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+}
+
+.agent-budget-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.agent-budget-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 200ms ease;
+}
+.agent-budget-bar-fill.good {
+  background: var(--good);
+}
+.agent-budget-bar-fill.warn {
+  background: var(--warn);
+}
+.agent-budget-bar-fill.bad {
+  background: var(--bad);
+}
+
 .agent-drawer-device {
   display: inline-flex;
   align-items: center;

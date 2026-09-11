@@ -260,10 +260,13 @@ func newAgentAdminCommand() *cli.Command {
 			},
 			{
 				Name:      "limit",
-				Usage:     "set a person's daily token budget; 0 returns them to the default",
+				Usage:     "set a person's daily budget, in tokens or in money; 0 returns them to the default",
 				ArgsUsage: "<username> <tokens>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentAdminLimit,
+				Flags: []cli.Flag{
+					&cli.Float64Flag{Name: "cost", Usage: "the day's budget in money instead, at the providers' configured prices; 0 for none"},
+					JSONFlag(),
+				},
+				Action: runAgentAdminLimit,
 			},
 			{
 				Name:      "disable",
@@ -363,6 +366,7 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		Language           string     `json:"language"`
 		AskModel           string     `json:"askModel"`
 		DailyTokens        int64      `json:"dailyTokens"`
+		DailyCost          float64    `json:"dailyCost"`
 		OperatorDisabledAt *time.Time `json:"operatorDisabledAt"`
 		Confirm            []string   `json:"confirm"`
 		Categories         []struct {
@@ -850,7 +854,7 @@ func printSummaries(command *cli.Command, summaries []*client.AgentSummary) erro
 				granted++
 			}
 		}
-		today, limit := "", "default"
+		today, limit, spent, costLimit := "", "default", "", "default"
 		if summary.Today != nil {
 			today = strconv.FormatInt(summary.Today.Used, 10)
 			if summary.Today.Limit > 0 {
@@ -858,10 +862,16 @@ func printSummaries(command *cli.Command, summaries []*client.AgentSummary) erro
 			} else {
 				limit = "unlimited"
 			}
+			spent = fmt.Sprintf("%.2f", summary.Today.Cost)
+			if summary.Today.CostLimit > 0 {
+				costLimit = fmt.Sprintf("%.2f %s", summary.Today.CostLimit, summary.Today.Currency)
+			} else {
+				costLimit = "unlimited"
+			}
 		}
-		rows = append(rows, []string{summary.Username, summary.Name, state, strconv.Itoa(granted), today, limit, formatTime(summary.LastRunAt), strconv.FormatInt(summary.Queued, 10), strconv.FormatInt(summary.Dead, 10)})
+		rows = append(rows, []string{summary.Username, summary.Name, state, strconv.Itoa(granted), today, limit, spent, costLimit, formatTime(summary.LastRunAt), strconv.FormatInt(summary.Queued, 10), strconv.FormatInt(summary.Dead, 10)})
 	}
-	return printTable([]string{"USER", "AGENT", "ON", "SOURCES", "TODAY", "LIMIT", "LAST RUN", "QUEUED", "DEAD"}, rows)
+	return printTable([]string{"USER", "AGENT", "ON", "SOURCES", "TODAY", "LIMIT", "SPENT", "COST LIMIT", "LAST RUN", "QUEUED", "DEAD"}, rows)
 }
 
 func runAgentAdminList(ctx context.Context, command *cli.Command) error {
@@ -894,18 +904,22 @@ func runAgentAdminLimit(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if command.Args().Len() != 2 {
-		return fmt.Errorf("usage: limit <username> <tokens>")
+	if command.Args().Len() < 1 || command.Args().Len() > 2 {
+		return fmt.Errorf("usage: limit <username> <tokens> [--cost amount]")
 	}
-	tokens, err := strconv.ParseInt(command.Args().Get(1), 10, 64)
-	if err != nil {
-		return fmt.Errorf("%q is not a number of tokens", command.Args().Get(1))
+	tokens := int64(0)
+	if command.Args().Len() == 2 {
+		parsed, err := strconv.ParseInt(command.Args().Get(1), 10, 64)
+		if err != nil {
+			return fmt.Errorf("%q is not a number of tokens", command.Args().Get(1))
+		}
+		tokens = parsed
 	}
 	summary, err := agentByUsername(ctx, connection, command.Args().Get(0))
 	if err != nil {
 		return describeError(command, err)
 	}
-	updated, err := client.SetAgentLimit(ctx, connection, summary.AgentID, tokens)
+	updated, err := client.SetAgentLimit(ctx, connection, summary.AgentID, tokens, command.Float64("cost"))
 	if err != nil {
 		return describeError(command, err)
 	}

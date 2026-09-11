@@ -47,6 +47,7 @@ type AgentModel struct {
 type AgentSettings struct {
 	Enabled      bool                      `json:"enabled"`
 	Instructions string                    `json:"instructions"`
+	Currency     string                    `json:"currency"`
 	Providers    []*AgentProviderSettings  `json:"providers"`
 	Models       *AgentModelsSettings      `json:"models"`
 	Features     *AgentFeaturesSettings    `json:"features"`
@@ -108,15 +109,17 @@ type AgentFeaturesSettings struct {
 
 // AgentLimitsSettings are the operator's limits.
 type AgentLimitsSettings struct {
-	MaxBodyCharacters      int    `json:"maxBodyCharacters"`
-	DailyTokensPerAgent    int64  `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer int64  `json:"monthlyTokensPerServer"`
-	MaxRoundsPerAsk        int    `json:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch   int    `json:"maxRoundsPerResearch"`
-	MaxRoundsPerReply      int    `json:"maxRoundsPerReply"`
-	MaxToolCallsPerRun     int    `json:"maxToolCallsPerRun"`
-	RequestTimeout         string `json:"requestTimeout"`
-	Concurrency            int    `json:"concurrency"`
+	MaxBodyCharacters      int     `json:"maxBodyCharacters"`
+	DailyTokensPerAgent    int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent      float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer   float64 `json:"monthlyCostPerServer"`
+	MaxRoundsPerAsk        int     `json:"maxRoundsPerAsk"`
+	MaxRoundsPerResearch   int     `json:"maxRoundsPerResearch"`
+	MaxRoundsPerReply      int     `json:"maxRoundsPerReply"`
+	MaxToolCallsPerRun     int     `json:"maxToolCallsPerRun"`
+	RequestTimeout         string  `json:"requestTimeout"`
+	Concurrency            int     `json:"concurrency"`
 }
 
 // AgentRetentionSettings says how long records are kept.
@@ -182,6 +185,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 	settings := &AgentSettings{
 		Enabled:      agent.Enabled,
 		Instructions: agent.Instructions,
+		Currency:     agent.CurrencyOf(),
 		Providers:    []*AgentProviderSettings{},
 		Models: &AgentModelsSettings{
 			Default:   agent.Models.Default,
@@ -214,6 +218,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			MaxBodyCharacters:      agent.Limits.MaxBodyCharacters,
 			DailyTokensPerAgent:    agent.Limits.DailyTokensPerAgent,
 			MonthlyTokensPerServer: agent.Limits.MonthlyTokensPerServer,
+			DailyCostPerAgent:      agent.Limits.DailyCostPerAgent,
+			MonthlyCostPerServer:   agent.Limits.MonthlyCostPerServer,
 			MaxRoundsPerAsk:        agent.Limits.MaxRoundsPerAsk,
 			MaxRoundsPerResearch:   agent.Limits.MaxRoundsPerResearch,
 			MaxRoundsPerReply:      agent.Limits.MaxRoundsPerReply,
@@ -301,6 +307,7 @@ func nonNil(values []string) []string {
 type AgentParameters struct {
 	Enabled      *bool                        `json:"enabled"`
 	Instructions *string                      `json:"instructions"`
+	Currency     *string                      `json:"currency"`
 	Providers    *[]*AgentProviderParameters  `json:"providers"`
 	Models       *AgentModelsParameters       `json:"models"`
 	Features     *AgentFeaturesParameters     `json:"features"`
@@ -368,15 +375,17 @@ type AgentFeaturesParameters struct {
 
 // AgentLimitsParameters change the limits.
 type AgentLimitsParameters struct {
-	MaxBodyCharacters      *int    `json:"maxBodyCharacters"`
-	DailyTokensPerAgent    *int64  `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer *int64  `json:"monthlyTokensPerServer"`
-	MaxRoundsPerAsk        *int    `json:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch   *int    `json:"maxRoundsPerResearch"`
-	MaxRoundsPerReply      *int    `json:"maxRoundsPerReply"`
-	MaxToolCallsPerRun     *int    `json:"maxToolCallsPerRun"`
-	RequestTimeout         *string `json:"requestTimeout"`
-	Concurrency            *int    `json:"concurrency"`
+	MaxBodyCharacters      *int     `json:"maxBodyCharacters"`
+	DailyTokensPerAgent    *int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer *int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent      *float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer   *float64 `json:"monthlyCostPerServer"`
+	MaxRoundsPerAsk        *int     `json:"maxRoundsPerAsk"`
+	MaxRoundsPerResearch   *int     `json:"maxRoundsPerResearch"`
+	MaxRoundsPerReply      *int     `json:"maxRoundsPerReply"`
+	MaxToolCallsPerRun     *int     `json:"maxToolCallsPerRun"`
+	RequestTimeout         *string  `json:"requestTimeout"`
+	Concurrency            *int     `json:"concurrency"`
 }
 
 // AgentRetentionParameters change how long records are kept.
@@ -442,6 +451,9 @@ type AgentMCPServerParameters struct {
 func applyAgentSettings(configuration *config.Configuration, parameters *AgentParameters) error {
 	agent := &configuration.Agent
 	applyBool(&agent.Enabled, parameters.Enabled)
+	if parameters.Currency != nil {
+		agent.Currency = strings.ToUpper(strings.TrimSpace(*parameters.Currency))
+	}
 	if parameters.Instructions != nil {
 		agent.Instructions = strings.TrimSpace(*parameters.Instructions)
 	}
@@ -513,6 +525,12 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		}
 		if parameters.Limits.MonthlyTokensPerServer != nil {
 			limits.MonthlyTokensPerServer = *parameters.Limits.MonthlyTokensPerServer
+		}
+		if parameters.Limits.DailyCostPerAgent != nil {
+			limits.DailyCostPerAgent = *parameters.Limits.DailyCostPerAgent
+		}
+		if parameters.Limits.MonthlyCostPerServer != nil {
+			limits.MonthlyCostPerServer = *parameters.Limits.MonthlyCostPerServer
 		}
 		applyInt(&limits.MaxRoundsPerAsk, parameters.Limits.MaxRoundsPerAsk)
 		applyInt(&limits.MaxRoundsPerResearch, parameters.Limits.MaxRoundsPerResearch)

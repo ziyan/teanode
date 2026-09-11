@@ -1137,6 +1137,12 @@ reached by the `shell` and `filesystem` tools while they are present.
 **`chatApps`** — A person's own Telegram or Discord bot, through which they
 talk to their agent's primary conversation.
 
+**`currency`** — What the providers' prices, and so every amount this server
+shows or caps, are written in: a three-letter code such as `USD` or `EUR`,
+and `USD` when it is not set. It labels and formats; nothing is converted, so
+an operator whose prices are in euros enters them in euros and says `EUR`
+here.
+
 ### `agent.limits`
 
 **`maxBodyCharacters`** — How much of a message a model is given; the rest
@@ -1155,6 +1161,16 @@ person's time zone. Zero means unlimited.
 **`monthlyTokensPerServer`** — A cap for the whole server. The same
 behaviour for everyone until the first of the month; a warning is logged at
 80 %. Zero means no cap.
+
+**`dailyCostPerAgent`** — The same budget said in money rather than tokens:
+what one person's calls may cost in a day, at the prices their providers are
+configured with, in `agent.currency`. An operator may override it for one
+person. Where this and `dailyTokensPerAgent` are both set, whichever runs out
+first stops the day. Zero means no limit of this kind.
+
+**`monthlyCostPerServer`** — What everybody's agents may cost the deployment
+in a month, beside `monthlyTokensPerServer`, and warned about at 80 % the
+same way. Zero means no cap.
 
 **`maxRoundsPerAsk`** — How many times one conversation turn may go back to
 the model.

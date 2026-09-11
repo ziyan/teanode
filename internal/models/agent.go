@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -56,6 +57,12 @@ type Agent struct {
 	// DailyTokens is this person's budget, set only by an operator; zero is
 	// the server's default.
 	DailyTokens int64 `json:"dailyTokens"`
+
+	// DailyCost is the same budget said in money — what the day's calls
+	// cost at the provider's prices — for an operator who would rather
+	// cap the bill than the tokens. Zero is no limit of its own. Where
+	// both are set, whichever runs out first stops the day.
+	DailyCost float64 `json:"dailyCost"`
 
 	// OperatorDisabledAt is set by an operator and cannot be cleared by the
 	// person; while set the agent does nothing and the page says why.
@@ -140,6 +147,9 @@ func (self *Agent) Validate() error {
 				errors.add("notifications."+field, "%q is not off, dashboard or mail", value)
 			}
 		}
+	}
+	if self.DailyCost < 0 {
+		return fmt.Errorf("a daily cost cannot be negative")
 	}
 	if self.DailyTokens < 0 {
 		errors.add("dailyTokens", "must not be negative")

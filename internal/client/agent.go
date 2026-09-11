@@ -33,9 +33,12 @@ type AgentSource struct {
 
 // AgentBudget is today's spend.
 type AgentBudget struct {
-	Used     int64     `json:"used"`
-	Limit    int64     `json:"limit"`
-	ResetsAt time.Time `json:"resetsAt"`
+	Used      int64     `json:"used"`
+	Limit     int64     `json:"limit"`
+	ResetsAt  time.Time `json:"resetsAt"`
+	Cost      float64   `json:"cost"`
+	CostLimit float64   `json:"costLimit"`
+	Currency  string    `json:"currency"`
 }
 
 // AgentUsageRow is totals under one key.
@@ -59,6 +62,7 @@ type AgentSummary struct {
 	Enabled            bool           `json:"enabled"`
 	OperatorDisabledAt *time.Time     `json:"operatorDisabledAt"`
 	DailyTokens        int64          `json:"dailyTokens"`
+	DailyCost          float64        `json:"dailyCost"`
 	Sources            []*AgentSource `json:"sources"`
 	Today              *AgentBudget   `json:"today"`
 	LastRunAt          *time.Time     `json:"lastRunAt"`
@@ -81,7 +85,7 @@ type AgentJob struct {
 }
 
 const agentViewSelection = `{
-	agent { id name enabled instructions language askModel dailyTokens operatorDisabledAt confirm
+	agent { id name enabled instructions language askModel dailyTokens dailyCost operatorDisabledAt confirm
 		voice { tone length greeting signoff }
 		categories { name description }
 		notifications { heldReply highPriority runFailed } }
@@ -90,14 +94,14 @@ const agentViewSelection = `{
 		summaries { enabled minimumMessages style }
 		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
-	budget { used limit resetsAt }
+	budget { used limit resetsAt cost costLimit currency }
 	choices timezone language categories
 }`
 
 const agentSummarySelection = `{
-	agentId userId username name enabled operatorDisabledAt dailyTokens dead queued
+	agentId userId username name enabled operatorDisabledAt dailyTokens dailyCost dead queued
 	sources { mailboxId name addresses policy { granted draftReplies search research triage { enabled } summaries { enabled } autoReply { enabled } } }
-	today { used limit resetsAt } lastRunAt
+	today { used limit resetsAt cost costLimit currency } lastRunAt
 }`
 
 const agentJobSelection = `{ id createdAt agentId mailboxId kind subjectId status attempts error finishedAt }`
@@ -134,8 +138,8 @@ const (
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`
 
-	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int!) {
-		SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens) ` + agentSummarySelection + `
+	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int!, $dailyCost: Float) {
+		SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ` + agentSummarySelection + `
 	}`
 
 	DocumentSetAgentDisabled = `mutation ($agentId: String!, $disabled: Boolean!) {
@@ -342,11 +346,11 @@ func ListAgentDeadLetters(ctx context.Context, connection *Client) ([]*AgentJob,
 }
 
 // SetAgentLimit sets one person's daily budget.
-func SetAgentLimit(ctx context.Context, connection *Client, agentId string, dailyTokens int64) (*AgentSummary, error) {
+func SetAgentLimit(ctx context.Context, connection *Client, agentId string, dailyTokens int64, dailyCost float64) (*AgentSummary, error) {
 	var result struct {
 		SetAgentLimit *AgentSummary `json:"SetAgentLimit"`
 	}
-	if err := connection.Execute(ctx, DocumentSetAgentLimit, map[string]any{"agentId": agentId, "dailyTokens": dailyTokens}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentSetAgentLimit, map[string]any{"agentId": agentId, "dailyTokens": dailyTokens, "dailyCost": dailyCost}, &result); err != nil {
 		return nil, err
 	}
 	return result.SetAgentLimit, nil

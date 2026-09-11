@@ -189,6 +189,27 @@ Notable changes to TeaNode. The format follows
   reply to it or `/ask`. The bots run on the server, one instance each;
   the operator can keep chat apps off with `agent.features.chatApps`.
   `teanode agent channel` does the same from a terminal. (#73)
+- What your agent has spent today, where you are talking to it. A ring in
+  the head of the chat window fills as the day's budget goes, green while
+  there is room, amber when it is worth knowing, red when the next turn
+  may be the one that is refused; hovering says the numbers and when the
+  day starts again, and clicking opens your agent's page. The page itself
+  has the same thing as a bar, with the hour it resets beside it. Nothing
+  is drawn where nobody set a budget. (#73)
+- A budget can be set in money rather than tokens. An operator gives
+  `agent.limits.dailyCostPerAgent` and `monthlyCostPerServer` an amount,
+  and the day is priced at the prices each provider is configured with —
+  two providers are each priced their own way — rather than counted in
+  tokens. Where a token budget and a money budget are both set, whichever
+  runs out first stops the day, and what the agent says when it stops
+  names the one that did. `teanode agent admin limit alice --cost 5` does
+  the same for one person, and the operator's page has both fields. (#73)
+- The currency is the operator's to choose. `agent.currency` takes a
+  three-letter code, `USD` unless it is set, and every amount the server
+  shows or caps is written in it. It labels and formats rather than
+  converts: an operator whose provider bills in euros enters the prices
+  in euros and says `EUR`. (#73)
+
 - The agent hands you files. Ask for the photo on a message, a file
   from your attached computer, or something already in the conversation,
   and `share_file` puts it under the tool line: a picture shown, a video

@@ -49,6 +49,8 @@ func Language(agent *models.Agent, user *models.User) string {
 }
 
 // Budget is what a person may still spend today, and when the day turns.
+// A budget can be said in tokens, in money, or in both; where both are
+// set, whichever runs out first stops the day.
 type Budget struct {
 	Used     int64
 	Limit    int64 // 0 = unlimited
@@ -57,14 +59,58 @@ type Budget struct {
 	// ServerUsed and ServerLimit are the monthly cap for the whole server.
 	ServerUsed  int64
 	ServerLimit int64
+
+	// Cost and CostLimit are the same day said in money, at the prices
+	// the providers are configured with; ServerCost and ServerCostLimit
+	// the same for the month and the whole server. Currency is what the
+	// operator says those prices are in, for whoever shows them.
+	Cost            float64
+	CostLimit       float64
+	ServerCost      float64
+	ServerCostLimit float64
+	Currency        string
 }
 
 // Exhausted says whether the next call should wait.
 func (self *Budget) Exhausted() bool {
+	return self.exhaustedBy() != ""
+}
+
+// exhaustedBy names what ran out, as the reason a run is deferred says
+// it, or "" while there is room. The person's own budget is looked at
+// before the server's: it is the one they can see on their page.
+func (self *Budget) exhaustedBy() string {
 	if self.Limit > 0 && self.Used >= self.Limit {
+		return fmt.Sprintf("the daily budget of %d tokens is used up", self.Limit)
+	}
+	if self.CostLimit > 0 && self.Cost >= self.CostLimit {
+		return fmt.Sprintf("the daily budget of %s is used up", Money(self.CostLimit, self.Currency))
+	}
+	if self.ServerLimit > 0 && self.ServerUsed >= self.ServerLimit {
+		return fmt.Sprintf("the server's monthly budget of %d tokens is used up", self.ServerLimit)
+	}
+	if self.ServerCostLimit > 0 && self.ServerCost >= self.ServerCostLimit {
+		return fmt.Sprintf("the server's monthly budget of %s is used up", Money(self.ServerCostLimit, self.Currency))
+	}
+	return ""
+}
+
+// serverExhausted says whether what ran out was the server's, which
+// resets with the month rather than the day.
+func (self *Budget) serverExhausted() bool {
+	if self.ServerLimit > 0 && self.ServerUsed >= self.ServerLimit {
 		return true
 	}
-	return self.ServerLimit > 0 && self.ServerUsed >= self.ServerLimit
+	return self.ServerCostLimit > 0 && self.ServerCost >= self.ServerCostLimit
+}
+
+// Money is an amount as it is written for a person to read: the amount,
+// and the currency the operator says the prices are in.
+func Money(amount float64, currency string) string {
+	if currency == "" {
+		currency = config.DefaultCurrency
+	}
+	return fmt.Sprintf("%.2f %s", amount, currency)
 }
 
 // Remaining is what is left of the smaller of the two caps, or -1 when
@@ -93,30 +139,66 @@ func CheckBudget(tx db.Transaction, configuration *config.Configuration, agent *
 	local := now.In(location)
 	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 	budget := &Budget{
-		Limit:       configuration.Agent.Limits.DailyTokensPerAgent,
-		ResetsAt:    dayStart.Add(24 * time.Hour),
-		ServerLimit: configuration.Agent.Limits.MonthlyTokensPerServer,
+		Limit:           configuration.Agent.Limits.DailyTokensPerAgent,
+		ResetsAt:        dayStart.Add(24 * time.Hour),
+		ServerLimit:     configuration.Agent.Limits.MonthlyTokensPerServer,
+		CostLimit:       configuration.Agent.Limits.DailyCostPerAgent,
+		ServerCostLimit: configuration.Agent.Limits.MonthlyCostPerServer,
+		Currency:        configuration.Agent.CurrencyOf(),
 	}
 	if agent.DailyTokens > 0 {
 		budget.Limit = agent.DailyTokens
+	}
+	if agent.DailyCost > 0 {
+		budget.CostLimit = agent.DailyCost
 	}
 	used, err := tx.SumAgentUsage(agent.ID, dayStart)
 	if err != nil {
 		return nil, err
 	}
 	budget.Used = used.Total()
-	if budget.ServerLimit > 0 {
+	// The day in money is only worth pricing where something caps it.
+	if budget.CostLimit > 0 {
+		if budget.Cost, err = SumCost(tx, configuration, agent.ID, dayStart); err != nil {
+			return nil, err
+		}
+	}
+	if budget.ServerLimit > 0 || budget.ServerCostLimit > 0 {
 		monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location)
 		serverUsed, err := tx.SumAgentUsage("", monthStart)
 		if err != nil {
 			return nil, err
 		}
 		budget.ServerUsed = serverUsed.Total()
-		if budget.ServerUsed*5 >= budget.ServerLimit*4 {
+		if budget.ServerLimit > 0 && budget.ServerUsed*5 >= budget.ServerLimit*4 {
 			log.Warningf("the server has used %d of its %d monthly tokens", budget.ServerUsed, budget.ServerLimit)
+		}
+		if budget.ServerCostLimit > 0 {
+			if budget.ServerCost, err = SumCost(tx, configuration, "", monthStart); err != nil {
+				return nil, err
+			}
+			if budget.ServerCost*5 >= budget.ServerCostLimit*4 {
+				log.Warningf("the server has used %s of its %s this month", Money(budget.ServerCost, budget.Currency), Money(budget.ServerCostLimit, budget.Currency))
+			}
 		}
 	}
 	return budget, nil
+}
+
+// SumCost is what a period's calls cost at the prices the providers are
+// configured with. Usage is kept per model, and each model is priced by
+// its own provider, so a deployment with two providers adds up properly.
+// An agent id of "" is the whole server.
+func SumCost(tx db.Transaction, configuration *config.Configuration, agentId string, since time.Time) (float64, error) {
+	rows, err := tx.QueryAgentUsage(agentId, since, time.Time{}, "model")
+	if err != nil {
+		return 0, err
+	}
+	total := 0.0
+	for _, row := range rows {
+		total += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
+	}
+	return total, nil
 }
 
 // RequireBudget is what a run calls before its first model call: it returns
@@ -130,11 +212,10 @@ func RequireBudget(tx db.Transaction, configuration *config.Configuration, agent
 		return nil
 	}
 	until := budget.ResetsAt
-	reason := fmt.Sprintf("the daily budget of %d tokens is used up", budget.Limit)
-	if budget.ServerLimit > 0 && budget.ServerUsed >= budget.ServerLimit {
+	if budget.serverExhausted() {
+		// The server's budget turns with the month, not the day.
 		local := now.In(Location(owner))
 		until = time.Date(local.Year(), local.Month()+1, 1, 0, 0, 0, 0, local.Location())
-		reason = fmt.Sprintf("the server's monthly budget of %d tokens is used up", budget.ServerLimit)
 	}
-	return &Deferral{Until: until, Reason: reason}
+	return &Deferral{Until: until, Reason: budget.exhaustedBy()}
 }

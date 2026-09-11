@@ -139,11 +139,25 @@ type AgentAllowed struct {
 	ConnectedServers bool `json:"connectedServers"`
 }
 
-// AgentBudget is today's spend.
+// AgentBudget is today's spend, in tokens and in money. A limit of zero
+// is no limit of that kind; where both are set, whichever runs out first
+// stops the day. Cost and CostLimit are in Currency, which is what the
+// operator says the providers' prices are written in.
 type AgentBudget struct {
-	Used     int64     `json:"used"`
-	Limit    int64     `json:"limit"`
-	ResetsAt time.Time `json:"resetsAt"`
+	Used      int64     `json:"used"`
+	Limit     int64     `json:"limit"`
+	ResetsAt  time.Time `json:"resetsAt"`
+	Cost      float64   `json:"cost"`
+	CostLimit float64   `json:"costLimit"`
+	Currency  string    `json:"currency"`
+}
+
+// budgetView is a budget as the API hands it over.
+func budgetView(budget *agent.Budget) *AgentBudget {
+	return &AgentBudget{
+		Used: budget.Used, Limit: budget.Limit, ResetsAt: budget.ResetsAt,
+		Cost: budget.Cost, CostLimit: budget.CostLimit, Currency: budget.Currency,
+	}
 }
 
 // AgentUsageArguments say what period and what grouping.
@@ -197,6 +211,7 @@ type AgentSummary struct {
 	Enabled            bool                    `json:"enabled"`
 	OperatorDisabledAt *time.Time              `json:"operatorDisabledAt,omitempty"`
 	DailyTokens        int64                   `json:"dailyTokens"`
+	DailyCost          float64                 `json:"dailyCost"`
 	Sources            []*AgentSource          `json:"sources"`
 	Today              *AgentBudget            `json:"today"`
 	LastRunAt          *time.Time              `json:"lastRunAt,omitempty"`
@@ -205,10 +220,12 @@ type AgentSummary struct {
 	Totals             models.AgentUsageTotals `json:"totals"`
 }
 
-// SetAgentLimitArguments name the agent and the budget.
+// SetAgentLimitArguments name the agent and the budget, in tokens, in
+// money, or in both. Zero for either returns that one to the server's.
 type SetAgentLimitArguments struct {
-	AgentID     string `json:"agentId"`
-	DailyTokens int64  `json:"dailyTokens"`
+	AgentID     string  `json:"agentId"`
+	DailyTokens int64   `json:"dailyTokens"`
+	DailyCost   float64 `json:"dailyCost" graphapi:"nullable"`
 }
 
 // SetAgentDisabledArguments name the agent and the switch.
@@ -264,7 +281,7 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 		if err != nil {
 			return nil, err
 		}
-		view.Budget = &AgentBudget{Used: budget.Used, Limit: budget.Limit, ResetsAt: budget.ResetsAt}
+		view.Budget = budgetView(budget)
 	}
 	return view, nil
 }
@@ -601,6 +618,7 @@ func (self *graph) summarize(tx db.Transaction, found *models.Agent) (*AgentSumm
 		Enabled:            found.Enabled,
 		OperatorDisabledAt: found.OperatorDisabledAt,
 		DailyTokens:        found.DailyTokens,
+		DailyCost:          found.DailyCost,
 		Sources:            []*AgentSource{},
 	}
 	if owner != nil {
@@ -612,7 +630,7 @@ func (self *graph) summarize(tx db.Transaction, found *models.Agent) (*AgentSumm
 		if err != nil {
 			return nil, err
 		}
-		summary.Today = &AgentBudget{Used: budget.Used, Limit: budget.Limit, ResetsAt: budget.ResetsAt}
+		summary.Today = budgetView(budget)
 	}
 	if summary.Totals, err = tx.SumAgentUsage(found.ID, time.Now().Add(-30*24*time.Hour)); err != nil {
 		return nil, err
@@ -682,18 +700,20 @@ func (self *graph) SetAgentLimit(ctx context.Context, arguments SetAgentLimitArg
 	if _, err := self.requirePermission(ctx, models.PermissionAgentAudit); err != nil {
 		return nil, err
 	}
-	if arguments.DailyTokens < 0 {
+	if arguments.DailyTokens < 0 || arguments.DailyCost < 0 {
 		return nil, api.ErrInvalidArguments
 	}
 	tx := self.transaction(ctx)
-	updated, err := tx.UpdateAgent(arguments.AgentID, func(agent *models.Agent) error {
-		agent.DailyTokens = arguments.DailyTokens
+	updated, err := tx.UpdateAgent(arguments.AgentID, func(found *models.Agent) error {
+		found.DailyTokens = arguments.DailyTokens
+		found.DailyCost = arguments.DailyCost
 		return nil
 	})
 	if err != nil {
 		return nil, translateError(err)
 	}
-	log.Noticef("%s set the daily budget of agent %s to %d", operatorName(ctx), updated.ID, arguments.DailyTokens)
+	log.Noticef("%s set the daily budget of agent %s to %d tokens and %s", operatorName(ctx), updated.ID,
+		arguments.DailyTokens, agent.Money(arguments.DailyCost, self.config.Current().Agent.CurrencyOf()))
 	return self.summarize(tx, updated)
 }
 

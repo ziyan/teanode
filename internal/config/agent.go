@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,6 +32,12 @@ type Agent struct {
 
 	// Features says what people may turn on at all. Unset means on.
 	Features AgentFeatures `yaml:"features"`
+
+	// Currency is what the providers' prices — and so every amount this
+	// server shows or caps — are written in, as a three-letter code. It
+	// labels and formats; nothing is converted, so an operator who enters
+	// prices in euros says EUR here.
+	Currency string `yaml:"currency,omitempty"`
 
 	// Limits bound what a run may cost.
 	Limits AgentLimits `yaml:"limits"`
@@ -235,6 +242,16 @@ type AgentLimits struct {
 	// operator may set a person's own. Zero means unlimited.
 	DailyTokensPerAgent int64 `yaml:"dailyTokensPerAgent"`
 
+	// DailyCostPerAgent is the same budget said in money, at the prices
+	// the providers are configured with: what one person's calls may cost
+	// in a day. Zero is no limit. Where both this and the token budget
+	// are set, whichever runs out first stops the day.
+	DailyCostPerAgent float64 `yaml:"dailyCostPerAgent"`
+
+	// MonthlyCostPerServer caps what everybody's agents may cost the
+	// deployment in a month, beside the token cap. Zero is no limit.
+	MonthlyCostPerServer float64 `yaml:"monthlyCostPerServer"`
+
 	// MonthlyTokensPerServer caps the whole server. Zero means no cap.
 	MonthlyTokensPerServer int64 `yaml:"monthlyTokensPerServer,omitempty"`
 
@@ -424,7 +441,8 @@ type AgentMCPOAuth struct {
 // value that keeps a mistake affordable.
 func defaultAgent() Agent {
 	return Agent{
-		Enabled: false,
+		Enabled:  false,
+		Currency: DefaultCurrency,
 		Limits: AgentLimits{
 			MaxBodyCharacters:    12000,
 			MaxAttachmentBytes:   25 * 1024 * 1024,
@@ -455,6 +473,22 @@ func (self *Agent) Provider(name string) *AgentProvider {
 		}
 	}
 	return nil
+}
+
+// currencyCode is what a currency setting may look like: the three
+// letters of an ISO 4217 code.
+var currencyCode = regexp.MustCompile(`^[A-Za-z]{3}$`)
+
+// DefaultCurrency is what amounts are in when an operator has not said
+// otherwise: the currency the providers publish their prices in.
+const DefaultCurrency = "USD"
+
+// CurrencyOf is what this deployment's amounts are written in.
+func (self *Agent) CurrencyOf() string {
+	if currency := strings.ToUpper(strings.TrimSpace(self.Currency)); currency != "" {
+		return currency
+	}
+	return DefaultCurrency
 }
 
 // CostOf is what a call cost, from the provider's pricing per million
@@ -588,6 +622,20 @@ func (self *Configuration) validateAgent(validator *validator) {
 		if field.value <= 0 {
 			validator.add("agent.limits."+field.name, "must be positive")
 		}
+	}
+	for _, field := range []struct {
+		name  string
+		value float64
+	}{
+		{"dailyCostPerAgent", agent.Limits.DailyCostPerAgent},
+		{"monthlyCostPerServer", agent.Limits.MonthlyCostPerServer},
+	} {
+		if field.value < 0 {
+			validator.add("agent.limits."+field.name, "cannot be negative; zero is no limit")
+		}
+	}
+	if currency := strings.TrimSpace(agent.Currency); currency != "" && !currencyCode.MatchString(currency) {
+		validator.add("agent.currency", "%q is not a three-letter currency code, for example USD or EUR", currency)
 	}
 	switch agent.Search.Kind {
 	case "", AgentSearchKindBrave:

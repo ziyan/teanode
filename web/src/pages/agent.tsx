@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
-import { ErrorMessage, Loading, SaveRow, Tag, formatCount, formatTime } from '../components/common'
+import { ErrorMessage, Loading, SaveRow, Tag, budgetNearness, formatCount, formatMoney, formatTime } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, PinIcon, PinOffIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
@@ -62,7 +62,7 @@ export type AgentView = {
   agent: Agent | null
   sources: AgentSource[]
   allowed: Record<string, boolean>
-  budget: { used: number; limit: number; resetsAt: string } | null
+  budget: { used: number; limit: number; resetsAt: string; cost: number; costLimit: number; currency: string } | null
   choices: string[]
   timezone: string
   language: string
@@ -79,7 +79,7 @@ const VIEW = `{
     summaries { enabled minimumMessages style }
     autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
   allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
-  budget { used limit resetsAt }
+  budget { used limit resetsAt cost costLimit currency }
   choices timezone language categories
 }`
 
@@ -184,12 +184,9 @@ export function AgentPage() {
           />
           {t('agent.enabled')}
         </label>
+        <BudgetBar budget={view.budget} />
         <p className="muted">
-          {t('agent.budget', {
-            used: formatCount(view.budget?.used ?? 0),
-            limit: view.budget && view.budget.limit > 0 ? formatCount(view.budget.limit) : t('agent.unlimited'),
-          })}{' '}
-          · {t('agent.timezone', { zone: view.timezone })} · {t('agent.language', { language: view.language || '—' })}
+          {t('agent.timezone', { zone: view.timezone })} · {t('agent.language', { language: view.language || '—' })}
         </p>
       </div>
       <div className="card">
@@ -265,6 +262,49 @@ type SaveProps = {
 
 // AboutForm: what the agent is called, what it writes in, and the standing
 // instructions — the three things a person writes once and then leaves.
+// BudgetBar is the day against its budget: what has gone of it as a bar
+// in the colour of how near the end it is, the numbers beside it, and
+// when the day starts again. A budget can be set in tokens or in money;
+// where both are, the one nearer its end is the one drawn, since that is
+// the one that will stop the day.
+function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
+  const { t } = useTranslation()
+  if (!budget) return null
+  const tokens = budget.limit > 0 ? budget.used / budget.limit : -1
+  const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
+  if (tokens < 0 && money < 0) {
+    return (
+      <p className="muted">
+        {t('agent.budgetNone')}{' '}
+        {budget.cost > 0 ? t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') }) : null}
+      </p>
+    )
+  }
+  const byMoney = money >= tokens
+  const fraction = Math.max(0, Math.min(1, byMoney ? money : tokens))
+  const said = byMoney
+    ? t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency) })
+    : t('agent.budgetTokens', { used: formatCount(budget.used), limit: formatCount(budget.limit) })
+  return (
+    <div className="agent-budget">
+      <div className="agent-budget-said">
+        <span>{said}</span>
+        <span className="muted">{t('agent.budgetResets', { at: formatTime(budget.resetsAt) })}</span>
+      </div>
+      <div
+        className="agent-budget-bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(fraction * 100)}
+        aria-label={said}
+      >
+        <span className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`} style={{ width: `${Math.round(fraction * 100)}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView }) {
   const { t } = useTranslation()
   const [name, setName] = useState(agent.name)

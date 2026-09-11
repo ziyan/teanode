@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
   AGENT_OPEN_EVENT,
@@ -15,7 +15,7 @@ import {
   withToken,
 } from '../api'
 import { uploadFiles } from '../upload'
-import { formatCount, formatTime } from './common'
+import { budgetNearness, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
@@ -85,6 +85,30 @@ function sharedFileOf(line: { tool: string; result?: string }): SharedFile | nul
     // An error, most likely.
   }
   return null
+}
+
+// Today's spend against the day's budget, in tokens and in money. A
+// limit of zero is no limit of that kind; where both are set, whichever
+// runs out first stops the day, and the ring shows that one.
+interface Budget {
+  used: number
+  limit: number
+  resetsAt: string
+  cost: number
+  costLimit: number
+  currency: string
+}
+
+// budgetShown is the budget the ring draws: the one nearer its end where
+// both are set, and null where neither is.
+function budgetShown(budget: Budget): { used: string; limit: string; fraction: number } | null {
+  const tokens = budget.limit > 0 ? budget.used / budget.limit : -1
+  const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
+  if (tokens < 0 && money < 0) return null
+  if (money >= tokens) {
+    return { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency), fraction: money }
+  }
+  return { used: formatCount(budget.used), limit: formatCount(budget.limit), fraction: tokens }
 }
 
 interface Attachment {
@@ -163,6 +187,7 @@ const TAB = `
   query {
     ReadAgentTab { attached title url }
     ReadAgentComputers { computers { name } }
+    ReadAgent { budget { used limit resetsAt cost costLimit currency } }
   }`
 
 const CONVERSATIONS = `
@@ -229,12 +254,6 @@ const MAKE_MAIN = `
   mutation ($conversationId: String) {
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
   }`
-
-// formatCost is money as a turn costs it: fractions of a cent, so four
-// places where there is nothing before the point, two otherwise.
-function formatCost(cost: number): string {
-  return '$' + (cost >= 1 ? cost.toFixed(2) : cost.toFixed(4).replace(/0+$/, '').replace(/\.$/, '.0'))
-}
 
 // The tools after which what the mailbox shows may have changed.
 const MAIL_TOOLS = new Set([
@@ -555,6 +574,53 @@ function FileCard({ file }: { file: SharedFile }) {
   )
 }
 
+// BudgetRing is the day's tokens as a ring in the drawer's head: how much
+// of the budget has gone, coloured by how near the end of it the day is,
+// with the numbers and the hour it resets on hover, and the agent's own
+// page a click away. Nothing is drawn where there is no limit to be near.
+function BudgetRing({ budget, framed }: { budget: Budget; framed: boolean }) {
+  const { t } = useTranslation()
+  const shown = budgetShown(budget)
+  if (!shown) return null
+  const fraction = Math.max(0, Math.min(1, shown.fraction))
+  const percent = Math.round(fraction * 100)
+  const nearness = budgetNearness(fraction, 1)
+  const radius = 6
+  const round = 2 * Math.PI * radius
+  const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })} ${t(
+    'agentDrawer.budgetResets',
+    { at: formatTime(budget.resetsAt) },
+  )}`
+  const ring = (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle className="agent-budget-track" cx="8" cy="8" r={radius} />
+      <circle
+        className={`agent-budget-fill ${nearness}`}
+        cx="8"
+        cy="8"
+        r={radius}
+        strokeDasharray={`${round * fraction} ${round}`}
+        transform="rotate(-90 8 8)"
+      />
+    </svg>
+  )
+  return (
+    <Tooltip label={label}>
+      {framed ? (
+        // Framed into another site, the drawer sends the person to the
+        // dashboard itself rather than drawing a settings page in here.
+        <a className="agent-drawer-budget" href={`${window.location.origin}/settings/agent`} target="_blank" rel="noreferrer" aria-label={label}>
+          {ring}
+        </a>
+      ) : (
+        <Link className="agent-drawer-budget" to="/settings/agent" aria-label={label}>
+          {ring}
+        </Link>
+      )}
+    </Tooltip>
+  )
+}
+
 // standalone is the drawer as a page of its own, framed by the browser
 // extension into another site: always open, filling its frame, and its
 // close mark telling the framing page to hide it.
@@ -597,6 +663,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [timed, setTimed] = useState<Set<string>>(() => new Set())
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
   const [computers, setComputers] = useState<string[]>([])
+  // The day's tokens against the budget, read with the rest and so kept
+  // current as turns start and finish.
+  const [budget, setBudget] = useState<Budget | null>(null)
   // How many turns this drawer has sent and not yet been handed the run
   // of: the feed's "asked" for one of those is the drawer's own words,
   // already on the page.
@@ -818,14 +887,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // and again before each turn.
   useEffect(() => {
     if (!open || !available) return
-    graphql<{ ReadAgentTab: { attached: boolean; title?: string; url?: string }; ReadAgentComputers: { computers: { name: string }[] } }>(TAB)
+    graphql<{
+      ReadAgentTab: { attached: boolean; title?: string; url?: string }
+      ReadAgentComputers: { computers: { name: string }[] }
+      ReadAgent: { budget: Budget | null }
+    }>(TAB)
       .then((response) => {
         setTab(response.ReadAgentTab)
         setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
+        setBudget(response.ReadAgent.budget)
       })
       .catch(() => {
         setTab(null)
         setComputers([])
+        setBudget(null)
       })
   }, [open, available, runs.length])
 
@@ -1344,7 +1419,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         in: formatCount(line.usage.promptTokens),
         out: formatCount(line.usage.completionTokens),
       })}
-      {line.usage.cost ? ` · ${formatCost(line.usage.cost)}` : ''}
+      {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
     </div>
   )}
           </div>
@@ -1496,6 +1571,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 </span>
               </Tooltip>
             )}
+            {budget && <BudgetRing budget={budget} framed={standalone} />}
             <button
               type="button"
               className="icon-button"

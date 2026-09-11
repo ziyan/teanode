@@ -85,6 +85,8 @@ export type Agent = {
   limits: {
     maxBodyCharacters: number
     dailyTokensPerAgent: number
+    dailyCostPerAgent: number
+    monthlyCostPerServer: number
     monthlyTokensPerServer: number
     maxRoundsPerAsk: number
     maxRoundsPerResearch: number
@@ -94,6 +96,7 @@ export type Agent = {
     concurrency: number
   }
   retention: { runs: string; corrections: string }
+  currency: string
   search: { kind: string; hasApiKey: boolean }
   tools: { disabled: string[]; confirm: string[]; catalog: AgentTool[] }
   browser: {
@@ -115,8 +118,9 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
+  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
   retention { runs corrections }
+  currency
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core } }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
@@ -777,6 +781,8 @@ function limitFields(settings: Agent) {
     maxBodyCharacters: String(settings.limits.maxBodyCharacters),
     dailyTokensPerAgent: String(settings.limits.dailyTokensPerAgent),
     monthlyTokensPerServer: String(settings.limits.monthlyTokensPerServer),
+    dailyCostPerAgent: String(settings.limits.dailyCostPerAgent),
+    monthlyCostPerServer: String(settings.limits.monthlyCostPerServer),
     maxRoundsPerAsk: String(settings.limits.maxRoundsPerAsk),
     maxRoundsPerResearch: String(settings.limits.maxRoundsPerResearch),
     maxRoundsPerReply: String(settings.limits.maxRoundsPerReply),
@@ -791,9 +797,11 @@ function LimitsForm({ settings, onSaved }: Props) {
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [limits, setLimits] = useState(limitFields(settings))
   const [retention, setRetention] = useState(settings.retention)
+  const [currency, setCurrency] = useState(settings.currency || '')
   useEffect(() => {
     setLimits(limitFields(settings))
     setRetention(settings.retention)
+    setCurrency(settings.currency || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(settings.limits), JSON.stringify(settings.retention)])
 
@@ -820,6 +828,8 @@ function LimitsForm({ settings, onSaved }: Props) {
               maxBodyCharacters: number(limits.maxBodyCharacters),
               dailyTokensPerAgent: number(limits.dailyTokensPerAgent),
               monthlyTokensPerServer: number(limits.monthlyTokensPerServer),
+              dailyCostPerAgent: number(limits.dailyCostPerAgent),
+              monthlyCostPerServer: number(limits.monthlyCostPerServer),
               maxRoundsPerAsk: number(limits.maxRoundsPerAsk),
               maxRoundsPerResearch: number(limits.maxRoundsPerResearch),
               maxRoundsPerReply: number(limits.maxRoundsPerReply),
@@ -828,6 +838,7 @@ function LimitsForm({ settings, onSaved }: Props) {
               concurrency: number(limits.concurrency),
             },
             retention,
+            currency,
           },
         })
       }}
@@ -835,6 +846,18 @@ function LimitsForm({ settings, onSaved }: Props) {
       <h3>{t('agentSettings.limits')}</h3>
       <p className="muted">{t('agentSettings.limitsDescription')}</p>
       <div className="row">{(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}</div>
+      <div className="row">
+        {(['dailyCostPerAgent', 'monthlyCostPerServer'] as const).map(numeric)}
+        <label className="shrink">
+          <span>{t('agentSettings.currency')}</span>
+          <input
+            value={currency}
+            maxLength={3}
+            placeholder="USD"
+            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+          />
+        </label>
+      </div>
       <div className="row">
         {(['maxRoundsPerAsk', 'maxRoundsPerResearch', 'maxRoundsPerReply', 'maxToolCallsPerRun'] as const).map(numeric)}
       </div>
