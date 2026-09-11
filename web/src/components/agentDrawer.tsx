@@ -605,6 +605,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // it rather than reading it again.
   const loading = useRef<Promise<void> | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
+  // atBottom as the watchers below read it, so that they are set up once
+  // rather than again on every scroll.
+  const sticking = useRef(true)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
@@ -824,17 +827,71 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }, [lines, atBottom])
 
-  // The transcript shrinks when the box under it grows with the words;
-  // a person at the end stays at the end through it.
+  // A person at the end stays at the end while the transcript grows
+  // under them. Most of what makes it grow is not a line arriving: a
+  // picture that finished loading, a framed page saying how tall it is,
+  // a document fetched and drawn, the box below growing with the words.
+  // None of those is a scroll and none of them changes the lines, so
+  // none of them is noticed unless it is watched for — which is why a
+  // conversation would open at its end and then sit part way up it a
+  // moment later.
+  //
+  // What a person did with their own hands is left alone: growth just
+  // after a click inside the transcript is a tool line they opened to
+  // read, not the conversation moving on without them.
+  useEffect(() => {
+    sticking.current = atBottom
+  }, [atBottom])
+
   useEffect(() => {
     const element = transcript.current
-    if (!element || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      if (atBottom) element.scrollTop = element.scrollHeight
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [atBottom, open])
+    if (!element || !open) return
+    let frame = 0
+    let clicked = 0
+    const pin = () => {
+      if (!sticking.current || Date.now() - clicked < 500) return
+      // On the next frame, once what grew has been laid out, so the
+      // height is the one the person is about to see.
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        element.scrollTop = element.scrollHeight
+      })
+    }
+    const noteClick = () => {
+      clicked = Date.now()
+    }
+    const observers: { disconnect: () => void }[] = []
+    if (typeof ResizeObserver !== 'undefined') {
+      const sizes = new ResizeObserver(pin)
+      sizes.observe(element)
+      observers.push(sizes)
+    }
+    if (typeof MutationObserver !== 'undefined') {
+      const changes = new MutationObserver(pin)
+      changes.observe(element, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['style', 'src', 'height', 'width'],
+      })
+      observers.push(changes)
+    }
+    // A picture, a video or a framed page finishing: load does not
+    // bubble, so it is caught on the way down.
+    element.addEventListener('load', pin, true)
+    element.addEventListener('loadedmetadata', pin, true)
+    element.addEventListener('click', noteClick, true)
+    return () => {
+      cancelAnimationFrame(frame)
+      element.removeEventListener('load', pin, true)
+      element.removeEventListener('loadedmetadata', pin, true)
+      element.removeEventListener('click', noteClick, true)
+      for (const observer of observers) {
+        observer.disconnect()
+      }
+    }
+  }, [open])
 
   // A page pointing the agent at a thread: the drawer opens with a chip
   // for it, and the next turn carries it.
