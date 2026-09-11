@@ -6252,6 +6252,27 @@ p.notice.domain-logo-note {
   overflow: auto;
 }
 
+/* A file handed over: the picture or the player fills the box's width
+   and stays a sensible height; a sound is a bar. */
+.agent-file-media {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  background: var(--surface);
+}
+.agent-file-audio {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.agent-file-caption {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 
 .agent-code-language {
   position: absolute;

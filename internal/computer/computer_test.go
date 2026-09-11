@@ -2,6 +2,7 @@ package computer
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -169,4 +170,24 @@ func errorAs(err error, target **RefusedError) bool {
 		*target = refused
 	}
 	return ok
+}
+
+// fetch hands a file across whole, as base64 with its type; a directory
+// and a file too large are refused.
+func TestFilesystemFetchesAFileWhole(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "cat.png"), []byte{0x89, 'P', 'N', 'G', 1, 2, 3}, 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	answer, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{Action: "fetch", Path: "~/cat.png"})
+	if err != nil {
+		t.Fatalf("fetch: %s", err)
+	}
+	fields := answer.(map[string]any)
+	if fields["name"] != "cat.png" || fields["content_type"] != "image/png" || fields["bytes"] != 7 || fields["base64"] != base64.StdEncoding.EncodeToString([]byte{0x89, 'P', 'N', 'G', 1, 2, 3}) {
+		t.Fatalf("the file, whole: %v", fields)
+	}
+	if _, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{Action: "fetch", Path: "~"}); err == nil {
+		t.Fatal("a directory is refused")
+	}
 }

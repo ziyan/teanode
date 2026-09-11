@@ -156,7 +156,7 @@ func TestConversationFeedCarriesEveryTurnAcrossInstances(t *testing.T) {
 // and nothing else.
 func TestSharedArtifactAddresses(t *testing.T) {
 	configuration := config.Default()
-	configuration.Server.Secret = "a-secret-long-enough-to-sign-with-1234567890"
+	configuration.Server.Secret = strings.Repeat("not-a-secret-", 4)
 	worker := agent.New(&agent.Settings{Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
 	share := worker.ShareArtifact("artifact1", time.Now().Add(time.Hour))
 	if share == "" || !worker.SharedArtifact("artifact1", share) {

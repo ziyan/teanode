@@ -124,6 +124,10 @@ type Result struct {
 
 	// Note is a line for the drawer, saying what was done.
 	Note string
+
+	// Images are pictures the model asked to look at, given to it as a
+	// turn of its own after this round's results; not kept.
+	Images []llm.ContentPart
 }
 
 // Definition is the tool as a model is given it.
@@ -405,4 +409,12 @@ func ActionOf(arguments json.RawMessage) string {
 		return ""
 	}
 	return strings.ToLower(strings.TrimSpace(call.Action))
+}
+
+// imageTypes are the pictures a model can look at and a browser shows.
+var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
+
+// IsImage says whether a file is a picture a model can look at.
+func IsImage(contentType string) bool {
+	return imageTypes[strings.ToLower(strings.TrimSpace(contentType))]
 }

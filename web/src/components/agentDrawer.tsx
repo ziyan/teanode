@@ -65,6 +65,28 @@ function artifactOf(line: { tool: string; result?: string }): Artifact | null {
   return null
 }
 
+// A file the agent handed over, as share_file answered.
+interface SharedFile {
+  attachment_id: string
+  name: string
+  content_type: string
+  size: number
+  url: string
+  caption?: string
+}
+
+// sharedFileOf reads what share_file answered, if this is its line.
+function sharedFileOf(line: { tool: string; result?: string }): SharedFile | null {
+  if (line.tool !== 'share_file' || !line.result) return null
+  try {
+    const parsed = JSON.parse(line.result) as Partial<SharedFile>
+    if (parsed.attachment_id && parsed.url && parsed.name) return parsed as SharedFile
+  } catch {
+    // An error, most likely.
+  }
+  return null
+}
+
 interface Attachment {
   id: string
   name: string
@@ -493,6 +515,42 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
           style={height === null ? undefined : { height }}
         />
       )}
+    </div>
+  )
+}
+
+// FileCard is a file the agent handed over, under the tool line: a
+// picture shown, a video or a sound playing, anything else to open.
+function FileCard({ file }: { file: SharedFile }) {
+  const { t } = useTranslation()
+  const href = withToken(file.url)
+  const type = file.content_type.toLowerCase()
+  const media = isImage(type) ? (
+    <img src={href} alt={file.name} className="agent-file-media" />
+  ) : type.startsWith('video/') ? (
+    <video src={href} controls preload="metadata" className="agent-file-media" />
+  ) : type.startsWith('audio/') ? (
+    <audio src={href} controls preload="metadata" className="agent-file-audio" />
+  ) : null
+  return (
+    <div className="agent-artifact agent-file">
+      <div className="agent-artifact-head">
+        <PaperclipIcon size={11} />
+        <span className="agent-artifact-title">{file.name}</span>
+        <span className="muted">{formatBytes(file.size)}</span>
+        <a
+          className="icon-button agent-artifact-open"
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('agentDrawer.openArtifact')}
+          title={t('agentDrawer.openArtifact')}
+        >
+          <ExternalIcon size={14} />
+        </a>
+      </div>
+      {media}
+      {file.caption ? <div className="agent-file-caption">{file.caption}</div> : null}
     </div>
   )
 }
@@ -1214,8 +1272,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         )
       case 'tool': {
         const artifact = artifactOf(line)
+        const shared = sharedFileOf(line)
         if (!showTools) {
-          return artifact ? <ArtifactCard key={line.key} artifact={artifact} /> : null
+          if (artifact) return <ArtifactCard key={line.key} artifact={artifact} />
+          return shared ? <FileCard key={line.key} file={shared} /> : null
         }
         return (
           <div
@@ -1235,6 +1295,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     </div>
   )}
   {artifact ? <ArtifactCard artifact={artifact} /> : null}
+  {shared ? <FileCard file={shared} /> : null}
           </div>
         )
       }

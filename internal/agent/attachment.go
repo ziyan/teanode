@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -38,12 +39,16 @@ const (
 	orphanAttachmentAge = 24 * time.Hour
 )
 
-// imageTypes are the pictures every provider here can look at.
-var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
-
 // IsImageAttachment says whether a file is a picture a model can look at.
 func IsImageAttachment(contentType string) bool {
-	return imageTypes[strings.ToLower(strings.TrimSpace(contentType))]
+	return tools.IsImage(contentType)
+}
+
+// IsMediaAttachment says whether a file is a video or a sound a browser
+// plays in the page.
+func IsMediaAttachment(contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/")
 }
 
 // isTextAttachment says whether a file is read as text.

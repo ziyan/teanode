@@ -140,6 +140,12 @@ type filesystemArguments struct {
 // only one when one is attached, and a question back when there are
 // several and none was named.
 func computerOf(run tools.Run, name string) (tools.Computer, error) {
+	return Of(run, name)
+}
+
+// Of is the attached computer a tool means, for the tools outside this
+// package that reach one.
+func Of(run tools.Run, name string) (tools.Computer, error) {
 	if run.Headless() {
 		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
 	}

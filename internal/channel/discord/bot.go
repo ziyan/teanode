@@ -11,8 +11,8 @@ import (
 // it in a direct message, or with a mention in a server channel, handed
 // over, and a Chat per channel to answer through.
 type Bot struct {
-	client *Client
-	me     *User
+	client   *Client
+	identity *User
 }
 
 // Open is a channel.Opener for Discord: the token is tried at once.
@@ -23,18 +23,18 @@ func Open(ctx context.Context, token string) (channel.Bot, error) {
 // OpenAt is Open against other addresses, for tests.
 func OpenAt(ctx context.Context, token, base, gateway string) (channel.Bot, error) {
 	client := New(token, nil, base, gateway)
-	me, err := client.Me(ctx)
+	identity, err := client.Me(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &Bot{client: client, me: me}, nil
+	return &Bot{client: client, identity: identity}, nil
 }
 
 func (self *Bot) Name() string {
-	if self.me.Username != "" {
-		return "@" + self.me.Username
+	if self.identity.Username != "" {
+		return "@" + self.identity.Username
 	}
-	return self.me.Name()
+	return self.identity.Name()
 }
 
 // Run listens on the gateway until the context ends. In a server channel
@@ -43,7 +43,7 @@ func (self *Bot) Name() string {
 // channel — the link names whichever sent the code.
 func (self *Bot) Run(ctx context.Context, handle func(ctx context.Context, incoming *channel.Incoming, chat channel.Chat)) error {
 	return self.client.Listen(ctx, func(message *Message) {
-		if message.Author == nil || message.Author.Bot || message.Author.ID == self.me.ID {
+		if message.Author == nil || message.Author.Bot || message.Author.ID == self.identity.ID {
 			return
 		}
 		incoming := self.incoming(message)
@@ -63,13 +63,13 @@ func (self *Bot) incoming(message *Message) *channel.Incoming {
 	text := message.Content
 	mentioned := false
 	for _, user := range message.Mentions {
-		if user.ID == self.me.ID {
+		if user.ID == self.identity.ID {
 			mentioned = true
 		}
 	}
-	text = strings.ReplaceAll(text, "<@"+self.me.ID+">", "")
-	text = strings.ReplaceAll(text, "<@!"+self.me.ID+">", "")
-	if message.ReferencedMessage != nil && message.ReferencedMessage.Author != nil && message.ReferencedMessage.Author.ID == self.me.ID {
+	text = strings.ReplaceAll(text, "<@"+self.identity.ID+">", "")
+	text = strings.ReplaceAll(text, "<@!"+self.identity.ID+">", "")
+	if message.ReferencedMessage != nil && message.ReferencedMessage.Author != nil && message.ReferencedMessage.Author.ID == self.identity.ID {
 		mentioned = true
 	}
 	incoming := &channel.Incoming{

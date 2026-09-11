@@ -275,12 +275,21 @@ func (self *Client) Download(ctx context.Context, fileId string) ([]byte, error)
 	return io.ReadAll(io.LimitReader(response.Body, 64<<20))
 }
 
-// SendFile sends a file, as a photo when it is a picture and as a
-// document otherwise, with a caption.
+// photoBytes is the largest picture Telegram takes as a photo; a larger
+// one goes as a document.
+const photoBytes = 10 << 20
+
+// SendFile sends a file, as a photo when it is a picture, a video or a
+// sound as such, and as a document otherwise, with a caption.
 func (self *Client) SendFile(ctx context.Context, chatId int64, name, contentType string, content []byte, caption string) error {
 	method, field := "sendDocument", "document"
-	if strings.HasPrefix(contentType, "image/") && !strings.Contains(contentType, "svg") {
+	switch {
+	case strings.HasPrefix(contentType, "image/") && !strings.Contains(contentType, "svg") && len(content) <= photoBytes:
 		method, field = "sendPhoto", "photo"
+	case strings.HasPrefix(contentType, "video/"):
+		method, field = "sendVideo", "video"
+	case strings.HasPrefix(contentType, "audio/"):
+		method, field = "sendAudio", "audio"
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

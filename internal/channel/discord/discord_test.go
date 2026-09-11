@@ -210,7 +210,7 @@ func TestRestAndTheBot(t *testing.T) {
 }
 
 func TestIncomingReadsAMention(t *testing.T) {
-	bot := &Bot{me: &User{ID: "7", Username: "bertie"}, client: New("TOKEN", nil, "", "")}
+	bot := &Bot{identity: &User{ID: "7", Username: "bertie"}, client: New("TOKEN", nil, "", "")}
 	var message Message
 	_ = json.Unmarshal([]byte(`{"id":"m1","channel_id":"c1","guild_id":"g1","content":"<@7> what needs me?","author":{"id":"42","username":"alice","global_name":"Alice"},"mentions":[{"id":"7","username":"bertie"}],"attachments":[{"id":"a1","filename":"notes.txt","content_type":"text/plain","url":"http://x/notes.txt"}]}`), &message)
 	incoming := bot.incoming(&message)

@@ -716,10 +716,12 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 	}
 }
 
-// artifactIn is the id of an artifact a tool's answer made, if one.
+// artifactIn is the id of an artifact a tool's answer made, or of a file
+// it handed the person, if one.
 func artifactIn(result string) string {
 	var made struct {
-		ArtifactID string `json:"artifact_id"`
+		ArtifactID   string `json:"artifact_id"`
+		AttachmentID string `json:"attachment_id"`
 	}
 	trimmed := strings.TrimSpace(result)
 	if !strings.HasPrefix(trimmed, "{") {
@@ -728,11 +730,14 @@ func artifactIn(result string) string {
 	if json.Unmarshal([]byte(trimmed), &made) != nil {
 		return ""
 	}
-	return made.ArtifactID
+	if made.ArtifactID != "" {
+		return made.ArtifactID
+	}
+	return made.AttachmentID
 }
 
-// sendArtifacts sends what the agent made during the turn: a picture or
-// a document as a file, and a page as a link. A chat app shows an
+// sendArtifacts sends what the agent made or handed over during the
+// turn: a picture, a video or a document as a file, and a page as a link. A chat app shows an
 // attached page as a file to download and never runs its script, so a
 // chart in it would be blank; the link opens it in the browser, drawn,
 // without a sign-in, for thirty days.

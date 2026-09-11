@@ -13,34 +13,34 @@ import (
 // Bot is a Telegram bot as the channel manager runs it: updates polled
 // and handed over, and a Chat per conversation to answer through.
 type Bot struct {
-	client *Client
-	me     *User
+	client   *Client
+	identity *User
 }
 
 // Open is a channel.Opener for Telegram: the token is tried at once, so
 // a wrong one is an error now rather than a bot that never answers.
 func Open(ctx context.Context, token string) (channel.Bot, error) {
 	client := New(token, nil, "")
-	me, err := client.Me(ctx)
+	identity, err := client.Me(ctx)
 	if err != nil {
 		return nil, err
 	}
 	commands, order := channel.Commands()
 	_ = client.SetCommands(ctx, commands, order)
-	return &Bot{client: client, me: me}, nil
+	return &Bot{client: client, identity: identity}, nil
 }
 
 // OpenAt is Open against another address, for tests.
 func OpenAt(ctx context.Context, token, base string) (channel.Bot, error) {
 	client := New(token, nil, base)
-	me, err := client.Me(ctx)
+	identity, err := client.Me(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &Bot{client: client, me: me}, nil
+	return &Bot{client: client, identity: identity}, nil
 }
 
-func (self *Bot) Name() string { return self.me.Name() }
+func (self *Bot) Name() string { return self.identity.Name() }
 
 // Run polls for updates until the context ends. Telegram refuses a
 // second poller on the same token; that refusal ends the run, and the
@@ -102,10 +102,10 @@ func (self *Bot) incoming(message *Message) *channel.Incoming {
 		incoming.SenderID = strconv.FormatInt(message.From.ID, 10)
 		incoming.SenderName = message.From.Name()
 	}
-	if message.ReplyToMessage != nil && message.ReplyToMessage.From != nil && message.ReplyToMessage.From.ID == self.me.ID {
+	if message.ReplyToMessage != nil && message.ReplyToMessage.From != nil && message.ReplyToMessage.From.ID == self.identity.ID {
 		incoming.ToBot = true
 	}
-	if self.me.Username != "" && strings.Contains(incoming.Text, "@"+self.me.Username) {
+	if self.identity.Username != "" && strings.Contains(incoming.Text, "@"+self.identity.Username) {
 		incoming.ToBot = true
 	}
 	for _, file := range message.Attachments() {

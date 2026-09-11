@@ -84,9 +84,9 @@ func TestClientSpeaksTheBotAPI(t *testing.T) {
 	client := New("TOKEN", server.Client(), server.URL)
 	ctx := context.Background()
 
-	me, err := client.Me(ctx)
-	if err != nil || me.Username != "bertie_bot" || me.Name() != "@bertie_bot" {
-		t.Fatalf("me %+v %v", me, err)
+	identity, err := client.Me(ctx)
+	if err != nil || identity.Username != "bertie_bot" || identity.Name() != "@bertie_bot" {
+		t.Fatalf("identity %+v %v", identity, err)
 	}
 	updates, err := client.Poll(ctx, 0, time.Second)
 	if err != nil || len(updates) != 1 || updates[0].Message.Said() != "hello" || updates[0].Message.Group() {
@@ -124,6 +124,12 @@ func TestClientSpeaksTheBotAPI(t *testing.T) {
 	}
 	if err := client.SendFile(ctx, 42, "notes.txt", "text/plain", []byte("x"), ""); err != nil || fake.called()[len(fake.called())-1] != "sendDocument" {
 		t.Fatalf("a file goes as a document: %v", err)
+	}
+	if err := client.SendFile(ctx, 42, "clip.mp4", "video/mp4", []byte{1}, ""); err != nil || fake.called()[len(fake.called())-1] != "sendVideo" {
+		t.Fatalf("a video goes as a video: %v", err)
+	}
+	if err := client.SendFile(ctx, 42, "big.png", "image/png", make([]byte, photoBytes+1), ""); err != nil || fake.called()[len(fake.called())-1] != "sendDocument" {
+		t.Fatalf("a picture too large for a photo goes as a document: %v", err)
 	}
 	// A 429 is waited out once.
 	fake.mutex.Lock()

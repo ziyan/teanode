@@ -182,7 +182,7 @@ func TestTelegramBotCarriesThePrimaryConversation(t *testing.T) {
 	model := fakeModel([]string{answerRound, deleteRound, declinedRound, pageRound, pageDoneRound})
 	defer model.Close()
 	configuration := config.Default()
-	configuration.Server.Secret = "a-secret-long-enough-to-seal-with-1234567890"
+	configuration.Server.Secret = strings.Repeat("not-a-secret-", 4)
 	configuration.Server.Name = "mail.example.com"
 	configuration.Agent.Enabled = true
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}

@@ -189,6 +189,13 @@ Notable changes to TeaNode. The format follows
   reply to it or `/ask`. The bots run on the server, one instance each;
   the operator can keep chat apps off with `agent.features.chatApps`.
   `teanode agent channel` does the same from a terminal. (#73)
+- The agent hands you files. Ask for the photo on a message, a file
+  from your attached computer, or something already in the conversation,
+  and `share_file` puts it under the tool line: a picture shown, a video
+  or a sound playing, anything else to open; in Telegram or Discord it
+  arrives as a photo, a video or a document. Asked what is in a photo,
+  the agent looks at it. `mail_read` numbers the attachments it lists.
+  (#73)
 - The drawer follows the conversation, not only its own turns: a
   question sent from Telegram, a phone, a terminal or another browser
   appears in the open drawer as it happens, words, tools and answer,

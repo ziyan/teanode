@@ -115,7 +115,15 @@ export function CommandLinePage({ username }: { username: string }) {
 
     if (forExtension) {
       const fragment = new URLSearchParams({ state, token: issued, tokenId, username })
-      window.location.assign(`${redirect}#${fragment.toString()}`)
+      // The address is built again from its checked parts, not taken as
+      // given: an extension's id and a plain path, nothing else.
+      const callback = extensionCallback(redirect)
+      if (!callback) {
+        setError(t('cli.noToken'))
+        setPhase('consent')
+        return
+      }
+      window.location.assign(`${callback}#${fragment.toString()}`)
       setPhase('delivered')
       return
     }
@@ -207,7 +215,18 @@ export function isProfileName(name: string): boolean {
 // such origin, made of its id, and hands what lands there to that extension
 // alone. Nothing else is accepted as a redirect.
 export function isExtensionCallback(address: string): boolean {
-  return /^https:\/\/[a-p]{32}\.chromiumapp\.org\/[A-Za-z0-9._/-]*$/.test(address)
+  return extensionCallback(address) !== ''
+}
+
+// extensionCallback is the callback address built again from what it may
+// contain — the extension's id, a plain path — or '' when it is anything
+// else.
+export function extensionCallback(address: string): string {
+  const match = /^https:\/\/([a-p]{32})\.chromiumapp\.org\/([A-Za-z0-9._/-]*)$/.exec(address)
+  if (!match) return ''
+  const id = match[1].replace(/[^a-p]/g, '')
+  const path = match[2].replace(/[^A-Za-z0-9._/-]/g, '')
+  return `https://${id}.chromiumapp.org/${path}`
 }
 
 // extensionIdOf is the extension's id in its callback address, for the

@@ -203,13 +203,14 @@ func GetThread(ctx context.Context, operations tools.Operations, itemId string) 
 }
 
 const DocumentGetContent = `query ($mailId: String!) { GetMailContent(mailId: $mailId) {
-	text html attachments { filename contentType size } headers { key value } facts
+	text html attachments { index filename contentType size } headers { key value } facts
 } }`
 
 type ContentView struct {
 	Text        string `json:"text"`
 	HTML        string `json:"html"`
 	Attachments []struct {
+		Index       int    `json:"index"`
 		Filename    string `json:"filename"`
 		ContentType string `json:"contentType"`
 		Size        int64  `json:"size"`

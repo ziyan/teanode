@@ -28,6 +28,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/rule"
 	_ "github.com/ziyan/teanode/internal/agent/tools/schedule"
 	_ "github.com/ziyan/teanode/internal/agent/tools/server"
+	_ "github.com/ziyan/teanode/internal/agent/tools/share"
 	_ "github.com/ziyan/teanode/internal/agent/tools/subscription"
 	_ "github.com/ziyan/teanode/internal/agent/tools/toolsearch"
 	_ "github.com/ziyan/teanode/internal/agent/tools/webfetch"

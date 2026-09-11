@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"mime"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +38,7 @@ const (
 	longestTimeout   = 600 * time.Second
 	outputBytes      = 256 << 10 // per stream
 	readBytes        = 4 << 20   // the largest file read at once
+	fetchBytes       = 32 << 20  // the largest file handed over whole
 	readLines        = 2000      // lines given when no limit is asked
 	listEntries      = 500
 	searchEntries    = 200
@@ -368,6 +372,8 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 	switch arguments.Action {
 	case "read":
 		return readFile(path, arguments.Offset, arguments.Limit)
+	case "fetch":
+		return fetchFile(path)
 	case "write":
 		// The directories on the way are made: a file is written where
 		// it is wanted, not where a directory happens to be.
@@ -448,6 +454,31 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 		return grep(path, arguments.Pattern, arguments.Limit)
 	}
 	return nil, fmt.Errorf("%q is not something the filesystem does", arguments.Action)
+}
+
+// fetchFile is the file's bytes for the server to keep: a picture, a
+// video, a document the agent hands to the person. Base64 across the
+// socket, with the type the name or the bytes say.
+func fetchFile(path string) (any, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory; list it", path)
+	}
+	if info.Size() > fetchBytes {
+		return nil, fmt.Errorf("%s is %d bytes, more than %d; it is too large to hand over", path, info.Size(), fetchBytes)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if contentType == "" {
+		contentType = http.DetectContentType(content)
+	}
+	return map[string]any{"path": path, "name": filepath.Base(path), "bytes": len(content), "content_type": contentType, "base64": base64.StdEncoding.EncodeToString(content)}, nil
 }
 
 func readFile(path string, offset, limit int) (any, error) {

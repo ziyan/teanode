@@ -83,9 +83,13 @@ export function App() {
   }, [refresh, framed, framedToken])
 
   // The panel around the frame is told who this drawer is signed in as,
-  // so that it can tell a frame somebody else navigated.
+  // so that it can tell a frame somebody else navigated. Told to the
+  // page framing it and no other: the browser names that page's origin.
   useEffect(() => {
-    if (framed && session?.authenticated) window.parent.postMessage({ teanode: 'signedIn', username: session.username }, '*')
+    if (!framed || !session?.authenticated) return
+    const parentOrigin = window.location.ancestorOrigins?.[0]
+    if (!parentOrigin || parentOrigin === 'null') return
+    window.parent.postMessage({ teanode: 'signedIn', username: session.username }, parentOrigin)
   }, [framed, session])
 
   if (session === null) {

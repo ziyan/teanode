@@ -432,7 +432,7 @@ above.
 
 ## Concrete Steps
 
-All commands run in the repository root, `/home/ziyan/projects/ziyan/teanode`.
+All commands run in the repository root.
 
     make web                      # builds the dashboard, including the cli page
     go build ./... && go vet ./internal/agent/... ./internal/computer/... ./internal/cmd/...

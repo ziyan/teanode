@@ -48,7 +48,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
         mail && framedDrawer ? (
           // Framed into another site, the drawer sends the person to the
           // dashboard itself: nothing of it but the drawer is drawn here.
-          <a key={key} href={`${window.location.origin}/mailbox/starred/${mail[1]}`} target="_blank" rel="noopener noreferrer">
+          <a key={key} href={`${window.location.origin}/mailbox/starred/${encodeURIComponent(mail[1])}`} target="_blank" rel="noopener noreferrer">
             {match[5]}
           </a>
         ) : mail ? (

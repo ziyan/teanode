@@ -89,6 +89,15 @@ readonly ALLOWED_HOSTS=(
   # published on purpose, which is the opposite of a private reference.
   .teanode.com
 
+  # Where Chrome sends an extension's sign-in back to: a fixed name of the
+  # browser's, under which every extension has an address.
+  .chromiumapp.org
+
+  # The chat apps a person's own bot talks to, at their published API
+  # addresses.
+  .telegram.org
+  .discord.com
+
   # The model services and the search service the agent can be pointed at,
   # as the defaults a provider of that kind is given when no base URL is
   # set. Public API endpoints, named in their own documentation.

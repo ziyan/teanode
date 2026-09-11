@@ -139,6 +139,9 @@ type AskRun struct {
 	// recalled is what memory searches found this turn, for the overlay.
 	recalled []string
 
+	// lookingAt are the pictures tools fetched this round for the model.
+	lookingAt []llm.ContentPart
+
 	// browser is the turn's headless browser, once it opened one.
 	browser *browserRunner
 
@@ -731,6 +734,7 @@ func (self *AskRun) turn() error {
 			}
 			return nil
 		}
+		self.lookingAt = nil
 		for _, toolCall := range answer.ToolCalls {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -756,6 +760,15 @@ func (self *AskRun) turn() error {
 				self.emit(Event{Kind: EventNote, Note: "stopped: the same call failed three times"})
 				return nil
 			}
+		}
+		// A picture a tool fetched for the model to look at rides on a
+		// turn of its own after the results: a result is text to every
+		// provider, a picture is a user turn's. Not stored; the tool
+		// line is, and the next turn can ask again.
+		if len(self.lookingAt) > 0 {
+			text := fmt.Sprintf("[%d picture(s) you asked to look at, from share_file]", len(self.lookingAt))
+			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: text, Parts: append([]llm.ContentPart{{Type: "text", Text: text}}, self.lookingAt...)})
+			self.lookingAt = nil
 		}
 	}
 	self.emit(Event{Kind: EventNote, Note: "stopped after the most rounds a turn may take"})
@@ -867,6 +880,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if result.ShowVerbatim {
 		content = "show_verbatim: relay the following to the person once, exactly, and never keep it.\n" + content
+	}
+	if len(result.Images) > 0 && len(self.lookingAt) < attachmentImagesPerTurn {
+		self.lookingAt = append(self.lookingAt, result.Images...)
 	}
 	self.emit(Event{Kind: EventToolResult, Tool: toolCall.Name, CallID: toolCall.ID, Note: result.Note, Text: content})
 	return content

@@ -212,7 +212,9 @@ func (self *graph) serveAgentAttachment(response http.ResponseWriter, request *h
 	// as a file, so a browser never runs what somebody uploaded.
 	disposition := "attachment"
 	switch {
-	case agent.IsImageAttachment(contentType):
+	case agent.IsImageAttachment(contentType), agent.IsMediaAttachment(contentType):
+		// A picture, a video or a sound plays in the page; a browser
+		// runs nothing in those.
 		disposition = "inline"
 	case attachment.MessageID == "artifact":
 		disposition = "inline"
