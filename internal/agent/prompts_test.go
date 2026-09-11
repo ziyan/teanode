@@ -109,6 +109,14 @@ func TestInterpretTriageRefusesWhatIsNotInTheVocabulary(t *testing.T) {
 	if insight.Category != "club" || insight.Priority != "normal" || len(insight.Summary) != 300 || len(insight.ActionItems) != 1 {
 		t.Fatalf("insight %+v", insight)
 	}
+	// A notification never needs a reply, whatever the model said: a
+	// plan-expiry notice on a real mailbox was marked as waiting for one.
+	if insight, _ := InterpretTriage(&TriageAnswer{Category: "notification", Priority: "high", NeedsReply: true}, agent); insight.NeedsReply {
+		t.Fatal("a notification was left needing a reply")
+	}
+	if insight, _ := InterpretTriage(&TriageAnswer{Category: "personal", Priority: "normal", NeedsReply: true}, agent); !insight.NeedsReply {
+		t.Fatal("a personal message that needs a reply lost it")
+	}
 	insight, _ = InterpretTriage(&TriageAnswer{Category: "spam", Priority: "HIGH"}, agent)
 	if insight.Category != "other" || insight.Priority != "high" {
 		t.Fatalf("insight %+v", insight)

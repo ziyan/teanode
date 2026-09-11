@@ -16,7 +16,9 @@ Categories, pick exactly one:
 
 Priority: high means the person should see it today and act — a real person waiting on them, a deadline, money, something broken; low means it can wait a week or forever — newsletters, promotions, notifications nobody acts on; everything else is normal.
 
-needs_reply is true when a real person expects an answer from Alice Example and wrote to them directly, not only in copy. A newsletter, a notification, a receipt, an automatic message, a mailing list never needs a reply.
+needs_reply is true when a real person expects an answer from Alice Example and wrote to them directly, not only in copy. A newsletter, a notification, a receipt, an automatic message, a mailing list, a community site's prompt never needs a reply, even when the text says "reply to this message".
+
+An automatic message from a service — a build that failed, a sign-in, an alert, a plan that ends — is a notification even when it concerns the person's work. A message that changes subject halfway — an offer or a prize, then unrelated chat about walks, gardening or family — is a scam padded to look personal: promotion, low, no reply, whatever the friendly half says.
 
 research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message, judged against these standing notes:
 - Look up parcel numbers with the tracker.

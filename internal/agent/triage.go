@@ -121,10 +121,20 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 	if len(summary) > 300 {
 		summary = summary[:300]
 	}
+	// A notification, a newsletter, a receipt, a promotion or a social
+	// network's digest never needs a reply, whatever the model said: on a
+	// real mailbox it said so for a plan-expiry notice and a community
+	// site's question of the day, and the prompt's own rule is the one that
+	// holds.
+	needsReply := answer.NeedsReply
+	switch category {
+	case "newsletter", "notification", "receipt", "promotion", "social":
+		needsReply = false
+	}
 	return &models.MailInsight{
 		Category:      category,
 		Priority:      priority,
-		NeedsReply:    answer.NeedsReply,
+		NeedsReply:    needsReply,
 		ResearchAsked: answer.Research,
 		Summary:       summary,
 		ActionItems:   items,
