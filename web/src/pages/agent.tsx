@@ -1266,7 +1266,7 @@ function RepliesCard() {
     }
   }
   return (
-    <SettingsSection card title={t('agent.replies')} description={t('agent.repliesHint')}>
+    <SettingsSection card title={t('agent.answered')} description={t('agent.repliesHint')}>
       {error ? <ErrorMessage error={error} /> : null}
       {loading && !data ? <Loading /> : null}
       {data && replies.length === 0 ? <SettingsEmpty>{t('agent.noReplies')}</SettingsEmpty> : null}

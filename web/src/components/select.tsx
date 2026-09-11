@@ -365,7 +365,9 @@ export function Combobox({
         autoFocus={autoFocus}
         autoComplete="off"
         onFocus={() => {
-          setOpen(true)
+          // Suggestions once there is something to match; a list of every
+          // contact dropping over the form the moment it opens is noise.
+          setOpen(value.trim() !== '')
           onFocus?.()
         }}
         onChange={(event) => {

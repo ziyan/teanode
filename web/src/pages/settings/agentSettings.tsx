@@ -889,7 +889,7 @@ function SearchForm({ settings, onSaved }: Props) {
       <h3>{t('agentSettings.search')}</h3>
       <p className="muted">{t('agentSettings.searchDescription')}</p>
       <div className="row">
-        <label className="shrink">
+        <label>
           <span>{t('agentSettings.searchKind')}</span>
           <Select
             block

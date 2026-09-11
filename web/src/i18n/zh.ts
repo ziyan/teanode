@@ -994,6 +994,7 @@ export const zh: Catalog = {
   'agentDrawer.uploading': '上传中…',
   'agentDrawer.dropHere': '将文件拖放到这里',
   'agentDrawer.filesOnly': '（文件）',
+  'agent.answered': '代你回复的',
   'agent.repliesHint': '代理替你回复了什么、即将回复什么、没有回复什么以及原因。',
   'agent.noReplies': '还没有。在邮箱里允许代理替你回复后，会显示在这里。',
   'agent.replyWhen': '时间',

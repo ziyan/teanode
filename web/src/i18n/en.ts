@@ -1033,6 +1033,7 @@ export const en = {
   'agentDrawer.uploading': 'Uploading…',
   'agentDrawer.dropHere': 'Drop files here',
   'agentDrawer.filesOnly': '(files)',
+  'agent.answered': 'Answered for you',
   'agent.repliesHint': 'What your agent answered on your behalf, what it is about to, and what it left alone and why.',
   'agent.noReplies': 'Nothing yet. Replies appear here once a mailbox lets the agent answer for you.',
   'agent.replyWhen': 'When',

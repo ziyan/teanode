@@ -6538,3 +6538,18 @@ a.button.agent-artifact-action {
 .agent-source > .settings-section-head h4 {
   margin: 0 0 2px;
 }
+
+/* A tool line is a row of the transcript, not a control to aim a thumb at:
+   the phone's taller buttons would space the lines out like paragraphs. */
+@media (max-width: 600px) {
+  .agent-tool-toggle {
+    min-height: 28px;
+  }
+}
+
+/* A button with a small mark before its word. */
+button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -982,8 +982,8 @@ export function MailboxComposer({
             event.target.value = ''
           }}
         />
-        <button type="button" className="link" disabled={!from} onClick={() => fileInput.current?.click()}>
-          <PaperclipIcon /> {t('compose.mailbox.attach')}
+        <button type="button" className="with-icon" disabled={!from} onClick={() => fileInput.current?.click()}>
+          <PaperclipIcon size={16} /> {t('compose.mailbox.attach')}
         </button>
       </div>
 

@@ -1029,6 +1029,7 @@ export const ja: Catalog = {
   'agentDrawer.uploading': 'アップロード中…',
   'agentDrawer.dropHere': 'ここにファイルをドロップ',
   'agentDrawer.filesOnly': '（ファイル）',
+  'agent.answered': '代わりに返答したもの',
   'agent.repliesHint':
     'エージェントがあなたの代わりに返信したもの、これから返信するもの、返信しなかったものとその理由。',
   'agent.noReplies': 'まだありません。メールボックスでエージェントの返信を許可すると、ここに表示されます。',
