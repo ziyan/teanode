@@ -6377,9 +6377,6 @@ p.notice.domain-logo-note {
   background: #ffffff;
 }
 
-.agent-artifact.large .agent-artifact-frame {
-  height: 70vh;
-}
 
 .agent-artifact-body {
   padding: 10px 12px;
@@ -6387,9 +6384,6 @@ p.notice.domain-logo-note {
   overflow: auto;
 }
 
-.agent-artifact.large .agent-artifact-body {
-  max-height: 70vh;
-}
 
 .agent-code-language {
   position: absolute;

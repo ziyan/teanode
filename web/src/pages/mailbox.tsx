@@ -16,6 +16,7 @@ import {
   AgentReply,
   askAgentAbout,
   MAIL_CHANGED_EVENT,
+  announceMailChanged,
 } from '../api'
 import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
 import {
@@ -27,6 +28,7 @@ import {
   ListIcon,
   MailIcon,
   MailOpenIcon,
+  PriorityIcon,
   MoveIcon,
   ReplyAllIcon,
   ReplyIcon,
@@ -35,7 +37,7 @@ import {
 } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
-import { ConfirmDialog } from '../components/dialog'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
 import { EnvelopeTrail } from '../components/envelopeTrail'
 import { Shortcut, useShortcuts } from '../shortcuts'
@@ -49,6 +51,7 @@ import { hasAnywhere, useSession } from '../session'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
 import { Select } from '../components/select'
+import { useAgent } from './agent'
 
 // The mailbox: one folder's messages beside the one being read.
 //
@@ -122,6 +125,11 @@ const CONTENT = `
       headers { key value }
       attachments { index filename contentType size inline }
     }
+  }`
+
+const SORT_ITEMS = `
+  mutation ($itemIds: [String!]!, $category: String, $priority: String, $needsReply: Boolean) {
+    SortMailboxItems(itemIds: $itemIds, category: $category, priority: $priority, needsReply: $needsReply)
   }`
 
 export const SET_FLAGS = `
@@ -455,6 +463,8 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [emptying, setEmptying] = useState(false)
   const [busy, setBusy] = useState(false)
+  // The messages a sort dialog is open for, when one is.
+  const [sorting, setSorting] = useState<string[] | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const variables = useMemo(
@@ -873,6 +883,10 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   // conversations existed.
   const chosen = threads.filter((thread) => selected.has(thread.threadId))
   const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
+  // Sorting by hand is offered where the agent sorts, so the words mean
+  // the same thing to both.
+  const owning = mailboxes.views.find((candidate) => candidate.mailbox.id === folder.mailboxId)
+  const sortable = !!owning?.mailbox.agent?.granted && !!owning.mailbox.agent.triage?.enabled
   const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0, starredUnread: 0, priorityUnread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
   const inJunk = folder.kind === 'junk'
@@ -1066,6 +1080,14 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                   onClick={() => setFlags(chosenIds, { flagged: false })}
                 />
               )}
+              {sortable && (
+                <IconAction
+                  label={t('mailbox.sortAs')}
+                  icon={<PriorityIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => setSorting(chosenIds)}
+                />
+              )}
               {archive && folder.id !== archive.id && (
                 <IconAction
                   label={t('mailbox.archive')}
@@ -1187,6 +1209,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onMove={(itemIds, target) => moveTo(itemIds, target)}
             onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
+            onSort={sortable ? (itemIds) => setSorting(itemIds) : undefined}
             onDiscarded={(discarded) => {
               remove([discarded])
               openNext([discarded])
@@ -1202,6 +1225,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
         )}
       </div>
 
+      {sorting ? <SortDialog itemIds={sorting} onClose={() => setSorting(null)} /> : null}
       {emptying && (
         <ConfirmDialog
           title={t('mailbox.emptyTrash')}
@@ -1328,6 +1352,88 @@ function Row({
 
 // The fixed categories the agent sorts into; a person's own are shown by
 // their name, since nobody but them knows what to call them.
+// SortDialog sorts messages by hand: the category, the priority, whether
+// a reply is needed — each left as it is unless changed. The agent is told
+// what the person chose, as a correction it learns from.
+function SortDialog({ itemIds, onClose }: { itemIds: string[]; onClose: () => void }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const agent = useAgent()
+  const [category, setCategory] = useState('')
+  const [priority, setPriority] = useState('')
+  const [needsReply, setNeedsReply] = useState('')
+  const [busy, setBusy] = useState(false)
+  const categories = agent.data?.ReadAgent.categories ?? Object.keys(CATEGORY_LABELS)
+  return (
+    <FormDialog
+      title={t('mailbox.sortTitle', { count: String(itemIds.length) })}
+      submitLabel={t('mailbox.sortAs')}
+      busy={busy}
+      canSubmit={category !== '' || priority !== '' || needsReply !== ''}
+      onClose={onClose}
+      onSubmit={() => {
+        setBusy(true)
+        graphql(SORT_ITEMS, {
+          itemIds,
+          category: category || undefined,
+          priority: priority || undefined,
+          needsReply: needsReply === '' ? undefined : needsReply === 'yes',
+        })
+          .then(() => {
+            toast.done(t('mailbox.sorted'))
+            announceMailChanged()
+            onClose()
+          })
+          .catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
+          .finally(() => setBusy(false))
+      }}
+    >
+      <label>
+        <span>{t('mailbox.sortCategory')}</span>
+        <Select
+          block
+          value={category}
+          label={t('mailbox.sortCategory')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            ...categories.map((name) => ({ value: name, label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name })),
+          ]}
+          onChange={setCategory}
+        />
+      </label>
+      <label>
+        <span>{t('mailbox.sortPriority')}</span>
+        <Select
+          block
+          value={priority}
+          label={t('mailbox.sortPriority')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            { value: 'high', label: t('mailbox.priority.high') },
+            { value: 'normal', label: t('mailbox.priority.normal') },
+            { value: 'low', label: t('mailbox.priority.low') },
+          ]}
+          onChange={setPriority}
+        />
+      </label>
+      <label>
+        <span>{t('mailbox.sortNeedsReply')}</span>
+        <Select
+          block
+          value={needsReply}
+          label={t('mailbox.sortNeedsReply')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            { value: 'yes', label: t('common.yes') },
+            { value: 'no', label: t('common.no') },
+          ]}
+          onChange={setNeedsReply}
+        />
+      </label>
+    </FormDialog>
+  )
+}
+
 const CATEGORY_LABELS: Record<string, Key> = {
   personal: 'mailbox.category.personal',
   work: 'mailbox.category.work',
@@ -1478,6 +1584,7 @@ function Reader({
   onMove,
   onJunk,
   onDelete,
+  onSort,
   onDiscarded,
   onBack,
 }: {
@@ -1491,6 +1598,7 @@ function Reader({
   onMove: (itemIds: string[], folderId: string) => void
   onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
+  onSort?: (itemIds: string[]) => void
   // A draft thrown away from the composer below. The list is the folder's,
   // not this pane's, so taking the row out of it belongs to the folder.
   onDiscarded: (itemId: string) => void
@@ -1778,6 +1886,14 @@ function Reader({
             onFlag(acting, next)
           }}
         />
+        {onSort && (
+          <IconAction
+            label={t('mailbox.sortAs')}
+            icon={<PriorityIcon size={16} />}
+            disabled={busy}
+            onClick={() => onSort(acting)}
+          />
+        )}
         {archive && folder.id !== archive.id && (
           <IconAction
             label={t('mailbox.archive')}

@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -65,6 +66,12 @@ type MailboxMutation interface {
 
 	// Set flags on items: read, flagged
 	SetMailboxItemFlags(ctx context.Context, arguments SetMailboxItemFlagsArguments) (int, error)
+
+	// Sort messages by hand: the category, the priority, whether a reply is
+	// needed, for every message named, with the fields left out kept as
+	// they are. What the agent had decided is recorded as a correction it
+	// learns from. Needs mail:write.
+	SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error)
 
 	// Move items to another folder of the same mailbox
 	MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error)
@@ -897,6 +904,82 @@ func (self *graph) SetMailboxItemFlags(ctx context.Context, arguments SetMailbox
 		return 0, translateError(err)
 	}
 	return int(changed), nil
+}
+
+type SortMailboxItemsArguments struct {
+	ItemIDs    []string `json:"itemIds"`
+	Category   *string  `json:"category"`
+	Priority   *string  `json:"priority"`
+	NeedsReply *bool    `json:"needsReply"`
+}
+
+func (self *graph) SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error) {
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs)
+	if err != nil {
+		return 0, err
+	}
+	var category, priority string
+	if arguments.Category != nil {
+		category = strings.ToLower(strings.TrimSpace(*arguments.Category))
+	}
+	if arguments.Priority != nil {
+		priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+		switch priority {
+		case "high", "normal", "low":
+		default:
+			return 0, fmt.Errorf("%w: priority is high, normal or low", api.ErrInvalidArguments)
+		}
+	}
+	if category == "" && priority == "" && arguments.NeedsReply == nil {
+		return 0, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	owner, err := tx.GetAgentByUser(mailbox.UserID)
+	if err != nil {
+		return 0, err
+	}
+	mailIds := make([]string, 0, len(items))
+	for _, item := range items {
+		mailIds = append(mailIds, item.MailID)
+	}
+	existing, err := tx.GetMailInsights(mailbox.ID, mailIds)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, item := range items {
+		before := existing[item.MailID]
+		after := &models.MailInsight{MailID: item.MailID, MailboxID: mailbox.ID, Category: "other", Priority: "normal"}
+		if before != nil {
+			copied := *before
+			after = &copied
+		} else if owner != nil {
+			after.AgentID = owner.ID
+		}
+		if category != "" {
+			after.Category = category
+		}
+		if priority != "" {
+			after.Priority = priority
+		}
+		if arguments.NeedsReply != nil {
+			after.NeedsReply = *arguments.NeedsReply
+		}
+		if err := tx.PutMailInsight(after); err != nil {
+			return changed, translateError(err)
+		}
+		if owner != nil {
+			mail, err := tx.GetMail(item.MailID, nil)
+			if err != nil {
+				return changed, err
+			}
+			if err := agent.RecordSorted(tx, owner.ID, mailbox.ID, mail, before, after); err != nil {
+				return changed, err
+			}
+		}
+		changed++
+	}
+	return changed, nil
 }
 
 type ShowMailboxItemImagesArguments struct {

@@ -16,7 +16,7 @@ import {
 import { uploadFiles } from '../upload'
 import { formatCount, formatTime } from './common'
 import { Markdown } from './markdown'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon } from './icons'
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
@@ -424,7 +424,6 @@ function ReferenceChips({ references, onRemove }: { references: AgentReference[]
 // document as text. It opens larger, and in a tab of its own.
 function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation()
-  const [large, setLarge] = useState(false)
   const [markdown, setMarkdown] = useState<string | null>(null)
   useEffect(() => {
     if (artifact.kind !== 'markdown') return
@@ -442,15 +441,19 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
     }
   }, [artifact.kind, artifact.url])
   return (
-    <div className={['agent-artifact', large ? 'large' : ''].filter(Boolean).join(' ')}>
+    <div className="agent-artifact">
       <div className="agent-artifact-head">
         <SparkIcon size={12} />
         <span className="agent-artifact-title">{artifact.title}</span>
-        <button type="button" className="agent-artifact-action" onClick={() => setLarge((previous) => !previous)}>
-          {large ? t('agentDrawer.smaller') : t('agentDrawer.larger')}
-        </button>
-        <a className="button agent-artifact-action" href={artifact.url} target="_blank" rel="noreferrer">
-          {t('agentDrawer.openArtifact')}
+        <a
+          className="icon-button agent-artifact-open"
+          href={artifact.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('agentDrawer.openArtifact')}
+          title={t('agentDrawer.openArtifact')}
+        >
+          <ExternalIcon size={14} />
         </a>
       </div>
       {artifact.kind === 'markdown' ? (

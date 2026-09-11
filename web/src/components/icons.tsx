@@ -567,6 +567,17 @@ export function QuoteIcon(props: IconProps) {
   )
 }
 
+// ExternalIcon marks a link that opens in a tab of its own.
+export function ExternalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 10 14" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </Icon>
+  )
+}
+
 export function LinkIcon(props: IconProps) {
   return (
     <Icon {...props}>

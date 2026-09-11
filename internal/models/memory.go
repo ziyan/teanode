@@ -105,6 +105,7 @@ type AgentFeedbackKind string
 const (
 	FeedbackFiled         AgentFeedbackKind = "filed"
 	FeedbackReplyDeclined AgentFeedbackKind = "reply_declined"
+	FeedbackSorted        AgentFeedbackKind = "sorted"
 )
 
 // AgentFeedback is a correction recorded from the person's own action,

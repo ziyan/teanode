@@ -164,7 +164,11 @@ Notable changes to TeaNode. The format follows
   mailboxes rather than showing their ids. Escape opens and closes the
   drawer from anywhere; what is typed in its box survives a refresh. The
   tools a person wants asked about first are picked from the same list
-  by family, not typed. (#73)
+  by family, not typed. What the agent decided about a message — its
+  category, its priority, whether it needs a reply — can be set by hand,
+  for the messages chosen in the list or for the conversation open in the
+  reader, and the agent is told, as a correction it learns from. An
+  artifact opens in a tab of its own from one mark. (#73)
 
 ### Changed
 
