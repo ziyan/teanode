@@ -87,3 +87,15 @@ func RunFrom(ctx context.Context) (Run, error) {
 	}
 	return run, nil
 }
+
+// MustRun is the run a tool was called in, for a tool the loop calls —
+// the loop always puts one in. A test that calls a tool directly puts one
+// in with WithRun; a call without one is a programming error and panics
+// with RunFrom's message.
+func MustRun(ctx context.Context) Run {
+	run, err := RunFrom(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return run
+}

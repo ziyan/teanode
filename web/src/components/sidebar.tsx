@@ -302,7 +302,7 @@ export function Sidebar({
                     <NavLink
                       key={key}
                       to={`/mailbox/${folder.id}`}
-                      className={folder.unread > 0 ? 'unread' : undefined}
+                      className={folder.unread > 0 && folder.kind !== 'archive' ? 'unread' : undefined}
                       data-depth={Math.min(depth, 3)}
                       title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
                     >
@@ -310,7 +310,9 @@ export function Sidebar({
                         <FolderKindIcon kind={folder.kind} />
                       </span>
                       <span className="sidebar-label">{label}</span>
-                      {folder.unread > 0 && (
+                      {/* The Archive is where read-later goes: a count there is
+                          a nag, not news. */}
+                      {folder.unread > 0 && folder.kind !== 'archive' && (
                         <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
                           {folder.unread}
                         </span>

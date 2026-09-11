@@ -161,6 +161,10 @@ type AgentUsageNote struct {
 	CompletionTokens int    `json:"completionTokens"`
 	CacheReadTokens  int    `json:"cacheReadTokens"`
 	CacheWriteTokens int    `json:"cacheWriteTokens"`
+
+	// Cost is what the call cost by the provider's pricing, in the
+	// operator's currency; zero when there is no pricing.
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // AgentMessageNote is the role of a message that is neither side of the

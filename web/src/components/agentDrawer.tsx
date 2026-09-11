@@ -16,7 +16,7 @@ import {
 import { uploadFiles } from '../upload'
 import { formatCount, formatTime } from './common'
 import { Markdown } from './markdown'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, PinIcon, PlusIcon, SparkIcon, TrashIcon } from './icons'
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
@@ -70,6 +70,7 @@ interface Attachment {
 interface Usage {
   promptTokens: number
   completionTokens: number
+  cost?: number
 }
 
 interface StoredMessage {
@@ -147,7 +148,7 @@ const CONVERSATION = `
       conversation { id kind title summary lastAt archivedAt }
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
-        usage { promptTokens completionTokens }
+        usage { promptTokens completionTokens cost }
         attachments { id name contentType size }
         references { itemId threadId subject from }
       }
@@ -200,6 +201,12 @@ const MAKE_MAIN = `
   mutation ($conversationId: String) {
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
   }`
+
+// formatCost is money as a turn costs it: fractions of a cent, so four
+// places where there is nothing before the point, two otherwise.
+function formatCost(cost: number): string {
+  return '$' + (cost >= 1 ? cost.toFixed(2) : cost.toFixed(4).replace(/0+$/, '').replace(/\.$/, '.0'))
+}
 
 // The tools after which what the mailbox shows may have changed.
 const MAIL_TOOLS = new Set([
@@ -1045,6 +1052,7 @@ export function AgentDrawer() {
         in: formatCount(line.usage.promptTokens),
         out: formatCount(line.usage.completionTokens),
       })}
+      {line.usage.cost ? ` · ${formatCost(line.usage.cost)}` : ''}
     </div>
   )}
           </div>
@@ -1206,10 +1214,6 @@ export function AgentDrawer() {
                       <PlusIcon size={14} />
                       <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
                     </button>
-                    <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void makeMain('')}>
-                      <PinIcon size={14} />
-                      <span className="agent-drawer-list-title">{t('agentDrawer.freshMain')}</span>
-                    </button>
                   </>
                 )}
                 {found !== null && found.length === 0 && (
@@ -1262,7 +1266,7 @@ export function AgentDrawer() {
                         <span className="agent-drawer-list-name">
                           {conversation.kind === 'main' ? (
                             <>
-                              <PinIcon size={12} /> {t('agentDrawer.main')}
+                              <StarIcon size={12} /> {t('agentDrawer.main')}
                             </>
                           ) : (
                             conversation.title || t('agentDrawer.untitled')
@@ -1282,7 +1286,7 @@ export function AgentDrawer() {
                           title={t('agentDrawer.makeMain')}
                           onClick={() => void makeMain(conversation.id)}
                         >
-                          <PinIcon size={14} />
+                          <StarIcon size={14} />
                         </button>
                         <button
                           type="button"

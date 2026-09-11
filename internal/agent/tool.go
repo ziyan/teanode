@@ -39,12 +39,11 @@ const (
 )
 
 var (
-	NewCatalog           = tools.NewCatalog
-	NeedsConfirmation    = tools.NeedsConfirmation
-	Split                = tools.Split
-	Search               = tools.Search
-	listed               = tools.Listed
-	allowedByPermissions = tools.AllowedByPermissions
+	NewCatalog        = tools.NewCatalog
+	NeedsConfirmation = tools.NeedsConfirmation
+	Split             = tools.Split
+	Search            = tools.Search
+	listed            = tools.Listed
 
 	object          = tools.Object
 	stringProperty  = tools.StringProperty
@@ -53,11 +52,9 @@ var (
 	booleanProperty = tools.BooleanProperty
 	arrayProperty   = tools.ArrayProperty
 	jsonResult      = tools.JSONResult
-	textResult      = tools.TextResult
 
 	// Location and the time helpers moved to the kit with the datetime tool.
-	Location  = tools.Location
-	parseTime = tools.ParseTime
+	Location = tools.Location
 
 	// The text and cron helpers moved to the kit too.
 	HTMLToText      = tools.HTMLToText
@@ -84,6 +81,7 @@ func runOf(ctx context.Context) *AskRun {
 
 // Helpers that moved to the kit with the mailbox family.
 var (
-	threadSubject = tools.ThreadSubject
-	replySubject  = tools.ReplySubject
+	threadSubject   = tools.ThreadSubject
+	replySubject    = tools.ReplySubject
+	permissionWords = tools.PermissionWords
 )

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -614,7 +613,8 @@ func (self *AskRun) turn() error {
 				Content:        answer.Content,
 				ToolCalls:      toolCallsOf(answer.ToolCalls),
 				Usage: &models.AgentUsageNote{Model: modelName, Kind: usageKind, PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
-					CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens},
+					CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
+					Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens)},
 			})
 			return err
 		}); err != nil {
@@ -1042,31 +1042,6 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
 	return strings.Join(lines, "\n")
-}
-
-// permissionWords says what the person may do, in words.
-func permissionWords(permissions *models.EffectivePermissions) string {
-	if permissions == nil {
-		return "nothing beyond their own mail"
-	}
-	var words []string
-	for _, permission := range models.Permissions() {
-		if !permissions.HasAnywhere(permission) {
-			continue
-		}
-		domains, all := permissions.DomainsWith(permission)
-		switch {
-		case all || len(domains) == 0:
-			words = append(words, string(permission))
-		default:
-			words = append(words, fmt.Sprintf("%s (over %d domain(s))", permission, len(domains)))
-		}
-	}
-	if len(words) == 0 {
-		return "nothing beyond their own mail"
-	}
-	sort.Strings(words)
-	return strings.Join(words, ", ")
 }
 
 // sources lists the mailboxes, granted and not, as the situation says them.

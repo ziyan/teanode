@@ -5,12 +5,15 @@
 package all
 
 import (
+	_ "github.com/ziyan/teanode/internal/agent/tools/account"
 	_ "github.com/ziyan/teanode/internal/agent/tools/artifact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/askuser"
 	_ "github.com/ziyan/teanode/internal/agent/tools/contact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/datetime"
+	_ "github.com/ziyan/teanode/internal/agent/tools/domain"
 	_ "github.com/ziyan/teanode/internal/agent/tools/folder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailact"
+	_ "github.com/ziyan/teanode/internal/agent/tools/mailaudit"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailboxsettings"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailcomposehelp"
 	_ "github.com/ziyan/teanode/internal/agent/tools/maildraft"
@@ -18,9 +21,11 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailsearch"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailsend"
 	_ "github.com/ziyan/teanode/internal/agent/tools/memory"
+	_ "github.com/ziyan/teanode/internal/agent/tools/people"
 	_ "github.com/ziyan/teanode/internal/agent/tools/replyqueue"
 	_ "github.com/ziyan/teanode/internal/agent/tools/rule"
 	_ "github.com/ziyan/teanode/internal/agent/tools/schedule"
+	_ "github.com/ziyan/teanode/internal/agent/tools/server"
 	_ "github.com/ziyan/teanode/internal/agent/tools/subscription"
 	_ "github.com/ziyan/teanode/internal/agent/tools/toolsearch"
 	_ "github.com/ziyan/teanode/internal/agent/tools/webfetch"

@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 )
 
 // The agent's tools send documents of this schema, written by hand in
-// internal/agent, and a tool whose document drifted would fail on every
+// internal/agent and its tool packages, and a tool whose document drifted would fail on every
 // call and be blamed on the model. This reads every document out of the
 // agent's source — a string literal that begins with query or mutation,
 // or a concatenation of them — and validates it against the schema. A
@@ -53,7 +54,18 @@ func TestTheAgentDocumentsMatchTheSchema(t *testing.T) {
 func readAgentDocuments(t *testing.T) []clientOperation {
 	t.Helper()
 	fileSet := token.NewFileSet()
-	paths, err := filepath.Glob(filepath.Join(agentDirectory, "*.go"))
+	// The agent package and every tool package under it: a tool is a
+	// directory of its own, and its documents are read where they live.
+	var paths []string
+	err := filepath.WalkDir(agentDirectory, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			paths = append(paths, path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("cannot list the agent package: %s", err)
 	}

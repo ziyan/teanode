@@ -54,9 +54,17 @@ golden prompt tests and the catalog schema test hold in place.
   `tools.Run` grew `DraftReply`, `DiscardDraft` and `MeaningSearch`; the
   subject and search-mode helpers joined the kit. `tools_mailbox.go` is
   gone.
-- [ ] Milestone 4 — the operator families moved: domain, alias, credential,
-  queue, mailaudit, report, user, group, role, auditlog, server, settings,
-  account, token, session, apppassword, accessexplain.
+- [x] (2026-09-11 17:30Z) Milestone 4 — the operator families moved, one
+  package per family since every tool in a family shares its helpers:
+  `tools/domain` (domains, addresses, credentials, the queue),
+  `tools/mailaudit` (the audit and the reports), `tools/people` (accounts,
+  groups, roles, the audit log), `tools/server` (status, settings,
+  upgrade), `tools/account` (profile, tokens, sessions, app passwords,
+  `access_explain`). `tools/operator` holds what they share — a document
+  run as the person, the domains as listed — with no tool of its own; the
+  permission words joined the kit; `tools.MustRun` is the run for a tool
+  the loop calls. The schema test walks every tool package.
+  `tools_operator.go` is gone.
 - [ ] Milestone 5 — browser and connected servers moved: `tools/browser`
   (the tool and the attached-tab relay's tool face), `tools/mcp` (the
   adapter that makes tools of a connected server's tools).

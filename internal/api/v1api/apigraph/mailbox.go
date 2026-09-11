@@ -206,11 +206,12 @@ func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox)
 	}
 	unseen, flagged := true, true
 	tx := self.transaction(ctx)
-	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged}); err != nil {
+	aside := []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged, ExcludeKinds: aside}); err != nil {
 		return nil, err
 	}
 	if mailbox.Agent != nil && mailbox.Agent.Granted && mailbox.Agent.Triage != nil && mailbox.Agent.Triage.Enabled {
-		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high"}); err != nil {
+		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high", ExcludeKinds: aside}); err != nil {
 			return nil, err
 		}
 	}
@@ -341,6 +342,11 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	}
 	if arguments.Priority != nil {
 		options.Priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+	}
+	// A view over the whole mailbox — Starred, Priority — leaves out what
+	// was thrown away or junked; those are reached in their own folders.
+	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
+		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
 	}
 	if arguments.NeedsReply != nil {
 		options.NeedsReply = arguments.NeedsReply
@@ -549,6 +555,11 @@ func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailbox
 	}
 	if arguments.Priority != nil {
 		options.Priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+	}
+	// A view over the whole mailbox — Starred, Priority — leaves out what
+	// was thrown away or junked; those are reached in their own folders.
+	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
+		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
 	}
 	if arguments.NeedsReply != nil {
 		options.NeedsReply = arguments.NeedsReply

@@ -178,7 +178,9 @@ function DocumentTitle() {
       // subscriptions live there too, and Starred is a view over all of
       // them. Those fall through to the count across every mailbox.
       if (folder) {
-        return folder.unread
+        // The Archive keeps what was put aside to read later; its count is
+        // not news, so the tab does not carry it.
+        return folder.kind === 'archive' ? 0 : folder.unread
       }
       // The two views that are not folders carry their own counts.
       if (folderId === 'starred') {

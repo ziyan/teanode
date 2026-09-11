@@ -455,6 +455,19 @@ func (self *Agent) Provider(name string) *AgentProvider {
 	return nil
 }
 
+// CostOf is what a call cost, from the provider's pricing per million
+// tokens: input, output and cached input priced apart. Zero where the
+// provider has no pricing, or the model names none.
+func (self *Agent) CostOf(model string, promptTokens, completionTokens, cacheReadTokens int) float64 {
+	name, _, _ := strings.Cut(model, ":")
+	provider := self.Provider(name)
+	if provider == nil {
+		return 0
+	}
+	pricing := provider.Pricing
+	return (float64(promptTokens)*pricing.Input + float64(completionTokens)*pricing.Output + float64(cacheReadTokens)*pricing.CacheRead) / 1e6
+}
+
 // FeatureOn says whether a deployment offers a feature, by its
 // configuration key.
 func (self *Agent) FeatureOn(feature string) bool {

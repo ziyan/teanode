@@ -175,7 +175,6 @@ func FullCatalog() *Catalog {
 func init() {
 	tools.Register(func() []*Tool {
 		catalog := NewCatalog()
-		registerOperatorTools(catalog)
 		registerBrowserTools(catalog)
 		return catalog.All()
 	})

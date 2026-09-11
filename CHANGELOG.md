@@ -157,7 +157,9 @@ Notable changes to TeaNode. The format follows
   or Return-Path pointing elsewhere — and the sorter is told those two
   as well. The newest OpenAI models refuse function tools while they
   reason on chat completions; the client repeats the call with reasoning
-  off and remembers the model. (#73)
+  off and remembers the model. Each turn shows what it cost beside its
+  tokens, from the provider's pricing. The primary conversation heads the
+  picker with a star; any named conversation can be made primary. (#73)
 
 ### Changed
 
@@ -170,8 +172,10 @@ Notable changes to TeaNode. The format follows
   page rather than in red under the field; a warning that stays true stays
   on the page. Actions are buttons, not underlined words. The mailbox's
   star is a star. Starred and Priority show their unread counts in the
-  rail and in the tab's title, which used to carry the Inbox's. On the
-  roles and groups pages a press anywhere on a row picks it. (#73)
+  rail and in the tab's title, which used to carry the Inbox's, and leave
+  out what sits in Junk or Trash; the Archive's unread count is not shown,
+  since what was put aside to read later is not news. On the roles and
+  groups pages a press anywhere on a row picks it. (#73)
 
 ## [0.18.2] - 2026-09-10
 
