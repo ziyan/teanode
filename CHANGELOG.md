@@ -269,6 +269,12 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Dropdowns work on a phone. Every one of the dashboard's own dropdowns
+  shut the instant it opened there: the list closed on any scroll or
+  resize, and a phone browser fires both constantly — its toolbar slides,
+  a keyboard appears, a zoomed page pans. The list follows what it
+  belongs to now, and closes only when the button it opened from has left
+  the window. (#73)
 - On a phone, a link out of the agent's drawer closes it. The drawer is
   the whole screen there, so the page it went to — the agent's own page
   from the budget ring, a message it cited — was left behind it. (#73)

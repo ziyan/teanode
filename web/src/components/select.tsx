@@ -141,13 +141,25 @@ export function Select({
     if (!open) {
       return
     }
-    const close = (event: Event) => {
-      // Scrolling inside the list is not leaving it.
+    // The page moving under an open list is not a reason to close it. It
+    // used to be one, which cost nothing on a desktop and made the
+    // control unusable on a phone: a browser there resizes the window
+    // whenever its own toolbar slides, and scrolls it whenever a
+    // keyboard appears, so the list shut the moment it opened. The list
+    // follows what it belongs to instead, and closes only when the
+    // button it opened from has left the window altogether.
+    const follow = (event: Event) => {
+      // Scrolling inside the list itself moves nothing it must follow.
       if (event.target instanceof Node && list.current?.contains(event.target)) return
-      setOpen(false)
+      const box = trigger.current?.getBoundingClientRect()
+      if (!box || box.bottom < 0 || box.top > window.innerHeight) {
+        setOpen(false)
+        return
+      }
+      place()
     }
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
+    window.addEventListener('scroll', follow, true)
+    window.addEventListener('resize', follow)
     function onPointerDown(event: MouseEvent | TouchEvent) {
       const target = event.target as Node
       if (trigger.current?.contains(target) || list.current?.contains(target)) {
@@ -158,12 +170,12 @@ export function Select({
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('touchstart', onPointerDown)
     return () => {
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('resize', follow)
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('touchstart', onPointerDown)
     }
-  }, [open])
+  }, [open, place])
 
   const choose = (option: SelectOption) => {
     onChange(option.value)
