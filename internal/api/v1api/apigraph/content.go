@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent"
 	"io"
 	"mime"
 	"net/textproto"
@@ -52,6 +53,12 @@ type MailContent struct {
 
 	// Files attached to the message
 	Attachments []*Attachment `json:"attachments,omitempty"`
+
+	// Facts is what the server made of the headers: authentication, the
+	// spam filter, list and automatic-message markers, a Reply-To or
+	// Return-Path elsewhere. For whoever, or whatever, has to judge a
+	// message rather than read it.
+	Facts []string `json:"facts,omitempty"`
 
 	// Headers worth showing above the message
 	Headers []*Header `json:"headers,omitempty"`
@@ -175,6 +182,7 @@ func (self *graph) GetMailContent(ctx context.Context, arguments GetMailContentA
 	if err != nil {
 		return nil, err
 	}
+	content.Facts = agent.MailFacts(mail)
 	if content.HasRemoteContent {
 		allowed, err := self.imagesAllowed(ctx, mail)
 		if err != nil {

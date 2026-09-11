@@ -91,7 +91,7 @@ func BuildMessageContext(ctx context.Context, store storage.Storage, mail *model
 	headers, body, err := store.Get(ctx, mail.ID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			result.Facts = facts(mail)
+			result.Facts = MailFacts(mail)
 			result.Text = "(the message body is no longer stored)"
 			return result, nil
 		}
@@ -112,7 +112,7 @@ func BuildMessageContext(ctx context.Context, store storage.Storage, mail *model
 		result.To = strings.Join(mail.Recipients, ", ")
 	}
 	result.Cc = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "Cc"))
-	result.Facts = facts(mail)
+	result.Facts = MailFacts(mail)
 	text, html := "", ""
 	if err := mailparse.TraverseParts(headers, body, func(header textproto.MIMEHeader, reader io.Reader) error {
 		mediaType, parameters, err := mime.ParseMediaType(header.Get("Content-Type"))
@@ -245,9 +245,19 @@ func stripQuoted(text string) string {
 	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
-// facts is what the server already knows about a message, said plainly.
-func facts(mail *models.Mail) []string {
+// MailFacts is what the server already knows about a message, said
+// plainly: how it authenticated, what the spam filter made of it, whether
+// it came from a list or a machine, and the two headers a forgery shows
+// itself in — a Reply-To or a Return-Path pointing somewhere else than
+// the From.
+func MailFacts(mail *models.Mail) []string {
 	var lines []string
+	if replyTo := strings.TrimSpace(mailparse.FindHeaderValue(mail.Headers, "Reply-To")); replyTo != "" && !strings.Contains(strings.ToLower(replyTo), strings.ToLower(mail.From)) {
+		lines = append(lines, "Reply-To is elsewhere: "+replyTo)
+	}
+	if returnPath := strings.Trim(strings.TrimSpace(mailparse.FindHeaderValue(mail.Headers, "Return-Path")), "<>"); returnPath != "" && domainOf(returnPath) != domainOf(mail.From) {
+		lines = append(lines, "Return-Path is elsewhere: "+returnPath)
+	}
 	results := mail.AuthenticationResults
 	if results.SPF != nil {
 		lines = append(lines, "SPF: "+results.SPF.Result)
@@ -311,4 +321,12 @@ func (self *MessageContext) Render() string {
 		builder.WriteString(self.Text)
 	}
 	return builder.String()
+}
+
+// domainOf is the part of an address after the @, lowercased.
+func domainOf(address string) string {
+	if at := strings.LastIndex(address, "@"); at >= 0 {
+		return strings.ToLower(address[at+1:])
+	}
+	return strings.ToLower(address)
 }

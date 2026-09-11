@@ -16,7 +16,7 @@ import {
 import { uploadFiles } from '../upload'
 import { formatCount, formatTime } from './common'
 import { Markdown } from './markdown'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, PlusIcon, SparkIcon, TrashIcon } from './icons'
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, PaperclipIcon, PencilIcon, PinIcon, PlusIcon, SparkIcon, TrashIcon } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
@@ -194,6 +194,11 @@ const UPDATE = `
 const DELETE = `
   mutation ($conversationId: String!) {
     DeleteAgentConversation(conversationId: $conversationId)
+  }`
+
+const MAKE_MAIN = `
+  mutation ($conversationId: String) {
+    SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
   }`
 
 // The tools after which what the mailbox shows may have changed.
@@ -946,6 +951,21 @@ export function AgentDrawer() {
     }
   }
 
+  // makeMain promotes a named conversation, or starts a fresh main one;
+  // the main conversation until now stays, named.
+  const makeMain = async (id: string) => {
+    try {
+      const response = await graphql<{ SetAgentMainConversation: Conversation }>(MAKE_MAIN, {
+        conversationId: id || undefined,
+      })
+      await loadConversations()
+      await switchTo(response.SetAgentMainConversation.id)
+      toast.done(t('agentDrawer.madeMain'))
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
   const remove = async (conversation: Conversation) => {
     try {
       await graphql(DELETE, { conversationId: conversation.id })
@@ -1181,20 +1201,34 @@ export function AgentDrawer() {
                   onChange={(event) => setSearch(event.target.value)}
                 />
                 {found === null && (
-                  <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void startNew()}>
-                    <PlusIcon size={14} />
-                    <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
-                  </button>
+                  <>
+                    <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void startNew()}>
+                      <PlusIcon size={14} />
+                      <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
+                    </button>
+                    <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void makeMain('')}>
+                      <PinIcon size={14} />
+                      <span className="agent-drawer-list-title">{t('agentDrawer.freshMain')}</span>
+                    </button>
+                  </>
                 )}
                 {found !== null && found.length === 0 && (
                   <div className="agent-drawer-list-row muted">
                     <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
                   </div>
                 )}
-                {(found ?? conversations).map((conversation) => (
+                {[...(found ?? conversations)]
+                  // The main conversation first, whatever was said last,
+                  // and a rule under it: it is the one the drawer opens to.
+                  .sort((first, second) => Number(second.kind === 'main') - Number(first.kind === 'main'))
+                  .map((conversation) => (
                   <div
                     key={conversation.id}
-                    className={['agent-drawer-list-row', conversation.id === conversationId ? 'active' : '']
+                    className={[
+                      'agent-drawer-list-row',
+                      conversation.id === conversationId ? 'active' : '',
+                      conversation.kind === 'main' ? 'main' : '',
+                    ]
                       .filter(Boolean)
                       .join(' ')}
                   >
@@ -1226,9 +1260,13 @@ export function AgentDrawer() {
                         onClick={() => void switchTo(conversation.id)}
                       >
                         <span className="agent-drawer-list-name">
-                          {conversation.kind === 'main'
-                            ? t('agentDrawer.main')
-                            : conversation.title || t('agentDrawer.untitled')}
+                          {conversation.kind === 'main' ? (
+                            <>
+                              <PinIcon size={12} /> {t('agentDrawer.main')}
+                            </>
+                          ) : (
+                            conversation.title || t('agentDrawer.untitled')
+                          )}
                         </span>
                         {conversation.summary ? (
                           <span className="agent-drawer-list-summary muted">{conversation.summary}</span>
@@ -1237,6 +1275,15 @@ export function AgentDrawer() {
                     )}
                     {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
                       <span className="agent-drawer-list-actions">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={t('agentDrawer.makeMain')}
+                          title={t('agentDrawer.makeMain')}
+                          onClick={() => void makeMain(conversation.id)}
+                        >
+                          <PinIcon size={14} />
+                        </button>
                         <button
                           type="button"
                           className="icon-button"

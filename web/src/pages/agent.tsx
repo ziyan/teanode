@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, SaveRow, Tag, formatCount, formatTime } from '../components/common'
+import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, PinIcon, PinOffIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -1153,39 +1154,66 @@ const RUNS = `
     ListAgentRuns(first: $first) { id title jobKind lastAt }
   }`
 
-// ActivityCard is what the agent did on its own: every run, newest first,
-// each a transcript the drawer opens.
+// ActivityCard is what the agent did on its own: every run kept, newest
+// first, as a table that pages and filters, each row a transcript the
+// drawer opens. Runs are swept by the operator's retention, so what the
+// query returns is the whole of what there is.
+type Run = { id: string; title: string; jobKind: string; lastAt: string }
+
 function ActivityCard() {
-  const { t } = useTranslation()
-  const { data, error } = useQuery(
-    () => graphql<{ ListAgentRuns: { id: string; title: string; jobKind: string; lastAt: string }[] }>(RUNS, { first: 30 }),
-    [],
-  )
+  const { t, plural } = useTranslation()
+  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [])
   const runs = data?.ListAgentRuns ?? []
   if (error) {
     return null
   }
+  const columns: Column<Run>[] = [
+    {
+      key: 'lastAt',
+      header: t('agent.when'),
+      width: '11rem',
+      value: (run) => formatTime(run.lastAt),
+      sort: (first, second) => first.lastAt.localeCompare(second.lastAt),
+    },
+    {
+      key: 'jobKind',
+      header: t('agent.runKind'),
+      width: '8rem',
+      filter: 'select',
+      value: (run) => run.jobKind,
+      render: (run) => <Tag value={run.jobKind} />,
+    },
+    { key: 'title', header: t('agent.runWhat'), filter: 'text', truncate: true, value: (run) => run.title },
+    {
+      key: 'open',
+      header: '',
+      width: '6rem',
+      render: (run) => (
+        <button
+          type="button"
+          onClick={() => {
+            if (!openAgentConversation(run.id)) window.scrollTo(0, 0)
+          }}
+        >
+          {t('agent.open')}
+        </button>
+      ),
+    },
+  ]
   return (
     <SettingsSection card title={t('agent.activity')} description={t('agent.activityHint')}>
-      {data && runs.length === 0 ? <SettingsEmpty>{t('agent.noActivity')}</SettingsEmpty> : null}
-      {runs.map((run) => (
-        <SettingsRow
-          key={run.id}
-          title={run.title || run.jobKind}
-          badge={<Tag value={run.jobKind} />}
-          subtitle={formatTime(run.lastAt)}
-          actions={
-            <button
-              type="button"
-              onClick={() => {
-                if (!openAgentConversation(run.id)) window.scrollTo(0, 0)
-              }}
-            >
-              {t('agent.open')}
-            </button>
-          }
-        />
-      ))}
+      <DataTable
+        columns={columns}
+        rows={runs}
+        rowKey={(run) => run.id}
+        loading={loading && !data}
+        emptyMessage={t('agent.noActivity')}
+        countLabel={(count, filtering) =>
+          filtering
+            ? plural(count, { one: 'agent.runsFilteredOne', other: 'agent.runsFilteredOther' }, { total: runs.length })
+            : plural(count, { one: 'agent.runsOne', other: 'agent.runsOther' })
+        }
+      />
     </SettingsSection>
   )
 }

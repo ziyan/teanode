@@ -179,6 +179,7 @@ func registerMailboxTools(catalog *Catalog) {
 			"item_id":        stringProperty("the message, from a mail_search row or the viewing overlay"),
 			"thread":         booleanProperty("read the whole conversation, oldest first"),
 			"include_quoted": booleanProperty("keep the quoted history inside each message; off by default"),
+			"headers":        booleanProperty("include every header line and the server's facts about the message — SPF, DKIM, DMARC, the spam filter's score, list and automatic-message markers, a Reply-To or Return-Path elsewhere — for judging whether a message is what it claims"),
 			"max_characters": integerProperty("bound per message, 12000 by default"),
 		}, "item_id"),
 		Run: runMailRead,
@@ -675,6 +676,7 @@ type mailReadArguments struct {
 	Thread        bool   `json:"thread"`
 	IncludeQuoted bool   `json:"include_quoted"`
 	MaxCharacters int    `json:"max_characters"`
+	Headers       bool   `json:"headers"`
 }
 
 // threadView is GetMailboxThread as the tools read it.
@@ -728,7 +730,7 @@ func getThread(ctx context.Context, operations Operations, itemId string) (*thre
 }
 
 const documentGetContent = `query ($mailId: String!) { GetMailContent(mailId: $mailId) {
-	text html attachments { filename contentType size }
+	text html attachments { filename contentType size } headers { key value } facts
 } }`
 
 type contentView struct {
@@ -739,6 +741,11 @@ type contentView struct {
 		ContentType string `json:"contentType"`
 		Size        int64  `json:"size"`
 	} `json:"attachments"`
+	Headers []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	} `json:"headers"`
+	Facts []string `json:"facts"`
 }
 
 func getContent(ctx context.Context, operations Operations, mailId string) (*contentView, error) {
@@ -779,6 +786,8 @@ func runMailRead(ctx context.Context, call *Call) (*Result, error) {
 		Text        string   `json:"text"`
 		Attachments []string `json:"attachments,omitempty"`
 		Truncated   bool     `json:"truncated,omitempty"`
+		Facts       []string `json:"facts,omitempty"`
+		Headers     []string `json:"headers,omitempty"`
 	}
 	var messages []message
 	entries := thread.Items
@@ -819,6 +828,12 @@ func runMailRead(ctx context.Context, call *Call) (*Result, error) {
 		if content != nil {
 			for _, attachment := range content.Attachments {
 				record.Attachments = append(record.Attachments, fmt.Sprintf("%s (%s, %d bytes)", attachment.Filename, attachment.ContentType, attachment.Size))
+			}
+			if arguments.Headers {
+				record.Facts = content.Facts
+				for _, header := range content.Headers {
+					record.Headers = append(record.Headers, header.Key+": "+header.Value)
+				}
 			}
 		}
 		messages = append(messages, record)

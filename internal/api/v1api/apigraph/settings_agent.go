@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent"
 	"strings"
 	"time"
 
@@ -132,6 +133,11 @@ type AgentSearchSettings struct {
 type AgentToolsSettings struct {
 	Disabled []string `json:"disabled"`
 	Confirm  []string `json:"confirm"`
+
+	// Catalog is every tool the policy can name, with its family and risk,
+	// so the operator sets each one rather than typing names from memory.
+	// Tools a connected server adds are not here; their family is.
+	Catalog []*AgentToolView `json:"catalog"`
 }
 
 // AgentBrowserSettings is the headless browser.
@@ -216,7 +222,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Corrections: agent.Retention.Corrections.String(),
 		},
 		Search: &AgentSearchSettings{Kind: agent.Search.Kind, HasAPIKey: agent.Search.APIKey != ""},
-		Tools:  &AgentToolsSettings{Disabled: nonNil(agent.Tools.Disabled), Confirm: nonNil(agent.Tools.Confirm)},
+		Tools:  &AgentToolsSettings{Disabled: nonNil(agent.Tools.Disabled), Confirm: nonNil(agent.Tools.Confirm), Catalog: toolCatalog()},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
@@ -667,4 +673,15 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 		result = append(result, &AgentModel{Provider: model.Provider, Model: model.Model, Name: model.Name, ContextLength: model.ContextLength})
 	}
 	return result, nil
+}
+
+// toolCatalog is the full catalog as the settings show it, in registration
+// order, with the two risk classes that always ask marked as asking.
+func toolCatalog() []*AgentToolView {
+	tools := agent.FullCatalog().All()
+	views := make([]*AgentToolView, 0, len(tools))
+	for _, tool := range tools {
+		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward, Core: tool.Core})
+	}
+	return views
 }

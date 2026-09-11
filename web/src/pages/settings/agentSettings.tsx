@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../../api'
 import { SaveRow } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
-import { PencilIcon, TrashIcon } from '../../components/icons'
+import { ChevronDownIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { Tag } from '../../components/common'
@@ -61,6 +61,8 @@ export type AgentMCPServer = {
   enabled: boolean
 }
 
+export type AgentTool = { name: string; family: string; risk: string; description: string; confirms: boolean; core: boolean }
+
 export type Agent = {
   enabled: boolean
   instructions: string
@@ -92,7 +94,7 @@ export type Agent = {
   }
   retention: { runs: string; corrections: string }
   search: { kind: string; hasApiKey: boolean }
-  tools: { disabled: string[]; confirm: string[] }
+  tools: { disabled: string[]; confirm: string[]; catalog: AgentTool[] }
   browser: {
     enabled: boolean
     cdpEndpoint: string
@@ -115,7 +117,7 @@ export const AGENT_SELECTION = `agent {
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
   retention { runs corrections }
   search { kind hasApiKey }
-  tools { disabled confirm }
+  tools { disabled confirm catalog { name family risk description confirms core } }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
   works families kinds
@@ -446,12 +448,31 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
           onClose={() => setEditing(null)}
           onSubmit={() => {
             const values = settings.providers.map(providerValues)
+            const section: Record<string, unknown> = {}
             if (editing.index < 0) {
               values.push(draftValues(editing.draft))
             } else {
               values[editing.index] = draftValues(editing.draft)
+              // A renamed provider takes its models with it: every
+              // assignment written provider:model is rewritten, or the
+              // server would refuse the settings for naming a provider
+              // that no longer exists.
+              const before = settings.providers[editing.index].name
+              const after = editing.draft.name.trim()
+              if (before !== after) {
+                const rename = (model: string) => (model.startsWith(before + ':') ? after + model.slice(before.length) : model)
+                const models = settings.models
+                section.models = {
+                  ...Object.fromEntries(
+                    (['default', 'fast', 'embedding', 'triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact'] as const).map(
+                      (field) => [field, rename(models[field])],
+                    ),
+                  ),
+                  choices: models.choices.map(rename),
+                }
+              }
             }
-            void saveList(values).then((ok) => ok && setEditing(null))
+            void save({ providers: values, ...section }).then((ok) => ok && setEditing(null))
           }}
         />
       ) : null}
@@ -833,35 +854,114 @@ function LimitsForm({ settings, onSaved }: Props) {
   )
 }
 
+type Policy = 'allow' | 'confirm' | 'off'
+
+// policyOf reads the two lists as one word per name.
+function policyOf(name: string, tools: Agent['tools']): Policy {
+  if (tools.disabled.includes(name)) return 'off'
+  if (tools.confirm.includes(name)) return 'confirm'
+  return 'allow'
+}
+
+// ToolsForm: every tool the agent can be given, by family, and one word
+// for each — allowed, ask first, off — with a word for the whole family
+// that the tools inherit unless they say otherwise.
 function ToolsForm({ settings, onSaved }: Props) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
-  const [tools, setTools] = useState({ disabled: list(settings.tools.disabled), confirm: list(settings.tools.confirm) })
+  const names = useMemo(
+    () => [...settings.families, ...settings.tools.catalog.map((tool) => tool.name)],
+    [settings.families, settings.tools.catalog],
+  )
+  const [policy, setPolicy] = useState<Record<string, Policy>>({})
+  const [open, setOpen] = useState<Record<string, boolean>>({})
   useEffect(() => {
-    setTools({ disabled: list(settings.tools.disabled), confirm: list(settings.tools.confirm) })
+    setPolicy(Object.fromEntries(names.map((name) => [name, policyOf(name, settings.tools)])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(settings.tools)])
+  }, [JSON.stringify(settings.tools), names.join(',')])
+
+  const options = [
+    { value: 'allow', label: t('agentSettings.policyAllow') },
+    { value: 'confirm', label: t('agentSettings.policyConfirm') },
+    { value: 'off', label: t('agentSettings.policyOff') },
+  ]
+  const wordFor = (name: string) => policy[name] ?? 'allow'
 
   return (
     <form
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ agent: { tools: { disabled: split(tools.disabled), confirm: split(tools.confirm) } } })
+        void save({
+          agent: {
+            tools: {
+              disabled: names.filter((name) => wordFor(name) === 'off'),
+              confirm: names.filter((name) => wordFor(name) === 'confirm'),
+            },
+          },
+        })
       }}
     >
       <h3>{t('agentSettings.tools')}</h3>
-      <p className="muted">{t('agentSettings.toolsDescription', { families: settings.families.join(', ') })}</p>
-      <div className="row">
-        <label>
-          <span>{t('agentSettings.toolsDisabled')}</span>
-          <input value={tools.disabled} onChange={(event) => setTools({ ...tools, disabled: event.target.value })} />
-        </label>
-        <label>
-          <span>{t('agentSettings.toolsConfirm')}</span>
-          <input value={tools.confirm} onChange={(event) => setTools({ ...tools, confirm: event.target.value })} />
-        </label>
-      </div>
+      <p className="muted">{t('agentSettings.toolsDescription')}</p>
+      {settings.families.map((family) => {
+        const tools = settings.tools.catalog.filter((tool) => tool.family === family)
+        const familyWord = wordFor(family)
+        return (
+          <div className="tool-policy-family" key={family}>
+            <SettingsRow
+              title={
+                <button
+                  type="button"
+                  className="tool-policy-toggle"
+                  aria-expanded={!!open[family]}
+                  onClick={() => setOpen({ ...open, [family]: !open[family] })}
+                >
+                  {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />} {family}
+                </button>
+              }
+              subtitle={t('agentSettings.familyTools', { count: String(tools.length) })}
+              actions={
+                <Select
+                  value={familyWord}
+                  label={`${family}: ${t('agentSettings.policy')}`}
+                  options={options}
+                  onChange={(value) => setPolicy({ ...policy, [family]: value as Policy })}
+                />
+              }
+            />
+            {open[family] && (
+              <div className="tool-policy-tools">
+                {tools.map((tool) => (
+                  <SettingsRow
+                    key={tool.name}
+                    title={tool.name}
+                    badge={tool.confirms ? <Tag value={t('agentSettings.asksByRisk')} /> : undefined}
+                    subtitle={tool.description}
+                    actions={
+                      <Select
+                        value={wordFor(tool.name)}
+                        label={`${tool.name}: ${t('agentSettings.policy')}`}
+                        options={
+                          familyWord === 'allow'
+                            ? options
+                            : options.map((option) =>
+                                option.value === 'allow'
+                                  ? { ...option, label: t('agentSettings.policyInherits', { word: t(`agentSettings.policy${familyWord === 'off' ? 'Off' : 'Confirm'}`) }) }
+                                  : option,
+                              )
+                        }
+                        onChange={(value) => setPolicy({ ...policy, [tool.name]: value as Policy })}
+                      />
+                    }
+                  />
+                ))}
+                {tools.length === 0 ? <p className="muted">{t('agentSettings.familyDynamic')}</p> : null}
+              </div>
+            )}
+          </div>
+        )
+      })}
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )

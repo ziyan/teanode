@@ -154,6 +154,9 @@ const (
 	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean) {
 		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived) ` + conversationFields + `
 	}`
+	DocumentSetAgentMainConversation = `mutation ($conversationId: String) {
+		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
+	}`
 	DocumentListAgentTools = `query { ListAgentTools { name family risk description confirms core } }`
 )
 
@@ -311,6 +314,23 @@ func DeleteAgentConversation(ctx context.Context, connection *Client, conversati
 		DeleteAgentConversation bool `json:"DeleteAgentConversation"`
 	}
 	return connection.Execute(ctx, DocumentDeleteAgentConversation, map[string]any{"conversationId": conversationId}, &result)
+}
+
+// SetAgentMainConversation makes a named conversation the main one, or
+// starts a fresh main one when none is named; the old main is kept as a
+// named conversation.
+func SetAgentMainConversation(ctx context.Context, connection *Client, conversationId string) (*AgentConversation, error) {
+	var result struct {
+		SetAgentMainConversation *AgentConversation `json:"SetAgentMainConversation"`
+	}
+	variables := map[string]any{}
+	if conversationId != "" {
+		variables["conversationId"] = conversationId
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentMainConversation, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentMainConversation, nil
 }
 
 func UpdateAgentConversation(ctx context.Context, connection *Client, conversationId, title string, archived *bool) (*AgentConversation, error) {

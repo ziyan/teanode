@@ -82,6 +82,13 @@ func newAgentConversationCommand() *cli.Command {
 				Action:    runAgentConversationRename,
 			},
 			{
+				Name:      "main",
+				Usage:     "make a named conversation the main one, or start a fresh main one; the old main is kept as a named conversation",
+				ArgsUsage: "[conversation-id]",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentConversationMain,
+			},
+			{
 				Name:      "delete",
 				Usage:     "delete a conversation and everything in it; asks first",
 				ArgsUsage: "<conversation-id>",
@@ -413,6 +420,22 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 		return PrintJSON(conversation)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", conversation.ID, conversation.Title)
+	return nil
+}
+
+func runAgentConversationMain(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	conversation, err := client.SetAgentMainConversation(ctx, connection, command.Args().First())
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(conversation)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s is the main conversation now\n", conversation.ID)
 	return nil
 }
 

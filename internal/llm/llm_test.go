@@ -420,3 +420,37 @@ func TestEstimateTokensIsRoughButMonotonic(t *testing.T) {
 		t.Fatal("wide characters cost more than a quarter token each")
 	}
 }
+
+// A newer model refuses function tools while it reasons on chat
+// completions and says to set reasoning_effort to none: the client does
+// exactly that, once, and remembers the model.
+func TestOpenAIRetriesWithReasoningOffWhenToolsRefused(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		bodies = append(bodies, body)
+		if _, hasTools := body["tools"]; hasTools && body["reasoning_effort"] != "none" {
+			writer.WriteHeader(400)
+			_, _ = writer.Write([]byte(`{"error":{"message":"Function tools with reasoning_effort are not supported for gpt-5.6-terra in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'."}}`))
+			return
+		}
+		_, _ = writer.Write([]byte(`{"id":"c1","model":"gpt-5.6-terra","choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2}}`))
+	}))
+	defer server.Close()
+	provider := newOpenAI(server.URL+"/v1", "key-1", server.Client())
+	request := &ChatRequest{Model: "gpt-5.6-terra", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}, Tools: []ToolDefinition{{Name: "mail_search", Parameters: map[string]any{"type": "object"}}}}
+	response, err := provider.Chat(context.Background(), request)
+	if err != nil || response.Message.Content != "done" {
+		t.Fatalf("response %v, err %v", response, err)
+	}
+	if len(bodies) != 2 || bodies[0]["reasoning_effort"] != nil || bodies[1]["reasoning_effort"] != "none" {
+		t.Fatalf("expected one refusal then a retry with reasoning off, got %d calls: %v", len(bodies), bodies)
+	}
+	if _, err := provider.Chat(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 3 || bodies[2]["reasoning_effort"] != "none" {
+		t.Fatalf("the model should be remembered as refusing, got %d calls", len(bodies))
+	}
+}

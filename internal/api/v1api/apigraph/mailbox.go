@@ -102,6 +102,12 @@ type MailboxView struct {
 	// Unread is the Inbox's unread count, for the switcher and the tab title.
 	Unread int64 `json:"unread"`
 
+	// StarredUnread and PriorityUnread are the unread counts of the two
+	// views that are not folders — every flagged message, every message
+	// the agent marked high — for their rows in the rail and their titles.
+	StarredUnread  int64 `json:"starredUnread"`
+	PriorityUnread int64 `json:"priorityUnread"`
+
 	// MaxMessageSize is the most a message may be, in bytes, so the compose
 	// page can refuse a selection of files before uploading it; zero when
 	// there is no limit.
@@ -196,6 +202,16 @@ func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox)
 	for _, folder := range folders {
 		if folder.Kind == models.MailboxFolderKindInbox {
 			view.Unread = folder.Unread
+		}
+	}
+	unseen, flagged := true, true
+	tx := self.transaction(ctx)
+	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged}); err != nil {
+		return nil, err
+	}
+	if mailbox.Agent != nil && mailbox.Agent.Granted && mailbox.Agent.Triage != nil && mailbox.Agent.Triage.Enabled {
+		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high"}); err != nil {
+			return nil, err
 		}
 	}
 	return view, nil

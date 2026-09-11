@@ -25,6 +25,8 @@ const MAILBOXES = `{
     }
     folders { id mailboxId parentId name kind pinnedAt unread total }
     unread
+    starredUnread
+    priorityUnread
     maxMessageSize
   }
 }`

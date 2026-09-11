@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // openAI speaks the chat completion API. It is what OpenAI serves and what
@@ -18,6 +19,9 @@ type openAI struct {
 	baseUrl string
 	apiKey  string
 	client  *http.Client
+
+	mu          sync.Mutex
+	noReasoning map[string]bool
 }
 
 const openAIDefaultBaseURL = "https://api.openai.com/v1"
@@ -74,6 +78,34 @@ type openAIRequest struct {
 	ResponseFormat      any             `json:"response_format,omitempty"`
 	Stream              bool            `json:"stream,omitempty"`
 	StreamOptions       any             `json:"stream_options,omitempty"`
+
+	// ReasoningEffort is sent as "none" to a model that refuses function
+	// tools while it reasons on this endpoint; see reasoningRefused.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// reasoningRefused says whether an error is the newer models' refusal to
+// take function tools with their default reasoning on chat completions:
+// "Function tools with reasoning_effort are not supported ... set
+// reasoning_effort to 'none'". The call is repeated with exactly that,
+// and the model is remembered so the next call does not pay twice.
+func reasoningRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "reasoning_effort")
+}
+
+func (self *openAI) refusesReasoning(model string) bool {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	return self.noReasoning[model]
+}
+
+func (self *openAI) rememberRefusal(model string) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.noReasoning == nil {
+		self.noReasoning = map[string]bool{}
+	}
+	self.noReasoning[model] = true
 }
 
 func (self *openAI) encode(request *ChatRequest, stream bool) *openAIRequest {
@@ -176,7 +208,17 @@ type openAIResponse struct {
 
 func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatResponse, error) {
 	var response openAIResponse
-	if err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), self.encode(request, false), &response); err != nil {
+	body := self.encode(request, false)
+	if len(body.Tools) > 0 && self.refusesReasoning(request.Model) {
+		body.ReasoningEffort = "none"
+	}
+	err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), body, &response)
+	if err != nil && len(body.Tools) > 0 && body.ReasoningEffort == "" && reasoningRefused(err) {
+		self.rememberRefusal(request.Model)
+		body.ReasoningEffort = "none"
+		err = doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), body, &response)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if len(response.Choices) == 0 {
@@ -233,7 +275,16 @@ type openAIChunk struct {
 }
 
 func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
-	body, err := openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), self.encode(request, true))
+	encoded := self.encode(request, true)
+	if len(encoded.Tools) > 0 && self.refusesReasoning(request.Model) {
+		encoded.ReasoningEffort = "none"
+	}
+	body, err := openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), encoded)
+	if err != nil && len(encoded.Tools) > 0 && encoded.ReasoningEffort == "" && reasoningRefused(err) {
+		self.rememberRefusal(request.Model)
+		encoded.ReasoningEffort = "none"
+		body, err = openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), encoded)
+	}
 	if err != nil {
 		return nil, err
 	}

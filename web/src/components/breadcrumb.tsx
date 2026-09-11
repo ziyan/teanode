@@ -180,6 +180,13 @@ function DocumentTitle() {
       if (folder) {
         return folder.unread
       }
+      // The two views that are not folders carry their own counts.
+      if (folderId === 'starred') {
+        return views.reduce((sum, view) => sum + (view.starredUnread ?? 0), 0)
+      }
+      if (folderId === 'priority') {
+        return views.reduce((sum, view) => sum + (view.priorityUnread ?? 0), 0)
+      }
     }
     return views.reduce((sum, view) => sum + view.unread, 0)
   }, [location.pathname, views])

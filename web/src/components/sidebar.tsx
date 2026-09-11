@@ -335,21 +335,39 @@ export function Sidebar({
                       <span className="sidebar-label">{t('mailbox.newMessage')}</span>
                     </NavLink>
                     {inbox.map(({ folder, depth }) => folderRow(folder, depth, folder.id))}
-                    <NavLink to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                    <NavLink
+                      to="/mailbox/starred"
+                      className={current.starredUnread > 0 ? 'unread' : undefined}
+                      title={collapsed ? t('mailbox.folder.starred') : undefined}
+                    >
                       <span className="sidebar-icon">
                         <FolderKindIcon kind="starred" />
                       </span>
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
+                      {current.starredUnread > 0 && (
+                        <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.starredUnread })}>
+                          {current.starredUnread}
+                        </span>
+                      )}
                     </NavLink>
                     {/* What the agent said matters today. Only where the
                         agent sorts this mailbox; a view that is always empty
                         would be a question with no answer. */}
                     {current.mailbox.agent?.granted && current.mailbox.agent.triage?.enabled && (
-                      <NavLink to="/mailbox/priority" title={collapsed ? t('mailbox.folder.priority') : undefined}>
+                      <NavLink
+                        to="/mailbox/priority"
+                        className={current.priorityUnread > 0 ? 'unread' : undefined}
+                        title={collapsed ? t('mailbox.folder.priority') : undefined}
+                      >
                         <span className="sidebar-icon">
                           <FolderKindIcon kind="priority" />
                         </span>
                         <span className="sidebar-label">{t('mailbox.folder.priority')}</span>
+                        {current.priorityUnread > 0 && (
+                          <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.priorityUnread })}>
+                            {current.priorityUnread}
+                          </span>
+                        )}
                       </NavLink>
                     )}
                     {pinned.map(({ folder, depth }) => folderRow(folder, depth, `pinned-${folder.id}`))}

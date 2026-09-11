@@ -146,7 +146,18 @@ Notable changes to TeaNode. The format follows
   categories are rows added in a dialog. The operator's Agents tab is the
   same shape: providers and connected servers are rows edited in a
   dialog, with Test on a provider's row, and models are picked from what
-  the providers offer. (#73)
+  the providers offer; renaming a provider takes its model assignments
+  with it. The tool policy lists every tool by family with one word for
+  each — allowed, ask first, off — instead of two boxes of names. The
+  main conversation heads the picker, marked; any named conversation can
+  be made the main one, or a fresh main one started, and the one before
+  is kept, named. What the agent did is a table that pages and filters.
+  `mail_read` can hand the agent every header and the server's facts
+  about a message — authentication, the spam filter's score, a Reply-To
+  or Return-Path pointing elsewhere — and the sorter is told those two
+  as well. The newest OpenAI models refuse function tools while they
+  reason on chat completions; the client repeats the call with reasoning
+  off and remembers the model. (#73)
 
 ### Changed
 
@@ -158,7 +169,9 @@ Notable changes to TeaNode. The format follows
   and what it saved, is said once through the notice at the top of the
   page rather than in red under the field; a warning that stays true stays
   on the page. Actions are buttons, not underlined words. The mailbox's
-  star is a star. (#73)
+  star is a star. Starred and Priority show their unread counts in the
+  rail and in the tab's title, which used to carry the Inbox's. On the
+  roles and groups pages a press anywhere on a row picks it. (#73)
 
 ## [0.18.2] - 2026-09-10
 

@@ -157,15 +157,23 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobEmbed, self.runEmbed)
 	self.Register(models.AgentJobSchedule, self.runSchedule)
 	self.Register(models.AgentJobResearch, self.runResearch)
-	self.catalog = NewCatalog()
-	registerGeneralTools(self.catalog)
-	registerMemoryTools(self.catalog)
-	registerConversationTools(self.catalog)
-	registerScheduleTools(self.catalog)
-	registerMailboxTools(self.catalog)
-	registerOperatorTools(self.catalog)
-	registerBrowserTools(self.catalog)
+	self.catalog = FullCatalog()
 	return self
+}
+
+// FullCatalog is every tool the agent can be given, before permissions and
+// policy narrow it: what the worker runs with, and what the operator's
+// tool policy lists.
+func FullCatalog() *Catalog {
+	catalog := NewCatalog()
+	registerGeneralTools(catalog)
+	registerMemoryTools(catalog)
+	registerConversationTools(catalog)
+	registerScheduleTools(catalog)
+	registerMailboxTools(catalog)
+	registerOperatorTools(catalog)
+	registerBrowserTools(catalog)
+	return catalog
 }
 
 // SetMailer hands the worker the mailer, once there is one.

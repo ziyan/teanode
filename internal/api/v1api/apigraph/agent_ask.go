@@ -70,6 +70,12 @@ type AgentAskMutation interface {
 	// conversation is never archived. Needs agent:use.
 	UpdateAgentConversation(ctx context.Context, arguments UpdateAgentConversationArguments) (*models.AgentConversation, error)
 	DeleteAgentConversation(ctx context.Context, arguments DeleteAgentConversationArguments) (bool, error)
+
+	// Make a conversation the main one — the one the drawer opens to and
+	// the agent's runs deliver into — or, with no conversation named, start
+	// a fresh main one. The main conversation until now becomes a named
+	// one, keeping everything said in it. Needs agent:use.
+	SetAgentMainConversation(ctx context.Context, arguments SetAgentMainConversationArguments) (*models.AgentConversation, error)
 }
 
 // AgentSubscription follows a turn as it happens.
@@ -86,6 +92,12 @@ type ListAgentConversationsArguments struct {
 	// Query finds conversations by words in the title or in what was said;
 	// with it, Archived is ignored and every match is listed.
 	Query string `json:"query" graphapi:"nullable"`
+}
+
+// SetAgentMainConversationArguments name the conversation to make the
+// main one; none for a fresh one.
+type SetAgentMainConversationArguments struct {
+	ConversationID string `json:"conversationId" graphapi:"nullable"`
 }
 
 // DeleteAgentConversationArguments name the conversation to delete.
@@ -570,6 +582,51 @@ func (self *graph) DeleteAgentConversation(ctx context.Context, arguments Delete
 	}
 	log.Noticef("%s deleted a conversation with their agent", operatorName(ctx))
 	return true, nil
+}
+
+func (self *graph) SetAgentMainConversation(ctx context.Context, arguments SetAgentMainConversationArguments) (*models.AgentConversation, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	previous, err := self.mainConversation(tx, found)
+	if err != nil {
+		return nil, err
+	}
+	var chosen *models.AgentConversation
+	if id := strings.TrimSpace(arguments.ConversationID); id != "" {
+		chosen, err = self.ownConversation(tx, found, id, false)
+		if err != nil {
+			return nil, err
+		}
+		if chosen.ID == previous.ID {
+			return previous, nil
+		}
+		if chosen.Kind != models.AgentConversationNamed {
+			return nil, fmt.Errorf("%w: only a named conversation can become the main one", api.ErrInvalidArguments)
+		}
+	}
+	// The old main becomes a named conversation. Untitled, so the describer
+	// names it from what was said; never archived, so it stays in the list.
+	if _, err := tx.UpdateAgentConversation(previous.ID, func(conversation *models.AgentConversation) error {
+		conversation.Kind = models.AgentConversationNamed
+		return nil
+	}); err != nil {
+		return nil, translateError(err)
+	}
+	if chosen == nil {
+		return tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+	}
+	updated, err := tx.UpdateAgentConversation(chosen.ID, func(conversation *models.AgentConversation) error {
+		conversation.Kind = models.AgentConversationMain
+		conversation.ArchivedAt = nil
+		return nil
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return updated, nil
 }
 
 func (self *graph) UpdateAgentConversation(ctx context.Context, arguments UpdateAgentConversationArguments) (*models.AgentConversation, error) {

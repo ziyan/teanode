@@ -6122,9 +6122,12 @@ p.notice.domain-logo-note {
 .access-pick-row {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 0;
   margin: 1px 0;
-  padding: 6px 8px;
+  /* No padding of its own: the name is the button, and it carries the
+     padding, so a press anywhere on the row lands on it — the row's own
+     edges used to swallow a click beside the word. */
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-2);
   color: var(--muted);
@@ -6138,6 +6141,9 @@ p.notice.domain-logo-note {
   background: var(--sidebar-hover);
   color: var(--text);
 }
+.access-pick-row .row-actions {
+  padding-right: 8px;
+}
 .access-pick-row.chosen {
   background: var(--surface);
   border-color: var(--border);
@@ -6146,8 +6152,9 @@ p.notice.domain-logo-note {
 }
 .access-pick-name {
   flex: 1 1 auto;
+  align-self: stretch;
   min-width: 0;
-  padding: 0;
+  padding: 6px 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -6552,4 +6559,42 @@ button.with-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The main conversation heads the picker, marked, with a rule under it. */
+.agent-drawer-list-row.main {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+  border-radius: 0;
+}
+
+.agent-drawer-list-row.main .agent-drawer-list-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+/* The tool policy: a family, its tools, and one word for each. */
+.tool-policy-family {
+  margin-top: var(--space-4);
+}
+
+.tool-policy-family > .settings-row {
+  background: var(--field);
+}
+
+.tool-policy-tools {
+  margin-left: var(--space-4);
+}
+
+.tool-policy-tools .settings-row {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.tool-policy-tools .settings-row-title {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
 }

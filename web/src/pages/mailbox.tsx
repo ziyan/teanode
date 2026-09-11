@@ -65,7 +65,7 @@ const PAGE_SIZE = 50
 export const STARRED = 'starred'
 
 function starredFolder(view: MailboxView): MailboxFolder {
-  return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: 0, total: 0 }
+  return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: view.starredUnread ?? 0, total: 0 }
 }
 
 // PRIORITY is the path segment of the view of every message the agent marked
@@ -73,7 +73,7 @@ function starredFolder(view: MailboxView): MailboxFolder {
 export const PRIORITY = 'priority'
 
 function priorityFolder(view: MailboxView): MailboxFolder {
-  return { id: PRIORITY, mailboxId: view.mailbox.id, name: 'Priority', kind: PRIORITY, unread: 0, total: 0 }
+  return { id: PRIORITY, mailboxId: view.mailbox.id, name: 'Priority', kind: PRIORITY, unread: view.priorityUnread ?? 0, total: 0 }
 }
 
 const THREADS = `
@@ -873,7 +873,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   // conversations existed.
   const chosen = threads.filter((thread) => selected.has(thread.threadId))
   const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
-  const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0 }, 'archive')
+  const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0, starredUnread: 0, priorityUnread: 0 }, 'archive')
   const inTrash = folder.kind === 'trash'
   const inJunk = folder.kind === 'junk'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
