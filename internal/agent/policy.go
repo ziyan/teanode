@@ -152,53 +152,44 @@ func CheckBudget(tx db.Transaction, configuration *config.Configuration, agent *
 	if agent.DailyCost > 0 {
 		budget.CostLimit = agent.DailyCost
 	}
-	used, err := tx.SumAgentUsage(agent.ID, dayStart)
-	if err != nil {
+	var err error
+	if budget.Used, budget.Cost, err = SumSpend(tx, configuration, agent.ID, dayStart); err != nil {
 		return nil, err
 	}
-	budget.Used = used.Total()
-	// The day in money is only worth pricing where something caps it.
-	if budget.CostLimit > 0 {
-		if budget.Cost, err = SumCost(tx, configuration, agent.ID, dayStart); err != nil {
-			return nil, err
-		}
-	}
+	// The month is read only where something caps it: every run would
+	// otherwise price the whole server's day before every call.
 	if budget.ServerLimit > 0 || budget.ServerCostLimit > 0 {
 		monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location)
-		serverUsed, err := tx.SumAgentUsage("", monthStart)
-		if err != nil {
+		if budget.ServerUsed, budget.ServerCost, err = SumSpend(tx, configuration, "", monthStart); err != nil {
 			return nil, err
 		}
-		budget.ServerUsed = serverUsed.Total()
 		if budget.ServerLimit > 0 && budget.ServerUsed*5 >= budget.ServerLimit*4 {
 			log.Warningf("the server has used %d of its %d monthly tokens", budget.ServerUsed, budget.ServerLimit)
 		}
-		if budget.ServerCostLimit > 0 {
-			if budget.ServerCost, err = SumCost(tx, configuration, "", monthStart); err != nil {
-				return nil, err
-			}
-			if budget.ServerCost*5 >= budget.ServerCostLimit*4 {
-				log.Warningf("the server has used %s of its %s this month", Money(budget.ServerCost, budget.Currency), Money(budget.ServerCostLimit, budget.Currency))
-			}
+		if budget.ServerCostLimit > 0 && budget.ServerCost*5 >= budget.ServerCostLimit*4 {
+			log.Warningf("the server has used %s of its %s this month", Money(budget.ServerCost, budget.Currency), Money(budget.ServerCostLimit, budget.Currency))
 		}
 	}
 	return budget, nil
 }
 
-// SumCost is what a period's calls cost at the prices the providers are
-// configured with. Usage is kept per model, and each model is priced by
-// its own provider, so a deployment with two providers adds up properly.
-// An agent id of "" is the whole server.
-func SumCost(tx db.Transaction, configuration *config.Configuration, agentId string, since time.Time) (float64, error) {
+// SumSpend is what a period came to, in tokens and in money. Usage is
+// kept per model, and each model is priced by its own provider, so a
+// deployment with two providers adds up properly — and grouping by model
+// gives both numbers from the one query, which is why the budget check
+// does not read the same rows twice. An agent id of "" is the whole
+// server.
+func SumSpend(tx db.Transaction, configuration *config.Configuration, agentId string, since time.Time) (int64, float64, error) {
 	rows, err := tx.QueryAgentUsage(agentId, since, time.Time{}, "model")
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	total := 0.0
+	tokens, cost := int64(0), 0.0
 	for _, row := range rows {
-		total += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
+		tokens += row.Totals.Total()
+		cost += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
 	}
-	return total, nil
+	return tokens, cost, nil
 }
 
 // RequireBudget is what a run calls before its first model call: it returns
