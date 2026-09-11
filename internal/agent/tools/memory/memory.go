@@ -101,7 +101,12 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		// search first, and this is for the times it does not.
 		if twins := noteMeaning(ctx, run, created); len(twins) > 0 {
 			answer["already_remembered"] = twins
-			answer["warning"] = "this may be something you already remember; update that one instead of keeping both"
+			// An imperative with both ids in it, not a hedge: a warning
+			// that something "may be" a duplicate was read and ignored,
+			// and two memories of one fact were kept.
+			answer["do_this_next"] = fmt.Sprintf(
+				"this says what memory %s already says. Put whatever is new here into that one with update, then delete %s. Do it now, in this turn.",
+				firstOf(twins), created.ID)
 		}
 		result, err := tools.JSONResult(answer)
 		if err != nil {
@@ -220,6 +225,15 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 
 // recalledOverlay is what memory searches found this turn, so the model
 // does not search again for what it just saw.
+// firstOf names the nearest of the memories a new one may be a copy of.
+func firstOf(twins []map[string]any) string {
+	if len(twins) == 0 {
+		return ""
+	}
+	id, _ := twins[0]["id"].(string)
+	return id
+}
+
 // noteMeaning gives a memory its vector and names whatever it may be a
 // copy of, where the deployment can say what a memory means at all.
 func noteMeaning(ctx context.Context, run tools.Run, memory *models.AgentMemory) []map[string]any {
