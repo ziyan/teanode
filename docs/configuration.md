@@ -1304,7 +1304,11 @@ PKCE. Empty is inferred: `static` when an authorization is set, otherwise
 **`oauth`** — The client this server is at an OAuth-protected server:
 `clientId`, `clientSecret` (a secret; optional for a public client),
 `scopes`, and `authorizationUrl` and `tokenUrl`, which override discovery
-when set.
+when set. Leave `clientId` empty and a client is registered with the
+server the first time somebody authorizes, which is how a server that
+publishes no client id of its own is reached; the client is kept with that
+person's authorization, so refreshing later uses the same one. Setting the
+two endpoints by hand skips discovery, and then a `clientId` is needed.
 
 **`clientId`**, **`clientSecret`**, **`scopes`**, **`authorizationUrl`**,
 **`tokenUrl`** — The OAuth client's fields.

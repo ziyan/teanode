@@ -111,6 +111,7 @@ func (self *Agent) OAuthSettings(server *config.AgentMCPServer, redirectURL stri
 		AuthorizationURL: server.OAuth.AuthorizationURL,
 		TokenURL:         server.OAuth.TokenURL,
 		RedirectURL:      redirectURL,
+		ClientName:       "TeaNode",
 	}
 }
 
@@ -195,7 +196,13 @@ func (self *Agent) personToken(ctx context.Context, agentId string, server *conf
 	if tokens.RefreshToken == "" {
 		return "", fmt.Errorf("the authorization for %s has expired; connect it again", server.Name)
 	}
-	refreshed, err := mcp.Refresh(ctx, self.OAuthSettings(server, ""), tokens.RefreshToken)
+	settings := self.OAuthSettings(server, "")
+	if tokens.ClientID != "" {
+		// The client these tokens were issued to, which for a server that
+		// publishes none is the one registered when they authorized.
+		settings.ClientID = tokens.ClientID
+	}
+	refreshed, err := mcp.Refresh(ctx, settings, tokens.RefreshToken)
 	if err != nil {
 		return "", err
 	}

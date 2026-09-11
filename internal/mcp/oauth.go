@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -28,12 +29,15 @@ type Metadata struct {
 	ScopesSupported       []string `json:"scopes_supported"`
 }
 
-// Tokens are what an authorization gave.
+// Tokens are what an authorization gave. ClientID is kept beside them
+// because a client this server registered for itself is not in the
+// configuration, and refreshing needs the same one that was authorized.
 type Tokens struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 	Scope        string    `json:"scope,omitempty"`
+	ClientID     string    `json:"client_id,omitempty"`
 }
 
 // Expired says whether the access token is past its time, with a minute
@@ -58,6 +62,9 @@ type OAuthSettings struct {
 
 	// RedirectURL is where the code comes back to.
 	RedirectURL string
+
+	// ClientName is what a client registered here is called.
+	ClientName string
 
 	Client *http.Client
 }
@@ -86,9 +93,10 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 		AuthorizationServers []string `json:"authorization_servers"`
 	}](ctx, settings.client(), origin+"/.well-known/oauth-protected-resource"); err == nil {
 		for _, authorizationServer := range resource.AuthorizationServers {
-			candidates = append(candidates, strings.TrimSuffix(authorizationServer, "/")+"/.well-known/oauth-authorization-server")
+			candidates = append(candidates, wellKnown(authorizationServer, "oauth-authorization-server")...)
 		}
 	}
+	candidates = append(candidates, wellKnown(settings.ServerURL, "oauth-authorization-server")...)
 	candidates = append(candidates, origin+"/.well-known/oauth-authorization-server", origin+"/.well-known/openid-configuration")
 	var lastErr error
 	for _, candidate := range candidates {
@@ -105,6 +113,71 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 		lastErr = fmt.Errorf("no authorization endpoints published")
 	}
 	return nil, fmt.Errorf("mcp: cannot discover the authorization server of %s: %w", settings.ServerURL, lastErr)
+}
+
+// wellKnown is where an issuer publishes a document, in both the shapes
+// that are used: the segment goes between the host and the issuer's own
+// path, which is what the specification says, and the older form that
+// appends it, which is what several servers actually serve.
+func wellKnown(issuer, document string) []string {
+	parsed, err := url.Parse(strings.TrimSuffix(issuer, "/"))
+	if err != nil || parsed.Host == "" {
+		return nil
+	}
+	origin := parsed.Scheme + "://" + parsed.Host
+	path := strings.TrimSuffix(parsed.Path, "/")
+	if path == "" {
+		return []string{origin + "/.well-known/" + document}
+	}
+	return []string{origin + "/.well-known/" + document + path, origin + path + "/.well-known/" + document}
+}
+
+// Register asks the authorization server for a client of our own, which is
+// how a server that publishes no client id is reached: the operator
+// declares the server and nothing else, and the client is made on the
+// first authorization. Servers that want a client registered by hand say
+// so by publishing no registration endpoint.
+func Register(ctx context.Context, settings *OAuthSettings, metadata *Metadata) (string, string, error) {
+	if metadata.RegistrationEndpoint == "" {
+		return "", "", fmt.Errorf("mcp: %s publishes no client id and no way to register one; set agent.mcp.servers[].oauth.clientId", settings.ServerURL)
+	}
+	body, err := json.Marshal(map[string]any{
+		"client_name":                settings.ClientName,
+		"redirect_uris":              []string{settings.RedirectURL},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": "none",
+		"scope":                      strings.Join(settings.Scopes, " "),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, metadata.RegistrationEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := settings.client().Do(request)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		answer, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		return "", "", fmt.Errorf("mcp: %s refused to register a client: %d %s", metadata.RegistrationEndpoint, response.StatusCode, strings.TrimSpace(string(answer)))
+	}
+	var registered struct {
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&registered); err != nil {
+		return "", "", err
+	}
+	if registered.ClientID == "" {
+		return "", "", fmt.Errorf("mcp: %s registered a client with no id", metadata.RegistrationEndpoint)
+	}
+	return registered.ClientID, registered.ClientSecret, nil
 }
 
 func fetchJSON[T any](ctx context.Context, client *http.Client, address string) (T, error) {
@@ -134,6 +207,11 @@ type Authorization struct {
 	URL      string
 	State    string
 	Verifier string
+
+	// ClientID is the client the flow was begun with, which is the
+	// configured one, or the one registered for it here. Finishing the
+	// flow must use the same.
+	ClientID string
 }
 
 // Begin starts a code flow with PKCE.
@@ -142,13 +220,24 @@ func Begin(ctx context.Context, settings *OAuthSettings) (*Authorization, error)
 	if err != nil {
 		return nil, err
 	}
+	clientId := settings.ClientID
+	if clientId == "" {
+		registered, secret, err := Register(ctx, settings, metadata)
+		if err != nil {
+			return nil, err
+		}
+		clientId, settings.ClientID = registered, registered
+		if secret != "" {
+			settings.ClientSecret = secret
+		}
+	}
 	verifier := randomToken(32)
 	digest := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(digest[:])
 	state := randomToken(16)
 	values := url.Values{
 		"response_type":         {"code"},
-		"client_id":             {settings.ClientID},
+		"client_id":             {clientId},
 		"redirect_uri":          {settings.RedirectURL},
 		"state":                 {state},
 		"code_challenge":        {challenge},
@@ -165,7 +254,7 @@ func Begin(ctx context.Context, settings *OAuthSettings) (*Authorization, error)
 	if strings.Contains(metadata.AuthorizationEndpoint, "?") {
 		separator = "&"
 	}
-	return &Authorization{URL: metadata.AuthorizationEndpoint + separator + values.Encode(), State: state, Verifier: verifier}, nil
+	return &Authorization{URL: metadata.AuthorizationEndpoint + separator + values.Encode(), State: state, Verifier: verifier, ClientID: clientId}, nil
 }
 
 // Exchange turns the code the person came back with into tokens.
@@ -184,7 +273,12 @@ func Exchange(ctx context.Context, settings *OAuthSettings, code, verifier strin
 	if settings.ServerURL != "" {
 		values.Set("resource", settings.ServerURL)
 	}
-	return tokenRequest(ctx, settings, metadata.TokenEndpoint, values)
+	tokens, err := tokenRequest(ctx, settings, metadata.TokenEndpoint, values)
+	if err != nil {
+		return nil, err
+	}
+	tokens.ClientID = settings.ClientID
+	return tokens, nil
 }
 
 // Refresh trades a refresh token for new tokens.
@@ -205,6 +299,7 @@ func Refresh(ctx context.Context, settings *OAuthSettings, refreshToken string) 
 	if tokens.RefreshToken == "" {
 		tokens.RefreshToken = refreshToken
 	}
+	tokens.ClientID = settings.ClientID
 	return tokens, nil
 }
 

@@ -773,8 +773,12 @@ func (self *Configuration) validateAgent(validator *validator) {
 		default:
 			validator.add(prefix+".auth", `must be "none", "static", "user" or "oauth"`)
 		}
-		if server.ResolvedAuth() == AgentMCPAuthOAuth && server.OAuth.ClientID == "" {
-			validator.add(prefix+".oauth.clientId", "required for the oauth mode")
+		if server.ResolvedAuth() == AgentMCPAuthOAuth && server.OAuth.ClientID == "" && server.OAuth.AuthorizationURL != "" && server.OAuth.TokenURL != "" {
+			// Left empty, a client is registered with the server on the
+			// first authorization, which is how a server that publishes no
+			// client id is reached. That needs discovery, so endpoints
+			// given by hand still need a client id given by hand.
+			validator.add(prefix+".oauth.clientId", "required when the endpoints are set by hand, which skips discovery")
 		}
 		for envIndex, variable := range server.Env {
 			if variable.Name == "" {

@@ -97,6 +97,10 @@ type pendingAuthorization struct {
 	State       string `json:"state"`
 	Verifier    string `json:"verifier"`
 	RedirectURL string `json:"redirectUrl"`
+	// ClientID is the client the flow was begun with, kept because a
+	// server that publishes none has one registered for it, and finishing
+	// must use the same one -- including on another instance.
+	ClientID string `json:"clientId,omitempty"`
 }
 
 func (self *graph) serverView(server *config.AgentMCPServer, connection *models.AgentConnection) *AgentServerView {
@@ -243,7 +247,7 @@ func (self *graph) BeginAgentServerOAuth(ctx context.Context, arguments BeginAge
 	if err != nil {
 		return "", err
 	}
-	pending, _ := json.Marshal(pendingAuthorization{State: authorization.State, Verifier: authorization.Verifier, RedirectURL: redirect})
+	pending, _ := json.Marshal(pendingAuthorization{State: authorization.State, Verifier: authorization.Verifier, RedirectURL: redirect, ClientID: authorization.ClientID})
 	sealed, err := worker.SealSecret(string(pending))
 	if err != nil {
 		return "", err
@@ -291,7 +295,11 @@ func (self *graph) FinishAgentServerOAuth(ctx context.Context, arguments FinishA
 	if pending.State == "" || pending.State != arguments.State {
 		return nil, fmt.Errorf("%w: the authorization did not come back as it left", api.ErrInvalidArguments)
 	}
-	tokens, err := mcp.Exchange(ctx, worker.OAuthSettings(server, pending.RedirectURL), arguments.Code, pending.Verifier)
+	settings := worker.OAuthSettings(server, pending.RedirectURL)
+	if pending.ClientID != "" {
+		settings.ClientID = pending.ClientID
+	}
+	tokens, err := mcp.Exchange(ctx, settings, arguments.Code, pending.Verifier)
 	if err != nil {
 		connection.Status = models.ConnectionError
 		connection.LastError = err.Error()
