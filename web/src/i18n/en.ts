@@ -917,6 +917,7 @@ export const en = {
   'agent.aboutMe': 'About me',
   'agent.name': 'What to call it',
   'agent.languageField': 'Writes in',
+  'agent.languageFollows': 'Same as my account',
   'agent.instructions': 'Standing instructions',
   'agent.instructionsPlaceholder':
     'Who you are, how you write, what matters to you. "I am the treasurer of the sailing club; anything from the club is important; sign as Z."',

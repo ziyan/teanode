@@ -305,6 +305,24 @@ function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
   )
 }
 
+// The languages the server has a name for, each written in itself. A tag
+// it does not know is still allowed — the prompt says "the language with
+// the code xx" and the model does the rest — which is what allowCustom
+// on the control is for.
+const AGENT_LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'de', label: 'Deutsch' },
+  { value: 'es', label: 'Español' },
+  { value: 'fr', label: 'Français' },
+  { value: 'it', label: 'Italiano' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+  { value: 'nl', label: 'Nederlands' },
+  { value: 'pt', label: 'Português' },
+  { value: 'ru', label: 'Русский' },
+  { value: 'zh', label: '中文' },
+]
+
 function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView }) {
   const { t } = useTranslation()
   const [name, setName] = useState(agent.name)
@@ -335,11 +353,14 @@ function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView 
           </label>
           <label className="shrink">
             <span>{t('agent.languageField')}</span>
-            <input
-              className="narrow"
+            <Select
               value={language}
+              label={t('agent.languageField')}
+              options={[{ value: '', label: t('agent.languageFollows') }, ...AGENT_LANGUAGES]}
+              onChange={setLanguage}
               placeholder={view.language || 'en'}
-              onChange={(event) => setLanguage(event.target.value)}
+              allowCustom
+              block
             />
           </label>
         </div>

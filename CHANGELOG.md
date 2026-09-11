@@ -204,6 +204,9 @@ Notable changes to TeaNode. The format follows
   runs out first stops the day, and what the agent says when it stops
   names the one that did. `teanode agent admin limit alice --cost 5` does
   the same for one person, and the operator's page has both fields. (#73)
+- The language your agent writes in is a list to pick from, in each
+  language's own name, with "same as my account" at the top of it and
+  room to type a code the list does not carry. (#73)
 - The currency is the operator's to choose. `agent.currency` takes a
   three-letter code, `USD` unless it is set, and every amount the server
   shows or caps is written in it. It labels and formats rather than
@@ -266,6 +269,12 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- On a phone, a link out of the agent's drawer closes it. The drawer is
+  the whole screen there, so the page it went to — the agent's own page
+  from the budget ring, a message it cited — was left behind it. (#73)
+- The zone box on the preferences page has room under it. The hint below
+  it is drawn tight under a field's label, and this box has none, so the
+  words rode up over the box itself. (#73)
 - The agent's conversation opens at its end and stays there. It went to the
   end and then, a moment later, sat part way up it: a picture finishing, a
   chart saying how tall it is, a document fetched and drawn all make the

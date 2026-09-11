@@ -578,7 +578,7 @@ function FileCard({ file }: { file: SharedFile }) {
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
 // page a click away. Nothing is drawn where there is no limit to be near.
-function BudgetRing({ budget, framed }: { budget: Budget; framed: boolean }) {
+function BudgetRing({ budget, framed, onLeaving }: { budget: Budget; framed: boolean; onLeaving: () => void }) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
   if (!shown) return null
@@ -613,7 +613,7 @@ function BudgetRing({ budget, framed }: { budget: Budget; framed: boolean }) {
           {ring}
         </a>
       ) : (
-        <Link className="agent-drawer-budget" to="/settings/agent" aria-label={label}>
+        <Link className="agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
           {ring}
         </Link>
       )}
@@ -1036,6 +1036,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return { page: location.pathname }
   }, [location.pathname, told])
 
+  // leaving is what a link out of the drawer does on the way: on a phone
+  // the drawer is the whole screen, so the page it goes to would be
+  // behind it, and going somewhere is leaving here.
+  const leaving = () => {
+    if (window.innerWidth <= 720) close()
+  }
+
+  // close puts the drawer away, wherever it is drawn.
+  const close = () => {
+    if (standalone) {
+      window.parent.postMessage({ teanode: 'close' }, '*')
+      return
+    }
+    setOpen(false)
+    remember(OPEN_KEY, '0')
+  }
+
   const toggle = () => {
     if (standalone) {
       window.parent.postMessage({ teanode: 'close' }, '*')
@@ -1411,7 +1428,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   title={line.at ? formatTime(line.at) : undefined}
   onClick={() => toggleTimed(line.key)}
           >
-  <Markdown text={line.text} />
+  <Markdown text={line.text} onLeaving={leaving} />
   {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
   {showUsage && line.usage && (
     <div className="agent-usage muted">
@@ -1571,7 +1588,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 </span>
               </Tooltip>
             )}
-            {budget && <BudgetRing budget={budget} framed={standalone} />}
+            {budget && (
+              <BudgetRing
+                budget={budget}
+                framed={standalone}
+                onLeaving={leaving}
+              />
+            )}
             <button
               type="button"
               className="icon-button"

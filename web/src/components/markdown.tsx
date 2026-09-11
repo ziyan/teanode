@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
 
@@ -33,6 +34,22 @@ function webAddress(written: string): string {
   // Put together from the parts the browser parsed, which leaves out
   // anything a name and password were written into the address as.
   return `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+// Leaving is what whoever draws this markdown wants done when a link in
+// it takes the reader somewhere else in the dashboard. The drawer on a
+// phone is the whole screen, so it puts itself away rather than leaving
+// the page it went to behind it.
+const Leaving = createContext<() => void>(() => {})
+
+// MailLink is a message the agent cited, opened where it is.
+function MailLink({ itemId, children }: { itemId: string; children: React.ReactNode }) {
+  const leaving = useContext(Leaving)
+  return (
+    <Link to={`/mailbox/starred/${encodeURIComponent(itemId)}`} onClick={leaving}>
+      {children}
+    </Link>
+  )
 }
 
 function inline(text: string, keyPrefix: string): React.ReactNode[] {
@@ -72,9 +89,9 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
         ) : mail ? (
           // The agent cites a message as mail:ITEM_ID; Starred opens any
           // item by id whichever folder it is in.
-          <Link key={key} to={`/mailbox/starred/${encodeURIComponent(mail[1])}`}>
+          <MailLink key={key} itemId={mail[1]}>
             {match[5]}
-          </Link>
+          </MailLink>
         ) : href ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
             {match[5]}
@@ -241,7 +258,19 @@ function parse(source: string): Block[] {
   return blocks
 }
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, onLeaving }: { text: string; onLeaving?: () => void }) {
+  return (
+    <Leaving.Provider value={onLeaving ?? noLeaving}>
+      <MarkdownBlocks text={text} />
+    </Leaving.Provider>
+  )
+}
+
+// noLeaving is the default: a link goes where it goes and nothing else
+// happens. Kept out of the render so the provider's value is stable.
+const noLeaving = () => {}
+
+function MarkdownBlocks({ text }: { text: string }) {
   return (
     <div className="markdown">
       {parse(text).map((block, index) => {

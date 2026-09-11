@@ -913,6 +913,7 @@ export const ja: Catalog = {
   'agent.aboutMe': '私について',
   'agent.name': '呼び名',
   'agent.languageField': '書く言語',
+  'agent.languageFollows': 'アカウントと同じ',
   'agent.instructions': '常時の指示',
   'agent.instructionsPlaceholder':
     'あなたが誰で、どう書き、何が大事か。「私はヨットクラブの会計です。クラブからのものは重要。Z と署名する。」',

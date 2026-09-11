@@ -198,6 +198,8 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           </label>
           {timezoneMode === 'fixed' ? (
             <input
+              className='field-standalone'
+              aria-label={t('profile.timezone')}
               value={timezone}
               placeholder='Europe/Berlin'
               onChange={(event) => {

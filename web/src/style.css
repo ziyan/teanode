@@ -2323,6 +2323,15 @@ body,
 
 /* The sentence under a field, saying what it is for. Under rather than beside:
    a hint beside a field is read after the field has already been filled in. */
+/* A control standing on its own rather than inside its label — the zone
+   box that appears under "always this zone" — carries the bottom margin
+   the label would have given it, so the hint below does not ride up over
+   it. The hint's own top margin is negative by design: it closes the gap
+   under a label, and without this there is no gap to close. */
+.field-standalone {
+  margin-bottom: 10px;
+}
+
 .field-hint {
   margin: -6px 0 var(--space-3);
   font-size: var(--text-label);

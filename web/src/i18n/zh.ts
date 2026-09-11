@@ -880,6 +880,7 @@ export const zh: Catalog = {
   'agent.aboutMe': '关于我',
   'agent.name': '称呼',
   'agent.languageField': '书写语言',
+  'agent.languageFollows': '与账户相同',
   'agent.instructions': '固定指示',
   'agent.instructionsPlaceholder':
     '你是谁、如何写作、什么重要。"我是帆船俱乐部的司库；来自俱乐部的邮件都重要；署名 Z。"',
