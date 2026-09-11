@@ -24,7 +24,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you remember about the person, kept between conversations: add a fact, change or delete one, look one up, list or search them. The conversation always reads a memory; name the runs that should read it too — triage, reply, summaries, research. Search before adding, so nothing is kept twice.",
+				Description: "What you remember about the person, kept between conversations: add a fact, change or delete one, look one up, list or search them. Only the top of it is in your prompt, so search here before answering that you do not know something about them, and before asking them for something they may already have told you. Keep what a turn teaches you: who somebody is to them, what a word means here, how they want a kind of thing handled, a decision they made. The conversation always reads a memory; name the runs that should read it too — triage, reply, summaries, research. Search before adding, so nothing is kept twice, and update what is there rather than adding beside it.",
 				Parameters: tools.Object(map[string]any{
 					"action":     tools.EnumProperty("what to do", "add", "update", "delete", "get", "list", "search", "batch"),
 					"id":         tools.StringProperty("for update, delete and get: the memory"),
@@ -37,7 +37,7 @@ func init() {
 					"limit":      tools.IntegerProperty("for list and search: how many, 20 by default"),
 					"items":      tools.ArrayProperty("for batch: several of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "A memory addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for the person. Prefer a rule for anything rule-shaped; a memory is for what a rule cannot say.",
+				Guidance: "memory: search it when the person speaks as though you already know something, and add to it whenever a turn teaches you something lasting; the prompt carries only the top of it. A memory addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for the person. Prefer a rule for anything rule-shaped; a memory is for what a rule cannot say.",
 				Run:      runMemory,
 				Overlay:  recalledOverlay,
 			},

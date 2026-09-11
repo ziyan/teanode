@@ -28,6 +28,12 @@ type MemoryOperation interface {
 	// contain the words.
 	SearchAgentMemories(agentId, query string, limit int) ([]*models.AgentMemory, error)
 
+	// RecallAgentMemories is the memories any one of the words touches,
+	// for putting what is already known in front of a turn. Where the
+	// search above narrows with every word, this widens: a sentence is a
+	// handful of chances to remember, not a filter.
+	RecallAgentMemories(agentId string, words []string, limit int) ([]*models.AgentMemory, error)
+
 	// TouchAgentMemories marks memories used now.
 	TouchAgentMemories(memoryIds []string, at time.Time) error
 
@@ -206,6 +212,26 @@ func (self *transaction) SearchAgentMemories(agentId, query string, limit int) (
 		pattern := "%" + strings.ReplaceAll(strings.ReplaceAll(word, "%", "\\%"), "_", "\\_") + "%"
 		statement = statement.Where("(LOWER(\"title\") LIKE ? OR LOWER(\"content\") LIKE ? OR LOWER(\"tags\"::text) LIKE ?)", pattern, pattern, pattern)
 	}
+	statement = statement.Order("\"pinned\" DESC, \"used_at\" DESC NULLS LAST, \"modified_at\" DESC")
+	if limit <= 0 {
+		limit = 20
+	}
+	return self.memoriesFrom(statement.Limit(limit))
+}
+
+func (self *transaction) RecallAgentMemories(agentId string, words []string, limit int) ([]*models.AgentMemory, error) {
+	if len(words) == 0 {
+		return nil, nil
+	}
+	statement := self.tx.Where("\"agent_id\" = ?", agentId)
+	var clauses []string
+	var arguments []any
+	for _, word := range words {
+		pattern := "%" + strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(word), "%", "\\%"), "_", "\\_") + "%"
+		clauses = append(clauses, "(LOWER(\"title\") LIKE ? OR LOWER(\"content\") LIKE ? OR LOWER(\"tags\"::text) LIKE ?)")
+		arguments = append(arguments, pattern, pattern, pattern)
+	}
+	statement = statement.Where(strings.Join(clauses, " OR "), arguments...)
 	statement = statement.Order("\"pinned\" DESC, \"used_at\" DESC NULLS LAST, \"modified_at\" DESC")
 	if limit <= 0 {
 		limit = 20

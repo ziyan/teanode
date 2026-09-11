@@ -207,6 +207,21 @@ Notable changes to TeaNode. The format follows
 - The language your agent writes in is a list to pick from, in each
   language's own name, with "same as my account" at the top of it and
   room to type a code the list does not carry. (#73)
+- Your agent remembers harder. What it knows was already folded into its
+  prompt, but only the top of it, so a thing you told it in March was
+  forgotten by June unless it thought to go looking. Now the words of
+  every turn are searched against everything it remembers before it
+  answers, and whatever they touch is put in front of it — one query, no
+  extra call to a model, on every turn. Its conduct also tells it to keep
+  what a turn teaches it rather than only what you order it to remember,
+  to look before saying it does not know, and to update what is there
+  instead of keeping a second copy beside it. (#73)
+- Your agent can read its own past. A `conversation` tool searches
+  everything said in your other conversations with it and in the runs
+  that happened without you, lists the recent ones and reads one through,
+  so "the thing we decided last week" is something it can go and find
+  rather than something you have to say again. What it reads back is
+  data, like mail: quoted, never obeyed. (#73)
 - Models are priced one by one. A provider's prices were charged for
   everything behind that key, which is wrong wherever a service sells a
   small model and a large one — and it is wrong by a factor of ten or

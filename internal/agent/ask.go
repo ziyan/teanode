@@ -136,8 +136,11 @@ type AskRun struct {
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
 
-	// recalled is what memory searches found this turn, for the overlay.
-	recalled []string
+	// recalled is what memory searches found this turn, for the overlay;
+	// promptMemories are the ones the prompt already carries, which the
+	// turn's own recall does not repeat.
+	recalled       []string
+	promptMemories map[string]bool
 
 	// lookingAt are the pictures tools fetched this round for the model.
 	lookingAt []llm.ContentPart
@@ -653,6 +656,11 @@ func (self *AskRun) turn() error {
 		system, err := self.systemPrompt(ctx, configuration, sent, deferred, compact)
 		if err != nil {
 			return err
+		}
+		if round == 0 {
+			// Once the prompt has said which memories it carries, what
+			// the person actually asked about is looked up beside them.
+			self.recallForTurn(ctx)
 		}
 		messages := make([]llm.ChatMessage, 0, len(history)+2)
 		messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: system, CacheBreakpoint: true})
