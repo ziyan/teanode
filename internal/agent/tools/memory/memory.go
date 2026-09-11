@@ -6,6 +6,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -39,10 +40,37 @@ func init() {
 				}, "action"),
 				Guidance: "memory: search it when the person speaks as though you already know something, and add to it whenever a turn teaches you something lasting; the prompt carries only the top of it. A memory addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for the person. Prefer a rule for anything rule-shaped; a memory is for what a rule cannot say.",
 				Run:      runMemory,
+				RiskOf:   riskOfMemory,
 				Overlay:  recalledOverlay,
 			},
 		}
 	})
+}
+
+// riskOfMemory judges the call, not the tool: looking one up changes
+// nothing. Without it the whole tool counts as writing, and a run that may
+// only read loses it altogether -- which is how a research run came to be
+// offered memory in its allow list and never see it.
+func riskOfMemory(arguments json.RawMessage) tools.Risk {
+	var call memoryArguments
+	if err := json.Unmarshal(arguments, &call); err != nil {
+		return tools.RiskWrite
+	}
+	switch call.Action {
+	case "get", "list", "search":
+		return tools.RiskRead
+	case "batch":
+		// A batch is as risky as the most it does.
+		for _, item := range call.Items {
+			switch item.Action {
+			case "get", "list", "search":
+			default:
+				return tools.RiskWrite
+			}
+		}
+		return tools.RiskRead
+	}
+	return tools.RiskWrite
 }
 
 // batchItems is how many memories one call may write.
@@ -232,8 +260,6 @@ func runMemory(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return nil, fmt.Errorf("%q is not an action of memory", arguments.Action)
 }
 
-// recalledOverlay is what memory searches found this turn, so the model
-// does not search again for what it just saw.
 // firstOf names the nearest of the memories a new one may be a copy of.
 func firstOf(twins []map[string]any) string {
 	if len(twins) == 0 {
@@ -257,6 +283,8 @@ func noteMeaning(ctx context.Context, run tools.Run, memory *models.AgentMemory)
 	return twins
 }
 
+// recalledOverlay is what memory searches found this turn, so the model
+// does not search again for what it just saw.
 func recalledOverlay(ctx context.Context) string {
 	run, err := tools.RunFrom(ctx)
 	if err != nil {

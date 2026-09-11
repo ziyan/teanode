@@ -66,7 +66,8 @@ type AgentOperation interface {
 	// key so a caller can price what it reads.
 	QueryAgentUsageByModel(agentId string, since, until time.Time, by string) ([]models.AgentUsageModelRow, error)
 
-	// ScavengeAgentUsage removes rows older than the retention.
+	// ScavengeAgentUsage removes rows older than the retention. Nothing
+	// calls it; see the implementation for why.
 	ScavengeAgentUsage(before time.Time) (int64, error)
 
 	// TouchUserLocation records where a person is and what they read in, as
@@ -758,6 +759,10 @@ func (self *transaction) QueryAgentUsageByModel(agentId string, since, until tim
 	return result, nil
 }
 
+// ScavengeAgentUsage removes usage older than a time. Nothing calls it:
+// the worker's hourly sweep takes transcripts, jobs, replies and files, and
+// deliberately leaves usage, which is what a year of spending is added up
+// from. It is here for an operator who one day wants a retention on it.
 func (self *transaction) ScavengeAgentUsage(before time.Time) (int64, error) {
 	result := self.tx.Where("\"timestamp\" < ?", uint64(before.Unix())).Delete(&agentUsageModel{})
 	return result.RowsAffected, result.Error

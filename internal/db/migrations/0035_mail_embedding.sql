@@ -1,8 +1,9 @@
 -- A message's meaning as a vector, for search by meaning. One row per
 -- message per mailbox per model: a person who changes the embedding model
--- gets new rows, and the old ones go with the next sweep. Stored as an
--- array of reals rather than a vector type, because the database this ships
--- with is stock PostgreSQL; ranking is done in the server over a mailbox's
+-- gets new rows, and the old ones stay where they are, matching nothing and
+-- swept by nothing. Stored as an array of reals rather than a vector type,
+-- because the database this ships with is stock PostgreSQL; ranking is done
+-- in the server over a mailbox's
 -- candidates, which is fine at the size of a personal mailbox.
 CREATE TABLE "mail_embedding" (
     "mail_id"    character varying(32)    NOT NULL REFERENCES "mail" ("id") ON DELETE CASCADE,

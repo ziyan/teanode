@@ -31,6 +31,21 @@ func NextRun(schedule *models.AgentSchedule, owner *models.User, now time.Time) 
 	return nextCron(schedule.Cron, now, Location(owner))
 }
 
+// SettleSchedule settles a schedule's time and says when it next runs. A
+// distance from now ("@in 20m") becomes the moment it means, so that what
+// is stored does not move every time it is read. The agent's own tool has
+// always done this; a schedule written from the dashboard or the command
+// line was refused instead, being told it wanted five cron fields.
+func SettleSchedule(schedule *models.AgentSchedule, owner *models.User, now time.Time) (time.Time, error) {
+	location := Location(owner)
+	settled, err := resolveRelative(schedule.Cron, now, location)
+	if err != nil {
+		return time.Time{}, err
+	}
+	schedule.Cron = settled
+	return nextCron(schedule.Cron, now, location)
+}
+
 // dueSchedules queues a run for every schedule whose time has come, and
 // moves each on to its next time.
 func (self *Agent) dueSchedules(ctx context.Context, now time.Time) error {

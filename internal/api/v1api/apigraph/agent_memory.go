@@ -211,7 +211,7 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 	tx := self.transaction(ctx)
 	if arguments.ScheduleID == "" {
 		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
-		next, err := agent.NextRun(schedule, principal.User, time.Now())
+		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
 		}
@@ -245,7 +245,7 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Enabled != nil {
 			schedule.Enabled = *arguments.Enabled
 		}
-		next, err := agent.NextRun(schedule, principal.User, time.Now())
+		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return err
 		}

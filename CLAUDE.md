@@ -8,6 +8,8 @@ Then, depending on what you are doing:
 - `CONTRIBUTING.md` — naming, comments, commits, changelog, tests
 - `docs/reference/local-development.md` — build, test, run a dev server
 - `docs/reference/project-structure.md` — what each package is for
+- `docs/subsystems/` — how the agent works: the loop, the prompt, streaming,
+  memory, jobs, the devices
 - `docs/reference/command-line.md` — the CLI, and how it reaches the whole API
 - `docs/reference/deployment.md` — running it with docker compose, and backups
 - `docs/coding/database-migrations.md` — how to add a migration safely

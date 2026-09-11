@@ -376,8 +376,11 @@ type AgentTools struct {
 }
 
 // AgentToolFamilies are the names the tool policy may use besides a tool's
-// own name.
-var AgentToolFamilies = []string{"mailbox", "domains", "audit", "access", "server", "account", "general", "mcp", "browser"}
+// own name. They are the families in internal/agent/tools, and they must
+// stay that list: two of the names here once said "access" and "mcp", which
+// name nothing, so a policy that switched off connected servers switched off
+// nothing and said so to nobody.
+var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer"}
 
 // AgentBrowser is a headless browser reached over the DevTools protocol.
 type AgentBrowser struct {

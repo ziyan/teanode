@@ -97,3 +97,35 @@ func TestDecodeArgumentsRepairs(t *testing.T) {
 		t.Fatal("required")
 	}
 }
+
+// The operator's policy names families, and the validator prints the list
+// it accepts. A family missing from that list validates only because
+// anything tool-shaped does, and a name in the list that is no family
+// switches off nothing at all.
+func TestEveryFamilyIsAPolicyName(t *testing.T) {
+	families := []Family{FamilyMailbox, FamilyDomains, FamilyAudit, FamilyPeople, FamilyServer, FamilyAccount, FamilyGeneral, FamilyServers, FamilyBrowser, FamilyComputer}
+	for _, family := range families {
+		found := false
+		for _, name := range config.AgentToolFamilies {
+			if name == string(family) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("the family %q is not in config.AgentToolFamilies, so the policy cannot name it", family)
+		}
+	}
+	for _, name := range config.AgentToolFamilies {
+		found := false
+		for _, family := range families {
+			if string(family) == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("config.AgentToolFamilies offers %q, which is no family", name)
+		}
+	}
+}

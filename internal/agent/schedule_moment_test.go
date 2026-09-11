@@ -3,6 +3,8 @@ package agent
 import (
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A schedule at one moment comes once, in the person's zone, and never
@@ -52,5 +54,32 @@ func TestResolveRelative(t *testing.T) {
 		if _, err := resolveRelative(input, now, location); err == nil {
 			t.Fatalf("resolveRelative(%q) should fail", input)
 		}
+	}
+}
+
+// A distance from now is settled into the moment it means before it is
+// stored, whoever wrote it: the agent's own tool did this and the dashboard
+// did not, so "@in 20m" typed by a person was refused.
+func TestSettleScheduleResolvesADistanceFromNow(t *testing.T) {
+	owner := &models.User{Timezone: "America/New_York"}
+	location, _ := time.LoadLocation("America/New_York")
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, location)
+	schedule := &models.AgentSchedule{Cron: "@in 20m", Name: "Later", Prompt: "look again"}
+	next, err := SettleSchedule(schedule, owner, now)
+	if err != nil {
+		t.Fatalf("a distance from now is taken: %v", err)
+	}
+	if schedule.Cron != "@at 2026-09-10 12:20" {
+		t.Fatalf("it is stored as the moment it means, got %q", schedule.Cron)
+	}
+	if !next.Equal(time.Date(2026, 9, 10, 12, 20, 0, 0, location)) {
+		t.Fatalf("and runs then, got %s", next)
+	}
+	cron := &models.AgentSchedule{Cron: "0 8 * * 1-5"}
+	if _, err := SettleSchedule(cron, owner, now); err != nil || cron.Cron != "0 8 * * 1-5" {
+		t.Fatalf("a cron line is left alone: %q %v", cron.Cron, err)
+	}
+	if _, err := SettleSchedule(&models.AgentSchedule{Cron: "@in never"}, owner, now); err == nil {
+		t.Fatal("nonsense is refused")
 	}
 }

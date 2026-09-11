@@ -1072,7 +1072,7 @@ after allow. Only admitted models may be assigned work.
 **`allow`**, **`deny`** — The two lists of the filter.
 
 **`pricing`** — What the service charges, per million tokens, with
-`input`, `output` and `cacheRead`. Optional; it lets the usage view show
+`input`, `output`, `cacheRead` and `cacheWrite`. Optional; it lets the usage view show
 money beside tokens, which is the number an operator budgets.
 
 **`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`** — The four
@@ -1083,7 +1083,7 @@ wrong for one that does.
 
 **`modelPricing`** — Prices for particular models of this provider, since
 one service's models rarely cost alike: a small model and a large one behind
-the same key are priced apart. Each entry has a `model` and the same three
+the same key are priced apart. Each entry has a `model` and the same four
 prices. The `model` is the name after the provider's, matched the way `allow`
 and `deny` are, so `gpt-5*` prices a family; the first entry that matches a
 model is the one used, so exact names belong above the patterns that would
@@ -1109,7 +1109,11 @@ compaction — unless one of them is overridden. Empty means `default`.
 
 **`embedding`** — The model that turns text into vectors, which enables
 search by meaning. Empty means no search by meaning. Changing it marks
-existing vectors stale; they are re-embedded on the backfill schedule.
+existing vectors stale, and the two kinds catch up differently: a person's
+memories are re-embedded a few per conversation turn, while mail is only
+re-embedded by a backfill, which runs when a mailbox is granted with sorting
+and its own backfill on. Mail vectors from the old model are left where they
+are; they match nothing, so that mailbox falls back to searching by words.
 
 **`triage`**, **`research`**, **`summarize`**, **`reply`**, **`ask`**,
 **`schedule`**, **`compact`** — Overrides per kind of work. Resolution is
@@ -1156,11 +1160,12 @@ reached by the `shell` and `filesystem` tools while they are present.
 **`chatApps`** — A person's own Telegram or Discord bot, through which they
 talk to their agent's primary conversation.
 
-**`currency`** — What the providers' prices, and so every amount this server
-shows or caps, are written in: a three-letter code such as `USD` or `EUR`,
-and `USD` when it is not set. It labels and formats; nothing is converted, so
-an operator whose prices are in euros enters them in euros and says `EUR`
-here.
+### `agent.currency`
+
+What the providers' prices, and so every amount this server shows or caps,
+are written in: a three-letter code such as `USD` or `EUR`, and `USD` when it
+is not set. It labels and formats; nothing is converted, so an operator whose
+prices are in euros enters them in euros and says `EUR` here.
 
 ### `agent.limits`
 
@@ -1196,17 +1201,27 @@ the model.
 
 **`maxRoundsPerResearch`** — The same for a research run.
 
-**`maxRoundsPerReply`** — The same for a reply.
+**`maxRoundsPerReply`** — Set, validated, and read by nothing: a reply is a
+single call to a model and has no rounds. Kept so a stored configuration does
+not fail to load.
 
-**`maxToolCallsPerRun`** — How many tool calls one run may make.
+**`maxToolCallsPerRun`** — Set, validated, and read by nothing. What actually
+bounds a run is `maxRoundsPerAsk`, together with the rule that stops a turn
+when the same call has failed three times. Kept so a stored configuration does
+not fail to load.
 
 **`requestTimeout`** — How long one call to a provider may take.
 
 **`concurrency`** — How many runs a worker executes at once, per instance.
+Read when the worker is built, so a change needs a restart of that instance.
 
 ### `agent.retention`
 
-**`runs`** — How long run transcripts and dead-lettered jobs are kept.
+**`runs`** — How long the record of work done without anybody watching is
+kept: run transcripts, finished and dead-lettered jobs, the replies the agent
+held or sent, and the files a run produced. Token and money usage is not swept
+by this, or by anything: those rows stay until the agent is deleted, because
+they are what a year's spending is added up from.
 
 **`corrections`** — How long a person's corrections are kept.
 
@@ -1220,8 +1235,10 @@ which case the `web_search` tool is not offered.
 ### `agent.tools`
 
 Risk classes are the floor; this can only make the agent more cautious.
-Both lists take family names — `mailbox`, `domains`, `audit`, `access`,
-`server`, `account`, `general`, `mcp`, `browser` — or tool names.
+Both lists take family names — `mailbox`, `domains`, `audit`, `people`,
+`server`, `account`, `general`, `servers`, `browser`, `computer` — or tool
+names. `servers` is the family of the connected servers' tools, and `people`
+the family of the ones that reach accounts and access.
 
 **`disabled`** — Families or tools never offered to anybody.
 

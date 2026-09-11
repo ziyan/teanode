@@ -343,11 +343,11 @@ have made.
 | --- | --- |
 | `teanode agent ask <message \| ->` | say something to your agent and print what it answers; `--new` starts a named conversation, `--conversation` continues one, `--attach FILE` (repeatable) hands it a file — a picture is shown to it, a text file read to it, anything else named — `--json` streams every event, `--quiet` prints the answer alone. A tool that needs your word asks on the terminal, y or n — never a flag |
 | `teanode agent chat` | the same, turn by turn, until an empty line |
-| `teanode agent conversation list\|show\|new\|rename\|delete` | the main conversation and the named ones; `list --query` finds one by words in its title or in what was said; `delete` asks first and takes the files that came with it |
+| `teanode agent conversation list\|show\|new\|rename\|main\|delete` | the main conversation and the named ones; `list --query` finds one by words in its title or in what was said; `main` makes a named conversation the main one, or starts a fresh main one and keeps the old as a named one; `delete` asks first and takes the files that came with it |
 | `teanode agent run list\|show` | what the agent did on its own: the transcripts of its sorting, summaries and replies |
 | `teanode agent tools` | the tools your agent has, as you may use them, with the risk class and whether it asks first |
 | `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
-| `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone |
+| `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone; or a single moment, `"@at 2026-09-12 09:00"`, or a distance from now, `"@in 20m"`, which is stored as the moment it means and runs once |
 | `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
 | `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
 | `teanode agent mcp list\|connect\|disconnect` | the connected servers the operator declared and your connections to them; `connect tracker --credential -` reads your credential from standard input, and an authorizing server prints the address to open |
@@ -382,7 +382,10 @@ yes is the last word. The card is the server's: the program runs what
 the server sends, so it trusts the server the way a terminal trusts the
 person at it. The program signs in as you, with the active profile's
 token, never as the server. Several computers can be attached at once,
-told apart by name.
+told apart by name. A command runs under `/bin/sh -c` (`cmd /C` on
+Windows), not your login shell, so your aliases are not in scope. The
+program answers four requests at once and refuses a fifth rather than
+queueing it.
 
 | Command | What it does |
 | --- | --- |

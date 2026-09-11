@@ -15,10 +15,9 @@ import (
 // a fresh, isolated context per turn, discarded when the turn ends, never
 // signed in as anybody. A tab is the person's own, attached through the
 // extension, for what needs their session; it is never used by a run with
-// nobody present. A headless run may only read: navigate, snapshot,
-// scroll, wait, click and select; never type, press or evaluate.
+// nobody present. A headless run may only read; which actions count as
+// reading is browserReadingActions, in the tool's own package.
 
-// browserReadingActions are what a run with nobody present may do.
 // browserRunner is the browser as one turn reaches it.
 type browserRunner struct {
 	agent *Agent

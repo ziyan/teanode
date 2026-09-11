@@ -20,14 +20,16 @@ credentials the headless browser never has.
 ## Decision
 
 A tab is attached by the person, from their own browser, to their own
-agent's main conversation, and stays visible on their screen for as long as
+agent, and stays visible on their screen for as long as
 it is attached; they can detach at any time. Only an interactive
 conversation may use it: a scheduled run or a processing run with nobody
 present never sees an attached tab. The extension itself — not the model —
-refuses to type into a password or card-number field, requires a
-confirmation card before submitting a form that is about payment,
-credentials or account settings, and reads cookies or storage only for the
-site the person attached. The operator can keep tab attachment off for the
+refuses to type into a password or card-number field, refuses to submit a
+form that is about payment, credentials or account settings, and reads
+storage only for the site of the tab the actions are going to. The refusal
+on those forms was meant to be a card the person could answer; it was built
+as a plain refusal, which is the stricter of the two, and stands until the
+confirmation is wired through. The operator can keep tab attachment off for the
 whole server.
 
 ## Consequences

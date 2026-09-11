@@ -166,7 +166,10 @@ body, such as `tools/rule` and `tools/domain`), registering from its
 operations as the person. The adapter that makes tools of a connected
 server's tools stays in `agent`, since it is not a tool but a bridge to
 many. Prompts are templates under `prompts/`, with golden files in
-`testdata/prompts`.
+`testdata/prompts`. How each part actually works — the loop and its rounds,
+the prompt's layers, compaction, the event feed and what crosses instances,
+memory and its vectors, the budgets — is written down in
+`docs/subsystems/`.
 
 **`internal/mcp`** — a client for servers that speak the Model Context
 Protocol: JSON-RPC over streamable HTTP or a subprocess's standard streams,
@@ -177,9 +180,14 @@ data. Tests speak to in-process servers.
 **`internal/computer`** — the person's own computer as their agent reaches
 it: the program `teanode computer` runs there, which signs in with the
 person's token, keeps a websocket to the server and answers the shell and
-filesystem tools' requests inside the directory the person allowed; and
-the rule over commands both ends apply (what never runs, what asks first).
-Tests speak to a fake connection.
+filesystem tools' requests as that person, anywhere on the machine; and the
+rule the server applies, which asks the person first for what changes the
+machine or reaches off it and refuses nothing outright. The rule is the
+server's alone: the program runs what it is sent, the way a terminal does
+what the person at it types. It is their own
+assistant on their own computer, so it is not confined to a sandbox; the
+guard is the card they answer, not a directory. Tests speak to a fake
+connection. `docs/subsystems/devices.md` has the protocol and the rules.
 
 **`internal/browser`** — a DevTools client for the Chrome the operator runs
 beside the server: an isolated context per run, the page read as a tree the

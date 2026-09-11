@@ -303,6 +303,14 @@ async function inPage(action, args) {
     const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
     return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)
   }
+  // A form that pays or changes credentials is not submitted on the model's
+  // word alone. Every way of submitting one comes through here: the button,
+  // type with submit, and Enter.
+  const payingForm = (form, args) => {
+    const text = (form.innerText || '').toLowerCase()
+    if (!/password|card number|cvc|cvv|pay now|place order|checkout|wire|transfer/.test(text) || args.confirmed) return null
+    return { ok: false, error: 'this form pays or changes credentials; it needs the person\u2019s word (confirmed) before it is submitted' }
+  }
   const nameOf = (node) => {
     const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
     if (label) return label.trim()
@@ -367,10 +375,8 @@ async function inPage(action, args) {
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       const form = node.form || node.closest('form')
       if (form && (node.type === 'submit' || node.tagName.toLowerCase() === 'button')) {
-        const text = (form.innerText || '').toLowerCase()
-        if (/password|card number|cvc|cvv|pay now|place order|checkout|wire|transfer/.test(text) && !args.confirmed) {
-          return { ok: false, error: 'this form pays or changes credentials; it needs the person’s word (confirmed) before it is submitted' }
-        }
+        const refusal = payingForm(form, args)
+        if (refusal) return refusal
       }
       node.scrollIntoView({ block: 'center' })
       node.click()
@@ -397,10 +403,8 @@ async function inPage(action, args) {
         document.execCommand('insertText', false, args.text || '')
       }
       if (args.submit && node.form) {
-        const text = (node.form.innerText || '').toLowerCase()
-        if (/password|card number|cvc|cvv|pay now|place order|checkout|wire|transfer/.test(text) && !args.confirmed) {
-          return { ok: false, error: 'this form pays or changes credentials; it needs the person’s word (confirmed) before it is submitted' }
-        }
+        const refusal = payingForm(node.form, args)
+        if (refusal) return refusal
         node.form.requestSubmit ? node.form.requestSubmit() : node.form.submit()
       }
       return { ok: true, data: { typed: (args.text || '').length } }
@@ -418,6 +422,12 @@ async function inPage(action, args) {
     }
     case 'press': {
       const active = document.activeElement || document.body
+      // Enter in a form submits it, so it is the same act as clicking the
+      // button and asks the same question. It went unasked once.
+      if (args.key === 'Enter' && active.form) {
+        const refusal = payingForm(active.form, args)
+        if (refusal) return refusal
+      }
       for (const kind of ['keydown', 'keypress', 'keyup']) active.dispatchEvent(new KeyboardEvent(kind, { key: args.key, bubbles: true }))
       if (args.key === 'Enter' && active.form) active.form.requestSubmit ? active.form.requestSubmit() : active.form.submit()
       return { ok: true, data: { pressed: args.key } }
