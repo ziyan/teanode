@@ -151,10 +151,18 @@ export function AgentAdminPage() {
     const parts = [
       summary.name,
       t('agentAdmin.mailboxes', { granted: String(granted), total: String(summary.sources.length) }),
-      t('agentAdmin.tokensToday', {
-        used: formatCount(summary.today?.used ?? 0),
-        limit: summary.today && summary.today.limit > 0 ? formatCount(summary.today.limit) : t('agentAdmin.unlimited'),
-      }),
+      // What the day came to, said the way this person's budget counts
+      // it: money where money bounds them, tokens where tokens do.
+      summary.today && summary.today.costLimit > 0
+        ? t('agentAdmin.spentToday', {
+            used: formatMoney(summary.today.cost, summary.today.currency),
+            limit: formatMoney(summary.today.costLimit, summary.today.currency),
+          })
+        : t('agentAdmin.tokensToday', {
+            used: formatCount(summary.today?.used ?? 0),
+            limit: summary.today && summary.today.limit > 0 ? formatCount(summary.today.limit) : t('agentAdmin.unlimited'),
+            spent: formatMoney(summary.today?.cost ?? 0, summary.today?.currency),
+          }),
     ]
     if (summary.lastRunAt) parts.push(t('agentAdmin.lastRunAt', { time: formatTime(summary.lastRunAt) }))
     if (summary.queued > 0) parts.push(t('agentAdmin.queuedCount', { count: String(summary.queued) }))

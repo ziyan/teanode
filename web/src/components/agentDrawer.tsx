@@ -15,7 +15,7 @@ import {
   withToken,
 } from '../api'
 import { uploadFiles } from '../upload'
-import { budgetNearness, formatCount, formatMoney, formatTime } from './common'
+import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
@@ -592,7 +592,7 @@ function BudgetRing({ budget, framed, onLeaving }: { budget: Budget; framed: boo
   const spent = shown.money ? '' : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
   const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })}${spent} ${t(
     'agentDrawer.budgetResets',
-    { at: formatTime(budget.resetsAt) },
+    { at: formatClock(budget.resetsAt) },
   )}`
   const ring = (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">

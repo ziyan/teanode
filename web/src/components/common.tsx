@@ -308,6 +308,16 @@ export function Field({ label, mono, children }: { label: string; mono?: boolean
 // formatCount says a count the way a person reads one: 59, 13.5k, 1.2M.
 // For tokens and anything else that runs into the thousands and is read
 // for its size rather than its exact value.
+// formatClock is a time of day, for a moment whose date the reader
+// already knows: a budget that starts again within the day does not need
+// the date, the seconds and the zone said back to them.
+export function formatClock(value?: string): string {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
 // formatMoney is an amount in the currency the operator says the
 // providers' prices are written in. A turn can cost a fraction of a
 // cent, so small amounts are given the places they need rather than

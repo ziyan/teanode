@@ -215,10 +215,13 @@ Notable changes to TeaNode. The format follows
   provider's own prices for whatever no line matches. What a period cost
   is worked out per model and added up, so a deployment with two
   providers and six models is priced properly.
-- What things cost is shown wherever the tokens are: a column on the
-  operator's usage table, a column in `teanode agent admin usage`, and
-  the day's money beside the day's tokens on your agent's page and in
-  the ring's tooltip. (#73)
+- What things cost is shown wherever the tokens are: on the operator's
+  page the usage table is "Use and cost" with a column for it and each
+  person's row says the day in whichever their budget counts, a column on the
+  a column in `teanode agent admin usage`, and the day's money beside
+  the day's tokens on your agent's page and in the ring's tooltip. The
+  hour a budget starts again is said as an hour rather than a full
+  timestamp. (#73)
 - The currency is the operator's to choose. `agent.currency` takes a
   three-letter code, `USD` unless it is set, and every amount the server
   shows or caps is written in it. It labels and formats rather than

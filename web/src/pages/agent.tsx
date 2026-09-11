@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
-import { ErrorMessage, Loading, SaveRow, Tag, budgetNearness, formatCount, formatMoney, formatTime } from '../components/common'
+import { ErrorMessage, Loading, SaveRow, Tag, budgetNearness, formatClock, formatCount, formatMoney, formatTime } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, PinIcon, PinOffIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
@@ -293,7 +293,7 @@ function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
               number of tokens is not something anybody can act on. */}
           {!byMoney && budget.cost > 0 ? <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span> : null}
         </span>
-        <span className="muted">{t('agent.budgetResets', { at: formatTime(budget.resetsAt) })}</span>
+        <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt) })}</span>
       </div>
       <div
         className="agent-budget-bar"

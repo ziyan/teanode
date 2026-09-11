@@ -2323,6 +2323,62 @@ body,
 
 /* The sentence under a field, saying what it is for. Under rather than beside:
    a hint beside a field is read after the field has already been filled in. */
+/* Prices for particular models: a row per model, with the columns named
+   once above them rather than four labels repeated down the dialog. The
+   fields are the form's own; only the grid is here. */
+.priced-models {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.priced-models-head,
+.priced-models-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5rem 4.5rem 4.5rem 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.priced-models-head {
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.priced-models-head span + span {
+  text-align: right;
+}
+
+.priced-models-row input {
+  font-variant-numeric: tabular-nums;
+}
+
+.priced-models-row input + input {
+  text-align: right;
+}
+
+.priced-models-add {
+  margin-bottom: 10px;
+}
+
+/* Narrow enough that four fields across would leave no room for a model
+   name: the name takes the line, the three prices share the next, and
+   the column names move into the fields, since a header cannot sit over
+   two rows at once. */
+@media (max-width: 560px) {
+  .priced-models-head {
+    display: none;
+  }
+  .priced-models-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 30px;
+    margin-bottom: 6px;
+  }
+  .priced-models-row input:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 /* A control standing on its own rather than inside its label — the zone
    box that appears under "always this zone" — carries the bottom margin
    the label would have given it, so the hint below does not ride up over

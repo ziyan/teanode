@@ -416,6 +416,11 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
             t('agentSettings.priced', { input: String(provider.pricingInput), output: String(provider.pricingOutput) }),
           )
         }
+        // A provider whose models are priced apart says so, since the
+        // prices above are only what is left when none of them matches.
+        if ((provider.modelPricing ?? []).length > 0) {
+          detail.push(t('agentSettings.pricedModels', { count: String(provider.modelPricing.length) }))
+        }
         return (
           <SettingsRow
             key={provider.name || index}
@@ -623,46 +628,70 @@ function ProviderDialog({
       </div>
       <p className="field-label">{t('agentSettings.modelPricing')}</p>
       <p className="muted field-hint">{t('agentSettings.modelPricingHint')}</p>
-      {draft.modelPricing.map((priced, index) => {
-        const change = (fields: Partial<(typeof draft.modelPricing)[number]>) =>
-          set({ modelPricing: draft.modelPricing.map((row, at) => (at === index ? { ...row, ...fields } : row)) })
-        return (
-          <div className="row" key={index}>
-            <label>
-              <span>{t('agentSettings.pricingModel')}</span>
-              <input value={priced.model} placeholder="gpt-5*" onChange={(event) => change({ model: event.target.value })} />
-            </label>
-            <label className="shrink">
-              <span>{t('agentSettings.pricingInput')}</span>
-              <input value={priced.input} inputMode="decimal" onChange={(event) => change({ input: event.target.value })} />
-            </label>
-            <label className="shrink">
-              <span>{t('agentSettings.pricingOutput')}</span>
-              <input value={priced.output} inputMode="decimal" onChange={(event) => change({ output: event.target.value })} />
-            </label>
-            <label className="shrink">
-              <span>{t('agentSettings.pricingCacheRead')}</span>
-              <input value={priced.cacheRead} inputMode="decimal" onChange={(event) => change({ cacheRead: event.target.value })} />
-            </label>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('common.remove')}
-              title={t('common.remove')}
-              onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
-            >
-              <TrashIcon size={14} />
-            </button>
+      {draft.modelPricing.length > 0 && (
+        <div className="priced-models">
+          <div className="priced-models-head">
+            <span>{t('agentSettings.pricingModel')}</span>
+            <span>{t('agentSettings.pricingIn')}</span>
+            <span>{t('agentSettings.pricingOut')}</span>
+            <span>{t('agentSettings.pricingCached')}</span>
+            <span />
           </div>
-        )
-      })}
-      <button
-        type="button"
-        className="link-button"
-        onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '' }] })}
-      >
-        {t('agentSettings.addModelPricing')}
-      </button>
+          {draft.modelPricing.map((priced, index) => {
+            const change = (fields: Partial<(typeof draft.modelPricing)[number]>) =>
+              set({ modelPricing: draft.modelPricing.map((row, at) => (at === index ? { ...row, ...fields } : row)) })
+            const named = priced.model.trim() || t('agentSettings.pricingModel')
+            return (
+              <div className="priced-models-row" key={index}>
+                <input
+                  value={priced.model}
+                  placeholder="gpt-5*"
+                  aria-label={t('agentSettings.pricingModel')}
+                  onChange={(event) => change({ model: event.target.value })}
+                />
+                <input
+                  value={priced.input}
+                  inputMode="decimal"
+                  placeholder={t('agentSettings.pricingIn')}
+                  aria-label={`${named}: ${t('agentSettings.pricingIn')}`}
+                  onChange={(event) => change({ input: event.target.value })}
+                />
+                <input
+                  value={priced.output}
+                  inputMode="decimal"
+                  placeholder={t('agentSettings.pricingOut')}
+                  aria-label={`${named}: ${t('agentSettings.pricingOut')}`}
+                  onChange={(event) => change({ output: event.target.value })}
+                />
+                <input
+                  value={priced.cacheRead}
+                  inputMode="decimal"
+                  placeholder={t('agentSettings.pricingCached')}
+                  aria-label={`${named}: ${t('agentSettings.pricingCached')}`}
+                  onChange={(event) => change({ cacheRead: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={`${named}: ${t('common.remove')}`}
+                  title={t('common.remove')}
+                  onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
+                >
+                  <TrashIcon size={14} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className="priced-models-add">
+        <button
+          type="button"
+          onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '' }] })}
+        >
+          {t('agentSettings.addModelPricing')}
+        </button>
+      </div>
       <label className="checkbox">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />
         {t('integrations.enabled')}
