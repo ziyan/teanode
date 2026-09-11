@@ -35,7 +35,7 @@ func TestReachesOut(t *testing.T) {
 	if reachesOut(`<html><body><svg><rect/></svg><script>draw()</script></body></html>`) != "" {
 		t.Fatal("an inline page is fine")
 	}
-	if reachesOut(`<script src="https://d3js.org/d3.v5.min.js"></script>`) == "" {
+	if reachesOut(`<script src="https://cdn.example.net/d3.v5.min.js"></script>`) == "" {
 		t.Fatal("a library from elsewhere never loads")
 	}
 	if reachesOut(`<link rel="stylesheet" href="https://x/y.css">`) == "" {

@@ -1498,10 +1498,10 @@ function SortingForm({ policy, allowed, busy, onSave }: PolicyProps) {
             <span>{t('agent.replyExpectation')}</span>
             <Select
               block
-              value={triage.replyExpectation ?? ''}
+              value={triage.replyExpectation || 'direct'}
               label={t('agent.replyExpectation')}
               options={[
-                { value: '', label: t('agent.replyExpectationDirect') },
+                { value: 'direct', label: t('agent.replyExpectationDirect') },
                 { value: 'any', label: t('agent.replyExpectationAny') },
               ]}
               onChange={(replyExpectation) => setTriage({ ...triage, replyExpectation })}
@@ -1511,10 +1511,10 @@ function SortingForm({ policy, allowed, busy, onSave }: PolicyProps) {
             <span>{t('agent.backfill')}</span>
             <Select
               block
-              value={triage.backfill ?? ''}
+              value={triage.backfill || 'recent'}
               label={t('agent.backfill')}
               options={[
-                { value: '', label: t('agent.backfillRecent') },
+                { value: 'recent', label: t('agent.backfillRecent') },
                 { value: 'none', label: t('agent.backfillNone') },
                 { value: 'all', label: t('agent.backfillAll') },
               ]}
@@ -1567,10 +1567,10 @@ function SummariesForm({ policy, allowed, busy, onSave }: PolicyProps) {
             <span>{t('agent.summaryStyle')}</span>
             <Select
               block
-              value={summaries.style ?? ''}
+              value={summaries.style || 'brief'}
               label={t('agent.summaryStyle')}
               options={[
-                { value: '', label: t('agent.styleBrief') },
+                { value: 'brief', label: t('agent.styleBrief') },
                 { value: 'detailed', label: t('agent.styleDetailed') },
               ]}
               onChange={(style) => setSummaries({ ...summaries, style })}
@@ -1663,10 +1663,10 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
             <span>{t('agent.scope')}</span>
             <Select
               block
-              value={reply.scope ?? ''}
+              value={reply.scope || 'known'}
               label={t('agent.scope')}
               options={[
-                { value: '', label: t('agent.scopeKnown') },
+                { value: 'known', label: t('agent.scopeKnown') },
                 { value: 'everyone', label: t('agent.scopeEveryone') },
                 { value: 'list', label: t('agent.scopeList') },
               ]}
@@ -1677,10 +1677,10 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
             <span>{t('agent.when')}</span>
             <Select
               block
-              value={reply.when ?? ''}
+              value={reply.when || 'always'}
               label={t('agent.when')}
               options={[
-                { value: '', label: t('agent.whenAlways') },
+                { value: 'always', label: t('agent.whenAlways') },
                 { value: 'outsideHours', label: t('agent.whenOutsideHours') },
                 { value: 'whenAway', label: t('agent.whenAway') },
               ]}

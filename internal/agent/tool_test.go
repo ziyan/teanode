@@ -138,7 +138,7 @@ func TestDatetimeParsing(t *testing.T) {
 }
 
 func TestAddressMatchesAndHours(t *testing.T) {
-	if !addressMatches("maria@example.net", "example.net") || !addressMatches("maria@example.net", "@example.net") || !addressMatches("maria@example.net", "Maria@Example.net") || addressMatches("maria@example.net", "other.net") || !addressMatches("a@mail.example.net", "example.net") {
+	if !addressMatches("maria@example.net", "example.net") || !addressMatches("maria@example.net", "@example.net") || !addressMatches("maria@example.net", "Maria@Example.net") || addressMatches("maria@example.net", "other.example") || !addressMatches("a@mail.example.net", "example.net") {
 		t.Fatal("addressMatches")
 	}
 	hours := &models.AgentHours{From: "09:00", Until: "17:30", Days: []int{1, 2, 3, 4, 5}}
