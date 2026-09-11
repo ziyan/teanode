@@ -207,6 +207,18 @@ Notable changes to TeaNode. The format follows
 - The language your agent writes in is a list to pick from, in each
   language's own name, with "same as my account" at the top of it and
   room to type a code the list does not carry. (#73)
+- Models are priced one by one. A provider's prices were charged for
+  everything behind that key, which is wrong wherever a service sells a
+  small model and a large one — and it is wrong by a factor of ten or
+  more, not a rounding. Each provider now takes a list of prices by
+  model, matched by name or by a pattern such as `gpt-5*`, with the
+  provider's own prices for whatever no line matches. What a period cost
+  is worked out per model and added up, so a deployment with two
+  providers and six models is priced properly.
+- What things cost is shown wherever the tokens are: a column on the
+  operator's usage table, a column in `teanode agent admin usage`, and
+  the day's money beside the day's tokens on your agent's page and in
+  the ring's tooltip. (#73)
 - The currency is the operator's to choose. `agent.currency` takes a
   three-letter code, `USD` unless it is set, and every amount the server
   shows or caps is written in it. It labels and formats rather than

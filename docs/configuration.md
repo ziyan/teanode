@@ -1077,6 +1077,21 @@ money beside tokens, which is the number an operator budgets.
 
 **`input`**, **`output`**, **`cacheRead`** — The three prices.
 
+**`modelPricing`** — Prices for particular models of this provider, since
+one service's models rarely cost alike: a small model and a large one behind
+the same key are priced apart. Each entry has a `model` and the same three
+prices. The `model` is the name after the provider's, matched the way `allow`
+and `deny` are, so `gpt-5*` prices a family; the first entry that matches a
+model is the one used, so exact names belong above the patterns that would
+also catch them. A model no entry matches costs what `pricing` above says.
+
+    providers:
+      - name: openai
+        pricing: { input: 0.15, output: 0.6, cacheRead: 0.075 }
+        modelPricing:
+          - { model: gpt-5.6-terra, input: 2, output: 12, cacheRead: 0.2 }
+          - { model: gpt-5.6-luna, input: 0.2, output: 1.2, cacheRead: 0.02 }
+
 ### `agent.models`
 
 Every value is written `provider:model`, and the provider must be declared,

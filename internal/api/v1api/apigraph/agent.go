@@ -331,11 +331,41 @@ func (self *graph) AgentUsage(ctx context.Context, arguments AgentUsageArguments
 	if found == nil {
 		return []models.AgentUsageRow{}, nil
 	}
-	rows, err := tx.QueryAgentUsage(found.ID, usageSince(arguments.Since), usageUntil(arguments.Until), usageBy(arguments.By))
+	return self.pricedUsage(tx, found.ID, arguments)
+}
+
+// pricedUsage totals a period under one key and prices it. The rows are
+// read with the model beside the key, because models are not priced
+// alike and a table of tokens is one nobody can act on; the money is
+// then added up per key and the models folded away.
+func (self *graph) pricedUsage(tx db.Transaction, agentId string, arguments AgentUsageArguments) ([]models.AgentUsageRow, error) {
+	rows, err := tx.QueryAgentUsageByModel(agentId, usageSince(arguments.Since), usageUntil(arguments.Until), usageBy(arguments.By))
 	if err != nil {
 		return nil, translateError(err)
 	}
-	return rows, nil
+	configuration := self.config.Current()
+	currency := configuration.Agent.CurrencyOf()
+	var order []string
+	priced := map[string]*models.AgentUsageRow{}
+	for _, row := range rows {
+		into, seen := priced[row.Key]
+		if !seen {
+			into = &models.AgentUsageRow{Key: row.Key, Currency: currency}
+			priced[row.Key] = into
+			order = append(order, row.Key)
+		}
+		into.Totals.PromptTokens += row.Totals.PromptTokens
+		into.Totals.CompletionTokens += row.Totals.CompletionTokens
+		into.Totals.CacheReadTokens += row.Totals.CacheReadTokens
+		into.Totals.CacheWriteTokens += row.Totals.CacheWriteTokens
+		into.Totals.Calls += row.Totals.Calls
+		into.Cost += configuration.Agent.CostOf(row.Model, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens))
+	}
+	result := make([]models.AgentUsageRow, 0, len(order))
+	for _, key := range order {
+		result = append(result, *priced[key])
+	}
+	return result, nil
 }
 
 func usageSince(since *time.Time) time.Time {
@@ -675,11 +705,7 @@ func (self *graph) AgentServerUsage(ctx context.Context, arguments AgentUsageArg
 	if _, err := self.requirePermission(ctx, models.PermissionAgentAudit); err != nil {
 		return nil, err
 	}
-	rows, err := self.transaction(ctx).QueryAgentUsage("", usageSince(arguments.Since), usageUntil(arguments.Until), usageBy(arguments.By))
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return rows, nil
+	return self.pricedUsage(self.transaction(ctx), "", arguments)
 }
 
 func (self *graph) ListAgentDeadLetters(ctx context.Context) ([]*models.AgentJob, error) {

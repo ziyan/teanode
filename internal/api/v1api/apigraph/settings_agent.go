@@ -74,6 +74,27 @@ type AgentProviderSettings struct {
 	PricingInput     float64  `json:"pricingInput"`
 	PricingOutput    float64  `json:"pricingOutput"`
 	PricingCacheRead float64  `json:"pricingCacheRead"`
+	// ModelPricing prices particular models of this provider, in order:
+	// the first entry that matches a model is the one used.
+	ModelPricing []*AgentModelPricingSettings `json:"modelPricing"`
+}
+
+// AgentModelPricingSettings is one model's prices, per million tokens.
+type AgentModelPricingSettings struct {
+	Model     string  `json:"model"`
+	Input     float64 `json:"input"`
+	Output    float64 `json:"output"`
+	CacheRead float64 `json:"cacheRead"`
+}
+
+// modelPricingSettings is a provider's per-model prices as they are read
+// back, never nil so a client can count them.
+func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricingSettings {
+	settings := []*AgentModelPricingSettings{}
+	for _, entry := range priced {
+		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead})
+	}
+	return settings
 }
 
 // AgentModelsSettings assigns work to models.
@@ -260,6 +281,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			PricingInput:     provider.Pricing.Input,
 			PricingOutput:    provider.Pricing.Output,
 			PricingCacheRead: provider.Pricing.CacheRead,
+			ModelPricing:     modelPricingSettings(provider.ModelPricing),
 		})
 	}
 	for _, server := range agent.MCP.Servers {
@@ -333,12 +355,13 @@ type AgentProviderParameters struct {
 	// rename carries its stored key along.
 	PreviousName string `json:"previousName" graphapi:"nullable"`
 
-	Enabled          bool     `json:"enabled"`
-	Allow            []string `json:"allow" graphapi:"nullable"`
-	Deny             []string `json:"deny" graphapi:"nullable"`
-	PricingInput     float64  `json:"pricingInput" graphapi:"nullable"`
-	PricingOutput    float64  `json:"pricingOutput" graphapi:"nullable"`
-	PricingCacheRead float64  `json:"pricingCacheRead" graphapi:"nullable"`
+	Enabled          bool                         `json:"enabled"`
+	Allow            []string                     `json:"allow" graphapi:"nullable"`
+	Deny             []string                     `json:"deny" graphapi:"nullable"`
+	PricingInput     float64                      `json:"pricingInput" graphapi:"nullable"`
+	PricingOutput    float64                      `json:"pricingOutput" graphapi:"nullable"`
+	PricingCacheRead float64                      `json:"pricingCacheRead" graphapi:"nullable"`
+	ModelPricing     []*AgentModelPricingSettings `json:"modelPricing" graphapi:"nullable"`
 }
 
 // AgentModelsParameters assign work to models; each given field replaces
@@ -480,6 +503,14 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				Enabled: &enabled,
 				Models:  config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
 				Pricing: config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead},
+			}
+			for _, priced := range given.ModelPricing {
+				if priced == nil || strings.TrimSpace(priced.Model) == "" {
+					continue
+				}
+				provider.ModelPricing = append(provider.ModelPricing, config.AgentModelPricing{
+					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead,
+				})
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {
 				provider.APIKey = key

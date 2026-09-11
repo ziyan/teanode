@@ -43,8 +43,10 @@ type AgentBudget struct {
 
 // AgentUsageRow is totals under one key.
 type AgentUsageRow struct {
-	Key    string `json:"key"`
-	Totals struct {
+	Key      string  `json:"key"`
+	Cost     float64 `json:"cost"`
+	Currency string  `json:"currency"`
+	Totals   struct {
 		PromptTokens     int64 `json:"promptTokens"`
 		CompletionTokens int64 `json:"completionTokens"`
 		CacheReadTokens  int64 `json:"cacheReadTokens"`
@@ -127,13 +129,13 @@ const (
 	}`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
-		AgentUsage(since: $since, by: $by) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
 	}`
 
 	DocumentListAgents = `query { ListAgents ` + agentSummarySelection + ` }`
 
 	DocumentAgentServerUsage = `query ($since: DateTime, $by: String) {
-		AgentServerUsage(since: $since, by: $by) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+		AgentServerUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
 	}`
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`

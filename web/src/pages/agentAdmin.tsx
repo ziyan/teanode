@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { graphql } from '../api'
-import { ErrorMessage, Loading, Tag, formatCount, formatTime } from '../components/common'
+import { ErrorMessage, Loading, Tag, formatCount, formatMoney, formatTime } from '../components/common'
 import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -38,6 +38,8 @@ type Summary = {
 }
 type UsageRow = {
   key: string
+  cost: number
+  currency: string
   totals: {
     promptTokens: number
     completionTokens: number
@@ -61,7 +63,7 @@ const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt daily
   totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }`
 const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
-  AgentServerUsage(by: $by, since: $since, until: $until) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+  AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
 }`
 const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
@@ -205,6 +207,7 @@ export function AgentAdminPage() {
                   <th className="numeric">{t('agentAdmin.completion')}</th>
                   <th className="numeric">{t('agentAdmin.cached')}</th>
                   <th className="numeric">{t('agentAdmin.total')}</th>
+                  <th className="numeric">{t('agentAdmin.cost')}</th>
                   <th className="numeric">{t('agentAdmin.calls')}</th>
                 </tr>
               </thead>
@@ -216,6 +219,7 @@ export function AgentAdminPage() {
                     <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
                     <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
                     <td className="numeric">{formatCount(total(row.totals))}</td>
+                    <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
                     <td className="numeric">{row.totals.calls}</td>
                   </tr>
                 ))}

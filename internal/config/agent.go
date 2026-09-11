@@ -95,8 +95,39 @@ type AgentProvider struct {
 	Models AgentProviderModels `yaml:"models"`
 
 	// Pricing, per million tokens, lets the usage view show money beside
-	// tokens. Optional; zero means unknown.
+	// tokens. Optional; zero means unknown. It is what a model of this
+	// provider costs unless ModelPricing names it.
 	Pricing AgentPricing `yaml:"pricing"`
+
+	// ModelPricing prices particular models, since one provider's models
+	// rarely cost the same: a small model and a large one behind the same
+	// key are priced apart. Each entry's model is matched the way the
+	// allow and deny lists are, so "gpt-5*" prices a family, and the
+	// first entry that matches a model is the one used.
+	ModelPricing []AgentModelPricing `yaml:"modelPricing,omitempty"`
+}
+
+// AgentModelPricing is what one model, or one family of them, costs.
+type AgentModelPricing struct {
+	// Model is the name after the provider's, or a pattern for it.
+	Model string `yaml:"model"`
+
+	// Input, Output and CacheRead, per million tokens, as on a provider.
+	Input     float64 `yaml:"input,omitempty"`
+	Output    float64 `yaml:"output,omitempty"`
+	CacheRead float64 `yaml:"cacheRead,omitempty"`
+}
+
+// PricingFor is what a model of this provider costs: the first entry
+// that names it, or the provider's own prices.
+func (self *AgentProvider) PricingFor(model string) AgentPricing {
+	for index := range self.ModelPricing {
+		priced := &self.ModelPricing[index]
+		if matchesAny([]string{priced.Model}, model) {
+			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead}
+		}
+	}
+	return self.Pricing
 }
 
 // IsEnabled resolves the unset Enabled to on.
@@ -491,16 +522,17 @@ func (self *Agent) CurrencyOf() string {
 	return DefaultCurrency
 }
 
-// CostOf is what a call cost, from the provider's pricing per million
-// tokens: input, output and cached input priced apart. Zero where the
-// provider has no pricing, or the model names none.
+// CostOf is what a call cost, from the prices per million tokens that
+// the model's own entry gives, or its provider's where it has none:
+// input, output and cached input priced apart. Zero where neither
+// prices it.
 func (self *Agent) CostOf(model string, promptTokens, completionTokens, cacheReadTokens int) float64 {
-	name, _, _ := strings.Cut(model, ":")
+	name, rest, _ := strings.Cut(model, ":")
 	provider := self.Provider(name)
 	if provider == nil {
 		return 0
 	}
-	pricing := provider.Pricing
+	pricing := provider.PricingFor(rest)
 	return (float64(promptTokens)*pricing.Input + float64(completionTokens)*pricing.Output + float64(cacheReadTokens)*pricing.CacheRead) / 1e6
 }
 
@@ -621,6 +653,17 @@ func (self *Configuration) validateAgent(validator *validator) {
 	} {
 		if field.value <= 0 {
 			validator.add("agent.limits."+field.name, "must be positive")
+		}
+	}
+	for index, provider := range agent.Providers {
+		for position, priced := range provider.ModelPricing {
+			path := fmt.Sprintf("agent.providers[%d].modelPricing[%d]", index, position)
+			if strings.TrimSpace(priced.Model) == "" {
+				validator.add(path+".model", "required: the model this prices, or a pattern such as gpt-5*")
+			}
+			if priced.Input < 0 || priced.Output < 0 || priced.CacheRead < 0 {
+				validator.add(path, "prices cannot be negative")
+			}
 		}
 	}
 	for _, field := range []struct {

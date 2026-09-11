@@ -275,8 +275,7 @@ function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
   if (tokens < 0 && money < 0) {
     return (
       <p className="muted">
-        {t('agent.budgetNone')}{' '}
-        {budget.cost > 0 ? t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') }) : null}
+        {t('agent.budgetNone')} {t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') })}
       </p>
     )
   }
@@ -288,7 +287,12 @@ function BudgetBar({ budget }: { budget: AgentView['budget'] }) {
   return (
     <div className="agent-budget">
       <div className="agent-budget-said">
-        <span>{said}</span>
+        <span>
+          {said}
+          {/* What it came to, whichever way the budget is counted: a
+              number of tokens is not something anybody can act on. */}
+          {!byMoney && budget.cost > 0 ? <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span> : null}
+        </span>
         <span className="muted">{t('agent.budgetResets', { at: formatTime(budget.resetsAt) })}</span>
       </div>
       <div

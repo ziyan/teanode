@@ -34,6 +34,7 @@ export type AgentProvider = {
   allow: string[]
   deny: string[]
   pricingInput: number
+  modelPricing: { model: string; input: number; output: number; cacheRead: number }[]
   pricingOutput: number
   pricingCacheRead: number
 }
@@ -115,7 +116,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions
-  providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead }
+  providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead modelPricing { model input output cacheRead } }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
@@ -281,6 +282,7 @@ type ProviderDraft = {
   pricingInput: string
   pricingOutput: string
   pricingCacheRead: string
+  modelPricing: { model: string; input: string; output: string; cacheRead: string }[]
 }
 
 function providerDraft(provider?: AgentProvider): ProviderDraft {
@@ -297,6 +299,12 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingInput: provider.pricingInput ? String(provider.pricingInput) : '',
         pricingOutput: provider.pricingOutput ? String(provider.pricingOutput) : '',
         pricingCacheRead: provider.pricingCacheRead ? String(provider.pricingCacheRead) : '',
+        modelPricing: (provider.modelPricing ?? []).map((priced) => ({
+          model: priced.model,
+          input: priced.input ? String(priced.input) : '',
+          output: priced.output ? String(priced.output) : '',
+          cacheRead: priced.cacheRead ? String(priced.cacheRead) : '',
+        })),
       }
     : {
         name: '',
@@ -310,6 +318,7 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingInput: '',
         pricingOutput: '',
         pricingCacheRead: '',
+        modelPricing: [],
       }
 }
 
@@ -327,6 +336,7 @@ function providerValues(provider: AgentProvider) {
     pricingInput: provider.pricingInput,
     pricingOutput: provider.pricingOutput,
     pricingCacheRead: provider.pricingCacheRead,
+    modelPricing: provider.modelPricing ?? [],
   }
 }
 
@@ -342,6 +352,14 @@ function draftValues(draft: ProviderDraft) {
     pricingInput: Number(draft.pricingInput) || 0,
     pricingOutput: Number(draft.pricingOutput) || 0,
     pricingCacheRead: Number(draft.pricingCacheRead) || 0,
+    modelPricing: draft.modelPricing
+      .filter((priced) => priced.model.trim())
+      .map((priced) => ({
+        model: priced.model.trim(),
+        input: Number(priced.input) || 0,
+        output: Number(priced.output) || 0,
+        cacheRead: Number(priced.cacheRead) || 0,
+      })),
   }
 }
 
@@ -603,6 +621,48 @@ function ProviderDialog({
           />
         </label>
       </div>
+      <p className="field-label">{t('agentSettings.modelPricing')}</p>
+      <p className="muted field-hint">{t('agentSettings.modelPricingHint')}</p>
+      {draft.modelPricing.map((priced, index) => {
+        const change = (fields: Partial<(typeof draft.modelPricing)[number]>) =>
+          set({ modelPricing: draft.modelPricing.map((row, at) => (at === index ? { ...row, ...fields } : row)) })
+        return (
+          <div className="row" key={index}>
+            <label>
+              <span>{t('agentSettings.pricingModel')}</span>
+              <input value={priced.model} placeholder="gpt-5*" onChange={(event) => change({ model: event.target.value })} />
+            </label>
+            <label className="shrink">
+              <span>{t('agentSettings.pricingInput')}</span>
+              <input value={priced.input} inputMode="decimal" onChange={(event) => change({ input: event.target.value })} />
+            </label>
+            <label className="shrink">
+              <span>{t('agentSettings.pricingOutput')}</span>
+              <input value={priced.output} inputMode="decimal" onChange={(event) => change({ output: event.target.value })} />
+            </label>
+            <label className="shrink">
+              <span>{t('agentSettings.pricingCacheRead')}</span>
+              <input value={priced.cacheRead} inputMode="decimal" onChange={(event) => change({ cacheRead: event.target.value })} />
+            </label>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('common.remove')}
+              title={t('common.remove')}
+              onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
+            >
+              <TrashIcon size={14} />
+            </button>
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        className="link-button"
+        onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '' }] })}
+      >
+        {t('agentSettings.addModelPricing')}
+      </button>
       <label className="checkbox">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />
         {t('integrations.enabled')}

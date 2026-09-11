@@ -444,6 +444,20 @@ func (self AgentUsageTotals) Total() int64 {
 type AgentUsageRow struct {
 	Key    string           `json:"key"`
 	Totals AgentUsageTotals `json:"totals"`
+
+	// Cost is what those tokens came to at the prices the models are
+	// configured with, and Currency what that is written in. The store
+	// leaves both alone: only what knows the prices fills them in.
+	Cost     float64 `json:"cost"`
+	Currency string  `json:"currency,omitempty"`
+}
+
+// AgentUsageModelRow is totals under one key for one model, which is
+// what pricing a period needs: models are not priced alike.
+type AgentUsageModelRow struct {
+	Key    string           `json:"key"`
+	Model  string           `json:"model"`
+	Totals AgentUsageTotals `json:"totals"`
 }
 
 func oneOf(value string, allowed ...string) bool {

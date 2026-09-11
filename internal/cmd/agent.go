@@ -794,13 +794,17 @@ func printUsage(command *cli.Command, rows []*client.AgentUsageRow, by string) e
 			key = "total"
 		}
 		total := row.Totals.PromptTokens + row.Totals.CompletionTokens + row.Totals.CacheReadTokens + row.Totals.CacheWriteTokens
-		table = append(table, []string{key, strconv.FormatInt(row.Totals.PromptTokens, 10), strconv.FormatInt(row.Totals.CompletionTokens, 10), strconv.FormatInt(row.Totals.CacheReadTokens, 10), strconv.FormatInt(total, 10), strconv.FormatInt(row.Totals.Calls, 10)})
+		cost := fmt.Sprintf("%.2f %s", row.Cost, row.Currency)
+		if row.Currency == "" {
+			cost = fmt.Sprintf("%.2f", row.Cost)
+		}
+		table = append(table, []string{key, strconv.FormatInt(row.Totals.PromptTokens, 10), strconv.FormatInt(row.Totals.CompletionTokens, 10), strconv.FormatInt(row.Totals.CacheReadTokens, 10), strconv.FormatInt(total, 10), cost, strconv.FormatInt(row.Totals.Calls, 10)})
 	}
 	header := strings.ToUpper(by)
 	if header == "" {
 		header = "PERIOD"
 	}
-	return printTable([]string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "CALLS"}, table)
+	return printTable([]string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "COST", "CALLS"}, table)
 }
 
 func runAgentUsage(ctx context.Context, command *cli.Command) error {

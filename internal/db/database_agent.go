@@ -62,6 +62,10 @@ type AgentOperation interface {
 	// "kind", "mailbox" or "model". An empty agentId is the whole server.
 	QueryAgentUsage(agentId string, since, until time.Time, by string) ([]models.AgentUsageRow, error)
 
+	// QueryAgentUsageByModel is the same, with the model kept beside the
+	// key so a caller can price what it reads.
+	QueryAgentUsageByModel(agentId string, since, until time.Time, by string) ([]models.AgentUsageModelRow, error)
+
 	// ScavengeAgentUsage removes rows older than the retention.
 	ScavengeAgentUsage(before time.Time) (int64, error)
 
@@ -640,27 +644,29 @@ func (self *transaction) SumAgentUsage(agentId string, since time.Time) (models.
 	return totals, nil
 }
 
-func (self *transaction) QueryAgentUsage(agentId string, since, until time.Time, by string) ([]models.AgentUsageRow, error) {
-	keyExpression := "''"
+// usageKeyExpression is what a grouping selects as its key.
+func usageKeyExpression(by string) (string, error) {
 	switch by {
 	case "day":
-		keyExpression = `to_char(to_timestamp("timestamp"), 'YYYY-MM-DD')`
+		return `to_char(to_timestamp("timestamp"), 'YYYY-MM-DD')`, nil
 	case "kind":
-		keyExpression = `"kind"`
+		return `"kind"`, nil
 	case "mailbox":
-		keyExpression = `"mailbox_id"`
+		return `"mailbox_id"`, nil
 	case "model":
-		keyExpression = `"model"`
+		return `"model"`, nil
 	case "agent":
-		keyExpression = `"agent_id"`
+		return `"agent_id"`, nil
 	case "":
-	default:
-		return nil, fmt.Errorf("db: %q is not a usage grouping", by)
+		return "''", nil
 	}
-	var where []string
-	var arguments []any
-	where = append(where, `"interval" = ?`, `"timestamp" >= ?`)
-	arguments = append(arguments, models.HourlyInterval, models.DiscretizeTimestamp(models.HourlyInterval, uint64(since.Unix())))
+	return "", fmt.Errorf("db: %q is not a usage grouping", by)
+}
+
+// usageWhere bounds a usage query to one agent and a period.
+func usageWhere(agentId string, since, until time.Time) ([]string, []any) {
+	where := []string{`"interval" = ?`, `"timestamp" >= ?`}
+	arguments := []any{models.HourlyInterval, models.DiscretizeTimestamp(models.HourlyInterval, uint64(since.Unix()))}
 	if !until.IsZero() {
 		where = append(where, `"timestamp" < ?`)
 		arguments = append(arguments, uint64(until.Unix()))
@@ -669,6 +675,15 @@ func (self *transaction) QueryAgentUsage(agentId string, since, until time.Time,
 		where = append(where, `"agent_id" = ?`)
 		arguments = append(arguments, agentId)
 	}
+	return where, arguments
+}
+
+func (self *transaction) QueryAgentUsage(agentId string, since, until time.Time, by string) ([]models.AgentUsageRow, error) {
+	keyExpression, err := usageKeyExpression(by)
+	if err != nil {
+		return nil, err
+	}
+	where, arguments := usageWhere(agentId, since, until)
 	var rows []struct {
 		Key        string
 		Ordinality uint64
@@ -687,6 +702,58 @@ func (self *transaction) QueryAgentUsage(agentId string, since, until time.Time,
 	result := make([]models.AgentUsageRow, 0, len(keys))
 	for _, key := range keys {
 		result = append(result, models.AgentUsageRow{Key: key, Totals: totals[key]})
+	}
+	return result, nil
+}
+
+// QueryAgentUsageByModel is QueryAgentUsage with the model kept beside
+// the key, so a caller that knows what the models cost can add up what a
+// period was worth as well as what it used. Grouping by both in the one
+// query is what keeps a table of thirty days from being thirty queries.
+func (self *transaction) QueryAgentUsageByModel(agentId string, since, until time.Time, by string) ([]models.AgentUsageModelRow, error) {
+	keyExpression, err := usageKeyExpression(by)
+	if err != nil {
+		return nil, err
+	}
+	where, arguments := usageWhere(agentId, since, until)
+	var rows []struct {
+		Key        string
+		Model      string
+		Ordinality uint64
+		Value      int64
+	}
+	query := fmt.Sprintf(
+		`SELECT %s AS "key", "model" AS "model", "ordinality", SUM("unnest") AS "value" FROM "agent_usage", unnest("values") WITH ORDINALITY WHERE %s GROUP BY "key", "model", "ordinality" ORDER BY "key", "model", "ordinality"`,
+		keyExpression, strings.Join(where, " AND "))
+	if err := self.tx.Raw(query, arguments...).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	type pair struct{ key, model string }
+	totals := map[pair]models.AgentUsageTotals{}
+	order := make([]pair, 0, len(rows))
+	for _, row := range rows {
+		at := pair{row.Key, row.Model}
+		total, seen := totals[at]
+		if !seen {
+			order = append(order, at)
+		}
+		switch row.Ordinality - 1 {
+		case models.AgentUsagePromptTokens:
+			total.PromptTokens += row.Value
+		case models.AgentUsageCompletionTokens:
+			total.CompletionTokens += row.Value
+		case models.AgentUsageCacheReadTokens:
+			total.CacheReadTokens += row.Value
+		case models.AgentUsageCacheWriteTokens:
+			total.CacheWriteTokens += row.Value
+		case models.AgentUsageCalls:
+			total.Calls += row.Value
+		}
+		totals[at] = total
+	}
+	result := make([]models.AgentUsageModelRow, 0, len(order))
+	for _, at := range order {
+		result = append(result, models.AgentUsageModelRow{Key: at.key, Model: at.model, Totals: totals[at]})
 	}
 	return result, nil
 }

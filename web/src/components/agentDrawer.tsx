@@ -101,14 +101,14 @@ interface Budget {
 
 // budgetShown is the budget the ring draws: the one nearer its end where
 // both are set, and null where neither is.
-function budgetShown(budget: Budget): { used: string; limit: string; fraction: number } | null {
+function budgetShown(budget: Budget): { used: string; limit: string; fraction: number; money: boolean } | null {
   const tokens = budget.limit > 0 ? budget.used / budget.limit : -1
   const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
   if (tokens < 0 && money < 0) return null
   if (money >= tokens) {
-    return { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency), fraction: money }
+    return { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency), fraction: money, money: true }
   }
-  return { used: formatCount(budget.used), limit: formatCount(budget.limit), fraction: tokens }
+  return { used: formatCount(budget.used), limit: formatCount(budget.limit), fraction: tokens, money: false }
 }
 
 interface Attachment {
@@ -587,7 +587,10 @@ function BudgetRing({ budget, framed, onLeaving }: { budget: Budget; framed: boo
   const nearness = budgetNearness(fraction, 1)
   const radius = 6
   const round = 2 * Math.PI * radius
-  const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })} ${t(
+  // Said in whichever the budget is counted in, and what it came to in
+  // money when that is not the same thing.
+  const spent = shown.money ? '' : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
+  const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })}${spent} ${t(
     'agentDrawer.budgetResets',
     { at: formatTime(budget.resetsAt) },
   )}`
