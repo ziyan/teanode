@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ziyan/teanode/internal/access"
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
@@ -32,6 +33,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/frontend"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
@@ -265,6 +267,11 @@ type server struct {
 	// does not have.
 	spamFilter spamfilter.Filter
 
+	// agentRegistry and agentWorker exist only while the agent is enabled;
+	// nil otherwise, and nothing downstream is built.
+	agentRegistry *llm.Registry
+	agentWorker   *agent.Agent
+
 	// upgrader knows what has been released and, after an upgrade, what this
 	// process should become. Read at the end of serve, once everything is
 	// drained: that is the only safe moment to replace the process image.
@@ -418,6 +425,10 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	}
 
 	if err := self.openExchange(configuration, spamFilter, antivirusClient); err != nil {
+		return nil, err
+	}
+
+	if err := self.openAgentWorker(configuration); err != nil {
 		return nil, err
 	}
 
@@ -721,6 +732,9 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	}
 
 	mailerComponent, err := mailer.New(self.database, self.store, self.exchange, nil)
+	if err == nil && self.agentWorker != nil {
+		self.agentWorker.SetMailer(mailerComponent)
+	}
 	if err != nil {
 		return fmt.Errorf("cannot create the mailer: %w", err)
 	}
@@ -846,6 +860,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		BackendID:   self.instance,
 		Restarter:   self.restarter,
 		AuthLimiter: self.authLimiter(configuration),
+		Agent:       self.agentService(),
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)

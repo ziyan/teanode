@@ -16,6 +16,15 @@ const Prefix = "/api/v1"
 
 // The paths making up version 1.
 const (
+	// PathAgentTab is the websocket the browser extension attaches a tab
+	// through, for the person's agent.
+	PathAgentTab = Prefix + "/agent/tab"
+
+	// PathAgentAttachments takes files for a conversation with the agent,
+	// as a multipart body; PathAgentAttachment hands one back to its owner.
+	PathAgentAttachments = Prefix + "/agent/attachments"
+	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
+
 	// PathGraphQL is the whole of the management API. POST executes a query
 	// or mutation; GET upgrades to a WebSocket for subscriptions.
 	PathGraphQL = Prefix + "/graphql"
@@ -137,7 +146,7 @@ const ()
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
-	return []string{PathGraphQL}
+	return []string{PathGraphQL, PathAgentTab}
 }
 
 // PublicPrefixes are reachable without the middleware turning them away, for

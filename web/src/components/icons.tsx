@@ -193,6 +193,25 @@ export function StarIcon(props: IconProps) {
   )
 }
 
+// PriorityIcon marks the view of what the agent said matters today.
+export function PriorityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5" />
+      <path d="M12 16h.01" />
+    </Icon>
+  )
+}
+
+// SparkIcon marks the agent: what acts on the person's behalf.
+export function SparkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2zM5 17l.9 2.1L8 20l-2.1.9L5 23l-.9-2.1L2 20l2.1-.9L5 17z" />
+    </Icon>
+  )
+}
 export function QueueIcon(props: IconProps) {
   return (
     <Icon {...props}>

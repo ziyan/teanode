@@ -10,6 +10,7 @@ import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
+import { Select } from '../../components/select'
 
 const TOKENS = `
   query ($includeRevoked: Boolean) {
@@ -182,13 +183,13 @@ export function TokensPage() {
           </label>
           <label>
             <span>{t('tokens.lifetime')}</span>
-            <select value={lifetime} onChange={(event) => setLifetime(event.target.value)}>
-              {LIFETIMES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {t(option.label)}
-                </option>
-              ))}
-            </select>
+            <Select
+              block
+              value={lifetime}
+              label={t('tokens.lifetime')}
+              options={LIFETIMES.map((option) => ({ value: option.value, label: t(option.label) }))}
+              onChange={setLifetime}
+            />
           </label>
         </FormDialog>
       )}

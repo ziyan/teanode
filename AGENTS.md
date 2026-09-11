@@ -35,6 +35,15 @@ retried.
       web/                  HTTP server and middlewares
       dns/                  advisory DNS record checking for configured domains
       mailer/               template rendering and transactional send
+      llm/                  talking to language models: OpenAI-compatible,
+                            Anthropic and Gemini clients, the registry that
+                            picks a model per kind of work, structured output
+      agent/                the personal agent: the job queue and worker, the
+                            runs (triage, summaries, replies, embeddings), the
+                            tool catalog and the Ask loop. Knows mail, not HTTP
+      mcp/                  a client for connected servers (Model Context
+                            Protocol): HTTP and stdio transports, OAuth 2.1
+      browser/              the DevTools client behind the agent's browser tool
       models/               structs shared across packages
       spamfilter/           the seam between the server and whatever scores mail
       strainer/             the built-in spam filter, which scores it here
@@ -79,3 +88,12 @@ found along the way are in
 `docs/planning/active/20260818-open-source-restructure.md`. Read it before
 starting anything substantial — it says what is already done, what is
 deliberately deferred, and which decisions are settled.
+
+The personal agent — a language model, when an operator configures one,
+that sorts, summarizes, drafts and answers a person's mail and talks to
+them through a drawer and the command line — is being built under
+`docs/planning/active/20260910-personal-agents.md`, with its roadmap and
+the calendar and contacts that follow beside it. Its words are fixed:
+*rules* are the mailbox's rules and nothing else; the prompt is the
+*conduct*; the person's standing words are *instructions*; the operator's
+are *house instructions*; the auto-reply policy's text is *guidance*.

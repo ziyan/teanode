@@ -5,13 +5,14 @@ import { Attachment, MailContent, MailboxItem, graphql } from '../api'
 import { ErrorMessage, Loading, formatBytes, formatTime } from '../components/common'
 import { SettingsEmpty } from '../components/settingsList'
 import { ConfirmDialog } from '../components/dialog'
-import { PaperclipIcon } from '../components/icons'
+import { PaperclipIcon, SparkIcon } from '../components/icons'
 import { RichTextEditor, htmlToText, quotableHtml, textToHtml } from '../components/richText'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 import { UploadHandle, isCancelled, uploadFiles } from '../upload'
 import { folderOfKind, useMailboxes } from '../mailboxes'
+import { Combobox, Select } from '../components/select'
 
 // Writing from a mailbox: a new message, a reply, a forward, or a draft
 // picked up again. One page for the four, told apart by the address bar:
@@ -147,6 +148,11 @@ export function MailboxComposePage() {
 // draft picked up again. It is a component rather than a page because it is
 // used twice — on its own page, and at the top of a conversation, where a
 // reply is written where the conversation is being read.
+const DRAFT_REPLY = `
+  mutation ($itemId: String!, $instructions: String) {
+    DraftReply(itemId: $itemId, instructions: $instructions) { text }
+  }`
+
 export function MailboxComposer({
   replyTo,
   replyAll,
@@ -205,6 +211,11 @@ export function MailboxComposer({
   const [editor, setEditor] = useState<Editor>('rich')
   const [html, setHtml] = useState('')
   const [text, setText] = useState('')
+  // The agent's help with a reply: a line saying what it should do, and
+  // whether it is being written. The result lands in the editor above
+  // whatever is there, and sending stays with the person.
+  const [say, setSay] = useState('')
+  const [drafting, setDrafting] = useState(false)
   // Files on their way up: one entry per file of the selection in flight,
   // with how far along it is. A selection is one request; another one
   // chosen meanwhile waits its turn, since each rewrites the draft.
@@ -231,6 +242,31 @@ export function MailboxComposer({
   const fileInput = useRef<HTMLInputElement>(null)
 
   const addresses = useMemo(() => view?.mailbox.addresses ?? [], [view])
+
+  const draftWithAgent = async () => {
+    if (!replyItemId || drafting) {
+      return
+    }
+    setDrafting(true)
+    setProblem(null)
+    try {
+      const response = await graphql<{ DraftReply: { text: string } }>(DRAFT_REPLY, {
+        itemId: replyItemId,
+        instructions: say.trim() || undefined,
+      })
+      const written = response.DraftReply.text
+      if (editor === 'rich') {
+        setHtml((previous) => textToHtml(written) + previous)
+      } else {
+        setText((previous) => (previous.trim() ? `${written}\n\n${previous}` : written))
+      }
+      touch()
+    } catch (error) {
+      setProblem(error)
+    } finally {
+      setDrafting(false)
+    }
+  }
 
   // Whoever has written to this mailbox, offered as the address is typed.
   // The last entry of the field is what is being typed; the ones before
@@ -325,7 +361,11 @@ export function MailboxComposer({
           if (wroteTo) {
             setFrom(wroteTo)
           }
-          const originalHtml = content?.html ? quotableHtml(content.html) : content?.text ? textToHtml(content.text) : ''
+          const originalHtml = content?.html
+            ? quotableHtml(content.html)
+            : content?.text
+              ? textToHtml(content.text)
+              : ''
           const originalText = content?.text || (content?.html ? htmlToText(content.html) : '')
           if (replyTo) {
             const replyToHeader = content?.headers?.find((header) => header.key.toLowerCase() === 'reply-to')?.value
@@ -624,7 +664,9 @@ export function MailboxComposer({
       toast.done(t('compose.mailbox.sent'))
       const landed = answer.SendMailboxMessage?.item
       const sentFolderId = landed?.folderId ?? folderOfKind(view, 'sent')?.id
-      navigate(landed ? `/mailbox/${landed.folderId}/${landed.id}` : sentFolderId ? `/mailbox/${sentFolderId}` : '/mailbox')
+      navigate(
+        landed ? `/mailbox/${landed.folderId}/${landed.id}` : sentFolderId ? `/mailbox/${sentFolderId}` : '/mailbox',
+      )
     } catch (failure) {
       setProblem(failure)
     } finally {
@@ -707,78 +749,63 @@ export function MailboxComposer({
       <label>
         {t('compose.mailbox.from')}
         {addresses.length > 1 ? (
-          <select
+          <Select
+            block
             value={from}
-            onChange={(event) => {
-              setFrom(event.target.value)
+            label={t('compose.mailbox.from')}
+            options={addresses.map((address) => ({ value: address.address, label: address.address }))}
+            onChange={(value) => {
+              setFrom(value)
               touch()
             }}
-          >
-            {addresses.map((address) => (
-              <option key={address.aliasId} value={address.address}>
-                {address.address}
-              </option>
-            ))}
-          </select>
+          />
         ) : (
           <input value={from} readOnly />
         )}
       </label>
       <label>
         {t('compose.mailbox.to')}
-        <input
+        <Combobox
           value={to}
-          list="compose-contacts-to"
-          onChange={(event) => {
-            setTo(event.target.value)
-            setTyping(event.target.value)
+          label={t('compose.mailbox.to')}
+          suggestions={completions(to)}
+          onChange={(value) => {
+            setTo(value)
+            setTyping(value)
             touch()
           }}
           placeholder="ada@example.com, Bob <bob@example.org>"
           autoFocus={!replyTo && !forwardOf && !draftOf}
         />
-        <datalist id="compose-contacts-to">
-          {completions(to).map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
       </label>
       {/* Copy and blind copy are fields like any other. They were behind a
           link, which made two ordinary boxes into something to go looking
           for, and put a link where the form's rhythm wanted a label. */}
       <label>
         {t('compose.mailbox.copy')}
-        <input
+        <Combobox
           value={cc}
-          list="compose-contacts-cc"
-          onChange={(event) => {
-            setCc(event.target.value)
-            setTyping(event.target.value)
+          label={t('compose.mailbox.copy')}
+          suggestions={completions(cc)}
+          onChange={(value) => {
+            setCc(value)
+            setTyping(value)
             touch()
           }}
         />
-        <datalist id="compose-contacts-cc">
-          {completions(cc).map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
       </label>
       <label>
         {t('compose.mailbox.blindCopy')}
-        <input
+        <Combobox
           value={bcc}
-          list="compose-contacts-bcc"
-          onChange={(event) => {
-            setBcc(event.target.value)
-            setTyping(event.target.value)
+          label={t('compose.mailbox.blindCopy')}
+          suggestions={completions(bcc)}
+          onChange={(value) => {
+            setBcc(value)
+            setTyping(value)
             touch()
           }}
         />
-        <datalist id="compose-contacts-bcc">
-          {completions(bcc).map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
       </label>
       <label>
         {t('compose.mailbox.subject')}
@@ -817,6 +844,26 @@ export function MailboxComposer({
           {t('compose.mailbox.plainText')}
         </button>
       </div>
+      {replyItemId && view?.mailbox.agent?.granted && view.mailbox.agent.draftReplies && (
+        <div className="compose-agent">
+          <input
+            value={say}
+            placeholder={t('compose.mailbox.agentSay')}
+            aria-label={t('compose.mailbox.agentSay')}
+            disabled={drafting}
+            onChange={(event) => setSay(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void draftWithAgent()
+              }
+            }}
+          />
+          <button type="button" disabled={drafting} onClick={() => void draftWithAgent()}>
+            <SparkIcon size={14} /> {drafting ? t('compose.mailbox.agentDrafting') : t('compose.mailbox.agentDraft')}
+          </button>
+        </div>
+      )}
       {editor === 'rich' ? (
         <RichTextEditor
           value={html}
@@ -894,7 +941,7 @@ export function MailboxComposer({
                 <span className="upload-name">{entry.file.name}</span>{' '}
                 <span className="muted">{formatBytes(entry.file.size)}</span>
                 {entry.error ? (
-                  <span className="error"> {entry.error}</span>
+                  <span className="muted"> {entry.error}</span>
                 ) : (
                   <progress
                     max={1}

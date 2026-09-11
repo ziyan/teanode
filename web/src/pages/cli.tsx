@@ -5,6 +5,7 @@ import { graphql } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
 import { CopyButton } from '../components/settingsList'
 import { useTranslation } from '../i18n/i18n'
+import { Select } from '../components/select'
 
 // The page "teanode auth login" opens.
 //
@@ -164,13 +165,13 @@ export function CommandLinePage({ username }: { username: string }) {
       <AuthField label={t('cli.tokenLabel')} value={tokenName} readOnly />
       <label className="auth-field">
         <span>{t('tokens.lifetime')}</span>
-        <select value={lifetime} onChange={(event) => setLifetime(event.target.value)}>
-          {lifetimes.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          block
+          value={lifetime}
+          label={t('cli.lifetime')}
+          options={lifetimes.map((option) => ({ value: option.value, label: option.label }))}
+          onChange={setLifetime}
+        />
       </label>
 
       <ErrorMessage error={error} />

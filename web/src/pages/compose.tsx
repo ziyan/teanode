@@ -9,6 +9,7 @@ import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
 import { Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
 import { Trans, useTranslation } from '../i18n/i18n'
+import { Select } from '../components/select'
 
 const DOMAINS = `{ ListDomains { id domain } }`
 
@@ -313,21 +314,16 @@ export function ComposePage() {
                 onChange={(event) => setFromLocal(event.target.value.replace(/@.*$/, ''))}
               />
               <span className="address-domain">@</span>
-              <select
+              <Select
                 className="mono"
-                aria-label={t('compose.domain')}
+                label={t('compose.domain')}
                 value={domainId}
-                onChange={(event) => {
-                  setDomainId(event.target.value)
-                  setSearch({ domain: event.target.value }, { replace: true })
+                options={domains.map((each) => ({ value: each.id, label: each.domain }))}
+                onChange={(value) => {
+                  setDomainId(value)
+                  setSearch({ domain: value }, { replace: true })
                 }}
-              >
-                {domains.map((each) => (
-                  <option key={each.id} value={each.id}>
-                    {each.domain}
-                  </option>
-                ))}
-              </select>
+              />
             </span>
           </label>
         </div>
@@ -379,34 +375,30 @@ export function ComposePage() {
                     </>
                   )}
                 </span>
-                <select
+                <Select
+                  block
+                  label={t('compose.template')}
                   value={templateId}
-                  onChange={(event) => {
-                    setTemplateId(event.target.value)
+                  options={templates.map((each) => ({ value: each.id, label: each.comment ? `${each.name} — ${each.comment}` : each.name }))}
+                  onChange={(value) => {
+                    setTemplateId(value)
                     setValues({})
-                    setLocale(preferredLocale(templates.find((each) => each.id === event.target.value)))
+                    setLocale(preferredLocale(templates.find((each) => each.id === value)))
                   }}
-                >
-                  {templates.map((each) => (
-                    <option key={each.id} value={each.id}>
-                      {each.name}
-                      {each.comment ? ` — ${each.comment}` : ''}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label style={{ margin: 0, maxWidth: 200 }}>
                 <span>{t('compose.language')}</span>
-                <select value={locale} onChange={(event) => setLocale(event.target.value)}>
-                  <option value="">
-                    {template?.locale ? t('locale.defaultNamed', { locale: template.locale }) : t('locale.default')}
-                  </option>
-                  {(template?.translations ?? []).map((translation) => (
-                    <option key={translation.locale} value={translation.locale}>
-                      {translation.locale}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  block
+                  label={t('compose.locale')}
+                  value={locale}
+                  options={[
+                    { value: '', label: template?.locale ? t('locale.defaultNamed', { locale: template.locale }) : t('locale.default') },
+                    ...(template?.translations ?? []).map((translation) => ({ value: translation.locale, label: translation.locale })),
+                  ]}
+                  onChange={setLocale}
+                />
               </label>
             </div>
             {variables.length > 0 ? (

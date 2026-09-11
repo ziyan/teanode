@@ -21,6 +21,7 @@ const MAILBOXES = `{
       addresses { aliasId domainId domain localPart address }
       rules { name enabled stop conditions { field header operator value } actions { kind folderId address } }
       autoReply { enabled from until subject text html }
+      agent { granted draftReplies triage { enabled } }
     }
     folders { id mailboxId parentId name kind pinnedAt unread total }
     unread

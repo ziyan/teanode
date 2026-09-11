@@ -1,0 +1,14 @@
+A message arrived in {{.PersonName}}'s mailbox "{{.MailboxName}}" and sorting decided that looking something up would help them act on it. Find what would help — on the web, in their mailbox, or on a connected service — and answer with notes {{.PersonName}} will read above the message and that a reply may draw on: what you found, where, and how sure you are; in {{.Language}}; plain paragraphs or a short list; under 250 words. Nothing else. If nothing useful can be found, say so in a line.
+{{if .Memories}}
+What {{.PersonName}} has told you about research:
+{{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Summary}}
+What sorting said: {{.Summary}}
+{{end}}{{if .ActionItems}}What the message asks for:
+{{range .ActionItems}}- {{.}}
+{{end}}{{end}}
+The message (item {{.ItemID}}):
+
+<message>
+{{.Message}}
+</message>

@@ -136,6 +136,11 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	if err := self.runRules(tx, mailbox, target, item, mail); err != nil {
 		log.Warningf("the rules of mailbox %q failed on message %q: %s", mailbox.ID, mail.ID, err)
 	}
+	// Then the owner's agent, if this mailbox is one of its sources: it
+	// queues its work here and does it later, never in this transaction.
+	if hook := self.currentAgentHook(); hook != nil {
+		hook.OnMailboxDelivery(tx, mailbox, item, mail)
+	}
 	// And the out-of-office reply, decided after the rules have had their
 	// say about where the message ended up.
 	self.maybeAutoReply(tx, mailbox, alias, recipient, item, mail)

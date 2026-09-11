@@ -499,7 +499,7 @@ function UpgradeCard({
           ) : (
             <span className="muted">{t('common.none')}</span>
           )}
-          {status.checkError && <div className="error">{status.checkError}</div>}
+          {status.checkError && <div className="warning">{status.checkError}</div>}
         </dd>
       </dl>
 
@@ -521,7 +521,7 @@ function UpgradeCard({
         </>
       )}
 
-      {status.error && <p className="error">{t('upgrade.failed', { reason: status.error })}</p>}
+      {status.error && <p className="warning">{t('upgrade.failed', { reason: status.error })}</p>}
 
       {!status.enabled && <p className="notice">{t('upgrade.checkingOff')}</p>}
 

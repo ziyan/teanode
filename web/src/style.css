@@ -139,7 +139,7 @@
 }
 
 :root[data-theme='dark'] {
-    --background: #141416;
+  --background: #141416;
   --rail: #0c0c0e;
   --surface: #1a1a1d;
   --border: #2a2a2e;
@@ -159,17 +159,26 @@
   --warn: #fbbf24;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* A scrollbar that does not draw a gray slab down the side of a quiet page. */
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
 *::-webkit-scrollbar-thumb {
   background-color: var(--border);
   border-radius: var(--radius-2);
   border: 3px solid var(--background);
 }
-*::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-strong);
+}
 
 html {
   /* Landscape on iOS inflates text in a way that breaks the table layouts. */
@@ -178,21 +187,38 @@ html {
   color-scheme: light dark;
 }
 
-:root[data-theme='light'] { color-scheme: light; }
-:root[data-theme='dark'] { color-scheme: dark; }
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
 
 body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font:
+    15px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 /* A link in running text is the text color, underlined. The accent is what
    you press, and painting every link with it turns a page of prose into a
    page of buttons. */
-a { color: var(--text); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
-a:hover { text-decoration-color: var(--text); }
+a {
+  color: var(--text);
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+a:hover {
+  text-decoration-color: var(--text);
+}
 
 /* A link in a table, a card header or the rail is a destination, not prose.
    Underlining every one of them turns a list of subjects into a wall of
@@ -886,11 +912,27 @@ a.tile:hover strong {
   padding: var(--space-6) max(32px, (100% - 1400px) / 2);
 }
 
-h2 { margin-top: 0; font-size: 20px; }
-h3 { font-size: 16px; margin-bottom: 8px; }
+h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
 
-table { width: 100%; border-collapse: collapse; font-size: var(--text-body); }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
 
 /* Top is right for a cell that stacks several lines — the values found for a
    DNS record, the evidence behind an authentication check — and wrong for a
@@ -1112,9 +1154,19 @@ td.truncate {
 /* A table of rules, not a grid of boxes. The head is a quiet label in the
    same case as everything else — uppercase at this size is harder to read and
    buys nothing that weight and color do not already give. */
-th { color: var(--muted); font-weight: 550; font-size: 13px; letter-spacing: 0; }
-tbody tr:hover { background: var(--sidebar-hover); }
-td.shrink { width: 1%; white-space: nowrap; }
+th {
+  color: var(--muted);
+  font-weight: 550;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+tbody tr:hover {
+  background: var(--sidebar-hover);
+}
+td.shrink {
+  width: 1%;
+  white-space: nowrap;
+}
 
 /* A static panel: an outline and a background. No shadow — that is reserved
    for things that float, so a shadow always means the same thing. */
@@ -1270,9 +1322,21 @@ td .cell-note {
   color: var(--muted);
   white-space: nowrap;
 }
-.tag.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, transparent); background: color-mix(in srgb, var(--good) 10%, transparent); }
-.tag.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: color-mix(in srgb, var(--bad) 10%, transparent); }
-.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.tag.good {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+}
+.tag.bad {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 35%, transparent);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+}
+.tag.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
 
 /* --- what happened to a message -------------------------------------------
    The first line of a mail: its verdict, its kind, and one sentence saying
@@ -1331,7 +1395,8 @@ td .cell-note {
 /* Three weights of button, and the difference between them is how much they
    ask for. The default is outlined and quiet; .primary is the near-black one
    and there is at most one per view; .link is text that happens to act. */
-button, .button {
+button,
+.button {
   font: inherit;
   font-weight: 550;
   padding: 7px 14px;
@@ -1357,7 +1422,10 @@ button.primary:hover:not(:disabled) {
   border-color: var(--accent-hover);
 }
 
-button:disabled { opacity: 0.5; cursor: default; }
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* The one confirming button that takes something away. Red is reserved for
    that, so that a red button always means the same thing — signing out takes
@@ -1387,7 +1455,9 @@ button.link:hover:not(:disabled) {
   color: var(--text);
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
   font: inherit;
   padding: 7px 10px;
   border: 1px solid var(--border);
@@ -1397,11 +1467,15 @@ input, select, textarea {
   width: 100%;
 }
 
-input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+input:hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
 
-input:focus-visible, select:focus-visible, textarea:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: none;
   border-color: var(--text);
 }
@@ -1421,7 +1495,11 @@ input[type='radio'] {
   margin-right: var(--space-1);
 }
 
-label { display: block; margin-bottom: 10px; font-size: 14px; }
+label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
 
 /* The name of a control that is not a single field — a switch and the editor
    under it — said the way a field's label is said, since it is doing the same
@@ -1447,14 +1525,34 @@ label:has(> input[type='radio']) > input {
   margin-right: 0;
   vertical-align: baseline;
 }
-label span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 3px; }
+label span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
 
-.row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-.row > * { flex: 1; min-width: 140px; }
-.row > .shrink { flex: 0 0 auto; min-width: 0; }
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.row > * {
+  flex: 1;
+  min-width: 140px;
+}
+.row > .shrink {
+  flex: 0 0 auto;
+  min-width: 0;
+}
 
-.muted { color: var(--muted); }
-.error { color: var(--bad); }
+.muted {
+  color: var(--muted);
+}
+.error {
+  color: var(--bad);
+}
 /* Monospace, and allowed to break inside a word — but only when the word
    cannot fit on a line of its own. That is the difference between
    overflow-wrap:anywhere and word-break:break-all, and it matters here: a
@@ -1702,8 +1800,20 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
   flex: 0 0 auto;
 }
 
-.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font-weight: 550; padding: 8px 2px; margin-right: 22px; }
-.tabs button:hover:not(:disabled) { background: none; color: var(--text); }
+.tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 550;
+  padding: 8px 2px;
+  margin-right: 22px;
+}
+.tabs button:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
 
 /* An action sitting with the tabs rather than being one: it does not change
    what is below, it takes a copy away with you — or, on a domain, it leaves
@@ -1754,7 +1864,10 @@ label span { display: block; color: var(--muted); font-size: 13px; margin-bottom
 /* Color and the rule under it, and not a heavier weight: bolder text is
    wider text, so switching tabs moved every tab to the right of the one
    chosen. */
-.tabs button.active { border-bottom-color: var(--text); color: var(--text); }
+.tabs button.active {
+  border-bottom-color: var(--text);
+  color: var(--text);
+}
 
 /* The message body is rendered inside a sandboxed frame. It is mail written
    by a stranger, so it gets no scripts, no same-origin access, and a white
@@ -2038,8 +2151,8 @@ pre.message-text {
   }
 
   .content {
-    padding: var(--space-4) max(14px, env(safe-area-inset-right))
-      max(32px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    padding: var(--space-4) max(14px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom))
+      max(14px, env(safe-area-inset-left));
   }
 
   .surface-grid {
@@ -2149,14 +2262,12 @@ pre.message-text {
 
   .auth-page {
     align-items: flex-start;
-    padding: var(--space-6) max(16px, env(safe-area-inset-left)) var(--space-6)
-      max(16px, env(safe-area-inset-right));
+    padding: var(--space-6) max(16px, env(safe-area-inset-left)) var(--space-6) max(16px, env(safe-area-inset-right));
   }
 
   .login {
     padding: var(--space-6);
   }
-
 }
 
 /* Nothing should ever make the page itself scroll sideways. */
@@ -2676,12 +2787,25 @@ label.checkbox input {
   --tok-comment: #71717a;
 }
 
-.code .tok-tag { color: var(--tok-punctuation); }
-.code .tok-name { color: var(--tok-name); }
-.code .tok-attribute { color: var(--tok-attribute); }
-.code .tok-value { color: var(--tok-value); }
-.code .tok-comment { color: var(--tok-comment); font-style: italic; }
-.code .tok-doctype { color: var(--tok-comment); }
+.code .tok-tag {
+  color: var(--tok-punctuation);
+}
+.code .tok-name {
+  color: var(--tok-name);
+}
+.code .tok-attribute {
+  color: var(--tok-attribute);
+}
+.code .tok-value {
+  color: var(--tok-value);
+}
+.code .tok-comment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+.code .tok-doctype {
+  color: var(--tok-comment);
+}
 
 /* --- the control above a table --------------------------------------------
    The filter fields used to be a permanent row of empty inputs under every
@@ -2970,9 +3094,15 @@ a.button.primary:hover {
   background: var(--sidebar-hover);
 }
 
-.richtext-bold { font-weight: 700; }
-.richtext-italic { font-style: italic; }
-.richtext-underline { text-decoration: underline; }
+.richtext-bold {
+  font-weight: 700;
+}
+.richtext-italic {
+  font-style: italic;
+}
+.richtext-underline {
+  text-decoration: underline;
+}
 
 .richtext-link {
   display: flex;
@@ -3035,10 +3165,22 @@ a.button.primary:hover {
   pointer-events: none;
 }
 
-.richtext-editor p { margin: 0 0 0.6em; }
-.richtext-editor h2 { margin: 0.4em 0; font-size: 1.3em; }
-.richtext-editor blockquote { margin: 0.4em 0; padding-left: 12px; border-left: 3px solid var(--border-strong); color: var(--muted); }
-.richtext-editor a { color: var(--accent); }
+.richtext-editor p {
+  margin: 0 0 0.6em;
+}
+.richtext-editor h2 {
+  margin: 0.4em 0;
+  font-size: 1.3em;
+}
+.richtext-editor blockquote {
+  margin: 0.4em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+.richtext-editor a {
+  color: var(--accent);
+}
 
 .attachments {
   margin: var(--space-3) 0;
@@ -3830,6 +3972,33 @@ label.check-list-item {
   border-color: var(--muted);
 }
 
+/* In a form, the width of an input; the list under it is the same. */
+.select.block {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.select-value.placeholder {
+  color: var(--muted);
+}
+
+.select-search {
+  width: 100%;
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.select-empty {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .select-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4457,6 +4626,713 @@ label.check-list-item {
   font-size: 11px;
   font-weight: 500;
   color: var(--warn);
+}
+
+/* The agent's help with a reply: a line to say what it should do, and the
+   button that asks. Above the editor, because that is where the answer
+   lands. */
+.compose-agent {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.compose-agent input {
+  flex: 1;
+  min-width: 0;
+}
+
+.compose-agent button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* The agent page's lists of memories and schedules, and the drawer's task
+   list. */
+.agent-memory-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.agent-memory-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.agent-memory-list li p {
+  margin: 4px 0 0;
+}
+
+.agent-memory-list .mailbox-row-chip {
+  margin-left: 6px;
+}
+
+.agent-memory-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+}
+
+.agent-drawer-todo {
+  list-style: none;
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.agent-drawer-todo li.done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.agent-drawer-tab {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The agent's drawer: a panel on the right of every page, and the button
+   that opens it when it is closed. */
+.agent-drawer-toggle {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--background);
+  color: var(--accent, inherit);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+/* The drawer floats over the page at the corner where its button was: a
+   panel the page keeps its own shape under, rather than a column that
+   squeezes the reader. On a phone it takes the screen. */
+.agent-drawer {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, calc(100vw - 40px));
+  height: min(760px, calc(100vh - 40px));
+  height: min(760px, calc(100dvh - 40px));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .agent-drawer {
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+.agent-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-drawer-conversation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-drawer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The conversations, hanging from the title like a menu: a row each, the
+   open one marked, its actions appearing under the pointer, and a first
+   row for starting another. */
+.agent-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+}
+
+.agent-drawer-list {
+  position: absolute;
+  top: 44px;
+  left: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.agent-drawer-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.agent-drawer-list-row:hover,
+.agent-drawer-list-row:focus-within {
+  background: var(--sidebar-hover);
+}
+
+.agent-drawer-list-row.active {
+  font-weight: 600;
+}
+
+.agent-drawer-list-row.new {
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+}
+
+.agent-drawer-list-row.new:hover {
+  color: var(--text);
+}
+
+.agent-drawer-list-row.more {
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+}
+
+.agent-drawer-list-row.more:hover {
+  color: var(--text);
+}
+
+.agent-drawer-list-heading {
+  margin-top: 6px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-drawer-list-row.archived .agent-drawer-list-title {
+  color: var(--muted);
+}
+
+.agent-drawer-list-title {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-drawer-list-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.agent-drawer-list-row:hover .agent-drawer-list-actions,
+.agent-drawer-list-row:focus-within .agent-drawer-list-actions {
+  opacity: 1;
+}
+
+.agent-drawer-list-actions .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.agent-drawer-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-drawer-transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.agent-drawer-empty {
+  margin: auto 0;
+  text-align: center;
+}
+
+.agent-line {
+  max-width: 100%;
+  border-radius: 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-line.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--accent, var(--field));
+  color: var(--background);
+}
+
+.agent-line.assistant {
+  align-self: stretch;
+  background: var(--field);
+  white-space: normal;
+}
+
+.agent-line.assistant .markdown > :first-child {
+  margin-top: 0;
+}
+
+.agent-line.assistant .markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-line.tool,
+.agent-line.note {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-line.confirmation {
+  border: 1px solid var(--warn);
+  background: var(--field);
+}
+
+.agent-line.confirmation p {
+  margin: 0 0 8px;
+}
+
+.agent-line.confirmation .row {
+  display: flex;
+  gap: 6px;
+}
+
+.agent-line.error {
+  border: 1px solid var(--danger, var(--warn));
+  background: var(--field);
+  font-size: 12px;
+}
+
+.agent-drawer-input {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* One row, everything in it 36px tall: the paperclip, the box on one
+   line, the send mark. The box grows with the words, from the bottom, so
+   the marks stay beside its last line. */
+.agent-drawer-input textarea {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  max-height: 160px;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 20px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.agent-drawer-input .icon-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+/* Send and Stop are the size of the paperclip beside them: a round mark
+   each, not a word. */
+.agent-drawer-input .agent-send {
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.agent-drawer-input .agent-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.agent-drawer-input .agent-stop {
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+/* What is about to go with the next turn: the threads pointed at and the
+   files picked, each removable, above the box. */
+.agent-drawer-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.agent-drawer-pending .agent-references,
+.agent-drawer-pending .agent-attachments {
+  margin: 0;
+}
+
+/* The rule sits above what is picked, so the picked things and the box
+   read as one composer. */
+.agent-drawer-pending ~ .agent-drawer-input {
+  border-top: 0;
+}
+
+.agent-attachments,
+.agent-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.agent-line.user .agent-references {
+  margin: 0 0 6px;
+}
+
+.agent-attachment-chip,
+.agent-reference-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--field);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-attachment-chip .link,
+.agent-reference-chip .link {
+  padding: 0 2px;
+}
+
+.agent-attachment-image {
+  display: block;
+  max-width: 160px;
+  max-height: 120px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+/* A tool line opens to what was asked and what came back. */
+.agent-tool-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-tool-detail {
+  margin: 4px 0 6px 12px;
+}
+
+/* A table of counts: the numbers right-aligned in a tabular face, so the
+   columns read down as columns. */
+.numbers-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-code {
+  position: relative;
+  margin: 4px 0 6px;
+}
+
+.agent-code pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 6px 28px 6px 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--field);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-code-copy {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.agent-code:hover .agent-code-copy,
+.agent-code-copy:focus-visible {
+  opacity: 1;
+}
+
+/* JSON as an editor colours it: the keys in the leaf, numbers and the
+   three words in the warm, strings as the text is. */
+.json-key {
+  color: var(--leaf);
+}
+
+.json-number,
+.json-literal {
+  color: var(--warn);
+}
+
+.agent-usage {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* When a message was said: under the pointer, or after a tap where there
+   is no pointer. Folded away otherwise, so the conversation reads as a
+   conversation and not as a log. */
+.agent-line-time {
+  /* Not there rather than folded: a folded line still sets the width of
+     the bubble, and "ok" was drawn as wide as its date. */
+  display: none;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.agent-line.timed .agent-line-time {
+  display: block;
+}
+
+@media (hover: hover) {
+  .agent-line:hover .agent-line-time {
+    display: block;
+  }
+}
+
+.agent-drawer-rename input {
+  width: 100%;
+}
+
+.agent-drawer.dragging {
+  outline: 2px dashed var(--accent, var(--muted));
+  outline-offset: -4px;
+}
+
+.agent-drawer-drop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  pointer-events: none;
+  font-weight: 600;
+}
+
+/* The agent is about to answer: said where the conversation is read, with
+   the ways out beside it. Warm, because it is the one thing here that acts
+   without a person. */
+.mailbox-held-reply {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: var(--field);
+  font-size: 13px;
+}
+
+.mailbox-held-reply-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mailbox-held-reply-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.mailbox-held-reply-text {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.agent-reply-status.held {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* The agent's summary of a conversation, folded at the top of the reader. A
+   button for the fold, so the keyboard reaches it. */
+.mailbox-thread-summary {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--field);
+}
+
+.mailbox-thread-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailbox-thread-summary-head .muted {
+  font-weight: 400;
+}
+
+.mailbox-thread-summary-chevron {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.mailbox-thread-summary-text {
+  margin: 0;
+  padding: 0 10px 10px 32px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* What the agent worked out, in the width of a word: the category, whether
+   an answer is waited for, and a mark when it said the message matters
+   today. Quiet, because every row may carry one. */
+.mailbox-row-insight {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The chips give way before the name does: a row that reads "M…" beside
+   three chips says less than one that reads "Maria" beside one. The name
+   keeps a few characters whatever else is in the line. */
+.mailbox-row-from > .mailbox-row-insight {
+  flex: 0 1 auto;
+}
+.mailbox-row-who {
+  min-width: 8ch;
+}
+
+.mailbox-row-chip {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--field);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mailbox-row-priority {
+  margin-left: 6px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--warn);
+  color: var(--background);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 16px;
 }
 
 .mailbox-row-folder {
@@ -5289,7 +6165,6 @@ p.notice.domain-logo-note {
   font-size: 13px;
 }
 
-
 /* A dialog fits the screen it is on: what does not fit scrolls inside it,
    and the actions stay at its foot. */
 .dialog {
@@ -5354,4 +6229,312 @@ p.notice.domain-logo-note {
   .access-narrow-filter {
     display: flex;
   }
+}
+
+/* --- the drawer, continued ----------------------------------------------- */
+
+/* The agent at work and nothing said yet: three dots breathing. */
+.agent-line.thinking {
+  align-self: flex-start;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--field);
+}
+
+.agent-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.agent-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: agent-dot 1.2s ease-in-out infinite;
+}
+
+.agent-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.agent-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes agent-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Where the day changes. */
+.agent-day {
+  align-self: center;
+  margin: 4px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A way back to the end, for somebody who scrolled up to read. */
+.agent-drawer-jump {
+  position: absolute;
+  right: 16px;
+  bottom: 96px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--background);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.agent-drawer-note {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.agent-drawer-search {
+  width: 100%;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.agent-drawer-list-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-drawer-list-summary {
+  font-size: 11px;
+  font-weight: 400;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-drawer-list-actions .icon-button.danger:hover {
+  color: var(--bad);
+}
+
+/* What the agent made: a frame of its own under the line that made it. */
+.agent-artifact {
+  margin: 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.agent-artifact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.agent-artifact-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-artifact-frame {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 0;
+  background: #ffffff;
+}
+
+.agent-artifact.large .agent-artifact-frame {
+  height: 70vh;
+}
+
+.agent-artifact-body {
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.agent-artifact.large .agent-artifact-body {
+  max-height: 70vh;
+}
+
+.agent-code-language {
+  position: absolute;
+  top: 6px;
+  right: 30px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The markdown an answer is written in, beyond what a changelog needs. */
+.markdown ol {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.4em;
+}
+
+.markdown h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 700;
+}
+
+.markdown blockquote {
+  margin: 0 0 var(--space-2);
+  padding: 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.markdown hr {
+  margin: var(--space-3) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown .table-wrap {
+  margin: 0 0 var(--space-2);
+}
+
+.markdown table {
+  font-size: 12.5px;
+}
+
+.markdown .agent-code {
+  margin: 0 0 var(--space-2);
+}
+
+.markdown .agent-code pre {
+  font-size: 12px;
+  max-height: 400px;
+}
+
+/* A box that narrows a long list to the rows with the words in them. */
+.settings-filter {
+  width: 100%;
+  max-width: 360px;
+  margin-bottom: var(--space-3);
+}
+
+.agent-drawer-readonly {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+/* A quiet red for a button that takes something back — revoke, cancel a
+   held reply — outlined like the default, so that the one filled red
+   button on a page stays the confirming one. */
+button.danger:not(.primary):not(.icon-action):not(.icon-button):not(.link) {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--border));
+}
+
+button.danger:not(.primary):not(.icon-action):not(.icon-button):not(.link):hover:not(:disabled) {
+  background: var(--bad-surface, var(--sidebar-hover));
+}
+
+/* A small action beside a title, inside a card that is itself inside a
+   conversation: sized to the text it sits by. */
+.agent-artifact-action,
+a.button.agent-artifact-action {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+/* One subject of a card, with a Save of its own: a heading, its fields,
+   the button. A rule above separates it from the subject before. */
+.settings-subform {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.settings-subform h4 {
+  margin: 0 0 var(--space-1);
+}
+
+.settings-subform > p.muted {
+  margin: 0 0 var(--space-3);
+}
+
+.settings-subform .page-actions {
+  margin-top: var(--space-3);
+}
+
+/* Chosen things, each removable. */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--field);
+  font-size: var(--text-label);
+}
+
+.chip-remove {
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chip-remove:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+
+/* One mailbox as a source, among others in the same card: a heavier rule
+   between two than between the subjects inside one. */
+.agent-source + .agent-source {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 2px solid var(--border);
+}
+
+.agent-source > .settings-section-head {
+  margin-bottom: var(--space-3);
+}
+
+.agent-source > .settings-section-head h4 {
+  margin: 0 0 2px;
 }

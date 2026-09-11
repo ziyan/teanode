@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "TeaNode agent tab",
+  "version": "1.0.0",
+  "description": "Attach the tab you are looking at to your TeaNode agent, so it can act there with your session while you watch.",
+  "permissions": ["activeTab", "scripting", "storage", "cookies", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_title": "Attach this tab to your agent" },
+  "options_page": "options.html",
+  "background": { "service_worker": "background.js" },
+  "icons": {}
+}

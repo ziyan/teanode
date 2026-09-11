@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"net/http"
 	"sync"
 	"time"
@@ -204,21 +207,64 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				defer deferutil.Recover()
 				defer waitGroup.Done()
 
-				channel := graphql.Subscribe(graphql.Params{
-					Schema:         self.graph.schema,
-					RequestString:  data.Query,
-					VariableValues: data.Variables,
-					OperationName:  data.OperationName,
-					Context:        ctxWithCancel,
-				})
+				// As the signed-in person, resolved the way a request is:
+				// the subscription's resolver authorizes like any other,
+				// inside a short transaction that ends once it has.
+				channel, err := self.subscribe(ctxWithCancel, &data)
+				if err != nil {
+					_ = self.sendMessage(message.ID, "error", map[string]any{"message": err.Error()})
+					return
+				}
 				for result := range channel {
 					if err := self.sendMessage(message.ID, "data", result); err != nil {
 						return
 					}
 				}
+				// The subscription ended of itself: say so, so the client
+				// can tell an end from a dropped connection.
+				_ = self.sendMessage(message.ID, "complete", nil)
 			}()
 		default:
 			log.Warningf("received unhandled message type %q from websocket at %q", message.Type, self.conn.RemoteAddr())
 		}
 	}
+}
+
+// subscribe starts a subscription as the person the socket belongs to.
+func (self *webSocketConnection) subscribe(ctx context.Context, data *graphRequest) (chan *graphql.Result, error) {
+	username := api.UsernameFromRequest(self.request)
+	var user *models.User
+	if username != "" && username != localUsername {
+		found, err := self.graph.database.GetUserByUsername(username)
+		if err != nil {
+			return nil, err
+		}
+		if found == nil || found.Disabled() {
+			username = ""
+		} else {
+			user = found
+		}
+	}
+	ctx = api.ContextWithRequest(ctx, self.request)
+	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
+	var channel chan *graphql.Result
+	if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		ctx := api.ContextWithTransaction(ctx, tx)
+		principal, err := self.graph.resolvePrincipal(tx, username, user)
+		if err != nil {
+			return err
+		}
+		ctx = api.ContextWithPrincipal(ctx, principal)
+		channel = graphql.Subscribe(graphql.Params{
+			Schema:         self.graph.schema,
+			RequestString:  data.Query,
+			VariableValues: data.Variables,
+			OperationName:  data.OperationName,
+			Context:        ctx,
+		})
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return channel, nil
 }

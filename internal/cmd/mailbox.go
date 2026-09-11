@@ -617,13 +617,16 @@ func newRuleCommand() *cli.Command {
 				Usage:     "add a rule",
 				ArgsUsage: "<name>",
 				Description: "Conditions are --when field:operator:value, repeated; every one must match.\n" +
-					"The fields are from, to, subject, header, score, sender-known and any; the\n" +
-					"operators are contains, equals, matches (a regular expression), above and below.\n" +
-					"A header condition names the header: --when header:List-Id:contains:golang.\n" +
-					"sender-known and any take no operator.\n\n" +
+					"The fields are from, to, subject, header, score, sender-known, category, priority,\n" +
+					"needs-reply and any; the operators are contains, equals, matches (a regular\n" +
+					"expression), above and below. A header condition names the header:\n" +
+					"--when header:List-Id:contains:golang. sender-known, needs-reply and any take no\n" +
+					"operator. category, priority and needs-reply read what the agent decided about a\n" +
+					"message, so such a rule runs once the agent has sorted it rather than at delivery.\n\n" +
 					"  teanode mailbox rule add GitHub --when from:contains:@github.com --move GitHub --stop\n" +
 					"  teanode mailbox rule add Loud --when score:above:5 --move Junk\n" +
-					"  teanode mailbox rule add Receipts --when subject:contains:receipt --move Receipts --mark-read",
+					"  teanode mailbox rule add Receipts --when subject:contains:receipt --move Receipts --mark-read\n" +
+					"  teanode mailbox rule add Reading --when category:equals:newsletter --move Reading --mark-read",
 				Flags:  append(ruleFlags(), JSONFlag(), mailboxFlag()),
 				Action: runRuleAdd,
 			},
@@ -693,17 +696,17 @@ func ruleFlags() []cli.Flag {
 // parseCondition reads one --when. A condition is field:operator:value, and
 // a header condition names the header between the two:
 // header:List-Id:contains:golang. The fields that ask nothing of a value —
-// sender-known, any — are written alone.
+// sender-known, needs-reply, any — are written alone.
 func parseCondition(specification string) (client.MailboxRuleCondition, error) {
 	parts := strings.Split(specification, ":")
 	field := strings.TrimSpace(parts[0])
 	switch field {
-	case "sender-known", "any":
+	case "sender-known", "needs-reply", "any":
 		if len(parts) != 1 {
 			return client.MailboxRuleCondition{}, fmt.Errorf("%q takes nothing after it: write --when %s", field, field)
 		}
 		return client.MailboxRuleCondition{Field: field}, nil
-	case "from", "to", "subject", "score":
+	case "from", "to", "subject", "score", "category", "priority":
 		if len(parts) < 3 {
 			return client.MailboxRuleCondition{}, fmt.Errorf("%q is not a condition; write field:operator:value, as in from:contains:@github.com", specification)
 		}
@@ -725,7 +728,7 @@ func parseCondition(specification string) (client.MailboxRuleCondition, error) {
 		}
 		return condition, validateOperator(condition)
 	default:
-		return client.MailboxRuleCondition{}, fmt.Errorf("%q is not a field; use from, to, subject, header, score, sender-known or any", field)
+		return client.MailboxRuleCondition{}, fmt.Errorf("%q is not a field; use from, to, subject, header, score, sender-known, category, priority, needs-reply or any", field)
 	}
 }
 
@@ -801,7 +804,7 @@ func describeRule(view *client.MailboxView, rule client.MailboxRule) (string, st
 	conditions := make([]string, 0, len(rule.Conditions))
 	for _, condition := range rule.Conditions {
 		switch condition.Field {
-		case "sender-known", "any":
+		case "sender-known", "needs-reply", "any":
 			conditions = append(conditions, condition.Field)
 		case "header":
 			conditions = append(conditions, fmt.Sprintf("header %s %s %s", condition.Header, condition.Operator, condition.Value))

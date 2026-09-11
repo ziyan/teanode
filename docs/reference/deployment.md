@@ -146,6 +146,22 @@ nothing. Mark messages in the dashboard — it needs examples of ordinary mail
 as much as of spam — and it begins contributing once it has seen enough of
 both. The settings page shows how many it has learned.
 
+## The agent's browser
+
+The personal agent can drive a web page — a carrier's tracking page, a
+supplier's portal — in a Chrome that runs beside the server, off unless you
+switch it on. The compose file has one under the `browser` profile:
+
+    docker compose --profile browser up -d
+
+Then, on the dashboard's server page under Agent, set the browser's
+endpoint to `http://chrome:9222` and switch the browser on. Every run gets a
+fresh, isolated context that is signed in as nobody and discarded when the
+run ends; private and internal addresses are refused unless you list them;
+downloads are off. A person who wants the agent to act in a page only they
+can sign into installs the extension under `web/extension/` and attaches
+that tab; `agent.browser.attachTabs` switches that off for everybody.
+
 ## Upgrading
 
 From the dashboard, under Settings, when a release is available — it stages

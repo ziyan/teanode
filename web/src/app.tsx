@@ -7,6 +7,7 @@ import { MailPage } from './pages/mail'
 import { MailDetailPage } from './pages/mailDetail'
 import { MailboxPage } from './pages/mailbox'
 import { MailboxSettingsPage } from './pages/mailboxSettings'
+import { AgentPage } from './pages/agent'
 import { MailboxContactsPage } from './pages/mailboxContacts'
 import { MailboxSubscriptionsPage } from './pages/mailboxSubscriptions'
 import { MailboxComposePage } from './pages/mailboxCompose'
@@ -36,6 +37,7 @@ import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
+import { AgentDrawer } from './components/agentDrawer'
 import { MailboxesProvider } from './mailboxes'
 import { Tooltip } from './components/tooltip'
 
@@ -191,6 +193,9 @@ export function App() {
                   <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                   <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
+                  {/* The agent's page moved under the account's settings,
+                      where the rest of what is the person's own lives. */}
+                  <Route path="/agent" element={<Navigate to="/settings/agent" replace />} />
                   <Route path="/mailbox/:folderId" element={<MailboxPage />} />
                   <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
                   {/* The operator's view of every message needs mail:audit;
@@ -237,7 +242,9 @@ export function App() {
                   {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
                   <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
-                  <Route path="/settings/profile" element={<ProfilePage onSaved={refresh} />} />
+                  <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
+                  <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
+                  <Route path="/settings/agent" element={<AgentPage />} />
                   <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                   <Route path="/settings/passkeys" element={<PasskeysPage />} />
                   <Route path="/settings/tokens" element={<TokensPage />} />
@@ -259,6 +266,7 @@ export function App() {
                 </Routes>
               </main>
             </div>
+            {session.username && <AgentDrawer />}
           </div>
         </BreadcrumbProvider>
       </MailboxesProvider>

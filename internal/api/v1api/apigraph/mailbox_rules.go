@@ -191,6 +191,10 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 	if err := self.attachMails(ctx, items); err != nil {
 		return nil, err
 	}
+	insights, err := tx.GetMailInsights(mailbox.ID, mailIdsOf(items))
+	if err != nil {
+		return nil, err
+	}
 	// A rule reads headers the row does not carry — To, Cc, any header a
 	// condition names — so each message is read back from storage, the way
 	// the rule saw it when it arrived.
@@ -216,7 +220,7 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 				if !rule.Enabled {
 					continue
 				}
-				if mx.RuleMatches(rule, item.Mail, senderKnown) {
+				if mx.RuleMatches(rule, item.Mail, senderKnown, insights[item.Mail.ID]) {
 					result.Matched = append(result.Matched, index)
 					if rule.Stop {
 						break

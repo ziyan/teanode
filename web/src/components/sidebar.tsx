@@ -20,6 +20,7 @@ import {
   TerminalIcon,
   ListIcon,
   UserIcon,
+  SparkIcon,
 } from './icons'
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
@@ -47,7 +48,8 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
 }
 
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
-  profile: <UserIcon />,
+  preference: <UserIcon />,
+  agent: <SparkIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -339,6 +341,17 @@ export function Sidebar({
                       </span>
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
                     </NavLink>
+                    {/* What the agent said matters today. Only where the
+                        agent sorts this mailbox; a view that is always empty
+                        would be a question with no answer. */}
+                    {current.mailbox.agent?.granted && current.mailbox.agent.triage?.enabled && (
+                      <NavLink to="/mailbox/priority" title={collapsed ? t('mailbox.folder.priority') : undefined}>
+                        <span className="sidebar-icon">
+                          <FolderKindIcon kind="priority" />
+                        </span>
+                        <span className="sidebar-label">{t('mailbox.folder.priority')}</span>
+                      </NavLink>
+                    )}
                     {pinned.map(({ folder, depth }) => folderRow(folder, depth, `pinned-${folder.id}`))}
                     {/* What is always at the top — the inbox, what is
                         starred, and whatever has been pinned up there — ends
@@ -413,11 +426,7 @@ export function Sidebar({
             state you have to be able to leave: at the top there was no room
             for it once the rail had narrowed, and a control that disappears
             when you use it is a trap. */}
-        {(onToggle || account) && (
-          <div className="sidebar-account">
-            {account}
-          </div>
-        )}
+        {(onToggle || account) && <div className="sidebar-account">{account}</div>}
       </aside>
     </>
   )

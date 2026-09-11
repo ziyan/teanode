@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, SaveRow, Tag, useSaySaved } from '../../components/common'
+import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
+import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
 import {
   GeoIPForm,
   IdentityForm,
@@ -34,6 +36,7 @@ const SETTINGS = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      ${AGENT_SELECTION}
     }
   }`
 
@@ -55,6 +58,7 @@ export const UPDATE = `
     $identity: IdentityParametersInput
     $storage: StorageParametersInput
     $geoip: GeoIPParametersInput
+    $agent: AgentParametersInput
   ) {
     UpdateSettings(
       s3: $s3
@@ -73,6 +77,7 @@ export const UPDATE = `
       identity: $identity
       storage: $storage
       geoip: $geoip
+      agent: $agent
     ) {
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
       route53 { enabled zoneId region accessKeyId hasSecretAccessKey credentialsFile }
@@ -89,6 +94,7 @@ export const UPDATE = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      ${AGENT_SELECTION}
     }
   }`
 
@@ -196,6 +202,7 @@ type Settings = {
   route53: Route53
   antivirus: Service
   antispam: Antispam
+  agent: Agent
   relay: Relay
   proxy: Proxy
   certificates: Certificates
@@ -228,6 +235,7 @@ export type Section =
   | 'spam'
   | 'sessions'
   | 'sso'
+  | 'agent'
 
 // The tabs these four are, for the Server page to render along with the rest
 // of its own. Here rather than there because this file is what knows which
@@ -247,6 +255,7 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   { id: 'spam', label: 'integrations.tabSpam' },
   { id: 'sessions', label: 'serverSettings.tabSessions' },
   { id: 'sso', label: 'integrations.tabSso' },
+  { id: 'agent', label: 'server.tabAgents' },
 ]
 
 // IntegrationsSection edits one group of the optional services: how outgoing
@@ -324,6 +333,7 @@ export function IntegrationsSection({ section }: { section: Section }) {
         </>
       )}
       {section === 'spam' && <AntispamForm settings={settings.antispam} onSaved={reload} />}
+      {section === 'agent' && <AgentForm settings={settings.agent} onSaved={reload} />}
     </>
   )
 }
@@ -471,10 +481,14 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
 
       <label>
         <span>{t('integrations.relayPreset')}</span>
-        <select
+        <Select
+          block
           value=""
-          onChange={(event) => {
-            const preset = PRESETS.find((candidate) => candidate.label === event.target.value)
+          label={t('integrations.relayPresetChoose')}
+          placeholder={t('integrations.relayPresetChoose')}
+          options={PRESETS.map((preset) => ({ value: preset.label, label: preset.label }))}
+          onChange={(value) => {
+            const preset = PRESETS.find((candidate) => candidate.label === value)
             if (!preset) {
               return
             }
@@ -485,14 +499,7 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
               setUsername(preset.username)
             }
           }}
-        >
-          <option value="">{t('integrations.relayPresetChoose')}</option>
-          {PRESETS.map((preset) => (
-            <option key={preset.label} value={preset.label}>
-              {preset.label}
-            </option>
-          ))}
-        </select>
+        />
         <span className="muted">{t('integrations.relayPresetHelp')}</span>
       </label>
 
@@ -511,11 +518,17 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
         </label>
         <label className="shrink">
           <span>{t('integrations.relaySecurity')}</span>
-          <select value={security} onChange={(event) => setSecurity(event.target.value)}>
-            <option value="starttls">{t('integrations.relayStartTls')}</option>
-            <option value="tls">{t('integrations.relayTls')}</option>
-            <option value="none">{t('integrations.relayNone')}</option>
-          </select>
+          <Select
+            block
+            value={security}
+            label={t('integrations.relaySecurity')}
+            options={[
+              { value: 'starttls', label: t('integrations.relayStartTls') },
+              { value: 'tls', label: t('integrations.relayTls') },
+              { value: 'none', label: t('integrations.relayNone') },
+            ]}
+            onChange={setSecurity}
+          />
         </label>
       </div>
 
@@ -754,10 +767,16 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
 
         <label>
           <span>{t('serverSettings.acmeChallenge')}</span>
-          <select value={acmeChallenge} onChange={(event) => setAcmeChallenge(event.target.value)}>
-            <option value="http-01">http-01</option>
-            <option value="dns-01">dns-01</option>
-          </select>
+          <Select
+            block
+            value={acmeChallenge}
+            label="ACME"
+            options={[
+              { value: 'http-01', label: 'http-01' },
+              { value: 'dns-01', label: 'dns-01' },
+            ]}
+            onChange={setAcmeChallenge}
+          />
         </label>
         <p className="muted field-hint">{t('serverSettings.acmeChallengeHint')}</p>
 
@@ -1056,10 +1075,16 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
 
       <label>
         <span>{t('integrations.antispamEngine')}</span>
-        <select value={engine} onChange={(event) => setEngine(event.target.value)}>
-          <option value="builtin">{t('integrations.antispamBuiltin')}</option>
-          <option value="spamd">{t('integrations.antispamSpamd')}</option>
-        </select>
+        <Select
+          block
+          value={engine}
+          label={t('integrations.antispamEngine')}
+          options={[
+            { value: 'builtin', label: t('integrations.antispamBuiltin') },
+            { value: 'spamd', label: t('integrations.antispamSpamd') },
+          ]}
+          onChange={setEngine}
+        />
       </label>
 
       {engine === 'spamd' ? (

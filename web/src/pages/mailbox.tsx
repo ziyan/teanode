@@ -11,12 +11,17 @@ import {
   MailboxThreadView,
   MailboxView,
   graphql,
+  MailInsight,
+  ThreadSummary,
+  AgentReply,
+  askAgentAbout,
+  MAIL_CHANGED_EVENT,
 } from '../api'
 import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
-  FlagIcon,
+  StarIcon,
   ForwardIcon,
   JunkIcon,
   ListIcon,
@@ -26,6 +31,7 @@ import {
   ReplyAllIcon,
   ReplyIcon,
   TrashIcon,
+  SparkIcon,
 } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { Tooltip } from '../components/tooltip'
@@ -42,6 +48,7 @@ import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxe
 import { hasAnywhere, useSession } from '../session'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
+import { Select } from '../components/select'
 
 // The mailbox: one folder's messages beside the one being read.
 //
@@ -61,14 +68,23 @@ function starredFolder(view: MailboxView): MailboxFolder {
   return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: 0, total: 0 }
 }
 
+// PRIORITY is the path segment of the view of every message the agent marked
+// as high priority, wherever it is filed.
+export const PRIORITY = 'priority'
+
+function priorityFolder(view: MailboxView): MailboxFolder {
+  return { id: PRIORITY, mailboxId: view.mailbox.id, name: 'Priority', kind: PRIORITY, unread: 0, total: 0 }
+}
+
 const THREADS = `
-  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $offset: Int) {
-    ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
+  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $priority: String, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $offset: Int) {
+    ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, priority: $priority, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
       total
       threads {
         threadId count unread flagged participants itemIds hasDraft
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
+          insight { category priority needsReply summary actionItems notes }
           mail {
             id from fromName sender subject recipients receivedAt size kind status logoDomain
             authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
@@ -82,10 +98,13 @@ const THREAD = `
   query ($itemId: String!) {
     GetMailboxThread(itemId: $itemId) {
       threadId subject truncated
+      summary { summary throughMailId messageCount createdAt stale pending }
+      heldReply { id status subject to text sendAfter draftItemId }
       items {
         folderId folderName folderKind
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
+          insight { category priority needsReply summary actionItems notes }
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
             listKey listName listOneClick logoDomain
@@ -325,6 +344,10 @@ export function MailboxPage() {
   if (folderId === STARRED) {
     return <FollowRail view={view} folder={starredFolder(view)} itemId={itemId} />
   }
+  // Priority is every message the agent said matters today, likewise.
+  if (folderId === PRIORITY) {
+    return <FollowRail view={view} folder={priorityFolder(view)} itemId={itemId} />
+  }
 
   // /mailbox on its own is the inbox of the mailbox last looked at.
   const folder = folderId ? view.folders.find((candidate) => candidate.id === folderId) : undefined
@@ -420,8 +443,11 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     setParameters(written, { replace: written.toString() === parameters.toString() })
   }
   const starred = folder.kind === STARRED
+  const priority = folder.kind === PRIORITY
   const everywhere =
-    starred || (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
+    starred ||
+    priority ||
+    (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
   const [threads, setThreads] = useState<MailboxThread[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -437,6 +463,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       mailboxId: everywhere ? folder.mailboxId : undefined,
       unread: filter === 'unread' ? true : undefined,
       flagged: starred || filter === 'flagged' ? true : undefined,
+      priority: priority ? 'high' : undefined,
       search: applied || undefined,
       from: appliedNarrowing.from || undefined,
       to: appliedNarrowing.to || undefined,
@@ -446,7 +473,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       hasAttachment: appliedNarrowing.attachment === 'any' ? undefined : appliedNarrowing.attachment === 'with',
       first: PAGE_SIZE,
     }),
-    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred],
+    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred, priority],
   )
 
   const load = useCallback(
@@ -488,6 +515,16 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     // from a closure that has already served its purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, reloadToken])
+
+  // The agent filed, sent or made something: the list reads again.
+  useEffect(() => {
+    const listener = () => {
+      void load()
+      void mailboxes.refresh()
+    }
+    window.addEventListener(MAIL_CHANGED_EVENT, listener)
+    return () => window.removeEventListener(MAIL_CHANGED_EVENT, listener)
+  }, [load, mailboxes])
 
   // A change to a message's flags is written into the list in place rather
   // than reloaded: the list should not jump under somebody who just marked
@@ -676,10 +713,10 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   // and the few seconds this covers are the ones between an action and the
   // undo beside it.
   const itemsAddedSince = async (folderId: string, since: number): Promise<MovedItem[]> => {
-    const answer = await graphql<{ ListMailboxItems: { items: (MovedItem & { addedAt: string })[] } }>(
-      ITEMS_IN,
-      { folderId, first: 200 },
-    )
+    const answer = await graphql<{ ListMailboxItems: { items: (MovedItem & { addedAt: string })[] } }>(ITEMS_IN, {
+      folderId,
+      first: 200,
+    })
     return (answer.ListMailboxItems?.items ?? []).filter((item) => Date.parse(item.addedAt) >= since)
   }
 
@@ -726,8 +763,16 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       },
       {
         message: archive
-          ? plural(itemIds.length, { one: 'mailbox.saidArchivedOne', other: 'mailbox.saidArchivedOther' }, { count: itemIds.length })
-          : plural(itemIds.length, { one: 'mailbox.saidMovedOne', other: 'mailbox.saidMovedOther' }, { count: itemIds.length }),
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidArchivedOne', other: 'mailbox.saidArchivedOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidMovedOne', other: 'mailbox.saidMovedOther' },
+              { count: itemIds.length },
+            ),
         undo: () => putBack(places, moved),
       },
     )
@@ -751,8 +796,16 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       },
       {
         message: notJunk
-          ? plural(itemIds.length, { one: 'mailbox.saidNotJunkOne', other: 'mailbox.saidNotJunkOther' }, { count: itemIds.length })
-          : plural(itemIds.length, { one: 'mailbox.saidJunkOne', other: 'mailbox.saidJunkOther' }, { count: itemIds.length }),
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidNotJunkOne', other: 'mailbox.saidNotJunkOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidJunkOne', other: 'mailbox.saidJunkOther' },
+              { count: itemIds.length },
+            ),
         // Junk teaches as well as moves, so undoing has to unteach: moving it
         // back while the filter still believes it was junk leaves the next one
         // from that sender in the same place.
@@ -794,8 +847,16 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       },
       {
         message: forever
-          ? plural(itemIds.length, { one: 'mailbox.saidDeletedOne', other: 'mailbox.saidDeletedOther' }, { count: itemIds.length })
-          : plural(itemIds.length, { one: 'mailbox.saidTrashedOne', other: 'mailbox.saidTrashedOther' }, { count: itemIds.length }),
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidDeletedOne', other: 'mailbox.saidDeletedOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidTrashedOne', other: 'mailbox.saidTrashedOther' },
+              { count: itemIds.length },
+            ),
         undo: forever ? undefined : () => putBack(places, moved),
       },
     )
@@ -925,16 +986,17 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               </div>
               <label>
                 <span>{t('mailbox.narrowAttachment')}</span>
-                <select
+                <Select
+                  block
                   value={narrowing.attachment}
-                  onChange={(event) =>
-                    setNarrowing({ ...narrowing, attachment: event.target.value as Narrowing['attachment'] })
-                  }
-                >
-                  <option value="any">{t('mailbox.narrowAttachmentAny')}</option>
-                  <option value="with">{t('mailbox.narrowAttachmentWith')}</option>
-                  <option value="without">{t('mailbox.narrowAttachmentWithout')}</option>
-                </select>
+                  label={t('mailbox.narrowAttachment')}
+                  options={[
+                    { value: 'any', label: t('mailbox.narrowAttachmentAny') },
+                    { value: 'with', label: t('mailbox.narrowAttachmentWith') },
+                    { value: 'without', label: t('mailbox.narrowAttachmentWithout') },
+                  ]}
+                  onChange={(value) => setNarrowing({ ...narrowing, attachment: value as Narrowing['attachment'] })}
+                />
               </label>
               <div className="mailbox-narrowing-actions">
                 <button type="submit" className="primary">
@@ -991,14 +1053,14 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               {chosen.some((item) => !item.flagged) ? (
                 <IconAction
                   label={t('mailbox.flag')}
-                  icon={<FlagIcon size={16} />}
+                  icon={<StarIcon size={16} />}
                   disabled={busy}
                   onClick={() => setFlags(chosenIds, { flagged: true })}
                 />
               ) : (
                 <IconAction
                   label={t('mailbox.unflag')}
-                  icon={<FlagIcon size={16} />}
+                  icon={<StarIcon size={16} />}
                   active
                   disabled={busy}
                   onClick={() => setFlags(chosenIds, { flagged: false })}
@@ -1080,6 +1142,8 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                 t('mailbox.nothingFound')
               ) : starred ? (
                 t('mailbox.nothingStarred')
+              ) : priority ? (
+                t('mailbox.nothingPriority')
               ) : folder.kind === 'inbox' && addresses.length === 0 ? (
                 // An Inbox with no address is the first thing a new account
                 // sees, and "nothing here" would leave it wondering why.
@@ -1244,6 +1308,7 @@ function Row({
               conversation looks finished otherwise and the half-written reply
               is two folders away. */}
           {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
+          {item.insight && <InsightChips insight={item.insight} />}
         </div>
         <div className="mailbox-row-subject">
           {folderName && <span className="mailbox-row-folder">{folderName}</span>}
@@ -1258,6 +1323,140 @@ function Row({
         <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
       </div>
     </li>
+  )
+}
+
+// The fixed categories the agent sorts into; a person's own are shown by
+// their name, since nobody but them knows what to call them.
+const CATEGORY_LABELS: Record<string, Key> = {
+  personal: 'mailbox.category.personal',
+  work: 'mailbox.category.work',
+  newsletter: 'mailbox.category.newsletter',
+  notification: 'mailbox.category.notification',
+  receipt: 'mailbox.category.receipt',
+  promotion: 'mailbox.category.promotion',
+  social: 'mailbox.category.social',
+  invitation: 'mailbox.category.invitation',
+  other: 'mailbox.category.other',
+}
+
+// InsightChips is what the agent worked out about a message, in the width
+// of a word or two: a mark when it said the message matters today, the
+// category, and whether somebody is waiting on an answer. The summary rides
+// on the title, where a hover finds it without the row growing a line.
+export function InsightChips({ insight }: { insight: MailInsight }) {
+  const { t } = useTranslation()
+  const label = CATEGORY_LABELS[insight.category]
+  return (
+    <span className="mailbox-row-insight" title={insight.summary || undefined}>
+      {insight.priority === 'high' && (
+        <span className="mailbox-row-priority" aria-label={t('mailbox.priorityHigh')}>
+          !
+        </span>
+      )}
+      {insight.category && insight.category !== 'other' && (
+        <span className="mailbox-row-chip">{label ? t(label) : insight.category}</span>
+      )}
+      {insight.needsReply && <span className="mailbox-row-chip">{t('mailbox.needsReply')}</span>}
+    </span>
+  )
+}
+
+const CANCEL_REPLY = `
+  mutation ($replyId: String!) {
+    CancelAgentReply(replyId: $replyId) { id status }
+  }`
+
+// HeldReplyBanner says the agent is about to answer, and offers the two
+// ways out: cancel, or take the draft over — which is also a cancel, since
+// an edited reply is the person's to send.
+function HeldReplyBanner({ reply, onChanged }: { reply: AgentReply; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const cancel = async () => {
+    setBusy(true)
+    try {
+      await graphql(CANCEL_REPLY, { replyId: reply.id })
+      toast.done(t('mailbox.heldReplyCancelled'))
+      onChanged()
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="mailbox-held-reply" role="status">
+      <div className="mailbox-held-reply-head">
+        <SparkIcon size={14} />
+        <span>
+          {reply.sendAfter
+            ? t('mailbox.heldReplyAt', { to: reply.to, time: formatTime(reply.sendAfter) })
+            : t('mailbox.heldReply', { to: reply.to })}
+        </span>
+        <button type="button" className="link" onClick={() => setOpen((previous) => !previous)}>
+          {open ? t('mailbox.heldReplyHide') : t('mailbox.heldReplyShow')}
+        </button>
+        <span className="mailbox-held-reply-actions">
+          {reply.draftItemId && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => navigate(`/mailbox/compose?draft=${encodeURIComponent(reply.draftItemId ?? '')}`)}
+            >
+              {t('mailbox.heldReplyEdit')}
+            </button>
+          )}
+          <button type="button" className="danger" disabled={busy} onClick={() => void cancel()}>
+            {t('mailbox.heldReplyCancel')}
+          </button>
+        </span>
+      </div>
+      {open && <p className="mailbox-held-reply-text">{reply.text}</p>}
+    </div>
+  )
+}
+
+// ThreadSummaryStrip is the agent's summary of the conversation, folded at
+// the top of the reader: a line to open when the conversation is long, and
+// nothing that pushes the messages down when it is not wanted.
+function ThreadSummaryStrip({ summary }: { summary: ThreadSummary }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem('teanode.mailbox.summaryOpen') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggle = () => {
+    setOpen((previous) => {
+      try {
+        localStorage.setItem('teanode.mailbox.summaryOpen', previous ? '0' : '1')
+      } catch {
+        // A browser that keeps nothing forgets the fold, which is fine.
+      }
+      return !previous
+    })
+  }
+  return (
+    <div className={['mailbox-thread-summary', open ? 'open' : ''].filter(Boolean).join(' ')}>
+      <button type="button" className="mailbox-thread-summary-head" aria-expanded={open} onClick={toggle}>
+        <SparkIcon size={14} />
+        <span>{t('mailbox.summaryTitle')}</span>
+        {summary.pending && (
+          <span className="muted">{summary.summary ? t('mailbox.summaryUpdating') : t('mailbox.summaryWriting')}</span>
+        )}
+        {!summary.pending && summary.stale && <span className="muted">{t('mailbox.summaryStale')}</span>}
+        <span className="mailbox-thread-summary-chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && summary.summary && <p className="mailbox-thread-summary-text">{summary.summary}</p>}
+    </div>
   )
 }
 
@@ -1301,6 +1500,34 @@ function Reader({
   const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
     refresh: false,
   })
+  // The agent filed or answered something in this conversation: read it
+  // again.
+  useEffect(() => {
+    const listener = () => void thread.reload()
+    window.addEventListener(MAIL_CHANGED_EVENT, listener)
+    return () => window.removeEventListener(MAIL_CHANGED_EVENT, listener)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId])
+
+  // A summary on its way is asked for again in a moment, a few times; the
+  // run is quick when the model is, and a reader who has moved on stops
+  // asking when the page does.
+  const pending = thread.data?.GetMailboxThread?.summary?.pending ?? false
+  const [summaryAsks, setSummaryAsks] = useState(0)
+  useEffect(() => {
+    setSummaryAsks(0)
+  }, [itemId])
+  useEffect(() => {
+    if (!pending || summaryAsks >= 6) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setSummaryAsks((previous) => previous + 1)
+      void thread.reload()
+    }, 5000)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, summaryAsks, thread.data])
 
   // Opening a draft opens the composer on it. The thread is what was asked
   // for; the draft inside it is what the reader meant.
@@ -1423,6 +1650,12 @@ function Reader({
     return <Loading />
   }
   if (thread.error) {
+    // The conversation is gone from here — the agent, or another window,
+    // moved it — so the list is the place to be, not a blank reader.
+    if (/not found/i.test(thread.error instanceof Error ? thread.error.message : String(thread.error))) {
+      onBack()
+      return null
+    }
     return <ErrorMessage error={thread.error} />
   }
   if (!view || entries.length === 0) {
@@ -1500,6 +1733,22 @@ function Reader({
               disabled={Boolean(writing)}
               onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
             />
+            {/* The agent is pointed at the conversation: the drawer opens
+                with a chip for it, or the agent page when there is no
+                agent to open. */}
+            <IconAction
+              label={t('mailbox.askAgent')}
+              icon={<SparkIcon size={16} />}
+              onClick={() => {
+                const handled = askAgentAbout({
+                  itemId: newest.item.id,
+                  threadId: view?.threadId,
+                  subject: newest.item.mail?.subject ?? view?.subject,
+                  from: newest.item.mail?.from,
+                })
+                if (!handled) window.location.assign('/settings/agent')
+              }}
+            />
           </>
         )}
         <IconAction
@@ -1517,7 +1766,7 @@ function Reader({
         />
         <IconAction
           label={anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
-          icon={<FlagIcon size={16} />}
+          icon={<StarIcon size={16} />}
           shortcut="s"
           active={anyFlagged}
           disabled={busy}
@@ -1609,6 +1858,11 @@ function Reader({
           </p>
         )}
       </div>
+
+      {view.heldReply && view.heldReply.status === 'held' && (
+        <HeldReplyBanner reply={view.heldReply} onChanged={() => void thread.reload()} />
+      )}
+      {view.summary && (view.summary.summary || view.summary.pending) && <ThreadSummaryStrip summary={view.summary} />}
 
       {writing && (
         <div className="mailbox-thread-compose">

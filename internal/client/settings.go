@@ -34,6 +34,19 @@ const settingsSelection = `{
 	identity { name mailServers externalAddresses logLevel dataDirectory }
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
+	agent {
+		enabled instructions
+		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead }
+		models { default fast embedding triage research summarize reply ask schedule compact choices }
+		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
+		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
+		retention { runs corrections }
+		search { kind hasApiKey }
+		tools { disabled confirm }
+		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
+		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
+		works families kinds
+	}
 }`
 
 // GetSettings returns the optional integrations. Secrets are never returned;
@@ -73,14 +86,14 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
 		$listen: ListenParametersInput, $sso: SSOParametersInput, $identity: IdentityParametersInput,
 		$storage: StorageParametersInput, $geoip: GeoIPParametersInput,
-		$upgrade: UpgradeParametersInput
+		$upgrade: UpgradeParametersInput, $agent: AgentParametersInput
 	) {
 		UpdateSettings(
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
 			relay: $relay, submission: $submission, imap: $imap, proxy: $proxy, certificates: $certificates,
 			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
 			listen: $listen, sso: $sso, identity: $identity, storage: $storage, geoip: $geoip,
-			upgrade: $upgrade
+			upgrade: $upgrade, agent: $agent
 		) ` + settingsSelection + `
 	}`
 	if err := connection.Execute(ctx, query, sections, &result); err != nil {

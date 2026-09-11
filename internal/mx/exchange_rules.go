@@ -15,13 +15,29 @@ import (
 // stops ends the run. A failing rule is logged and skipped: a person's
 // misspelled pattern must not lose them the message.
 
+// Rules run in two phases. At delivery, the rules whose conditions the
+// server can answer on its own; once the agent has written an insight, the
+// rules that read it. A rule with both kinds of condition waits for the
+// second phase, because all of its conditions must hold at once.
 func (self *exchange) runRules(tx db.Transaction, mailbox *models.Mailbox, inbox *models.MailboxFolder, item *models.MailboxItem, mail *models.Mail) error {
+	return self.runRulesPhase(tx, mailbox, item, mail, nil, false)
+}
+
+// RunInsightRules implements Exchange.
+func (self *exchange) RunInsightRules(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail, insight *models.MailInsight) error {
+	return self.runRulesPhase(tx, mailbox, item, mail, insight, true)
+}
+
+func (self *exchange) runRulesPhase(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail, insight *models.MailInsight, insightPhase bool) error {
 	current := item
 	for index, rule := range mailbox.Rules {
 		if !rule.Enabled || current == nil {
 			continue
 		}
-		matched, err := self.ruleMatches(tx, mailbox, rule, mail)
+		if rule.NeedsInsight() != insightPhase {
+			continue
+		}
+		matched, err := self.ruleMatches(tx, mailbox, rule, mail, insight)
 		if err != nil {
 			log.Warningf("rule %d (%q) of mailbox %q could not be evaluated: %s", index, rule.Name, mailbox.ID, err)
 			continue
@@ -46,9 +62,9 @@ func (self *exchange) runRules(tx db.Transaction, mailbox *models.Mailbox, inbox
 	return nil
 }
 
-func (self *exchange) ruleMatches(tx db.Transaction, mailbox *models.Mailbox, rule models.MailboxRule, mail *models.Mail) (bool, error) {
+func (self *exchange) ruleMatches(tx db.Transaction, mailbox *models.Mailbox, rule models.MailboxRule, mail *models.Mail, insight *models.MailInsight) (bool, error) {
 	for _, condition := range rule.Conditions {
-		holds, err := self.conditionHolds(tx, mailbox, condition, mail)
+		holds, err := self.conditionHolds(tx, mailbox, condition, mail, insight)
 		if err != nil {
 			return false, err
 		}
@@ -61,16 +77,16 @@ func (self *exchange) ruleMatches(tx db.Transaction, mailbox *models.Mailbox, ru
 
 // RuleMatches is the dry run the settings page offers: which of the last
 // messages would this rule match.
-func RuleMatches(rule models.MailboxRule, mail *models.Mail, senderKnown bool) bool {
+func RuleMatches(rule models.MailboxRule, mail *models.Mail, senderKnown bool, insight *models.MailInsight) bool {
 	for _, condition := range rule.Conditions {
-		if !conditionHoldsWithout(condition, mail, senderKnown) {
+		if !conditionHoldsWithout(condition, mail, senderKnown, insight) {
 			return false
 		}
 	}
 	return true
 }
 
-func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox, condition models.MailboxRuleCondition, mail *models.Mail) (bool, error) {
+func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox, condition models.MailboxRuleCondition, mail *models.Mail, insight *models.MailInsight) (bool, error) {
 	senderKnown := false
 	if condition.Field == "sender-known" {
 		address, _ := senderOf(mail)
@@ -81,13 +97,22 @@ func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox,
 		// Seen before this message: the one arriving now counts once.
 		senderKnown = contact != nil && contact.Count > 1
 	}
-	return conditionHoldsWithout(condition, mail, senderKnown), nil
+	return conditionHoldsWithout(condition, mail, senderKnown, insight), nil
 }
 
-func conditionHoldsWithout(condition models.MailboxRuleCondition, mail *models.Mail, senderKnown bool) bool {
+func conditionHoldsWithout(condition models.MailboxRuleCondition, mail *models.Mail, senderKnown bool, insight *models.MailInsight) bool {
 	switch condition.Field {
 	case "any":
 		return true
+	case "category":
+		// What the agent said the message is. Without an insight the
+		// condition cannot hold, which is what keeps such a rule waiting for
+		// the second phase.
+		return insight != nil && compare(condition.Operator, insight.Category, condition.Value)
+	case "priority":
+		return insight != nil && compare(condition.Operator, insight.Priority, condition.Value)
+	case "needs-reply":
+		return insight != nil && insight.NeedsReply
 	case "sender-known":
 		return senderKnown
 	case "score":

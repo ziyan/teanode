@@ -31,6 +31,19 @@ export class APIError extends Error {
 // Once, and only for that. A server that answered, however it answered, is a
 // server whose answer we keep; retrying a real failure twice as fast is not
 // help.
+// Where this browser is, sent with every call so the server can tell time in
+// the person's own zone when nobody is looking — a scheduled brief, a held
+// reply's notification. The language goes as Accept-Language, which the
+// browser sends on its own.
+function locationHeaders(): Record<string, string> {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return zone ? { 'X-Timezone': zone } : {}
+  } catch {
+    return {}
+  }
+}
+
 async function send(
   query: string,
   variables: Record<string, unknown>,
@@ -39,7 +52,7 @@ async function send(
   const request = () =>
     fetch('/api/v1/graphql', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...locationHeaders() },
       body: JSON.stringify({ query, variables }),
       // Given by useQuery, so a request nobody is waiting for any more is
       // dropped rather than left to finish and report.
@@ -605,6 +618,28 @@ export interface Mailbox {
   rules?: MailboxRule[]
   autoReply?: MailboxAutoReply | null
   addresses?: MailboxAddress[]
+  // What the owner's agent may do with this mailbox, when it has been
+  // granted access; null when it never was.
+  agent?: MailboxAgentGrant | null
+}
+
+// The parts of a mailbox's grant to the agent that the reader needs: whether
+// there is one, and whether sorting is on, which is what puts the Priority
+// view in the rail.
+export interface MailboxAgentGrant {
+  granted: boolean
+  draftReplies?: boolean
+  triage?: { enabled: boolean } | null
+}
+
+// What the agent worked out about a message for this mailbox.
+export interface MailInsight {
+  category: string
+  priority: string
+  needsReply: boolean
+  summary: string
+  actionItems?: string[]
+  notes?: string
 }
 
 export interface MailboxFolder {
@@ -641,6 +676,8 @@ export interface MailboxItem {
   addedAt: string
   // The list this arrived from, when it arrived from one.
   subscriptionId?: string
+  // What the agent worked out about it, once it has.
+  insight?: MailInsight | null
 }
 
 export interface MailboxItemPage {
@@ -681,4 +718,184 @@ export interface MailboxThreadView {
   subject: string
   items: MailboxThreadItem[]
   truncated: boolean
+  // The agent's summary of the conversation, where the agent summarizes
+  // this mailbox.
+  summary?: ThreadSummary | null
+  // The reply the agent is holding for this conversation, if any.
+  heldReply?: AgentReply | null
+}
+
+// A reply the agent wrote on the person's behalf, and where it stands.
+export interface AgentReply {
+  id: string
+  createdAt: string
+  mailboxId: string
+  mailId: string
+  threadId?: string
+  draftItemId?: string
+  status: 'held' | 'sent' | 'cancelled' | 'refused' | 'failed'
+  reason?: string
+  subject: string
+  from: string
+  to: string
+  text: string
+  sendAfter?: string | null
+  sentAt?: string | null
+}
+
+// A conversation's summary: the text, how far it reads, and whether a
+// fresher one is being written.
+export interface ThreadSummary {
+  summary: string
+  throughMailId: string
+  messageCount: number
+  createdAt: string
+  stale: boolean
+  pending: boolean
+}
+
+// subscribe follows a GraphQL subscription over the websocket the API
+// serves on the same path, and calls back with each result. The returned
+// function stops it. The socket speaks the same small protocol the server
+// does: connection_init with the CSRF token, start with the document, data
+// per result, ka to keep alive, stop to end.
+export function subscribe<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  onData: (data: T) => void,
+  onEnd?: (error?: Error) => void,
+): () => void {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const socket = new WebSocket(`${protocol}//${window.location.host}/api/v1/graphql`)
+  const id = String(Date.now()) + Math.random().toString(36).slice(2)
+  let ended = false
+  const end = (error?: Error) => {
+    if (ended) {
+      return
+    }
+    ended = true
+    onEnd?.(error)
+  }
+  const csrf = () => {
+    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/)
+    return match ? decodeURIComponent(match[1]) : ''
+  }
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders() } }))
+  }
+  socket.onmessage = (event) => {
+    let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[] } }
+    try {
+      message = JSON.parse(String(event.data))
+    } catch {
+      return
+    }
+    switch (message.type) {
+      case 'connection_ack':
+        socket.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
+        break
+      case 'data':
+        if (message.payload?.errors && message.payload.errors.length > 0) {
+          end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
+          socket.close()
+          return
+        }
+        if (message.payload?.data) {
+          onData(message.payload.data)
+        }
+        break
+      case 'complete':
+        end()
+        socket.close()
+        break
+      default:
+        break
+    }
+  }
+  socket.onerror = () => end(new APIError('the connection to the server was lost'))
+  socket.onclose = () => end()
+  return () => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ id, type: 'stop' }))
+    }
+    socket.close()
+    end()
+  }
+}
+
+// A page pointing the agent at a thread. The drawer listens; when it is
+// there it opens with a chip for the thread and says so by marking the
+// event handled, and the caller sends the person to the agent page
+// otherwise.
+export const AGENT_ASK_EVENT = 'teanode:agent-ask'
+
+export interface AgentReference {
+  itemId?: string
+  threadId?: string
+  subject?: string
+  from?: string
+}
+
+export interface AgentAskDetail {
+  reference: AgentReference
+  handled: boolean
+}
+
+export function askAgentAbout(reference: AgentReference): boolean {
+  const detail: AgentAskDetail = { reference, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentAskDetail>(AGENT_ASK_EVENT, { detail }))
+  return detail.handled
+}
+
+// A page asking the drawer to open a conversation: a run's transcript from
+// the agent page. Handled the same way as a reference.
+export const AGENT_OPEN_EVENT = 'teanode:agent-open'
+
+export interface AgentOpenDetail {
+  conversationId: string
+  handled: boolean
+}
+
+export function openAgentConversation(conversationId: string): boolean {
+  const detail: AgentOpenDetail = { conversationId, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentOpenDetail>(AGENT_OPEN_EVENT, { detail }))
+  return detail.handled
+}
+
+// The agent changed mail — filed, flagged, drafted, sent, a rule or a
+// folder made — and the pages showing mail read again. Announced by the
+// drawer after such a tool answers; listened for by the mailbox.
+export const MAIL_CHANGED_EVENT = 'teanode:mail-changed'
+
+export function announceMailChanged() {
+  window.dispatchEvent(new Event(MAIL_CHANGED_EVENT))
+}
+
+// What a page has open, told to the agent with every turn as "this". A
+// page that shows something the address does not name — the mailing list
+// on the subscriptions page — says so here; the drawer reads the address
+// for the rest.
+export interface AgentViewing {
+  page?: string
+  itemId?: string
+  threadId?: string
+  subject?: string
+  mailboxId?: string
+  mailboxName?: string
+  folderId?: string
+  folderName?: string
+  listKey?: string
+  listName?: string
+}
+
+export const VIEWING_EVENT = 'teanode:viewing'
+let viewingNow: AgentViewing | null = null
+
+export function setAgentViewing(viewing: AgentViewing | null) {
+  viewingNow = viewing
+  window.dispatchEvent(new Event(VIEWING_EVENT))
+}
+
+export function agentViewing(): AgentViewing | null {
+  return viewingNow
 }

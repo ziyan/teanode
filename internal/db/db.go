@@ -119,6 +119,13 @@ type Transaction interface {
 	SubscriptionQuery
 	BimiQuery
 	IdentityOperation
+	AgentOperation
+	InsightOperation
+	AttachmentOperation
+	ReplyOperation
+	EmbeddingOperation
+	MemoryOperation
+	ConnectionOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

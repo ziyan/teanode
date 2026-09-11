@@ -7,6 +7,7 @@ import { hasPermission, useSession } from '../session'
 import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
 import { SetupPage } from './setup'
+import { AgentAdminPage } from './agentAdmin'
 
 // Everything about this server, in one place with tabs across the top.
 //
@@ -58,8 +59,20 @@ export function ServerPage() {
           : candidate,
       )
     : []
+  // Somebody who audits agents but does not manage the server still has
+  // the one tab, with only the people on it.
+  const auditsAgents = hasPermission(session.permissions, 'agent:audit')
+  if (auditsAgents && !TABS.some((candidate) => candidate.id === 'agent')) {
+    TABS.push({ id: 'agent', label: 'server.tabAgents' })
+  }
   if (TABS.length === 0) {
     return <Navigate to="/access" replace />
+  }
+
+  // The people's agents were a tab of their own beside the settings, two
+  // tabs called nearly the same thing; they are one page now.
+  if (tab === 'agents') {
+    return <Navigate to="/server/agent" replace />
   }
 
   // The certificates tab was called "dns" while the only DNS on this page was
@@ -81,9 +94,11 @@ export function ServerPage() {
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}
-      {INTEGRATION_SECTIONS.some((candidate) => candidate.id === tab) && (
-        <IntegrationsSection section={tab as Section} />
-      )}
+      {INTEGRATION_SECTIONS.some((candidate) => candidate.id === tab) &&
+        hasPermission(session.permissions, 'server:manage') && <IntegrationsSection section={tab as Section} />}
+      {/* Under the settings: everyone's agents, what they may reach and
+          what they cost, for whoever may audit them. */}
+      {tab === 'agent' && auditsAgents && <AgentAdminPage />}
     </>
   )
 }

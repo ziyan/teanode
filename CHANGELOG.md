@@ -6,6 +6,158 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Personal agents. An operator who configures a language model — OpenAI,
+  Anthropic, Gemini, or anything that speaks the OpenAI API, such as Ollama —
+  gives each person an agent of their own, off until they turn it on and
+  blind to any mailbox they have not granted it. Granted a mailbox, it sorts
+  what arrives: a category, a priority, whether somebody is waiting on an
+  answer, a line of summary and the things the message asks for, shown as
+  chips on the row and gathered in a Priority view beside Starred. Rules can
+  read what it decided — "category is newsletter, move to Reading" — and run
+  once the sorting is done rather than at delivery. Nothing is ever sent to a
+  model from inside the delivery path; the work queues and a worker does it,
+  retrying on a short ladder and stopping for the day when the person's
+  token budget is spent. Operators choose providers and models, switch
+  features on and off for the deployment, set per-agent and per-server
+  limits, and see token use by day, kind, mailbox and model on the Agents
+  tab of the server page; `teanode agent` does the same from a terminal.
+  Provider keys and the other secrets of the agent section are sealed with
+  the server secret before they are stored, as the domain keys are. The
+  account learns its time zone and language from the browser or the CLI, so
+  the agent knows when "tomorrow" is. (#73)
+
+- The agent summarizes conversations and drafts replies. A conversation
+  that reaches three messages — or whatever the person sets — gets a summary,
+  folded above the messages in the reader and rewritten as the conversation
+  grows, from the previous summary and only the messages since. Replying in
+  a mailbox the agent may draft in, the composer offers *Draft with agent*
+  and a line to say what the reply should do; the text lands in the editor,
+  in the person's own voice and sign-off, and sending stays with them. Both
+  are per mailbox and off until switched on. (#73)
+
+- The agent can answer for you. A mailbox can let the agent reply on your
+  behalf under a policy you write — who it may answer (contacts, everyone, a
+  list), which kinds of message, when (always, outside your hours, while
+  your out-of-office reply is on), how long a reply waits, how many a day,
+  how long a sender is then left alone. A reply is held in Drafts, in the
+  conversation, with a banner in the reader to cancel it or take it over —
+  and an edit by you is a takeover — then sent as you, marked automatic so
+  nothing answers it back. Before writing and again before sending it
+  climbs the same ladder the out-of-office reply climbs: never to a list,
+  a bounce, an automatic message, spam, or a message not addressed to you,
+  never twice in a week to the same sender, never fifty in an hour; and the
+  model itself declines anything asking for money, credentials, documents
+  or a commitment. Every reply it wrote, sent, cancelled or refused is
+  listed on the agent page with the reason, and `teanode agent replies`
+  shows the same. (#73)
+
+- Ask your agent. A drawer on every page of the dashboard, and `teanode
+  agent ask` and `chat` from a terminal, hold one continuous conversation
+  with the agent — or a named one kept apart — and what you have open is
+  what "this" means. The agent works with tools over the same operations
+  the dashboard uses, as you, with exactly your permissions: it searches
+  your mail by words or by meaning, reads it, files it, drafts and — with
+  your word — sends, keeps your folders and rules, looks something up on
+  the web, and does time arithmetic in your zone. Anything it cannot undo,
+  and anything that leaves the server, stops at a card you approve or
+  decline; an operator can make it ask about more, never less. Everything
+  it did is in the transcript, a long conversation is folded into a note
+  rather than forgotten, and every action is in the audit trail as the
+  agent acting for you. (#73)
+
+- The agent can do what an operator can do — for an operator. A person who
+  manages domains, users, groups or the server gets the tools for it:
+  adding a domain and checking its DNS, adding and changing addresses and
+  sending credentials, retrying the queue, searching the mail audit, making
+  accounts and groups and roles, reading the audit log, reading and
+  changing the server's settings, upgrading. Each tool is offered only to
+  somebody holding the permission behind it and runs as them, so the agent
+  can never reach further than the person; removing anything asks first,
+  and a secret it makes is shown once and never kept. `teanode agent
+  tools` lists what your agent has. (#73)
+
+- The agent remembers, learns and keeps time. It keeps facts about you
+  between conversations — who the accountant is, how you sign, what never
+  to answer automatically — each addressed to the runs that should read
+  it, shown on the agent page and editable there or with `teanode agent
+  memory`. It learns from your own hands: a message you file somewhere
+  other than where it sorted it, a reply you cancel or take over, become
+  examples the next run is shown, for a while. It runs on its own at times
+  you set — a morning brief at eight, in your own zone — delivering the
+  answer by mail or into your conversation, and never doing anything that
+  would have needed your word. It asks you a question when the answer
+  changes what it does, and keeps a task list through a long piece of
+  work. (#73)
+
+- The agent reaches other services, and looks things up on its own. An
+  operator can declare servers that speak the Model Context Protocol — a
+  parcel tracker, a wiki, a ticketing system, a tool beside the server —
+  over HTTP or as a subprocess, shared by everyone or connected by each
+  person with their own credential or an authorization; the agent's
+  catalog grows by their tools, each asking your word before it does
+  anything unless the operator marked it read-only, and treating what
+  comes back as data. When sorting decides a message would be easier to
+  act on with something looked up — a tracking number, a reference — a
+  research run reads the web, the mailbox and the read-only tools and
+  leaves notes above the message, which a reply written for you draws on.
+  (#73)
+
+- The agent can use a browser. With a Chrome beside the server — the
+  compose file has one under the `browser` profile — the agent opens a page
+  in a fresh, isolated browser signed in as nobody, reads it as a tree it
+  can point into, clicks, types, scrolls and waits, and never reaches a
+  private address or downloads a file. For a page only you can sign into,
+  a small extension attaches the tab you are looking at to your agent, so
+  it acts there with your session while you watch; the extension itself
+  refuses to type into a password or card field and to submit a form that
+  pays or changes credentials without your word. A run with nobody present
+  may only read a page. (#73)
+
+- The conversation holds up to use. A second message sent while the agent
+  is still working queues behind it and says so, rather than waiting on
+  you to wait; Stop ends the turn in flight and keeps the words that had
+  come. You can hand the agent files — a paperclip, a drop or a paste in
+  the drawer, `--attach` on the command line: a picture is shown to it, a
+  text file read to it, a video or anything else named — and point it at
+  a conversation from the reader's toolbar, so "this" keeps meaning it. A
+  tool line opens to what was asked and what came back, and each turn can
+  show what it cost; both are switches you set once. Conversations can be
+  renamed. (#73)
+
+- The conversation, looked after. A named conversation titles itself after
+  the first exchange, and every conversation gets a line of summary once it
+  has been quiet for a few minutes with something new said; a name you
+  give it is yours and stays. The picker finds old
+  conversations by words in the title, the summary or what was said, and
+  deletes one after asking. The transcript shows when each message was
+  said, the day changing, the agent thinking, and stays at the end while
+  you type. The agent can draw a chart from data and make a page, a
+  drawing or a document to open beside the conversation, shown under the
+  line that made it. Memories and schedules can be edited; a schedule can
+  be one moment (`@at 2026-09-12 09:00`) or a distance from now (`@in
+  20m`) for a reminder — "check this in twenty minutes" is one. Your
+  agent's page is under Settings, beside a Preferences page that holds how
+  its work is shown; each subject on it saves on its own, the mailboxes it
+  may reach are one block each with Grant or Revoke, and your own
+  categories are rows added in a dialog. The operator's Agents tab is the
+  same shape: providers and connected servers are rows edited in a
+  dialog, with Test on a provider's row, and models are picked from what
+  the providers offer. (#73)
+
+### Changed
+
+- Every dropdown in the dashboard is the dashboard's own — the browser's
+  `<select>` and `<datalist>` are gone — with a box to narrow a long list
+  by typing, and room for a value the list does not know where one is
+  allowed (a model name, a folder, a template). Recipients in the composer
+  and a rule's category are completed the same way. What a form gets wrong,
+  and what it saved, is said once through the notice at the top of the
+  page rather than in red under the field; a warning that stays true stays
+  on the page. Actions are buttons, not underlined words. The mailbox's
+  star is a star. (#73)
+
 ## [0.18.2] - 2026-09-10
 
 ### Fixed

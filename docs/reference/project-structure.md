@@ -138,6 +138,41 @@ endpoint. `Render` chooses a translation by locale and fills a template in;
 `Send` assembles a message from text, HTML and attachments and hands it to
 `mx` as outgoing mail from the domain.
 
+**`internal/llm`** — talking to language models, knowing nothing about mail:
+provider-neutral chat types with tool calls and streaming; clients for the
+OpenAI-compatible API (which is also Ollama, vLLM, OpenRouter and the rest),
+Anthropic's and Gemini's, over `net/http`; a registry built from the `agent`
+section that resolves `provider:model` names and picks a model per kind of
+work; `Extract`, which turns a model's answer into a typed value after
+repairing the JSON. Nothing is constructed when agents are off: `Open`
+returns nil.
+
+**`internal/agent`** — the personal agent. A queue of jobs in the database
+claimed with `SKIP LOCKED` and a worker that runs them: triage (`triage.go`),
+summaries, drafts, the reply that answers on the person's behalf and the
+send that follows the hold, embeddings for search by meaning, backfills. The
+delivery hook (`mx.AgentHook`) only queues; no model is ever called in the
+SMTP path. `tool.go` is the catalog — every tool with a family, a risk class
+and a schema, filtered by the person's permissions and the operator's
+policy — and `ask.go` is the loop that talks to the person: the prompt in
+layers, overlays rebuilt each round, compaction, and the confirmation pause
+that a destructive or outward tool never gets past on its own. Tools reach
+the server only through `Operations`, which the API package implements by
+executing its own operations as the person. Prompts are templates under
+`prompts/`, with golden files in `testdata/prompts`.
+
+**`internal/mcp`** — a client for servers that speak the Model Context
+Protocol: JSON-RPC over streamable HTTP or a subprocess's standard streams,
+tool discovery and calls, and OAuth 2.1 with PKCE for the servers that want
+a person's authorization. Only tools are consumed; what a server answers is
+data. Tests speak to in-process servers.
+
+**`internal/browser`** — a DevTools client for the Chrome the operator runs
+beside the server: an isolated context per run, the page read as a tree the
+model can point into, click, type, scroll, wait, screenshot, with every
+navigation and request through the same address guard as fetching a page
+and downloads refused. Nothing launches Chrome; tests speak to a fake.
+
 **`internal/models`** — plain structs shared between `db`, `api` and `mx`. No
 behavior beyond enum helpers.
 

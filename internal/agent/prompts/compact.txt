@@ -1,0 +1,5 @@
+The conversation below has grown long. Write a note that stands in for it, so the conversation can go on without it: what was decided, what is still open, facts learned about the person and their mail that matter later, what they said they prefer, and identifiers (item ids, folder names, addresses) that later turns may need. Plain text under headings "Decided", "Open", "Learned", "Prefers", "Identifiers". Nothing else. Keep it under 400 words.
+
+<conversation>
+{{.Conversation}}
+</conversation>

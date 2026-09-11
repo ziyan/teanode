@@ -1,0 +1,20 @@
+Summarize the conversation "{{.Subject}}" in {{.PersonName}}'s mailbox "{{.MailboxName}}", for {{.PersonName}}, in {{.Language}}. {{if .Detailed}}Write a short paragraph of what has been said and decided so far, then one line per open question or thing {{.PersonName}} still has to do.{{else}}Write at most three sentences: what it is about, where it stands, and what {{.PersonName}} has to do, if anything.{{end}} Say who said what, by name. Do not quote, do not greet, do not describe the messages one by one, do not add headings. Plain text only.
+{{if .Memories}}
+What {{.PersonName}} has told you about summaries:
+{{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Previous}}
+The summary so far, which covers the earlier messages. Rewrite it to take in what follows; do not append to it:
+
+<previous-summary>
+{{.Previous}}
+</previous-summary>
+
+The messages since then, oldest first:
+{{else}}
+The messages, oldest first:
+{{end}}
+{{range .Messages}}<message>
+{{.}}
+</message>
+
+{{end}}

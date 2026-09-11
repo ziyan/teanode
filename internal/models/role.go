@@ -41,8 +41,9 @@ func SeededRolePermissions(name string) []Permission {
 		}
 		return permissions
 	case RoleNameMember:
-		// A person with an inbox and nothing else.
-		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage}
+		// A person with an inbox and nothing else — and an agent of their
+		// own, which is off until they turn it on.
+		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage, PermissionAgentUse}
 	}
 	return nil
 }

@@ -19,11 +19,11 @@ func TestMatchingRulesWalkLikeArrival(test *testing.T) {
 		{Name: "pull requests", Enabled: true, Stop: true, Conditions: []models.MailboxRuleCondition{{Field: "subject", Operator: "contains", Value: "pull request"}}},
 		{Name: "everything", Enabled: true, Conditions: []models.MailboxRuleCondition{{Field: "any"}}},
 	}
-	if fired := matchingRules(rules, mail, false); !reflect.DeepEqual(fired, []int{1, 2}) {
+	if fired := matchingRules(rules, mail, false, nil); !reflect.DeepEqual(fired, []int{1, 2}) {
 		test.Errorf("matchingRules = %v, want the GitHub rule then the stopping one", fired)
 	}
 	other := &models.Mail{From: "ada@example.com", Subject: "hello"}
-	if fired := matchingRules(rules, other, false); !reflect.DeepEqual(fired, []int{3}) {
+	if fired := matchingRules(rules, other, false, nil); !reflect.DeepEqual(fired, []int{3}) {
 		test.Errorf("matchingRules for a stranger = %v, want the catch-all alone", fired)
 	}
 }

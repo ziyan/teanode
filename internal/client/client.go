@@ -162,6 +162,76 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	// Where this shell is and what it reads in, the way the dashboard sends
+	// the browser's, so a person who lives in the terminal is placed as well
+	// as one who lives in the browser.
+	if zone := localZoneName(); zone != "" {
+		request.Header.Set("X-Timezone", zone)
+	}
+	if language := localLanguage(); language != "" {
+		request.Header.Set("Accept-Language", language)
+	}
+
+	response, err := self.client.Do(request)
+	if err != nil {
+		return &ConnectionError{URL: self.url, Cause: err}
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	if response.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors Errors          `json:"errors"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
+	}
+	if len(envelope.Errors) > 0 {
+		return classify(envelope.Errors)
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
+	}
+	if result == nil || len(envelope.Data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(envelope.Data, result); err != nil {
+		return fmt.Errorf("client: cannot decode the reply: %w", err)
+	}
+	return nil
+}
+
+// executeAllowed sends a document a read-only client may send even though
+// it is a mutation: one that itself promises to change nothing.
+func (self *Client) executeAllowed(ctx context.Context, query string, variables map[string]any, result any) error {
+
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	if err != nil {
+		return fmt.Errorf("client: cannot encode the query: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+api.PathGraphQL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	// Where this shell is and what it reads in, the way the dashboard sends
+	// the browser's, so a person who lives in the terminal is placed as well
+	// as one who lives in the browser.
+	if zone := localZoneName(); zone != "" {
+		request.Header.Set("X-Timezone", zone)
+	}
+	if language := localLanguage(); language != "" {
+		request.Header.Set("Accept-Language", language)
+	}
 
 	response, err := self.client.Do(request)
 	if err != nil {

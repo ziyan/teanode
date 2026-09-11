@@ -208,12 +208,25 @@ export function Loading() {
 // Whatever went wrong, said in the one place the eye already looks for it.
 // Nothing is drawn when there is nothing wrong, so a caller can render it
 // unconditionally instead of writing the same guard on every page.
+// ErrorMessage says what went wrong through the toasts at the foot of the
+// window — the one place every failure is said — and draws nothing where
+// it sits. It keeps its old name and shape so a page can still put it
+// where the thing that failed is; what changed is where the words appear.
 export function ErrorMessage({ error }: { error: unknown }) {
-  if (error === null || error === undefined || error === '' || error === false) {
-    return null
-  }
-  const message = error instanceof Error ? error.message : String(error)
-  return <p className="error">{message}</p>
+  const toast = useToast()
+  const message =
+    error === null || error === undefined || error === '' || error === false
+      ? ''
+      : error instanceof Error
+        ? error.message
+        : String(error)
+  useEffect(() => {
+    if (message) toast.failed(message)
+    // Once per distinct message: the toast is the same whatever rendered
+    // it, and a form renders on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message])
+  return null
 }
 
 // SaveRow is the foot of a settings form: what went wrong, the button, and
@@ -287,6 +300,16 @@ export function Field({ label, mono, children }: { label: string; mono?: boolean
       <td className={mono ? 'mono wrap' : 'wrap'}>{children}</td>
     </tr>
   )
+}
+
+// formatCount says a count the way a person reads one: 59, 13.5k, 1.2M.
+// For tokens and anything else that runs into the thousands and is read
+// for its size rather than its exact value.
+export function formatCount(count?: number | null): string {
+  const value = count ?? 0
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`
+  return String(value)
 }
 
 export function formatBytes(size?: number): string {

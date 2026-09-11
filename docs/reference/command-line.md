@@ -153,11 +153,15 @@ several, and a folder is named rather than identified:
     teanode mailbox rule apply
 
 A condition is `field:operator:value`, repeatable, and every one must match.
-The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known` and
-`any`; the operators are `contains`, `equals`, `matches` (a regular
-expression), `above` and `below`. A header condition names the header:
-`--when header:List-Id:contains:golang`. Two of the fields ask nothing of a
-value and are written alone: `--when sender-known` and `--when any`. The actions are flags: `--move`,
+The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known`,
+`category`, `priority`, `needs-reply` and `any`; the operators are
+`contains`, `equals`, `matches` (a regular expression), `above` and `below`.
+A header condition names the header: `--when header:List-Id:contains:golang`.
+Three of the fields ask nothing of a value and are written alone: `--when
+sender-known`, `--when needs-reply` and `--when any`. `category`, `priority`
+and `needs-reply` read what the agent decided about a message, so a rule
+with one of them runs once the agent has sorted the message rather than at
+delivery: `--when category:equals:newsletter --move Reading`. The actions are flags: `--move`,
 `--mark-read`, `--flag`, `--forward`, `--delete`, and `--stop` ends the run
 after this rule.
 
@@ -328,3 +332,34 @@ so, rather than making a change the server would overwrite the next time
 anything was saved from the dashboard. The exceptions live in the server's
 own program: `teanode-server user` for accounts, and `teanode-server config
 import` for a whole configuration.
+
+### teanode agent
+
+Your own agent, and — for an operator — everybody's. Every command goes
+through the API, so a change made here is the change the Agent page would
+have made.
+
+| Command | What it does |
+| --- | --- |
+| `teanode agent ask <message \| ->` | say something to your agent and print what it answers; `--new` starts a named conversation, `--conversation` continues one, `--attach FILE` (repeatable) hands it a file — a picture is shown to it, a text file read to it, anything else named — `--json` streams every event, `--quiet` prints the answer alone. A tool that needs your word asks on the terminal, y or n — never a flag |
+| `teanode agent chat` | the same, turn by turn, until an empty line |
+| `teanode agent conversation list\|show\|new\|rename\|delete` | the main conversation and the named ones; `list --query` finds one by words in its title or in what was said; `delete` asks first and takes the files that came with it |
+| `teanode agent run list\|show` | what the agent did on its own: the transcripts of its sorting, summaries and replies |
+| `teanode agent tools` | the tools your agent has, as you may use them, with the risk class and whether it asks first |
+| `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
+| `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone |
+| `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
+| `teanode agent mcp list\|connect\|disconnect` | the connected servers the operator declared and your connections to them; `connect tracker --credential -` reads your credential from standard input, and an authorizing server prints the address to open |
+| `teanode agent settings show\|set` | your agent: `set enabled=true name=Bertie instructions=-` reads the long value from standard input; keys are listed by `set --help` |
+| `teanode agent settings categories add\|remove` | your own categories beside the fixed ones |
+| `teanode agent settings forget` | delete the agent and everything it learned; asks first |
+| `teanode agent source list\|grant\|revoke\|set` | the mailboxes the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` |
+| `teanode agent usage [--since] [--by day\|kind\|mailbox\|model]` | your tokens |
+| `teanode agent draft <item-id> [--say "…"]` | have the agent write a reply to a message, printed for you to use; nothing is saved or sent |
+| `teanode agent replies [--status held\|sent\|cancelled\|refused\|failed] [--mailbox]` | the replies the agent wrote for you and what became of each, with the reason when it left a message alone |
+| `teanode agent replies cancel <reply-id>` | cancel a held reply; the draft goes and nothing is sent |
+| `teanode agent admin usage\|list\|limit\|disable\|enable\|dead-letters\|retry` | everybody's agents, needing `agent:audit`: tokens by day, kind, mailbox, model or agent; each person's sources and today's spend; a per-person limit; the switch-off; the jobs the worker gave up on |
+
+Every command sends the shell's time zone and language with the request,
+the way the dashboard sends the browser's, so a person who lives in the
+terminal is placed as well as one who lives in the browser.

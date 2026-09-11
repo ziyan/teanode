@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TeaNode agent tab</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 24px; max-width: 480px; }
+      input { width: 100%; padding: 6px 8px; font: inherit; }
+      button { margin-top: 12px; padding: 6px 12px; font: inherit; }
+      p { color: #555; }
+    </style>
+  </head>
+  <body>
+    <h2>Your TeaNode server</h2>
+    <p>The dashboard you are signed in to. The extension attaches a tab to your agent there; you must be signed in to the dashboard in this browser.</p>
+    <label>Address <input id="server" placeholder="https://mail.example.com" /></label>
+    <button id="save">Save</button>
+    <p id="saved"></p>
+    <p>Click the extension's button on a tab to attach it; click again to detach. While attached the badge says <b>on</b>, and your agent can read and act in that tab with your session, in front of you. It never types into a password or card field, and never submits a form that pays or changes credentials without your word.</p>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -135,7 +135,7 @@ export function ReportDetailPage() {
             </tbody>
           </table>
           {feedback.errors?.length ? (
-            <p className="error" style={{ marginBottom: 0 }}>
+            <p className="warning" style={{ marginBottom: 0 }}>
               {feedback.errors.join('; ')}
             </p>
           ) : null}

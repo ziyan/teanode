@@ -47,6 +47,22 @@ type exchange struct {
 
 	// directory caches what the domain table is read for per message.
 	directory directory
+
+	agentHookMutex sync.RWMutex
+	agentHook      AgentHook
+}
+
+// SetAgentHook implements Exchange.
+func (self *exchange) SetAgentHook(hook AgentHook) {
+	self.agentHookMutex.Lock()
+	defer self.agentHookMutex.Unlock()
+	self.agentHook = hook
+}
+
+func (self *exchange) currentAgentHook() AgentHook {
+	self.agentHookMutex.RLock()
+	defer self.agentHookMutex.RUnlock()
+	return self.agentHook
 }
 
 func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamFilter spamfilter.Filter, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {

@@ -26,6 +26,13 @@ type Query interface {
 	SessionQuery
 	PasskeyQuery
 	SettingsQuery
+	AgentSettingsQuery
+	AgentQuery
+	AgentAdminQuery
+	AgentAskQuery
+	AgentMemoryQuery
+	AgentConnectionQuery
+	AgentTabQuery
 	ServerQuery
 	UpgradeQuery
 	CredentialQuery
@@ -55,6 +62,11 @@ type Mutation interface {
 	SessionMutation
 	PasskeyMutation
 	SettingsMutation
+	AgentMutation
+	AgentAdminMutation
+	AgentAskMutation
+	AgentMemoryMutation
+	AgentConnectionMutation
 	ServerMutation
 	UpgradeMutation
 	CredentialMutation
@@ -69,7 +81,12 @@ type Mutation interface {
 
 var _ Mutation = &graph{}
 
-// There are no subscriptions. There was one, which emitted a message with the
-// identifier "test" every second and asked nobody for permission; it was a
-// placeholder that nothing ever called. The WebSocket endpoint stays, because
-// the schema is where a real subscription would go.
+// Subscription is what the websocket endpoint can follow: a turn of the
+// agent as it happens. For a long while there were none — the one there had
+// been emitted a message every second and asked nobody for permission — and
+// the endpoint waited for a real one.
+type Subscription interface {
+	AgentSubscription
+}
+
+var _ Subscription = &graph{}

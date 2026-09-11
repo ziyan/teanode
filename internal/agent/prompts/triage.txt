@@ -1,0 +1,28 @@
+Sort one message that just arrived in {{.PersonName}}'s mailbox "{{.MailboxName}}". Answer with one JSON object and nothing else:
+
+{"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "summary": "one line, under 140 characters, in {{.Language}}", "action_items": ["…"]}
+
+Categories, pick exactly one:
+{{range .Categories}}- {{.Name}}{{if .Description}}: {{.Description}}{{end}}
+{{end}}
+Priority: high means the person should see it today and act — a real person waiting on them, a deadline, money, something broken; low means it can wait a week or forever — newsletters, promotions, notifications nobody acts on; everything else is normal.
+
+needs_reply is true when a real person expects an answer from {{.PersonName}}{{if .DirectOnly}} and wrote to them directly, not only in copy{{end}}. A newsletter, a notification, a receipt, an automatic message, a mailing list never needs a reply.
+
+research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message{{if .ResearchNotes}}, judged against these standing notes:
+{{range .ResearchNotes}}- {{.}}
+{{end}}{{else}}. There are no research notes, so answer false unless the message plainly asks for a fact the person does not have.{{end}}
+
+action_items are the things the message asks the person to do, each a short imperative line, in {{.Language}}; empty when there are none.
+{{if .Memories}}
+What {{.PersonName}} has told you about sorting their mail:
+{{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Corrections}}
+How {{.PersonName}} corrected earlier sorting — match these:
+{{range .Corrections}}- {{.}}
+{{end}}{{end}}
+The message:
+
+<message>
+{{.Message}}
+</message>

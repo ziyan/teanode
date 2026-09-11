@@ -1,0 +1,303 @@
+import { useState } from 'react'
+
+import { graphql } from '../api'
+import { ErrorMessage, Loading, Tag, formatCount, formatTime } from '../components/common'
+import { FormDialog } from '../components/dialog'
+import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
+import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
+import { useToast } from '../components/toast'
+import { useQuery } from '../components/useQuery'
+import { useTranslation } from '../i18n/i18n'
+import { Select } from '../components/select'
+
+// Everybody's agents, for an operator: who has one, what it may reach, what
+// it cost, and the two controls — a limit and a switch. Tokens and kinds,
+// never content: a transcript belongs to the person.
+
+type Summary = {
+  agentId: string
+  userId: string
+  username: string
+  name: string
+  enabled: boolean
+  operatorDisabledAt?: string | null
+  dailyTokens: number
+  sources: { mailboxId: string; name: string; policy?: { granted: boolean } | null }[]
+  today: { used: number; limit: number; resetsAt: string } | null
+  lastRunAt?: string | null
+  dead: number
+  queued: number
+  totals: {
+    promptTokens: number
+    completionTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    calls: number
+  }
+}
+type UsageRow = {
+  key: string
+  totals: {
+    promptTokens: number
+    completionTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    calls: number
+  }
+}
+type Job = {
+  id: string
+  agentId: string
+  mailboxId: string
+  kind: string
+  attempts: number
+  error: string
+  finishedAt?: string | null
+}
+
+const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt dailyTokens dead queued lastRunAt
+  sources { mailboxId name policy { granted } } today { used limit resetsAt }
+  totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }`
+const ADMIN = `query ($by: String) {
+  ListAgents ${SUMMARY}
+  AgentServerUsage(by: $by) { key totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+  ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
+}`
+const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int!) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens) ${SUMMARY} }`
+const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
+const RETRY = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }`
+
+function total(totals: UsageRow['totals']): number {
+  return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens
+}
+
+export function AgentAdminPage() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [by, setBy] = useState('day')
+  const { data, error, loading, reload } = useQuery(
+    () => graphql<{ ListAgents: Summary[]; AgentServerUsage: UsageRow[]; ListAgentDeadLetters: Job[] }>(ADMIN, { by }),
+    [by],
+  )
+  // The agent whose limit is being set, and the number typed for it.
+  const [limiting, setLimiting] = useState<Summary | null>(null)
+  const [limit, setLimit] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  if (loading && !data) return <Loading />
+  if (error) return <ErrorMessage error={error} />
+  const agents = data!.ListAgents
+  const usage = data!.AgentServerUsage
+  const dead = data!.ListAgentDeadLetters
+
+  async function act(work: () => Promise<unknown>, done: string) {
+    try {
+      await work()
+      toast.done(done)
+      await reload()
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
+  const stateOf = (summary: Summary) =>
+    summary.operatorDisabledAt ? (
+      <Tag value={t('agentAdmin.switchedOff')} tone="warn" />
+    ) : summary.enabled ? (
+      <Tag value={t('agentAdmin.on')} tone="good" />
+    ) : (
+      <Tag value={t('agentAdmin.off')} />
+    )
+
+  const detailOf = (summary: Summary) => {
+    const granted = summary.sources.filter((source) => source.policy?.granted).length
+    const parts = [
+      summary.name,
+      t('agentAdmin.mailboxes', { granted: String(granted), total: String(summary.sources.length) }),
+      t('agentAdmin.tokensToday', {
+        used: formatCount(summary.today?.used ?? 0),
+        limit: summary.today && summary.today.limit > 0 ? formatCount(summary.today.limit) : t('agentAdmin.unlimited'),
+      }),
+    ]
+    if (summary.lastRunAt) parts.push(t('agentAdmin.lastRunAt', { time: formatTime(summary.lastRunAt) }))
+    if (summary.queued > 0) parts.push(t('agentAdmin.queuedCount', { count: String(summary.queued) }))
+    if (summary.dead > 0) parts.push(t('agentAdmin.deadCount', { count: String(summary.dead) }))
+    return parts.join(' · ')
+  }
+
+  return (
+    <>
+      <SettingsSection
+        card
+        title={t('agentAdmin.usage')}
+        action={
+          <label className="shrink">
+            <span>{t('agentAdmin.by')}</span>
+            <Select
+              value={by}
+              label={t('agentAdmin.by')}
+              options={[
+                { value: 'day', label: t('agentAdmin.byDay') },
+                { value: 'kind', label: t('agentAdmin.byKind') },
+                { value: 'model', label: t('agentAdmin.byModel') },
+                { value: 'agent', label: t('agentAdmin.byAgent') },
+                { value: 'mailbox', label: t('agentAdmin.byMailbox') },
+              ]}
+              onChange={setBy}
+            />
+          </label>
+        }
+      >
+        {usage.length === 0 ? (
+          <SettingsEmpty>{t('agentAdmin.noUsage')}</SettingsEmpty>
+        ) : (
+          <div className="table-wrap">
+            <table className="numbers-table">
+              <thead>
+                <tr>
+                  <th>{t('agentAdmin.key')}</th>
+                  <th className="numeric">{t('agentAdmin.prompt')}</th>
+                  <th className="numeric">{t('agentAdmin.completion')}</th>
+                  <th className="numeric">{t('agentAdmin.cached')}</th>
+                  <th className="numeric">{t('agentAdmin.total')}</th>
+                  <th className="numeric">{t('agentAdmin.calls')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.map((row) => (
+                  <tr key={row.key}>
+                    <td>{row.key || t('agentAdmin.total')}</td>
+                    <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
+                    <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
+                    <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
+                    <td className="numeric">{formatCount(total(row.totals))}</td>
+                    <td className="numeric">{row.totals.calls}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SettingsSection>
+
+      <SettingsSection card title={t('agentAdmin.agents')} description={t('agentAdmin.agentsHint')}>
+        {agents.length === 0 ? (
+          <SettingsEmpty>{t('agentAdmin.noAgents')}</SettingsEmpty>
+        ) : (
+          agents.map((summary) => (
+            <SettingsRow
+              key={summary.agentId}
+              avatar={summary.username}
+              title={summary.username}
+              badge={stateOf(summary)}
+              subtitle={detailOf(summary)}
+              actions={
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('agentAdmin.setLimit')}
+                    aria-label={`${summary.username}: ${t('agentAdmin.setLimit')}`}
+                    onClick={() => {
+                      setLimit(summary.dailyTokens > 0 ? String(summary.dailyTokens) : '')
+                      setProblem(null)
+                      setLimiting(summary)
+                    }}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className={summary.operatorDisabledAt ? 'icon-action' : 'icon-action danger'}
+                    title={summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}
+                    aria-label={`${summary.username}: ${summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}`}
+                    onClick={() =>
+                      void act(
+                        () =>
+                          graphql(SET_DISABLED, {
+                            agentId: summary.agentId,
+                            disabled: !summary.operatorDisabledAt,
+                          }),
+                        t('agentAdmin.switched'),
+                      )
+                    }
+                  >
+                    {summary.operatorDisabledAt ? <ToggleOffIcon size={16} /> : <ToggleOnIcon size={16} />}
+                  </button>
+                </div>
+              }
+            />
+          ))
+        )}
+      </SettingsSection>
+
+      <SettingsSection card title={t('agentAdmin.deadLetters')}>
+        {dead.length === 0 ? (
+          <SettingsEmpty>{t('agentAdmin.noDeadLetters')}</SettingsEmpty>
+        ) : (
+          dead.map((job) => (
+            <SettingsRow
+              key={job.id}
+              title={t('agentAdmin.gaveUp', {
+                kind: job.kind,
+                user: agents.find((summary) => summary.agentId === job.agentId)?.username ?? job.agentId,
+              })}
+              subtitle={
+                <>
+                  {t('agentAdmin.after', { count: String(job.attempts), time: formatTime(job.finishedAt ?? undefined) })}
+                  {job.error ? <> · {job.error}</> : null}
+                </>
+              }
+              actions={
+                <button
+                  type="button"
+                  onClick={() => void act(() => graphql(RETRY, { jobId: job.id }), t('agentAdmin.retried'))}
+                >
+                  {t('agentAdmin.retry')}
+                </button>
+              }
+            />
+          ))
+        )}
+      </SettingsSection>
+
+      {limiting ? (
+        <FormDialog
+          title={t('agentAdmin.setLimit')}
+          submitLabel={t('common.save')}
+          busy={busy}
+          error={problem}
+          onClose={() => setLimiting(null)}
+          onSubmit={() => {
+            const value = Number(limit) || 0
+            setBusy(true)
+            setProblem(null)
+            graphql(SET_LIMIT, { agentId: limiting.agentId, dailyTokens: value })
+              .then(async () => {
+                setLimiting(null)
+                toast.done(t('agentAdmin.limitSet'))
+                await reload()
+              })
+              .catch((caught) => setProblem(caught instanceof Error ? caught.message : String(caught)))
+              .finally(() => setBusy(false))
+          }}
+        >
+          <p className="muted">{t('agentAdmin.limitHint', { user: limiting.username })}</p>
+          <label>
+            <span>{t('agentAdmin.limit')}</span>
+            <input
+              autoFocus
+              inputMode="numeric"
+              value={limit}
+              placeholder={
+                limiting.today && limiting.today.limit > 0 ? String(limiting.today.limit) : t('agentAdmin.unlimited')
+              }
+              onChange={(event) => setLimit(event.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </label>
+        </FormDialog>
+      ) : null}
+    </>
+  )
+}

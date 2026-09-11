@@ -65,6 +65,10 @@ type Settings struct {
 	Identity *IdentitySettings `json:"identity"`
 	Storage  *StorageSettings  `json:"storage"`
 	GeoIP    *GeoIPSettings    `json:"geoip"`
+
+	// The personal agent: providers, models, features, limits. See
+	// settings_agent.go.
+	Agent *AgentSettings `json:"agent"`
 }
 
 // CertificateSettings is what this server obtains certificates for, and how.
@@ -338,6 +342,7 @@ func describeSettings(configuration *config.Configuration) *Settings {
 		},
 	}
 	describeServerSettings(configuration, settings)
+	settings.Agent = describeAgentSettings(configuration)
 	return settings
 }
 
@@ -508,6 +513,7 @@ type UpdateSettingsArguments struct {
 	Identity *IdentityParameters `json:"identity"`
 	Storage  *StorageParameters  `json:"storage"`
 	GeoIP    *GeoIPParameters    `json:"geoip"`
+	Agent    *AgentParameters    `json:"agent"`
 }
 
 func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsArguments) (*Settings, error) {
@@ -630,6 +636,11 @@ func (self *graph) UpdateSettings(ctx context.Context, arguments UpdateSettingsA
 		}
 		if parameters := arguments.Proxy; parameters != nil {
 			applyString(&configuration.SMTP.SOCKS5Proxy, parameters.SOCKS5)
+		}
+		if parameters := arguments.Agent; parameters != nil {
+			if err := applyAgentSettings(configuration, parameters); err != nil {
+				return err
+			}
 		}
 		return applyServerSettings(configuration, arguments)
 	}); err != nil {

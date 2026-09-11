@@ -250,6 +250,18 @@ services:
     volumes:
       - ./data/teanode:/data
 
+
+  # A Chrome for the agent's headless browser, under the browser profile.
+  # Reached only from inside the compose network; set agent.browser.cdpEndpoint
+  # to http://chrome:9222 in the dashboard's Agent settings and switch the
+  # browser on there.
+  chrome:
+    image: chromedp/headless-shell:latest
+    profiles: [browser]
+    restart: unless-stopped
+    command: ["--no-sandbox", "--disable-gpu", "--remote-debugging-address=0.0.0.0", "--remote-debugging-port=9222", "--disable-dev-shm-usage", "--hide-scrollbars"]
+    shm_size: 512m
+
   teanode:
     # The published image, so "docker compose up -d" pulls rather than builds.
     # Pin the version rather than following latest on a mail server somebody
