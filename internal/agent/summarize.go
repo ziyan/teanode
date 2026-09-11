@@ -257,23 +257,3 @@ func (self *Agent) runSummarize(ctx context.Context, run *Run) error {
 		return tx.PutThreadSummary(summary)
 	})
 }
-
-// threadSubject is a conversation's subject without the Re: and Fwd: its
-// answers added.
-func threadSubject(subject string) string {
-	subject = strings.TrimSpace(subject)
-	for {
-		lower := strings.ToLower(subject)
-		trimmed := subject
-		for _, prefix := range []string{"re:", "fwd:", "fw:", "aw:", "wg:", "sv:", "vs:", "tr:"} {
-			if strings.HasPrefix(lower, prefix) {
-				trimmed = strings.TrimSpace(subject[len(prefix):])
-				break
-			}
-		}
-		if trimmed == subject {
-			return subject
-		}
-		subject = trimmed
-	}
-}

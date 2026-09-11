@@ -81,3 +81,9 @@ func runOf(ctx context.Context) *AskRun {
 	}
 	return run.(*AskRun)
 }
+
+// Helpers that moved to the kit with the mailbox family.
+var (
+	threadSubject = tools.ThreadSubject
+	replySubject  = tools.ReplySubject
+)

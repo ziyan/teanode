@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"strings"
 	"time"
 
@@ -349,7 +350,7 @@ func registerDomainTools(catalog *Catalog) {
 	catalog.Register(&Tool{
 		Name: "alias_update", Family: FamilyDomains, Risk: RiskWrite, Permissions: manage,
 		Description: "Change an address: its pattern, what it does, its note, or switch it off and on.",
-		Parameters:  object(mergeProperties(aliasFields, map[string]any{"alias_id": stringProperty("the alias, from alias_list")}), "alias_id"),
+		Parameters:  object(mailbox.MergeProperties(aliasFields, map[string]any{"alias_id": stringProperty("the alias, from alias_list")}), "alias_id"),
 		Run: func(ctx context.Context, call *Call) (*Result, error) {
 			arguments, err := decodeArguments[struct {
 				AliasID   string  `json:"alias_id"`
@@ -723,7 +724,7 @@ func registerAuditTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			content, err := getContent(ctx, runOf(ctx).settings.Operations, arguments.MailID)
+			content, err := mailbox.GetContent(ctx, runOf(ctx).settings.Operations, arguments.MailID)
 			if err != nil {
 				return nil, err
 			}
@@ -1384,13 +1385,13 @@ func registerAccountTools(catalog *Catalog) {
 			if err != nil {
 				return nil, err
 			}
-			views, err := grantedMailboxes(ctx, runOf(ctx).settings.Operations)
+			views, err := mailbox.GrantedMailboxes(ctx, runOf(ctx).settings.Operations)
 			if err != nil {
 				return nil, err
 			}
 			switch arguments.Action {
 			case "list":
-				view, err := findMailbox(views, arguments.Mailbox)
+				view, err := mailbox.FindMailbox(views, arguments.Mailbox)
 				if err != nil {
 					return nil, err
 				}
@@ -1400,7 +1401,7 @@ func registerAccountTools(catalog *Catalog) {
 				}
 				return jsonResult(map[string]any{"mailbox": view.Mailbox.Name, "app_passwords": result["ListMailboxAppPasswords"]})
 			case "create":
-				view, err := findMailbox(views, arguments.Mailbox)
+				view, err := mailbox.FindMailbox(views, arguments.Mailbox)
 				if err != nil {
 					return nil, err
 				}

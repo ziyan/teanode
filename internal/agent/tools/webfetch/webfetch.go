@@ -5,12 +5,13 @@ package webfetch
 import (
 	"context"
 	"fmt"
-	"github.com/ziyan/teanode/internal/agent/tools"
-	"github.com/ziyan/teanode/internal/util/safefetch"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 func init() {

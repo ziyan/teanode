@@ -61,6 +61,14 @@ type Run interface {
 
 	// Enqueue queues a job of the agent's, in the transaction given.
 	Enqueue(tx db.Transaction, kind models.AgentJobKind, mailboxId, subjectId string) error
+
+	// DraftReply writes a reply the way the draft pipeline does; DiscardDraft
+	// removes a draft the agent holds; MeaningSearch finds messages that say
+	// the same thing in other words, or nothing where search by meaning is
+	// off.
+	DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error)
+	DiscardDraft(ctx context.Context, tx db.Transaction, itemId string) error
+	MeaningSearch(ctx context.Context, mailboxId, query string, limit int) ([]string, error)
 }
 
 type runKey struct{}

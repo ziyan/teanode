@@ -264,11 +264,6 @@ func inboxItemOf(tx db.Transaction, mailbox *models.Mailbox, mail *models.Mail) 
 	return nil, nil
 }
 
-// replySubject is the answer's subject: the original's with one Re:.
-func replySubject(subject string) string {
-	return "Re: " + threadSubject(subject)
-}
-
 // threadingHeaders are what make a reply part of the conversation.
 func threadingHeaders(original *models.Mail) []string {
 	if original.MessageID == "" {

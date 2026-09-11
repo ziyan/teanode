@@ -36,6 +36,13 @@ func (self *fakeRun) Ask(context.Context, string, string, []string) (string, err
 	return "", nil
 }
 func (self *fakeRun) Enqueue(db.Transaction, models.AgentJobKind, string, string) error { return nil }
+func (self *fakeRun) DraftReply(context.Context, *models.AgentDraftRequest) (*models.AgentDraft, error) {
+	return nil, nil
+}
+func (self *fakeRun) DiscardDraft(context.Context, db.Transaction, string) error { return nil }
+func (self *fakeRun) MeaningSearch(context.Context, string, string, int) ([]string, error) {
+	return nil, nil
+}
 
 // A run in the context is the run a tool gets back; none is an error a
 // tool can report, never a nil to fall over.

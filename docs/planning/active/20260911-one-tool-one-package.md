@@ -43,9 +43,17 @@ golden prompt tests and the catalog schema test hold in place.
   stay on `AskRun` as `Ask` and `Recall`; `memoryLines` and the worker's
   schedule code stay in `agent`. `tools_general.go`, `chart.go` and
   `askuser.go` are gone.
-- [ ] Milestone 3 — the mailbox family moved: mailsearch, mailread,
-  mailact, maildraft, mailsend, mailcomposehelp, folder, rule,
-  mailboxsettings, contact, subscription, replyqueue.
+- [x] (2026-09-11 16:30Z) Milestone 3 — the mailbox family moved:
+  `tools/mailsearch`, `mailread`, `mailact`, `maildraft`, `mailsend`,
+  `mailcomposehelp`, `folder` (list and manage), `rule` (the six),
+  `mailboxsettings`, `contact`, `subscription`, `replyqueue` (and the
+  `<pending>` overlay). What they share — the mailboxes and folders as the
+  API lists them, a conversation and a message's content as the tools read
+  them, the mailbox parameter — is `tools/mailbox`, a package with no tool
+  of its own that the loop's situation and the operator tools read too.
+  `tools.Run` grew `DraftReply`, `DiscardDraft` and `MeaningSearch`; the
+  subject and search-mode helpers joined the kit. `tools_mailbox.go` is
+  gone.
 - [ ] Milestone 4 — the operator families moved: domain, alias, credential,
   queue, mailaudit, report, user, group, role, auditlog, server, settings,
   account, token, session, apppassword, accessexplain.

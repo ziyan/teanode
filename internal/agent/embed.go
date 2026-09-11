@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -212,14 +211,6 @@ func norm(vector []float32) float64 {
 		sum += float64(value) * float64(value)
 	}
 	return math.Sqrt(sum)
-}
-
-// searchMode says how a mailbox is searched: by meaning where it can be.
-func searchMode(configuration *config.Configuration, source *models.AgentMailbox) string {
-	if source != nil && source.Search && configuration.Agent.Models.Embedding != "" && FeatureAllowed(configuration, "search") {
-		return "meaning"
-	}
-	return "keyword"
 }
 
 // MeaningSearch is meaningSearch for the API and for tests.

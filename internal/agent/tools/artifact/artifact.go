@@ -7,10 +7,11 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
-	"strings"
 )
 
 func init() {

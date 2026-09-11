@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"sort"
 	"strings"
 	"sync"
@@ -334,6 +335,15 @@ func (self *AskRun) Recalled() []string {
 func (self *AskRun) Enqueue(tx db.Transaction, kind models.AgentJobKind, mailboxId, subjectId string) error {
 	_, err := self.agent.Enqueue(tx, kind, self.settings.Agent.ID, mailboxId, subjectId)
 	return err
+}
+func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
+	return self.agent.DraftReply(ctx, request)
+}
+func (self *AskRun) DiscardDraft(ctx context.Context, tx db.Transaction, itemId string) error {
+	return self.agent.discardDraft(ctx, tx, itemId)
+}
+func (self *AskRun) MeaningSearch(ctx context.Context, mailboxId, query string, limit int) ([]string, error) {
+	return self.agent.meaningSearch(ctx, self.settings.Agent, mailboxId, query, limit)
 }
 
 // Resolve answers a confirmation card. It says whether there was one.
@@ -1061,7 +1071,7 @@ func permissionWords(permissions *models.EffectivePermissions) string {
 
 // sources lists the mailboxes, granted and not, as the situation says them.
 func (self *AskRun) sources(ctx context.Context) (granted []string, others []string) {
-	views, err := listMailboxes(ctx, self.settings.Operations)
+	views, err := mailbox.ListMailboxes(ctx, self.settings.Operations)
 	if err != nil {
 		log.Warningf("cannot list the mailboxes of %q for the prompt: %s", self.settings.Owner.Username, err)
 		return nil, nil
