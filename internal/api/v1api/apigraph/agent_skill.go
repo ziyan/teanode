@@ -48,6 +48,12 @@ type AgentSkillMutation interface {
 	// away. Needs server:manage.
 	SetAgentSkillEnabled(ctx context.Context, arguments SetAgentSkillEnabledArguments) (*AgentSkillView, error)
 
+	// Settle who fills a skill's secrets in: "operator" for one set of
+	// values for the whole server, "person" for each person's own, or
+	// empty to leave it to what the skill declares per secret. Needs
+	// server:manage.
+	SetAgentSkillScope(ctx context.Context, arguments SetAgentSkillScopeArguments) (*AgentSkillView, error)
+
 	// Keep one of the caller's own values for a skill that asks them for
 	// it, sealed; or forget it. Needs agent:use.
 	SetAgentSkillSecret(ctx context.Context, arguments SetAgentSkillSecretArguments) (*AgentSkillSecretView, error)
@@ -63,6 +69,11 @@ type AgentSkillView struct {
 	URL         string    `json:"url"`
 	Enabled     bool      `json:"enabled"`
 	InstalledAt time.Time `json:"installedAt"`
+
+	// Scope is who the operator settled on to fill this skill's secrets
+	// in -- "operator", "person", or empty for what the skill declares
+	// per secret.
+	Scope string `json:"scope"`
 
 	// Tools are what it declares, by name. Secrets are the values an
 	// operator fills in once for the whole server; PersonalSecrets the
@@ -120,10 +131,18 @@ type SetAgentSkillEnabledArguments struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type SetAgentSkillScopeArguments struct {
+	Name string `json:"name"`
+
+	// Scope is "operator", "person", or empty to leave it to the skill.
+	Scope string `json:"scope"`
+}
+
 func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 	view := &AgentSkillView{
 		Name: row.Name, Description: row.Description, Version: row.Version,
 		Publisher: row.Publisher, URL: row.URL, Enabled: row.Enabled,
+		Scope:       row.Scope,
 		InstalledAt: row.CreatedAt, Tools: []*AgentSkillToolView{},
 		Secrets: []string{}, PersonalSecrets: []string{},
 	}
@@ -146,7 +165,7 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 		})
 	}
 	for _, secret := range parsed.Secrets {
-		if secret.ForPerson() {
+		if secret.ForPerson(view.Scope) {
 			view.PersonalSecrets = append(view.PersonalSecrets, secret.Key)
 			continue
 		}
@@ -271,8 +290,12 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 		// Values people filled in for keys this version no longer asks
 		// them for are forgotten. A later version that used the same key
 		// for something else would otherwise be handed the old value.
+		settled := ""
+		if existing != nil {
+			settled = existing.Scope
+		}
 		mine := map[string]bool{}
-		for _, secret := range parsed.PersonalSecrets() {
+		for _, secret := range parsed.PersonalSecrets(settled) {
 			mine[secret.Key] = true
 		}
 		if err := tx.SweepAgentSkillSecretsExcept(entry.Name, mine); err != nil {
@@ -281,7 +304,7 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 		stored, err = tx.PutAgentSkill(&models.AgentSkill{
 			Name: entry.Name, CreatedAt: created, Version: entry.Version, Publisher: registry.Publisher(),
 			URL: entry.URL, SHA256: entry.SHA256, Description: entry.Description,
-			Content: string(content), Enabled: enabled,
+			Content: string(content), Enabled: enabled, Scope: settled,
 		})
 		return err
 	}); err != nil {
@@ -312,6 +335,38 @@ func (self *graph) RemoveAgentSkill(ctx context.Context, arguments AgentSkillArg
 	}
 	self.forgetSkills()
 	return true, nil
+}
+
+// SetAgentSkillScope settles who fills a skill's secrets in. A skill's
+// author declares which of its secrets are the deployment's and which are
+// each person's own, and is usually right; but the same skill serves a
+// household with one camera system and an office where twenty people each
+// have their own, and only the operator here knows which this is.
+func (self *graph) SetAgentSkillScope(ctx context.Context, arguments SetAgentSkillScopeArguments) (*AgentSkillView, error) {
+	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
+		return nil, err
+	}
+	settled, err := skills.SettledScope(arguments.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	var stored *models.AgentSkill
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		found, err := tx.GetAgentSkill(arguments.Name)
+		if err != nil {
+			return err
+		}
+		if found == nil {
+			return api.ErrNotFound
+		}
+		found.Scope = settled
+		stored, err = tx.PutAgentSkill(found)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	self.forgetSkills()
+	return self.skillView(stored), nil
 }
 
 func (self *graph) SetAgentSkillEnabled(ctx context.Context, arguments SetAgentSkillEnabledArguments) (*AgentSkillView, error) {
@@ -404,7 +459,7 @@ func (self *graph) ListAgentSkillSecrets(ctx context.Context) ([]*AgentSkillSecr
 		if err != nil {
 			continue
 		}
-		for _, secret := range parsed.PersonalSecrets() {
+		for _, secret := range parsed.PersonalSecrets(row.Scope) {
 			views = append(views, &AgentSkillSecretView{
 				Skill: row.Name, Key: secret.Key, Description: secret.Description,
 				Set: set[strings.ToLower(row.Name)+"\n"+secret.Key],

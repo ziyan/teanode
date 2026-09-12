@@ -21,6 +21,7 @@ type agentSkillModel struct {
 	Description string    `gorm:"column:description"`
 	Content     string    `gorm:"column:content"`
 	Enabled     bool      `gorm:"column:enabled"`
+	Scope       string    `gorm:"column:scope"`
 }
 
 func (agentSkillModel) TableName() string { return "agent_skill" }
@@ -30,7 +31,7 @@ func skillToModel(skill *models.AgentSkill) *agentSkillModel {
 		Name: skill.Name, CreatedAt: skill.CreatedAt, ModifiedAt: skill.ModifiedAt,
 		Version: skill.Version, Publisher: skill.Publisher, URL: skill.URL,
 		SHA256: skill.SHA256, Description: skill.Description, Content: skill.Content,
-		Enabled: skill.Enabled,
+		Enabled: skill.Enabled, Scope: skill.Scope,
 	}
 }
 
@@ -39,7 +40,7 @@ func (self *agentSkillModel) toModel() *models.AgentSkill {
 		Name: self.Name, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Version: self.Version, Publisher: self.Publisher, URL: self.URL,
 		SHA256: self.SHA256, Description: self.Description, Content: self.Content,
-		Enabled: self.Enabled,
+		Enabled: self.Enabled, Scope: self.Scope,
 	}
 }
 
@@ -86,7 +87,7 @@ func (self *transaction) PutAgentSkill(skill *models.AgentSkill) (*models.AgentS
 	if err := self.tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "name"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"modified_at", "version", "publisher", "url", "sha256", "description", "content", "enabled",
+			"modified_at", "version", "publisher", "url", "sha256", "description", "content", "enabled", "scope",
 		}),
 	}).Create(row).Error; err != nil {
 		return nil, err

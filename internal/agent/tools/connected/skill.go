@@ -19,13 +19,14 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "skill", Family: tools.FamilyServers, Risk: tools.RiskWrite,
-				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and what each brings, search the registry for one, install or update it, or take one away. Secrets says which values the installed skills are waiting on from this person, which is why one of their tools may be refusing to work. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
+				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and what each brings, search the registry for one, install or update it, or take one away. Secrets says which values the installed skills are waiting on from this person, which is why one of their tools may be refusing to work. Scope settles who fills a skill's values in here: one set for the whole server, or each person's own -- which is the difference between one camera system in a household and twenty people each with their own. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
 				Parameters: tools.Object(map[string]any{
-					"action": tools.EnumProperty("what to do", "list", "search", "secrets", "install", "update", "remove", "enable", "disable"),
-					"name":   tools.StringProperty("the skill, for install, update, remove, enable and disable"),
+					"action": tools.EnumProperty("what to do", "list", "search", "secrets", "install", "update", "remove", "enable", "disable", "scope"),
+					"name":   tools.StringProperty("the skill, for install, update, remove, enable, disable and scope"),
+					"scope":  tools.EnumProperty("for scope: who fills this skill's secrets in here -- operator for one set of values for the whole server, person for each person's own, skill to leave it to what the skill declares", "operator", "person", "skill"),
 					"query":  tools.StringProperty("for search: words to narrow what the registry offers; leave it out to see everything, which is a short list"),
 				}, "action"),
-				Guidance: "skill: a tool of a skill that refuses because a value is missing is answered with secrets, which says what the person has not filled in -- tell them where to set it and never ask them to type a secret to you, because what they type is kept in the conversation. Look before you install -- what is installed may already do it, and the registry is small enough to read. Installing one is the person's decision as much as yours: say what it brings and what it would let you do before you ask for it. A skill is checked against the registry's signature before anything is kept, so a refusal means the file is not what was signed for, not that the network failed.",
+				Guidance: "skill: a tool of a skill that refuses because a value is missing is answered with secrets, which says what the person has not filled in -- tell them where to set it and never ask them to type a secret to you, because what they type is kept in the conversation. Look before you install -- what is installed may already do it, and the registry is small enough to read. Installing one is the person's decision as much as yours: say what it brings and what it would let you do before you ask for it. A skill is checked against the registry's signature before anything is kept, so a refusal means the file is not what was signed for, not that the network failed. When somebody wants a skill pointed at equipment of their own rather than the deployment's, scope person is the answer: they then fill in the address and the credential themselves, and neither is shared with anybody else here.",
 				Preview: func(arguments json.RawMessage) string {
 					var call skillRequest
 					if err := json.Unmarshal(arguments, &call); err != nil {
@@ -38,6 +39,14 @@ func init() {
 						return fmt.Sprintf("Take the %s skill away from this server, with the tools it brought", call.Name)
 					case "disable":
 						return fmt.Sprintf("Stop offering the %s skill's tools", call.Name)
+					case "scope":
+						if call.Scope == "person" {
+							return fmt.Sprintf("Have the %s skill ask each person here for their own values", call.Name)
+						}
+						if call.Scope == "operator" {
+							return fmt.Sprintf("Have the %s skill use one set of values for everybody here", call.Name)
+						}
+						return fmt.Sprintf("Leave who fills the %s skill's values in to what the skill declares", call.Name)
 					}
 					return "Skills: " + strings.TrimSpace(string(arguments))
 				},
@@ -49,9 +58,10 @@ func init() {
 					switch call.Action {
 					case "list", "search", "secrets":
 						return tools.RiskRead
-					case "install", "update", "remove":
-						// It changes what everybody here is offered, so it
-						// asks first, as declaring a connected server does.
+					case "install", "update", "remove", "scope":
+						// It changes what everybody here is offered, or who
+						// they are offered it as, so it asks first, as
+						// declaring a connected server does.
 						return tools.RiskDestructive
 					}
 					return tools.RiskWrite
@@ -66,6 +76,7 @@ type skillRequest struct {
 	Action string `json:"action"`
 	Name   string `json:"name"`
 	Query  string `json:"query"`
+	Scope  string `json:"scope"`
 }
 
 // skillView is an installed skill as the API describes it.
@@ -79,6 +90,7 @@ type skillView struct {
 	Problem         string   `json:"problem,omitempty"`
 	Secrets         []string `json:"secrets"`
 	PersonalSecrets []string `json:"personalSecrets"`
+	Scope           string   `json:"scope"`
 	Tools           []*struct {
 		Name          string `json:"name"`
 		Description   string `json:"description"`
@@ -107,12 +119,12 @@ type skillOffer struct {
 }
 
 const (
-	documentInstalledSkills = `query { ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
+	documentInstalledSkills = `query { ListAgentSkills { name description version publisher enabled readable problem scope secrets personalSecrets
 		tools { name description kind needsComputer } } }`
 
 	documentOfferedSkills = `query ($query: String) { SearchAgentSkills(query: $query) { name description version tags installed newer } }`
 
-	documentInstallSkill = `mutation ($name: String!) { InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets personalSecrets
+	documentInstallSkill = `mutation ($name: String!) { InstallAgentSkill(name: $name) { name description version publisher enabled readable problem scope secrets personalSecrets
 		tools { name description kind needsComputer } } }`
 
 	documentRemoveSkill = `mutation ($name: String!) { RemoveAgentSkill(name: $name) }`
@@ -120,6 +132,8 @@ const (
 	documentSkillSecrets = `query { ListAgentSkillSecrets { skill key description set } }`
 
 	documentSetSkillEnabled = `mutation ($name: String!, $enabled: Boolean!) { SetAgentSkillEnabled(name: $name, enabled: $enabled) { name enabled } }`
+
+	documentSetSkillScope = `mutation ($name: String!, $scope: String!) { SetAgentSkillScope(name: $name, scope: $scope) { name scope secrets personalSecrets } }`
 )
 
 func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -243,6 +257,41 @@ func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return tools.TextResult("%s is offered again", name), nil
 		}
 		return tools.TextResult("%s is installed but not offered", name), nil
+
+	case "scope":
+		if name == "" {
+			return nil, fmt.Errorf("which skill")
+		}
+		// "skill" is how the person says "leave it as the skill declares",
+		// which over an argument is easier to say than nothing at all.
+		scope := strings.ToLower(strings.TrimSpace(arguments.Scope))
+		if scope == "skill" || scope == "declared" {
+			scope = ""
+		}
+		var answer struct {
+			SetAgentSkillScope *skillView `json:"SetAgentSkillScope"`
+		}
+		if err := run.Operations().Execute(ctx, documentSetSkillScope, map[string]any{"name": name, "scope": scope}, &answer); err != nil {
+			return nil, err
+		}
+		settled := answer.SetAgentSkillScope
+		if settled == nil {
+			return nil, fmt.Errorf("%s answered nothing", name)
+		}
+		switch settled.Scope {
+		case "person":
+			result := tools.TextResult("%s now asks each person here for their own %s; nobody's is used for anybody else, and each of them sets it on their agent page or with `teanode agent skill secret set`",
+				name, strings.Join(settled.PersonalSecrets, ", "))
+			result.Note = name + ": each person's own values"
+			return result, nil
+		case "operator":
+			result := tools.TextResult("%s now takes %s from agent.skillSecrets, one set of values for everybody here",
+				name, strings.Join(settled.Secrets, ", "))
+			result.Note = name + ": one set of values for everybody"
+			return result, nil
+		}
+		return tools.TextResult("%s fills its values in as the skill declares them: %d for an operator, %d for each person",
+			name, len(settled.Secrets), len(settled.PersonalSecrets)), nil
 	}
 	return nil, fmt.Errorf("%q is not an action of skill", arguments.Action)
 }

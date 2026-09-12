@@ -87,6 +87,12 @@ func newAgentSkillCommand() *cli.Command {
 				ArgsUsage: "<name>",
 				Action:    runAgentSkillDisable,
 			},
+			{
+				Name:      "scope",
+				Usage:     "who fills a skill's secrets in here: operator, person, or 'skill' to leave it to the skill",
+				ArgsUsage: "<name> <operator | person | skill>",
+				Action:    runAgentSkillScope,
+			},
 		},
 	}
 }
@@ -116,9 +122,57 @@ func runAgentSkillList(ctx context.Context, command *cli.Command) error {
 		if !skill.Readable {
 			state = "unreadable"
 		}
-		rows = append(rows, []string{skill.Name, skill.Version, state, describeSkillTools(skill), skill.Description})
+		rows = append(rows, []string{skill.Name, skill.Version, state, describeSkillSecrets(skill), describeSkillTools(skill), skill.Description})
 	}
-	return printTable([]string{"skill", "version", "", "tools", "what it is"}, rows)
+	return printTable([]string{"skill", "version", "", "secrets", "tools", "what it is"}, rows)
+}
+
+// describeSkillSecrets says who fills this skill's values in, and how
+// many each of them, which is the question the scope command answers.
+func describeSkillSecrets(skill *client.AgentSkill) string {
+	var said []string
+	if len(skill.Secrets) > 0 {
+		said = append(said, fmt.Sprintf("%d operator", len(skill.Secrets)))
+	}
+	if len(skill.PersonalSecrets) > 0 {
+		said = append(said, fmt.Sprintf("%d each", len(skill.PersonalSecrets)))
+	}
+	if len(said) == 0 {
+		return "none"
+	}
+	if skill.Scope != "" {
+		return strings.Join(said, ", ") + " (set here)"
+	}
+	return strings.Join(said, ", ")
+}
+
+func runAgentSkillScope(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the skill and who fills its secrets in: teanode agent skill scope unifi-protect person")
+	}
+	// "skill" rather than an empty argument, which a shell makes awkward
+	// to type and impossible to tell from a missing one.
+	scope := strings.ToLower(strings.TrimSpace(command.Args().Get(1)))
+	if scope == "skill" || scope == "declared" {
+		scope = ""
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	skill, err := client.SetAgentSkillScope(ctx, connection, command.Args().First(), scope)
+	if err != nil {
+		return describeError(command, err)
+	}
+	switch skill.Scope {
+	case "operator":
+		fmt.Printf("%s takes its values from agent.skillSecrets, one set for everybody\n", skill.Name)
+	case "person":
+		fmt.Printf("%s asks each person for their own: %s\n", skill.Name, strings.Join(skill.PersonalSecrets, ", "))
+	default:
+		fmt.Printf("%s fills its values in as it declares them\n", skill.Name)
+	}
+	return nil
 }
 
 func describeSkillTools(skill *client.AgentSkill) string {

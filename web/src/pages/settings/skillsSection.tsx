@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { graphql } from '../../api'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { Tag } from '../../components/common'
+import { Select } from '../../components/select'
 import { Tooltip } from '../../components/tooltip'
 import { TrashIcon } from '../../components/icons'
 import { ConfirmDialog } from '../../components/dialog'
@@ -23,6 +24,7 @@ type Skill = {
   enabled: boolean
   readable: boolean
   problem?: string
+  scope: string
   secrets: string[]
   personalSecrets: string[]
   tools: SkillTool[]
@@ -38,7 +40,7 @@ type Offer = {
 }
 
 const INSTALLED = `query {
-  ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
+  ListAgentSkills { name description version publisher enabled readable problem scope secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -52,6 +54,15 @@ const REMOVE = `mutation ($name: String!) { RemoveAgentSkill(name: $name) }`
 
 const SET_ENABLED = `mutation ($name: String!, $enabled: Boolean!) {
   SetAgentSkillEnabled(name: $name, enabled: $enabled) { name enabled }
+}`
+
+// Who fills a skill's values in here. The skill's author says which of its
+// secrets are the deployment's and which are each person's own, and is
+// usually right; but the same skill serves a household with one camera
+// system and an office where everybody has their own, and only the
+// operator knows which this is.
+const SET_SCOPE = `mutation ($name: String!, $scope: String!) {
+  SetAgentSkillScope(name: $name, scope: $scope) { name scope }
 }`
 
 export function SkillsSection() {
@@ -142,6 +153,23 @@ export function SkillsSection() {
               subtitle={detail.filter(Boolean).join(' · ')}
               actions={
                 <>
+                  {skill.secrets.length + skill.personalSecrets.length > 0 ? (
+                    <Select
+                      value={skill.scope}
+                      disabled={busy === skill.name}
+                      label={t('agentSettings.skillScope')}
+                      options={[
+                        { value: '', label: t('agentSettings.skillScopeDeclared') },
+                        { value: 'operator', label: t('agentSettings.skillScopeOperator') },
+                        { value: 'person', label: t('agentSettings.skillScopePerson') },
+                      ]}
+                      onChange={(value) =>
+                        void act(skill.name, t('agentSettings.skillScopeSaved', { name: skill.name }), () =>
+                          graphql(SET_SCOPE, { name: skill.name, scope: value }),
+                        )
+                      }
+                    />
+                  ) : null}
                   <button
                     type="button"
                     disabled={busy === skill.name}

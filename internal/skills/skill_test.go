@@ -159,16 +159,35 @@ func TestASecretIsTheOperatorsUnlessItSaysOtherwise(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	mine := skill.PersonalSecrets()
+	mine := skill.PersonalSecrets(ScopeAsDeclared)
 	if len(mine) != 1 || mine[0].Key != "MY_KEY" {
 		t.Fatalf("only the one scoped to a person is theirs: %v", mine)
 	}
 	for _, secret := range skill.Secrets {
-		if secret.Key == "SHARED_TOKEN" && secret.ForPerson() {
+		if secret.Key == "SHARED_TOKEN" && secret.ForPerson(ScopeAsDeclared) {
 			t.Error("a secret that says nothing is the operator's")
 		}
-		if secret.Key == "ALSO_SHARED" && secret.ForPerson() {
+		if secret.Key == "ALSO_SHARED" && secret.ForPerson(ScopeAsDeclared) {
 			t.Error("operator means operator")
+		}
+	}
+
+	// An operator who has settled it answers for the whole skill, either
+	// way: one camera system for the household, or one each.
+	if mine := skill.PersonalSecrets(ScopePerson); len(mine) != len(skill.Secrets) {
+		t.Fatalf("settling on the person makes every value theirs: %v", mine)
+	}
+	if mine := skill.PersonalSecrets(ScopeOperator); len(mine) != 0 {
+		t.Fatalf("settling on the operator leaves nobody a value of their own: %v", mine)
+	}
+	for _, refused := range []string{"everybody", "yes", "operator or person"} {
+		if _, err := SettledScope(refused); err == nil {
+			t.Fatalf("%q is not an answer", refused)
+		}
+	}
+	for _, allowed := range []string{"", " Person ", "OPERATOR"} {
+		if _, err := SettledScope(allowed); err != nil {
+			t.Fatalf("%q is an answer: %v", allowed, err)
 		}
 	}
 

@@ -380,7 +380,7 @@ func TestSecretsAreDeclaredOnceAndCanBeFilledIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	mine := skill.PersonalSecrets()
+	mine := skill.PersonalSecrets(ScopeAsDeclared)
 	if len(mine) != 1 || mine[0].Key != "TOKEN" {
 		t.Fatalf("the key is trimmed where it is declared: %+v", mine)
 	}

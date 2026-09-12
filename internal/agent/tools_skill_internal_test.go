@@ -72,7 +72,7 @@ func TestAPersonsKeyIsNeverTakenFromTheOperatorsList(t *testing.T) {
 	defer closeDatabase()
 	ctx := context.Background()
 
-	_, err := worker.skillSecrets(ctx, run, skill, "camera_mine")
+	_, err := worker.skillSecrets(ctx, run, skill, skills.ScopeAsDeclared, "camera_mine")
 	if err == nil || !strings.Contains(err.Error(), "CAMERA_TOKEN") {
 		t.Fatalf("it should refuse, naming the key: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestAPersonsKeyIsNeverTakenFromTheOperatorsList(t *testing.T) {
 	}
 
 	// The skill's other tool wants only the operator's key, and works.
-	filled, err := worker.skillSecrets(ctx, run, skill, "camera_list")
+	filled, err := worker.skillSecrets(ctx, run, skill, skills.ScopeAsDeclared, "camera_list")
 	if err != nil {
 		t.Fatalf("a tool wanting only the operator's key runs: %v", err)
 	}
@@ -104,11 +104,27 @@ func TestAPersonsKeyIsNeverTakenFromTheOperatorsList(t *testing.T) {
 			t.Fatalf("PutAgentSkillSecret: %s", err)
 		}
 	})
-	if filled, err = worker.skillSecrets(ctx, run, skill, "camera_mine"); err != nil {
+	if filled, err = worker.skillSecrets(ctx, run, skill, skills.ScopeAsDeclared, "camera_mine"); err != nil {
 		t.Fatalf("with the value set it runs: %v", err)
 	}
 	if filled["CAMERA_TOKEN"] != "alices-own-token" {
 		t.Fatalf("their own value is used, not the operator's: %q", filled["CAMERA_TOKEN"])
+	}
+
+	// An operator who settles the whole skill on themselves overrules the
+	// declaration, and the value written under the same key is used --
+	// for a deployment where everybody shares one account.
+	if filled, err = worker.skillSecrets(ctx, run, skill, skills.ScopeOperator, "camera_mine"); err != nil {
+		t.Fatalf("settled on the operator it runs: %v", err)
+	}
+	if filled["CAMERA_TOKEN"] != "somebody-elses-token" {
+		t.Fatalf("settled on the operator the configured value is used: %q", filled["CAMERA_TOKEN"])
+	}
+	// Settling on the person makes the operator's own key theirs too, so
+	// a key nobody has filled in refuses rather than falling back.
+	if _, err = worker.skillSecrets(ctx, run, skill, skills.ScopePerson, "camera_list"); err == nil ||
+		!strings.Contains(err.Error(), "DIRECTORY_KEY") {
+		t.Fatalf("settled on the person, the operator's list is not used: %v", err)
 	}
 	if sealed == "alices-own-token" || strings.Contains(sealed, "alices-own-token") {
 		t.Fatal("the value is sealed at rest")
@@ -141,7 +157,7 @@ func TestOnePersonsValueIsNotAnothers(t *testing.T) {
 			t.Fatalf("CreateAgent: %s", err)
 		}
 	})
-	if _, err := worker.skillSecrets(ctx, stranger, skill, "camera_mine"); err == nil || !strings.Contains(err.Error(), "CAMERA_TOKEN") {
+	if _, err := worker.skillSecrets(ctx, stranger, skill, skills.ScopeAsDeclared, "camera_mine"); err == nil || !strings.Contains(err.Error(), "CAMERA_TOKEN") {
 		t.Fatalf("somebody else's value is not theirs to use: %v", err)
 	}
 }
@@ -152,7 +168,7 @@ func TestAPersonsKeyNeedsAPerson(t *testing.T) {
 	worker, run, skill, _, closeDatabase := skillFixture(t)
 	defer closeDatabase()
 	nobody := &secretRun{configuration: run.configuration}
-	if _, err := worker.skillSecrets(context.Background(), nobody, skill, "camera_mine"); err == nil ||
+	if _, err := worker.skillSecrets(context.Background(), nobody, skill, skills.ScopeAsDeclared, "camera_mine"); err == nil ||
 		!strings.Contains(err.Error(), "nobody to ask") {
 		t.Fatalf("want a refusal about there being nobody to ask, got %v", err)
 	}

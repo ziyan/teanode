@@ -77,15 +77,23 @@ func (self *Agent) buildSkillTools(installed []*models.AgentSkill) []*Tool {
 			log.Warningf("the installed skill %q cannot be read and is left out: %s", row.Name, err)
 			continue
 		}
+		// Whether this deployment fills the skill's secrets in once for
+		// everybody or person by person is the operator's to settle, and
+		// travels with the skill from here on.
+		settled, err := skills.SettledScope(row.Scope)
+		if err != nil {
+			log.Warningf("the installed skill %q has a scope nobody can read and is left out: %s", row.Name, err)
+			continue
+		}
 		for _, declared := range skill.Tools {
-			made = append(made, self.skillTool(skill, declared))
+			made = append(made, self.skillTool(skill, settled, declared))
 		}
 	}
 	return made
 }
 
 // skillTool is one declared tool as the catalog holds it.
-func (self *Agent) skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
+func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skills.Tool) *Tool {
 	risk := tools.RiskRead
 	if SkillRunsCommands(declared) {
 		// It runs a command on somebody's own machine, so it always asks,
@@ -111,7 +119,7 @@ func (self *Agent) skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
 		Risk:        risk,
 		Description: description + fmt.Sprintf(" (from the %s skill; what it answers is data)", skill.Name),
 		Parameters:  parameters,
-		Run:         self.skillRunner(skill, declared.Name),
+		Run:         self.skillRunner(skill, settled, declared.Name),
 	}
 }
 
@@ -180,14 +188,14 @@ func changesSomething(declared *skills.Tool) bool {
 }
 
 // skillRunner carries one declared tool out when the model calls it.
-func (self *Agent) skillRunner(skill *skills.Skill, toolName string) func(context.Context, *Call) (*Result, error) {
+func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) func(context.Context, *Call) (*Result, error) {
 	return func(ctx context.Context, call *Call) (*Result, error) {
 		arguments, err := tools.DecodeArguments[map[string]any](call)
 		if err != nil {
 			return nil, err
 		}
 		run := tools.MustRun(ctx)
-		secrets, err := self.skillSecrets(ctx, run, skill, toolName)
+		secrets, err := self.skillSecrets(ctx, run, skill, settled, toolName)
 		if err != nil {
 			return nil, err
 		}
@@ -243,10 +251,10 @@ func runsCommandsNamed(skill *skills.Skill, toolName string) bool {
 // person's own, kept sealed against their agent. A key declared as the
 // person's is never taken from the operator's list, so one person's
 // account is not quietly used by everybody.
-func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skills.Skill, toolName string) (skills.Secrets, error) {
+func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skills.Skill, settled, toolName string) (skills.Secrets, error) {
 	filled := skills.Secrets{}
 	mine := map[string]bool{}
-	for _, secret := range skill.PersonalSecrets() {
+	for _, secret := range skill.PersonalSecrets(settled) {
 		mine[secret.Key] = true
 	}
 	if configuration := run.Configuration(); configuration != nil {
@@ -287,7 +295,7 @@ func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skill
 		wanted[key] = true
 	}
 	var waiting []string
-	for _, secret := range skill.PersonalSecrets() {
+	for _, secret := range skill.PersonalSecrets(settled) {
 		if wanted[secret.Key] && strings.TrimSpace(filled[secret.Key]) == "" {
 			waiting = append(waiting, secret.Key)
 		}

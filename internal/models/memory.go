@@ -236,6 +236,12 @@ type AgentSkill struct {
 	Content string `json:"-"`
 
 	Enabled bool `json:"enabled"`
+
+	// Scope is who fills this skill's secrets in, when an operator has
+	// settled it for the whole skill rather than leaving it to what the
+	// skill's author declared per secret: "operator", "person", or empty
+	// for the author's declaration.
+	Scope string `json:"scope"`
 }
 
 // AgentSkillSecret is one person's own value for a secret an installed

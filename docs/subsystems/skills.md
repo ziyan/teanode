@@ -96,9 +96,19 @@ row's key, and what a database copied without `server.secret` is worth is
 nothing. That is right for a credential that is theirs: their account with a
 service, their own key.
 
-The skill's author decides, because only they know which kind it is. Getting it
-wrong in one direction shares one person's account with everybody; in the other
-it asks everybody for a value the operator already has.
+The skill's author decides by default, because they know what the value is.
+Getting it wrong in one direction shares one person's account with everybody;
+in the other it asks everybody for a value the operator already has.
+
+**The operator can overrule them**, for a whole skill at a time, because the
+author cannot know the deployment. The same camera skill serves a household
+with one console — one address, one token, filled in once — and an office where
+twenty people each have their own. On the Skills card, in `teanode agent skill
+scope <name> operator|person|skill`, and through the agent's `skill` tool, an
+operator says which this is; `skill` leaves it to the declaration. The choice
+survives an update, and applies to every secret the skill declares, which is
+what keeps the host rule below from being anything to think about: settle on
+one answer and the host and the credential are always scoped alike.
 
 Three rules follow from the split:
 
@@ -195,6 +205,8 @@ data fetched from outside, never words addressed to the agent.
     teanode agent skill disable weather   keep it, stop offering its tools
     teanode agent skill enable weather    offer its tools again
     teanode agent skill remove weather    take it away
+    teanode agent skill scope unifi-protect person
+                                          each person's own values
 
     teanode agent skill secret list       what the skills ask you for
     teanode agent skill secret set news NEWSAPI_KEY

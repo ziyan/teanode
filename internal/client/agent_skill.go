@@ -15,6 +15,7 @@ type AgentSkill struct {
 	Problem         string            `json:"problem,omitempty"`
 	Secrets         []string          `json:"secrets"`
 	PersonalSecrets []string          `json:"personalSecrets"`
+	Scope           string            `json:"scope"`
 	Tools           []*AgentSkillTool `json:"tools"`
 }
 
@@ -38,7 +39,7 @@ type AgentSkillOffer struct {
 
 const (
 	documentListAgentSkills = `query {
-  ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
+  ListAgentSkills { name description version publisher enabled readable problem scope secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -47,7 +48,7 @@ const (
 }`
 
 	documentInstallAgentSkill = `mutation ($name: String!) {
-  InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets personalSecrets
+  InstallAgentSkill(name: $name) { name description version publisher enabled readable problem scope secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -55,6 +56,10 @@ const (
 
 	documentSetAgentSkillEnabled = `mutation ($name: String!, $enabled: Boolean!) {
   SetAgentSkillEnabled(name: $name, enabled: $enabled) { name enabled }
+}`
+
+	documentSetAgentSkillScope = `mutation ($name: String!, $scope: String!) {
+  SetAgentSkillScope(name: $name, scope: $scope) { name scope secrets personalSecrets }
 }`
 )
 
@@ -164,4 +169,16 @@ func ClearAgentSkillSecret(ctx context.Context, connection *Client, skill, key s
 		return false, err
 	}
 	return result.ClearAgentSkillSecret, nil
+}
+
+// SetAgentSkillScope settles who fills a skill's secrets in: "operator",
+// "person", or empty to leave it to what the skill declares.
+func SetAgentSkillScope(ctx context.Context, connection *Client, name, scope string) (*AgentSkill, error) {
+	var result struct {
+		SetAgentSkillScope *AgentSkill `json:"SetAgentSkillScope"`
+	}
+	if err := connection.Execute(ctx, documentSetAgentSkillScope, map[string]any{"name": name, "scope": scope}, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentSkillScope, nil
 }

@@ -38,15 +38,38 @@ type Secret struct {
 	Scope string `yaml:"scope,omitempty"`
 }
 
-// The scopes a declared secret may have.
+// The scopes a declared secret may have, and that an operator may impose
+// on a whole skill. ScopeAsDeclared is no imposition: what the skill's
+// author said about each secret stands.
 const (
-	ScopeOperator = "operator"
-	ScopePerson   = "person"
+	ScopeAsDeclared = ""
+	ScopeOperator   = "operator"
+	ScopePerson     = "person"
 )
 
-// ForPerson says whether each person fills this one in themselves.
-func (self *Secret) ForPerson() bool {
+// ForPerson says whether each person fills this one in themselves under
+// the scope the operator settled on for the skill. An operator who has
+// settled on one answers for every secret the skill declares; otherwise
+// the skill's own declaration stands, secret by secret.
+func (self *Secret) ForPerson(settled string) bool {
+	switch strings.ToLower(strings.TrimSpace(settled)) {
+	case ScopePerson:
+		return true
+	case ScopeOperator:
+		return false
+	}
 	return strings.EqualFold(strings.TrimSpace(self.Scope), ScopePerson)
+}
+
+// SettledScope reads an operator's answer, or refuses one that is not an
+// answer. Empty means they have not settled on one.
+func SettledScope(scope string) (string, error) {
+	switch settled := strings.ToLower(strings.TrimSpace(scope)); settled {
+	case ScopeAsDeclared, ScopeOperator, ScopePerson:
+		return settled, nil
+	default:
+		return "", fmt.Errorf("skills: %q is not who fills a skill's secrets in; say operator, person, or nothing to leave it to the skill", scope)
+	}
 }
 
 // Profile is a way of authenticating that several steps share, so a token
@@ -509,7 +532,7 @@ func (self *Skill) settledEnough(step *Step) error {
 	// The host may be written in, or come from a secret -- but only from
 	// one whose owner is at least as trusted as everything being sent.
 	mine := map[string]bool{}
-	for _, secret := range self.PersonalSecrets() {
+	for _, secret := range self.PersonalSecrets(ScopeAsDeclared) {
 		mine[secret.Key] = true
 	}
 	anyOperator := false
@@ -644,11 +667,12 @@ func bodyStrings(body any) []string {
 }
 
 // PersonalSecrets are the keys of this skill that each person fills in
-// themselves, in the order the skill declares them.
-func (self *Skill) PersonalSecrets() []*Secret {
+// themselves, in the order the skill declares them, under the scope the
+// operator settled on.
+func (self *Skill) PersonalSecrets(settled string) []*Secret {
 	var mine []*Secret
 	for _, secret := range self.Secrets {
-		if secret.ForPerson() {
+		if secret.ForPerson(settled) {
 			mine = append(mine, secret)
 		}
 	}
