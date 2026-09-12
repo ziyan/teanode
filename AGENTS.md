@@ -41,6 +41,10 @@ and a person turns it on. See `docs/subsystems/` for how it works.
       storage/              where a message's bytes and a person's files live:
                             the filesystem or an S3 bucket
       imap/                 the IMAP server over those mailboxes
+      contacts/             the vCard format: parsing a card, writing one out,
+                            and naming a version of one with an ETag
+      dav/                  a person's address book to their phone and desktop
+                            over CardDAV, signed in to with an app password
       api/                  GraphQL over the config store and the database
       client/               the other side of that API, for the client
       web/                  HTTP server and middlewares

@@ -98,7 +98,8 @@ const (
 	AuditResourceToken              AuditResourceType = "token"
 	AuditResourcePasskey            AuditResourceType = "passkey"
 	AuditResourceConfiguration      AuditResourceType = "configuration"
-	AuditResourceAgent              AuditResourceType = "agent" // a person's agent, and its sources
+	AuditResourceAgent              AuditResourceType = "agent"       // a person's agent, and its sources
+	AuditResourceAddressBook        AuditResourceType = "addressbook" // the book, not the contacts in it
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

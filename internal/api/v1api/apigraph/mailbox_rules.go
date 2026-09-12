@@ -39,7 +39,7 @@ func (self *graph) SaveMailboxContact(ctx context.Context, arguments SaveMailbox
 	if address := strings.TrimSpace(arguments.Address); len(address) > 320 || !models.IsEmailAddress(address) {
 		return nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, arguments.Address)
 	}
-	contact, err := self.transaction(ctx).SaveContact(mailbox.ID, arguments.Address, arguments.Name)
+	contact, err := self.transaction(ctx).SaveLearnedContact(mailbox.ID, arguments.Address, arguments.Name)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -56,7 +56,7 @@ func (self *graph) DeleteMailboxContact(ctx context.Context, arguments DeleteMai
 	if err != nil {
 		return err
 	}
-	return translateError(self.transaction(ctx).DeleteContact(mailbox.ID, arguments.Address))
+	return translateError(self.transaction(ctx).DeleteLearnedContact(mailbox.ID, arguments.Address))
 }
 
 type DeleteMailboxContactsArguments struct {
@@ -83,7 +83,7 @@ func (self *graph) DeleteMailboxContacts(ctx context.Context, arguments DeleteMa
 		if strings.TrimSpace(address) == "" {
 			continue
 		}
-		if err := tx.DeleteContact(mailbox.ID, address); err != nil {
+		if err := tx.DeleteLearnedContact(mailbox.ID, address); err != nil {
 			return removed, translateError(err)
 		}
 		removed++
@@ -124,7 +124,7 @@ func (self *graph) ListMailboxContacts(ctx context.Context, arguments ListMailbo
 	if arguments.First != nil && *arguments.First > 0 {
 		limit = min(*arguments.First, 500)
 	}
-	contacts, err := self.transaction(ctx).ListContacts(mailbox.ID, prefix, limit)
+	contacts, err := self.transaction(ctx).ListLearnedContacts(mailbox.ID, prefix, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 			}
 			senderKnown := false
 			if address, _ := senderAddressOf(item.Mail); address != "" {
-				contact, err := tx.GetContact(mailbox.ID, address)
+				contact, err := tx.GetLearnedContact(mailbox.ID, address)
 				if err != nil {
 					return nil, err
 				}

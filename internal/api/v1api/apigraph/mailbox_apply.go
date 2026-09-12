@@ -133,7 +133,7 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		senderKnown := false
 		if needsContacts {
 			if address, _ := senderAddressOf(item.Mail); address != "" {
-				contact, err := tx.GetContact(mailbox.ID, address)
+				contact, err := tx.GetLearnedContact(mailbox.ID, address)
 				if err != nil {
 					return nil, err
 				}

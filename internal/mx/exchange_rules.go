@@ -90,7 +90,7 @@ func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox,
 	senderKnown := false
 	if condition.Field == "sender-known" {
 		address, _ := senderOf(mail)
-		contact, err := tx.GetContact(mailbox.ID, address)
+		contact, err := tx.GetLearnedContact(mailbox.ID, address)
 		if err != nil {
 			return false, err
 		}

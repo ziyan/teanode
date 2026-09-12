@@ -164,7 +164,7 @@ func TestAListDoesNotBecomeAContact(t *testing.T) {
 		deliver("news@example.com", "weekly.news.example.com")
 		deliver("no-reply@example.com", "")
 
-		contacts, err := tx.ListContacts(mailbox.ID, "", 50)
+		contacts, err := tx.ListLearnedContacts(mailbox.ID, "", 50)
 		if err != nil {
 			t.Fatalf("ListContacts: %s", err)
 		}

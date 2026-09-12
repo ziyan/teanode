@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // Who a message is from, as a picture.
 //
@@ -31,6 +31,10 @@ export function SenderLogo({
   // A logo that fails to load falls back to the monogram rather than leaving
   // a broken image: what is cached may have been removed since.
   const [broken, setBroken] = useState(false)
+  // ...and tries again when it is a different picture. A row that failed once
+  // kept its monogram for as long as the component lived, so a contact that
+  // gained a photograph went on showing a letter.
+  useEffect(() => setBroken(false), [src, logoDomain])
   const letter = firstLetter(name)
   const style = { width: `${size}px`, height: `${size}px` }
   const address = src ?? (logoDomain ? `/api/v1/logo/${encodeURIComponent(logoDomain)}` : '')

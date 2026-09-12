@@ -98,7 +98,7 @@ func (self *Agent) replyRefusal(tx db.Transaction, run *Run, policy *models.Agen
 	}
 	switch policy.Scope {
 	case "", "known":
-		contact, err := tx.GetContact(mailbox.ID, sender)
+		contact, err := tx.GetLearnedContact(mailbox.ID, sender)
 		if err != nil {
 			return "", err
 		}

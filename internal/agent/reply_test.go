@@ -136,7 +136,7 @@ func TestAutoReplyIsHeldThenSent(t *testing.T) {
 		if _, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
-		if err := tx.TouchContact(mailbox.ID, from, "", mail.ReceivedAt); err != nil {
+		if err := tx.TouchLearnedContact(mailbox.ID, from, "", mail.ReceivedAt); err != nil {
 			t.Fatalf("TouchContact: %s", err)
 		}
 		worker.OnMailboxDelivery(tx, mailbox, nil, mail)
