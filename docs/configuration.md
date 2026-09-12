@@ -1177,6 +1177,12 @@ keys it wants; an operator fills them in here, one entry per value with the
 is a secret. `teanode agent skill list` says which keys each installed skill
 is waiting for.
 
+Only the keys a skill scoped to the operator, which is the default. A key it
+scoped to the person is each person's own: they fill it in on their agent
+page or with `teanode agent skill secret set`, it is sealed against their
+agent rather than kept here, and a value written here for such a key is
+ignored.
+
 ### `agent.currency`
 
 What the providers' prices, and so every amount this server shows or caps,

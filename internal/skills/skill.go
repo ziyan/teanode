@@ -28,6 +28,25 @@ type Skill struct {
 type Secret struct {
 	Key         string `yaml:"key"`
 	Description string `yaml:"description"`
+
+	// Scope says whose value it is. "operator" -- the default -- is one
+	// value for the whole server, which is right for a thing the
+	// deployment has: a camera system, a licence. "person" is a value of
+	// each person's own, which is right for a credential that is theirs:
+	// their account with a service, their own key. A skill's author
+	// decides, because only they know which kind it is.
+	Scope string `yaml:"scope,omitempty"`
+}
+
+// The scopes a declared secret may have.
+const (
+	ScopeOperator = "operator"
+	ScopePerson   = "person"
+)
+
+// ForPerson says whether each person fills this one in themselves.
+func (self *Secret) ForPerson() bool {
+	return strings.EqualFold(strings.TrimSpace(self.Scope), ScopePerson)
 }
 
 // Profile is a way of authenticating that several steps share, so a token
@@ -187,6 +206,11 @@ func (self *Skill) validate() error {
 	for _, secret := range self.Secrets {
 		if strings.TrimSpace(secret.Key) == "" {
 			return fmt.Errorf("skills: %s declares a secret with no key", self.Name)
+		}
+		switch strings.ToLower(strings.TrimSpace(secret.Scope)) {
+		case "", ScopeOperator, ScopePerson:
+		default:
+			return fmt.Errorf("skills: the secret %s of %s is scoped %q, which is not operator or person", secret.Key, self.Name, secret.Scope)
 		}
 		known[secret.Key] = true
 	}
@@ -556,4 +580,16 @@ func bodyStrings(body any) []string {
 		return values
 	}
 	return nil
+}
+
+// PersonalSecrets are the keys of this skill that each person fills in
+// themselves, in the order the skill declares them.
+func (self *Skill) PersonalSecrets() []*Secret {
+	var mine []*Secret
+	for _, secret := range self.Secrets {
+		if secret.ForPerson() {
+			mine = append(mine, secret)
+		}
+	}
+	return mine
 }

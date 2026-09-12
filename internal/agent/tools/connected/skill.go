@@ -19,13 +19,13 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "skill", Family: tools.FamilyServers, Risk: tools.RiskWrite,
-				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and what each brings, search the registry for one, install or update it, or take one away. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
+				Description: "Skills: files of declarations from a signed registry whose tools become yours. List what this server has installed and what each brings, search the registry for one, install or update it, or take one away. Secrets says which values the installed skills are waiting on from this person, which is why one of their tools may be refusing to work. Installing changes what everybody on this server is offered, so it needs the person to manage this server; listing does not. A skill that runs commands runs them on a computer the person attached, never on this server.",
 				Parameters: tools.Object(map[string]any{
-					"action": tools.EnumProperty("what to do", "list", "search", "install", "update", "remove", "enable", "disable"),
+					"action": tools.EnumProperty("what to do", "list", "search", "secrets", "install", "update", "remove", "enable", "disable"),
 					"name":   tools.StringProperty("the skill, for install, update, remove, enable and disable"),
 					"query":  tools.StringProperty("for search: words to narrow what the registry offers; leave it out to see everything, which is a short list"),
 				}, "action"),
-				Guidance: "skill: look before you install -- what is installed may already do it, and the registry is small enough to read. Installing one is the person's decision as much as yours: say what it brings and what it would let you do before you ask for it. A skill is checked against the registry's signature before anything is kept, so a refusal means the file is not what was signed for, not that the network failed.",
+				Guidance: "skill: a tool of a skill that refuses because a value is missing is answered with secrets, which says what the person has not filled in -- tell them where to set it and never ask them to type a secret to you, because what they type is kept in the conversation. Look before you install -- what is installed may already do it, and the registry is small enough to read. Installing one is the person's decision as much as yours: say what it brings and what it would let you do before you ask for it. A skill is checked against the registry's signature before anything is kept, so a refusal means the file is not what was signed for, not that the network failed.",
 				Preview: func(arguments json.RawMessage) string {
 					var call skillRequest
 					if err := json.Unmarshal(arguments, &call); err != nil {
@@ -47,7 +47,7 @@ func init() {
 						return tools.RiskWrite
 					}
 					switch call.Action {
-					case "list", "search":
+					case "list", "search", "secrets":
 						return tools.RiskRead
 					case "install", "update", "remove":
 						// It changes what everybody here is offered, so it
@@ -86,6 +86,15 @@ type skillView struct {
 	} `json:"tools"`
 }
 
+// skillSecretView is one value an installed skill asks this person for.
+// Whether it is set comes back; the value never does.
+type skillSecretView struct {
+	Skill       string `json:"skill"`
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	Set         bool   `json:"set"`
+}
+
 // skillOffer is one skill the registry publishes.
 type skillOffer struct {
 	Name        string   `json:"name"`
@@ -106,6 +115,8 @@ const (
 		tools { name description kind needsComputer } } }`
 
 	documentRemoveSkill = `mutation ($name: String!) { RemoveAgentSkill(name: $name) }`
+
+	documentSkillSecrets = `query { ListAgentSkillSecrets { skill key description set } }`
 
 	documentSetSkillEnabled = `mutation ($name: String!, $enabled: Boolean!) { SetAgentSkillEnabled(name: $name, enabled: $enabled) { name enabled } }`
 )
@@ -146,6 +157,27 @@ func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			// as the second.
 			described["nothing_matched"] = arguments.Query
 			described["do_this_next"] = "Nothing in the registry matches that word. Search again with no query to see everything it offers, which is a short list, before telling the person there is nothing."
+		}
+		return tools.JSONResult(described)
+
+	case "secrets":
+		var answer struct {
+			ListAgentSkillSecrets []*skillSecretView `json:"ListAgentSkillSecrets"`
+		}
+		if err := run.Operations().Execute(ctx, documentSkillSecrets, nil, &answer); err != nil {
+			return nil, err
+		}
+		var waiting []string
+		for _, secret := range answer.ListAgentSkillSecrets {
+			if !secret.Set {
+				waiting = append(waiting, secret.Skill+"."+secret.Key)
+			}
+		}
+		described := map[string]any{"asked_of_this_person": answer.ListAgentSkillSecrets}
+		if len(waiting) > 0 {
+			// Never offer to take the value in the conversation: it would
+			// be written into the transcript and sent to a model.
+			described["do_this_next"] = fmt.Sprintf("These are not set yet: %s. Tell the person to set them on their agent page, or with `teanode agent skill secret set <skill> <key> -`. Do not ask them to type a secret to you.", strings.Join(waiting, ", "))
 		}
 		return tools.JSONResult(described)
 

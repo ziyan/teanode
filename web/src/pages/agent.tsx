@@ -202,6 +202,7 @@ export function AgentPage() {
       <MemoryCard />
       <SchedulesCard />
       <ServersCard />
+      <SkillSecretsCard />
       <ChatAppsCard />
       <RepliesCard />
       <ActivityCard />
@@ -960,6 +961,121 @@ function ServersCard() {
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
             />
+          </label>
+        </FormDialog>
+      ) : null}
+    </>
+  )
+}
+
+// SkillSecretsCard is what the installed skills ask this person for. A
+// skill's author says which of its secrets are the deployment's and which
+// are each person's own; the operator fills in the first kind in the
+// settings, and this is where somebody fills in the second.
+interface SkillSecret {
+  skill: string
+  key: string
+  description: string
+  set: boolean
+}
+
+const SKILL_SECRETS = `query { ListAgentSkillSecrets { skill key description set } }`
+
+const SET_SKILL_SECRET = `
+  mutation ($skill: String!, $key: String!, $value: String!) {
+    SetAgentSkillSecret(skill: $skill, key: $key, value: $value) { skill key set }
+  }`
+
+const CLEAR_SKILL_SECRET = `mutation ($skill: String!, $key: String!) { ClearAgentSkillSecret(skill: $skill, key: $key) }`
+
+function SkillSecretsCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, reload } = useQuery(
+    () => graphql<{ ListAgentSkillSecrets: SkillSecret[] }>(SKILL_SECRETS, {}),
+    [],
+    { refresh: false },
+  )
+  const [filling, setFilling] = useState<SkillSecret | null>(null)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const asked = data?.ListAgentSkillSecrets ?? []
+  // Nothing installed asks for anything of theirs: no card at all, rather
+  // than an empty one to wonder about.
+  if (error || asked.length === 0) return null
+
+  const keep = async (secret: SkillSecret, given: string) => {
+    setBusy(secret.key)
+    try {
+      await graphql(SET_SKILL_SECRET, { skill: secret.skill, key: secret.key, value: given })
+      toast.done(t('agent.skillSecretKept', { key: secret.key, skill: secret.skill }))
+      setFilling(null)
+      void reload()
+    } catch (caught) {
+      toast.failure(caught, t('agent.skillSecretFailed'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const forget = async (secret: SkillSecret) => {
+    setBusy(secret.key)
+    try {
+      await graphql(CLEAR_SKILL_SECRET, { skill: secret.skill, key: secret.key })
+      toast.done(t('agent.skillSecretForgotten', { key: secret.key }))
+      void reload()
+    } catch (caught) {
+      toast.failure(caught, t('agent.skillSecretFailed'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <SettingsSection card title={t('agent.skillSecrets')} description={t('agent.skillSecretsHint')}>
+        {asked.map((secret) => (
+          <SettingsRow
+            key={`${secret.skill}.${secret.key}`}
+            title={secret.key}
+            badge={<Tag value={secret.skill} />}
+            subtitle={secret.description || undefined}
+            actions={
+              <>
+                <button
+                  type="button"
+                  className={secret.set ? '' : 'primary'}
+                  disabled={busy === secret.key}
+                  onClick={() => {
+                    setValue('')
+                    setFilling(secret)
+                  }}
+                >
+                  {secret.set ? t('agent.skillSecretReplace') : t('agent.skillSecretSet')}
+                </button>
+                {secret.set ? (
+                  <button type="button" className="danger" disabled={busy === secret.key} onClick={() => void forget(secret)}>
+                    {t('agent.skillSecretForget')}
+                  </button>
+                ) : null}
+              </>
+            }
+          />
+        ))}
+      </SettingsSection>
+      {filling ? (
+        <FormDialog
+          title={`${filling.key} · ${filling.skill}`}
+          submitLabel={t('agent.skillSecretSet')}
+          busy={busy === filling.key}
+          canSubmit={value.trim() !== ''}
+          onClose={() => setFilling(null)}
+          onSubmit={() => void keep(filling, value.trim())}
+        >
+          <label>
+            <span>{filling.description || filling.key}</span>
+            <input autoFocus type="password" value={value} onChange={(event) => setValue(event.target.value)} />
           </label>
         </FormDialog>
       ) : null}

@@ -237,3 +237,17 @@ type AgentSkill struct {
 
 	Enabled bool `json:"enabled"`
 }
+
+// AgentSkillSecret is one person's own value for a secret an installed
+// skill declared as theirs to fill in. The operator's values live in the
+// configuration; these belong to the person whose agent uses them.
+type AgentSkillSecret struct {
+	AgentID    string    `json:"agentId"`
+	Skill      string    `json:"skill"`
+	Key        string    `json:"key"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+
+	// Value is sealed with the server secret and never leaves the server.
+	Value string `json:"-"`
+}

@@ -34,10 +34,11 @@ own parameters, and a list of steps per value of it. That is how a skill offers
 six operations as one tool rather than six.
 
 Two more things a skill may declare. **Secrets** are values it needs and does
-not carry, named as keys the operator fills in under `agent.skillSecrets` and
-reached as `{{secret:KEY}}`. **Authentication profiles** are named ways of
-authenticating — bearer, basic or an API key — that several steps share, so a
-token is written once.
+not carry, reached as `{{secret:KEY}}`. **Authentication profiles** are named
+ways of authenticating — bearer, basic or an API key — that several steps
+share, so a token is written once.
+
+A secret says whose it is — see **Secrets**, below.
 
 ## Templating
 
@@ -74,6 +75,40 @@ separated by dots, with a number or `[number]` for a place in a list, so
 `properties.periods[0].shortForecast` and `0.lat` both work. `result: text`
 keeps the answer as text under the name `text`. A step with no `select` hands
 back the whole parsed answer under `json`.
+
+## Secrets
+
+A skill carries none of the credentials it needs. It declares the keys, and
+each one says whose value it is.
+
+**`scope: operator`**, the default, is one value for the whole server, filled
+in under `agent.skillSecrets`. That is right for something the deployment has:
+the address of a camera system, a licence, a key the organisation bought.
+
+**`scope: person`** is a value of each person's own. It is filled in on their
+own agent page, or with `teanode agent skill secret set`, and kept sealed with
+the server's secret against their agent — the same way a connected server's
+credential is. That is right for a credential that is theirs: their account
+with a service, their own key.
+
+The skill's author decides, because only they know which kind it is. Getting it
+wrong in one direction shares one person's account with everybody; in the other
+it asks everybody for a value the operator already has.
+
+Three rules follow from the split:
+
+- A person-scoped key is **never** taken from the operator's list, even when a
+  value is written there. Falling back would defeat the point of scoping it.
+- A tool whose person-scoped secret is unset **refuses before it runs**, naming
+  the key and where that person sets it, rather than making a request with a
+  hole in it.
+- The agent can ask which of a person's keys are unset, and is told never to
+  ask for the value. A secret typed into a conversation is kept in the
+  transcript and sent to a model.
+
+Only a key an installed skill actually asks for can be set, so the table cannot
+be used as a general place to keep secrets. Nothing ever reads a value back
+out: the API says whether it is set, and no more.
 
 ## Trust
 
@@ -148,6 +183,11 @@ data fetched from outside, never words addressed to the agent.
     teanode agent skill enable weather    offer its tools again
     teanode agent skill remove weather    take it away
 
+    teanode agent skill secret list       what the skills ask you for
+    teanode agent skill secret set news NEWSAPI_KEY -
+                                          your own value, read without echo
+    teanode agent skill secret clear news NEWSAPI_KEY
+
 ## Caveats
 
 - **A skill is only as trustworthy as the registry's key.** The signature says
@@ -157,7 +197,12 @@ data fetched from outside, never words addressed to the agent.
   runs commands.
 - **A skill that stops parsing is left out**, logged, and shown in the
   dashboard as unreadable rather than silently missing.
-- **Secrets are the operator's to fill in.** A skill that needs one and does
-  not have it fails when its step runs, naming the key.
+- **An operator's secret is one value for everybody.** A skill that needs one
+  and does not have it fails when its step runs, naming the key. A
+  person-scoped one fails before the step runs, naming the key and where that
+  person sets it.
+- **The agent can see which of a person's keys are unset and never asks for
+  the value.** A secret typed into a conversation is kept in the transcript and
+  sent to a model, so the tool says where to set it instead.
 - **The tools are read again at most twice a minute**, so a skill installed
   from another instance takes up to half a minute to appear on this one.

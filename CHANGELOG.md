@@ -307,6 +307,18 @@ Notable changes to TeaNode. The format follows
   switches them off. `docs/subsystems/skills.md` says how it works.
   (#73)
 
+- A skill can ask you for a credential of your own. Some want one value
+  for the whole deployment -- the address of a camera system -- and some
+  want one that is yours, like your account with a service. A skill says
+  which of its secrets are which; the operator fills in the first kind in
+  the settings, and the second kind appears on your own agent page and in
+  `teanode agent skill secret`, sealed against your agent and used by
+  nothing else. A tool whose value you have not set refuses by naming it
+  and saying where to set it, rather than quietly using somebody else's.
+  The agent can see which of yours are missing and tell you; it never
+  asks you to type one to it, because what you type stays in the
+  conversation. (#73)
+
 - The agent hands a piece of coding work to your own machine. With a
   computer attached, `claude_code` and `codex` brief a coding agent
   there — it reads and edits your files, runs commands, works on its own

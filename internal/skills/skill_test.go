@@ -143,3 +143,37 @@ func TestTheProseIsKept(t *testing.T) {
 		t.Fatalf("the prose is kept for a person to read: %q", skill.Prose)
 	}
 }
+
+// A secret is the operator's unless the skill says it is the person's.
+// Which it is decides who is asked for it and whose account is used, so
+// the default matters: silence means the deployment's, not somebody's own.
+func TestASecretIsTheOperatorsUnlessItSaysOtherwise(t *testing.T) {
+	body := "---\nname: x\ndescription: x\nsecrets:\n" +
+		"  - key: SHARED_TOKEN\n    description: the deployment's\n" +
+		"  - key: MY_KEY\n    description: each person's own\n    scope: person\n" +
+		"  - key: ALSO_SHARED\n    description: said out loud\n    scope: operator\n" +
+		"tools:\n  - name: x_get\n    description: get\n    type: http\n" +
+		"    url: \"https://example.com/a\"\n    headers: {Authorization: \"{{secret:MY_KEY}}\"}\n    result: json\n" +
+		"    parameters: {type: object, properties: {}}\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mine := skill.PersonalSecrets()
+	if len(mine) != 1 || mine[0].Key != "MY_KEY" {
+		t.Fatalf("only the one scoped to a person is theirs: %v", mine)
+	}
+	for _, secret := range skill.Secrets {
+		if secret.Key == "SHARED_TOKEN" && secret.ForPerson() {
+			t.Error("a secret that says nothing is the operator's")
+		}
+		if secret.Key == "ALSO_SHARED" && secret.ForPerson() {
+			t.Error("operator means operator")
+		}
+	}
+
+	// A scope nobody can act on is refused rather than guessed at.
+	if _, err := Parse([]byte(strings.Replace(body, "scope: person", "scope: everybody", 1))); err == nil {
+		t.Fatal("an unknown scope must be refused")
+	}
+}

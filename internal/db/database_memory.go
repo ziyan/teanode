@@ -65,6 +65,13 @@ type MemoryOperation interface {
 	// The skills the operator installed, which belong to the server and
 	// whose tools are offered to everybody. PutAgentSkill installs one or
 	// replaces the one of that name, which is what updating is.
+	// A person's own values for the secrets a skill declared as theirs.
+	// The operator's live in the configuration; these are per person and
+	// sealed.
+	ListAgentSkillSecrets(agentId string) ([]*models.AgentSkillSecret, error)
+	PutAgentSkillSecret(secret *models.AgentSkillSecret) error
+	DeleteAgentSkillSecret(agentId, skill, key string) error
+
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)
 	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)

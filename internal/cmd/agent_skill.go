@@ -52,6 +52,30 @@ func newAgentSkillCommand() *cli.Command {
 				Action:    runAgentSkillRemove,
 			},
 			{
+				Name:  "secret",
+				Usage: "the values the installed skills ask you for, which are yours rather than the server's",
+				Commands: []*cli.Command{
+					{
+						Name:   "list",
+						Usage:  "what the installed skills ask you for, and whether you have filled each in",
+						Flags:  []cli.Flag{JSONFlag()},
+						Action: runAgentSkillSecretList,
+					},
+					{
+						Name:      "set",
+						Usage:     "keep one of your values; - reads it from the terminal without echoing",
+						ArgsUsage: "<skill> <key> [value | -]",
+						Action:    runAgentSkillSecretSet,
+					},
+					{
+						Name:      "clear",
+						Usage:     "forget one of your values",
+						ArgsUsage: "<skill> <key>",
+						Action:    runAgentSkillSecretClear,
+					},
+				},
+			},
+			{
 				Name:      "enable",
 				Usage:     "offer a skill's tools again",
 				ArgsUsage: "<name>",
@@ -256,5 +280,74 @@ func setAgentSkillEnabled(ctx context.Context, command *cli.Command, enabled boo
 	} else {
 		fmt.Printf("%s is installed but not offered\n", skill.Name)
 	}
+	return nil
+}
+
+func runAgentSkillSecretList(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	asked, err := client.ListAgentSkillSecrets(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(asked)
+	}
+	if len(asked) == 0 {
+		fmt.Println("no installed skill asks you for anything of your own")
+		return nil
+	}
+	rows := make([][]string, 0, len(asked))
+	for _, secret := range asked {
+		state := "not set"
+		if secret.Set {
+			state = "set"
+		}
+		rows = append(rows, []string{secret.Skill, secret.Key, state, secret.Description})
+	}
+	return printTable([]string{"skill", "key", "", "what it is"}, rows)
+}
+
+func runAgentSkillSecretSet(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the skill and the key: teanode agent skill secret set news NEWSAPI_KEY -")
+	}
+	// A value on the command line is in the shell's history; "-" reads it
+	// from the terminal without echoing, which is how every other secret
+	// is given here.
+	value := "-"
+	if command.Args().Len() > 2 {
+		value = command.Args().Get(2)
+	}
+	given, err := readValue(command, value)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	secret, err := client.SetAgentSkillSecret(ctx, connection, command.Args().First(), command.Args().Get(1), given)
+	if err != nil {
+		return describeError(command, err)
+	}
+	fmt.Printf("kept your %s for %s\n", secret.Key, secret.Skill)
+	return nil
+}
+
+func runAgentSkillSecretClear(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the skill and the key")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.ClearAgentSkillSecret(ctx, connection, command.Args().First(), command.Args().Get(1)); err != nil {
+		return describeError(command, err)
+	}
+	fmt.Printf("forgot your %s for %s\n", command.Args().Get(1), command.Args().First())
 	return nil
 }

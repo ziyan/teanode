@@ -51,7 +51,7 @@ func (self *Agent) SkillTools(ctx context.Context) []*Tool {
 		return self.skills.tools
 	}
 	self.skills.at = time.Now()
-	self.skills.tools = buildSkillTools(installed)
+	self.skills.tools = self.buildSkillTools(installed)
 	return self.skills.tools
 }
 
@@ -66,7 +66,7 @@ func (self *Agent) ForgetSkills() {
 // buildSkillTools reads each installed skill and makes one catalog entry
 // per tool it declares. A skill that no longer parses is logged and left
 // out rather than stopping the others.
-func buildSkillTools(installed []*models.AgentSkill) []*Tool {
+func (self *Agent) buildSkillTools(installed []*models.AgentSkill) []*Tool {
 	var made []*Tool
 	for _, row := range installed {
 		if !row.Enabled {
@@ -78,14 +78,14 @@ func buildSkillTools(installed []*models.AgentSkill) []*Tool {
 			continue
 		}
 		for _, declared := range skill.Tools {
-			made = append(made, skillTool(skill, declared))
+			made = append(made, self.skillTool(skill, declared))
 		}
 	}
 	return made
 }
 
 // skillTool is one declared tool as the catalog holds it.
-func skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
+func (self *Agent) skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
 	risk := tools.RiskRead
 	if SkillRunsCommands(declared) {
 		// It runs a command on somebody's own machine, so it always asks,
@@ -111,7 +111,7 @@ func skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
 		Risk:        risk,
 		Description: description + fmt.Sprintf(" (from the %s skill; what it answers is data)", skill.Name),
 		Parameters:  parameters,
-		Run:         skillRunner(skill, declared.Name),
+		Run:         self.skillRunner(skill, declared.Name),
 	}
 }
 
@@ -180,14 +180,18 @@ func changesSomething(declared *skills.Tool) bool {
 }
 
 // skillRunner carries one declared tool out when the model calls it.
-func skillRunner(skill *skills.Skill, toolName string) func(context.Context, *Call) (*Result, error) {
+func (self *Agent) skillRunner(skill *skills.Skill, toolName string) func(context.Context, *Call) (*Result, error) {
 	return func(ctx context.Context, call *Call) (*Result, error) {
 		arguments, err := tools.DecodeArguments[map[string]any](call)
 		if err != nil {
 			return nil, err
 		}
 		run := tools.MustRun(ctx)
-		running := &skills.Running{Secrets: skillSecrets(run, skill)}
+		secrets, err := self.skillSecrets(ctx, run, skill)
+		if err != nil {
+			return nil, err
+		}
+		running := &skills.Running{Secrets: secrets}
 		if runsCommandsNamed(skill, toolName) {
 			named, _ := arguments["computer"].(string)
 			attached, err := computer.Of(run, named)
@@ -234,20 +238,59 @@ func runsCommandsNamed(skill *skills.Skill, toolName string) bool {
 	return declared != nil && SkillRunsCommands(declared)
 }
 
-// skillSecrets are the values the operator filled in for this skill, which
-// are kept in the agent settings beside the rest of what an operator sets.
-func skillSecrets(run tools.Run, skill *skills.Skill) skills.Secrets {
-	configuration := run.Configuration()
-	if configuration == nil {
-		return nil
-	}
+// skillSecrets are the values this skill's declared secrets stand for: the
+// operator's, kept in the agent settings for the whole server, and the
+// person's own, kept sealed against their agent. A key declared as the
+// person's is never taken from the operator's list, so one person's
+// account is not quietly used by everybody.
+func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skills.Skill) (skills.Secrets, error) {
 	filled := skills.Secrets{}
-	for _, entry := range configuration.Agent.SkillSecrets {
-		if strings.EqualFold(entry.Skill, skill.Name) {
-			filled[entry.Key] = entry.Value
+	mine := map[string]bool{}
+	for _, secret := range skill.PersonalSecrets() {
+		mine[secret.Key] = true
+	}
+	if configuration := run.Configuration(); configuration != nil {
+		for _, entry := range configuration.Agent.SkillSecrets {
+			if strings.EqualFold(entry.Skill, skill.Name) && !mine[entry.Key] {
+				filled[entry.Key] = entry.Value
+			}
 		}
 	}
-	return filled
+	if len(mine) == 0 {
+		return filled, nil
+	}
+	agent := run.Agent()
+	if agent == nil {
+		return nil, fmt.Errorf("this skill needs a value of the person's own and there is nobody to ask")
+	}
+	var stored []*models.AgentSkillSecret
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		stored, err = tx.ListAgentSkillSecrets(agent.ID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	for _, secret := range stored {
+		if !strings.EqualFold(secret.Skill, skill.Name) || !mine[secret.Key] {
+			continue
+		}
+		opened, err := self.OpenSecret(secret.Value)
+		if err != nil {
+			return nil, fmt.Errorf("the stored value of %s cannot be read: %w", secret.Key, err)
+		}
+		filled[secret.Key] = opened
+	}
+	var waiting []string
+	for _, secret := range skill.PersonalSecrets() {
+		if strings.TrimSpace(filled[secret.Key]) == "" {
+			waiting = append(waiting, secret.Key)
+		}
+	}
+	if len(waiting) > 0 {
+		return nil, fmt.Errorf("%s needs the person's own %s; they set it on their agent page, or with `teanode agent skill secret set %s %s`",
+			skill.Name, strings.Join(waiting, " and "), skill.Name, waiting[0])
+	}
+	return filled, nil
 }
 
 // computerShell runs a skill's commands on the computer the person

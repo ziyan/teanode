@@ -112,3 +112,51 @@ func SetAgentSkillEnabled(ctx context.Context, connection *Client, name string, 
 	}
 	return result.SetAgentSkillEnabled, nil
 }
+
+// AgentSkillSecret is one value an installed skill asks a person for.
+type AgentSkillSecret struct {
+	Skill       string `json:"skill"`
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	Set         bool   `json:"set"`
+}
+
+const (
+	documentAgentSkillSecrets = `query { ListAgentSkillSecrets { skill key description set } }`
+
+	documentSetAgentSkillSecret = `mutation ($skill: String!, $key: String!, $value: String!) {
+  SetAgentSkillSecret(skill: $skill, key: $key, value: $value) { skill key set }
+}`
+
+	documentClearAgentSkillSecret = `mutation ($skill: String!, $key: String!) { ClearAgentSkillSecret(skill: $skill, key: $key) }`
+)
+
+// ListAgentSkillSecrets is what the installed skills ask this person for.
+func ListAgentSkillSecrets(ctx context.Context, connection *Client) ([]*AgentSkillSecret, error) {
+	var result struct {
+		ListAgentSkillSecrets []*AgentSkillSecret `json:"ListAgentSkillSecrets"`
+	}
+	if err := connection.Execute(ctx, documentAgentSkillSecrets, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentSkillSecrets, nil
+}
+
+// SetAgentSkillSecret keeps one of this person's values.
+func SetAgentSkillSecret(ctx context.Context, connection *Client, skill, key, value string) (*AgentSkillSecret, error) {
+	var result struct {
+		SetAgentSkillSecret *AgentSkillSecret `json:"SetAgentSkillSecret"`
+	}
+	if err := connection.Execute(ctx, documentSetAgentSkillSecret, map[string]any{"skill": skill, "key": key, "value": value}, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentSkillSecret, nil
+}
+
+// ClearAgentSkillSecret forgets one.
+func ClearAgentSkillSecret(ctx context.Context, connection *Client, skill, key string) error {
+	var result struct {
+		ClearAgentSkillSecret bool `json:"ClearAgentSkillSecret"`
+	}
+	return connection.Execute(ctx, documentClearAgentSkillSecret, map[string]any{"skill": skill, "key": key}, &result)
+}

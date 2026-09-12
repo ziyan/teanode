@@ -27,6 +27,11 @@ type AgentSkillQuery interface {
 	// whether what is installed is behind. Needs server:manage, because
 	// it reaches out of this server.
 	SearchAgentSkills(ctx context.Context, arguments SearchAgentSkillsArguments) ([]*AgentSkillOffer, error)
+
+	// The values the installed skills ask this person for, and whether
+	// they have filled each in. The values themselves never come back.
+	// Needs agent:use.
+	ListAgentSkillSecrets(ctx context.Context) ([]*AgentSkillSecretView, error)
 }
 
 // AgentSkillMutation installs and removes them.
@@ -42,6 +47,11 @@ type AgentSkillMutation interface {
 	// Offer a skill's tools, or stop offering them without taking it
 	// away. Needs server:manage.
 	SetAgentSkillEnabled(ctx context.Context, arguments SetAgentSkillEnabledArguments) (*AgentSkillView, error)
+
+	// Keep one of the caller's own values for a skill that asks them for
+	// it, sealed; or forget it. Needs agent:use.
+	SetAgentSkillSecret(ctx context.Context, arguments SetAgentSkillSecretArguments) (*AgentSkillSecretView, error)
+	ClearAgentSkillSecret(ctx context.Context, arguments ClearAgentSkillSecretArguments) (bool, error)
 }
 
 // AgentSkillView is an installed skill and what it declares.
@@ -312,4 +322,131 @@ func (self *graph) forgetSkills() {
 	if worker := self.agentWorker(); worker != nil {
 		worker.ForgetSkills()
 	}
+}
+
+// A person's own values for the secrets a skill declared as theirs. The
+// operator's live in the settings and are one per server; these are one
+// per person, sealed, and never come back out.
+
+// AgentSkillSecretView is one key a person is asked for.
+type AgentSkillSecretView struct {
+	Skill       string `json:"skill"`
+	Key         string `json:"key"`
+	Description string `json:"description"`
+
+	// Set says whether this person has filled it in. The value itself is
+	// never returned.
+	Set bool `json:"set"`
+}
+
+// SetAgentSkillSecretArguments carry one value.
+type SetAgentSkillSecretArguments struct {
+	Skill string `json:"skill"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ClearAgentSkillSecretArguments name one value to forget.
+type ClearAgentSkillSecretArguments struct {
+	Skill string `json:"skill"`
+	Key   string `json:"key"`
+}
+
+// ListAgentSkillSecrets is every value the installed skills ask this
+// person for, and whether they have filled it in.
+func (self *graph) ListAgentSkillSecrets(ctx context.Context) ([]*AgentSkillSecretView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var installed []*models.AgentSkill
+	var stored []*models.AgentSkillSecret
+	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		if installed, err = tx.ListAgentSkills(); err != nil {
+			return err
+		}
+		stored, err = tx.ListAgentSkillSecrets(found.ID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	for _, secret := range stored {
+		set[strings.ToLower(secret.Skill)+"\n"+secret.Key] = true
+	}
+	views := []*AgentSkillSecretView{}
+	for _, row := range installed {
+		if !row.Enabled {
+			continue
+		}
+		parsed, err := skills.Parse([]byte(row.Content))
+		if err != nil {
+			continue
+		}
+		for _, secret := range parsed.PersonalSecrets() {
+			views = append(views, &AgentSkillSecretView{
+				Skill: row.Name, Key: secret.Key, Description: secret.Description,
+				Set: set[strings.ToLower(row.Name)+"\n"+secret.Key],
+			})
+		}
+	}
+	return views, nil
+}
+
+// SetAgentSkillSecret keeps one of this person's values, sealed.
+func (self *graph) SetAgentSkillSecret(ctx context.Context, arguments SetAgentSkillSecretArguments) (*AgentSkillSecretView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(arguments.Key)
+	if key == "" || strings.TrimSpace(arguments.Value) == "" {
+		return nil, fmt.Errorf("%w: a key and a value are needed", api.ErrInvalidArguments)
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	// Only a key an installed skill actually asks this person for, so that
+	// the table cannot be used as somewhere to keep arbitrary secrets.
+	asked, err := self.ListAgentSkillSecrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var wanted *AgentSkillSecretView
+	for _, view := range asked {
+		if strings.EqualFold(view.Skill, arguments.Skill) && view.Key == key {
+			wanted = view
+		}
+	}
+	if wanted == nil {
+		return nil, fmt.Errorf("%w: no installed skill asks you for %s", api.ErrInvalidArguments, key)
+	}
+	sealed, err := worker.SealSecret(arguments.Value)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		return tx.PutAgentSkillSecret(&models.AgentSkillSecret{
+			AgentID: found.ID, Skill: wanted.Skill, Key: key, Value: sealed,
+		})
+	}); err != nil {
+		return nil, err
+	}
+	wanted.Set = true
+	return wanted, nil
+}
+
+// ClearAgentSkillSecret forgets one of this person's values.
+func (self *graph) ClearAgentSkillSecret(ctx context.Context, arguments ClearAgentSkillSecretArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		return tx.DeleteAgentSkillSecret(found.ID, arguments.Skill, arguments.Key)
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
