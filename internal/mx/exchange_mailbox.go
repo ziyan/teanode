@@ -128,7 +128,7 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	// can never be written to and — worse — makes "sender is known" true for
 	// exactly the mail that rule exists to tell apart from a stranger's.
 	if address, name := senderOf(mail); address != "" && mail.ListKey == "" && !noReplyAddress(address) {
-		if err := tx.TouchContact(mailbox.ID, address, name, mail.ReceivedAt); err != nil {
+		if err := tx.TouchLearnedContact(mailbox.ID, address, name, mail.ReceivedAt); err != nil {
 			return nil, err
 		}
 	}
