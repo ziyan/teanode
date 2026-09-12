@@ -5,6 +5,7 @@ import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
+import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
@@ -23,7 +24,7 @@ const BOOKS = `query { ListAddressBooks { id name description contacts } }`
 const CONTACTS = `
   query ($addressBookId: String!, $query: String, $first: Int) {
     ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
-      id uid name organization emails phones addresses { written }
+      id uid name organization emails phones hasPhoto addresses { written }
     }
   }`
 
@@ -36,7 +37,7 @@ const SAVE = `
 
 const GET = `query ($id: String!) {
   GetContact(id: $id) {
-    id name organization emails phones note
+    id name organization emails phones note hasPhoto
     addresses { street locality region postalCode country }
   }
 }`
@@ -62,6 +63,7 @@ type Contact = {
   emails: string[]
   phones: string[]
   addresses?: Address[]
+  hasPhoto?: boolean
 }
 
 // A form's worth of one contact. Addresses and numbers are edited as one box
@@ -87,6 +89,14 @@ type Draft = {
 const empty: Draft = {
   id: '', name: '', organization: '', emails: '', phones: '', note: '',
   street: '', locality: '', region: '', postalCode: '', country: '', addresses: [],
+}
+
+// Where a contact's picture is served from. It lives inside the card as
+// base64 -- a card with a photograph on it is several hundred kilobytes -- so
+// the listing says only whether there is one and the browser asks for it
+// separately, where it is cached against the card's own version.
+function photoAddress(id: string): string {
+  return `/api/v1/contacts/${encodeURIComponent(id)}/photo`
 }
 
 function lines(value: string): string[] {
@@ -191,8 +201,16 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
         filter: 'text',
         value: (contact) => contact.name ?? '',
         sort: (first, second) => (first.name ?? '').localeCompare(second.name ?? ''),
-        render: (contact) =>
-          contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>,
+        render: (contact) => (
+          <span className="sender-row">
+            <SenderLogo
+              name={contact.name || contact.emails?.[0] || ''}
+              src={contact.hasPhoto ? photoAddress(contact.id) : undefined}
+              size={24}
+            />
+            {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+          </span>
+        ),
       },
       {
         key: 'emails',

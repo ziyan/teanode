@@ -178,6 +178,28 @@ a fixed list of `GET, HEAD, POST, PUT, PATCH, OPTIONS, DELETE`, and anything
 else is refused before it reaches the origin. A deployment behind such a thing
 needs a name that reaches the server directly.
 
+## The picture on a card
+
+A phone puts a photograph on a contact and expects to see it again. It lives
+on the card, base64 inside the text, written one of two ways depending on the
+version the client speaks — `PHOTO;ENCODING=b;TYPE=JPEG:` on a version 3 card,
+which is what iOS sends, and a `data:` URL on a version 4 one. Both are read.
+A `PHOTO` naming a URL is not: that is somebody else's picture at somebody
+else's address, and this server does not fetch things on a card's say-so.
+
+It is served from an address of its own, `/api/v1/contacts/{id}/photo`, rather
+than carried inside the listing: a card with a photograph on it is several
+hundred kilobytes, and a page that drew a column of faces out of the listing
+would cost megabytes. The response is cached against the card's own ETag, so a
+browser that has one never asks for it twice, and the media type is this
+server's to decide rather than the card's — a media type tells a browser how
+to treat bytes, and that is not an instruction to take from a contact
+somebody synchronized.
+
+A picture is why the megabyte limit on a card matters in practice. One
+photograph from a phone is around three hundred kilobytes; two would be close
+to the limit, and a card over it is refused with `507`.
+
 ## Promoting a learned address
 
 The learned list marks the addresses that are already contacts and offers to
@@ -192,10 +214,10 @@ one list is what happened and the other is what somebody chose.
 
 ## Caveats
 
-A contact is capped at a megabyte, which is generous for text and may not be
-for a card carrying an inline photograph. A larger one is refused with `507`,
-which is the status that makes a client stop resending rather than retry for
-ever.
+A contact is capped at a megabyte, which is generous for text and is not
+generous for a card carrying photographs — see above. A larger one is refused
+with `507`, which is the status that makes a client stop resending rather than
+retry for ever.
 
 A deletion is a row delete with no tombstone. That is deliberate — it is what
 makes the listing mechanism above work without any extra machinery — but it

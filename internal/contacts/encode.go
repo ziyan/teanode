@@ -45,6 +45,18 @@ const (
 	needsQuoting = ";:,"
 )
 
+// uriValued are the properties whose value is a URI rather than text.
+//
+// A URI is not escaped: RFC 6350 says so, and it matters here because a
+// version 4 card writes a photograph as data:image/png;base64,... -- escaping
+// that semicolon gives every other client a backslash in the middle of the
+// data URL and a picture it cannot decode.
+var uriValued = map[string]bool{
+	vcard.FieldPhoto: true, vcard.FieldLogo: true, vcard.FieldSound: true,
+	vcard.FieldURL: true, "KEY": true, "FBURL": true, "CALADRURI": true,
+	"CALURI": true, "SOURCE": true, "MEMBER": true, "IMPP": true,
+}
+
 // structured are the properties whose value is several components separated
 // by semicolons. In those a semicolon is punctuation and must stay bare; in
 // every other property it is part of the text and has to be escaped.
@@ -130,9 +142,14 @@ func line(name string, field *vcard.Field) string {
 	}
 	built.WriteByte(':')
 	value := withoutControls(field.Value)
-	if structured[name] {
+	switch {
+	case uriValued[name]:
+		// Verbatim. A control character has already gone, and there is
+		// nothing else in a URI that needs saying differently.
+		built.WriteString(value)
+	case structured[name]:
 		built.WriteString(escapeStructured(value))
-	} else {
+	default:
 		built.WriteString(textEscaper.Replace(value))
 	}
 	return built.String()

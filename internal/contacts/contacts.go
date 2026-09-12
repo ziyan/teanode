@@ -11,6 +11,7 @@ package contacts
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -108,7 +109,7 @@ func Parse(card []byte) (*Parsed, error) {
 // gain a visible backslash, and another on every trip after that.
 func unescapeSemicolons(card vcard.Card) {
 	for name, fields := range card {
-		if structured[name] {
+		if structured[name] || uriValued[name] {
 			continue
 		}
 		for _, field := range fields {
@@ -269,4 +270,83 @@ func labelFor(card vcard.Card, field *vcard.Field) string {
 		}
 	}
 	return ""
+}
+
+// Photo is the picture a card carries, and the media type to serve it as.
+//
+// A phone puts a photograph on a contact and expects to see it again. It
+// lives on the card, base64 inside the text, written one of two ways
+// depending on the vCard version the client speaks:
+//
+//	PHOTO;ENCODING=b;TYPE=JPEG:<base64>          version 3, which iOS sends
+//	PHOTO:data:image/jpeg;base64,<base64>        version 4
+//
+// Both are read. Nothing else is: a PHOTO naming a URL is somebody else's
+// picture at somebody else's address, and this server does not go and fetch
+// things on a card's say-so.
+func Photo(card []byte) (picture []byte, mediaType string, err error) {
+	parsed, err := vcard.NewDecoder(bytes.NewReader(card)).Decode()
+	if err != nil {
+		return nil, "", fmt.Errorf("contacts: this is not a vCard this server can read: %w", err)
+	}
+	field := parsed.Get(vcard.FieldPhoto)
+	if field == nil || strings.TrimSpace(field.Value) == "" {
+		return nil, "", nil
+	}
+	value := strings.TrimSpace(field.Value)
+
+	// Version 4: the whole thing is a data URL.
+	if rest, found := strings.CutPrefix(value, "data:"); found {
+		head, encoded, ok := strings.Cut(rest, ",")
+		if !ok || !strings.Contains(head, "base64") {
+			return nil, "", nil
+		}
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			return nil, "", fmt.Errorf("contacts: the picture on this card cannot be read: %w", err)
+		}
+		return decoded, imageTypeOf(strings.TrimSuffix(head, ";base64")), nil
+	}
+
+	// Version 3: the value is the base64, and a parameter says what it is.
+	// Anything that is not base64 is a reference to a picture somewhere
+	// else, which is not ours to follow.
+	if encoding := strings.ToLower(field.Params.Get("ENCODING")); encoding != "b" && encoding != "base64" {
+		return nil, "", nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, "", fmt.Errorf("contacts: the picture on this card cannot be read: %w", err)
+	}
+	return decoded, imageTypeOf(field.Params.Get(vcard.ParamType)), nil
+}
+
+// HasPhoto says whether a card carries a picture, without decoding it.
+func HasPhoto(card []byte) bool {
+	parsed, err := vcard.NewDecoder(bytes.NewReader(card)).Decode()
+	if err != nil {
+		return false
+	}
+	field := parsed.Get(vcard.FieldPhoto)
+	return field != nil && strings.TrimSpace(field.Value) != ""
+}
+
+// imageTypeOf is what to serve a picture as.
+//
+// Only the handful of types a picture may actually be, and never whatever
+// the card said: a media type is an instruction to a browser about how to
+// treat bytes, and taking one from a contact somebody synchronized would let
+// them choose that instruction. Anything unrecognized is served as a JPEG,
+// which is what a camera produces and what every client sends.
+func imageTypeOf(said string) string {
+	switch strings.ToLower(strings.TrimSpace(strings.TrimPrefix(said, "image/"))) {
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "webp":
+		return "image/webp"
+	default:
+		return "image/jpeg"
+	}
 }

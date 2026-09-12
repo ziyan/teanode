@@ -22,6 +22,11 @@ Notable changes to TeaNode. The format follows
   another, and a device holding a stale copy cannot delete an edit it has
   never seen.
 
+  Photographs, postal addresses and everything else a phone puts on a
+  contact are kept and shown: the picture beside the name, the address in
+  the list and in the form. One photograph is about three hundred kilobytes
+  against a one megabyte limit per contact, so two is close to it.
+
   `teanode contact list|show|add|edit|remove` does the same from a terminal,
   and your agent can look somebody up or keep somebody for you -- forgetting a
   contact asks first, because it reaches your phone too and there is no undo.

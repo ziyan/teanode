@@ -1,6 +1,8 @@
 package contacts
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -448,6 +450,80 @@ func TestEditingKeepsAnAddressAndItsLabel(t *testing.T) {
 	for _, gone := range []string{"ADR;", ".ADR:", "Analytical Way"} {
 		if strings.Contains(string(cleared.Card), gone) {
 			t.Errorf("an emptied address leaves %q behind:\n%s", gone, cleared.Card)
+		}
+	}
+}
+
+// A photograph a phone put on a contact has to come back out of the card as a
+// picture, whichever way the client wrote it.
+func TestAPictureIsReadBackOutOfTheCard(t *testing.T) {
+	picture := []byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 'I', 'H', 'D', 'R',
+		0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89,
+	}
+	encoded := base64.StdEncoding.EncodeToString(picture)
+
+	// The way iOS writes one, on a version 3 card, and the way a version 4
+	// card writes one.
+	third := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nFN:Ada\r\n" +
+		"PHOTO;ENCODING=b;TYPE=PNG:" + encoded + "\r\nEND:VCARD\r\n"
+	fourth := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:Ada\r\n" +
+		"PHOTO:data:image/png;base64," + encoded + "\r\nEND:VCARD\r\n"
+
+	for name, body := range map[string]string{"version 3": third, "version 4": fourth} {
+		parsed, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: parse: %s", name, err)
+		}
+		if !HasPhoto(parsed.Card) {
+			t.Errorf("%s: the card has a picture", name)
+		}
+		got, mediaType, err := Photo(parsed.Card)
+		if err != nil {
+			t.Fatalf("%s: %s", name, err)
+		}
+		if !bytes.Equal(got, picture) {
+			t.Errorf("%s: the picture came back changed: %d bytes against %d", name, len(got), len(picture))
+		}
+		if mediaType != "image/png" {
+			t.Errorf("%s: served as %q", name, mediaType)
+		}
+	}
+
+	// A card with no picture says so rather than failing.
+	plain, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:Ada\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if HasPhoto(plain.Card) {
+		t.Error("a card with no picture has no picture")
+	}
+	if got, _, err := Photo(plain.Card); err != nil || got != nil {
+		t.Errorf("and asking for one gives nothing, not an error: %v %v", got, err)
+	}
+
+	// A picture somewhere else is not fetched: the card names an address,
+	// and this server does not go and get things on a card's say-so.
+	remote, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:Ada\r\n" +
+		"PHOTO;VALUE=uri:https://example.invalid/ada.jpg\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if got, _, err := Photo(remote.Card); err != nil || got != nil {
+		t.Errorf("a picture at an address is not fetched: %v %v", got, err)
+	}
+}
+
+// The media type is this server's to decide, not the card's: it tells a
+// browser how to treat the bytes it is about to be handed.
+func TestThePictureTypeIsNotTheCardsToChoose(t *testing.T) {
+	for said, want := range map[string]string{
+		"JPEG": "image/jpeg", "PNG": "image/png", "gif": "image/gif",
+		"image/webp": "image/webp", "text/html": "image/jpeg",
+		"image/svg+xml": "image/jpeg", "": "image/jpeg",
+	} {
+		if got := imageTypeOf(said); got != want {
+			t.Errorf("a card saying %q is served as %q, want %q", said, got, want)
 		}
 	}
 }

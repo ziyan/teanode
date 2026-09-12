@@ -74,6 +74,12 @@ type ContactView struct {
 	Addresses    []*AddressView `json:"addresses"`
 	Note         string         `json:"note,omitempty"`
 	Card         string         `json:"card,omitempty"`
+
+	// HasPhoto says whether the card carries a picture. The picture itself
+	// is served from its own address, because a card holding a photograph
+	// is several hundred kilobytes and a listing of them would be a page
+	// that cost megabytes to draw a column of faces.
+	HasPhoto bool `json:"hasPhoto"`
 }
 
 // AddressView is one postal address, in the components a card keeps it in.
@@ -441,6 +447,7 @@ func contactView(contact *models.Contact, withCard bool) *ContactView {
 	// address and no email address -- which is an ordinary thing to do --
 	// would otherwise see a row with nothing in it.
 	view.Addresses = []*AddressView{}
+	view.HasPhoto = contacts.HasPhoto([]byte(contact.Card))
 	if parsed, err := contacts.Parse([]byte(contact.Card)); err == nil {
 		view.Note = parsed.Note
 		for index := range parsed.Addresses {

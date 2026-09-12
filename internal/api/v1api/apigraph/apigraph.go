@@ -113,5 +113,8 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// And files for a conversation with the agent, the same way.
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
 	router.Path(api.PathAgentAttachment).Methods(http.MethodGet).HandlerFunc(self.agentAttachmentView)
+	// A contact's picture, which is inside its card and far too large to
+	// carry through a listing.
+	router.Path(api.PathContactPhoto).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.contactPhotoView)
 	return nil
 }
