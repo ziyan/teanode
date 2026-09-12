@@ -263,6 +263,9 @@ func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
 		settings.Antispam.BayesLearnedSpam = spam
 		settings.Antispam.BayesLearnedHam = ham
 	}
+	// What the installed skills declare, which is not in the built-in
+	// catalog and is what the tool policy is written against.
+	self.withSkillTools(ctx, settings.Agent)
 	return settings, nil
 }
 

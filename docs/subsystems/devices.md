@@ -89,6 +89,16 @@ read the page's local storage, and open, list, switch and close tabs. Tabs it
 opens sit in a group named after the server, on the person's screen, where they
 can see them.
 
+It can also speak the **DevTools protocol** to that tab. A page script can be
+told to click and type, but what it dispatches is not a real event and a site
+can tell; the protocol dispatches input the way the person's own mouse and
+keyboard do, and it is the only way to see what a page asks the network for.
+`cdp` sends a method — `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`,
+`Network.enable`, anything the protocol has — `cdp_events` reads back what the
+page has done since, and `cdp_stop` lets go. While it is attached Chrome shows
+its own bar saying so, which is the person's sign that it is happening; it is
+let go when the tab closes, when the socket does, or after ten quiet minutes.
+
 It is the person's own session, so the agent acts as them: it can fill in a
 password or a card number, because an assistant that cannot is not much of
 one. What stands between it and an act they cannot undo is the confirmation

@@ -4,6 +4,7 @@
   "version": "2.0.0",
   "description": "Your TeaNode agent on any page: talk to it, and attach the tab you are looking at so it can act there with your session while you watch.",
   "permissions": [
+    "debugger",
     "activeTab",
     "scripting",
     "storage",

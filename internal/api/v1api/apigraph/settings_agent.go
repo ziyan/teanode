@@ -754,6 +754,9 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 
 // toolCatalog is the full catalog as the settings show it, in registration
 // order, with the two risk classes that always ask marked as asking.
+// toolCatalog is every tool built into this release. The tools the
+// installed skills declare are added by withSkillTools, which needs the
+// worker and so cannot be done here.
 func toolCatalog() []*AgentToolView {
 	tools := agent.FullCatalog().All()
 	views := make([]*AgentToolView, 0, len(tools))
@@ -761,4 +764,22 @@ func toolCatalog() []*AgentToolView {
 		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward, Core: tool.Core})
 	}
 	return views
+}
+
+// withSkillTools adds what the installed skills declare to the catalog the
+// tool policy is written against. Without them an operator could install a
+// skill and then not find its tools in the policy they are subject to.
+func (self *graph) withSkillTools(ctx context.Context, settings *AgentSettings) {
+	worker := self.agentWorker()
+	if worker == nil || settings == nil || settings.Tools == nil {
+		return
+	}
+	for _, tool := range worker.SkillTools(ctx) {
+		settings.Tools.Catalog = append(settings.Tools.Catalog, &AgentToolView{
+			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
+			Description: tool.Description,
+			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
+			Core:        tool.Core,
+		})
+	}
 }

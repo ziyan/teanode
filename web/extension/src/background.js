@@ -14,15 +14,21 @@ let socket = null
 // actions go to.
 let attached = null // { tabId, ownTabId, title, url }
 // groups are the "TeaNode" tab groups the agent's tabs live in, by window.
+// Kept in the session's storage beside the opened tabs: the worker is
+// started and stopped freely, and a group remembered only in memory was
+// forgotten every time, so each tab was put in a group of its own or left
+// out of one entirely.
 const groups = new Map()
 // opened are the tabs the agent opened, by id: what it may switch to and
 // close. Kept in the session's storage, so that a worker started again
 // still knows them; a tab the person moved into the group is not one.
 const opened = new Set()
-chrome.storage.session.get('opened').then(({ opened: kept }) => {
+const restored = chrome.storage.session.get(['opened', 'groups']).then(({ opened: kept, groups: keptGroups }) => {
   for (const id of kept || []) opened.add(id)
+  for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
 })
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
+const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
 // A worker starts with nothing attached, whatever the badge said before.
 setBadge('')
 let pings = null
@@ -136,22 +142,43 @@ async function current() {
   return { tab: tab.id, url: attached.url, title: attached.title }
 }
 
-// groupFor is the TeaNode tab group of a window, made when there is none.
+// groupFor puts a tab in this window's TeaNode group, making the group
+// when there is none. Grouping is how the person sees at a glance which
+// tabs are the agent's, so it is worth doing -- but it is not worth
+// failing the whole call for: a tab that opened and was not grouped is
+// still the tab they asked for.
 async function groupFor(windowId, tabId) {
-  const known = groups.get(windowId)
-  if (known !== undefined) {
-    try {
-      await chrome.tabGroups.get(known)
-      await chrome.tabs.group({ tabIds: [tabId], groupId: known })
-      return known
-    } catch {
+  await restored
+  try {
+    const known = groups.get(windowId)
+    if (known !== undefined) {
+      // It may have been closed, or be in another window by now, in which
+      // case grouping into it would move the tab out of this one.
+      const existing = await chrome.tabGroups.get(known).catch(() => null)
+      if (existing && existing.windowId === windowId) {
+        await chrome.tabs.group({ tabIds: [tabId], groupId: known })
+        return known
+      }
       groups.delete(windowId)
     }
+    // A group this window already has, from a worker that has since been
+    // stopped: joined rather than a second one made beside it.
+    const mine = await chrome.tabGroups.query({ windowId, title: 'TeaNode' }).catch(() => [])
+    if (mine.length > 0) {
+      await chrome.tabs.group({ tabIds: [tabId], groupId: mine[0].id })
+      groups.set(windowId, mine[0].id)
+      await rememberGroups()
+      return mine[0].id
+    }
+    const groupId = await chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId } })
+    await chrome.tabGroups.update(groupId, { title: 'TeaNode', color: 'green' })
+    groups.set(windowId, groupId)
+    await rememberGroups()
+    return groupId
+  } catch (reason) {
+    console.warn('[TeaNode] could not group the tab:', reason)
+    return null
   }
-  const groupId = await chrome.tabs.group({ tabIds: [tabId] })
-  await chrome.tabGroups.update(groupId, { title: 'TeaNode', color: 'green' })
-  groups.set(windowId, groupId)
-  return groupId
 }
 
 // pickTab is the tab an action means: the number tabs gave, a piece of an
@@ -181,6 +208,57 @@ async function agentTabs() {
   }
   return listed
 }
+
+// The DevTools protocol, relayed. A page script can be told to click and
+// type, but what it dispatches is not a real event: a site can tell, and
+// some will not act on it. The protocol dispatches input the way the
+// person's own mouse and keyboard do, and it is the only way to watch what
+// a page asks the network for. It is the same protocol the headless
+// browser beside the server speaks; here it speaks to the person's own
+// tab, with their session.
+//
+// Attaching shows Chrome's own "is debugging this browser" bar, which is
+// the person's sign that it is happening. It is attached on first use and
+// let go when the tab goes, the socket closes, or nothing has used it for
+// a while.
+const debugging = new Map() // tabId -> { events: [], until }
+const DEBUGGER_PROTOCOL = '1.3'
+const EVENTS_KEPT = 500
+const DEBUGGER_IDLE = 10 * 60 * 1000
+
+async function debuggerFor(tabId) {
+  const known = debugging.get(tabId)
+  if (known) {
+    known.until = Date.now() + DEBUGGER_IDLE
+    return known
+  }
+  await chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL)
+  const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
+  debugging.set(tabId, state)
+  return state
+}
+
+async function letDebuggerGo(tabId) {
+  if (!debugging.delete(tabId)) return
+  await chrome.debugger.detach({ tabId }).catch(() => {})
+}
+
+function letEveryDebuggerGo() {
+  for (const tabId of [...debugging.keys()]) void letDebuggerGo(tabId)
+}
+
+// What a page did, kept until it is asked for. The newest are kept: a
+// page that makes a thousand requests should not push the worker over.
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  const state = source.tabId !== undefined && debugging.get(source.tabId)
+  if (!state) return
+  state.events.push({ at: Date.now(), method, params })
+  if (state.events.length > EVENTS_KEPT) state.events.splice(0, state.events.length - EVENTS_KEPT)
+})
+
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId !== undefined) debugging.delete(source.tabId)
+})
 
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
@@ -252,6 +330,27 @@ async function act(action, args) {
     if (action === 'screenshot') {
       const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
       return { ok: true, data: image }
+    }
+    if (action === 'cdp') {
+      if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
+      await debuggerFor(tab.id)
+      const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
+      return { ok: true, data: { result: answer === undefined ? null : answer } }
+    }
+    if (action === 'cdp_events') {
+      const state = debugging.get(tab.id)
+      if (!state) return { ok: false, error: 'nothing is being watched on this tab; send a cdp command such as Network.enable first' }
+      state.until = Date.now() + DEBUGGER_IDLE
+      const wanted = String(args.method || '').trim()
+      const kept = wanted ? state.events.filter((event) => event.method.startsWith(wanted)) : state.events
+      const most = Number(args.limit) > 0 ? Number(args.limit) : 100
+      const shown = kept.slice(-most)
+      if (args.forget) state.events = []
+      return { ok: true, data: { events: shown, kept: state.events.length } }
+    }
+    if (action === 'cdp_stop') {
+      await letDebuggerGo(tab.id)
+      return { ok: true, data: { stopped: true } }
     }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },

@@ -46,7 +46,12 @@ func init() {
 
 func define(name, label, description string) *tools.Tool {
 	return &tools.Tool{
-		Name: name, Family: tools.FamilyComputer, Risk: tools.RiskDestructive,
+		// A write, not a destruction: handing a piece of work to a coding
+		// agent is the ordinary use of this, and a card in front of every
+		// one of them is a card nobody reads. It reaches only a computer
+		// the person attached, while they are there -- and an operator, or
+		// the person, can put it behind a card by listing it in confirm.
+		Name: name, Family: tools.FamilyComputer, Risk: tools.RiskWrite,
 		Description: description,
 		Parameters: tools.Object(map[string]any{
 			"prompt":        tools.StringProperty("what to do, in as much detail as you would give a person"),
