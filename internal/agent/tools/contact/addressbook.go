@@ -35,7 +35,7 @@ func init() {
 					"phones":       tools.ArrayProperty("for save: their telephone numbers, replacing what is there", tools.StringProperty("a number")),
 					"note":         tools.StringProperty("for save: anything else worth keeping about them"),
 				}, "action"),
-				Guidance: "contact_book: saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead.",
+				Guidance: "contact_book: contact_search finds the addresses a mailbox has corresponded with; this keeps people. To promote one -- \"save that sender to my contacts\" -- search for them there and save them here with their name and address; there is no separate action for it, because a contact kept from a learned address is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead.",
 				Preview: func(arguments json.RawMessage) string {
 					var call contactBookArguments
 					if err := json.Unmarshal(arguments, &call); err != nil {

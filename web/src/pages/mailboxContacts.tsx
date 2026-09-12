@@ -7,12 +7,12 @@ import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { PencilIcon, TrashIcon } from '../components/icons'
+import { AddPersonIcon, KeptPersonIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { useMailboxes } from '../mailboxes'
-import { AddressBookSection } from './addressBook'
+import { AddressBookSection, KeptAddresses } from './addressBook'
 
 const CONTACTS = `
   query ($mailboxId: String!, $first: Int) {
@@ -73,6 +73,10 @@ export function MailboxContactsPage() {
   const [forgetting, setForgetting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // What the address book above holds, so a learned address can say whether
+  // it is already a contact and offer to become one.
+  const [kept, setKept] = useState<KeptAddresses | null>(null)
+  const [keeping, setKeeping] = useState('')
 
   // Whether it worked, so a dialog closes only on success.
   const run = async (action: () => Promise<unknown>): Promise<boolean> => {
@@ -139,9 +143,36 @@ export function MailboxContactsPage() {
       {
         key: 'actions',
         header: '',
-        width: '5rem',
+        width: '7rem',
         render: (contact) => (
           <div className="row-actions">
+            {kept?.has(contact.address) ? (
+              <Tooltip label={t('contacts.alreadyKept')}>
+                <span className="muted contacts-kept" aria-label={t('contacts.alreadyKept')}>
+                  <KeptPersonIcon size={16} />
+                </span>
+              </Tooltip>
+            ) : (
+              <Tooltip label={t('contacts.keep')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${contact.address}: ${t('contacts.keep')}`}
+                  disabled={busy || !kept?.ready || keeping === contact.address}
+                  onClick={() => {
+                    if (!kept) return
+                    setKeeping(contact.address)
+                    void kept
+                      .keep(contact.address, contact.name)
+                      .then(() => toast.done(t('contacts.saidKept', { name: contact.name || contact.address })))
+                      .catch((failure) => toast.failure(failure, t('addressBook.failed')))
+                      .finally(() => setKeeping(''))
+                  }}
+                >
+                  <AddPersonIcon size={16} />
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label={t('common.edit')}>
               <button
                 type="button"
@@ -172,7 +203,7 @@ export function MailboxContactsPage() {
         ),
       },
     ],
-    [t, busy],
+    [t, busy, kept, keeping, toast],
   )
 
   if (!mailboxes.loaded) {
@@ -185,7 +216,7 @@ export function MailboxContactsPage() {
 
   return (
     <>
-      <AddressBookSection />
+      <AddressBookSection onReady={setKept} />
 
       {/* A rule and a heading, so that the two lists are not read as one.
           settings-subform is the divider the settings pages already use for

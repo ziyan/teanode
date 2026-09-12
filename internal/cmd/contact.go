@@ -41,7 +41,7 @@ func NewContactCommand() *cli.Command {
 			},
 			{
 				Name:  "add",
-				Usage: "keep a contact",
+				Usage: "keep a contact; to promote one the mailbox has learned, give its address here",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call them"},

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
@@ -62,7 +62,15 @@ function lines(value: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-export function AddressBookSection() {
+// KeptAddresses is what the address book holds, for the learned list below to
+// mark the addresses that are already contacts.
+export interface KeptAddresses {
+  has: (address: string) => boolean
+  keep: (address: string, name?: string) => Promise<void>
+  ready: boolean
+}
+
+export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses) => void } = {}) {
   const { t, plural } = useTranslation()
   const toast = useToast()
   const books = useQuery(() => graphql<{ ListAddressBooks: AddressBook[] }>(BOOKS), [], { refresh: false })
@@ -203,6 +211,32 @@ export function AddressBookSection() {
 
   const rows = contacts.data?.ListContacts ?? []
   const editing = Boolean(draft?.id)
+
+  // Handed to the learned list below, so it can say which addresses are
+  // already kept and offer to keep the rest. Promoting one is an ordinary
+  // save: the address book has one way in, not two.
+  useEffect(() => {
+    if (!onReady) return
+    const held = new Set(
+      rows.flatMap((contact) => (contact.emails ?? []).map((address) => address.toLowerCase())),
+    )
+    onReady({
+      ready: Boolean(bookId) && !contacts.loading,
+      has: (address) => held.has(address.trim().toLowerCase()),
+      keep: async (address, name) => {
+        await graphql(SAVE, {
+          addressBookId: bookId,
+          id: null,
+          name: (name ?? '').trim() || address,
+          organization: null,
+          emails: [address],
+          phones: [],
+          note: null,
+        })
+        await Promise.all([contacts.reload(), books.reload()])
+      },
+    })
+  }, [rows, bookId, contacts.loading, onReady])
 
   return (
     <>

@@ -109,3 +109,54 @@ func TestEveryDomainPublishesItsOwnKey(t *testing.T) {
 		})
 	}
 }
+
+// The advisory that lets a phone find this server from a mail address alone.
+func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T) {
+	checker := &verifier{}
+	configuration := config.Default()
+	configuration.Server.Name = "mail.example.com"
+	configuration.Listen.HTTPS = ":10443"
+	domain := &models.Domain{Domain: "example.com"}
+
+	ours := []mailHost{{Name: "mx.example.com."}}
+	record := checker.checkContactsService(context.Background(), configuration, domain, ours)
+	if record == nil {
+		t.Fatal("a server with an HTTPS listener has a record to advise")
+	}
+	if record.Type != "SRV" || record.Name != "_carddavs._tcp.example.com" {
+		t.Fatalf("the record: %+v", record)
+	}
+	// This domain's own mail host, not the server's name: every row on a
+	// domain's page has to be something its reader can publish.
+	if record.Expected != "0 1 10443 mx.example.com" {
+		t.Fatalf("names this domain's own host and the port: %q", record.Expected)
+	}
+	if !record.Optional {
+		t.Error("nothing breaks without it, so it is optional")
+	}
+
+	// A domain whose mail is addressed to somebody else's name has nothing
+	// it could publish, so it is advised nothing.
+	theirs := []mailHost{{Name: "mail.someone-else.test."}}
+	if record := checker.checkContactsService(context.Background(), configuration, domain, theirs); record != nil {
+		t.Errorf("a host outside this domain is not this domain's to publish: %+v", record)
+	}
+
+	// With TLS ended somewhere in front there is no port this server can
+	// honestly name, so it advises nothing rather than a wrong number.
+	configuration.Listen.HTTPS = ""
+	if record := checker.checkContactsService(context.Background(), configuration, domain, ours); record != nil {
+		t.Errorf("with no HTTPS listener there is no honest port to advise: %+v", record)
+	}
+}
+
+func TestAListenAddressYieldsItsPort(t *testing.T) {
+	for address, want := range map[string]int{
+		":10443": 10443, "127.0.0.1:443": 443, "[::]:8443": 8443,
+		"": 0, "nonsense": 0, ":0": 0, ":70000": 0,
+	} {
+		if got := portOf(address); got != want {
+			t.Errorf("portOf(%q) = %d, want %d", address, got, want)
+		}
+	}
+}

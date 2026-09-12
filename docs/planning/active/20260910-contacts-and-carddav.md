@@ -78,23 +78,20 @@ app password, discovery, and read-only CardDAV.
         HTTP server, including that a collection is never redirected.
   - [x] (2026-09-12 16:20Z) Exercised end to end against a development
         server with curl, in both directions; evidence below.
-- [x] Milestone 4: discovery, CLI, documentation. (Completed: the
-      `.well-known` routes, `teanode contact`, a `contact_book` tool for the
-      agent, `docs/subsystems/contacts.md`, the command-line row, AGENTS.md
-      and project-structure.md, and the changelog. **Not done: the
-      `_carddavs._tcp` DNS advisory.** `internal/dns` has no notion of an SRV
-      record at all, so this is not adding a check but adding a record type,
-      a resolver path and the advice around it; and what the record should
-      point at is deployment-specific -- on the deployment this was built
-      against it would have to name the origin host and a non-standard port,
-      which is not something to guess at in an advisory an operator is meant
-      to act on. It is advisory, nothing breaks without it, and it is better
-      left than half-built.)
-- [ ] Milestone 5: the address book as an agent source. (Partly done ahead of
-      its milestone: the agent has a `contact_book` tool that lists, reads,
-      keeps and forgets. Remaining: "save to contacts" promoting a learned
-      address, and the learned addresses shown as suggestions beside the
-      book.)
+- [x] Milestone 4: discovery, CLI, documentation, the DNS advisory.
+      (`internal/dns` had no notion of an SRV record, so this took a resolver
+      for one as well as the check. The target was not a guess in the end:
+      the server knows its own name and the port its HTTPS listener binds, so
+      the record writes itself, and it is offered only when there is an HTTPS
+      listener -- with TLS ended by something in front there is no honest
+      port to name.)
+- [x] Milestone 5: the address book as something the agent knows, and
+      learned addresses promoted into it. (The agent has a `contact_book`
+      tool that lists, reads, keeps and forgets. The learned list marks the
+      addresses already kept and offers to keep the rest, and promoting one
+      is an ordinary save rather than an action of its own -- a contact kept
+      from a learned address is just a contact, and a second way in would be
+      a second thing to keep right.)
 
 Four rounds of review were run over the finished code, each on the previous
 round's fixes. Rounds one to three each found defects that lost or corrupted a

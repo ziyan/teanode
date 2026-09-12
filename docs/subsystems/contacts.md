@@ -162,11 +162,33 @@ redirects to the mount. `/.well-known/caldav` answers `404`: calendars are not
 served yet, and sending a calendar client to an address book would produce
 something stranger than "not here".
 
+A domain may also publish an SRV record at `_carddavs._tcp`, so that a phone
+finds the server from a mail address alone. The domain page advises one,
+naming the domain's **own** mail host and the port the HTTPS listener binds —
+its own host rather than the server's name, because every row on that page has
+to be a record its reader can go and create. A domain whose mail is addressed
+to a name somebody else owns is advised nothing, and neither is a deployment
+whose TLS is ended by something in front, because then there is no honest port
+to name. Nothing breaks without it: it saves a person typing the server and
+the port themselves.
+
 **CardDAV cannot be served through a CDN that does not forward `PROPFIND` and
 `REPORT`.** Amazon CloudFront, for one, cannot: its allowed-methods setting is
 a fixed list of `GET, HEAD, POST, PUT, PATCH, OPTIONS, DELETE`, and anything
 else is refused before it reaches the origin. A deployment behind such a thing
 needs a name that reaches the server directly.
+
+## Promoting a learned address
+
+The learned list marks the addresses that are already contacts and offers to
+keep the rest. Promoting one is an ordinary save — name and address into the
+address book — rather than an action of its own: a contact kept from a learned
+address is just a contact, and a second way in would be a second thing to keep
+right. The agent does it the same way, by searching the learned addresses with
+`contact_search` and saving with `contact_book`.
+
+Nothing is promoted automatically. The whole point of the distinction is that
+one list is what happened and the other is what somebody chose.
 
 ## Caveats
 
