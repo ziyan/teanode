@@ -51,9 +51,12 @@ history, and every example here is written the way it should be copied.
 - [x] (2026-09-12 22:30Z) Researched the libraries with a working spike before
       writing the plan; findings in `Surprises & Discoveries`.
 - [x] (2026-09-12 22:45Z) Wrote this plan in full from the outline.
-- [x] (2026-09-12) Milestone 1, in progress: migration 0051, the models, and
-      `internal/calendar` with 18 tests passing. Database layer next.
-- [ ] Milestone 2: the API and the calendar page.
+- [x] (2026-09-12) Milestone 1: migration 0051, the models, the database
+      layer, and `internal/calendar` -- parsing, folding, recurrence, the
+      builder and generated VTIMEZONEs. 34 tests in the package.
+- [x] (2026-09-12) Milestone 2: the API and the calendar page -- month, week
+      and agenda views, the event editor, and the strings in all three
+      catalogues. `make test` 1220 green, `make lint-ci` clean.
 - [ ] Milestone 3: CalDAV read and write on the stack plan B left.
 - [ ] Milestone 4: free-busy.
 - [ ] Milestone 5: invitations arriving as mail.

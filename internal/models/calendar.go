@@ -18,10 +18,10 @@ type Calendar struct {
 	Description string `json:"description,omitempty"`
 
 	// Colour is what a client paints this calendar's events, as "#rrggbb".
-	// TimeZone is the zone a new event is written in when nothing says
+	// Timezone is the zone a new event is written in when nothing says
 	// otherwise, as an IANA name such as "Europe/London".
 	Colour   string `json:"colour,omitempty"`
-	TimeZone string `json:"timeZone,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // CalendarObject is one iCalendar file: usually one event, sometimes an event

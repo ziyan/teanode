@@ -115,7 +115,7 @@ func TestARecurringEventKeepsItsHourWhenTheClocksChange(t *testing.T) {
 		Summary:    text("Weekly sync"),
 		StartsAt:   moment(2026, time.September, 14, 9, 0), // 10:00 in London, which is BST
 		EndsAt:     moment(2026, time.September, 14, 10, 0),
-		TimeZone:   "Europe/London",
+		Timezone:   "Europe/London",
 		Recurrence: text("FREQ=WEEKLY;BYDAY=MO;COUNT=12"),
 	})
 	written := string(Unfold(built.Data))
@@ -155,7 +155,7 @@ func TestTheWrittenZoneSaysWhatTheOffsetsAre(t *testing.T) {
 		Summary:    text("Weekly"),
 		StartsAt:   moment(2026, time.September, 14, 9, 0),
 		EndsAt:     moment(2026, time.September, 14, 10, 0),
-		TimeZone:   "Europe/London",
+		Timezone:   "Europe/London",
 		Recurrence: text("FREQ=WEEKLY;BYDAY=MO;COUNT=12"),
 	})
 	written := string(Unfold(built.Data))
@@ -178,7 +178,7 @@ func TestAZoneThatNeverChangesIsStillWritten(t *testing.T) {
 		Summary:  text("Morning call"),
 		StartsAt: moment(2026, time.September, 14, 1, 0), // 10:00 in Tokyo
 		EndsAt:   moment(2026, time.September, 14, 2, 0),
-		TimeZone: "Asia/Tokyo",
+		Timezone: "Asia/Tokyo",
 	})
 	written := string(Unfold(built.Data))
 	if !strings.Contains(written, "TZID:Asia/Tokyo") || !strings.Contains(written, "TZOFFSETTO:+0900") {
@@ -200,11 +200,11 @@ func TestChangingTheZoneDoesNotLeaveTheOldOneBehind(t *testing.T) {
 	}
 	first := mustBuild(t, nil, &Fields{
 		Summary: text("Call"), StartsAt: moment(2026, time.September, 14, 9, 0),
-		EndsAt: moment(2026, time.September, 14, 10, 0), TimeZone: "Europe/London",
+		EndsAt: moment(2026, time.September, 14, 10, 0), Timezone: "Europe/London",
 	})
 	moved := mustBuild(t, first.Data, &Fields{
 		StartsAt: moment(2026, time.September, 14, 9, 0),
-		EndsAt:   moment(2026, time.September, 14, 10, 0), TimeZone: "Asia/Tokyo",
+		EndsAt:   moment(2026, time.September, 14, 10, 0), Timezone: "Asia/Tokyo",
 	})
 	written := string(Unfold(moved.Data))
 	if strings.Contains(written, "TZID:Europe/London") {
@@ -222,7 +222,7 @@ func TestAnAllDayEventIsWrittenAsADate(t *testing.T) {
 		Summary:  text("Ada's birthday"),
 		StartsAt: moment(2026, time.December, 10, 0, 0),
 		AllDay:   flag(true),
-		TimeZone: "Asia/Tokyo",
+		Timezone: "Asia/Tokyo",
 	})
 	written := string(Unfold(built.Data))
 	if !strings.Contains(written, "DTSTART;VALUE=DATE:20261210") {
@@ -308,7 +308,7 @@ func TestWhatBuildingRefuses(t *testing.T) {
 	}
 	if _, err := Build(nil, &Fields{
 		Summary: text("Nowhere"), StartsAt: moment(2026, time.September, 14, 10, 0),
-		TimeZone: "Mars/Olympus_Mons",
+		Timezone: "Mars/Olympus_Mons",
 	}); err == nil {
 		t.Fatal("a zone this server does not know should be refused")
 	}
@@ -417,7 +417,7 @@ func TestAnEventThatRepeatsForEverIsWrittenQuickly(t *testing.T) {
 		Summary:    text("Every Monday, indefinitely"),
 		StartsAt:   moment(2026, time.September, 14, 9, 0),
 		EndsAt:     moment(2026, time.September, 14, 10, 0),
-		TimeZone:   "Europe/London",
+		Timezone:   "Europe/London",
 		Recurrence: text("FREQ=WEEKLY;BYDAY=MO"),
 	})
 	if taken := time.Since(started); taken > 5*time.Second {

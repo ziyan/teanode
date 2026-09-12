@@ -24,7 +24,7 @@ type calendarModel struct {
 	Name        string    `gorm:"column:name"`
 	Description string    `gorm:"column:description"`
 	Colour      string    `gorm:"column:colour"`
-	TimeZone    string    `gorm:"column:time_zone"`
+	Timezone    string    `gorm:"column:time_zone"`
 }
 
 func (calendarModel) TableName() string { return "calendar" }
@@ -33,7 +33,7 @@ func (self *calendarModel) toModel() *models.Calendar {
 	return &models.Calendar{
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
-		Colour: self.Colour, TimeZone: self.TimeZone,
+		Colour: self.Colour, Timezone: self.Timezone,
 	}
 }
 
@@ -135,7 +135,7 @@ func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Cale
 		// Not validated against the zone database here: a name this machine
 		// does not know is still what the person asked for, and refusing it
 		// would make a calendar undeliverable because of a missing package.
-		TimeZone: truncateRunes(strings.TrimSpace(calendar.TimeZone), 64),
+		Timezone: truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
 	}
 	if row.Name == "" {
 		row.Name = "Calendar"
@@ -165,7 +165,7 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 		ID: calendar.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(calendar.Name), 200), Description: calendar.Description,
 		Colour:   truncateRunes(strings.TrimSpace(calendar.Colour), 16),
-		TimeZone: truncateRunes(strings.TrimSpace(calendar.TimeZone), 64),
+		Timezone: truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
 	}
 	if row.Name == "" {
 		row.Name = before.Name
@@ -175,7 +175,7 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 			return tx.Model(&calendarModel{}).Where("\"id\" = ?", row.ID).
 				Updates(map[string]any{
 					"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description,
-					"colour": row.Colour, "time_zone": row.TimeZone,
+					"colour": row.Colour, "time_zone": row.Timezone,
 				}).Error
 		}); err != nil {
 		return nil, err

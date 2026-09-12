@@ -61,9 +61,17 @@ type Attendee struct {
 // right -- it is what a device is given back, and the fields exist only to
 // answer questions about it quickly.
 type Parsed struct {
-	UID      string
-	Summary  string
-	Location string
+	UID         string
+	Summary     string
+	Location    string
+	Description string
+
+	// Timezone is the IANA name the start is anchored to, when it is
+	// anchored to one; empty means the file wrote a plain moment.
+	// Recurrence is the repeat rule as its own text, without the property
+	// name, for a form that shows it.
+	Timezone   string
+	Recurrence string
 
 	// StartsAt and EndsAt are the first occurrence, in UTC. AllDay marks an
 	// event written as a date rather than a date and a time: a birthday
@@ -137,6 +145,10 @@ func Parse(data []byte) (*Parsed, error) {
 	}
 	parsed.Summary, _ = event.Props.Text(ical.PropSummary)
 	parsed.Location, _ = event.Props.Text(ical.PropLocation)
+	parsed.Description, _ = event.Props.Text(ical.PropDescription)
+	if rule := event.Props.Get(ical.PropRecurrenceRule); rule != nil {
+		parsed.Recurrence = strings.TrimSpace(rule.Value)
+	}
 	if status, err := event.Status(); err == nil {
 		parsed.Status = strings.ToUpper(string(status))
 	}
@@ -151,6 +163,7 @@ func Parse(data []byte) (*Parsed, error) {
 
 	if start := event.Props.Get(ical.PropDateTimeStart); start != nil {
 		parsed.AllDay = start.ValueType() == ical.ValueDate
+		parsed.Timezone = strings.TrimSpace(start.Params.Get(ical.ParamTimezoneID))
 	}
 	// Read in UTC. A property carrying its own TZID is resolved by the
 	// library from the VTIMEZONE beside it, and only one that carries

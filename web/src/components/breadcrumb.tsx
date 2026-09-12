@@ -58,6 +58,7 @@ const SECTION_PAGES: { path: string; label: Key }[] = [
   { path: '/mail/compose', label: 'nav.compose' },
   { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
   { path: '/mailbox/contacts', label: 'nav.contacts' },
+  { path: '/mailbox/calendar', label: 'nav.calendar' },
   { path: '/mailbox/compose', label: 'nav.compose' },
   // Missing, so this page fell back to the section it is in and called
   // itself Mailbox — in the trail, in the heading, and in the tab.

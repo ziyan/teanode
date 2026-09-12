@@ -31,10 +31,10 @@ type Fields struct {
 	EndsAt   *time.Time
 	AllDay   *bool
 
-	// TimeZone is the zone the times above are wall-clock times in, as an
+	// Timezone is the zone the times above are wall-clock times in, as an
 	// IANA name. It is what makes "every Monday at ten" stay at ten when
 	// the clocks change; empty writes the times in UTC.
-	TimeZone string
+	Timezone string
 
 	// Recurrence is the rule, as the text of an RRULE without the property
 	// name: "FREQ=WEEKLY;BYDAY=MO;COUNT=10". A pointer to an empty string
@@ -146,7 +146,7 @@ const productID = "-//TeaNode//Calendar//EN"
 // whether a VTIMEZONE goes beside it; and how far the recurrence reaches
 // decides how much of the zone that component has to describe.
 func setWhen(cal *ical.Calendar, event *ical.Event, fields *Fields) error {
-	if fields.StartsAt == nil && fields.EndsAt == nil && fields.AllDay == nil && fields.TimeZone == "" {
+	if fields.StartsAt == nil && fields.EndsAt == nil && fields.AllDay == nil && fields.Timezone == "" {
 		return nil
 	}
 	starts, err := event.DateTimeStart(time.UTC)
@@ -200,17 +200,17 @@ func setWhen(cal *ical.Calendar, event *ical.Event, fields *Fields) error {
 		return nil
 	}
 
-	if fields.TimeZone == "" {
+	if fields.Timezone == "" {
 		event.Props.SetDateTime(ical.PropDateTimeStart, starts.UTC())
 		event.Props.SetDateTime(ical.PropDateTimeEnd, ends.UTC())
 		return nil
 	}
-	loc, err := time.LoadLocation(fields.TimeZone)
+	loc, err := time.LoadLocation(fields.Timezone)
 	if err != nil {
-		return fmt.Errorf("calendar: this server does not know the time zone %q: %w", fields.TimeZone, err)
+		return fmt.Errorf("calendar: this server does not know the time zone %q: %w", fields.Timezone, err)
 	}
-	writeLocal(event, ical.PropDateTimeStart, starts.In(loc), fields.TimeZone)
-	writeLocal(event, ical.PropDateTimeEnd, ends.In(loc), fields.TimeZone)
+	writeLocal(event, ical.PropDateTimeStart, starts.In(loc), fields.Timezone)
+	writeLocal(event, ical.PropDateTimeEnd, ends.In(loc), fields.Timezone)
 
 	// The zone has to be described for as long as the event goes on. A
 	// recurrence with no end is described for a working lifetime, which is
