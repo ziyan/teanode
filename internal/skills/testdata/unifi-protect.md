@@ -4,6 +4,8 @@ description: UniFi Protect camera operations with built-in routing and shared au
 secrets:
   - key: UNIFI_PROTECT_TOKEN
     description: Bearer token for UniFi Protect API
+  - key: UNIFI_PROTECT_HOST
+    description: UniFi OS host, for example nvr.local. It is a secret rather than a parameter of the tool so that the bearer token above is only ever sent to the address the operator set.
 authenticationProfiles:
   protect:
     type: bearer
@@ -26,9 +28,6 @@ tools:
             - set_recording_mode
             - set_privacy_mode
           description: Protect operation to run
-        host:
-          type: string
-          description: UniFi OS host (e.g. nvr.local)
         cameraId:
           type: string
           description: Camera ID for camera-specific actions
@@ -42,13 +41,13 @@ tools:
         isDoorbell:
           type: boolean
           description: Filter list_cameras to doorbells (true) or non-doorbells (false)
-      required: ["action", "host"]
+      required: ["action"]
     actions:
       list_cameras:
         - name: list_cameras
           type: http
           method: GET
-          url: "https://{{host}}/proxy/protect/api/cameras"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras"
           auth: protect
           headers:
             Accept: application/json
@@ -57,7 +56,7 @@ tools:
         - name: get_camera
           type: http
           method: GET
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}"
           auth: protect
           headers:
             Accept: application/json
@@ -66,7 +65,7 @@ tools:
         - name: get_snapshot
           type: http
           method: GET
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}/snapshot"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}/snapshot"
           auth: protect
           headers:
             Accept: image/jpeg
@@ -74,7 +73,7 @@ tools:
         - name: set_status_light
           type: http
           method: PATCH
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}"
           auth: protect
           headers:
             Accept: application/json
@@ -85,7 +84,7 @@ tools:
         - name: set_recording_mode
           type: http
           method: PATCH
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}"
           auth: protect
           headers:
             Accept: application/json
@@ -97,7 +96,7 @@ tools:
           if: "enabled == true"
           type: http
           method: PATCH
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}"
           auth: protect
           headers:
             Accept: application/json
@@ -108,7 +107,7 @@ tools:
           if: "enabled == false"
           type: http
           method: PATCH
-          url: "https://{{host}}/proxy/protect/api/cameras/{{cameraId}}"
+          url: "https://{{secret:UNIFI_PROTECT_HOST}}/proxy/protect/api/cameras/{{cameraId}}"
           auth: protect
           headers:
             Accept: application/json
@@ -118,5 +117,8 @@ tools:
 ---
 
 Use protect_ops as a single entrypoint for UniFi Protect operations.
-Set `UNIFI_PROTECT_TOKEN` in TeaNode secrets settings and pass `host`.
+Set `UNIFI_PROTECT_TOKEN` and `UNIFI_PROTECT_HOST` in TeaNode's skill
+secrets. The host is a secret rather than a parameter of the tool on
+purpose: the bearer token is sent to it, so it must be the address the
+operator set and not one chosen when the tool is called.
 For camera-specific actions, call list_cameras first to obtain a valid camera ID.

@@ -10,31 +10,13 @@ import (
 // refused are the published skills this server will not install, and why.
 // They are kept as fixtures so that a change to what the registry
 // publishes shows up here rather than on somebody's server.
-var refused = map[string]string{
-	// It takes the address of the camera system as a parameter of the
-	// tool and sends the operator's bearer token there, so whoever calls
-	// it chooses where the credential goes.
-	"testdata/unifi-protect.md": "host chosen by whoever calls it",
-}
-
-// A published skill this server refuses is refused for the reason written
-// down, not by accident.
-func TestTheRefusedSkillsAreRefusedForTheirReason(t *testing.T) {
-	for file, because := range refused {
-		content, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("%s: %v", file, err)
-		}
-		_, err = Parse(content)
-		if err == nil {
-			t.Errorf("%s should be refused: %s", file, because)
-			continue
-		}
-		if !strings.Contains(err.Error(), because) {
-			t.Errorf("%s: want a refusal about %q, got %v", file, because, err)
-		}
-	}
-}
+// refused are published skills this server will not install, and why. It
+// is empty: the one that was here took the address of a camera system as a
+// parameter of the tool and sent the operator's token there, and the
+// registry has since taken the host from a secret instead. The shape is
+// kept because a fixture that starts failing is how the next one is
+// noticed; TestACredentialCannotBeSentToAChosenHost holds the rule itself.
+var refused = map[string]string{}
 
 // Every other skill the real registry publishes must parse, because an
 // entry that verifies and then cannot be read is a release that ships a
