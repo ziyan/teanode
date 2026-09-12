@@ -201,8 +201,11 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 	// disagreed, and the body was cut short by a byte. Serving what is
 	// stored is also the only way the promise the ETag makes can hold: the
 	// version a listing names is the bytes a fetch returns.
-	if (request.Method == http.MethodGet || request.Method == http.MethodHead) &&
-		len(segments) == 4 && strings.HasSuffix(segments[3], cardSuffix) {
+	// Any fetch of a contact, with the suffix or without it: the path
+	// resolver accepts a bare name, so requiring the suffix here left a
+	// way round to the library's encoder and to a body that did not match
+	// the length declared for it.
+	if (request.Method == http.MethodGet || request.Method == http.MethodHead) && len(segments) == 4 {
 		self.serveCard(response, request.WithContext(ctx), backing)
 		return
 	}

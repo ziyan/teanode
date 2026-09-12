@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/emersion/go-vcard"
-	"github.com/emersion/go-webdav/carddav"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -113,10 +112,9 @@ func (self *component) serveReport(writer http.ResponseWriter, request *http.Req
 		}
 
 	case asked.XMLName.Space == "urn:ietf:params:xml:ns:carddav" && asked.XMLName.Local == "addressbook-query":
-		// Every card in the book. A filter is not applied here: the
-		// library's own matching reads the parsed card, and answering with
-		// everything is allowed -- a client is expected to cope with more
-		// than it asked for -- where answering with a mangled card is not.
+		// The cards in the book that the filter matches. Reading them all
+		// and matching here costs a decode per card and saves sending the
+		// whole book to a client that asked for one person.
 		contacts, err := backing.storedCards(ctx, request.URL.Path)
 		if err != nil {
 			status, message := statusOf(err)
@@ -128,6 +126,15 @@ func (self *component) serveReport(writer http.ResponseWriter, request *http.Req
 			http.Error(writer, "that filter could not be read", http.StatusBadRequest)
 			return true
 		}
+		// Refused rather than answered emptily. A filter this server
+		// cannot carry out used to skip every contact, so a client whose
+		// query was slightly out of spec was told its address book was
+		// empty -- which a client enumerating with a query reads as
+		// everybody having been deleted.
+		if err := filter.check(); err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return true
+		}
 		for _, contact := range contacts {
 			matched, err := matchesQuery(&filter, contact)
 			if err != nil {
@@ -137,6 +144,13 @@ func (self *component) serveReport(writer http.ResponseWriter, request *http.Req
 				continue
 			}
 			answers = append(answers, found(signedIn, contact, wantsETag, wantsLength, wantsData))
+			// As many as the client said it would take. Truncating is
+			// kinder than the refusal the specification allows: a client
+			// asking for a bound wants an answer it can afford, not an
+			// error.
+			if filter.Limit != nil && len(answers) >= filter.Limit.NResults {
+				break
+			}
 		}
 
 	default:
@@ -209,39 +223,132 @@ func encodeHref(path string) string {
 // read: a filter of property filters, each with text matches.
 type queryFilter struct {
 	Filter struct {
-		Test        string `xml:"test,attr"`
-		PropFilters []struct {
-			Name         string    `xml:"name,attr"`
-			Test         string    `xml:"test,attr"`
-			IsNotDefined *struct{} `xml:"urn:ietf:params:xml:ns:carddav is-not-defined"`
-			TextMatches  []struct {
-				Text      string `xml:",chardata"`
-				Negate    string `xml:"negate-condition,attr"`
-				MatchType string `xml:"match-type,attr"`
-			} `xml:"urn:ietf:params:xml:ns:carddav text-match"`
-		} `xml:"urn:ietf:params:xml:ns:carddav prop-filter"`
+		Test        string       `xml:"test,attr"`
+		PropFilters []propFilter `xml:"urn:ietf:params:xml:ns:carddav prop-filter"`
 	} `xml:"urn:ietf:params:xml:ns:carddav filter"`
+
+	// Limit is how many a client is willing to be sent.
+	Limit *struct {
+		NResults int `xml:"urn:ietf:params:xml:ns:carddav nresults"`
+	} `xml:"urn:ietf:params:xml:ns:carddav limit"`
 }
 
-// asQuery is the filter in the form the library's matcher takes.
-func (self *queryFilter) asQuery() *carddav.AddressBookQuery {
-	query := &carddav.AddressBookQuery{FilterTest: carddav.FilterTest(self.Filter.Test)}
+// propFilter is one property's condition.
+type propFilter struct {
+	Name         string    `xml:"name,attr"`
+	Test         string    `xml:"test,attr"`
+	IsNotDefined *struct{} `xml:"urn:ietf:params:xml:ns:carddav is-not-defined"`
+	TextMatches  []struct {
+		Text      string `xml:",chardata"`
+		Negate    string `xml:"negate-condition,attr"`
+		MatchType string `xml:"match-type,attr"`
+		Collation string `xml:"collation,attr"`
+	} `xml:"urn:ietf:params:xml:ns:carddav text-match"`
+}
+
+// check refuses a filter this server cannot carry out, so that a client is
+// told its request was wrong rather than that its address book is empty.
+func (self *queryFilter) check() error {
+	switch self.Filter.Test {
+	case "", "anyof", "allof":
+	default:
+		return fmt.Errorf("a filter test of %q is not one this server knows", self.Filter.Test)
+	}
 	for _, filter := range self.Filter.PropFilters {
-		made := carddav.PropFilter{
-			Name:         filter.Name,
-			Test:         carddav.FilterTest(filter.Test),
-			IsNotDefined: filter.IsNotDefined != nil,
+		switch filter.Test {
+		case "", "anyof", "allof":
+		default:
+			return fmt.Errorf("a property filter test of %q is not one this server knows", filter.Test)
 		}
 		for _, match := range filter.TextMatches {
-			made.TextMatches = append(made.TextMatches, carddav.TextMatch{
-				Text:            strings.TrimSpace(match.Text),
-				NegateCondition: match.Negate == "yes",
-				MatchType:       carddav.MatchType(match.MatchType),
-			})
+			switch match.MatchType {
+			case "", "contains", "equals", "starts-with", "ends-with":
+			default:
+				return fmt.Errorf("a match type of %q is not one this server knows", match.MatchType)
+			}
+			// The default collation is case-insensitive and so is the
+			// only one offered; anything else has to be refused rather
+			// than quietly answered in the wrong one.
+			switch match.Collation {
+			case "", "default", "i;unicode-casemap", "i;ascii-casemap":
+			default:
+				return fmt.Errorf("a collation of %q is not one this server offers", match.Collation)
+			}
 		}
-		query.PropFilters = append(query.PropFilters, made)
 	}
-	return query
+	return nil
+}
+
+// matches says whether one card satisfies the filter.
+//
+// Matched here rather than by the library, whose matcher compares with
+// strings.Contains: the protocol's default collation is case-insensitive,
+// and a search for "hopper" that does not find Grace Hopper is not a search.
+// The dashboard's own search is case-insensitive too, and two doors into one
+// address book disagreeing about that would be worse than either answer.
+func (self *queryFilter) matches(card vcard.Card) bool {
+	if len(self.Filter.PropFilters) == 0 {
+		return true
+	}
+	all := self.Filter.Test == "allof"
+	for _, filter := range self.Filter.PropFilters {
+		held := card[strings.ToUpper(strings.TrimSpace(filter.Name))]
+		got := false
+		switch {
+		case filter.IsNotDefined != nil:
+			got = len(held) == 0
+		case len(filter.TextMatches) == 0:
+			got = len(held) > 0
+		default:
+			got = matchesText(filter, held)
+		}
+		if all && !got {
+			return false
+		}
+		if !all && got {
+			return true
+		}
+	}
+	return all
+}
+
+// matchesText is one property filter's text matches against the values a card
+// holds for it.
+func matchesText(filter propFilter, held []*vcard.Field) bool {
+	all := filter.Test == "allof"
+	for _, match := range filter.TextMatches {
+		wanted := strings.ToLower(match.Text)
+		found := false
+		for _, field := range held {
+			if field == nil {
+				continue
+			}
+			value := strings.ToLower(field.Value)
+			switch match.MatchType {
+			case "equals":
+				found = value == wanted
+			case "starts-with":
+				found = strings.HasPrefix(value, wanted)
+			case "ends-with":
+				found = strings.HasSuffix(value, wanted)
+			default:
+				found = strings.Contains(value, wanted)
+			}
+			if found {
+				break
+			}
+		}
+		if match.Negate == "yes" {
+			found = !found
+		}
+		if all && !found {
+			return false
+		}
+		if !all && found {
+			return true
+		}
+	}
+	return all
 }
 
 // matchesQuery says whether a stored card satisfies the filter.
@@ -252,6 +359,9 @@ func (self *queryFilter) asQuery() *carddav.AddressBookQuery {
 // it asked for -- but a client using the query as a directory search would
 // then show every contact as a match, and every search would carry the whole
 // address book across the network.
+//
+// A card that cannot be decoded matches, on the principle that a contact
+// nobody can read is better shown than silently withheld.
 func matchesQuery(filter *queryFilter, contact *models.Contact) (bool, error) {
 	if len(filter.Filter.PropFilters) == 0 {
 		// No filter at all: everything, which is what a client asking for
@@ -262,5 +372,5 @@ func matchesQuery(filter *queryFilter, contact *models.Contact) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	return carddav.Match(filter.asQuery(), &carddav.AddressObject{Card: card})
+	return filter.matches(card), nil
 }

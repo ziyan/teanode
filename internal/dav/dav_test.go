@@ -828,3 +828,118 @@ func TestTheAdvertisedLengthIsTheCardsLength(t *testing.T) {
 		t.Fatalf("advertised %s, the card is %d bytes", found[1], len(stored))
 	}
 }
+
+// Searching is case-insensitive, as the protocol's default collation says and
+// as the dashboard's own search is. Two doors into one address book must not
+// disagree about whether "hopper" finds Grace Hopper.
+func TestSearchingDoesNotCareAboutCase(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	_ = text(t, here.ask(t, http.MethodPut,
+		fmt.Sprintf("%s/%s/contacts/%s/grace.vcf", dav.Prefix, here.userID, here.bookID),
+		strings.Replace(aCard, "Ada Lovelace", "Grace Hopper", 1), "Content-Type", "text/vcard"))
+
+	for _, wanted := range []string{"Hopper", "hopper", "HOPPER", "grace"} {
+		query := fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/></d:prop>
+  <c:filter><c:prop-filter name="FN"><c:text-match>%s</c:text-match></c:prop-filter></c:filter>
+</c:addressbook-query>`, wanted)
+		body := text(t, here.ask(t, "REPORT",
+			fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), query, "Depth", "1"))
+		if !strings.Contains(body, "grace.vcf") {
+			t.Errorf("searching for %q found nothing:\n%s", wanted, body)
+		}
+	}
+	// And something that is not there is still not there.
+	missing := fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/></d:prop>
+  <c:filter><c:prop-filter name="FN"><c:text-match>%s</c:text-match></c:prop-filter></c:filter>
+</c:addressbook-query>`, "nobody at all")
+	body := text(t, here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), missing, "Depth", "1"))
+	if strings.Contains(body, "grace.vcf") {
+		t.Errorf("a search for nobody found somebody:\n%s", body)
+	}
+}
+
+// A filter this server cannot carry out is a bad request, not an empty
+// address book: a client enumerating with a query would read empty as
+// everybody having been deleted.
+func TestAFilterThisServerCannotCarryOutIsRefused(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	_ = text(t, here.ask(t, http.MethodPut,
+		fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID),
+		aCard, "Content-Type", "text/vcard"))
+
+	for _, bad := range []string{
+		`<c:prop-filter name="FN"><c:text-match match-type="fuzzy">Ada</c:text-match></c:prop-filter>`,
+		`<c:prop-filter name="FN" test="someof"><c:text-match>Ada</c:text-match></c:prop-filter>`,
+		`<c:prop-filter name="FN"><c:text-match collation="i;octet">Ada</c:text-match></c:prop-filter>`,
+	} {
+		query := fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/></d:prop><c:filter>%s</c:filter>
+</c:addressbook-query>`, bad)
+		answer := here.ask(t, "REPORT",
+			fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), query, "Depth", "1")
+		_ = text(t, answer)
+		if answer.StatusCode != http.StatusBadRequest {
+			t.Errorf("a filter this server cannot carry out: %d, wanted 400\n%s", answer.StatusCode, bad)
+		}
+	}
+}
+
+// A client that says how many it will take gets that many.
+func TestAQueryHonoursTheLimitAClientAsksFor(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	for _, name := range []string{"one", "two", "three"} {
+		card := strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:"+name, 1)
+		_ = text(t, here.ask(t, http.MethodPut,
+			fmt.Sprintf("%s/%s/contacts/%s/%s.vcf", dav.Prefix, here.userID, here.bookID, name),
+			card, "Content-Type", "text/vcard"))
+	}
+	query := `<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/></d:prop>
+  <c:filter><c:prop-filter name="FN"><c:text-match>Ada</c:text-match></c:prop-filter></c:filter>
+  <c:limit><c:nresults>2</c:nresults></c:limit>
+</c:addressbook-query>`
+	body := text(t, here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), query, "Depth", "1"))
+	if got := strings.Count(body, ".vcf"); got != 2 {
+		t.Fatalf("asked for two, got %d:\n%s", got, body)
+	}
+}
+
+// A fetch without the .vcf resolves to the same contact, and must be served
+// the same way: from storage, with a length that matches.
+func TestAFetchWithoutTheSuffixIsServedFromStorageToo(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	awkward := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada\r\n" +
+		"EMAIL;TYPE=\"work;main\":ada@example.com\r\nEND:VCARD\r\n"
+	_ = text(t, here.ask(t, http.MethodPut,
+		fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID),
+		awkward, "Content-Type", "text/vcard"))
+
+	got := here.ask(t, http.MethodGet,
+		fmt.Sprintf("%s/%s/contacts/%s/ada", dav.Prefix, here.userID, here.bookID), "")
+	card := text(t, got)
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("a fetch without the suffix: %d", got.StatusCode)
+	}
+	if declared := got.Header.Get("Content-Length"); declared != fmt.Sprint(len(card)) {
+		t.Fatalf("declared %s bytes and sent %d", declared, len(card))
+	}
+	if !strings.Contains(card, `TYPE="work;main"`) {
+		t.Fatalf("and served the stored bytes:\n%s", card)
+	}
+}
