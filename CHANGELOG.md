@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-12
+
 ### Fixed
 
 - A chart the agent draws with a subtitle no longer writes it through the
