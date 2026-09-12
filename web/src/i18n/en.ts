@@ -2137,7 +2137,7 @@ export const en = {
     'Everyone who has written to this mailbox, and anyone you add. They complete addresses when you write, and a rule can ask whether a sender is one of them.',
   'mailboxSettings.contactsFilter': 'Find by address or name',
   'mailboxSettings.noContacts': 'No contacts yet.',
-  'mailboxSettings.newContact': 'Add a contact',
+  'mailboxSettings.newContact': 'Add an address',
   'mailboxSettings.contactAddress': 'Address',
   'mailboxSettings.contactName': 'Name',
   'mailboxSettings.contactUnnamed': '(no name)',

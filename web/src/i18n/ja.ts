@@ -2133,7 +2133,7 @@ export const ja: Catalog = {
     'このメールボックスに送ってきた人と、あなたが追加した人。作成時にアドレスを補完し、ルールで「差出人が連絡先にある」かを判定できます。',
   'mailboxSettings.contactsFilter': 'アドレスや名前で探す',
   'mailboxSettings.noContacts': '連絡先はまだありません。',
-  'mailboxSettings.newContact': '連絡先を追加',
+  'mailboxSettings.newContact': 'アドレスを追加',
   'mailboxSettings.contactAddress': 'アドレス',
   'mailboxSettings.contactName': '名前',
   'mailboxSettings.contactUnnamed': '（名前なし）',

@@ -2066,7 +2066,7 @@ export const zh: Catalog = {
     '所有给此邮箱写过信的人，以及你添加的人。写信时用于补全地址，规则也可以判断发件人是否在联系人中。',
   'mailboxSettings.contactsFilter': '按地址或名称查找',
   'mailboxSettings.noContacts': '还没有联系人。',
-  'mailboxSettings.newContact': '添加联系人',
+  'mailboxSettings.newContact': '添加地址',
   'mailboxSettings.contactAddress': '地址',
   'mailboxSettings.contactName': '名称',
   'mailboxSettings.contactUnnamed': '（无名称）',

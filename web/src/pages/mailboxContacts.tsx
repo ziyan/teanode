@@ -191,7 +191,9 @@ export function MailboxContactsPage() {
           settings-subform is the divider the settings pages already use for
           exactly this: a related thing below a line. */}
       <div className="settings-subform">
-        <h4>{t('contacts.learned')}</h4>
+        {/* The same level as the address book above it: these are two lists
+            of the same standing, not one inside the other. */}
+        <h3>{t('contacts.learned')}</h3>
         <p className="muted">{t('mailboxSettings.contactsHint')}</p>
       </div>
       <div className="page-actions">

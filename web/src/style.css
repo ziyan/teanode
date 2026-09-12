@@ -6533,7 +6533,8 @@ a.button.agent-artifact-action {
   border-top: 1px solid var(--border);
 }
 
-.settings-subform h4 {
+.settings-subform h4,
+.settings-subform h3 {
   margin: 0 0 var(--space-1);
 }
 
