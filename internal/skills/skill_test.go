@@ -7,7 +7,36 @@ import (
 	"testing"
 )
 
-// Every skill the real registry publishes must parse, because a registry
+// refused are the published skills this server will not install, and why.
+// They are kept as fixtures so that a change to what the registry
+// publishes shows up here rather than on somebody's server.
+var refused = map[string]string{
+	// It takes the address of the camera system as a parameter of the
+	// tool and sends the operator's bearer token there, so whoever calls
+	// it chooses where the credential goes.
+	"testdata/unifi-protect.md": "host chosen by whoever calls it",
+}
+
+// A published skill this server refuses is refused for the reason written
+// down, not by accident.
+func TestTheRefusedSkillsAreRefusedForTheirReason(t *testing.T) {
+	for file, because := range refused {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		_, err = Parse(content)
+		if err == nil {
+			t.Errorf("%s should be refused: %s", file, because)
+			continue
+		}
+		if !strings.Contains(err.Error(), because) {
+			t.Errorf("%s: want a refusal about %q, got %v", file, because, err)
+		}
+	}
+}
+
+// Every other skill the real registry publishes must parse, because an
 // entry that verifies and then cannot be read is a release that ships a
 // broken install.
 func TestTheRealSkillsParse(t *testing.T) {
@@ -16,6 +45,9 @@ func TestTheRealSkillsParse(t *testing.T) {
 		t.Fatalf("no fixtures: %v", err)
 	}
 	for _, file := range files {
+		if _, no := refused[file]; no {
+			continue
+		}
 		content, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
@@ -58,24 +90,31 @@ func TestTheShapesEachSkillUses(t *testing.T) {
 		t.Fatalf("its steps select from what they fetched: %+v", weather.Tools[0].Steps[1])
 	}
 
-	content, _ = os.ReadFile("testdata/unifi-protect.md")
-	protect, err := Parse(content)
+	// Profiles, secrets and routing, on a skill shaped like the published
+	// one but with the camera system's address settled by a secret rather
+	// than by whoever calls it.
+	routed := "---\nname: cameras\ndescription: cameras\nsecrets:\n  - key: CAMERA_TOKEN\n  - key: CAMERA_HOST\n" +
+		"authenticationProfiles:\n  cameras: {type: bearer, token: \"{{secret:CAMERA_TOKEN}}\"}\n" +
+		"tools:\n  - name: camera_ops\n    description: ops\n    type: workflow\n    actionField: action\n" +
+		"    parameters: {type: object, properties: {action: {type: string}, cameraId: {type: string}}, required: [action]}\n" +
+		"    actions:\n" +
+		"      list: [{name: list, type: http, url: \"https://{{secret:CAMERA_HOST}}/api/cameras\", auth: cameras, result: json}]\n" +
+		"      get: [{name: get, type: http, url: \"https://{{secret:CAMERA_HOST}}/api/cameras/{{cameraId}}\", auth: cameras, result: json}]\n---\n"
+	cameras, err := Parse([]byte(routed))
 	if err != nil {
-		t.Fatalf("unifi-protect: %v", err)
+		t.Fatalf("cameras: %v", err)
 	}
-	if protect.Profiles["protect"] == nil || protect.Profiles["protect"].Type != "bearer" {
-		t.Fatalf("it shares one authentication: %+v", protect.Profiles)
+	if cameras.Profiles["cameras"] == nil || cameras.Profiles["cameras"].Type != "bearer" {
+		t.Fatalf("it shares one authentication: %+v", cameras.Profiles)
 	}
-	if len(protect.Secrets) != 1 || protect.Secrets[0].Key != "UNIFI_PROTECT_TOKEN" {
-		t.Fatalf("it declares the secret it needs: %+v", protect.Secrets)
+	if len(cameras.Secrets) != 2 {
+		t.Fatalf("it declares the secrets it needs: %+v", cameras.Secrets)
 	}
-	if protect.Tools[0].ActionField != "action" || len(protect.Tools[0].Actions) == 0 {
-		t.Fatalf("it routes one tool on a parameter: %+v", protect.Tools[0])
+	if cameras.Tools[0].ActionField != "action" || len(cameras.Tools[0].Actions) != 2 {
+		t.Fatalf("it routes one tool on a parameter: %+v", cameras.Tools[0])
 	}
 }
 
-// Each of these is a way a skill could fetch or run the wrong thing, and
-// each must be refused at parse rather than found out on first use.
 func TestWhatIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
 		"no header":                 "name: x\n",

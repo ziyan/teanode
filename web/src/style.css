@@ -4691,21 +4691,53 @@ label.check-list-item {
    squeezes the reader. On a phone it takes the screen. */
 /* The drawer as a page of its own, framed by the browser extension: it is
    the frame, so nothing floats and nothing is rounded. */
+/* The drawer as the whole of its own page, which is how the browser
+   extension's panel frames it. It fills the frame, whatever size the
+   person has dragged the panel to: stretched rather than centred, because
+   a centred drawer of its own fixed height left a band of empty page
+   under the composer. */
 .drawer-page {
   height: 100vh;
   height: 100dvh;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   background: var(--background);
 }
 .agent-drawer.standalone {
   position: static;
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
+  max-height: 100%;
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+/* A thin scrollbar inside the drawer. The default one is as wide as a
+   scrollbar on a page, and the drawer is a column of 440 pixels. */
+.agent-drawer {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.agent-drawer *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.agent-drawer *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-drawer *::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.agent-drawer *::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .agent-drawer {

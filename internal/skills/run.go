@@ -20,13 +20,22 @@ const (
 	stepSeconds    = 30
 	longestSeconds = 120
 	answerBytes    = 256 << 10
+
+	// mostBytes is the hard cap, however much a step asks for.
+	mostBytes = 4 << 20
 )
 
 // Shell runs a command somewhere. A skill's commands never run on this
 // server: the caller hands in the person's attached computer, and a nil
 // one means there is nowhere to run them and the step says so.
 type Shell interface {
+	// Run carries out a command line already quoted for this shell.
 	Run(ctx context.Context, command string, timeout time.Duration) (string, error)
+
+	// Windows says whether the command line will be given to cmd, which
+	// gives single quotes no meaning at all and would let a value out of
+	// its quoting.
+	Windows() bool
 }
 
 // Secrets are the values a skill declared and the operator filled in.
@@ -47,11 +56,16 @@ type Running struct {
 	Client *http.Client
 }
 
-func (self *Running) client() *http.Client {
+// client fetches for one step. safefetch's own client carries a ten
+// second timeout, which would silently override a step that asked for
+// longer, so the step's time is put on the client the guard built.
+func (self *Running) client(timeout time.Duration) *http.Client {
 	if self != nil && self.Client != nil {
 		return self.Client
 	}
-	return safefetch.Client()
+	guarded := safefetch.Client()
+	guarded.Timeout = timeout
+	return guarded
 }
 
 // Run carries out one of a skill's tools and answers what it produced.
@@ -145,26 +159,103 @@ func (self *run) one(ctx context.Context, step *Step) (map[string]any, error) {
 	return self.httpStep(ctx, step)
 }
 
-// skipped says whether a step's if says not to run it. An if is a single
-// reference that is read as a value: empty, false and zero are no.
+// skipped says whether a step's if says not to run it.
+//
+// An if is either one value -- read as true unless it is empty, false or
+// zero -- or two values compared with == or !=. Nothing else: no and, no
+// or, no arithmetic. A value that is not there is empty rather than an
+// error, because "only if the last step found one" is the whole point of
+// the field.
 func (self *run) skipped(step *Step) (bool, error) {
-	if strings.TrimSpace(step.If) == "" {
+	condition := strings.TrimSpace(step.If)
+	if condition == "" {
 		return false, nil
 	}
-	text, err := self.fill(step.If)
+	left, operator, right, err := ReadCondition(condition)
 	if err != nil {
 		return false, err
 	}
-	switch strings.TrimSpace(strings.ToLower(text)) {
-	case "", "false", "0", "null", "undefined":
-		return true, nil
+	if operator == "" {
+		return !truthy(self.operand(left)), nil
 	}
-	return false, nil
+	same := strings.EqualFold(strings.TrimSpace(self.operand(left)), strings.TrimSpace(self.operand(right)))
+	if operator == "!=" {
+		return same, nil
+	}
+	return !same, nil
+}
+
+// ReadCondition takes an if apart. The operator is empty when the whole of
+// it is one value.
+func ReadCondition(condition string) (left, operator, right string, err error) {
+	for _, candidate := range []string{"==", "!="} {
+		if before, after, found := strings.Cut(condition, candidate); found {
+			left, right = strings.TrimSpace(before), strings.TrimSpace(after)
+			if left == "" || right == "" {
+				return "", "", "", fmt.Errorf("%q compares nothing", condition)
+			}
+			if strings.ContainsAny(right, "=<>!&|") {
+				return "", "", "", fmt.Errorf("%q is more than one comparison, which an if cannot be", condition)
+			}
+			return left, candidate, right, nil
+		}
+	}
+	// One value and nothing else. Several words joined by something --
+	// "enabled and true" -- would otherwise be read as a word, which is
+	// not empty, which is yes: a condition that is always true and never
+	// looks it.
+	if strings.ContainsAny(condition, "<>&|") || strings.ContainsAny(strings.TrimSpace(condition), " \t") {
+		return "", "", "", fmt.Errorf("%q is not a condition an if understands: one value, or two compared with == or !=", condition)
+	}
+	return condition, "", "", nil
+}
+
+// operand is one side of a condition as text: a literal written in place,
+// or the value a name stands for. A name that stands for nothing is empty.
+func (self *run) operand(text string) string {
+	text = strings.TrimSpace(text)
+	if unquoted, err := strconv.Unquote(text); err == nil {
+		return unquoted
+	}
+	name := text
+	if strings.HasPrefix(name, "{{") && strings.HasSuffix(name, "}}") {
+		name = strings.Trim(name, "{}")
+	}
+	switch strings.ToLower(name) {
+	case "true", "false", "null", "undefined", "":
+		return strings.ToLower(name)
+	}
+	if value, ok := self.lookup(strings.TrimSpace(name)); ok {
+		return asText(value)
+	}
+	// Not a name this tool knows: a bare word written in the condition.
+	if reference.MatchString(text) || strings.HasPrefix(name, "steps.") || strings.HasPrefix(name, "secret:") {
+		return ""
+	}
+	if _, err := strconv.ParseFloat(name, 64); err == nil {
+		return name
+	}
+	return ""
+}
+
+// truthy is what counts as yes for a bare value.
+func truthy(value string) bool {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "", "false", "0", "null", "undefined":
+		return false
+	}
+	return true
 }
 
 func (self *run) shellStep(ctx context.Context, name string, command []string, seconds int) (map[string]any, error) {
 	if self.running.Shell == nil {
 		return nil, fmt.Errorf("this runs a command, which needs a computer of the person's attached; ask them to run `teanode computer start` on it")
+	}
+	if self.running.Shell.Windows() {
+		// cmd's quoting is not this quoting, and getting it wrong lets a
+		// value become another command. Until that is written and tested,
+		// a skill's commands do not run there.
+		return nil, fmt.Errorf("a skill's commands are not run on a Windows computer yet; the shell tool reaches it directly")
 	}
 	parts := make([]string, 0, len(command))
 	for _, part := range command {
@@ -202,7 +293,8 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 		}
 		body = strings.NewReader(written)
 	}
-	ctx, cancel := context.WithTimeout(ctx, secondsOf(step.Timeout))
+	allowed := secondsOf(step.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, allowed)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, method, target.String(), body)
 	if err != nil {
@@ -221,27 +313,44 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 	if err := self.authenticate(request, step.Auth); err != nil {
 		return nil, err
 	}
-	response, err := self.running.client().Do(request)
+	response, err := self.running.client(allowed).Do(request)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
+	// What the step asks for, up or down, within the hard cap: asking for
+	// more than the default and silently getting less cut a JSON answer
+	// in half and reported it as a service that does not answer with JSON.
 	most := int64(answerBytes)
-	if step.MaxBytes > 0 && int64(step.MaxBytes) < most {
+	if step.MaxBytes > 0 {
 		most = int64(step.MaxBytes)
+		if most > mostBytes {
+			most = mostBytes
+		}
 	}
-	answer, err := io.ReadAll(io.LimitReader(response.Body, most))
+	answer, err := io.ReadAll(io.LimitReader(response.Body, most+1))
 	if err != nil {
 		return nil, err
+	}
+	cutShort := int64(len(answer)) > most
+	if cutShort {
+		answer = answer[:most]
 	}
 	if response.StatusCode >= 400 {
 		return nil, fmt.Errorf("%s answered %d: %s", target.Host, response.StatusCode, cutTo(strings.TrimSpace(string(answer)), 300))
 	}
 	if step.Result != "json" {
-		return map[string]any{"text": cut(string(answer))}, nil
+		text := string(answer)
+		if cutShort {
+			text += "\n[cut here: the answer goes on]"
+		}
+		return map[string]any{"text": text}, nil
 	}
 	var parsed any
 	if err := json.Unmarshal(answer, &parsed); err != nil {
+		if cutShort {
+			return nil, fmt.Errorf("%s answered with more than the %d bytes this step reads, so what came back is not whole JSON; raise maxBytes on the step", target.Host, most)
+		}
 		return nil, fmt.Errorf("%s did not answer with JSON: %w", target.Host, err)
 	}
 	if len(step.Select) == 0 {
@@ -283,7 +392,7 @@ func (self *run) authenticate(request *http.Request, name string) error {
 		}
 		request.SetBasicAuth(username, password)
 	case "apiKey":
-		key, err := self.fill(profile.Key)
+		key, err := self.fill(profile.Credential())
 		if err != nil {
 			return err
 		}
@@ -492,7 +601,8 @@ func pick(value any, path string) (any, bool) {
 
 // Quote wraps a word for /bin/sh, which is what a computer runs a command
 // through. Single quotes take everything literally, and the one character
-// they cannot hold is closed, escaped and opened again.
+// they cannot hold is closed, escaped and opened again. This is not cmd's
+// quoting, which is why a Windows computer is refused above.
 func Quote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }

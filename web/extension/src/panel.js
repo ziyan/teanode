@@ -40,7 +40,7 @@
       .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); cursor: grab; user-select: none; touch-action: none; }
       .bar.dragging { cursor: grabbing; }
       .grip { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
-      .grip::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); opacity: 0.7; }
+      .grip::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); border-bottom-right-radius: 6px; opacity: 0.7; }
       .mark { width: 18px; height: 18px; display: block; flex: 0 0 auto; }
       .mark svg { display: block; width: 18px; height: 18px; }
       .name { font-weight: 600; flex: 1; }

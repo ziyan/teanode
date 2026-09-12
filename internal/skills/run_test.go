@@ -3,9 +3,11 @@ package skills
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,14 +15,17 @@ import (
 
 // fakeShell stands in for the person's attached computer.
 type fakeShell struct {
-	ran    []string
-	prints string
+	ran     []string
+	prints  string
+	windows bool
 }
 
 func (self *fakeShell) Run(ctx context.Context, command string, timeout time.Duration) (string, error) {
 	self.ran = append(self.ran, command)
 	return self.prints, nil
 }
+
+func (self *fakeShell) Windows() bool { return self.windows }
 
 // The weather skill is a workflow whose second step uses what the first
 // one found, which is the shape most skills are.
@@ -88,9 +93,17 @@ func TestAShellToolGoesToTheComputerQuoted(t *testing.T) {
 	if len(shell.ran) != 1 || !strings.HasPrefix(shell.ran[0], "'git' 'log' ") {
 		t.Fatalf("every word is quoted: %v", shell.ran)
 	}
-	if strings.Contains(shell.ran[0], "; rm -rf ~'") && !strings.Contains(shell.ran[0], `'\''`) {
-		t.Fatalf("the quote in the value is escaped: %v", shell.ran[0])
+	if want := `'git' 'log' '--grep=fix'\''; rm -rf ~'`; shell.ran[0] != want {
+		t.Fatalf("the command is quoted exactly:\n want %s\n  got %s", want, shell.ran[0])
 	}
+	// The quoting above is /bin/sh's. cmd gives single quotes no meaning,
+	// so a value carrying & would start another command there; until that
+	// is written, a Windows computer is refused rather than trusted.
+	windows := &fakeShell{windows: true}
+	if _, err := skill.Run(context.Background(), "git_log", map[string]any{"words": "x"}, &Running{Shell: windows}); err == nil || len(windows.ran) != 0 {
+		t.Fatalf("a Windows computer is refused, not run on: %v %v", err, windows.ran)
+	}
+
 	// With no computer attached there is nowhere to run it, and the skill
 	// says so rather than failing obscurely.
 	if _, err := skill.Run(context.Background(), "git_log", map[string]any{"words": "x"}, nil); err == nil || !strings.Contains(err.Error(), "teanode computer start") {
@@ -173,8 +186,9 @@ func TestWhatAServiceAnswersIsBoundedAndReported(t *testing.T) {
 func TestAPrivateAddressIsRefused(t *testing.T) {
 	body := "---\nname: x\ndescription: x\ntools:\n  - name: x_get\n    description: get\n    type: http\n    url: \"http://127.0.0.1:9/secret\"\n    result: json\n    parameters: {type: object, properties: {}}\n---\n"
 	skill, _ := Parse([]byte(body))
-	if _, err := skill.Run(context.Background(), "x_get", nil, nil); err == nil {
-		t.Fatal("a loopback address is refused")
+	_, err := skill.Run(context.Background(), "x_get", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "not a public address") {
+		t.Fatalf("the address guard should refuse it by name, got %v", err)
 	}
 }
 
@@ -196,10 +210,22 @@ func TestPickReadsAPath(t *testing.T) {
 	}
 }
 
-// Every skill the registry publishes is carried as far as its first
+// Every skill this server will install is carried as far as its first
 // request, which proves the file and the interpreter agree about it.
+// Nothing is fetched: each tool is asked for with no arguments and must
+// complain, and the client refuses to dial at all.
 func TestTheRealSkillsAreUnderstood(t *testing.T) {
-	for _, file := range []string{"testdata/weather.md", "testdata/git.md", "testdata/dictionary.md", "testdata/news.md", "testdata/unifi-protect.md"} {
+	files, err := filepath.Glob("testdata/*.md")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no fixtures: %v", err)
+	}
+	refusing := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("this test must not reach %s", request.URL.Host)
+	})}
+	for _, file := range files {
+		if _, no := refused[file]; no {
+			continue
+		}
 		content, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
@@ -209,57 +235,110 @@ func TestTheRealSkillsAreUnderstood(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 		for _, tool := range skill.Tools {
-			// Nothing is fetched: a tool asked for with none of its
-			// parameters must complain about a parameter or about there
-			// being no computer, never panic or hang.
-			_, err := skill.Run(context.Background(), tool.Name, nil, nil)
-			if err == nil {
-				continue
-			}
-			if strings.Contains(err.Error(), "panic") {
-				t.Errorf("%s %s: %v", file, tool.Name, err)
+			if _, err := skill.Run(context.Background(), tool.Name, nil, &Running{Client: refusing}); err == nil {
+				t.Errorf("%s %s: asked for with nothing, it should complain", file, tool.Name)
 			}
 		}
 	}
 }
 
-// A value goes into an address escaped, so a place with a space in it
-// reaches the service; an address that is one reference and nothing else
-// is a link an earlier step found and is passed on untouched.
-func TestValuesAreEscapedIntoAnAddress(t *testing.T) {
-	var asked []string
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (self roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return self(request)
+}
+
+// The condition on a step decides whether it runs. It used to be filled in
+// and then read as a word, so "enabled == true" was never false and both
+// branches of a routed skill ran, one undoing the other.
+func TestAConditionDecidesWhetherAStepRuns(t *testing.T) {
+	var ran []string
 	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		asked = append(asked, request.URL.String())
+		ran = append(ran, request.URL.Path)
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"next":"` + "PLACEHOLDER" + `","q":"` + request.URL.Query().Get("q") + `"}`))
+		_, _ = writer.Write([]byte(`{"ok":true}`))
 	}))
 	defer service.Close()
 
-	body := "---\nname: x\ndescription: x\ntools:\n  - name: x_get\n    description: get\n    type: http\n" +
-		"    url: \"" + service.URL + "/search?q={{words}}\"\n    result: json\n    select: {q: q}\n" +
-		"    parameters: {type: object, properties: {words: {type: string}}}\n---\n"
-	skill, _ := Parse([]byte(body))
-	answer, err := skill.Run(context.Background(), "x_get", map[string]any{"words": "Alpharetta, GA & more?"}, &Running{Client: service.Client()})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if answer["q"] != "Alpharetta, GA & more?" {
-		t.Fatalf("the value arrived whole: %v", answer)
-	}
-	if len(asked) != 1 || strings.Contains(asked[0], " ") {
-		t.Fatalf("no raw space in the address: %v", asked)
-	}
-
-	// One reference and nothing else: the value is the address.
-	whole := "---\nname: y\ndescription: y\ntools:\n  - name: y_get\n    description: get\n    type: workflow\n" +
-		"    parameters: {type: object, properties: {}}\n    steps:\n" +
-		"      - name: first\n        type: http\n        url: \"" + service.URL + "/a\"\n        result: json\n        select: {link: q}\n" +
-		"      - name: second\n        type: http\n        url: \"{{steps.first.link}}\"\n        result: json\n        select: {q: q}\n---\n"
-	skill, err = Parse([]byte(whole))
+	body := "---\nname: x\ndescription: x\ntools:\n  - name: x_set\n    description: set\n    type: workflow\n" +
+		"    parameters: {type: object, properties: {enabled: {type: boolean}}, required: [enabled]}\n    steps:\n" +
+		"      - name: turn_on\n        type: http\n        url: \"" + service.URL + "/on\"\n        if: \"enabled == true\"\n        result: json\n" +
+		"      - name: turn_off\n        type: http\n        url: \"" + service.URL + "/off\"\n        if: \"enabled == false\"\n        result: json\n---\n"
+	skill, err := Parse([]byte(body))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// The first step selects an empty q, so the second has nothing to
-	// fetch; what matters is that it was not escaped into nonsense.
-	_, _ = skill.Run(context.Background(), "y_get", nil, &Running{Client: service.Client()})
+	for _, want := range []struct {
+		enabled bool
+		path    string
+	}{{true, "/on"}, {false, "/off"}} {
+		ran = nil
+		if _, err := skill.Run(context.Background(), "x_set", map[string]any{"enabled": want.enabled}, &Running{Client: service.Client()}); err != nil {
+			t.Fatalf("enabled=%v: %v", want.enabled, err)
+		}
+		if len(ran) != 1 || ran[0] != want.path {
+			t.Fatalf("enabled=%v should run only %s, ran %v", want.enabled, want.path, ran)
+		}
+	}
+
+	// A condition this cannot carry out is refused when the skill is read,
+	// not found out when somebody calls it.
+	bad := strings.Replace(body, "enabled == true", "enabled and true", 1)
+	if _, err := Parse([]byte(bad)); err == nil {
+		t.Fatal("a condition it cannot work out must be refused")
+	}
+}
+
+// A condition naming something no step produced is not an error: "only if
+// the last step found one" is what the field is for.
+func TestAConditionOnSomethingMissingSkips(t *testing.T) {
+	var ran []string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		ran = append(ran, request.URL.Path)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{}`))
+	}))
+	defer service.Close()
+	body := "---\nname: x\ndescription: x\ntools:\n  - name: x_go\n    description: go\n    type: workflow\n" +
+		"    parameters: {type: object, properties: {}}\n    steps:\n" +
+		"      - name: first\n        type: http\n        url: \"" + service.URL + "/a\"\n        result: json\n        select: {found: nothing.here}\n" +
+		"      - name: second\n        type: http\n        url: \"" + service.URL + "/b\"\n        if: \"{{steps.first.found}}\"\n        result: json\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, err := skill.Run(context.Background(), "x_go", nil, &Running{Client: service.Client()}); err != nil {
+		t.Fatalf("a missing value skips rather than failing: %v", err)
+	}
+	if len(ran) != 1 || ran[0] != "/a" {
+		t.Fatalf("the second step should have been skipped: %v", ran)
+	}
+}
+
+// A schema that cannot be written as JSON would break every request from
+// every person on the server, so it is refused when the skill is read.
+func TestASchemaThatCannotBeSentIsRefused(t *testing.T) {
+	body := "---\nname: x\ndescription: x\ntools:\n  - name: x_go\n    description: go\n    type: http\n" +
+		"    url: \"https://example.com/a\"\n    parameters: {type: object, properties: {2024: {type: string}}}\n---\n"
+	if _, err := Parse([]byte(body)); err == nil || !strings.Contains(err.Error(), "cannot be sent to a model") {
+		t.Fatalf("want a refusal about sending it to a model, got %v", err)
+	}
+}
+
+// A credential goes where the skill says, never where the caller says.
+func TestACredentialCannotBeSentToAChosenHost(t *testing.T) {
+	chosen := "---\nname: x\ndescription: x\nsecrets:\n  - key: TOKEN\n" +
+		"authenticationProfiles:\n  it: {type: bearer, token: \"{{secret:TOKEN}}\"}\n" +
+		"tools:\n  - name: x_get\n    description: get\n    type: http\n    url: \"https://{{host}}/a\"\n    auth: it\n    result: json\n" +
+		"    parameters: {type: object, properties: {host: {type: string}}}\n---\n"
+	if _, err := Parse([]byte(chosen)); err == nil || !strings.Contains(err.Error(), "chosen by whoever calls it") {
+		t.Fatalf("a host from a parameter must be refused: %v", err)
+	}
+	// The same skill with the host from a secret is fine: that is the
+	// operator's to set, not the caller's to name.
+	settled := strings.ReplaceAll(chosen, "{{host}}", "{{secret:HOST}}")
+	settled = strings.Replace(settled, "  - key: TOKEN\n", "  - key: TOKEN\n  - key: HOST\n", 1)
+	if _, err := Parse([]byte(settled)); err != nil {
+		t.Fatalf("a host from a secret is fine: %v", err)
+	}
 }

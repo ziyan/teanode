@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // OfficialIndex is the registry this server knows, and publicKeyPEM the
@@ -80,11 +82,16 @@ func (self *Registry) address() string {
 	return OfficialIndex
 }
 
+// client fetches the index and the files. It is the guarded one the rest
+// of this server fetches through, so a registry that redirects into the
+// network this server sits in is refused rather than followed.
 func (self *Registry) client() *http.Client {
 	if self.Client != nil {
 		return self.Client
 	}
-	return &http.Client{Timeout: fetchTimeout}
+	guarded := safefetch.Client()
+	guarded.Timeout = fetchTimeout
+	return guarded
 }
 
 // key is the public half that checks a signature: the one given, or the

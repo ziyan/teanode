@@ -119,7 +119,10 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 		return view
 	}
 	view.Readable = true
-	if view.Description == "" {
+	// The file's own description, not the one the index carried: the
+	// signature covers the file through its hash, and covers the index's
+	// description not at all.
+	if parsed.Description != "" {
 		view.Description = parsed.Description
 	}
 	for _, declared := range parsed.Tools {
@@ -252,10 +255,17 @@ func (self *graph) RemoveAgentSkill(ctx context.Context, arguments AgentSkillArg
 	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
 		return false, err
 	}
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	var found *models.AgentSkill
+	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		if found, err = tx.GetAgentSkill(arguments.Name); err != nil || found == nil {
+			return err
+		}
 		return tx.DeleteAgentSkill(arguments.Name)
 	}); err != nil {
 		return false, err
+	}
+	if found == nil {
+		return false, api.ErrNotFound
 	}
 	self.forgetSkills()
 	return true, nil

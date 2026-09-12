@@ -547,10 +547,14 @@ func (self *AskRun) turn() error {
 			self.offered = append(self.offered, tool)
 		}
 	}
-	// The skills an operator installed, which everybody is offered.
+	// The skills an operator installed, which everybody is offered, and
+	// which are in the round from the start: somebody chose to install
+	// each of them, and a tool that has to be searched for is one the
+	// model answers around. There are a handful, not a catalog.
 	for _, tool := range self.agent.SkillTools(ctx) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
+			self.loaded[tool.Name] = true
 		}
 	}
 	// The browser tool goes when the operator switched the browser off,

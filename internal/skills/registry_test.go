@@ -41,7 +41,7 @@ func signedRegistry(t *testing.T, content string, damage func(*Entry)) (*Registr
 	indexServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write(index)
 	}))
-	registry := &Registry{Address: indexServer.URL, PublicKey: public}
+	registry := &Registry{Address: indexServer.URL, PublicKey: public, Client: server.Client()}
 	return registry, entry, func() { server.Close(); indexServer.Close() }
 }
 
@@ -119,7 +119,7 @@ func TestAFileThatIsNotWhatWasSignedForIsRefused(t *testing.T) {
 	sum := sha256.Sum256([]byte("what was promised"))
 	entry := &Entry{Name: "weather", Version: "1.0.0", URL: server.URL + "/skill.md", SHA256: hex.EncodeToString(sum[:])}
 	entry.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(private, []byte(signedMessage(entry))))
-	registry := &Registry{PublicKey: public}
+	registry := &Registry{PublicKey: public, Client: server.Client()}
 	if _, err := registry.Download(context.Background(), entry); err == nil || !strings.Contains(err.Error(), "hashes to") {
 		t.Fatalf("want a hash complaint naming both, got %v", err)
 	}

@@ -38,7 +38,21 @@ type Profile struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	Header   string `yaml:"header"`
-	Key      string `yaml:"key"`
+
+	// The credential for an apiKey profile. The registry's own skills
+	// write it as `value`; `key` is taken too, because the field used to
+	// be called that and a skill may still say it.
+	Key   string `yaml:"key"`
+	Value string `yaml:"value"`
+}
+
+// Credential is the apiKey profile's value, whichever name it was
+// written under.
+func (self *Profile) Credential() string {
+	if strings.TrimSpace(self.Value) != "" {
+		return self.Value
+	}
+	return self.Key
 }
 
 // Tool is one tool the skill declares, which becomes one tool of the
@@ -178,11 +192,22 @@ func (self *Skill) validate() error {
 	}
 	for name, profile := range self.Profiles {
 		switch profile.Type {
-		case "bearer", "basic", "apiKey":
+		case "bearer":
+			if strings.TrimSpace(profile.Token) == "" {
+				return fmt.Errorf("skills: the authentication %q of %s carries no token", name, self.Name)
+			}
+		case "basic":
+			if strings.TrimSpace(profile.Username) == "" {
+				return fmt.Errorf("skills: the authentication %q of %s carries no username", name, self.Name)
+			}
+		case "apiKey":
+			if strings.TrimSpace(profile.Credential()) == "" {
+				return fmt.Errorf("skills: the authentication %q of %s carries no value", name, self.Name)
+			}
 		default:
 			return fmt.Errorf("skills: the authentication %q of %s is %q, which is not bearer, basic or apiKey", name, self.Name, profile.Type)
 		}
-		for _, value := range []string{profile.Token, profile.Username, profile.Password, profile.Key} {
+		for _, value := range []string{profile.Token, profile.Username, profile.Password, profile.Key, profile.Value} {
 			if err := self.checkSecrets(value, known); err != nil {
 				return err
 			}
@@ -214,6 +239,14 @@ func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
 	}
 	if kind, _ := tool.Parameters["type"].(string); kind != "object" {
 		return fmt.Errorf("skills: the parameters of %s are not an object", where)
+	}
+	// The schema is sent to a model service as JSON. YAML allows a
+	// mapping key that is not a string, which JSON does not, and a schema
+	// carrying one would fail to encode -- taking down every request from
+	// every person on the server, not just this tool. It is refused here
+	// instead, where it costs one install.
+	if err := encodable(tool.Parameters); err != nil {
+		return fmt.Errorf("skills: the parameters of %s cannot be sent to a model: %w", where, err)
 	}
 	available := parameterNames(tool.Parameters)
 	switch tool.Type {
@@ -273,6 +306,9 @@ func (self *Skill) checkSteps(where string, steps []*Step, available map[string]
 }
 
 func (self *Skill) checkStep(where string, step *Step, available map[string]bool, earlier map[string]bool, secrets map[string]bool) error {
+	if err := self.checkCondition(where, step.If, available, earlier, secrets); err != nil {
+		return err
+	}
 	switch step.Type {
 	case KindShell:
 		if len(step.Command) == 0 {
@@ -283,10 +319,19 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 		if strings.TrimSpace(step.URL) == "" {
 			return fmt.Errorf("skills: the http step %s has no url", where)
 		}
-		if step.Auth != "" && self.Profiles[step.Auth] == nil {
-			return fmt.Errorf("skills: the step %s authenticates as %q, which the skill does not declare", where, step.Auth)
+		if step.Auth != "" {
+			if self.Profiles[step.Auth] == nil {
+				return fmt.Errorf("skills: the step %s authenticates as %q, which the skill does not declare", where, step.Auth)
+			}
+			// Where the credential is sent has to be settled by the skill,
+			// not by whoever calls the tool. With a name written into the
+			// host, a caller naming a host of their own would be handed
+			// the operator's secret.
+			if err := settledHost(step.URL); err != nil {
+				return fmt.Errorf("skills: the step %s sends a credential to %w", where, err)
+			}
 		}
-		values := []string{step.URL, step.Method, step.If}
+		values := []string{step.URL, step.Method}
 		for _, value := range step.Headers {
 			values = append(values, value)
 		}
@@ -305,6 +350,31 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 		return nil
 	}
 	return fmt.Errorf("skills: the step %s is a %q step, which is not http or shell", where, step.Type)
+}
+
+// checkCondition refuses an if this cannot carry out, and checks the names
+// in it. A name that stands for nothing at run time is empty rather than
+// an error, so the names are checked but not required here.
+func (self *Skill) checkCondition(where, condition string, available map[string]bool, earlier map[string]bool, secrets map[string]bool) error {
+	if strings.TrimSpace(condition) == "" {
+		return nil
+	}
+	left, operator, right, err := ReadCondition(condition)
+	if err != nil {
+		return fmt.Errorf("skills: the if of %s: %w", where, err)
+	}
+	sides := []string{left}
+	if operator != "" {
+		sides = append(sides, right)
+	}
+	for _, side := range sides {
+		for _, match := range reference.FindAllStringSubmatch(side, -1) {
+			if err := self.checkReference(where, strings.TrimSpace(match[1]), available, earlier, secrets); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (self *Skill) checkList(where string, values []string, available map[string]bool, earlier map[string]bool, secrets map[string]bool) error {
@@ -371,6 +441,65 @@ func (self *Skill) checkSecrets(value string, secrets map[string]bool) error {
 		key := strings.TrimSpace(strings.TrimPrefix(name, "secret:"))
 		if !secrets[key] {
 			return fmt.Errorf("skills: %s authenticates with the secret %q, which it does not declare", self.Name, key)
+		}
+	}
+	return nil
+}
+
+// settledHost refuses an address whose host is chosen by whoever calls the
+// tool. Everything after the host may be templated freely; the host itself
+// must be written into the skill or come from a secret, which is the
+// operator's to set. A host taken from a parameter would let a caller name
+// their own and be handed the operator's credential.
+func settledHost(address string) error {
+	address = strings.TrimSpace(address)
+	scheme, rest, found := strings.Cut(address, "://")
+	if !found {
+		rest, scheme = address, ""
+	}
+	if unsettled(scheme) {
+		return fmt.Errorf("an address it is given rather than one it knows")
+	}
+	authority := rest
+	if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+		authority = rest[:cut]
+	}
+	if unsettled(authority) {
+		return fmt.Errorf("a host chosen by whoever calls it, %q; write the host into the skill, or take it from a secret the operator sets", authority)
+	}
+	return nil
+}
+
+// unsettled says whether a piece of an address carries a reference that is
+// not a secret.
+func unsettled(piece string) bool {
+	for _, match := range reference.FindAllStringSubmatch(piece, -1) {
+		name, _ := SplitReference(strings.TrimSpace(match[1]))
+		if !strings.HasPrefix(name, "secret:") {
+			return true
+		}
+	}
+	return false
+}
+
+// encodable says whether a value read from YAML can be written as JSON.
+// A mapping with a key that is not a string is the one thing YAML takes
+// and JSON does not.
+func encodable(value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		for name, inner := range typed {
+			if err := encodable(inner); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+		}
+	case map[any]any:
+		return fmt.Errorf("a name in it is not written as text")
+	case []any:
+		for index, inner := range typed {
+			if err := encodable(inner); err != nil {
+				return fmt.Errorf("[%d]: %w", index, err)
+			}
 		}
 	}
 	return nil
