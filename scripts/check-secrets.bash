@@ -89,6 +89,15 @@ readonly ALLOWED_HOSTS=(
   # published on purpose, which is the opposite of a private reference.
   .teanode.com
 
+  # The services the published skills call. They are in the fixtures under
+  # internal/skills/testdata, which are the registry's own files kept
+  # verbatim so that a change to what it publishes shows up as a test
+  # failure. Rewriting them to example.com would defeat that.
+  .openstreetmap.org
+  .weather.gov
+  .dictionaryapi.dev
+  .newsapi.org
+
   # Where Chrome sends an extension's sign-in back to: a fixed name of the
   # browser's, under which every extension has an address.
   .chromiumapp.org
