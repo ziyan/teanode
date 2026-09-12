@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-12
+
 ### Added
 
 - Personal agents. An operator who configures a language model — OpenAI,
