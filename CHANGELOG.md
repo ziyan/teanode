@@ -6,6 +6,43 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A calendar, and your phone kept in step with it. The calendar page shows a
+  month, a week or an agenda, and an event is the iCalendar file itself rather
+  than a set of columns -- so an alarm, a conferencing link or a colour your
+  phone put on a meeting survives you correcting the title in a browser.
+
+  Your devices synchronize it over CalDAV, signing in the way a mail program
+  does: one of your addresses, and the app password you already made for that
+  device. The account password is never accepted, and it is HTTPS only. Two
+  devices editing the same event at once cannot silently overwrite one
+  another, and a device holding a stale copy cannot delete an edit it has
+  never seen.
+
+  An event anchored to a time zone keeps its hour when the clocks change, which
+  is what "every Monday at ten" means, and a birthday written as a date does
+  not move a day for somebody reading it from further west.
+
+- Invitations, in both directions, as mail. A message carrying an invitation
+  becomes an event in your calendar with Accept, Maybe and Decline above it;
+  pressing one marks your copy and tells whoever asked. Listing people under
+  "Invite" on an event you create sends each of them an invitation they can
+  answer, tells them when it moves, and tells them if you call it off.
+
+  An invitation is an instruction to write into your calendar, so some are
+  refused: one that did not prove where it came from, an older copy of an
+  event arriving late, a cancellation from somebody who is not the organizer,
+  and an answer from somebody who was never invited.
+
+- Free-busy: a calendar program asking when you are busy gets the times and
+  nothing else -- not what any of it is. Something marked transparent, declined
+  or cancelled does not make you busy, and neither does an all-day event,
+  because a birthday is something to know about rather than an appointment.
+
+- Your agent can read the calendar: what you have on, when you are free, and --
+  asking first -- putting something in.
+
 ## [0.20.1] - 2026-09-12
 
 ### Fixed

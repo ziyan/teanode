@@ -76,7 +76,10 @@ history, and every example here is written the way it should be copied.
       asked, a fresh one to everybody when the meeting really changes, and a
       cancellation when it is called off by whoever called it. 8 more tests in
       `internal/calendar`; 1263 green overall.
-- [ ] Milestone 7: the calendar as something the agent knows.
+- [x] (2026-09-12) Milestone 7: the calendar as something the agent knows --
+      `calendar_agenda`, `calendar_free` and `calendar_add`, the last a write
+      so the person is asked before anything goes in their diary. 9 tests;
+      1272 green overall.
 
 ## Surprises & Discoveries
 
@@ -252,8 +255,66 @@ rework, and because two of these findings invert what that plan learned.
 
 ## Outcomes & Retrospective
 
-To be written at the end of each milestone. Nothing to report yet: no code has
-been written.
+All seven milestones are done. `make test` is 1272 green, `make lint-ci` and
+`make lint` clean.
+
+**What the spike bought.** The one deliberate act at the start -- writing a
+throwaway program against both libraries before writing any of this -- decided
+three things that would each have been a rewrite to discover later: that the
+iCalendar encoder needed no replacing, that it needed folding, and that
+free-busy had no server side at all. Plan B learned its equivalent lesson by
+shipping four defects and fixing them over five review rounds. An afternoon
+against a week.
+
+**The thing the spike did not catch.** It ran against the library version it
+had asked for by name. The repository, left to itself, resolved a 2024 version
+that the WebDAV library pins -- and that version reads the exception dates
+where it means to read the added ones, so `RDATE` is silently dropped. It was
+found while writing `TestADateAddedByHandHappens`, which is the only test in
+the package that notices. The lesson is narrower than "pin your dependencies":
+a spike proves something about the version the spike ran, and the repository
+does not necessarily agree about which version that is.
+
+**Where the real difficulty was, and it was not the protocol.** CalDAV itself
+took one milestone and largely reused plan B's stack. The care went into three
+places that have nothing to do with HTTP:
+
+- *Recurrence.* Every way of getting it wrong shows somebody a meeting that is
+  not happening. An event does not occur on its own start date unless its rule
+  says that day; an occurrence lasts as long as the first one rather than
+  ending when it did; ten o'clock stays ten o'clock when the clocks change.
+- *Time zones.* Writing "every Monday at ten" as an offset from UTC makes it
+  nine o'clock for half the year. Describing the zone properly meant generating
+  a VTIMEZONE from this machine's own table, and that produced the one real
+  hang in this work: past the end of the table Go reports the bounds of the
+  last stretch as the moment asked about rather than as nothing, which reads as
+  "there is a change, and it is now". The loop never advanced, and the bound
+  never fired because it counted the observances it wrote and the step it was
+  stuck on wrote none. An event repeating with no end is the ordinary way to
+  reach that.
+- *Who to believe.* An invitation is an instruction to write into somebody's
+  calendar, and a cancellation an instruction to take something out. Each of
+  the four refusals in milestone 5 -- unproven sender, stale sequence,
+  cancellation from somebody who is not the organizer, answer from somebody
+  never invited -- is a way for a stranger with an address to change what
+  somebody believes about their own week.
+
+**What was harder than expected.** Free-busy, which the outline treated as a
+line item. Deciding what makes somebody busy is four separate judgements
+(transparent, declined, cancelled, all-day), and getting any of them wrong is
+worse than having no free-busy at all, because whoever is arranging the meeting
+will believe it.
+
+**What was easier.** Recurrence expansion and time-range matching both arrived
+inside a dependency this plan needed anyway. The outline had budgeted a
+milestone for vendoring and driving a recurrence library.
+
+**Two small things worth keeping.** The naming check earned its place: this
+work introduced `TimeZone` where the repository says `Timezone` sixty-seven
+times, and the same thing having two names is exactly what the convention
+exists to stop. And the authorization guard caught all six new resolvers at
+once -- it reads the source rather than trusting the author, which is why it
+works.
 
 ## Context and Orientation
 
