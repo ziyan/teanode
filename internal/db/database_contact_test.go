@@ -48,7 +48,7 @@ func TestAnAddressBookHoldsContactsAndTakesThemWithIt(t *testing.T) {
 		}
 		// The lists beside the card come back as lists, not as the one
 		// string they are stored as.
-		read, err := tx.GetContact(kept.ID)
+		read, err := tx.GetContact(book.ID, kept.ID)
 		if err != nil || read == nil {
 			t.Fatalf("GetContact: %v %v", read, err)
 		}
@@ -80,7 +80,7 @@ func TestAnAddressBookHoldsContactsAndTakesThemWithIt(t *testing.T) {
 		if err := tx.DeleteAddressBook(book.ID); err != nil {
 			t.Fatalf("DeleteAddressBook: %s", err)
 		}
-		gone, err := tx.GetContact(kept.ID)
+		gone, err := tx.GetContact(book.ID, kept.ID)
 		if err != nil || gone != nil {
 			t.Fatalf("the contacts went with the book: %v %v", gone, err)
 		}

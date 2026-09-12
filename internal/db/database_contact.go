@@ -36,8 +36,10 @@ func (self *addressBookModel) toModel() *models.AddressBook {
 }
 
 type contactModel struct {
+	// The identifier is the file name the client chose, so it is unique
+	// only within one address book, and the key is both columns together.
 	ID            string    `gorm:"column:id;primaryKey"`
-	AddressBookID string    `gorm:"column:addressbook_id"`
+	AddressBookID string    `gorm:"column:addressbook_id;primaryKey"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
 	ModifiedAt    time.Time `gorm:"column:modified_at"`
 	UID           string    `gorm:"column:uid"`
@@ -162,15 +164,31 @@ func (self *transaction) DeleteAddressBook(addressBookId string) error {
 		})
 }
 
+// contactsPerBook is how many contacts one address book may hold.
+//
+// There has to be a number, because the listing a client reads is the whole
+// book in one response and nothing else bounds it. It is enforced where a
+// contact is written, so a client is told plainly, rather than by cutting the
+// listing short, which would read to a phone as "those people were deleted".
+const contactsPerBook = 10000
+
 // ListContacts are one book's, by name. A query narrows by name, organization
 // or address, which is what a person typing into a search box means.
 func (self *transaction) ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error) {
-	if limit <= 0 || limit > 2000 {
-		limit = 2000
+	// A caller asking for everything gets everything. Quietly capping this
+	// would be worse than it sounds: a CardDAV client reads the listing of
+	// an address book as the whole truth and treats anything missing from
+	// it as deleted, so a cap would tell a phone to forget the contacts it
+	// could not see. How many a book may hold is decided where a contact is
+	// written, not here.
+	if limit <= 0 {
+		limit = contactsPerBook + 1
 	}
 	search := self.tx.Where("\"addressbook_id\" = ?", addressBookId)
 	if trimmed := strings.TrimSpace(query); trimmed != "" {
-		like := "%" + strings.ToLower(trimmed) + "%"
+		// Escaped, so that somebody searching for "50%" or "a_b" is looking
+		// for those characters rather than for LIKE's wildcards.
+		like := "%" + escapeLike(strings.ToLower(trimmed)) + "%"
 		search = search.Where(
 			"LOWER(\"name\") LIKE ? OR LOWER(\"organization\") LIKE ? OR LOWER(\"emails\") LIKE ? OR LOWER(\"phones\") LIKE ?",
 			like, like, like, like)
@@ -186,9 +204,10 @@ func (self *transaction) ListContacts(addressBookId, query string, limit int) ([
 	return contacts, nil
 }
 
-func (self *transaction) GetContact(contactId string) (*models.Contact, error) {
+func (self *transaction) GetContact(addressBookId, contactId string) (*models.Contact, error) {
 	var found []contactModel
-	if err := self.tx.Where("\"id\" = ?", contactId).Limit(1).Find(&found).Error; err != nil {
+	if err := self.tx.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+		Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {
@@ -229,13 +248,19 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 	row := &contactModel{
 		ID: strings.TrimSpace(contact.ID), AddressBookID: contact.AddressBookID,
 		CreatedAt: contact.CreatedAt, ModifiedAt: now,
-		UID: truncateRunes(strings.TrimSpace(contact.UID), 255), ETag: contact.ETag, Card: contact.Card,
+		UID: strings.TrimSpace(contact.UID), ETag: contact.ETag, Card: contact.Card,
 		Name:         truncateRunes(strings.TrimSpace(contact.Name), 255),
 		Organization: truncateRunes(strings.TrimSpace(contact.Organization), 255),
 		Emails:       strings.Join(contact.Emails, "\n"), Phones: strings.Join(contact.Phones, "\n"),
 	}
 	if row.ID == "" {
 		row.ID = newID()
+	}
+	if len(row.UID) > 255 {
+		// Not cut short: every later lookup uses the identifier the card
+		// actually carries, so a shortened one is a contact that can never
+		// be found again and a collision waiting to happen.
+		return nil, fmt.Errorf("db: a contact's identifier in the card is longer than 255 characters")
 	}
 	if len(row.ID) > 255 {
 		// The identifier is the file name a client chose. Cutting it short
@@ -251,8 +276,9 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 	return row.toModel(), nil
 }
 
-func (self *transaction) DeleteContact(contactId string) error {
-	return self.tx.Where("\"id\" = ?", contactId).Delete(&contactModel{}).Error
+func (self *transaction) DeleteContact(addressBookId, contactId string) error {
+	return self.tx.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+		Delete(&contactModel{}).Error
 }
 
 // CountContacts is how many a book holds, for a list that says so without
@@ -261,4 +287,11 @@ func (self *transaction) CountContacts(addressBookId string) (int64, error) {
 	var count int64
 	err := self.tx.Model(&contactModel{}).Where("\"addressbook_id\" = ?", addressBookId).Count(&count).Error
 	return count, err
+}
+
+// escapeLike makes a search term mean itself. Postgres reads % and _ inside
+// LIKE as wildcards, so a term carrying either would match more than the
+// person typing it asked for.
+func escapeLike(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(value)
 }

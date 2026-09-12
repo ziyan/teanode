@@ -18,7 +18,9 @@
 package dav
 
 import (
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/emersion/go-webdav"
@@ -27,6 +29,7 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/web"
@@ -57,6 +60,12 @@ const (
 	// so a person, their books and their cards are at one, two, three and
 	// four segments and nowhere else.
 	cardSuffix = ".vcf"
+
+	// maximumBody is the largest request this mount will read. A card is
+	// capped at contacts.MaximumCard; the rest is room for the XML around a
+	// multiget of many of them, which is the biggest legitimate body a
+	// client sends.
+	maximumBody = 8 * contacts.MaximumCard
 )
 
 type component struct {
@@ -84,11 +93,25 @@ func New(database db.Database, configuration config.Store, limiter *ratelimit.Re
 // arrives as a GET and is answered "method not allowed". Matching the prefix
 // and routing in Go means nothing under /dav can ever be redirected.
 func (self *component) AddRoutes(router *mux.Router) error {
+	// One route for the whole subtree, and the boundary checked in Go.
+	//
+	// Two routes would be the obvious way to say "/dav and everything
+	// under it", and it is wrong here: a route registered for the bare
+	// path makes StrictSlash redirect /dav/ to /dav, and a redirect is
+	// what turns a PROPFIND into a GET. So the prefix is matched loosely
+	// and anything that merely starts with those letters -- /dave, /davos
+	// -- is handed back to the rest of the router by serve.
 	router.PathPrefix(Prefix).HandlerFunc(self.serve)
 	// How a client finds any of this when somebody types only a mail
 	// address: RFC 6764 says to look here first.
 	router.Path("/.well-known/carddav").HandlerFunc(self.wellKnown)
-	router.Path("/.well-known/caldav").HandlerFunc(self.wellKnown)
+	// Calendars are not served yet. Answering plainly is better than
+	// sending a calendar client to an address book, where it would find a
+	// principal advertising nothing it can use and report something
+	// stranger than "not here".
+	router.Path("/.well-known/caldav").HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		http.Error(response, "this server does not serve calendars", http.StatusNotFound)
+	})
 	return nil
 }
 
@@ -101,6 +124,23 @@ func (self *component) wellKnown(response http.ResponseWriter, request *http.Req
 
 // serve is every request under the mount.
 func (self *component) serve(response http.ResponseWriter, request *http.Request) {
+	// /dave is not /dav. PathPrefix matches letters, not segments, so a
+	// path that merely begins the same way is not ours and must not be
+	// answered with a demand for a password.
+	if rest := strings.TrimPrefix(request.URL.Path, Prefix); rest != "" && !strings.HasPrefix(rest, "/") {
+		http.NotFound(response, request)
+		return
+	}
+
+	// Bounded before anything reads it. The protocol library decodes a
+	// whole card, and a whole XML document, into memory before any size is
+	// checked, so a refusal that comes from looking at the parsed result
+	// arrives far too late to stop somebody sending a gigabyte. Every
+	// other place this server takes a body does the same.
+	if request.Body != nil {
+		request.Body = http.MaxBytesReader(response, request.Body, maximumBody)
+	}
+
 	signedIn, ok := self.authenticate(response, request)
 	if !ok {
 		return
@@ -141,8 +181,33 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 		return
 	}
 
-	handler := &carddav.Handler{Backend: &backend{component: self, signedIn: signedIn}, Prefix: Prefix}
-	handler.ServeHTTP(response, request.WithContext(withSignedIn(request.Context(), signedIn)))
+	// A DELETE may carry If-Match, and clients send one: "remove this only
+	// if it is still the version I read". The CardDAV backend is handed a
+	// path and nothing else, so the condition would otherwise be dropped
+	// on the floor and a device would destroy an edit it never saw.
+	ctx := withSignedIn(request.Context(), signedIn)
+	if request.Method == http.MethodDelete {
+		ctx = withIfMatch(ctx, request.Header.Get("If-Match"))
+	}
+
+	backing := &backend{component: self, signedIn: signedIn}
+
+	// Fetching one contact is answered from here rather than by the
+	// protocol library, which serves a card by re-encoding the parsed form
+	// with its own encoder. That encoder writes a different number of
+	// bytes than this server stores -- it does not quote a parameter value
+	// that needs quoting -- so the length declared and the length sent
+	// disagreed, and the body was cut short by a byte. Serving what is
+	// stored is also the only way the promise the ETag makes can hold: the
+	// version a listing names is the bytes a fetch returns.
+	if (request.Method == http.MethodGet || request.Method == http.MethodHead) &&
+		len(segments) == 4 && strings.HasSuffix(segments[3], cardSuffix) {
+		self.serveCard(response, request.WithContext(ctx), backing)
+		return
+	}
+
+	handler := &carddav.Handler{Backend: backing, Prefix: Prefix}
+	handler.ServeHTTP(response, request.WithContext(ctx))
 }
 
 // servePrincipal answers for the person: who they are, and where their
@@ -171,4 +236,24 @@ func bookPath(userId, addressBookId string) string {
 
 func contactPath(userId, addressBookId, contactId string) string {
 	return bookPath(userId, addressBookId) + contactId + cardSuffix
+}
+
+// serveCard answers a fetch of one contact with exactly what is stored.
+func (self *component) serveCard(response http.ResponseWriter, request *http.Request, backing *backend) {
+	card, err := backing.storedCard(request.Context(), request.URL.Path)
+	if err != nil {
+		status, message := statusOf(err)
+		http.Error(response, message, status)
+		return
+	}
+	response.Header().Set("Content-Type", "text/vcard; charset=utf-8")
+	response.Header().Set("ETag", strconv.Quote(card.ETag))
+	response.Header().Set("Content-Length", strconv.Itoa(len(card.Card)))
+	response.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.WriteString(response, card.Card); err != nil {
+		log.Debugf("a contact could not be written to the client: %s", err)
+	}
 }

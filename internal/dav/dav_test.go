@@ -384,7 +384,9 @@ func TestAClientNamesTheFileAndThisServerTakesIt(t *testing.T) {
 		"ada",                                  // short, which some clients use
 		strings.Repeat("n", 255),               // the longest that fits
 	} {
-		card := strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:"+name, 1)
+		// A distinct identifier per card, short whatever the file name is:
+		// clients choose the two independently.
+		card := strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:"+name[:min(len(name), 30)], 1)
 		where := fmt.Sprintf("%s/%s/contacts/%s/%s.vcf", dav.Prefix, here.userID, here.bookID, name)
 		put := here.ask(t, http.MethodPut, where, card, "Content-Type", "text/vcard")
 		body := text(t, put)
@@ -410,5 +412,191 @@ func TestAClientNamesTheFileAndThisServerTakesIt(t *testing.T) {
 	_ = text(t, answer)
 	if answer.StatusCode != http.StatusBadRequest {
 		t.Errorf("a name of %d characters: %d, wanted 400", len(tooLong), answer.StatusCode)
+	}
+}
+
+// A card whose identifier belongs to a contact kept under another name is
+// refused, not silently landed on top of it.
+//
+// Merging them was the first attempt. The conditional headers had already
+// been judged against the path the client asked for, so a write saying "only
+// if this is new" passed -- the path was new -- and then replaced a different
+// contact wholesale, losing everything only that card had.
+func TestACardCannotTakeOverAnotherContact(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	first := fmt.Sprintf("%s/%s/contacts/%s/first.vcf", dav.Prefix, here.userID, here.bookID)
+	second := fmt.Sprintf("%s/%s/contacts/%s/second.vcf", dav.Prefix, here.userID, here.bookID)
+
+	rich := strings.Replace(aCard, "END:VCARD", "NOTE:everything the phone knew\r\nEND:VCARD", 1)
+	put := here.ask(t, http.MethodPut, first, rich, "Content-Type", "text/vcard")
+	_ = text(t, put)
+	if put.StatusCode >= 400 {
+		t.Fatalf("the first contact: %d", put.StatusCode)
+	}
+
+	// The same identifier, a different file name, and "only if it is new".
+	takeover := here.ask(t, http.MethodPut, second, aCard, "Content-Type", "text/vcard", "If-None-Match", "*")
+	_ = text(t, takeover)
+	if takeover.StatusCode != http.StatusConflict {
+		t.Fatalf("a card claiming another contact's identifier: %d, wanted 409", takeover.StatusCode)
+	}
+
+	// And the contact it tried to take over is untouched.
+	got := here.ask(t, http.MethodGet, first, "")
+	card := text(t, got)
+	if !strings.Contains(card, "everything the phone knew") {
+		t.Fatalf("the first contact kept what it had:\n%s", card)
+	}
+}
+
+// A device holding a stale copy must not be able to delete an edit it has
+// never seen. There is no tombstone, so a wrong delete cannot be undone.
+func TestADeleteCanBeConditional(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	put := here.ask(t, http.MethodPut, where, aCard, "Content-Type", "text/vcard")
+	_ = text(t, put)
+
+	stale := here.ask(t, http.MethodDelete, where, "", "If-Match", `"a-version-somebody-else-replaced"`)
+	_ = text(t, stale)
+	if stale.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("deleting a version somebody else has replaced: %d, wanted 412", stale.StatusCode)
+	}
+	if got := here.ask(t, http.MethodGet, where, ""); got.StatusCode != http.StatusOK {
+		t.Fatalf("and the contact is still there: %d", got.StatusCode)
+	} else {
+		_ = text(t, got)
+	}
+
+	// With the version it really has, it goes.
+	current := here.ask(t, http.MethodGet, where, "")
+	etag := current.Header.Get("ETag")
+	_ = text(t, current)
+	removed := here.ask(t, http.MethodDelete, where, "", "If-Match", etag)
+	_ = text(t, removed)
+	if removed.StatusCode >= 400 {
+		t.Fatalf("deleting the version it has: %d", removed.StatusCode)
+	}
+}
+
+// What a listing says a card's version is has to be what a fetch returns, and
+// the body has to be as long as the server said it would be.
+func TestWhatIsFetchedIsWhatWasPromised(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	// A card with a quoted parameter, which used to be re-encoded into
+	// something a byte longer than the length declared for it, so the body
+	// arrived with its last line cut off.
+	awkward := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada Lovelace\r\n" +
+		"EMAIL;TYPE=\"work;main\":ada@example.com\r\nEND:VCARD\r\n"
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	put := here.ask(t, http.MethodPut, where, awkward, "Content-Type", "text/vcard")
+	_ = text(t, put)
+
+	got := here.ask(t, http.MethodGet, where, "")
+	card := text(t, got)
+	if declared := got.Header.Get("Content-Length"); declared != fmt.Sprint(len(card)) {
+		t.Fatalf("declared %s bytes and sent %d", declared, len(card))
+	}
+	if !strings.HasSuffix(card, "END:VCARD\r\n") {
+		t.Fatalf("the card arrives whole:\n%q", card)
+	}
+	if !strings.Contains(card, `TYPE="work;main"`) {
+		t.Fatalf("with its parameter intact:\n%s", card)
+	}
+}
+
+// A request body is bounded before anything reads it, because the protocol
+// library parses a whole card into memory before any size is looked at.
+func TestAHugeBodyIsRefusedBeforeItIsRead(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	huge := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nNOTE:" + strings.Repeat("x", 32<<20) + "\r\nEND:VCARD\r\n"
+	answer := here.ask(t, http.MethodPut, where, huge, "Content-Type", "text/vcard")
+	_ = text(t, answer)
+	if answer.StatusCode < 400 {
+		t.Fatalf("a 32 megabyte card was accepted: %d", answer.StatusCode)
+	}
+}
+
+// Two people's clients may choose the same file name, and neither may learn
+// anything about the other from trying.
+func TestTwoPeopleMayUseTheSameName(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	// The stranger's own book, made directly; they have no app password in
+	// this world, so the check is that the name does not collide.
+	var strangerBook string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		book, err := tx.CreateAddressBook(&models.AddressBook{UserID: here.other, Name: "Contacts"})
+		if err != nil {
+			t.Fatalf("CreateAddressBook: %s", err)
+		}
+		strangerBook = book.ID
+		if _, err := tx.PutContact(&models.Contact{
+			AddressBookID: book.ID, ID: "contact1", UID: "urn:uuid:theirs",
+			ETag: "e", Card: aCard, Name: "Theirs",
+		}); err != nil {
+			t.Fatalf("PutContact: %s", err)
+		}
+	})
+
+	// The same file name, in this person's own book, must simply work.
+	where := fmt.Sprintf("%s/%s/contacts/%s/contact1.vcf", dav.Prefix, here.userID, here.bookID)
+	put := here.ask(t, http.MethodPut, where, aCard, "Content-Type", "text/vcard")
+	body := text(t, put)
+	if put.StatusCode >= 400 {
+		t.Fatalf("a name another account already uses: %d %s", put.StatusCode, body)
+	}
+
+	// And the stranger's contact is untouched.
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		theirs, err := tx.GetContact(strangerBook, "contact1")
+		if err != nil || theirs == nil || theirs.Name != "Theirs" {
+			t.Fatalf("the other account's contact is untouched: %v %v", theirs, err)
+		}
+	})
+}
+
+// A multiget names its own hrefs, which do not pass the check in the router.
+func TestAMultigetCannotReachAnotherAccount(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	var strangerBook string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		book, err := tx.CreateAddressBook(&models.AddressBook{UserID: here.other, Name: "Contacts"})
+		if err != nil {
+			t.Fatalf("CreateAddressBook: %s", err)
+		}
+		strangerBook = book.ID
+		if _, err := tx.PutContact(&models.Contact{
+			AddressBookID: book.ID, ID: "secret", UID: "urn:uuid:theirs",
+			ETag: "e", Card: aCard, Name: "Theirs",
+		}); err != nil {
+			t.Fatalf("PutContact: %s", err)
+		}
+	})
+
+	report := fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/><c:address-data/></d:prop>
+  <d:href>%s/%s/contacts/%s/secret.vcf</d:href>
+</c:addressbook-multiget>`, dav.Prefix, here.other, strangerBook)
+
+	answer := here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID),
+		report, "Depth", "1")
+	body := text(t, answer)
+	if strings.Contains(body, "Ada Lovelace") || strings.Contains(body, "BEGIN:VCARD") {
+		t.Fatalf("a multiget reached another account's card:\n%s", body)
 	}
 }

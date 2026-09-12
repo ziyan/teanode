@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
@@ -26,6 +25,20 @@ type session struct {
 }
 
 type signedInKey struct{}
+
+type ifMatchKey struct{}
+
+// withIfMatch carries a conditional header past the protocol library, which
+// hands a backend the path of the thing to delete and nothing else.
+func withIfMatch(ctx context.Context, value string) context.Context {
+	return context.WithValue(ctx, ifMatchKey{}, value)
+}
+
+// ifMatchFrom is the If-Match of the request being served, if it had one.
+func ifMatchFrom(ctx context.Context) string {
+	found, _ := ctx.Value(ifMatchKey{}).(string)
+	return found
+}
 
 func withSignedIn(ctx context.Context, signedIn *session) context.Context {
 	return context.WithValue(ctx, signedInKey{}, signedIn)
@@ -52,10 +65,20 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 
 	// A credential sent in the clear is a credential given away, and Basic
 	// authentication puts the password in a header on every single
-	// request. So this is refused rather than merely discouraged -- unless
-	// the request never left the machine, which is how a development
-	// server with no certificate is tried locally.
-	if !api.IsSecure(request, configuration.Server.TrustedProxies) && !isLoopback(request) {
+	// request, so plain HTTP is refused rather than merely discouraged.
+	//
+	// What counts as not-in-the-clear is deliberately wider here than the
+	// test used for the session cookie. That one reads X-Forwarded-Proto
+	// only from an address the operator listed as a proxy, because a
+	// forged header would otherwise let somebody mark a cookie Secure that
+	// should not be. Here the header is taken from anybody, because the
+	// only thing a forger gains is permission to send their own password
+	// over their own plaintext connection -- they harm nobody but
+	// themselves, and there is nothing to steal that they do not already
+	// have. Being strict instead had a cost paid immediately: a server
+	// behind a CDN that had never needed to list its proxies refused every
+	// request with a 403 that said nothing about why.
+	if !isOverTLS(request) {
 		http.Error(response, "contacts are served over HTTPS only", http.StatusForbidden)
 		return nil, false
 	}
@@ -66,14 +89,19 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		return nil, false
 	}
 
-	// The same buckets every other way of presenting a credential counts
-	// against, so that a client retrying in a loop cannot be used to grind
-	// app passwords faster than a mail program could.
-	if self.limiter != nil && !self.limiter.Allow(strings.ToLower(strings.TrimSpace(username))) {
-		response.Header().Set("Retry-After", "60")
-		http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)
-		return nil, false
-	}
+	// The limiter is keyed by where the request came from, as it is
+	// everywhere else this credential is presented, and it is asked only
+	// when a sign-in has actually failed.
+	//
+	// Keying it by the username instead was wrong twice over. A caller
+	// choosing the key can spend everybody's budget: naming a different
+	// address each time buys an unlimited number of password hashes from
+	// one machine, and filling the registry with invented names pushes out
+	// the buckets that the submission listener and IMAP share, turning the
+	// server-wide limit off for an hour. And counting every request rather
+	// than every failure would have throttled the ordinary case, since one
+	// phone synchronizing its contacts makes a request per card.
+	from := api.RemoteAddress(request, configuration.Server.TrustedProxies)
 
 	var signedIn *session
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
@@ -81,15 +109,23 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		if err != nil {
 			return err
 		}
+		// AuthenticateAppPasswordWithID has already recorded that this app
+		// password was used, which is what the app-password page shows; a
+		// second write here would be one per request for nothing.
 		signedIn = &session{userID: mailbox.UserID, mailbox: mailbox, appPasswordID: appPassword.ID}
-		// So that the app-password page can say when a device last used
-		// it, which is how somebody decides which one to revoke.
-		return tx.TouchAppPassword(appPassword.ID, time.Now())
+		return nil
 	}); err != nil {
 		if errors.Is(err, access.ErrInvalidAppPassword) {
 			// Every way of being wrong is one answer, and the function
 			// above spends a password hash even when refusing, so that a
-			// guess learns nothing from how long it took.
+			// guess learns nothing from how long it took. A failure is
+			// also what the limiter counts, so that guessing gets slower
+			// while ordinary use never does.
+			if self.limiter != nil && !self.limiter.Allow(from) {
+				response.Header().Set("Retry-After", "60")
+				http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)
+				return nil, false
+			}
 			self.askForCredentials(response)
 			return nil, false
 		}
@@ -124,6 +160,19 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 func (self *component) askForCredentials(response http.ResponseWriter) {
 	response.Header().Set("WWW-Authenticate", realm)
 	http.Error(response, "sign in with a mail address and an app password", http.StatusUnauthorized)
+}
+
+// isOverTLS says whether the password in this request's header reached the
+// server encrypted: over TLS here, over TLS to something in front that said
+// so, or over no network at all.
+func isOverTLS(request *http.Request) bool {
+	if request.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(request.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return isLoopback(request)
 }
 
 // isLoopback says whether the request came from this machine. A password in

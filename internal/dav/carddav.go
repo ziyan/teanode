@@ -2,6 +2,7 @@ package dav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -19,6 +20,68 @@ import (
 // maximumContactName is how long the last segment of a contact's URL may
 // be, which is the width of the column it becomes.
 const maximumContactName = 255
+
+// contactsPerBook is how many contacts one address book may hold, the same
+// number the storage layer uses. A client is refused at the point of writing
+// the one that would not fit.
+const contactsPerBook = 10000
+
+// answer is an error that already knows what to tell the client.
+//
+// The protocol library has a type for this, but it lives in a package that
+// cannot be imported from here, so an error made with webdav.NewHTTPError can
+// be given to the library and never read back. This one can be both: the
+// library gets it through davError, and the handler that serves a card
+// without the library reads the status straight off it.
+type answer struct {
+	status int
+	says   string
+}
+
+func (self *answer) Error() string { return self.says }
+
+// refuse is an answer for the client, with the status to send.
+func refuse(status int, says string, arguments ...any) *answer {
+	return &answer{status: status, says: fmt.Sprintf(says, arguments...)}
+}
+
+// davError is an answer as the protocol library wants it.
+func davError(err error) error {
+	var known *answer
+	if errors.As(err, &known) {
+		return webdav.NewHTTPError(known.status, known)
+	}
+	return err
+}
+
+// statusOf is what to tell a client about an error, for the paths this
+// package serves itself.
+func statusOf(err error) (int, string) {
+	var known *answer
+	if errors.As(err, &known) {
+		return known.status, known.says
+	}
+	return http.StatusInternalServerError, "this server could not do that just now"
+}
+
+// unexpected hides a failure that is nobody's business but this server's.
+//
+// The protocol library turns an error it does not recognize into a 500 whose
+// body is err.Error(), so a constraint violation would otherwise tell anybody
+// holding an app password the name of the index it hit and the SQLSTATE code.
+//
+// Wrap a database error with this at the point it happens, and never wrap an
+// error made by webdav.NewHTTPError: the library recognizes those by their
+// concrete type, which lives in a package this one cannot import, so anything
+// put around one turns a considered 409 into a blank 500.
+func unexpected(err error) error {
+	if err == nil {
+		return nil
+	}
+	log.Errorf("a contacts request could not be served: %s", err)
+	return webdav.NewHTTPError(http.StatusInternalServerError,
+		fmt.Errorf("this server could not do that just now"))
+}
 
 // backend is the address book as CardDAV sees it. Every method takes only a
 // context, which is why whose request this is travels in one.
@@ -55,12 +118,12 @@ func (self *backend) ListAddressBooks(ctx context.Context) ([]carddav.AddressBoo
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListAddressBooks(signedIn.userID)
 		if err != nil {
-			return err
+			return unexpected(err)
 		}
 		if len(found) == 0 {
 			made, err := tx.CreateAddressBook(&models.AddressBook{UserID: signedIn.userID, Name: "Contacts"})
 			if err != nil {
-				return err
+				return unexpected(err)
 			}
 			found = []*models.AddressBook{made}
 		}
@@ -95,7 +158,7 @@ func (self *backend) GetAddressBook(ctx context.Context, address string) (*cardd
 	signedIn := self.who(ctx)
 	book, err := self.bookAt(ctx, signedIn, address)
 	if err != nil {
-		return nil, err
+		return nil, davError(err)
 	}
 	described := self.describe(signedIn, book)
 	return &described, nil
@@ -120,17 +183,17 @@ func (self *backend) GetAddressObject(ctx context.Context, address string, reque
 	signedIn := self.who(ctx)
 	book, contactId, err := self.contactAt(ctx, signedIn, address)
 	if err != nil {
-		return nil, err
+		return nil, davError(err)
 	}
 	var found *models.Contact
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		found, err = tx.GetContact(contactId)
-		return err
+		found, err = tx.GetContact(book.ID, contactId)
+		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
-	if found == nil || found.AddressBookID != book.ID {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("no such contact"))
+	if found == nil {
+		return nil, davError(refuse(http.StatusNotFound, "no such contact"))
 	}
 	return self.object(signedIn, found)
 }
@@ -143,12 +206,12 @@ func (self *backend) ListAddressObjects(ctx context.Context, address string, req
 	signedIn := self.who(ctx)
 	book, err := self.bookAt(ctx, signedIn, address)
 	if err != nil {
-		return nil, err
+		return nil, davError(err)
 	}
 	var found []*models.Contact
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		found, err = tx.ListContacts(book.ID, "", 0)
-		return err
+		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
@@ -178,7 +241,7 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 	signedIn := self.who(ctx)
 	book, contactId, err := self.contactAt(ctx, signedIn, address)
 	if err != nil {
-		return nil, err
+		return nil, davError(err)
 	}
 	encoded, err := contacts.Encode(card)
 	if err != nil {
@@ -189,12 +252,16 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 		// A card larger than this server keeps is the one case worth its
 		// own status: 507 tells a client the request was understood and
 		// there is no room, which is what makes it stop resending.
-		if strings.Contains(err.Error(), "larger than") {
+		if errors.Is(err, contacts.ErrTooLarge) {
 			return nil, webdav.NewHTTPError(http.StatusInsufficientStorage, err)
 		}
 		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 	}
 
+	if len(parsed.UID) > maximumContactName {
+		return nil, davError(refuse(http.StatusBadRequest,
+			"that card's identifier is longer than the %d characters this server keeps", maximumContactName))
+	}
 	kept := &models.Contact{
 		ID: contactId, AddressBookID: book.ID, UID: parsed.UID,
 		ETag: contacts.ETag(parsed.Card), Card: string(parsed.Card),
@@ -203,12 +270,9 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 	}
 	var written *models.Contact
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetContact(contactId)
+		existing, err := tx.GetContact(book.ID, contactId)
 		if err != nil {
-			return err
-		}
-		if existing != nil && existing.AddressBookID != book.ID {
-			return webdav.NewHTTPError(http.StatusForbidden, fmt.Errorf("that contact is not in this address book"))
+			return unexpected(err)
 		}
 		// The conditional headers, which are how two devices editing the
 		// same person at once are stopped from silently overwriting one
@@ -227,31 +291,60 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 						fmt.Errorf("that contact has changed since you read it"))
 				}
 			}
-			if options.IfNoneMatch.IsWildcard() && existing != nil {
-				// "Only if it is not there yet." A client creating
-				// somebody, which must not quietly become an overwrite.
-				return webdav.NewHTTPError(http.StatusPreconditionFailed,
-					fmt.Errorf("there is already a contact there"))
+			if options.IfNoneMatch.IsSet() && existing != nil {
+				// "Only if it is not there yet", or "only if it is not
+				// this particular version". A client creating somebody,
+				// which must not quietly become an overwrite.
+				if options.IfNoneMatch.IsWildcard() {
+					return webdav.NewHTTPError(http.StatusPreconditionFailed,
+						fmt.Errorf("there is already a contact there"))
+				}
+				matched, err := options.IfNoneMatch.MatchETag(existing.ETag)
+				if err == nil && matched {
+					return webdav.NewHTTPError(http.StatusPreconditionFailed,
+						fmt.Errorf("that contact is already the version you have"))
+				}
 			}
 		}
-		// A card names the person it is about, and two devices adding
-		// somebody at the same time choose different file names but agree
-		// on that name. Landing the second on the first is what stops the
-		// same person being kept twice.
+		// A book has a ceiling, enforced here rather than by cutting the
+		// listing short: a client reads the listing as the whole truth,
+		// so a book it cannot list completely is a book whose contacts it
+		// would decide had been deleted.
+		if existing == nil {
+			held, err := tx.CountContacts(book.ID)
+			if err != nil {
+				return unexpected(err)
+			}
+			if held >= contactsPerBook {
+				return webdav.NewHTTPError(http.StatusInsufficientStorage,
+					fmt.Errorf("this address book already holds %d contacts, which is as many as this server keeps", contactsPerBook))
+			}
+		}
+		// A card names the person it is about, and a card claiming a name
+		// that belongs to a contact kept somewhere else is refused rather
+		// than quietly landed on top of it.
+		//
+		// Merging the two was the first attempt and it was wrong: the
+		// conditional headers had already been judged against the path
+		// the client asked for, so a write saying "only if this is new"
+		// passed -- the path was indeed new -- and then replaced a
+		// different contact wholesale, losing everything the other card
+		// had. 409 is what the protocol has for this, and it tells the
+		// client to go and look rather than to try again.
 		if existing == nil {
 			twin, err := tx.GetContactByUID(book.ID, kept.UID)
 			if err != nil {
-				return err
+				return unexpected(err)
 			}
 			if twin != nil && twin.ID != contactId {
-				kept.ID = twin.ID
-				kept.CreatedAt = twin.CreatedAt
+				return webdav.NewHTTPError(http.StatusConflict,
+					fmt.Errorf("a contact with that identifier is already kept here under another name"))
 			}
 		} else {
 			kept.CreatedAt = existing.CreatedAt
 		}
 		written, err = tx.PutContact(kept)
-		return err
+		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
@@ -262,17 +355,29 @@ func (self *backend) DeleteAddressObject(ctx context.Context, address string) er
 	signedIn := self.who(ctx)
 	book, contactId, err := self.contactAt(ctx, signedIn, address)
 	if err != nil {
-		return err
+		return davError(err)
 	}
+	wanted := webdav.ConditionalMatch(ifMatchFrom(ctx))
 	return self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetContact(contactId)
+		existing, err := tx.GetContact(book.ID, contactId)
 		if err != nil {
-			return err
+			return unexpected(err)
 		}
-		if existing == nil || existing.AddressBookID != book.ID {
-			return webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("no such contact"))
+		if existing == nil {
+			return davError(refuse(http.StatusNotFound, "no such contact"))
 		}
-		return tx.DeleteContact(contactId)
+		// "Remove it only if it is still the version I read." A device
+		// holding a stale copy would otherwise delete an edit made
+		// somewhere else that it has never seen, and with no tombstone
+		// there would be nothing left to recover from.
+		if wanted.IsSet() {
+			matched, err := wanted.MatchETag(existing.ETag)
+			if err != nil || !matched {
+				return webdav.NewHTTPError(http.StatusPreconditionFailed,
+					fmt.Errorf("that contact has changed since you read it"))
+			}
+		}
+		return unexpected(tx.DeleteContact(book.ID, contactId))
 	})
 }
 
@@ -282,10 +387,20 @@ func (self *backend) object(signedIn *session, contact *models.Contact) (*cardda
 	if err != nil {
 		return nil, fmt.Errorf("dav: a stored contact cannot be read back: %w", err)
 	}
+	// The length of what the protocol will write, not of what is stored.
+	// The library serves a card by re-encoding the parsed form, and
+	// re-encoding is not always byte-for-byte what went in; declaring the
+	// stored length and then writing one byte more had the body truncated
+	// by net/http, so a client fetched a card with its last line cut off
+	// and could not parse it.
+	served, err := contacts.Encode(card)
+	if err != nil {
+		return nil, err
+	}
 	return &carddav.AddressObject{
 		Path:          contactPath(signedIn.userID, contact.AddressBookID, contact.ID),
 		ModTime:       contact.ModifiedAt,
-		ContentLength: int64(len(contact.Card)),
+		ContentLength: int64(len(served)),
 		ETag:          contact.ETag,
 		Card:          card,
 	}, nil
@@ -295,17 +410,17 @@ func (self *backend) object(signedIn *session, contact *models.Contact) (*cardda
 func (self *backend) bookAt(ctx context.Context, signedIn *session, address string) (*models.AddressBook, error) {
 	segments := segmentsOf(address)
 	if len(segments) < 3 {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("no such address book"))
+		return nil, refuse(http.StatusNotFound, "no such address book")
 	}
 	var book *models.AddressBook
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		book, err = tx.GetAddressBook(segments[2])
-		return err
+		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
 	if book == nil || book.UserID != signedIn.userID {
-		return nil, webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("no such address book"))
+		return nil, refuse(http.StatusNotFound, "no such address book")
 	}
 	return book, nil
 }
@@ -320,7 +435,7 @@ func (self *backend) contactAt(ctx context.Context, signedIn *session, address s
 	}
 	segments := segmentsOf(address)
 	if len(segments) < 4 || segments[3] == "" {
-		return nil, "", webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("no such contact"))
+		return nil, "", refuse(http.StatusNotFound, "no such contact")
 	}
 	name := strings.TrimSuffix(segments[3], cardSuffix)
 	// The client chose this, so check it rather than trust it. The length
@@ -329,7 +444,7 @@ func (self *backend) contactAt(ctx context.Context, signedIn *session, address s
 	// client doing something strange rather than a person with a long name.
 	if name == "" || len(name) > maximumContactName || strings.ContainsAny(name, "/\\") ||
 		strings.ContainsFunc(name, func(letter rune) bool { return letter < 0x20 || letter == 0x7f }) {
-		return nil, "", webdav.NewHTTPError(http.StatusBadRequest, fmt.Errorf("that is not a name this server can keep a contact under"))
+		return nil, "", refuse(http.StatusBadRequest, "that is not a name this server can keep a contact under")
 	}
 	return book, name, nil
 }
@@ -342,4 +457,25 @@ func segmentsOf(address string) []string {
 		return nil
 	}
 	return strings.Split(rest, "/")
+}
+
+// storedCard is one contact exactly as it is kept, for serving a fetch
+// without going back through the protocol library's encoder.
+func (self *backend) storedCard(ctx context.Context, address string) (*models.Contact, error) {
+	signedIn := self.who(ctx)
+	book, contactId, err := self.contactAt(ctx, signedIn, address)
+	if err != nil {
+		return nil, davError(err)
+	}
+	var found *models.Contact
+	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = tx.GetContact(book.ID, contactId)
+		return unexpected(err)
+	}); err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, refuse(http.StatusNotFound, "no such contact")
+	}
+	return found, nil
 }

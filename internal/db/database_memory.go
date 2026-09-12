@@ -83,10 +83,10 @@ type MemoryOperation interface {
 	UpdateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	DeleteAddressBook(addressBookId string) error
 	ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error)
-	GetContact(contactId string) (*models.Contact, error)
+	GetContact(addressBookId, contactId string) (*models.Contact, error)
 	GetContactByUID(addressBookId, uid string) (*models.Contact, error)
 	PutContact(contact *models.Contact) (*models.Contact, error)
-	DeleteContact(contactId string) error
+	DeleteContact(addressBookId, contactId string) error
 	CountContacts(addressBookId string) (int64, error)
 
 	ListAgentSkills() ([]*models.AgentSkill, error)

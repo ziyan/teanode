@@ -71,7 +71,7 @@ export function AddressBookSection() {
   const contacts = useQuery(
     () =>
       bookId
-        ? graphql<{ ListContacts: Contact[] }>(CONTACTS, { addressBookId: bookId, query: null, first: 500 })
+        ? graphql<{ ListContacts: Contact[] }>(CONTACTS, { addressBookId: bookId, query: null, first: null })
         : Promise.resolve(null),
     [bookId],
     { refresh: false },
@@ -80,6 +80,9 @@ export function AddressBookSection() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
   const [busy, setBusy] = useState(false)
+  // Which contact's form is being fetched, so its row says so rather than
+  // appearing to do nothing.
+  const [opening, setOpening] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
 
   // Whether it worked, so a dialog closes only on success. What happened is
@@ -104,33 +107,29 @@ export function AddressBookSection() {
 
   // Editing reads the whole contact first, because the list does not carry
   // the note and there is no sense sending every card to draw a table.
+  // Read the whole contact before showing the form, never alongside it.
+  // The form sends every box, and an empty box means "clear this", so a
+  // dialog opened before the note had arrived would delete the note of
+  // anybody quick enough to save -- or of anybody at all, if the read
+  // failed and left the box empty behind a toast nobody had to act on.
   const edit = async (contact: Contact) => {
     setProblem(null)
-    setDraft({
-      id: contact.id,
-      name: contact.name ?? '',
-      organization: contact.organization ?? '',
-      emails: (contact.emails ?? []).join('\n'),
-      phones: (contact.phones ?? []).join('\n'),
-      note: '',
-    })
+    setOpening(contact.id)
     try {
       const answer = await graphql<{ GetContact: Contact & { note?: string } }>(GET, { id: contact.id })
       const full = answer.GetContact
-      setDraft((current) =>
-        current && current.id === contact.id
-          ? {
-              ...current,
-              name: full.name ?? '',
-              organization: full.organization ?? '',
-              emails: (full.emails ?? []).join('\n'),
-              phones: (full.phones ?? []).join('\n'),
-              note: full.note ?? '',
-            }
-          : current,
-      )
+      setDraft({
+        id: contact.id,
+        name: full.name ?? '',
+        organization: full.organization ?? '',
+        emails: (full.emails ?? []).join('\n'),
+        phones: (full.phones ?? []).join('\n'),
+        note: full.note ?? '',
+      })
     } catch (failure) {
       toast.failure(failure, t('addressBook.failed'))
+    } finally {
+      setOpening('')
     }
   }
 
@@ -182,7 +181,11 @@ export function AddressBookSection() {
         render: (contact) => (
           <div className="row-actions">
             <Tooltip label={t('common.edit')}>
-              <button type="button" disabled={busy} onClick={() => void edit(contact)}>
+              <button
+                type="button"
+                disabled={busy || opening === contact.id}
+                onClick={() => void edit(contact)}
+              >
                 <PencilIcon size={16} />
               </button>
             </Tooltip>
@@ -195,7 +198,7 @@ export function AddressBookSection() {
         ),
       },
     ],
-    [t, busy],
+    [t, busy, opening],
   )
 
   const rows = contacts.data?.ListContacts ?? []

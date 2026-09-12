@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,6 +26,13 @@ import (
 // carry an inline photograph, and a client that decides to send a ten
 // megabyte one should be told no rather than have it kept.
 const MaximumCard = 1 << 20
+
+// ErrTooLarge is a card bigger than this server keeps. Named, because the
+// answer a client is given for it is a different one -- a status that makes
+// it stop resending rather than retry for ever -- and deciding that by
+// looking at the words in a message means rewording the message changes the
+// protocol.
+var ErrTooLarge = errors.New("contacts: that contact is larger than this server keeps")
 
 // Parsed is a card and the few things pulled out of it that this server
 // lists, searches and sorts on.
@@ -52,7 +60,7 @@ func Parse(card []byte) (*Parsed, error) {
 		return nil, fmt.Errorf("contacts: a contact cannot be empty")
 	}
 	if len(card) > MaximumCard {
-		return nil, fmt.Errorf("contacts: a contact of %d bytes is larger than the %d this server keeps", len(card), MaximumCard)
+		return nil, fmt.Errorf("%w: %d bytes against a limit of %d", ErrTooLarge, len(card), MaximumCard)
 	}
 	decoded, err := vcard.NewDecoder(bytes.NewReader(card)).Decode()
 	if err != nil {
@@ -61,12 +69,33 @@ func Parse(card []byte) (*Parsed, error) {
 	return fromCard(decoded)
 }
 
+// unescapeSemicolons finishes what the library's decoder leaves undone.
+//
+// It turns \\ into a backslash, \n into a newline and \, into a comma, and
+// leaves \; exactly as it found it. A text value therefore arrives here still
+// carrying its escapes for semicolons, and writing it back out would escape
+// the backslash in front of them: a note reading "call him\; he knows" would
+// gain a visible backslash, and another on every trip after that.
+func unescapeSemicolons(card vcard.Card) {
+	for name, fields := range card {
+		if structured[name] {
+			continue
+		}
+		for _, field := range fields {
+			if field != nil {
+				field.Value = strings.ReplaceAll(field.Value, "\\;", ";")
+			}
+		}
+	}
+}
+
 // fromCard is Parse once the card is in hand, shared with the builder below.
 func fromCard(card vcard.Card) (*Parsed, error) {
 	// Version 4 throughout, whatever arrived. A phone may send 3.0, and
 	// keeping one version means nothing downstream has to ask which it is
 	// looking at. ToV4 also fills in the FN that version 4 requires.
 	vcard.ToV4(card)
+	unescapeSemicolons(card)
 	if strings.TrimSpace(card.Value(vcard.FieldUID)) == "" {
 		// The same shape of identifier the rest of this server uses, as a
 		// URN, which is how a vCard says an identifier is globally unique.
@@ -77,7 +106,7 @@ func fromCard(card vcard.Card) (*Parsed, error) {
 		return nil, err
 	}
 	if len(encoded) > MaximumCard {
-		return nil, fmt.Errorf("contacts: a contact of %d bytes is larger than the %d this server keeps", len(encoded), MaximumCard)
+		return nil, fmt.Errorf("%w: %d bytes against a limit of %d", ErrTooLarge, len(encoded), MaximumCard)
 	}
 	return &Parsed{
 		UID:          strings.TrimSpace(card.Value(vcard.FieldUID)),
@@ -88,15 +117,6 @@ func fromCard(card vcard.Card) (*Parsed, error) {
 		Note:         strings.TrimSpace(card.Value(vcard.FieldNote)),
 		Card:         encoded,
 	}, nil
-}
-
-// Encode writes a card out in the one form this server stores.
-func Encode(card vcard.Card) ([]byte, error) {
-	var buffer bytes.Buffer
-	if err := vcard.NewEncoder(&buffer).Encode(card); err != nil {
-		return nil, fmt.Errorf("contacts: cannot write the card back out: %w", err)
-	}
-	return buffer.Bytes(), nil
 }
 
 // ETag names a version of a card. The same bytes always give the same answer

@@ -1,6 +1,7 @@
 package contacts
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -254,5 +255,116 @@ func TestRenamingSomebodyRefilesThem(t *testing.T) {
 	}
 	if !strings.Contains(string(same.Card), "N:Lovelace;Ada;Byron") {
 		t.Errorf("a correction made on a device survives an unrelated edit:\n%s", same.Card)
+	}
+}
+
+// A parameter value carrying a semicolon has to be quoted on the way out, or
+// it comes back as two parameters and the property loses its value. The card
+// below is a real shape: a phone marking an address as both work and main.
+func TestAQuotedParameterSurvivesBeingStored(t *testing.T) {
+	body := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:Ada\r\n" +
+		"EMAIL;TYPE=\"work;main\":ada@example.com\r\nEND:VCARD\r\n"
+	once, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if !strings.Contains(string(once.Card), `TYPE="work;main"`) {
+		t.Fatalf("the parameter keeps its quotes:\n%s", once.Card)
+	}
+	// The second pass is the one that used to destroy it: unquoted, the
+	// semicolon read as a parameter separator and the address became the
+	// value of a parameter called MAIN.
+	twice, err := Parse(once.Card)
+	if err != nil {
+		t.Fatalf("reparse: %s", err)
+	}
+	if string(twice.Card) != string(once.Card) {
+		t.Fatalf("storing a card twice must not change it:\n%s\n%s", once.Card, twice.Card)
+	}
+	if len(twice.Emails) != 1 || twice.Emails[0] != "ada@example.com" {
+		t.Fatalf("the address survives: %v", twice.Emails)
+	}
+}
+
+// What is stored has to be a fixed point, because the ETag is taken over it
+// and a client is promised that what a listing names is what a fetch returns.
+func TestWhatIsStoredDoesNotChangeUnderneath(t *testing.T) {
+	for _, body := range []string{
+		fromAPhone,
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nNOTE:Call him\\; he knows\r\nEND:VCARD\r\n",
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nNOTE:one\\, two\\, three\r\nEND:VCARD\r\n",
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nADR;TYPE=work:;;1 Main St;London;;NW1;England\r\nEND:VCARD\r\n",
+		"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nFN:A\r\nN:B;A;;;\r\nORG:One;Two\r\nEND:VCARD\r\n",
+	} {
+		once, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("parse %q: %s", body, err)
+		}
+		twice, err := Parse(once.Card)
+		if err != nil {
+			t.Fatalf("reparse: %s", err)
+		}
+		if string(once.Card) != string(twice.Card) {
+			t.Errorf("storing this card twice changed it:\nfirst:  %q\nsecond: %q", once.Card, twice.Card)
+		}
+		if ETag(once.Card) != ETag(twice.Card) {
+			t.Errorf("and so changed its etag: %q", body)
+		}
+	}
+}
+
+// An escaped semicolon in a note is a semicolon, not a backslash somebody has
+// to look at. A structured property's semicolons are punctuation and stay.
+func TestASemicolonInANoteIsASemicolon(t *testing.T) {
+	parsed, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\n" +
+		"NOTE:Call him\\; he knows\r\nN:Lovelace;Ada;;;\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	kept := string(parsed.Card)
+	if !strings.Contains(kept, `NOTE:Call him\; he knows`) {
+		t.Errorf("the note keeps one backslash, not two:\n%s", kept)
+	}
+	if strings.Contains(kept, `\\;`) {
+		t.Errorf("and does not gain another:\n%s", kept)
+	}
+	if !strings.Contains(kept, "N:Lovelace;Ada;;;") {
+		t.Errorf("a structured name keeps its bare semicolons:\n%s", kept)
+	}
+}
+
+// Long lines are folded, because the format asks for it and some clients
+// will not read a line of five thousand characters.
+func TestALongLineIsFolded(t *testing.T) {
+	parsed, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nNOTE:" +
+		strings.Repeat("abcdefghij", 200) + "\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	for _, line := range strings.Split(string(parsed.Card), "\r\n") {
+		if len(line) > 75 {
+			t.Fatalf("a line of %d octets was not folded:\n%s", len(line), parsed.Card)
+		}
+	}
+	// And unfolds back to what it was.
+	again, err := Parse(parsed.Card)
+	if err != nil {
+		t.Fatalf("reparse: %s", err)
+	}
+	if string(again.Card) != string(parsed.Card) {
+		t.Fatal("folding is not stable")
+	}
+	if !strings.Contains(strings.ReplaceAll(string(again.Card), "\r\n ", ""), strings.Repeat("abcdefghij", 200)) {
+		t.Fatal("the note did not survive folding")
+	}
+}
+
+// The refusal for an oversized card is named, so that the answer given for it
+// does not depend on the wording of a message.
+func TestAnOversizedCardIsRefusedByName(t *testing.T) {
+	huge := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nNOTE:" + strings.Repeat("x", MaximumCard) + "\r\nEND:VCARD\r\n"
+	_, err := Parse([]byte(huge))
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("want ErrTooLarge, got %v", err)
 	}
 }

@@ -192,10 +192,10 @@ func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArgum
 	if err != nil {
 		return nil, err
 	}
+	// Nothing given means the whole book. The table pages in the browser,
+	// so a cut here would not save the reader anything -- it would just
+	// hide contacts, with no way to reach them.
 	limit := arguments.First
-	if limit <= 0 {
-		limit = 500
-	}
 	found, err := self.transaction(ctx).ListContacts(book.ID, arguments.Query, limit)
 	if err != nil {
 		return nil, err
@@ -221,22 +221,23 @@ func (self *graph) ownContact(ctx context.Context, contactId string) (*models.Co
 	if err != nil {
 		return nil, nil, err
 	}
+	// A contact is named within its address book, so the book comes first
+	// and is checked to be the caller's before anything in it is read.
 	tx := self.transaction(ctx)
-	contact, err := tx.GetContact(strings.TrimSpace(contactId))
+	books, err := tx.ListAddressBooks(principal.User.ID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if contact == nil {
-		return nil, nil, api.ErrNotFound
+	for _, book := range books {
+		contact, err := tx.GetContact(book.ID, strings.TrimSpace(contactId))
+		if err != nil {
+			return nil, nil, err
+		}
+		if contact != nil {
+			return contact, book, nil
+		}
 	}
-	book, err := tx.GetAddressBook(contact.AddressBookID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if book == nil || book.UserID != principal.User.ID {
-		return nil, nil, api.ErrNotFound
-	}
-	return contact, book, nil
+	return nil, nil, api.ErrNotFound
 }
 
 func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArguments) (*ContactView, error) {
@@ -251,22 +252,37 @@ func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArgumen
 		return nil, err
 	}
 
-	parsed, err := parseSaved(&arguments, existing)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
-	}
-
-	contact := &models.Contact{
-		AddressBookID: book.ID, UID: parsed.UID, ETag: contacts.ETag(parsed.Card),
-		Card: string(parsed.Card), Name: parsed.Name, Organization: parsed.Organization,
-		Emails: parsed.Emails, Phones: parsed.Phones,
-	}
-	if existing != nil {
-		contact.ID = existing.ID
-		contact.CreatedAt = existing.CreatedAt
-	}
 	var kept *models.Contact
+	var refused error
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// Read inside the transaction that writes. The form sends the
+		// boxes it showed, and the server merges them onto the card it
+		// holds; reading that card outside the write meant a phone's
+		// change arriving in between was merged away without a word.
+		if existing != nil {
+			latest, err := tx.GetContact(book.ID, existing.ID)
+			if err != nil {
+				return err
+			}
+			if latest == nil {
+				return api.ErrNotFound
+			}
+			existing = latest
+		}
+		parsed, err := parseSaved(&arguments, existing)
+		if err != nil {
+			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+			return refused
+		}
+		contact := &models.Contact{
+			AddressBookID: book.ID, UID: parsed.UID, ETag: contacts.ETag(parsed.Card),
+			Card: string(parsed.Card), Name: parsed.Name, Organization: parsed.Organization,
+			Emails: parsed.Emails, Phones: parsed.Phones,
+		}
+		if existing != nil {
+			contact.ID = existing.ID
+			contact.CreatedAt = existing.CreatedAt
+		}
 		// The card's own identifier decides which person this is. Two
 		// devices adding somebody at the same time pick different file
 		// names but agree on the identifier, and the second must land on
@@ -284,6 +300,9 @@ func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArgumen
 		kept, err = tx.PutContact(contact)
 		return err
 	}); err != nil {
+		if refused != nil {
+			return nil, refused
+		}
 		return nil, translateError(err)
 	}
 	return contactView(kept, true), nil
@@ -312,7 +331,7 @@ func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments
 		return false, err
 	}
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.DeleteContact(contact.ID)
+		return tx.DeleteContact(contact.AddressBookID, contact.ID)
 	}); err != nil {
 		return false, err
 	}
