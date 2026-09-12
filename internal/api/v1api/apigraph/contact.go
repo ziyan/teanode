@@ -64,15 +64,28 @@ type AddressBookView struct {
 // one. A list leaves Card empty, because a page of whole cards is a great
 // deal of text nobody reads.
 type ContactView struct {
-	ID           string   `json:"id"`
-	UID          string   `json:"uid"`
-	ETag         string   `json:"etag"`
-	Name         string   `json:"name,omitempty"`
-	Organization string   `json:"organization,omitempty"`
-	Emails       []string `json:"emails"`
-	Phones       []string `json:"phones"`
-	Note         string   `json:"note,omitempty"`
-	Card         string   `json:"card,omitempty"`
+	ID           string         `json:"id"`
+	UID          string         `json:"uid"`
+	ETag         string         `json:"etag"`
+	Name         string         `json:"name,omitempty"`
+	Organization string         `json:"organization,omitempty"`
+	Emails       []string       `json:"emails"`
+	Phones       []string       `json:"phones"`
+	Addresses    []*AddressView `json:"addresses"`
+	Note         string         `json:"note,omitempty"`
+	Card         string         `json:"card,omitempty"`
+}
+
+// AddressView is one postal address, in the components a card keeps it in.
+// Written is the same thing on one line, for a list.
+type AddressView struct {
+	Label      string `json:"label,omitempty"`
+	Street     string `json:"street,omitempty"`
+	Locality   string `json:"locality,omitempty"`
+	Region     string `json:"region,omitempty"`
+	PostalCode string `json:"postalCode,omitempty"`
+	Country    string `json:"country,omitempty"`
+	Written    string `json:"written"`
 }
 
 type ListContactsArguments struct {
@@ -104,12 +117,22 @@ type SaveContactArguments struct {
 	// instructions: a caller that sends only a name must not thereby
 	// delete the note and the numbers, and a form whose box is empty must
 	// be able to clear what was there.
-	Name         *string   `json:"name" graphapi:"nullable"`
-	Organization *string   `json:"organization" graphapi:"nullable"`
-	Title        *string   `json:"title" graphapi:"nullable"`
-	Emails       *[]string `json:"emails" graphapi:"nullable"`
-	Phones       *[]string `json:"phones" graphapi:"nullable"`
-	Note         *string   `json:"note" graphapi:"nullable"`
+	Name         *string         `json:"name" graphapi:"nullable"`
+	Organization *string         `json:"organization" graphapi:"nullable"`
+	Title        *string         `json:"title" graphapi:"nullable"`
+	Emails       *[]string       `json:"emails" graphapi:"nullable"`
+	Phones       *[]string       `json:"phones" graphapi:"nullable"`
+	Addresses    *[]AddressInput `json:"addresses" graphapi:"nullable"`
+	Note         *string         `json:"note" graphapi:"nullable"`
+}
+
+// AddressInput is one postal address as a form sends it.
+type AddressInput struct {
+	Street     string `json:"street"`
+	Locality   string `json:"locality"`
+	Region     string `json:"region"`
+	PostalCode string `json:"postalCode"`
+	Country    string `json:"country"`
 }
 
 type SaveAddressBookArguments struct {
@@ -202,7 +225,10 @@ func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArgum
 	}
 	views := make([]*ContactView, 0, len(found))
 	for _, contact := range found {
-		views = append(views, contactView(contact, false))
+		view := contactView(contact, false)
+		// A page of notes is a great deal of text nobody reads.
+		view.Note = ""
+		views = append(views, view)
 	}
 	return views, nil
 }
@@ -342,10 +368,21 @@ func parseSaved(arguments *SaveContactArguments, existing *models.Contact) (*con
 	if existing != nil {
 		previous = []byte(existing.Card)
 	}
-	return contacts.Build(previous, &contacts.Fields{
+	fields := &contacts.Fields{
 		Name: arguments.Name, Organization: arguments.Organization, Title: arguments.Title,
 		Emails: arguments.Emails, Phones: arguments.Phones, Note: arguments.Note,
-	})
+	}
+	if arguments.Addresses != nil {
+		wanted := make([]contacts.Address, 0, len(*arguments.Addresses))
+		for _, given := range *arguments.Addresses {
+			wanted = append(wanted, contacts.Address{
+				Street: given.Street, Locality: given.Locality, Region: given.Region,
+				PostalCode: given.PostalCode, Country: given.Country,
+			})
+		}
+		fields.Addresses = &wanted
+	}
+	return contacts.Build(previous, fields)
 }
 
 func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments) (bool, error) {
@@ -397,15 +434,26 @@ func contactView(contact *models.Contact, withCard bool) *ContactView {
 	if view.Phones == nil {
 		view.Phones = []string{}
 	}
+	// The note and the postal addresses are read out of the card rather
+	// than kept in columns of their own, which would be second copies to
+	// keep in step with it. Parsed for a list as well as for one contact:
+	// a card is a few hundred bytes of text, and a person who keeps an
+	// address and no email address -- which is an ordinary thing to do --
+	// would otherwise see a row with nothing in it.
+	view.Addresses = []*AddressView{}
+	if parsed, err := contacts.Parse([]byte(contact.Card)); err == nil {
+		view.Note = parsed.Note
+		for index := range parsed.Addresses {
+			address := parsed.Addresses[index]
+			view.Addresses = append(view.Addresses, &AddressView{
+				Label: address.Label, Street: address.Street, Locality: address.Locality,
+				Region: address.Region, PostalCode: address.PostalCode,
+				Country: address.Country, Written: address.Written(),
+			})
+		}
+	}
 	if withCard {
 		view.Card = contact.Card
-		// The note is read out of the card rather than kept in a column of
-		// its own: the form needs it, one contact at a time, and a column
-		// would be a second copy to keep in step with the card for no
-		// reader that a single parse here does not already serve.
-		if parsed, err := contacts.Parse([]byte(contact.Card)); err == nil {
-			view.Note = parsed.Note
-		}
 	}
 	return view
 }

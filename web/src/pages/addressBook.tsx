@@ -23,22 +23,37 @@ const BOOKS = `query { ListAddressBooks { id name description contacts } }`
 const CONTACTS = `
   query ($addressBookId: String!, $query: String, $first: Int) {
     ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
-      id uid name organization emails phones
+      id uid name organization emails phones addresses { written }
     }
   }`
 
 const SAVE = `
   mutation ($addressBookId: String!, $id: String, $name: String, $organization: String,
-            $emails: [String!], $phones: [String!], $note: String) {
+            $emails: [String!], $phones: [String!], $note: String, $addresses: [AddressInput!]) {
     SaveContact(addressBookId: $addressBookId, id: $id, name: $name, organization: $organization,
-                emails: $emails, phones: $phones, note: $note) { id name }
+                emails: $emails, phones: $phones, note: $note, addresses: $addresses) { id name }
   }`
 
-const GET = `query ($id: String!) { GetContact(id: $id) { id name organization emails phones note } }`
+const GET = `query ($id: String!) {
+  GetContact(id: $id) {
+    id name organization emails phones note
+    addresses { street locality region postalCode country }
+  }
+}`
 
 const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
 
 type AddressBook = { id: string; name: string; description?: string; contacts: number }
+type Address = {
+  label?: string
+  street?: string
+  locality?: string
+  region?: string
+  postalCode?: string
+  country?: string
+  written?: string
+}
+
 type Contact = {
   id: string
   uid: string
@@ -46,14 +61,33 @@ type Contact = {
   organization?: string
   emails: string[]
   phones: string[]
+  addresses?: Address[]
 }
 
 // A form's worth of one contact. Addresses and numbers are edited as one box
 // each, a line apiece, which is how somebody with three of them expects to
 // type them and avoids a row of controls for adding and removing lines.
-type Draft = { id: string; name: string; organization: string; emails: string; phones: string; note: string }
+type Draft = {
+  id: string
+  name: string
+  organization: string
+  emails: string
+  phones: string
+  note: string
+  // The first postal address, in the components a card keeps it in. Any
+  // others the card carries are left alone.
+  street: string
+  locality: string
+  region: string
+  postalCode: string
+  country: string
+  addresses: Address[]
+}
 
-const empty: Draft = { id: '', name: '', organization: '', emails: '', phones: '', note: '' }
+const empty: Draft = {
+  id: '', name: '', organization: '', emails: '', phones: '', note: '',
+  street: '', locality: '', region: '', postalCode: '', country: '', addresses: [],
+}
 
 function lines(value: string): string[] {
   return value
@@ -126,6 +160,8 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
     try {
       const answer = await graphql<{ GetContact: Contact & { note?: string } }>(GET, { id: contact.id })
       const full = answer.GetContact
+      const kept = full.addresses ?? []
+      const first = kept[0] ?? {}
       setDraft({
         id: contact.id,
         name: full.name ?? '',
@@ -133,6 +169,12 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
         emails: (full.emails ?? []).join('\n'),
         phones: (full.phones ?? []).join('\n'),
         note: full.note ?? '',
+        street: first.street ?? '',
+        locality: first.locality ?? '',
+        region: first.region ?? '',
+        postalCode: first.postalCode ?? '',
+        country: first.country ?? '',
+        addresses: kept,
       })
     } catch (failure) {
       toast.failure(failure, t('addressBook.failed'))
@@ -154,7 +196,7 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
       },
       {
         key: 'emails',
-        header: t('contacts.address'),
+        header: t('addressBook.email'),
         filter: 'text',
         value: (contact) => (contact.emails ?? []).join(' '),
         render: (contact) => (
@@ -164,6 +206,16 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
               <span className="muted"> {t('addressBook.more', { count: contact.emails.length - 1 })}</span>
             ) : null}
           </span>
+        ),
+      },
+      {
+        key: 'postal',
+        header: t('addressBook.postal'),
+        filter: 'text',
+        optional: true,
+        value: (contact) => (contact.addresses ?? []).map((address) => address.written ?? '').join(' '),
+        render: (contact) => (
+          <span className="muted">{(contact.addresses ?? [])[0]?.written ?? ''}</span>
         ),
       },
       {
@@ -178,7 +230,6 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
         key: 'phones',
         header: t('addressBook.phone'),
         width: '11rem',
-        optional: true,
         value: (contact) => (contact.phones ?? []).join(' '),
         render: (contact) => <span className="muted">{(contact.phones ?? [])[0] ?? ''}</span>,
       },
@@ -288,6 +339,25 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
                   emails: lines(draft.emails),
                   phones: lines(draft.phones),
                   note: draft.note.trim(),
+                  // The first address from the boxes, and any others the
+                  // card already carried, in order: a card may hold a home
+                  // and a work address, and this form shows one.
+                  addresses: [
+                    {
+                      street: draft.street.trim(),
+                      locality: draft.locality.trim(),
+                      region: draft.region.trim(),
+                      postalCode: draft.postalCode.trim(),
+                      country: draft.country.trim(),
+                    },
+                    ...draft.addresses.slice(1).map((address) => ({
+                      street: address.street ?? '',
+                      locality: address.locality ?? '',
+                      region: address.region ?? '',
+                      postalCode: address.postalCode ?? '',
+                      country: address.country ?? '',
+                    })),
+                  ],
                 }),
               editing
                 ? t('addressBook.saidSaved', { name: draft.name.trim() || lines(draft.emails)[0] || '' })
@@ -324,6 +394,36 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
             />
             <span className="muted">{t('addressBook.onePerLine')}</span>
           </label>
+          <label>
+            {t('addressBook.street')}
+            <input value={draft.street} onChange={(event) => setDraft({ ...draft, street: event.target.value })} />
+          </label>
+          <div className="form-row">
+            <label>
+              {t('addressBook.locality')}
+              <input
+                value={draft.locality}
+                onChange={(event) => setDraft({ ...draft, locality: event.target.value })}
+              />
+            </label>
+            <label>
+              {t('addressBook.region')}
+              <input value={draft.region} onChange={(event) => setDraft({ ...draft, region: event.target.value })} />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              {t('addressBook.postalCode')}
+              <input
+                value={draft.postalCode}
+                onChange={(event) => setDraft({ ...draft, postalCode: event.target.value })}
+              />
+            </label>
+            <label>
+              {t('addressBook.country')}
+              <input value={draft.country} onChange={(event) => setDraft({ ...draft, country: event.target.value })} />
+            </label>
+          </div>
           <label>
             {t('addressBook.note')}
             <textarea

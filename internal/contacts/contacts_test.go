@@ -368,3 +368,86 @@ func TestAnOversizedCardIsRefusedByName(t *testing.T) {
 		t.Fatalf("want ErrTooLarge, got %v", err)
 	}
 }
+
+// A card from a phone may carry a postal address and no email address at all,
+// which is an ordinary thing for a contact to be. It has to come back.
+func TestAPostalAddressIsReadBack(t *testing.T) {
+	fromAPhone := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nN:Zhou;Ziyan;;;\r\nFN:Ziyan Zhou\r\n" +
+		"item2.ADR;TYPE=HOME;TYPE=pref:;;345 Chiswick Cir;Alpharetta;GA;30009;United States\r\n" +
+		"item2.X-ABADR:us\r\nTEL;TYPE=CELL:+1 (585) 698-9749\r\nEND:VCARD\r\n"
+	parsed, err := Parse([]byte(fromAPhone))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if len(parsed.Emails) != 0 {
+		t.Fatalf("this contact has no email address: %v", parsed.Emails)
+	}
+	if len(parsed.Addresses) != 1 {
+		t.Fatalf("one postal address: %+v", parsed.Addresses)
+	}
+	address := parsed.Addresses[0]
+	if address.Street != "345 Chiswick Cir" || address.Locality != "Alpharetta" ||
+		address.Region != "GA" || address.PostalCode != "30009" || address.Country != "United States" {
+		t.Fatalf("its components: %+v", address)
+	}
+	if address.Label != "home" {
+		t.Errorf("what the phone calls it: %q", address.Label)
+	}
+	if written := address.Written(); written != "345 Chiswick Cir, Alpharetta, GA, 30009, United States" {
+		t.Errorf("on one line: %q", written)
+	}
+}
+
+// A label a phone invented for an address is read from the group beside it,
+// which is how iOS writes anything but home and work.
+func TestALabelAPhoneInventedIsRead(t *testing.T) {
+	parsed, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nFN:A\r\n" +
+		"item1.ADR;TYPE=pref:;;1 Analytical Way;London;;NW1;England\r\n" +
+		"item1.X-ABLabel:_$!<Cottage>!$_\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if len(parsed.Addresses) != 1 || parsed.Addresses[0].Label != "Cottage" {
+		t.Fatalf("the label beside it: %+v", parsed.Addresses)
+	}
+}
+
+// Editing from a form keeps the address, its label and the group that carries
+// it, and can change the parts somebody typed.
+func TestEditingKeepsAnAddressAndItsLabel(t *testing.T) {
+	kept, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nFN:Ziyan Zhou\r\n" +
+		"item2.ADR;TYPE=HOME;TYPE=pref:;;345 Chiswick Cir;Alpharetta;GA;30009;United States\r\n" +
+		"item2.X-ABADR:us\r\nEND:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	moved := []Address{{Street: "1 Analytical Way", Locality: "London", PostalCode: "NW1", Country: "England"}}
+	edited, err := Build(kept.Card, &Fields{Addresses: &moved})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	text := string(edited.Card)
+	if !strings.Contains(text, "1 Analytical Way;London;;NW1;England") {
+		t.Errorf("the new address is written:\n%s", text)
+	}
+	if !strings.Contains(text, "item2.ADR") || !strings.Contains(text, "TYPE=HOME") {
+		t.Errorf("and keeps the group and the label the phone gave it:\n%s", text)
+	}
+	if !strings.Contains(text, "item2.X-ABADR:us") {
+		t.Errorf("and what the phone kept beside it:\n%s", text)
+	}
+	// Emptying every box removes it.
+	none := []Address{{}}
+	cleared, err := Build(edited.Card, &Fields{Addresses: &none})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	// The address itself goes. What the phone kept beside it stays: an
+	// X-ABADR with nothing to label is untidy, and dropping a property this
+	// server does not understand is the worse of the two mistakes.
+	for _, gone := range []string{"ADR;", ".ADR:", "Analytical Way"} {
+		if strings.Contains(string(cleared.Card), gone) {
+			t.Errorf("an emptied address leaves %q behind:\n%s", gone, cleared.Card)
+		}
+	}
+}

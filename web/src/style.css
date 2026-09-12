@@ -2011,6 +2011,18 @@ pre.message-text {
     display: none;
   }
 
+  /* ...and the table has to be allowed to be as wide as it needs, or there
+     is nothing to scroll to. `table { width: 100% }` pinned it to the
+     screen's width while its cells, which do not wrap, went on needing more:
+     the row overflowed the table, the surface saw a table exactly its own
+     size, and the columns past the edge were simply unreachable. A contact
+     with no email address showed its name, a gap, and nothing else.
+     min-width: max-content lets the table grow to its content; width: 100%
+     still stretches it when there is room to spare. */
+  .table-surface table {
+    min-width: max-content;
+  }
+
   /* A table keeps its shape here and scrolls sideways, which is what a table
      does when it is wider than the screen. It runs to the edges to make that
      scroll as long as it can be: the page's padding was holding a table that
@@ -6527,6 +6539,25 @@ a.button.agent-artifact-action {
 
 /* One subject of a card, with a Save of its own: a heading, its fields,
    the button. A rule above separates it from the subject before. */
+/* Two short boxes side by side, for parts of one thing: a town and a region,
+   a postcode and a country. They stack on a narrow screen, where two boxes of
+   half a phone's width are two boxes nobody can type in. */
+.form-row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.form-row > label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    display: block;
+  }
+}
+
 .settings-subform {
   margin-top: var(--space-5);
   padding-top: var(--space-4);

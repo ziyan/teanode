@@ -25,6 +25,7 @@ type Fields struct {
 	Emails       *[]string
 	Phones       *[]string
 	Note         *string
+	Addresses    *[]Address
 }
 
 // Build makes a card from filled-in boxes, keeping whatever a card already
@@ -83,6 +84,9 @@ func Build(existing []byte, fields *Fields) (*Parsed, error) {
 	}
 	if fields.Note != nil {
 		setOne(card, vcard.FieldNote, *fields.Note)
+	}
+	if fields.Addresses != nil {
+		setAddresses(card, *fields.Addresses)
 	}
 	// Whatever route was taken, a contact needs something to call it.
 	if strings.TrimSpace(card.PreferredValue(vcard.FieldFormattedName)) == "" &&
@@ -149,4 +153,38 @@ func splitName(name string) (given, family string) {
 		return name, ""
 	}
 	return strings.Join(fields[:len(fields)-1], " "), fields[len(fields)-1]
+}
+
+// setAddresses replaces the postal addresses, keeping the type and the group
+// of the ones that are still there.
+//
+// Kept by position, because an address has no identifier: the first box on
+// the form is the first ADR on the card. That is enough to keep a phone's
+// "home" label and the group that carries its own name for it through an
+// edit made in a browser, which is what would otherwise be lost.
+func setAddresses(card vcard.Card, wanted []Address) {
+	previous := card[vcard.FieldAddress]
+	var kept []*vcard.Field
+	for index, address := range wanted {
+		if address.Empty() {
+			continue
+		}
+		field := &vcard.Field{}
+		if index < len(previous) && previous[index] != nil {
+			// The same address, edited: its parameters and its group are
+			// the phone's and are none of this form's business.
+			field.Params = previous[index].Params
+			field.Group = previous[index].Group
+		}
+		field.Value = strings.Join([]string{
+			"", "", address.Street, address.Locality,
+			address.Region, address.PostalCode, address.Country,
+		}, ";")
+		kept = append(kept, field)
+	}
+	if len(kept) == 0 {
+		delete(card, vcard.FieldAddress)
+		return
+	}
+	card[vcard.FieldAddress] = kept
 }

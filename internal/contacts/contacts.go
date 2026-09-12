@@ -34,6 +34,35 @@ const MaximumCard = 1 << 20
 // protocol.
 var ErrTooLarge = errors.New("contacts: that contact is larger than this server keeps")
 
+// Address is one postal address, in the components a vCard keeps it in.
+//
+// A person types a street, a town, a region, a postcode and a country; the
+// other two components of ADR are a post-office box and an "extended
+// address", which nothing writes and nothing reads.
+type Address struct {
+	Label      string
+	Street     string
+	Locality   string
+	Region     string
+	PostalCode string
+	Country    string
+}
+
+// Written is the address as somebody would write it on an envelope, for
+// showing in a list where there is room for one line.
+func (self *Address) Written() string {
+	var parts []string
+	for _, part := range []string{self.Street, self.Locality, self.Region, self.PostalCode, self.Country} {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Empty says whether there is anything here to keep.
+func (self *Address) Empty() bool { return self.Written() == "" }
+
 // Parsed is a card and the few things pulled out of it that this server
 // lists, searches and sorts on.
 type Parsed struct {
@@ -43,6 +72,7 @@ type Parsed struct {
 	Emails       []string
 	Phones       []string
 	Note         string
+	Addresses    []Address
 
 	// Card is the canonical text: what was given, read and written out
 	// again, which is what gets stored and what the ETag is over.
@@ -126,6 +156,7 @@ func fromCard(card vcard.Card) (*Parsed, error) {
 		Emails:       values(card, vcard.FieldEmail),
 		Phones:       values(card, vcard.FieldTelephone),
 		Note:         strings.TrimSpace(card.Value(vcard.FieldNote)),
+		Addresses:    addressesIn(card),
 		Card:         encoded,
 	}, nil
 }
@@ -181,4 +212,61 @@ func values(card vcard.Card, field string) []string {
 		kept = append(kept, trimmed)
 	}
 	return kept
+}
+
+// addressesIn are the postal addresses a card carries.
+//
+// ADR is seven components separated by semicolons: a post-office box, an
+// extended address, the street, the town, the region, the postcode and the
+// country. The first two are historical and empty in everything anybody
+// sends; the rest are what a person typed.
+func addressesIn(card vcard.Card) []Address {
+	var found []Address
+	for _, field := range card[vcard.FieldAddress] {
+		if field == nil {
+			continue
+		}
+		components := strings.Split(field.Value, ";")
+		for len(components) < 7 {
+			components = append(components, "")
+		}
+		address := Address{
+			Street:     strings.TrimSpace(components[2]),
+			Locality:   strings.TrimSpace(components[3]),
+			Region:     strings.TrimSpace(components[4]),
+			PostalCode: strings.TrimSpace(components[5]),
+			Country:    strings.TrimSpace(components[6]),
+		}
+		// What the phone calls it: a TYPE, or the label a grouped
+		// X-ABLabel gives it, which is how iOS writes anything but home
+		// and work.
+		address.Label = labelFor(card, field)
+		if !address.Empty() {
+			found = append(found, address)
+		}
+	}
+	return found
+}
+
+// labelFor is what to call one field: the label its group carries, if it has
+// one, and otherwise its type.
+func labelFor(card vcard.Card, field *vcard.Field) string {
+	if field.Group != "" {
+		for _, labelled := range card["X-ABLABEL"] {
+			if labelled != nil && strings.EqualFold(labelled.Group, field.Group) {
+				// Apple writes its own labels wrapped in _$!<...>!$_.
+				trimmed := strings.TrimSuffix(strings.TrimPrefix(labelled.Value, "_$!<"), ">!$_")
+				if trimmed = strings.TrimSpace(trimmed); trimmed != "" {
+					return trimmed
+				}
+			}
+		}
+	}
+	for _, kind := range field.Params[vcard.ParamType] {
+		switch strings.ToLower(kind) {
+		case "home", "work", "other":
+			return strings.ToLower(kind)
+		}
+	}
+	return ""
 }
