@@ -402,3 +402,182 @@ func TestSomethingThatIsNotAnEventIsRefused(t *testing.T) {
 		t.Fatalf("rubbish should be refused as the client's fault: %d", answer.StatusCode)
 	}
 }
+
+// event builds one, so a test can say what it is about rather than repeat a
+// file each time.
+func event(uid, summary, starts, ends string, extra ...string) string {
+	lines := []string{
+		"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Example//EN", "BEGIN:VEVENT",
+		"UID:" + uid, "DTSTAMP:20260912T120000Z",
+		"DTSTART:" + starts, "DTEND:" + ends, "SUMMARY:" + summary,
+	}
+	lines = append(lines, extra...)
+	lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+	return strings.Join(lines, "\r\n") + "\r\n"
+}
+
+func (self *world) freeBusy(t *testing.T, from, until string) (int, string) {
+	t.Helper()
+	answer := self.ask(t, "REPORT", self.calendarPath(), `<?xml version="1.0"?>
+		<c:free-busy-query xmlns:c="urn:ietf:params:xml:ns:caldav">
+		  <c:time-range start="`+from+`" end="`+until+`"/>
+		</c:free-busy-query>`, "Depth", "1")
+	return answer.StatusCode, text(t, answer)
+}
+
+// Asking when somebody is busy is answered, and answered with a calendar
+// rather than with XML -- which is the one place in this protocol where a
+// REPORT is not a multistatus.
+func TestFreeBusySaysWhenSomebodyIsBusy(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "morning", event("morning", "Standup", "20260914T090000Z", "20260914T093000Z"))
+	here.putEvent(t, "afternoon", event("afternoon", "Review", "20260914T140000Z", "20260914T150000Z"))
+
+	status, body := here.freeBusy(t, "20260914T000000Z", "20260915T000000Z")
+	if status != http.StatusOK {
+		t.Fatalf("asking when somebody is busy: %d %s", status, body)
+	}
+	if !strings.Contains(body, "BEGIN:VFREEBUSY") {
+		t.Fatalf("answered with a calendar:\n%s", body)
+	}
+	for _, want := range []string{
+		"FREEBUSY;FBTYPE=BUSY:20260914T090000Z/20260914T093000Z",
+		"FREEBUSY;FBTYPE=BUSY:20260914T140000Z/20260914T150000Z",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q:\n%s", want, body)
+		}
+	}
+	// And it says nothing about what any of it is. This is the whole
+	// point: somebody arranging a meeting is told the time is taken, not
+	// what it is taken by.
+	for _, leaked := range []string{"Standup", "Review", "SUMMARY", "LOCATION", "ATTENDEE"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("free-busy leaked %q:\n%s", leaked, body)
+		}
+	}
+}
+
+// Two meetings that touch are one stretch of unavailability, not two: a
+// client drawing them separately would show a gap that is not there.
+func TestBusyStretchesThatTouchAreOne(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "first", event("first", "One", "20260914T090000Z", "20260914T100000Z"))
+	here.putEvent(t, "second", event("second", "Two", "20260914T100000Z", "20260914T110000Z"))
+	// And one inside the first, which must not add a third stretch.
+	here.putEvent(t, "inside", event("inside", "Three", "20260914T091500Z", "20260914T094500Z"))
+
+	status, body := here.freeBusy(t, "20260914T000000Z", "20260915T000000Z")
+	if status != http.StatusOK {
+		t.Fatalf("%d %s", status, body)
+	}
+	if count := strings.Count(body, "FREEBUSY;FBTYPE"); count != 1 {
+		t.Fatalf("one stretch from nine to eleven, not %d:\n%s", count, body)
+	}
+	if !strings.Contains(body, "20260914T090000Z/20260914T110000Z") {
+		t.Fatalf("nine to eleven:\n%s", body)
+	}
+}
+
+// An event that says it does not make its owner busy does not, and neither
+// does one they declined or one that was cancelled. Each of these is a way to
+// tell somebody a time is taken when it is free.
+func TestWhatDoesNotMakeSomebodyBusy(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "transparent",
+		event("transparent", "Reminder", "20260914T090000Z", "20260914T100000Z", "TRANSP:TRANSPARENT"))
+	here.putEvent(t, "declined",
+		event("declined", "Not going", "20260914T110000Z", "20260914T120000Z",
+			"ORGANIZER:mailto:grace@example.com",
+			"ATTENDEE;PARTSTAT=DECLINED:mailto:alice@example.com"))
+	here.putEvent(t, "cancelled",
+		event("cancelled", "Called off", "20260914T130000Z", "20260914T140000Z", "STATUS:CANCELLED"))
+	here.putEvent(t, "birthday",
+		"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n"+
+			"UID:birthday\r\nDTSTAMP:20260912T120000Z\r\nDTSTART;VALUE=DATE:20260914\r\n"+
+			"DTEND;VALUE=DATE:20260915\r\nSUMMARY:Ada's birthday\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	// And one that does, so the test is not passing because nothing was
+	// stored or because the query is broken.
+	here.putEvent(t, "real", event("real", "A real meeting", "20260914T150000Z", "20260914T160000Z"))
+
+	status, body := here.freeBusy(t, "20260914T000000Z", "20260915T000000Z")
+	if status != http.StatusOK {
+		t.Fatalf("%d %s", status, body)
+	}
+	if !strings.Contains(body, "20260914T150000Z/20260914T160000Z") {
+		t.Fatalf("the real meeting makes them busy:\n%s", body)
+	}
+	if count := strings.Count(body, "FREEBUSY;FBTYPE"); count != 1 {
+		t.Fatalf("only the real meeting, not %d stretches:\n%s", count, body)
+	}
+	// And an attendee who is somebody else declining says nothing about
+	// whether the owner is going.
+	here.putEvent(t, "someoneElseDeclined",
+		event("someoneElseDeclined", "Still on", "20260914T170000Z", "20260914T180000Z",
+			"ORGANIZER:mailto:alice@example.com",
+			"ATTENDEE;PARTSTAT=DECLINED:mailto:grace@example.com"))
+	status, body = here.freeBusy(t, "20260914T000000Z", "20260915T000000Z")
+	if status != http.StatusOK || !strings.Contains(body, "20260914T170000Z/20260914T180000Z") {
+		t.Fatalf("somebody else declining does not free the owner: %d\n%s", status, body)
+	}
+}
+
+// A stretch reaching outside the window is cut to it: a client asked about a
+// window, and a period reaching past it says more about somebody's day than
+// they agreed to tell.
+func TestBusyStretchesAreCutToTheWindow(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "conference",
+		event("conference", "Conference", "20260914T090000Z", "20260918T170000Z"))
+	status, body := here.freeBusy(t, "20260916T000000Z", "20260917T000000Z")
+	if status != http.StatusOK {
+		t.Fatalf("%d %s", status, body)
+	}
+	if !strings.Contains(body, "20260916T000000Z/20260917T000000Z") {
+		t.Fatalf("cut to the day asked about:\n%s", body)
+	}
+	if strings.Contains(body, "20260914") || strings.Contains(body, "20260918") {
+		t.Fatalf("and says nothing about the days either side:\n%s", body)
+	}
+}
+
+// A repeat makes its owner busy every time it happens, not only the first.
+func TestARepeatMakesSomebodyBusyEveryTime(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "weekly",
+		event("weekly", "Weekly", "20260914T100000Z", "20260914T110000Z",
+			"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"))
+	// A week three repeats in, which the event's own start date is nowhere
+	// near.
+	status, body := here.freeBusy(t, "20261005T000000Z", "20261006T000000Z")
+	if status != http.StatusOK {
+		t.Fatalf("%d %s", status, body)
+	}
+	if !strings.Contains(body, "20261005T100000Z/20261005T110000Z") {
+		t.Fatalf("the fourth Monday:\n%s", body)
+	}
+}
+
+// A free-busy request with no window is refused rather than answered for all
+// of time.
+func TestFreeBusyNeedsAWindow(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	answer := here.ask(t, "REPORT", here.calendarPath(), `<?xml version="1.0"?>
+		<c:free-busy-query xmlns:c="urn:ietf:params:xml:ns:caldav"/>`, "Depth", "1")
+	_ = text(t, answer)
+	if answer.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a free-busy with no window: %d", answer.StatusCode)
+	}
+}

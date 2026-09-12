@@ -61,7 +61,11 @@ history, and every example here is written the way it should be copied.
       advertises both home sets, a fetch and both reports are answered from
       the stored bytes, and a calendar-query's time range is answered from the
       occurrence index. 11 tests in `internal/dav`; 1232 green overall.
-- [ ] Milestone 4: free-busy.
+- [x] (2026-09-12) Milestone 4: free-busy, answered by this server because
+      the library has no answer for it at all. Transparent, declined,
+      cancelled and all-day events do not make somebody busy; stretches that
+      touch are merged and cut to the window; the answer says when and
+      nothing else. 6 tests; 1238 green overall.
 - [ ] Milestone 5: invitations arriving as mail.
 - [ ] Milestone 6: invitations and cancellations leaving as mail.
 - [ ] Milestone 7: the calendar as something the agent knows.

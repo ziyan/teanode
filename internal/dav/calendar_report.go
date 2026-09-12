@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -28,8 +29,11 @@ import (
 // rather than to the window; the index of when things happen is there so it
 // does not have to be.
 //
-// Two reports are answered: calendar-multiget, which asks for events by name,
-// and calendar-query. Anything else is left to the library.
+// Three reports are answered: calendar-multiget, which asks for events by
+// name; calendar-query, which asks for the ones in a window; and
+// free-busy-query, which asks when somebody is busy without asking what they
+// are doing. The library has no answer for that last one at all, so if it
+// were not answered here it would not be answered.
 
 const calendarNS = "urn:ietf:params:xml:ns:caldav"
 
@@ -200,6 +204,10 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 			answers = append(answers, foundEvent(signedIn, object, wantsETag, wantsLength, wantsData))
 		}
 
+	case "free-busy-query":
+		self.serveFreeBusy(writer, request, backing, body)
+		return true
+
 	case "calendar-query":
 		var query calendarQuery
 		if err := xml.Unmarshal(body, &query); err != nil {
@@ -238,6 +246,103 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 	}
 	_, _ = writer.Write(encoded)
 	return true
+}
+
+// serveFreeBusy answers "when is this person busy", and says nothing else.
+//
+// Not a multistatus: this report answers with a calendar, which is the one
+// place in WebDAV where a REPORT is not XML.
+func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.Request,
+	backing *calendarBackend, body []byte) {
+	var asked struct {
+		TimeRange timeRange `xml:"urn:ietf:params:xml:ns:caldav time-range"`
+	}
+	if err := xml.Unmarshal(body, &asked); err != nil {
+		http.Error(writer, "that request could not be read", http.StatusBadRequest)
+		return
+	}
+	from, until, ok := asked.TimeRange.window()
+	if !ok {
+		http.Error(writer, "a free-busy request has to say which stretch of time it is about",
+			http.StatusBadRequest)
+		return
+	}
+
+	ctx := request.Context()
+	signedIn := backing.who(ctx)
+	found, err := backing.calendarAt(ctx, signedIn, request.URL.Path)
+	if err != nil {
+		status, message := statusOf(err)
+		http.Error(writer, message, status)
+		return
+	}
+
+	// Whose calendar this is, by address, so that "which of these
+	// attendees is me" can be answered and an event they declined does not
+	// make them look busy.
+	theirs := make(map[string]bool)
+	if signedIn.mailbox != nil {
+		for _, address := range signedIn.mailbox.Addresses {
+			theirs[strings.ToLower(strings.TrimSpace(address.Address))] = true
+		}
+	}
+
+	var busy []calendar.Occurrence
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		occurrences, err := tx.ListOccurrences(found.ID, from, until)
+		if err != nil {
+			return unexpectedCalendar(err)
+		}
+		// Whether an event makes its owner busy is a property of the
+		// event, not of each time it happens, so it is decided once per
+		// file however many occurrences that file has in the window.
+		counts := make(map[string]bool, len(occurrences))
+		for _, occurrence := range occurrences {
+			decided, already := counts[occurrence.ObjectID]
+			if !already {
+				object, err := tx.GetCalendarObject(found.ID, occurrence.ObjectID)
+				if err != nil {
+					return unexpectedCalendar(err)
+				}
+				if object == nil {
+					counts[occurrence.ObjectID] = false
+					continue
+				}
+				parsed, err := calendar.Parse([]byte(object.Data))
+				if err != nil {
+					// Kept text that cannot be read is this server's
+					// problem. Counted as busy, because the safe
+					// mistake here is to say somebody is unavailable
+					// when they are free rather than the other way
+					// round: the first wastes a slot, the second
+					// books over something real.
+					decided = true
+				} else {
+					decided = calendar.MakesBusy(parsed, theirs)
+				}
+				counts[occurrence.ObjectID] = decided
+			}
+			if !decided {
+				continue
+			}
+			busy = append(busy, calendar.Occurrence{
+				StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
+			})
+		}
+		return nil
+	}); err != nil {
+		status, message := statusOf(err)
+		http.Error(writer, message, status)
+		return
+	}
+
+	answer := calendar.WriteFreeBusy(calendar.FreeBusy(busy, from, until), from, until)
+	writer.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	writer.Header().Set("Content-Length", strconv.Itoa(len(answer)))
+	writer.WriteHeader(http.StatusOK)
+	if _, err := writer.Write(answer); err != nil {
+		log.Debugf("a free-busy answer could not be written to the client: %s", err)
+	}
 }
 
 // eventsMatching is the events a query asks for.
