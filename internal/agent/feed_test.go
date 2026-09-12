@@ -158,25 +158,25 @@ func TestSharedArtifactAddresses(t *testing.T) {
 	configuration := config.Default()
 	configuration.Server.Secret = strings.Repeat("not-a-secret-", 4)
 	worker := agent.New(&agent.Settings{Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
-	share := worker.ShareArtifact("artifact1", time.Now().Add(time.Hour))
-	if share == "" || !worker.SharedArtifact("artifact1", share) {
+	share := worker.ShareAttachment("artifact1", time.Now().Add(time.Hour))
+	if share == "" || !worker.SharedAttachment("artifact1", share) {
 		t.Fatalf("a fresh address opens the artifact: %q", share)
 	}
-	if worker.SharedArtifact("artifact2", share) {
+	if worker.SharedAttachment("artifact2", share) {
 		t.Fatal("the address names one artifact")
 	}
 	changed := share[:len(share)-1] + "0"
 	if strings.HasSuffix(share, "0") {
 		changed = share[:len(share)-1] + "1"
 	}
-	if worker.SharedArtifact("artifact1", changed) || worker.SharedArtifact("artifact1", "nonsense") || worker.SharedArtifact("artifact1", "") {
+	if worker.SharedAttachment("artifact1", changed) || worker.SharedAttachment("artifact1", "nonsense") || worker.SharedAttachment("artifact1", "") {
 		t.Fatal("a changed address opens nothing")
 	}
-	if expired := worker.ShareArtifact("artifact1", time.Now().Add(-time.Minute)); worker.SharedArtifact("artifact1", expired) {
+	if expired := worker.ShareAttachment("artifact1", time.Now().Add(-time.Minute)); worker.SharedAttachment("artifact1", expired) {
 		t.Fatal("an expired address opens nothing")
 	}
 	unsigned := agent.New(&agent.Settings{Configuration: func() *config.Configuration { return config.Default() }, Instance: "test", Tick: time.Hour})
-	if unsigned.ShareArtifact("artifact1", time.Now().Add(time.Hour)) != "" {
+	if unsigned.ShareAttachment("artifact1", time.Now().Add(time.Hour)) != "" {
 		t.Fatal("without a secret there is no address")
 	}
 }

@@ -3,10 +3,44 @@
   "name": "TeaNode agent tab",
   "version": "2.0.0",
   "description": "Your TeaNode agent on any page: talk to it, and attach the tab you are looking at so it can act there with your session while you watch.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs", "tabGroups", "identity"],
-  "host_permissions": ["<all_urls>"],
-  "action": { "default_title": "Your TeaNode agent" },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "tabGroups",
+    "identity"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "Your TeaNode agent",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
   "options_page": "options.html",
-  "background": { "service_worker": "background.js" },
-  "icons": {}
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

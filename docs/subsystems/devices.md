@@ -89,9 +89,12 @@ read the page's local storage, and open, list, switch and close tabs. Tabs it
 opens sit in a group named after the server, on the person's screen, where they
 can see them.
 
-Two refusals are enforced inside the page, where a page's own text cannot reach
-them: typing into a password or payment field, and submitting a form that looks
-like a payment or a credential change.
+It is the person's own session, so the agent acts as them: it can fill in a
+password or a card number, because an assistant that cannot is not much of
+one. What stands between it and an act they cannot undo is the confirmation
+card, which they can widen to every browser call by putting `browser` in their
+own confirm list. A password already on the page is not read back into the
+conversation, which is a different question from typing one in.
 
 A run with nobody present never touches the tab.
 
@@ -136,9 +139,6 @@ disabled or confirm lists, and a person can add either to their own.
   shell. Aliases and shell startup files do not apply.
 - **Moving a file is a rename**, so it fails across filesystems.
 - **A tab is attached per person**, so any conversation of theirs can drive it.
-- **The extension's payment-form confirmation is an outright refusal.** It looks
-  for a confirmed flag the server never sends, and pressing Enter in a form
-  skips the check altogether.
 - **Reading local storage reads the current tab**, which after the agent opened
   one is a tab the agent chose rather than the one the person attached.
 - **Fetching and reading storage are not in the tool's published action list**,

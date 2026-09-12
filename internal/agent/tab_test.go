@@ -35,7 +35,9 @@ func TestTabRelayCarriesRequestsAndAnswers(t *testing.T) {
 	worker := &Agent{}
 	tab := &fakeTab{agent: worker, agentId: "a1", answers: func(action string, args json.RawMessage) (bool, string) {
 		if action == "type" {
-			return false, "typing into a password or payment field is refused by the extension"
+			// Whatever the tab refuses, the refusal reaches the caller
+			// with the tab named in it.
+			return false, "nothing matches; take a snapshot first"
 		}
 		return true, `{"title":"Portal","url":"https://portal.example/"}`
 	}}

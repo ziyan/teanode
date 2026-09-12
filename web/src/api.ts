@@ -64,12 +64,30 @@ export function authorization(): Record<string, string> {
   return bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}
 }
 
-// withToken is an address a browser fetches on its own — a picture, a
-// framed artifact — with the token added where a header cannot go; the
-// address is unchanged when a session cookie will do.
-export function withToken(url: string): string {
-  if (!bearerToken) return url
-  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(bearerToken)}`
+// A picture in the transcript and a page the agent made are fetched by the
+// browser itself, which cannot be told to send a header. On the dashboard
+// the session cookie carries them. Framed into another site there is no
+// cookie of this origin, so the server signs an address for that one file,
+// good for a few hours: the person's own token never goes into an address,
+// where it would be written into every access log on the way and into
+// whatever they copied the link into.
+const sharedAddresses = new Map<string, Promise<string>>()
+
+export function sharedAttachment(attachmentId: string): Promise<string> {
+  const known = sharedAddresses.get(attachmentId)
+  if (known) return known
+  const asking = graphql<{ ShareAgentAttachment: string }>(
+    'query ($attachmentId: String!) { ShareAgentAttachment(attachmentId: $attachmentId) }',
+    { attachmentId },
+  )
+    .then((answer) => answer.ShareAgentAttachment)
+    .catch((reason) => {
+      // Asked for again next time rather than remembered as broken.
+      sharedAddresses.delete(attachmentId)
+      throw reason
+    })
+  sharedAddresses.set(attachmentId, asking)
+  return asking
 }
 
 async function send(

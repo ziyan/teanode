@@ -160,16 +160,26 @@ func TestBrowserDrivesAPageThroughTheProtocol(t *testing.T) {
 	if chrome.sent("Target.disposeBrowserContext") != 1 {
 		t.Fatal("closing a context should dispose it")
 	}
-	// A refused field: the script says so and nothing is typed.
+	// Any field the person's agent is asked to fill in is filled in,
+	// including a card number: it is their session and their agent, and
+	// what stands in front of an act they cannot undo is the card they
+	// answer, not a list of field names kept here.
 	chrome.evaluate = func(expression string) any {
-		if strings.Contains(expression, "password or payment field") {
-			return map[string]any{"ok": false, "refused": "a password or payment field"}
-		}
-		return true
+		return map[string]any{"ok": true}
 	}
 	page, _ = browser.NewContext(context.Background())
-	if err := page.Type(context.Background(), Target{Ref: 2}, "4111", false, false); err == nil || chrome.sent("Input.insertText") != 0 {
-		t.Fatalf("typing into a payment field must be refused: %v", err)
+	if err := page.Type(context.Background(), Target{Ref: 2}, "4111", false, false); err != nil {
+		t.Fatalf("typing into a payment field: %v", err)
+	}
+	if chrome.sent("Input.insertText") != 1 {
+		t.Fatal("the text should have been typed")
+	}
+	// Nothing matching is still nothing to type into.
+	chrome.evaluate = func(expression string) any {
+		return map[string]any{"ok": false}
+	}
+	if err := page.Type(context.Background(), Target{Ref: 9}, "x", false, false); err == nil {
+		t.Fatal("a ref that matches nothing is said so")
 	}
 	_ = page.Close()
 }

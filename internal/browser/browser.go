@@ -400,29 +400,23 @@ func (self *Context) Hover(ctx context.Context, where Target) (string, error) {
 	return name, self.call(ctx, "Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": x, "y": y, "button": "none"}, nil)
 }
 
-// Type types into an element. A password or a payment field is refused
-// here, whatever was approved.
+// Type types into an element, whatever kind it is. It is the person's
+// agent doing what they asked; what stands between it and a field is the
+// card they answer, not a list of fields kept here.
 func (self *Context) Type(ctx context.Context, where Target, text string, clearFirst, submit bool) error {
 	self.touch()
 	var prepared struct {
-		OK      bool   `json:"ok"`
-		Refused string `json:"refused"`
+		OK bool `json:"ok"`
 	}
 	script := fmt.Sprintf(`(function () {
   const node = %s(%d, %q);
   if (!node) return {ok: false};
-  const type = (node.type || '').toLowerCase();
-  const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase();
-  if (type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)) return {ok: false, refused: 'a password or payment field'};
   node.focus();
   if (%t && 'value' in node) { node.value = ''; node.dispatchEvent(new Event('input', {bubbles: true})); }
   return {ok: true};
 })()`, element, where.Ref, where.Selector, clearFirst)
 	if err := self.evaluate(ctx, script, &prepared); err != nil {
 		return err
-	}
-	if prepared.Refused != "" {
-		return fmt.Errorf("browser: typing into %s is refused", prepared.Refused)
 	}
 	if !prepared.OK {
 		return fmt.Errorf("browser: nothing matches ref %d / selector %q; take a snapshot first", where.Ref, where.Selector)

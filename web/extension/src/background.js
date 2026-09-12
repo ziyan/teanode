@@ -298,18 +298,14 @@ async function inPage(action, args) {
     if (args.selector) return document.querySelector(args.selector)
     return null
   }
+  // Which fields hold a secret. It decides what a snapshot says, not what
+  // may be typed: a password the person has already filled in is not read
+  // back into the conversation, where it would be kept and sent onward.
+  // Typing into one is their agent's business and goes ahead.
   const sensitive = (node) => {
     const type = (node.type || '').toLowerCase()
     const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
     return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)
-  }
-  // A form that pays or changes credentials is not submitted on the model's
-  // word alone. Every way of submitting one comes through here: the button,
-  // type with submit, and Enter.
-  const payingForm = (form, args) => {
-    const text = (form.innerText || '').toLowerCase()
-    if (!/password|card number|cvc|cvv|pay now|place order|checkout|wire|transfer/.test(text) || args.confirmed) return null
-    return { ok: false, error: 'this form pays or changes credentials; it needs the person\u2019s word (confirmed) before it is submitted' }
   }
   const nameOf = (node) => {
     const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
@@ -354,7 +350,7 @@ async function inPage(action, args) {
           let extra = ''
           if (tag === 'a' && node.getAttribute('href')) extra = ' href=' + node.getAttribute('href')
           if ((tag === 'input' || tag === 'textarea') && node.value && !sensitive(node)) extra = ' value=' + JSON.stringify(node.value.slice(0, 80))
-          if (sensitive(node)) extra = ' (sensitive: never typed into)'
+          if (sensitive(node)) extra = ' (holds a secret)'
           lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
           total += 40
           if (tag === 'select') {
@@ -373,11 +369,6 @@ async function inPage(action, args) {
     case 'click': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      const form = node.form || node.closest('form')
-      if (form && (node.type === 'submit' || node.tagName.toLowerCase() === 'button')) {
-        const refusal = payingForm(form, args)
-        if (refusal) return refusal
-      }
       node.scrollIntoView({ block: 'center' })
       node.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
@@ -392,7 +383,6 @@ async function inPage(action, args) {
     case 'type': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      if (sensitive(node)) return { ok: false, error: 'typing into a password or payment field is refused by the extension' }
       node.focus()
       if (args.clear_first) node.value = ''
       if ('value' in node) {
@@ -403,8 +393,6 @@ async function inPage(action, args) {
         document.execCommand('insertText', false, args.text || '')
       }
       if (args.submit && node.form) {
-        const refusal = payingForm(node.form, args)
-        if (refusal) return refusal
         node.form.requestSubmit ? node.form.requestSubmit() : node.form.submit()
       }
       return { ok: true, data: { typed: (args.text || '').length } }
@@ -422,12 +410,6 @@ async function inPage(action, args) {
     }
     case 'press': {
       const active = document.activeElement || document.body
-      // Enter in a form submits it, so it is the same act as clicking the
-      // button and asks the same question. It went unasked once.
-      if (args.key === 'Enter' && active.form) {
-        const refusal = payingForm(active.form, args)
-        if (refusal) return refusal
-      }
       for (const kind of ['keydown', 'keypress', 'keyup']) active.dispatchEvent(new KeyboardEvent(kind, { key: args.key, bubbles: true }))
       if (args.key === 'Enter' && active.form) active.form.requestSubmit ? active.form.requestSubmit() : active.form.submit()
       return { ok: true, data: { pressed: args.key } }

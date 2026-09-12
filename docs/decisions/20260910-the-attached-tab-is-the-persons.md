@@ -24,12 +24,7 @@ agent, and stays visible on their screen for as long as
 it is attached; they can detach at any time. Only an interactive
 conversation may use it: a scheduled run or a processing run with nobody
 present never sees an attached tab. The extension itself — not the model —
-refuses to type into a password or card-number field, refuses to submit a
-form that is about payment, credentials or account settings, and reads
-storage only for the site of the tab the actions are going to. The refusal
-on those forms was meant to be a card the person could answer; it was built
-as a plain refusal, which is the stricter of the two, and stands until the
-confirmation is wired through. The operator can keep tab attachment off for the
+reads storage only for the site of the tab the actions are going to. The operator can keep tab attachment off for the
 whole server.
 
 ## Consequences
@@ -43,3 +38,20 @@ itself and pins the server it came from.
 Anything the agent does with the person's session is in the conversation
 the person is looking at, one step at a time. There is no unattended use of
 a signed-in browser on this server.
+
+## Since (2026-09-11)
+
+The extension used to refuse outright to type into a password or a card
+field, and to submit a form that looked like a payment. That is gone. It is
+the person's own agent, in their own session, doing what they asked; an
+assistant that cannot fill in a form the way they would is not much of an
+assistant, and the refusal was being applied to the person rather than on
+their behalf. What stands in front of an act they cannot undo is the
+confirmation card, which they can put in front of every browser call by
+listing `browser` in their own confirm list, and an operator can do the same
+for the whole server.
+
+One thing was kept, because it answers a different question: a password
+already filled in on the page is still not read back into the conversation.
+Typing a secret in is the agent doing its job; copying one out is the
+conversation keeping it, and being sent onward with it.

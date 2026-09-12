@@ -27,6 +27,14 @@ type AgentQuery interface {
 	// The caller's own token use since a time, totalled under one key: day,
 	// kind, mailbox or model. Needs agent:use.
 	AgentUsage(ctx context.Context, arguments AgentUsageArguments) ([]models.AgentUsageRow, error)
+
+	// An address for one file of the caller's own conversations that the
+	// browser can fetch by itself -- a picture in the transcript, a page
+	// the agent made -- signed, naming that one file, and good for a few
+	// hours. It is for the drawer framed into another site, which has no
+	// session cookie of this origin and cannot put a header on an img or
+	// an iframe. Needs agent:use, and the file must be the caller's.
+	ShareAgentAttachment(ctx context.Context, arguments ShareAgentAttachmentArguments) (string, error)
 }
 
 // AgentMutation changes a person's own agent.

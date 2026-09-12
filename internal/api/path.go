@@ -164,5 +164,15 @@ func PublicPaths() []string {
 func PublicPrefixes() []string {
 	// Sending with an API key carries its own authentication; single
 	// sign-on is how somebody with no session yet gets one.
-	return []string{Prefix + "/send/", Prefix + "/sso/"}
+	//
+	// Fetching one file of a conversation is here because a picture and a
+	// framed artifact are fetched by the browser itself, which cannot be
+	// told to send a header: those carry the token in the address, and the
+	// handler checks it exactly as a header would be checked. The trailing
+	// slash keeps it to fetching one file by its id; uploading, which is
+	// the same path without it, stays behind the middleware. Without this
+	// the drawer framed into another site showed neither, because the
+	// middleware turned the request away before the handler could look at
+	// the token.
+	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/"}
 }

@@ -787,7 +787,7 @@ func (self *Manager) artifactLink(attachmentId string) string {
 	if host == "" {
 		host = strings.TrimSpace(configuration.Server.Name)
 	}
-	share := self.settings.Worker.ShareArtifact(attachmentId, time.Now().Add(agent.ShareFor))
+	share := self.settings.Worker.ShareAttachment(attachmentId, time.Now().Add(agent.ShareFor))
 	if host == "" || share == "" {
 		return ""
 	}

@@ -297,7 +297,7 @@ func browserOverlay(ctx context.Context) string {
 	if attached == nil || run.Headless() {
 		return ""
 	}
-	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; prefer target tab over the headless browser while it is attached. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. Typing into a password or payment field is refused there, and a form that pays or changes credentials needs their word.\n</tab>", attached.Title(), attached.URL())
+	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; prefer target tab over the headless browser while it is attached. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo.\n</tab>", attached.Title(), attached.URL())
 }
 
 // runBrowserOnTab carries a browser action to the person's tab.

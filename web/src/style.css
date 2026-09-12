@@ -4798,6 +4798,10 @@ label.check-list-item {
   padding: 0 4px 0 8px;
   border-radius: 6px;
   color: var(--text);
+  /* The list is a column that scrolls, so a row must keep its own height
+     rather than be squeezed to fit: a row carrying both a title and a
+     summary is two lines tall, and shrinking it ran the two together. */
+  flex-shrink: 0;
 }
 
 .agent-drawer-list-row:hover,
@@ -4840,6 +4844,7 @@ label.check-list-item {
 }
 
 .agent-drawer-list-heading {
+  flex-shrink: 0;
   margin-top: 6px;
   padding: 6px 8px 2px;
   border-top: 1px solid var(--border);
@@ -4853,6 +4858,12 @@ label.check-list-item {
 }
 
 .agent-drawer-list-title {
+  /* A title and, under it, the summary: two lines that each keep to
+     themselves. The name and the summary do their own trimming, so the
+     button trims nothing. */
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: 1;
   min-width: 0;
   padding: 6px 0;
@@ -4862,6 +4873,10 @@ label.check-list-item {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+}
+
+.agent-drawer-list-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -6307,12 +6322,6 @@ p.notice.domain-logo-note {
   width: 100%;
   margin-bottom: 4px;
   font-size: 13px;
-}
-
-.agent-drawer-list-title {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
 .agent-drawer-list-summary {

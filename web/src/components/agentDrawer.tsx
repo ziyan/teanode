@@ -12,7 +12,9 @@ import {
   announceMailChanged,
   graphql,
   subscribe,
-  withToken,
+  authorization,
+  framedDrawer,
+  sharedAttachment,
 } from '../api'
 import { uploadFiles } from '../upload'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
@@ -323,7 +325,71 @@ function isImage(contentType: string): boolean {
 }
 
 function attachmentHref(attachment: Attachment): string {
-  return withToken(`/api/v1/agent/attachments/${encodeURIComponent(attachment.id)}`)
+  return `/api/v1/agent/attachments/${encodeURIComponent(attachment.id)}`
+}
+
+// idOfAttachment reads the file's id out of one of these addresses, which
+// is what the server signs for.
+function idOfAttachment(url: string): string {
+  const match = /\/agent\/attachments\/([A-Za-z0-9_-]+)/.exec(url)
+  return match ? match[1] : ''
+}
+
+// useFileHref is the address to put on an img, a video or an iframe. On
+// the dashboard it is the plain one and the session cookie carries it.
+// Framed into another site there is no cookie, so the server signs an
+// address for that one file; until it answers there is nothing to draw.
+function useFileHref(url: string): string | null {
+  const [signed, setSigned] = useState<string | null>(framedDrawer ? null : url)
+  useEffect(() => {
+    if (!framedDrawer) {
+      setSigned(url)
+      return
+    }
+    const attachmentId = idOfAttachment(url)
+    if (!attachmentId) {
+      setSigned(url)
+      return
+    }
+    let cancelled = false
+    sharedAttachment(attachmentId)
+      .then((address) => {
+        if (!cancelled) setSigned(address)
+      })
+      .catch(() => {
+        if (!cancelled) setSigned(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+  return signed
+}
+
+// openAttachment opens a file the drawer cannot address directly. Framed
+// into another site the plain address has nothing to authenticate it, so
+// the link is followed only once the server has signed one.
+function openAttachment(event: React.MouseEvent<HTMLAnchorElement>) {
+  if (!framedDrawer) return
+  const attachmentId = idOfAttachment(event.currentTarget.getAttribute('href') ?? '')
+  if (!attachmentId) return
+  event.preventDefault()
+  void sharedAttachment(attachmentId).then((address) => {
+    window.open(address, '_blank', 'noopener')
+  })
+}
+
+// AttachedPicture is a picture somebody handed the agent, shown where they
+// sent it. Its address is signed when the drawer is framed elsewhere, so
+// there is a moment before there is anything to show.
+function AttachedPicture({ attachment }: { attachment: Attachment }) {
+  const href = useFileHref(attachmentHref(attachment))
+  if (!href) return null
+  return (
+    <a href={href} target="_blank" rel="noreferrer" title={attachment.name}>
+      <img src={href} alt={attachment.name} className="agent-attachment-image" />
+    </a>
+  )
 }
 
 // linesOf turns stored messages into what the drawer draws: the person's
@@ -439,11 +505,9 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
             <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
           </span>
         ) : isImage(attachment.contentType) ? (
-          <a key={attachment.id} href={attachmentHref(attachment)} target="_blank" rel="noreferrer" title={attachment.name}>
-            <img src={attachmentHref(attachment)} alt={attachment.name} className="agent-attachment-image" />
-          </a>
+          <AttachedPicture key={attachment.id} attachment={attachment} />
         ) : (
-          <a key={attachment.id} href={attachmentHref(attachment)} className="agent-attachment-chip" download={attachment.name}>
+          <a key={attachment.id} href={attachmentHref(attachment)} className="agent-attachment-chip" download={attachment.name} onClick={openAttachment}>
             <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
           </a>
         ),
@@ -490,11 +554,12 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
     return () => window.removeEventListener('message', listen)
   }, [])
   const { t } = useTranslation()
+  const framed = useFileHref(artifact.url)
   const [markdown, setMarkdown] = useState<string | null>(null)
   useEffect(() => {
     if (artifact.kind !== 'markdown') return
     let cancelled = false
-    fetch(withToken(artifact.url), { credentials: 'same-origin' })
+    fetch(artifact.url, { credentials: 'same-origin', headers: authorization() })
       .then((response) => (response.ok ? response.text() : Promise.reject(new Error(response.statusText))))
       .then((text) => {
         if (!cancelled) setMarkdown(text)
@@ -513,7 +578,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
         <span className="agent-artifact-title">{artifact.title}</span>
         <a
           className="icon-button agent-artifact-open"
-          href={withToken(artifact.url)}
+          href={framed ?? undefined}
           target="_blank"
           rel="noreferrer"
           aria-label={t('agentDrawer.openArtifact')}
@@ -524,16 +589,16 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       </div>
       {artifact.kind === 'markdown' ? (
         <div className="agent-artifact-body">{markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}</div>
-      ) : (
+      ) : framed ? (
         <iframe
           ref={frame}
           className="agent-artifact-frame"
           title={artifact.title}
-          src={`${withToken(artifact.url)}#theme=${shownTheme}`}
+          src={`${framed}#theme=${shownTheme}`}
           sandbox="allow-scripts"
           style={height === null ? undefined : { height }}
         />
-      )}
+      ) : null}
     </div>
   )
 }
@@ -542,14 +607,16 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 // picture shown, a video or a sound playing, anything else to open.
 function FileCard({ file }: { file: SharedFile }) {
   const { t } = useTranslation()
-  const href = withToken(file.url)
+  const signed = useFileHref(file.url)
+  // Nothing is drawn until there is an address to draw it from.
+  const href = signed ?? undefined
   const type = file.content_type.toLowerCase()
-  const media = isImage(type) ? (
-    <img src={href} alt={file.name} className="agent-file-media" />
+  const media = !signed ? null : isImage(type) ? (
+    <img src={signed} alt={file.name} className="agent-file-media" />
   ) : type.startsWith('video/') ? (
-    <video src={href} controls preload="metadata" className="agent-file-media" />
+    <video src={signed} controls preload="metadata" className="agent-file-media" />
   ) : type.startsWith('audio/') ? (
-    <audio src={href} controls preload="metadata" className="agent-file-audio" />
+    <audio src={signed} controls preload="metadata" className="agent-file-audio" />
   ) : null
   return (
     <div className="agent-artifact agent-file">

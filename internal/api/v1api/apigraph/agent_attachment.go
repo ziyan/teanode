@@ -1,14 +1,17 @@
 package apigraph
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -34,15 +37,6 @@ type AgentAttachmentUploadResult struct {
 // two file endpoints, settled before a byte of the body is read.
 func (self *graph) agentAttachmentPerson(response http.ResponseWriter, request *http.Request) (*models.User, *models.Agent, bool) {
 	username := api.UsernameFromRequest(request)
-	// The drawer framed into another site has no session cookie of this
-	// origin, and a picture or a framed artifact cannot carry a header:
-	// those come with the token in the address, verified as a header
-	// would be.
-	if username == "" && request.Method == http.MethodGet {
-		if token := request.URL.Query().Get("token"); token != "" {
-			username = self.usernameOfToken(request, token)
-		}
-	}
 	var user *models.User
 	if username != "" && username != config.LocalUsername {
 		found, err := self.database.GetUserByUsername(username)
@@ -140,12 +134,13 @@ func contentTypeOf(name, declared string, content []byte) string {
 
 func (self *graph) agentAttachmentView(response http.ResponseWriter, request *http.Request) {
 	attachmentId := mux.Vars(request)["attachmentId"]
-	// A shared artifact opens without a sign-in: the address itself is
-	// signed, names this one artifact, and expires. A chat app hands
-	// it to a browser that has no session here.
+	// A shared file opens without a sign-in: the address itself is signed,
+	// names this one file, and expires. A chat app hands it to a browser
+	// that has no session here, and so does the drawer framed into another
+	// site, which cannot put a header on a picture or a framed page.
 	if share := request.URL.Query().Get("share"); share != "" && request.Method == http.MethodGet {
 		worker := self.agentWorker()
-		if worker == nil || !worker.SharedArtifact(attachmentId, share) {
+		if worker == nil || !worker.SharedAttachment(attachmentId, share) {
 			writeJSON(response, http.StatusNotFound, map[string]string{"error": "the link is not good, or no longer"})
 			return
 		}
@@ -153,8 +148,8 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 		if !ok {
 			return
 		}
-		if attachment == nil || attachment.MessageID != "artifact" {
-			writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such page"})
+		if attachment == nil {
+			writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such file"})
 			return
 		}
 		self.serveAgentAttachment(response, request, attachment)
@@ -248,4 +243,50 @@ func artifactPolicy(host string) string {
 		assets = " " + host + "/assets/"
 	}
 	return "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'" + assets + "; style-src 'unsafe-inline'" + assets + "; img-src data: blob:; font-src data:" + assets + "; media-src data:"
+}
+
+// ShareAgentAttachmentArguments name one file.
+type ShareAgentAttachmentArguments struct {
+	AttachmentID string `json:"attachmentId"`
+}
+
+// sharedAttachmentFor is how long one of these addresses stays good. Short,
+// because it is made afresh whenever the drawer draws the file, and because
+// an address that opens a file without a sign-in should not outlive the
+// conversation it was drawn in.
+const sharedAttachmentFor = 6 * time.Hour
+
+// ShareAgentAttachment signs an address for one of the caller's own files.
+//
+// The drawer framed into another site has no session cookie of this origin,
+// and a picture or a framed page is fetched by the browser itself, which
+// cannot be told to send a header. The obvious answer -- put the person's
+// token in the address -- writes their token into this server's access log,
+// into the log of anything in front of it, and into whatever they copy the
+// link into. This is signed for one file and expires instead, so the worst
+// it can leak is that file.
+func (self *graph) ShareAgentAttachment(ctx context.Context, arguments ShareAgentAttachmentArguments) (string, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return "", err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return "", agent.ErrUnavailable
+	}
+	var attachment *models.AgentAttachment
+	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		attachment, err = tx.GetAgentAttachment(arguments.AttachmentID)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	if attachment == nil || attachment.AgentID != found.ID {
+		return "", api.ErrNotFound
+	}
+	share := worker.ShareAttachment(attachment.ID, time.Now().Add(sharedAttachmentFor))
+	if share == "" {
+		return "", agent.ErrUnavailable
+	}
+	return api.PathAgentAttachments + "/" + attachment.ID + "?share=" + url.QueryEscape(share), nil
 }
