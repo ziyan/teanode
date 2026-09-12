@@ -67,9 +67,22 @@ only when somebody presses "save to contacts".
 
 Milestone 1 is done. Milestone 2 is next: the DAV mount, sign-in with an
 app password, discovery, and read-only CardDAV.
-- [ ] Milestone 2: the DAV mount, sign-in, discovery, read-only CardDAV.
-- [ ] Milestone 3: writing, ETags, conflicts.
+- [x] Milestone 2: the DAV mount, sign-in, discovery, read-only CardDAV.
+- [x] Milestone 3: writing, ETags, conflicts.
+  - [x] (2026-09-12 15:40Z) internal/dav: the mount, Basic sign-in with an
+        app password, the principal and home set, and the CardDAV backend
+        over the storage from milestone 1.
+  - [x] (2026-09-12 15:55Z) Writing, with If-Match and If-None-Match
+        turned into 412, and an oversized card into 507.
+  - [x] (2026-09-12 16:10Z) Seven tests against a real database and a real
+        HTTP server, including that a collection is never redirected.
+  - [x] (2026-09-12 16:20Z) Exercised end to end against a development
+        server with curl, in both directions; evidence below.
 - [ ] Milestone 4: discovery niceties, DNS advisories, CLI, documentation.
+      (Done already, ahead of its milestone, because the route had to exist
+      anyway: /.well-known/carddav and /.well-known/caldav redirect to the
+      mount. Remaining: the DNS advisory records, the CLI, and the subsystem
+      document.)
 - [ ] Milestone 5: the address book as an agent source.
 
 ## Surprises & Discoveries
@@ -195,6 +208,27 @@ way, as a confusing 404 or a silent 405.
   Evidence: `ListAddressBooks does not authorize the caller ... checked 193
   resolvers`.
 
+- Observation: a contact's identifier is the file name the client chose, and
+  clients choose longer names than this server's own identifiers. iOS and
+  macOS name a card after its UID, a thirty-six character UUID, against a
+  column thirty-two characters wide -- so every contact either of them ever
+  created was refused with a 500 and no explanation.
+  Evidence, against a development server:
+
+        $ curl -X PUT .../contacts/BOOK/A1B2C3D4-E5F6-4789-ABCD-0123456789AB.vcf
+        HTTP/1.1 500 Internal Server Error
+
+  Migration 0049 widens the column to 255, the name is checked before it is
+  used rather than trusted, and a test puts a card under the name iOS would
+  choose. This was found by trying it, not by reading it: the tests written
+  first all used short names, because the author of the tests also wrote the
+  server.
+
+- Observation: the library refuses a PROPFIND whose body does not say it is
+  XML, with `400 webdav: expected application/xml request`. Real clients
+  always send the header; a test written by hand does not, and the resulting
+  400 looks exactly like a routing mistake.
+
 - Observation: a refused write aborts the transaction it happened in, so a
   test that expects a refusal cannot go on using the same transaction.
   Evidence: the duplicate-identifier test, written as one transaction, failed
@@ -262,6 +296,17 @@ way, as a confusing 404 or a silent 405.
   that matter. Deriving the ETag from the stored text rather than from the
   request makes the ETag a property of what we hold, so the value a client
   gets from a listing and the value it gets from a fetch cannot disagree.
+  Date/Author: 2026-09-12, Claude.
+
+- Decision: a contact's identifier is the file name the client chose for it,
+  and the column is wide enough to hold what clients actually choose.
+  Rationale: in CardDAV the client picks the last segment of the URL when it
+  creates a card, and this server has no say. Keeping our own identifier
+  beside it would mean a second column and a lookup on every request for no
+  gain, since the name is already unique within a book. The name is checked
+  before it is used -- length, no slashes, no control characters -- rather
+  than trusted, so that a strange client gets a 400 with a reason rather than
+  a 500 from the column underneath.
   Date/Author: 2026-09-12, Claude.
 
 - Decision: the URL layout is `/dav/{userId}/contacts/{bookId}/{contactId}.vcf`.
@@ -855,6 +900,48 @@ And the address book created on first sight, so that nothing has to be set up:
 
     $ ... ListAddressBooks { id name contacts }
     [{"contacts":0,"id":"01m2atwt94...","name":"Contacts"}]
+
+Milestones 2 and 3, against a development server. A card put the way a phone
+would put it -- an old vCard version, a property the vendor invented -- and
+what came back:
+
+    $ curl --user "$ADDRESS:$APP_PASSWORD" -X PUT \
+        --data-binary @ada.vcf .../contacts/BOOK/ada-from-a-phone.vcf
+    HTTP/1.1 201 Created
+    Etag: "e5abbdf2320cc62b8240281acb1197ff"
+
+    $ curl ... -X PROPFIND -H 'Depth: 1' .../contacts/BOOK/
+    /dav/USER/contacts/BOOK/
+    /dav/USER/contacts/BOOK/ada-from-a-phone.vcf  "e5abbdf2320cc62b..."
+
+    $ curl ... .../contacts/BOOK/ada-from-a-phone.vcf
+    BEGIN:VCARD
+    VERSION:4.0
+    EMAIL;TYPE=work:ada@example.com
+    FN:Ada Lovelace
+    N:Lovelace;Ada;;;
+    TEL;TYPE=cell:+1-555-0100
+    UID:urn:uuid:ada-from-a-phone
+    X-PHONE-INVENTED:kept
+    END:VCARD
+
+The same contact in the dashboard, an edit made there, and the phone seeing
+it without losing what only the phone knew:
+
+    ListContacts -> [{"name":"Ada Lovelace","emails":["ada@example.com"],
+                      "phones":["+1-555-0100"]}]
+    SaveContact(organization: "Analytical Engines")
+    $ curl ... .../contacts/BOOK/ada-from-a-phone.vcf | grep -E 'ORG|X-PHONE'
+    ORG:Analytical Engines
+    X-PHONE-INVENTED:kept
+
+A write over somebody else's, and a deletion:
+
+    $ curl ... -X PUT -H 'If-Match: "not-the-one"' ...
+    412
+    $ curl ... -X DELETE ...
+    204
+    ListContacts -> []
 
 The spike that produced the protocol discoveries above is not checked in; it
 was a scratch program. Its output, which is the evidence quoted throughout:

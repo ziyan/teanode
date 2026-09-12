@@ -237,6 +237,11 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 	if row.ID == "" {
 		row.ID = newID()
 	}
+	if len(row.ID) > 255 {
+		// The identifier is the file name a client chose. Cutting it short
+		// would make two contacts one, so this is refused instead.
+		return nil, fmt.Errorf("db: a contact's identifier is longer than 255 characters")
+	}
 	if row.CreatedAt.IsZero() {
 		row.CreatedAt = now
 	}
