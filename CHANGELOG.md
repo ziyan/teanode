@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A chart the agent draws with a subtitle no longer writes it through the
+  topmost axis label. The theme left room above the plot for a title and a
+  legend on one line; a subtitle goes on a second and had nowhere to be.
+  (#76)
+
 ## [0.20.0] - 2026-09-12
 
 ### Added

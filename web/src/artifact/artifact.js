@@ -61,6 +61,31 @@
     }
   }
 
+  // The theme leaves 48 pixels above the plot, which is room for a title and
+  // a legend on one line. A subtext goes on a second line and had nowhere to
+  // be: it landed on the topmost axis label, so "last six months" was written
+  // through the 200. The plot moves down when there is one, and only then,
+  // because a chart without a subtext should not pay for the space.
+  //
+  // Only when the option has not said where the plot goes. A chart that sets
+  // its own grid means it.
+  const roomForTheTitle = (option) => {
+    if (!option || !option.title || !option.title.subtext) return option
+    const grid = option.grid
+    // A chart may have several grids, and then grid is an array. Copying
+    // an array with Object.assign gives an object with numeric keys, which
+    // is not a grid at all and draws nothing -- so each one is widened on
+    // its own.
+    if (Array.isArray(grid)) {
+      if (grid.some((one) => one && one.top !== undefined)) return option
+      return Object.assign({}, option, {
+        grid: grid.map((one) => Object.assign({}, one, { top: 68 })),
+      })
+    }
+    if (grid && grid.top !== undefined) return option
+    return Object.assign({}, option, { grid: Object.assign({}, grid, { top: 68 }) })
+  }
+
   const drawnCharts = new Set()
   window.addEventListener('resize', () => drawnCharts.forEach((drawn) => drawn.resize()))
   const chart = (element, option) => {
@@ -76,7 +101,7 @@
       previous.dispose()
     }
     const drawn = window.echarts.init(target, 'teanode', { renderer: 'svg' })
-    drawn.setOption(option)
+    drawn.setOption(roomForTheTitle(option))
     drawnCharts.add(drawn)
     return drawn
   }
