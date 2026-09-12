@@ -95,8 +95,10 @@ func skillTool(skill *skills.Skill, declared *skills.Tool) *Tool {
 		risk = tools.RiskWrite
 	}
 	description := strings.TrimSpace(declared.Description)
-	if len(description) > 600 {
-		description = description[:600] + "…"
+	if letters := []rune(description); len(letters) > 600 {
+		// By letters, not bytes: a byte cut through a character leaves
+		// the schema carrying something that is not text.
+		description = string(letters[:600]) + "…"
 	}
 	parameters := declared.Parameters
 	if risk == tools.RiskDestructive {
@@ -193,8 +195,11 @@ func skillRunner(skill *skills.Skill, toolName string) func(context.Context, *Ca
 				return nil, err
 			}
 			running.Shell = &computerShell{attached: attached}
-			// The skill never declared it; it is this server's addition.
-			delete(arguments, "computer")
+			// This server's addition, unless the skill declared one of its
+			// own -- in which case it is the skill's and stays.
+			if !declaresComputer(skill, toolName) {
+				delete(arguments, "computer")
+			}
 		}
 		answer, err := skill.Run(ctx, toolName, arguments, running)
 		if err != nil {
@@ -210,6 +215,18 @@ func skillRunner(skill *skills.Skill, toolName string) func(context.Context, *Ca
 		result.Note = skill.Name + ": " + toolName
 		return result, nil
 	}
+}
+
+// declaresComputer says whether the skill's own schema takes a parameter
+// of that name, which withComputer leaves alone.
+func declaresComputer(skill *skills.Skill, toolName string) bool {
+	declared := skill.Tool(toolName)
+	if declared == nil {
+		return false
+	}
+	properties, _ := declared.Parameters["properties"].(map[string]any)
+	_, taken := properties["computer"]
+	return taken
 }
 
 func runsCommandsNamed(skill *skills.Skill, toolName string) bool {
@@ -260,27 +277,22 @@ func (self *computerShell) Run(ctx context.Context, command string, timeout time
 	if printed.TimedOut {
 		return "", fmt.Errorf("the command was stopped at its timeout on %s", self.attached.Name())
 	}
-	if printed.ExitCode != 0 {
-		// Plenty of programs end non-zero with something worth reading --
-		// git diff when there are differences, grep when there are none --
-		// so what it printed comes back with the code rather than instead
-		// of it.
-		said := strings.TrimSpace(printed.Stderr)
-		if said == "" {
-			said = strings.TrimSpace(printed.Stdout)
-		}
-		if said == "" {
-			said = "it printed nothing"
-		}
-		return "", fmt.Errorf("the command ended %d on %s: %s", printed.ExitCode, self.attached.Name(), said)
-	}
+	// Plenty of programs end non-zero with something worth reading -- git
+	// diff when there are differences, grep when there are none -- so the
+	// code is reported beside what was printed rather than instead of it,
+	// and the workflow carries on. Returning an error here abandoned every
+	// later step of it.
 	text := printed.Stdout
+	truncated := printed.StdoutTruncated
 	if strings.TrimSpace(text) == "" {
-		text = printed.Stderr
+		text, truncated = printed.Stderr, printed.StderrTruncated
 	}
-	if printed.StdoutTruncated || printed.StderrTruncated {
+	if truncated {
 		// Otherwise what the computer cut is handed over as if whole.
 		text += "\n[cut here: the computer stopped reading]"
+	}
+	if printed.ExitCode != 0 {
+		text = fmt.Sprintf("[ended %d on %s]\n%s", printed.ExitCode, self.attached.Name(), text)
 	}
 	return text, nil
 }

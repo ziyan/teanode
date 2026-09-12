@@ -319,14 +319,16 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 		if strings.TrimSpace(step.URL) == "" {
 			return fmt.Errorf("skills: the http step %s has no url", where)
 		}
-		if step.Auth != "" {
-			if self.Profiles[step.Auth] == nil {
-				return fmt.Errorf("skills: the step %s authenticates as %q, which the skill does not declare", where, step.Auth)
-			}
-			// Where the credential is sent has to be settled by the skill,
-			// not by whoever calls the tool. With a name written into the
-			// host, a caller naming a host of their own would be handed
-			// the operator's secret.
+		if step.Auth != "" && self.Profiles[step.Auth] == nil {
+			return fmt.Errorf("skills: the step %s authenticates as %q, which the skill does not declare", where, step.Auth)
+		}
+		// Where a credential is sent has to be settled by the skill, not by
+		// whoever calls the tool: with a name written into the host, a
+		// caller naming a host of their own would be handed the operator's
+		// secret. It counts however the credential travels -- a named
+		// authentication, or a secret written into a header or a body by
+		// hand, which used to go unchecked.
+		if step.Auth != "" || self.carriesSecret(step) {
 			if err := settledHost(step.URL); err != nil {
 				return fmt.Errorf("skills: the step %s sends a credential to %w", where, err)
 			}
@@ -444,6 +446,25 @@ func (self *Skill) checkSecrets(value string, secrets map[string]bool) error {
 		}
 	}
 	return nil
+}
+
+// carriesSecret says whether anything this step sends holds a secret: the
+// address, a header, or the body.
+func (self *Skill) carriesSecret(step *Step) bool {
+	values := []string{step.URL}
+	for _, value := range step.Headers {
+		values = append(values, value)
+	}
+	values = append(values, bodyStrings(step.Body)...)
+	for _, value := range values {
+		for _, match := range reference.FindAllStringSubmatch(value, -1) {
+			name, _ := SplitReference(strings.TrimSpace(match[1]))
+			if strings.HasPrefix(name, "secret:") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // settledHost refuses an address whose host is chosen by whoever calls the

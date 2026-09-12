@@ -26,10 +26,17 @@ sit in a "TeaNode" tab group; it can list them, switch between them and
 close the ones it opened, never yours. An operator can switch attaching
 off for the whole server with `agent.browser.attachTabs`.
 
-What the extension refuses on its own, whatever the agent asks: typing
-into a password or payment field; submitting a form that pays or changes
-credentials without your word; fetching from any site but the one the
-current tab is on; reading storage of any site but that one. The agent
-may open tabs at addresses of its choosing and read them with your
-session, the way you could; that is what attaching is for, and it
+The agent acts in the tab as you would, with your session, and the
+extension does not refuse things on your behalf: filling in a form,
+including a password or a card number, is what you attached it for. What
+it does hold is the edge of the tab itself — fetching only from the site
+the tab is on, reading only that site's storage, and refusing the few
+DevTools methods that reach past this tab into the whole browser, such as
+every site's cookies. One thing is kept out of the conversation rather
+than out of your hands: a password already filled in on the page is
+marked in a snapshot and its value left out, because a value read into
+the conversation is a value stored and sent onward.
+
+The agent may open tabs at addresses of its choosing and read them with
+your session, the way you could; that is what attaching is for, and it
 happens in front of you, in the TeaNode group beside your tab.

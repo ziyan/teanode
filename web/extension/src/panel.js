@@ -133,16 +133,24 @@
         height,
       }
     }
+    // Hidden until there is somewhere to put it, so it does not appear at
+    // the default size and jump to where it was left.
+    host.style.visibility = 'hidden'
+    const settle = () => {
+      host.style.visibility = ''
+      place()
+    }
     try {
       chrome.storage.local.get([GEOMETRY], (stored) => {
         const saved = stored && stored[GEOMETRY]
-        if (saved && typeof saved.width === 'number') geometry = saved
-        place()
+        if (saved && typeof saved.width === 'number' && typeof saved.across === 'number' && typeof saved.down === 'number') {
+          geometry = saved
+        }
+        settle()
       })
     } catch {
-      place()
+      settle()
     }
-    place()
 
     // Dragging by the bar, and sizing by the corner. Both take the
     // pointer for the whole gesture, so it keeps up even when the pointer
@@ -195,11 +203,19 @@
     window.addEventListener('resize', place)
     // A site whose own policy refuses the frame shows nothing and says
     // nothing; after a while the bar says it instead.
+    // A site whose own policy refuses the frame never loads it at all, so
+    // that -- not whether the drawer has finished signing in -- is what
+    // this waits for. A slow server used to have a working panel taken
+    // away at eight seconds.
+    let loaded = false
     let signedIn = false
     const notice = document.createElement('span')
     notice.className = 'name'
+    frame.addEventListener('load', () => {
+      loaded = true
+    })
     setTimeout(() => {
-      if (signedIn) return
+      if (loaded) return
       notice.textContent = 'This site does not allow the panel here; open the dashboard instead.'
       frame.replaceWith(notice)
       attach.hidden = true
@@ -235,7 +251,9 @@
       const message = event.data
       if (!message) return
       if (message.teanode === 'signedIn') {
-        if (answer.username && message.username !== answer.username) {
+        // Fails closed: without a name to check against there is nothing
+        // saying this frame is the person's own.
+        if (!answer.username || message.username !== answer.username) {
           notice.textContent = 'This page interfered with the panel. Close it and open the dashboard instead.'
           frame.replaceWith(notice)
           attach.hidden = true

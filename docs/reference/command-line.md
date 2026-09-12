@@ -19,9 +19,10 @@ with the same side effects. See
 | `teanode-server config env` | write a starter environment file |
 | `teanode-server config init` | migrate the database and store what the environment describes |
 | `teanode-server config show\|validate` | inspect and check the stored configuration |
+| `teanode-server config rules import\|show` | the built-in spam filter's pattern rules: import a set, or show what is stored |
 | `teanode-server config import\|export` | load a `teanode.yaml` into the database, or write one out |
 | `teanode-server tls self-signed` | a certificate for local development |
-| `teanode-server user list\|add\|password\|remove\|reset` | recover the accounts without going through the server |
+| `teanode-server user list\|add\|password\|remove\|reset\|rescue` | recover the accounts without going through the server |
 | `teanode-server password` | hash a password for an exported configuration |
 
 These read the environment the server reads (`TEANODE_DATABASE_URL` and the

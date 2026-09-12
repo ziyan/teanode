@@ -899,7 +899,16 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	result, err := tool.Run(tools.WithRun(ctx, self), call)
 	if err != nil {
-		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": %q}`, err.Error()))
+		// A tool's failure often quotes something from outside -- what a
+		// service answered, what a command printed on its error stream --
+		// so it is bounded like a result and marked like one. Unbounded
+		// and unmarked, a hostile endpoint could answer with instructions
+		// and have them read as the tool's own words.
+		said := err.Error()
+		if len(said) > askResultCharacters {
+			said = said[:askResultCharacters] + "\n[cut here: it went on]"
+		}
+		return self.toolAnswer(toolCall, "<untrusted-data>\n"+fmt.Sprintf(`{"error": %q}`, said)+"\n</untrusted-data>")
 	}
 	content := result.Content
 	if len(content) > askResultCharacters {

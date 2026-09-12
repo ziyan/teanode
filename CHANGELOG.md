@@ -110,10 +110,8 @@ Notable changes to TeaNode. The format follows
   can point into, clicks, types, scrolls and waits, and never reaches a
   private address or downloads a file. For a page only you can sign into,
   a small extension attaches the tab you are looking at to your agent, so
-  it acts there with your session while you watch; the extension itself
-  refuses to type into a password or card field and to submit a form that
-  pays or changes credentials without your word. A run with nobody present
-  may only read a page. (#73)
+  it acts there with your session while you watch, filling in a form the
+  way you would. A run with nobody present may only read a page. (#73)
 
 - The conversation holds up to use. A second message sent while the agent
   is still working queues behind it and says so, rather than waiting on
@@ -291,6 +289,50 @@ Notable changes to TeaNode. The format follows
   "TeaNode", list them, switch between them and close the ones it opened.
   The extension is built with webpack into `web/extension/dist`, and its
   options page wears the dashboard's own tokens. (#73)
+
+- Skills: tools that arrive without a release. A skill is a file of
+  declarations — some requests, some commands, a short sequence of them —
+  fetched from a registry that signs what it publishes. `teanode agent
+  skill search` says what there is, `install weather` checks the
+  signature and the content hash against a key built into the server
+  before keeping anything, and within a moment every agent here has the
+  tools that skill declares, under the ordinary tool policy and in a new
+  `skills` family. Installing belongs to an operator, as declaring a
+  connected server does. A skill's requests go out through the same
+  address guard as fetching a web page, and its commands do not run on
+  the server at all: they go to a computer the person attached, where
+  they ask first and a run with nobody watching never reaches them.
+  `agent.skillSecrets` is where a skill's declared keys are filled in,
+  and the Skills card on the server's agent page installs, updates and
+  switches them off. `docs/subsystems/skills.md` says how it works.
+  (#73)
+
+- The agent hands a piece of coding work to your own machine. With a
+  computer attached, `claude_code` and `codex` brief a coding agent
+  there — it reads and edits your files, runs commands, works on its own
+  and answers — and hand back what it said, whether it failed, how long
+  it took and what it cost at your own account with that service rather
+  than through this server. They never reach a run with nobody watching.
+  (#73)
+
+- The agent can set up a connected server itself, and say what it has
+  spent. `connected_server` lists what is declared, declares one at a
+  URL, and begins an authorization, handing you the address only you can
+  open; `agent_usage` answers what has been spent by day, kind, model or
+  mailbox with today's budget beside it, your own or the whole server's
+  for somebody who may audit agents. A server that publishes no client
+  id of its own — which is most of them — is registered with
+  automatically, so `oauth.clientId` can be left empty; and `teanode
+  agent mcp connect --loopback` brings the authorization back to the
+  terminal, for a service that answers only to a loopback address. (#73)
+
+- The attached tab speaks the DevTools protocol. A page script can be
+  told to click and type, but what it dispatches is not a real event and
+  a site can tell; `cdp` dispatches input the way your own mouse and
+  keyboard do, and `Network.enable` with `cdp_events` shows what a page
+  asked the network for. It attaches on first use — Chrome says so in
+  its own bar — and lets go when the tab closes, the connection does, or
+  ten quiet minutes pass. (#73)
 
 ### Changed
 

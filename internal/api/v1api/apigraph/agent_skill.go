@@ -237,11 +237,23 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 		return nil, fmt.Errorf("skills: the registry calls this %q and the file calls itself %q", entry.Name, parsed.Name)
 	}
 	var stored *models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+	if err := self.database.Transaction(func(tx db.Transaction) error {
+		// A skill an operator switched off stays off when it is updated;
+		// only a new one arrives switched on.
+		enabled := true
+		existing, err := tx.GetAgentSkill(entry.Name)
+		if err != nil {
+			return err
+		}
+		created := time.Time{}
+		if existing != nil {
+			enabled = existing.Enabled
+			created = existing.CreatedAt
+		}
 		stored, err = tx.PutAgentSkill(&models.AgentSkill{
-			Name: entry.Name, Version: entry.Version, Publisher: registry.Publisher(),
+			Name: entry.Name, CreatedAt: created, Version: entry.Version, Publisher: registry.Publisher(),
 			URL: entry.URL, SHA256: entry.SHA256, Description: entry.Description,
-			Content: string(content), Enabled: true,
+			Content: string(content), Enabled: enabled,
 		})
 		return err
 	}); err != nil {

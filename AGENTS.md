@@ -55,6 +55,8 @@ and a person turns it on. See `docs/subsystems/` for how it works.
                             Ask loop. Knows mail, not HTTP
       agent/tools/          the tool kit, and one package per tool beside it;
                             a new tool is a new directory, imported in tools/all
+      skills/               skills: files of declarations fetched from a signed
+                            registry, whose tools join the catalog at run time
       mcp/                  a client for connected servers (Model Context
                             Protocol): HTTP and stdio transports, OAuth 2.1
       browser/              the DevTools client behind the agent's browser tool

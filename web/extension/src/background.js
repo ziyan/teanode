@@ -1,10 +1,15 @@
 // The extension attaches one tab to the person's agent over the server's
 // websocket, saying who it is with the token the options page signed in
-// with. The server never touches the page: every action
-// arrives here as a request, is done by the content script in the page,
-// and its answer goes back. The refusals that matter — a password or card
-// field, a form that pays or changes credentials — are enforced in the
-// content script, whatever the server asked for.
+// with. The server never touches the page: every action arrives here as a
+// request, is done by the content script in the page, and its answer goes
+// back.
+//
+// It is the person's own tab and their own session, so the agent acts as
+// they would and nothing here refuses on their behalf. Two lines are held
+// all the same, because neither is about what the agent may do in this
+// tab: a password already filled in on the page is not read back into the
+// conversation, and the DevTools relay refuses the handful of methods
+// that reach past this tab into the whole browser.
 
 const PROTOCOL = 2
 
@@ -32,6 +37,31 @@ const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
 // A worker starts with nothing attached, whatever the badge said before.
 setBadge('')
 let pings = null
+// wanted is the attachment the person asked for, kept so that a dropped
+// socket can be put back; retry is the timer that does it.
+let wanted = null
+let retry = null
+
+// reconnect opens the socket again for the tab the person attached, if
+// that tab is still there.
+async function reconnect() {
+  if (!wanted) return
+  const origin = await serverOrigin()
+  const secret = await token()
+  if (!origin || !secret) {
+    wanted = null
+    setBadge('')
+    return
+  }
+  const still = await chrome.tabs.get(wanted.tabId).catch(() => null)
+  if (!still) {
+    // The tab it was attached to is gone; there is nothing to go back to.
+    wanted = null
+    setBadge('')
+    return
+  }
+  connect(origin, secret)
+}
 
 async function serverOrigin() {
   const { server } = await chrome.storage.sync.get('server')
@@ -57,9 +87,35 @@ async function attach(tab) {
     return
   }
   detach()
+  if (!/^https?:\/\//i.test(origin)) {
+    // Typed without a scheme, the address builds a WebSocket URL that
+    // throws, and the button did nothing with nothing said.
+    chrome.runtime.openOptionsPage()
+    return
+  }
+  wanted = { tabId: tab.id, attempt: 0 }
+  connect(origin, secret)
+}
+
+// connect opens the socket and puts it back when it drops. A closed lid,
+// a server restarted, a proxy that times out an idle socket: the
+// attachment used to end there, with nothing but a blank badge to say so.
+function connect(origin, secret) {
   const address = origin.replace(/^http/, 'ws') + '/api/v1/agent/tab'
-  socket = new WebSocket(address)
-  attached = { tabId: tab.id, ownTabId: tab.id, title: tab.title || '', url: tab.url || '' }
+  try {
+    socket = new WebSocket(address)
+  } catch {
+    setBadge('!', '#c33')
+    return
+  }
+  const tab = { id: wanted.tabId }
+  attached = { tabId: wanted.tabId, ownTabId: wanted.tabId, title: '', url: '' }
+  void chrome.tabs.get(wanted.tabId).then((found) => {
+    if (attached) {
+      attached.title = found.title || ''
+      attached.url = found.url || ''
+    }
+  }).catch(() => {})
   socket.onopen = async () => {
     socket.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url }))
     // A word every so often keeps this worker, and the socket, alive
@@ -82,6 +138,7 @@ async function attach(tab) {
         detach()
         return
       }
+      if (wanted) wanted.attempt = 0
       setBadge('on', '#2a7')
       tellPanels()
       return
@@ -100,15 +157,35 @@ async function attach(tab) {
   }
   socket.onclose = () => {
     clearInterval(pings)
-    setBadge('')
+    letEveryDebuggerGo()
     socket = null
     attached = null
     tellPanels()
+    if (!wanted) {
+      setBadge('')
+      return
+    }
+    // Put it back, slower each time, up to half a minute: a server being
+    // restarted should not need the person to press the button again.
+    setBadge('…', '#a80')
+    const waiting = Math.min(30000, 1000 * 2 ** Math.min(5, wanted.attempt++))
+    clearTimeout(retry)
+    retry = setTimeout(() => {
+      if (wanted) void reconnect()
+    }, waiting)
   }
   socket.onerror = () => setBadge('!', '#c33')
 }
 
 function detach() {
+  // Asked for: it does not come back on its own.
+  wanted = null
+  clearTimeout(retry)
+  retry = null
+  // The protocol goes with the attachment: otherwise Chrome's own
+  // "is debugging this browser" bar stays up on a tab the agent can no
+  // longer reach.
+  letEveryDebuggerGo()
   if (socket) {
     try {
       socket.close()
@@ -226,6 +303,47 @@ const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
 
+// What the protocol may be asked for. The line is not "the agent is
+// trusted" -- it is their agent and their tab -- but what the attached tab
+// is: everything the page's own origin can reach, plus real input and what
+// the page asks the network for. A handful of methods reach past that tab
+// into the whole browser, and those are refused however they are asked
+// for, because nothing about attaching one tab says yes to them.
+const CDP_REFUSED = [
+  // Every site's cookies, not this one's.
+  'Network.getAllCookies',
+  'Network.getCookies',
+  'Network.setCookie',
+  'Network.setCookies',
+  'Network.deleteCookies',
+  'Storage.getCookies',
+  'Storage.setCookies',
+  'Storage.clearCookies',
+  // Rewriting or holding the page's own requests, on a tab signed in as
+  // the person: a different thing from watching them.
+  'Fetch.',
+  // The browser itself rather than this page: downloads, permissions,
+  // other windows, other targets.
+  'Browser.',
+  'Target.',
+  'SystemInfo.',
+  'Tethering.',
+]
+
+function cdpRefusal(method) {
+  const asked = String(method || '').trim()
+  if (!/^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$/.test(asked)) {
+    return 'a method is written Domain.method, for example Input.dispatchMouseEvent'
+  }
+  for (const refused of CDP_REFUSED) {
+    const matches = refused.endsWith('.') ? asked.startsWith(refused) : asked === refused
+    if (matches) {
+      return `${asked} reaches past this tab into the whole browser, which attaching one tab does not allow; what this page itself holds is reachable with storage, fetch and evaluate`
+    }
+  }
+  return ''
+}
+
 async function debuggerFor(tabId) {
   const known = debugging.get(tabId)
   if (known) {
@@ -328,11 +446,19 @@ async function act(action, args) {
       return { ok: true, data: { url: updated.url, title: updated.title } }
     }
     if (action === 'screenshot') {
+      // captureVisibleTab takes the window's active tab, whichever that
+      // is. Without this it photographed whatever the person had switched
+      // to -- their bank, their inbox -- and sent it to the server.
+      if (!tab.active) {
+        return { ok: false, error: 'the tab to photograph is not the one in front; switch to it first, or take a snapshot instead' }
+      }
       const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
       return { ok: true, data: image }
     }
     if (action === 'cdp') {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
+      const refusal = cdpRefusal(args.method)
+      if (refusal) return { ok: false, error: refusal }
       await debuggerFor(tab.id)
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
       return { ok: true, data: { result: answer === undefined ? null : answer } }
@@ -393,7 +519,8 @@ async function inPage(action, args) {
   let next = window.__teanodeNextRef || 1
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
   const find = () => {
-    if (args.ref) return refs.get(args.ref) || null
+    // A ref comes back through a tool call, where it may be a string.
+    if (args.ref) return refs.get(Number(args.ref)) || refs.get(args.ref) || null
     if (args.selector) return document.querySelector(args.selector)
     return null
   }
@@ -525,7 +652,11 @@ async function inPage(action, args) {
       while (Date.now() - started < timeout) {
         if (args.for === 'selector' && document.querySelector(args.selector)) return { ok: true, data: { ended_by: 'selector' } }
         if ((args.for === 'navigation' || !args.for) && document.readyState === 'complete') return { ok: true, data: { ended_by: 'load' } }
-        if (args.for === 'timeout') break
+        if (args.for === 'timeout') {
+        // Waiting out the whole time is the point of asking for it.
+        await new Promise((resolve) => setTimeout(resolve, Math.min(250, timeout)))
+        continue
+      }
         await new Promise((resolve) => setTimeout(resolve, 250))
       }
       return { ok: true, data: { ended_by: 'timeout' } }
@@ -545,7 +676,13 @@ async function inPage(action, args) {
       try {
         const target = new URL(args.url || '', location.href)
         if (target.origin !== location.origin) return { ok: false, error: 'fetch is limited to the attached page’s own site' }
-        const response = await fetch(target.toString(), { credentials: 'include' })
+        // Following a redirect would take the person's cookies off this
+      // site: any open redirect on it would otherwise read any site they
+      // are signed into.
+      const response = await fetch(target.toString(), { credentials: 'include', redirect: 'manual' })
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+        return { ok: false, error: 'that address redirects off this site, which is not followed with the page\'s session' }
+      }
         const type = response.headers.get('content-type') || ''
         if (/^text\/|json|xml/.test(type)) {
           const text = await response.text()

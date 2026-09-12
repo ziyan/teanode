@@ -31,8 +31,8 @@ local profile for exactly that reason.
 
 It offers two actions. `shell` runs a command and returns both streams, an exit
 code, and whether either was cut. `filesystem` reads, writes, appends, edits by
-exact text, lists, copies, moves, deletes, makes directories, globs for files,
-and greps.
+exact text, lists, says what one file is, copies, moves, deletes, makes
+directories, globs for files, and greps.
 
 Bounds it applies itself:
 
@@ -61,9 +61,9 @@ formatting or writing over a disk, a fork bomb — ask with the reason spelled
 out. So do commands that remove or move files, run as another user, change
 permissions or ownership, stop processes, turn the machine off, install or
 remove software, push or rewrite a git history, pipe a download into a shell,
-reach another machine, change what runs on its own, write over storage, change
-the disks, change accounts, redirect into a whole path, or change the system's
-settings. Anything else runs.
+reach another machine, change what runs on its own, remove or stop containers,
+write over storage, change the disks, change accounts, redirect into a whole
+path, or change the system's settings. Anything else runs.
 
 For the filesystem, reading and searching are silent, deleting and moving always
 ask, and writing asks when the path is one of the shapes that change what runs
@@ -86,18 +86,24 @@ The agent can navigate, take a snapshot of the page as an interactive tree with
 numbered references, screenshot, click, hover, select, type, press a key,
 scroll, wait, go back, evaluate an expression, fetch from the page's own origin,
 read the page's local storage, and open, list, switch and close tabs. Tabs it
-opens sit in a group named after the server, on the person's screen, where they
-can see them.
+opens sit in a group called TeaNode, on the person's screen, where they can see
+them.
 
 It can also speak the **DevTools protocol** to that tab. A page script can be
 told to click and type, but what it dispatches is not a real event and a site
 can tell; the protocol dispatches input the way the person's own mouse and
 keyboard do, and it is the only way to see what a page asks the network for.
 `cdp` sends a method — `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`,
-`Network.enable`, anything the protocol has — `cdp_events` reads back what the
-page has done since, and `cdp_stop` lets go. While it is attached Chrome shows
-its own bar saying so, which is the person's sign that it is happening; it is
-let go when the tab closes, when the socket does, or after ten quiet minutes.
+`Network.enable` and the rest — `cdp_events` reads back what the page has done
+since, and `cdp_stop` lets go. While it is attached Chrome shows its own bar
+saying so, which is the person's sign that it is happening; it is let go when
+the tab closes, when the person detaches, and when the connection drops.
+
+A handful of methods are refused, not because the agent is not trusted with
+the tab but because they are not about the tab: every site's cookies rather
+than this one's, the browser's own settings, other targets, and holding or
+rewriting the page's own requests. What the page itself holds stays reachable
+through `storage`, `fetch` and `evaluate`.
 
 It is the person's own session, so the agent acts as them: it can fill in a
 password or a card number, because an assistant that cannot is not much of
@@ -120,8 +126,8 @@ so a page cannot reach the server's own network; downloads are denied outright;
 and a context that cannot be guarded is not opened at all.
 
 A run with nobody present may only read: navigate, snapshot, screenshot, click,
-hover, select, scroll, wait, back, and the tab actions. Typing, pressing and
-evaluating need somebody there.
+hover, select, scroll, wait, back, and listing or switching tabs. Typing,
+pressing, evaluating and closing a tab need somebody there.
 
 When a tab is attached and somebody is present, a call that names no target goes
 to the tab. They attached it to be used, and a call that forgets to say so
@@ -151,7 +157,5 @@ disabled or confirm lists, and a person can add either to their own.
 - **A tab is attached per person**, so any conversation of theirs can drive it.
 - **Reading local storage reads the current tab**, which after the agent opened
   one is a tab the agent chose rather than the one the person attached.
-- **Fetching and reading storage are not in the tool's published action list**,
-  so the model has no documented way to find them.
 - A computer's fifth concurrent request fails rather than waits, so one long
   command can fail other calls in the same round.

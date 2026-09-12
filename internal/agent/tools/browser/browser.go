@@ -48,7 +48,7 @@ func init() {
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
 					"steps":          tools.ArrayProperty("for steps: up to fifty of the above, run in order, stopping at the first failure", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Never type a password or a card number; the browser refuses them anyway.",
+				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Typing a password or a card number into the person's own tab is theirs to ask for and is not refused; say what you are about to do first, and never read one back into the conversation.",
 				Preview: func(arguments json.RawMessage) string {
 					var call browserArguments
 					_ = json.Unmarshal(arguments, &call)

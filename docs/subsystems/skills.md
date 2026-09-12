@@ -23,6 +23,12 @@ parameters, and one of three ways of being carried out:
 - **workflow**, a sequence of those, each named, where a later step may use
   what an earlier one selected.
 
+A step may carry an `if`, and runs only when it holds. A condition is one
+value — true unless it is empty, false or zero — or two values compared with
+`==` or `!=`; anything else is refused when the skill is read. A name that
+stands for nothing is empty rather than an error, so "only if the last step
+found one" is what the field is for.
+
 A workflow can also **route**: one tool with an `actionField` naming one of its
 own parameters, and a list of steps per value of it. That is how a skill offers
 six operations as one tool rather than six.
@@ -45,7 +51,13 @@ Nothing else is understood. No expressions, no arithmetic, no function calls.
 
 **Every reference is checked when the skill is read**, not when it runs: one
 naming a parameter the tool does not take, a step that has not run yet, or a
-secret the skill never declared, is refused at install. A reference that
+secret the skill never declared, is refused at install. So are three other
+things: a parameter schema that could not be sent to a model as JSON, which
+would otherwise break every request from every person on the server; a
+condition the interpreter cannot work out; and a step that sends a credential
+to a host filled in when the tool is called, which would let whoever calls it
+be handed the operator's secret. The host must be written into the skill, or
+come from a secret the operator sets. A reference that
 resolved to nothing would otherwise become an empty string in an address, and a
 skill that quietly fetches the wrong thing is worse than one that will not
 install.
@@ -88,7 +100,9 @@ network it sits in. A private or loopback address is refused.
 
 A **shell** step is carried to the person's own attached computer and run
 there, through the same relay the `shell` and `filesystem` tools use. It never
-runs on this server. Each word is quoted before it travels.
+runs on this server. Each word is quoted before it travels — for `/bin/sh`,
+which is why a skill's commands are refused outright on a Windows computer:
+`cmd` gives those quotes no meaning and a value would become another command.
 
 That choice has consequences the tool's own description states, so the model
 plans around them: a skill that runs commands needs a computer attached, asks
@@ -102,8 +116,10 @@ connected server — one list to audit, rather than every person separately
 deciding to trust a registry.
 
 Everybody's agent is then offered what it declares, named
-`skill__<skill>__<tool>` in the `skills` family, subject to the ordinary tool
-policy: an operator can switch off the whole family or a single tool by name in
+`skill__<skill>__<tool>` in the `skills` family — a hyphen in the skill's name
+becomes an underscore, so `unifi-protect` gives `skill__unifi_protect__…`,
+which is what an operator writes in a policy. It is subject to the ordinary
+tool policy: an operator can switch off the whole family or a single tool by name in
 `agent.tools.disabled`, and raise any of them to require confirmation in
 `agent.tools.confirm`.
 
@@ -118,7 +134,7 @@ data fetched from outside, never words addressed to the agent.
 | --- | --- |
 | steps in a workflow | 10 at most |
 | seconds per step | 30, or what it asks for, 120 at most |
-| read from one answer | 256 KiB, or its own `maxBytes` |
+| read from one answer | 256 KiB, or its own `maxBytes`, 4 MiB at most |
 | index and skill file | 1 MiB each |
 | how long the tools are kept before the rows are read again | 30 seconds |
 
@@ -127,8 +143,9 @@ data fetched from outside, never words addressed to the agent.
     teanode agent skill search            what the registry offers
     teanode agent skill install weather   install it, checking the signature
     teanode agent skill list              what is installed, and what it brings
-    teanode agent skill update            install every newer version there is
+    teanode agent skill update [name]     a newer version of one, or of each
     teanode agent skill disable weather   keep it, stop offering its tools
+    teanode agent skill enable weather    offer its tools again
     teanode agent skill remove weather    take it away
 
 ## Caveats

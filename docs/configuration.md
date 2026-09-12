@@ -1034,6 +1034,12 @@ this server, read after the fixed conduct and before a person's own —
 
 **`limits`** — What a run may cost.
 
+**`currency`** — The three-letter code every amount this server shows or
+caps is written in. Its own section below.
+
+**`skillSecrets`** — The values the installed skills need. Its own section
+below.
+
 **`retention`** — How long the agent's records are kept.
 
 **`search`** — The web search provider behind the `web_search` tool.
@@ -1334,6 +1340,9 @@ needs confirmation.
 **`disabled`** — Tools never offered.
 
 **`timeout`** — Bounds one call. Empty means 30 seconds.
+
+**`enabled`** — Whether the server is declared at all. Unset is on; off
+leaves the declaration in place and offers none of its tools.
 
 ### `users[].tokens[]`
 

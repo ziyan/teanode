@@ -86,10 +86,9 @@ happens to a message.
     exchange_usage.go       in-memory counters flushed to the database
     exchange_utils.go       header formatting, the parallel authenticator
 
-**`internal/db`** — PostgreSQL through GORM. Holds only data that grows without
-bound: mail, deliveries, DMARC reports, usage counters, templates and layouts.
-One file per entity, each defining a GORM model separate from the shared struct
-in `internal/models`, so the storage shape can change without changing the API.
+**`internal/db`** is described above. One file per entity, each defining a GORM
+model separate from the shared struct in `internal/models`, so the storage
+shape can change without changing the API.
 
 **`internal/api`** — what every API version shares: error values, the request
 context, and the paths. Deliberately depends on almost nothing, so the
@@ -170,6 +169,16 @@ many. Prompts are templates under `prompts/`, with golden files in
 the prompt's layers, compaction, the event feed and what crosses instances,
 memory and its vectors, the budgets — is written down in
 `docs/subsystems/`.
+
+**`internal/skills`** — skills: a file of declarations fetched from a registry
+that signs what it publishes, read here and carried out here. `registry.go`
+checks an entry's Ed25519 signature against a key embedded from `keys/` and
+the file against the hash that was signed; `skill.go` reads the header and
+refuses anything it could not carry out; `run.go` is the interpreter —
+templates, selection from an answer, a workflow's steps, and conditions. Its
+requests go through `util/safefetch`; its commands go to an attached computer
+through a `Shell` the caller hands in, never to this server. The tools it
+declares reach the catalog through `agent/tools_skill.go`.
 
 **`internal/mcp`** — a client for servers that speak the Model Context
 Protocol: JSON-RPC over streamable HTTP or a subprocess's standard streams,

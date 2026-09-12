@@ -184,7 +184,11 @@ func describe(answer json.RawMessage, name, label, on string) (*tools.Result, er
 		described["timed_out"] = true
 		described["do_this_next"] = fmt.Sprintf("%s was stopped at the timeout. Tell it to write its progress to a file in the working directory, then call again asking it to read that file first.", label)
 	}
-	if shell.ExitCode == 127 || strings.Contains(shell.Stderr, "command not found") {
+	// 127 is the shell saying it could not find the program. The words
+	// alone are not enough: a coding agent forwards what its own children
+	// print, and a run that finished was being thrown away and reported
+	// as not installed.
+	if shell.ExitCode == 127 && strings.TrimSpace(shell.Stdout) == "" {
 		return nil, fmt.Errorf("%s is not installed on %s, or is not on the path of a non-interactive shell; the person can check with the shell tool", label, on)
 	}
 	var parsed codingAnswer
@@ -199,7 +203,12 @@ func describe(answer json.RawMessage, name, label, on string) (*tools.Result, er
 	} else {
 		described["answer"] = parsed.Result
 		described["failed"] = parsed.IsError || shell.ExitCode != 0
-		if cost := parsed.CostUSD + parsed.TotalCostUSD; cost > 0 {
+		// Whichever spelling the program used, not both added together.
+		cost := parsed.TotalCostUSD
+		if cost == 0 {
+			cost = parsed.CostUSD
+		}
+		if cost > 0 {
 			// Their own account with the service, not this server's.
 			described["cost_to_the_person"] = fmt.Sprintf("%.4f USD", cost)
 		}
@@ -207,7 +216,7 @@ func describe(answer json.RawMessage, name, label, on string) (*tools.Result, er
 			described["tokens"] = parsed.InputTokens + parsed.OutputTokens
 		}
 	}
-	if shell.StdoutTruncated {
+	if shell.StdoutTruncated || shell.StderrTruncated {
 		described["cut"] = "the computer cut what it printed"
 	}
 	result, err := tools.JSONResult(described)
