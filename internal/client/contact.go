@@ -16,15 +16,29 @@ type AddressBook struct {
 // Contact is one person kept in an address book. Card is the whole of it and
 // comes back only when one contact is asked for by name.
 type Contact struct {
-	ID           string   `json:"id"`
-	UID          string   `json:"uid"`
-	ETag         string   `json:"etag"`
-	Name         string   `json:"name,omitempty"`
-	Organization string   `json:"organization,omitempty"`
-	Emails       []string `json:"emails"`
-	Phones       []string `json:"phones"`
-	Note         string   `json:"note,omitempty"`
-	Card         string   `json:"card,omitempty"`
+	ID           string     `json:"id"`
+	UID          string     `json:"uid"`
+	ETag         string     `json:"etag"`
+	Name         string     `json:"name,omitempty"`
+	Organization string     `json:"organization,omitempty"`
+	Emails       []string   `json:"emails"`
+	Phones       []string   `json:"phones"`
+	Addresses    []*Address `json:"addresses,omitempty"`
+	Note         string     `json:"note,omitempty"`
+	HasPhoto     bool       `json:"hasPhoto"`
+	Card         string     `json:"card,omitempty"`
+}
+
+// Address is one postal address on a contact. Written is the same thing on
+// one line, the way somebody would put it on an envelope.
+type Address struct {
+	Label      string `json:"label,omitempty"`
+	Street     string `json:"street,omitempty"`
+	Locality   string `json:"locality,omitempty"`
+	Region     string `json:"region,omitempty"`
+	PostalCode string `json:"postalCode,omitempty"`
+	Country    string `json:"country,omitempty"`
+	Written    string `json:"written"`
 }
 
 const (
@@ -32,12 +46,15 @@ const (
 
 	DocumentListContacts = `query ($addressBookId: String!, $query: String, $first: Int) {
   ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
-    id uid name organization emails phones
+    id uid name organization emails phones hasPhoto addresses { written }
   }
 }`
 
 	DocumentGetContact = `query ($id: String!) {
-  GetContact(id: $id) { id uid etag name organization emails phones note card }
+  GetContact(id: $id) {
+    id uid etag name organization emails phones note hasPhoto card
+    addresses { label street locality region postalCode country written }
+  }
 }`
 
 	DocumentSaveContact = `mutation ($addressBookId: String!, $id: String, $card: String,

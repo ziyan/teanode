@@ -117,12 +117,16 @@ func runContactBookList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(contacts))
 	for _, contact := range contacts {
+		written := ""
+		if len(contact.Addresses) > 0 && contact.Addresses[0] != nil {
+			written = contact.Addresses[0].Written
+		}
 		rows = append(rows, []string{
 			contact.Name, strings.Join(contact.Emails, ", "),
-			strings.Join(contact.Phones, ", "), contact.Organization, contact.ID,
+			strings.Join(contact.Phones, ", "), written, contact.Organization, contact.ID,
 		})
 	}
-	return printTable([]string{"name", "addresses", "numbers", "organization", "id"}, rows)
+	return printTable([]string{"name", "email", "numbers", "address", "organization", "id"}, rows)
 }
 
 func runContactBookShow(ctx context.Context, command *cli.Command) error {
@@ -152,6 +156,19 @@ func runContactBookShow(ctx context.Context, command *cli.Command) error {
 	}
 	for _, number := range contact.Phones {
 		fmt.Printf("  %s\n", number)
+	}
+	for _, address := range contact.Addresses {
+		if address == nil {
+			continue
+		}
+		if address.Label != "" {
+			fmt.Printf("  %s (%s)\n", address.Written, address.Label)
+			continue
+		}
+		fmt.Printf("  %s\n", address.Written)
+	}
+	if contact.HasPhoto {
+		fmt.Printf("  has a picture\n")
 	}
 	if contact.Note != "" {
 		fmt.Printf("  %s\n", contact.Note)
