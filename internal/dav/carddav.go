@@ -21,11 +21,6 @@ import (
 // be, which is the width of the column it becomes.
 const maximumContactName = 255
 
-// contactsPerBook is how many contacts one address book may hold, the same
-// number the storage layer uses. A client is refused at the point of writing
-// the one that would not fit.
-const contactsPerBook = 10000
-
 // answer is an error that already knows what to tell the client.
 //
 // The protocol library has a type for this, but it lives in a package that
@@ -243,11 +238,9 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 	if err != nil {
 		return nil, davError(err)
 	}
-	encoded, err := contacts.Encode(card)
-	if err != nil {
-		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
-	}
-	parsed, err := contacts.Parse(encoded)
+	// Straight from the decoded card. Encoding and parsing again would
+	// double the escape on every semicolon in a note, once per sync.
+	parsed, err := contacts.FromCard(card)
 	if err != nil {
 		// A card larger than this server keeps is the one case worth its
 		// own status: 507 tells a client the request was understood and
@@ -315,9 +308,9 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 			if err != nil {
 				return unexpected(err)
 			}
-			if held >= contactsPerBook {
+			if held >= db.ContactsPerBook {
 				return webdav.NewHTTPError(http.StatusInsufficientStorage,
-					fmt.Errorf("this address book already holds %d contacts, which is as many as this server keeps", contactsPerBook))
+					fmt.Errorf("this address book already holds %d contacts, which is as many as this server keeps", db.ContactsPerBook))
 			}
 		}
 		// A card names the person it is about, and a card claiming a name
@@ -331,16 +324,20 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 		// different contact wholesale, losing everything the other card
 		// had. 409 is what the protocol has for this, and it tells the
 		// client to go and look rather than to try again.
-		if existing == nil {
-			twin, err := tx.GetContactByUID(book.ID, kept.UID)
-			if err != nil {
-				return unexpected(err)
-			}
-			if twin != nil && twin.ID != contactId {
-				return webdav.NewHTTPError(http.StatusConflict,
-					fmt.Errorf("a contact with that identifier is already kept here under another name"))
-			}
-		} else {
+		// Whether the card is new here or replacing one, the identifier it
+		// carries must not already belong to somebody else in this book.
+		// Checking only the first case left the second to the unique
+		// index, so a client that had merged two people and rewrote one
+		// card in place got an opaque 500 it could only retry.
+		twin, err := tx.GetContactByUID(book.ID, kept.UID)
+		if err != nil {
+			return unexpected(err)
+		}
+		if twin != nil && twin.ID != contactId {
+			return webdav.NewHTTPError(http.StatusConflict,
+				fmt.Errorf("a contact with that identifier is already kept here under another name"))
+		}
+		if existing != nil {
 			kept.CreatedAt = existing.CreatedAt
 		}
 		written, err = tx.PutContact(kept)
@@ -476,6 +473,24 @@ func (self *backend) storedCard(ctx context.Context, address string) (*models.Co
 	}
 	if found == nil {
 		return nil, refuse(http.StatusNotFound, "no such contact")
+	}
+	return found, nil
+}
+
+// storedCards is every contact in a book, exactly as stored, for answering a
+// report without going back through the protocol library's encoder.
+func (self *backend) storedCards(ctx context.Context, address string) ([]*models.Contact, error) {
+	signedIn := self.who(ctx)
+	book, err := self.bookAt(ctx, signedIn, address)
+	if err != nil {
+		return nil, err
+	}
+	var found []*models.Contact
+	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = tx.ListContacts(book.ID, "", 0)
+		return unexpected(err)
+	}); err != nil {
+		return nil, err
 	}
 	return found, nil
 }

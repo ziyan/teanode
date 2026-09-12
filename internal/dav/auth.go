@@ -103,6 +103,26 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	// phone synchronizing its contacts makes a request per card.
 	from := api.RemoteAddress(request, configuration.Server.TrustedProxies)
 
+	// Looked at before the password is checked, and spent only when the
+	// check fails.
+	//
+	// Checking a password costs a bcrypt for every app password on the
+	// mailbox and another on every refusal, so a limiter consulted after
+	// the check bounds nothing: the work is already done by the time the
+	// answer arrives. And charging every request would throttle the
+	// ordinary case instead of the guessing -- a phone fetching five
+	// hundred cards makes five hundred requests, none of them a guess.
+	//
+	// So: refuse when the budget is already spent, and spend it only on a
+	// failure. Somebody guessing runs it down and is then turned away
+	// before any hashing happens; somebody signing in correctly never
+	// touches it.
+	if self.limiter != nil && self.limiter.For(from).Available() <= 0 {
+		response.Header().Set("Retry-After", "60")
+		http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)
+		return nil, false
+	}
+
 	var signedIn *session
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
 		mailbox, appPassword, err := access.AuthenticateAppPasswordWithID(tx, username, password)
@@ -118,13 +138,10 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		if errors.Is(err, access.ErrInvalidAppPassword) {
 			// Every way of being wrong is one answer, and the function
 			// above spends a password hash even when refusing, so that a
-			// guess learns nothing from how long it took. A failure is
-			// also what the limiter counts, so that guessing gets slower
-			// while ordinary use never does.
-			if self.limiter != nil && !self.limiter.Allow(from) {
-				response.Header().Set("Retry-After", "60")
-				http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)
-				return nil, false
+			// guess learns nothing from how long it took. This is the
+			// failure the budget exists to count.
+			if self.limiter != nil {
+				self.limiter.Allow(from)
 			}
 			self.askForCredentials(response)
 			return nil, false

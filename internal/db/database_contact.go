@@ -164,13 +164,16 @@ func (self *transaction) DeleteAddressBook(addressBookId string) error {
 		})
 }
 
-// contactsPerBook is how many contacts one address book may hold.
+// ContactsPerBook is how many contacts one address book may hold.
 //
 // There has to be a number, because the listing a client reads is the whole
 // book in one response and nothing else bounds it. It is enforced where a
 // contact is written, so a client is told plainly, rather than by cutting the
 // listing short, which would read to a phone as "those people were deleted".
-const contactsPerBook = 10000
+// ContactsPerBook is exported because both doors into an address book -- the
+// dashboard's API and CardDAV -- have to enforce the same number, and a limit
+// enforced on one of two doors is not a limit.
+const ContactsPerBook = 10000
 
 // ListContacts are one book's, by name. A query narrows by name, organization
 // or address, which is what a person typing into a search box means.
@@ -182,7 +185,7 @@ func (self *transaction) ListContacts(addressBookId, query string, limit int) ([
 	// could not see. How many a book may hold is decided where a contact is
 	// written, not here.
 	if limit <= 0 {
-		limit = contactsPerBook + 1
+		limit = ContactsPerBook + 1
 	}
 	search := self.tx.Where("\"addressbook_id\" = ?", addressBookId)
 	if trimmed := strings.TrimSpace(query); trimmed != "" {

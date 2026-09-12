@@ -62,6 +62,19 @@ var valueEscaper = strings.NewReplacer("\\", "\\\\", "\n", "\\n", ",", "\\,")
 
 var textEscaper = strings.NewReplacer("\\", "\\\\", "\n", "\\n", ",", "\\,", ";", "\\;")
 
+// escapeStructured writes a value whose semicolons are punctuation.
+//
+// The decoder leaves an escaped semicolon alone, and escaping the backslash
+// in front of it would turn ORG:Acme\; Inc;Engines into a company called
+// "Acme\" and another called " Inc". The escape is set aside, the rest is
+// escaped as usual, and it is put back.
+func escapeStructured(value string) string {
+	const aside = "\x00"
+	value = strings.ReplaceAll(value, "\\;", aside)
+	value = valueEscaper.Replace(value)
+	return strings.ReplaceAll(value, aside, "\\;")
+}
+
 // Encode writes a card out in the one form this server stores.
 func Encode(card vcard.Card) ([]byte, error) {
 	var out bytes.Buffer
@@ -116,24 +129,57 @@ func line(name string, field *vcard.Field) string {
 		}
 	}
 	built.WriteByte(':')
+	value := withoutControls(field.Value)
 	if structured[name] {
-		built.WriteString(valueEscaper.Replace(field.Value))
+		built.WriteString(escapeStructured(value))
 	} else {
-		built.WriteString(textEscaper.Replace(field.Value))
+		built.WriteString(textEscaper.Replace(value))
 	}
 	return built.String()
 }
 
 // parameter is one parameter value, quoted when it has to be.
 //
-// A quoted value may not itself contain a quotation mark, and there is no
-// escape for one inside quotes, so a mark in the value is dropped rather than
-// producing a line that cannot be read back.
+// Control characters are removed first, and that is not tidiness. The
+// library's decoder turns \n inside a parameter into a real newline, and a
+// real newline written back out ends the line: everything after it becomes a
+// property of its own, and the property it came from loses its value. A card
+// carrying UID;X="a\nUID:other":u came back with a second, genuine UID.
+//
+// A quoted value may not contain a quotation mark and there is no escape for
+// one inside quotes, so a mark is dropped rather than producing a line that
+// cannot be read back.
 func parameter(value string) string {
+	// Every control character, the newline included. A value has an
+	// escaper that turns a newline into the two characters \n; a
+	// parameter has none, so a newline here is a newline on the wire and
+	// the rest of the line becomes a property of its own.
+	value = strings.Map(func(letter rune) rune {
+		if letter < 0x20 || letter == 0x7f {
+			return -1
+		}
+		return letter
+	}, value)
 	if !strings.ContainsAny(value, needsQuoting) && !strings.Contains(value, "\"") {
 		return value
 	}
 	return `"` + strings.ReplaceAll(value, `"`, "") + `"`
+}
+
+// withoutControls drops the characters that would end a line or split it,
+// keeping the newline, which the value escapers write as the two characters
+// \n. Nothing else in that range has a meaning in a card or a way to be
+// written safely.
+func withoutControls(value string) string {
+	return strings.Map(func(letter rune) rune {
+		if letter == '\n' {
+			return letter
+		}
+		if letter < 0x20 || letter == 0x7f {
+			return -1
+		}
+		return letter
+	}, value)
 }
 
 // writeFold writes one line, broken so that no line exceeds foldAt octets.
@@ -147,6 +193,7 @@ func writeFold(out *bytes.Buffer, text string) {
 		return
 	}
 	written := 0
+	last := 0
 	for index := range text {
 		if index == 0 {
 			continue
@@ -157,15 +204,25 @@ func writeFold(out *bytes.Buffer, text string) {
 		if written > 0 {
 			limit = foldAt - 1
 		}
-		if index-written < limit {
+		if index-written <= limit {
+			// A character boundary that still fits: remember it and
+			// carry on looking for a later one.
+			last = index
 			continue
+		}
+		// This boundary is past the limit, so break at the last one that
+		// was not. Breaking here instead is how a line of snowmen came
+		// out at 77 octets: index moves a whole character at a time, so
+		// the chunk is already over the limit by the time it is noticed.
+		if last <= written {
+			last = index
 		}
 		if written > 0 {
 			out.WriteByte(' ')
 		}
-		out.WriteString(text[written:index])
+		out.WriteString(text[written:last])
 		out.WriteString("\r\n")
-		written = index
+		written = last
 	}
 	if written < len(text) {
 		if written > 0 {

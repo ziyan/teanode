@@ -18,6 +18,7 @@
 package dav
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"strconv"
@@ -204,6 +205,23 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 		len(segments) == 4 && strings.HasSuffix(segments[3], cardSuffix) {
 		self.serveCard(response, request.WithContext(ctx), backing)
 		return
+	}
+
+	// A report is answered here too, for the same reason a fetch is: the
+	// library writes a card by re-encoding it, and its encoder is the one
+	// this server replaced. A phone synchronizing asks for the etags and
+	// then reports for the cards that changed, so this is the ordinary
+	// path rather than a corner of one.
+	if request.Method == "REPORT" {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(response, "that request could not be read", http.StatusBadRequest)
+			return
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		if self.serveReport(response, request.WithContext(ctx), backing, body) {
+			return
+		}
 	}
 
 	handler := &carddav.Handler{Backend: backing, Prefix: Prefix}

@@ -600,3 +600,124 @@ func TestAMultigetCannotReachAnotherAccount(t *testing.T) {
 		t.Fatalf("a multiget reached another account's card:\n%s", body)
 	}
 }
+
+// What a report returns has to be the bytes that are stored, because a phone
+// synchronizes by asking for etags and then reporting for the cards that
+// changed -- and because it writes back what it was given.
+func TestAReportReturnsWhatIsStored(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	awkward := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada Lovelace\r\n" +
+		"EMAIL;TYPE=\"work;main\":ada@example.com\r\nNOTE:Call him\\; he knows\r\nEND:VCARD\r\n"
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	put := here.ask(t, http.MethodPut, where, awkward, "Content-Type", "text/vcard")
+	_ = text(t, put)
+	stored := text(t, here.ask(t, http.MethodGet, where, ""))
+
+	for _, report := range []string{
+		fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/><c:address-data/></d:prop>
+  <d:href>%s</d:href>
+</c:addressbook-multiget>`, where),
+		`<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/><c:address-data/></d:prop>
+</c:addressbook-query>`,
+	} {
+		answer := here.ask(t, "REPORT",
+			fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), report, "Depth", "1")
+		body := text(t, answer)
+		if answer.StatusCode != http.StatusMultiStatus {
+			t.Fatalf("report: %d\n%s", answer.StatusCode, body)
+		}
+		// The card comes back XML-escaped inside address-data; unescaping
+		// the three that matter is enough to compare it.
+		carried := strings.NewReplacer("&#xD;", "\r", "&#39;", "'", "&amp;", "&",
+			"&lt;", "<", "&gt;", ">", "&#34;", `"`, "&quot;", `"`).Replace(body)
+		if !strings.Contains(carried, `EMAIL;TYPE="work;main":ada@example.com`) {
+			t.Errorf("a report must not unquote a parameter:\n%s", body)
+		}
+		if strings.Contains(carried, "EMAIL;TYPE=work;main:") {
+			t.Errorf("which is how the address was destroyed:\n%s", body)
+		}
+		if !strings.Contains(carried, `NOTE:Call him\; he knows`) {
+			t.Errorf("and must not change the escaping of a note:\n%s", body)
+		}
+	}
+	if !strings.Contains(stored, `EMAIL;TYPE="work;main"`) {
+		t.Fatalf("and what is stored is that too:\n%s", stored)
+	}
+}
+
+// A note keeps its semicolon through a whole synchronization cycle: a phone
+// writes it, reads it back, and writes back what it read.
+func TestASemicolonSurvivesASyncCycle(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	card := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:urn:uuid:ada\r\nFN:Ada\r\n" +
+		"NOTE:call him\\; he knows\r\nEND:VCARD\r\n"
+	for round := 0; round < 3; round++ {
+		put := here.ask(t, http.MethodPut, where, card, "Content-Type", "text/vcard")
+		_ = text(t, put)
+		if put.StatusCode >= 400 {
+			t.Fatalf("round %d: %d", round, put.StatusCode)
+		}
+		card = text(t, here.ask(t, http.MethodGet, where, ""))
+		if strings.Contains(card, `\\;`) {
+			t.Fatalf("round %d gained a backslash:\n%s", round, card)
+		}
+		if !strings.Contains(card, `NOTE:call him\; he knows`) {
+			t.Fatalf("round %d changed the note:\n%s", round, card)
+		}
+	}
+}
+
+// A parameter cannot carry a newline into the card, because everything after
+// it would become a property of its own.
+func TestAParameterCannotInjectAProperty(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	card := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada\r\n" +
+		"EMAIL;TYPE=home\\nX-EVIL:injected:ada@example.com\r\nEND:VCARD\r\n"
+	put := here.ask(t, http.MethodPut, where, card, "Content-Type", "text/vcard")
+	_ = text(t, put)
+	if put.StatusCode >= 400 {
+		t.Fatalf("put: %d", put.StatusCode)
+	}
+	back := text(t, here.ask(t, http.MethodGet, where, ""))
+	if strings.Contains(back, "\nX-EVIL:") {
+		t.Fatalf("a property was injected:\n%s", back)
+	}
+	// And the address it was hidden in survives.
+	if !strings.Contains(back, "ada@example.com") {
+		t.Fatalf("the address survives:\n%s", back)
+	}
+}
+
+// Changing a card's identifier to one already kept here is the same conflict
+// as creating it that way, and has to say so rather than failing opaquely.
+func TestChangingAnIdentifierToOneAlreadyHeldIsAConflict(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	one := fmt.Sprintf("%s/%s/contacts/%s/one.vcf", dav.Prefix, here.userID, here.bookID)
+	two := fmt.Sprintf("%s/%s/contacts/%s/two.vcf", dav.Prefix, here.userID, here.bookID)
+	_ = text(t, here.ask(t, http.MethodPut, one,
+		strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:one", 1), "Content-Type", "text/vcard"))
+	_ = text(t, here.ask(t, http.MethodPut, two,
+		strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:two", 1), "Content-Type", "text/vcard"))
+
+	// A client that has merged two people and rewrites one card in place.
+	answer := here.ask(t, http.MethodPut, two,
+		strings.Replace(aCard, "urn:uuid:ada", "urn:uuid:one", 1), "Content-Type", "text/vcard")
+	_ = text(t, answer)
+	if answer.StatusCode != http.StatusConflict {
+		t.Fatalf("rewriting a card to an identifier already held: %d, wanted 409", answer.StatusCode)
+	}
+}

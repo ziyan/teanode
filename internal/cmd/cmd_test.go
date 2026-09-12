@@ -37,7 +37,7 @@ func everyCommand() []*cli.Command {
 	return []*cli.Command{
 		NewAuthCommand(), NewDomainCommand(), NewAliasCommand(), NewCredentialCommand(), NewDKIMCommand(),
 		NewUserCommand(), NewGroupCommand(), NewRoleCommand(), NewTokenCommand(), NewSessionCommand(),
-		NewPasskeyCommand(), NewSettingsCommand(), NewServerCommand(), NewUpgradeCommand(), NewMailboxCommand(), NewAgentCommand(), NewComputerCommand(),
+		NewPasskeyCommand(), NewSettingsCommand(), NewServerCommand(), NewUpgradeCommand(), NewMailboxCommand(), NewContactCommand(), NewAgentCommand(), NewComputerCommand(),
 		NewMailCommand(), NewDeliveryCommand(), NewReportCommand(), NewAuditCommand(), NewTemplateCommand(),
 		NewLayoutCommand(), NewAPICommand(),
 	}

@@ -89,6 +89,17 @@ func unescapeSemicolons(card vcard.Card) {
 	}
 }
 
+// FromCard is Parse for a card somebody else has already decoded, which is
+// what the CardDAV layer is handed.
+//
+// It exists because encoding and then parsing again is not the same thing:
+// the library's decoder leaves an escaped semicolon alone, so a note written
+// "call him\; he knows" that went out through Encode and back through Parse
+// gained a backslash, and gained another on every synchronization after that.
+func FromCard(card vcard.Card) (*Parsed, error) {
+	return fromCard(card)
+}
+
 // fromCard is Parse once the card is in hand, shared with the builder below.
 func fromCard(card vcard.Card) (*Parsed, error) {
 	// Version 4 throughout, whatever arrived. A phone may send 3.0, and

@@ -283,6 +283,21 @@ func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArgumen
 			contact.ID = existing.ID
 			contact.CreatedAt = existing.CreatedAt
 		}
+		// The same ceiling the CardDAV side enforces. A listing is the
+		// whole book in one answer, and a client reads a card missing
+		// from it as deleted, so a book that grew past what can be listed
+		// would tell a phone to forget the contacts it could not see.
+		if existing == nil {
+			held, err := tx.CountContacts(book.ID)
+			if err != nil {
+				return err
+			}
+			if held >= db.ContactsPerBook {
+				refused = fmt.Errorf("%w: this address book already holds %d contacts, which is as many as this server keeps",
+					api.ErrInvalidArguments, db.ContactsPerBook)
+				return refused
+			}
+		}
 		// The card's own identifier decides which person this is. Two
 		// devices adding somebody at the same time pick different file
 		// names but agree on the identifier, and the second must land on
