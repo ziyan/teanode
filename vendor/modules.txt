@@ -173,6 +173,9 @@ github.com/emersion/go-message/textproto
 # github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 ## explicit; go 1.12
 github.com/emersion/go-sasl
+# github.com/emersion/go-vcard v0.1.0
+## explicit; go 1.13
+github.com/emersion/go-vcard
 # github.com/felixge/httpsnoop v1.0.4
 ## explicit; go 1.13
 github.com/felixge/httpsnoop

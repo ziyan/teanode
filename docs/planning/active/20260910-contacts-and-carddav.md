@@ -44,6 +44,22 @@ only when somebody presses "save to contacts".
       findings recorded in `Surprises & Discoveries` below.
 - [x] (2026-09-12 13:05Z) Wrote this plan in full from the outline.
 - [ ] Milestone 1: schema, model, database layer, API, dashboard.
+  - [x] (2026-09-12 13:10Z) Renamed the learned-contact methods to
+        ListLearnedContacts and friends, so that the two kinds of contact
+        cannot be confused.
+  - [x] (2026-09-12 13:30Z) Migration 0048: the addressbook and contact
+        tables, and the contacts:use permission granted to the roles that
+        already read mail.
+  - [x] (2026-09-12 13:35Z) models.AddressBook and models.Contact.
+  - [x] (2026-09-12 13:45Z) internal/contacts: Parse, Encode, ETag and
+        Build, with six tests covering round-trip fidelity, generated
+        identifiers, ETag behaviour, refusals, and editing from a form
+        without losing what only a phone knows.
+  - [x] (2026-09-12 13:55Z) internal/db/database_contact.go with four
+        tests against a real PostgreSQL.
+  - [x] (2026-09-12 14:05Z) The API: ListAddressBooks, ListContacts,
+        GetContact, SaveContact, DeleteContact, SaveAddressBook.
+  - [ ] The dashboard page.
 - [ ] Milestone 2: the DAV mount, sign-in, discovery, read-only CardDAV.
 - [ ] Milestone 3: writing, ETags, conflicts.
 - [ ] Milestone 4: discovery niceties, DNS advisories, CLI, documentation.
@@ -131,6 +147,16 @@ way, as a confusing 404 or a silent 405.
   This is what makes the storage decision below safe: the library hands the
   backend a parsed card rather than the bytes that arrived, so what we store
   is necessarily a re-encoding.
+
+- Observation: a refused write aborts the transaction it happened in, so a
+  test that expects a refusal cannot go on using the same transaction.
+  Evidence: the duplicate-identifier test, written as one transaction, failed
+  with `commit unexpectedly resulted in rollback` even though the refusal it
+  was testing for had happened correctly. It is written as three transactions
+  now: set up, expect the refusal, then check the first contact survived.
+  This is PostgreSQL's own behaviour rather than anything about this
+  repository, and it will bite again in milestone 3, where a conditional write
+  is refused for a living.
 
 - Observation: a stale `If-Match` is refused with `412 Precondition Failed`
   by the library's PUT handling, given a backend that compares the ETag.
