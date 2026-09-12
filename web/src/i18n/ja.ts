@@ -1837,6 +1837,8 @@ export const ja: Catalog = {
   'calendar.repeats': '繰り返し',
   'calendar.summary': 'タイトル',
   'calendar.location': '場所',
+  'calendar.guests': '招待',
+  'calendar.guestsHint': '1 行に 1 つのアドレス。記載した全員に、返答できる招待が送られます。',
   'calendar.description': 'メモ',
   'calendar.starts': '開始',
   'calendar.ends': '終了',

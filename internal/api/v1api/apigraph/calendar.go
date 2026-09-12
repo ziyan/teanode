@@ -3,13 +3,16 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
 // The calendar: a person's own events, which they edit here and their phone
@@ -149,6 +152,12 @@ type SaveCalendarEventArguments struct {
 	Recurrence *string `json:"recurrence" graphapi:"nullable"`
 
 	Status *string `json:"status" graphapi:"nullable"`
+
+	// Attendees are the people to ask, as addresses. Setting them makes
+	// the event a meeting and sends each of them an invitation; a list
+	// given empty takes everybody off it, which is not the same as calling
+	// the meeting off.
+	Attendees *[]string `json:"attendees" graphapi:"nullable"`
 }
 
 type SaveCalendarArguments struct {
@@ -377,6 +386,23 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 	if err != nil {
 		return nil, err
 	}
+	// Who would be asking, if anybody is asked. Looked up before the write
+	// so that the event carries it from the first version: an invitation
+	// with no organizer is one nobody can answer.
+	organizer, err := self.organizerFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// What the guest list was before, so that afterwards it is possible to
+	// tell who is newly asked from who was already coming.
+	var before *models.CalendarObject
+	if named := strings.TrimSpace(arguments.ID); named != "" {
+		if before, err = self.transaction(ctx).GetCalendarObject(found.ID, named); err != nil {
+			return nil, err
+		}
+	}
+
 	var kept *models.CalendarObject
 	var refused error
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -393,7 +419,7 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 				return api.ErrNotFound
 			}
 		}
-		parsed, err := buildSaved(&arguments, existing)
+		parsed, err := buildSaved(&arguments, existing, organizer)
 		if err != nil {
 			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 			return refused
@@ -459,7 +485,86 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		}
 		return nil, translateError(err)
 	}
+
+	// Sent after the write, never before. An invitation that goes out and
+	// is then not saved is a meeting everybody has been asked to that the
+	// person who called it cannot see.
+	if err := self.inviteTo(ctx, kept, before, organizer); err != nil {
+		return nil, fmt.Errorf("the event is saved, but the invitations could not be sent: %w", err)
+	}
 	return eventView(kept, true)
+}
+
+// organizerFor is the address this person would organize a meeting from.
+//
+// One of their own mailbox's addresses, because the answers come back as
+// mail: an organizer at an address this server does not receive is a meeting
+// whose replies go nowhere. Empty when they have no mailbox, which makes an
+// event with guests refuse rather than send invitations nobody can answer.
+func (self *graph) organizerFor(ctx context.Context) (string, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return "", err
+	}
+	mailboxes, err := self.transaction(ctx).ListMailboxes(principal.User.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, mailbox := range mailboxes {
+		for _, address := range mailbox.Addresses {
+			if trimmed := strings.TrimSpace(address.Address); trimmed != "" {
+				return trimmed, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// inviteTo asks the people an event names.
+//
+// Only the ones who are not already coming: everybody on the list when the
+// event has really changed, and only the newly added ones when it has not.
+// Sending to everybody on every save would mean correcting a typo in the
+// notes putting an invitation in five people's mailboxes.
+func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarObject, organizer string) error {
+	if kept == nil || organizer == "" {
+		return nil
+	}
+	parsed, err := calendar.Parse([]byte(kept.Data))
+	if err != nil || len(parsed.Attendees) == 0 {
+		return nil
+	}
+	changed := true
+	already := map[string]bool{}
+	if before != nil {
+		if held, err := calendar.Parse([]byte(before.Data)); err == nil {
+			changed = held.Sequence != parsed.Sequence
+			for _, attendee := range held.Attendees {
+				already[strings.ToLower(attendee.Address)] = true
+			}
+		}
+	}
+	asked := make([]string, 0, len(parsed.Attendees))
+	for _, attendee := range parsed.Attendees {
+		if strings.EqualFold(attendee.Address, organizer) {
+			// Not to themselves. Their own calendar already has it, and
+			// a mail program shown an invitation it is the organizer of
+			// offers to accept on their behalf.
+			continue
+		}
+		if !changed && already[strings.ToLower(attendee.Address)] {
+			continue
+		}
+		asked = append(asked, attendee.Address)
+	}
+	if len(asked) == 0 {
+		return nil
+	}
+	written, err := calendar.Invite([]byte(kept.Data), organizer)
+	if err != nil {
+		return err
+	}
+	return self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
 }
 
 func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, error) {
@@ -483,7 +588,7 @@ func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, error) {
 // buildSaved turns what was sent into a file: whole iCalendar text when a
 // program sent one, otherwise the filled-in fields applied to whatever is
 // already kept.
-func buildSaved(arguments *SaveCalendarEventArguments, existing *models.CalendarObject) (*calendar.Parsed, error) {
+func buildSaved(arguments *SaveCalendarEventArguments, existing *models.CalendarObject, organizer string) (*calendar.Parsed, error) {
 	if strings.TrimSpace(arguments.File) != "" {
 		return calendar.Parse([]byte(arguments.File))
 	}
@@ -495,7 +600,18 @@ func buildSaved(arguments *SaveCalendarEventArguments, existing *models.Calendar
 		Summary: arguments.Summary, Location: arguments.Location,
 		Description: arguments.Description, AllDay: arguments.AllDay,
 		Timezone: strings.TrimSpace(arguments.Timezone), Recurrence: arguments.Recurrence,
-		Status: arguments.Status,
+		Status: arguments.Status, Organizer: organizer,
+	}
+	if arguments.Attendees != nil {
+		asked := make([]calendar.Attendee, 0, len(*arguments.Attendees))
+		for _, address := range *arguments.Attendees {
+			trimmed := strings.TrimSpace(address)
+			if trimmed == "" {
+				continue
+			}
+			asked = append(asked, calendar.Attendee{Address: trimmed})
+		}
+		fields.Attendees = &asked
 	}
 	var err error
 	if fields.StartsAt, err = moment(arguments.StartsAt, "start"); err != nil {
@@ -535,12 +651,55 @@ func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments CalendarEv
 	if object == nil {
 		return false, api.ErrNotFound
 	}
+	// Told before it goes, not after. Once it is deleted there is nothing
+	// left to write the cancellation from, and the people who were coming
+	// would simply never hear.
+	organizer, err := self.organizerFor(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := self.callOff(ctx, object, organizer); err != nil {
+		return false, fmt.Errorf("the event is still here: the people coming could not be told: %w", err)
+	}
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		return tx.DeleteCalendarObject(found.ID, object.ID)
 	}); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// callOff tells the people coming that a meeting is off.
+//
+// Only when this person is the one who called it. Deleting an event somebody
+// else organized is leaving their meeting, not cancelling it, and sending a
+// cancellation would take it out of everybody else's calendar too.
+func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, organizer string) error {
+	if object == nil || organizer == "" {
+		return nil
+	}
+	parsed, err := calendar.Parse([]byte(object.Data))
+	if err != nil || len(parsed.Attendees) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), organizer) {
+		return nil
+	}
+	asked := make([]string, 0, len(parsed.Attendees))
+	for _, attendee := range parsed.Attendees {
+		if strings.EqualFold(attendee.Address, organizer) {
+			continue
+		}
+		asked = append(asked, attendee.Address)
+	}
+	if len(asked) == 0 {
+		return nil
+	}
+	written, err := calendar.CallOff([]byte(object.Data), organizer)
+	if err != nil {
+		return err
+	}
+	return self.sendCalendarMessage(ctx, organizer, asked, object, written, "CANCEL")
 }
 
 func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error) {
@@ -575,4 +734,86 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 		ID: kept.ID, Name: kept.Name, Description: kept.Description,
 		Colour: kept.Colour, Timezone: kept.Timezone, Events: int(count),
 	}, nil
+}
+
+// sendCalendarMessage puts an invitation or a cancellation in the post.
+//
+// Sending on somebody's behalf is the riskiest thing this feature does, so it
+// is narrow on purpose: only to the addresses the event itself names, only
+// from an address of the person's own mailbox, and never to an address that
+// says in so many words that it does not take mail.
+func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, asked []string,
+	object *models.CalendarObject, written []byte, method string) error {
+	if self.mailer == nil {
+		return fmt.Errorf("this server cannot send mail")
+	}
+	to := make([]string, 0, len(asked))
+	for _, address := range asked {
+		if noReplyAddress(address) {
+			// An address that says it does not take mail. Inviting it is
+			// a message that bounces, or worse, does not.
+			continue
+		}
+		to = append(to, address)
+	}
+	if len(to) == 0 {
+		return nil
+	}
+	summary := strings.TrimSpace(object.Summary)
+	if summary == "" {
+		summary = "an appointment"
+	}
+	subject := "Invitation: " + summary
+	body := "You have been invited to " + summary + ".\r\n"
+	if method == "CANCEL" {
+		subject = "Cancelled: " + summary
+		body = summary + " has been called off.\r\n"
+	}
+	if !object.StartsAt.IsZero() {
+		body += "\r\n" + object.StartsAt.UTC().Format("Monday, 2 January 2006 at 15:04 MST") + "\r\n"
+	}
+	if strings.TrimSpace(object.Location) != "" {
+		body += object.Location + "\r\n"
+	}
+	message := &mailer.Message{
+		From:    organizer,
+		To:      to,
+		Subject: subject,
+		Text:    body,
+		Attachments: []*mailparse.Attachment{{
+			Filename: "invite.ics",
+			// The method belongs in the content type: it is how a mail
+			// program knows to show this as something to answer rather
+			// than as a file to save.
+			ContentType: "text/calendar; method=" + method + "; charset=utf-8",
+			Content:     written,
+		}},
+	}
+	envelope := &mailparse.Envelope{}
+	if request := api.ContextRequest(ctx); request != nil {
+		host, _, err := net.SplitHostPort(request.RemoteAddr)
+		if err != nil {
+			host = request.RemoteAddr
+		}
+		envelope.IP = net.ParseIP(host)
+		envelope.Location = self.locator.Locate(envelope.IP)
+		envelope.TLS = request.TLS
+	}
+	return self.mailer.Send(ctx, envelope, message)
+}
+
+// noReplyAddress is an address that says it does not take mail. The same
+// shapes the out-of-office reply refuses, and for the same reason: writing to
+// one is a message nobody reads and often one that bounces.
+func noReplyAddress(address string) bool {
+	local := strings.ToLower(strings.TrimSpace(address))
+	if at := strings.Index(local, "@"); at >= 0 {
+		local = local[:at]
+	}
+	local = strings.NewReplacer("-", "", "_", "", ".", "").Replace(local)
+	switch local {
+	case "noreply", "donotreply", "nobody", "mailerdaemon", "postmaster":
+		return true
+	}
+	return false
 }

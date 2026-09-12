@@ -71,7 +71,11 @@ history, and every example here is written the way it should be copied.
       with Accept, Maybe and Decline, and pressing one marks the person's own
       copy and sends the answer. 12 tests in `internal/scheduling`, 6 more in
       `internal/calendar`; 1255 green overall.
-- [ ] Milestone 6: invitations and cancellations leaving as mail.
+- [x] (2026-09-12) Milestone 6: invitations and cancellations leaving as
+      mail. A guest list in the editor; an invitation to each person newly
+      asked, a fresh one to everybody when the meeting really changes, and a
+      cancellation when it is called off by whoever called it. 8 more tests in
+      `internal/calendar`; 1263 green overall.
 - [ ] Milestone 7: the calendar as something the agent knows.
 
 ## Surprises & Discoveries

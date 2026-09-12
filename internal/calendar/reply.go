@@ -113,3 +113,69 @@ func Reply(stored []byte, theirs, participation string) ([]byte, error) {
 	answer.Children = append(answer.Children, replied.Component)
 	return Encode(answer)
 }
+
+// Invite builds what goes to the people asked to an event.
+//
+// The whole event, unlike a reply: an invitation is the organizer telling
+// everybody what the meeting is, so it carries the summary, the times, the
+// zone and the guest list. The method is what makes a mail program show it as
+// something to answer rather than as a file.
+func Invite(stored []byte, organizer string) ([]byte, error) {
+	return withMethod(stored, "REQUEST", organizer)
+}
+
+// CallOff builds what goes to them when it is called off.
+//
+// Also the whole event, and with the sequence it had: the recipients' programs
+// match it to what they are holding by identifier and sequence, and one that
+// looks older than their copy is ignored as a late duplicate.
+func CallOff(stored []byte, organizer string) ([]byte, error) {
+	return withMethod(stored, "CANCEL", organizer)
+}
+
+// withMethod writes the event out as a message of the given kind.
+func withMethod(stored []byte, method, organizer string) ([]byte, error) {
+	if len(bytes.TrimSpace(stored)) == 0 {
+		return nil, fmt.Errorf("calendar: there is no event to send")
+	}
+	decoded, err := ical.NewDecoder(bytes.NewReader(stored)).Decode()
+	if err != nil {
+		return nil, fmt.Errorf("calendar: what is kept cannot be read: %w", err)
+	}
+	event := firstEvent(decoded)
+	if event == nil {
+		return nil, fmt.Errorf("calendar: there is no event in that file")
+	}
+	decoded.Props.SetText(ical.PropMethod, method)
+	if method == "CANCEL" {
+		// A cancellation says the event is off in the event itself as
+		// well as in the method, so a program that files it without
+		// reading the method still shows it struck through.
+		decoded.Props.Del(ical.PropMethod)
+		decoded.Props.SetText(ical.PropMethod, method)
+		event.Props.SetText(ical.PropStatus, "CANCELLED")
+	}
+	// The organizer has to be there, and has to be this person: a program
+	// that receives an invitation with no organizer has nobody to answer,
+	// and one naming somebody else sends the answer to them.
+	if address := strings.TrimSpace(organizer); address != "" {
+		existing := event.Props.Get(ical.PropOrganizer)
+		name := ""
+		if existing != nil {
+			name = existing.Params.Get(ical.ParamCommonName)
+		}
+		property := ical.NewProp(ical.PropOrganizer)
+		property.Value = "mailto:" + address
+		if name != "" {
+			property.Params.Set(ical.ParamCommonName, name)
+		}
+		event.Props.Set(property)
+	}
+	if event.Props.Get(ical.PropOrganizer) == nil {
+		return nil, fmt.Errorf("calendar: an invitation has to say who is asking")
+	}
+	if len(event.Props[ical.PropAttendee]) == 0 {
+		return nil, fmt.Errorf("calendar: there is nobody to send that to")
+	}
+	return Encode(decoded)
+}

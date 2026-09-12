@@ -3,6 +3,7 @@ package calendar
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,16 @@ type Fields struct {
 
 	// Status is CONFIRMED, TENTATIVE or CANCELLED.
 	Status *string
+
+	// Attendees are the people asked. Setting them makes the event
+	// something to invite people to; a pointer to an empty list takes
+	// everybody off it, which is not the same as calling the meeting off.
+	Attendees *[]Attendee
+
+	// Organizer is who is asking, as an address. Only written when there
+	// are attendees: an event nobody else is coming to has no organizer,
+	// and writing one makes a personal reminder look like a meeting.
+	Organizer string
 }
 
 // Build writes an event: the fields applied to whatever is already kept.
@@ -128,11 +139,123 @@ func Build(previous []byte, fields *Fields) (*Parsed, error) {
 		return nil, fmt.Errorf("calendar: an event has to start somewhere")
 	}
 
+	if err := setGuests(event, fields); err != nil {
+		return nil, err
+	}
+
 	written, err := Encode(cal)
 	if err != nil {
 		return nil, err
 	}
+	// An event with guests that has actually changed is a new version, and
+	// says so. Their programs match a new copy to the one they hold by
+	// identifier and sequence, and one that does not look newer is ignored
+	// as a late duplicate -- so a meeting moved without this is a meeting
+	// everybody else still has at the old time.
+	//
+	// Bumped on any change rather than only on the ones the format says
+	// matter. Saying "this is newer" too often costs nothing: a program
+	// re-reads an event it already agrees with. Saying it too rarely
+	// leaves people at the wrong place.
+	if len(event.Props[ical.PropAttendee]) > 0 && meaningfullyDifferent(previous, written) {
+		sequence := 0
+		if property := event.Props.Get(ical.PropSequence); property != nil {
+			sequence, _ = property.Int()
+		}
+		setRaw(event.Component, ical.PropSequence, strconv.Itoa(sequence+1))
+		if written, err = Encode(cal); err != nil {
+			return nil, err
+		}
+	}
 	return Parse(written)
+}
+
+// meaningfullyDifferent is whether two versions of an event differ in
+// anything but when they were written down.
+//
+// DTSTAMP is set afresh every time, so comparing the bytes would call every
+// save a change -- and every save would then tell everybody invited that the
+// meeting had moved.
+func meaningfullyDifferent(before, after []byte) bool {
+	if len(bytes.TrimSpace(before)) == 0 {
+		// There was nothing before, so this is the first version. It is
+		// new rather than changed, and starts where it starts.
+		return false
+	}
+	return withoutStamp(before) != withoutStamp(after)
+}
+
+func withoutStamp(data []byte) string {
+	var kept []string
+	for _, line := range strings.Split(string(Unfold(data)), "\r\n") {
+		if strings.HasPrefix(line, ical.PropDateTimeStamp+":") {
+			continue
+		}
+		// The sequence itself is left out of the comparison: it is the
+		// answer, not the question, and including it would make every
+		// bump look like a further change.
+		if strings.HasPrefix(line, ical.PropSequence+":") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\r\n")
+}
+
+// setGuests writes the guest list and who is asking.
+//
+// Written afresh rather than merged: the list is what the form showed, and a
+// person taken off it in the browser has to come off the event, which a merge
+// would never do. What each guest has already said is carried over, because
+// somebody answering and then somebody else being added must not put the
+// first back to being asked.
+func setGuests(event *ical.Event, fields *Fields) error {
+	if fields.Attendees == nil {
+		return nil
+	}
+	said := make(map[string]*ical.Prop, len(event.Props[ical.PropAttendee]))
+	for index := range event.Props[ical.PropAttendee] {
+		property := &event.Props[ical.PropAttendee][index]
+		said[strings.ToLower(addressOf(property))] = property
+	}
+	event.Props.Del(ical.PropAttendee)
+	for _, guest := range *fields.Attendees {
+		address := strings.TrimSpace(guest.Address)
+		if address == "" {
+			continue
+		}
+		if strings.ContainsAny(address, "\r\n") {
+			return fmt.Errorf("calendar: %q is not an address", address)
+		}
+		property := ical.NewProp(ical.PropAttendee)
+		property.Value = "mailto:" + address
+		if name := strings.TrimSpace(guest.Name); name != "" {
+			property.Params.Set(ical.ParamCommonName, name)
+		}
+		participation := strings.ToUpper(strings.TrimSpace(guest.Participation))
+		if previous, already := said[strings.ToLower(address)]; already && participation == "" {
+			participation = previous.Params.Get(ical.ParamParticipationStatus)
+		}
+		if participation == "" {
+			participation = "NEEDS-ACTION"
+		}
+		property.Params.Set(ical.ParamParticipationStatus, participation)
+		if participation == "NEEDS-ACTION" {
+			property.Params.Set("RSVP", "TRUE")
+		}
+		event.Props.Add(property)
+	}
+	if len(event.Props[ical.PropAttendee]) == 0 {
+		// Nobody is coming, so there is nobody asking either.
+		event.Props.Del(ical.PropOrganizer)
+		return nil
+	}
+	if address := strings.TrimSpace(fields.Organizer); address != "" {
+		property := ical.NewProp(ical.PropOrganizer)
+		property.Value = "mailto:" + address
+		event.Props.Set(property)
+	}
+	return nil
 }
 
 // productID names what wrote a file. It is what other calendar programs show

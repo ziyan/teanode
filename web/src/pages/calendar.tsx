@@ -40,10 +40,11 @@ const GET = `
 const SAVE = `
   mutation ($calendarId: String!, $id: String, $summary: String, $location: String,
             $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-            $timezone: String, $recurrence: String, $status: String) {
+            $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
     SaveCalendarEvent(calendarId: $calendarId, id: $id, summary: $summary, location: $location,
                       description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-                      timezone: $timezone, recurrence: $recurrence, status: $status) { id uid summary }
+                      timezone: $timezone, recurrence: $recurrence, status: $status,
+                      attendees: $attendees) { id uid summary }
   }`
 
 const DELETE = `
@@ -98,6 +99,9 @@ type Draft = {
   allDay: boolean
   recurrence: string
   status: string
+  // One address a line, which is how somebody with four guests expects to
+  // type them and avoids a row of controls for adding and removing lines.
+  attendees: string
 }
 
 // The repeats worth offering as a list, each with a name a catalogue can
@@ -255,6 +259,7 @@ export function CalendarPage() {
       allDay: false,
       recurrence: '',
       status: '',
+      attendees: '',
     }
   }
 
@@ -286,6 +291,7 @@ export function CalendarPage() {
         allDay: full.allDay,
         recurrence: full.recurrence ?? '',
         status: full.status ?? '',
+        attendees: (full.attendees ?? []).map((attendee) => attendee.address).join('\n'),
       })
     } catch (failure) {
       toast.failure(failure, t('calendar.failed'))
@@ -539,6 +545,13 @@ export function CalendarPage() {
                   timezone: draft.allDay ? '' : calendar?.timezone || browserZone(),
                   recurrence: draft.recurrence.trim(),
                   status: draft.status.trim(),
+                  // Every line, including none: an empty box means nobody
+                  // is coming, which is a different thing from the meeting
+                  // being called off.
+                  attendees: draft.attendees
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter(Boolean),
                 }),
               draft.id
                 ? t('calendar.saidSaved', { name: draft.summary.trim() })
@@ -623,6 +636,15 @@ export function CalendarPage() {
             {/* A rule another program set is shown as it is rather than
                 quietly replaced by the nearest one on the list. */}
             {!namedRepeat(draft.recurrence) && <span className="mono muted">{draft.recurrence}</span>}
+          </label>
+          <label>
+            {t('calendar.guests')}
+            <textarea
+              rows={2}
+              value={draft.attendees}
+              onChange={(event) => setDraft({ ...draft, attendees: event.target.value })}
+            />
+            <span className="muted">{t('calendar.guestsHint')}</span>
           </label>
           <label>
             {t('calendar.description')}

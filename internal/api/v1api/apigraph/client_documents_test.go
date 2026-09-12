@@ -133,10 +133,11 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 }`,
 		"saving an event": `mutation ($calendarId: String!, $id: String, $summary: String, $location: String,
           $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-          $timezone: String, $recurrence: String, $status: String) {
+          $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
   SaveCalendarEvent(calendarId: $calendarId, id: $id, summary: $summary, location: $location,
                     description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-                    timezone: $timezone, recurrence: $recurrence, status: $status) { id uid summary }
+                    timezone: $timezone, recurrence: $recurrence, status: $status,
+                    attendees: $attendees) { id uid summary }
 }`,
 		"taking one away": `mutation ($calendarId: String!, $id: String!) {
   DeleteCalendarEvent(calendarId: $calendarId, id: $id)

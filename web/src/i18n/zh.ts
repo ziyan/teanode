@@ -1780,6 +1780,8 @@ export const zh: Catalog = {
   'calendar.repeats': '重复',
   'calendar.summary': '标题',
   'calendar.location': '地点',
+  'calendar.guests': '邀请',
+  'calendar.guestsHint': '每行一个地址。列出的每个人都会收到可回复的邀请。',
   'calendar.description': '备注',
   'calendar.starts': '开始',
   'calendar.ends': '结束',

@@ -1843,6 +1843,8 @@ export const en = {
   'calendar.repeats': 'Repeats',
   'calendar.summary': 'Title',
   'calendar.location': 'Where',
+  'calendar.guests': 'Invite',
+  'calendar.guestsHint': 'One address a line. Everybody listed is sent an invitation they can answer.',
   'calendar.description': 'Notes',
   'calendar.starts': 'Starts',
   'calendar.ends': 'Ends',

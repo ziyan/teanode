@@ -427,3 +427,202 @@ func TestAnEventThatRepeatsForEverIsWrittenQuickly(t *testing.T) {
 		t.Fatal("and it still carries its zone")
 	}
 }
+
+func guests(people ...Attendee) *[]Attendee { return &people }
+
+// An event with guests says who is asking and who is asked, and everybody
+// starts out being waited on.
+func TestAnEventWithGuestsNamesThem(t *testing.T) {
+	built := mustBuild(t, nil, &Fields{
+		Summary:  text("Planning"),
+		StartsAt: moment(2026, time.September, 14, 10, 0),
+		EndsAt:   moment(2026, time.September, 14, 11, 0),
+		Attendees: guests(
+			Attendee{Address: "ada@example.com", Name: "Ada Lovelace"},
+			Attendee{Address: "alan@example.com"},
+		),
+		Organizer: "grace@example.com",
+	})
+	written := string(Unfold(built.Data))
+	if !strings.Contains(written, "ORGANIZER:mailto:grace@example.com") {
+		t.Fatalf("who is asking:\n%s", written)
+	}
+	if len(built.Attendees) != 2 {
+		t.Fatalf("two guests: %+v", built.Attendees)
+	}
+	for _, attendee := range built.Attendees {
+		if attendee.Participation != "NEEDS-ACTION" {
+			t.Fatalf("everybody is being waited on: %+v", attendee)
+		}
+	}
+	if !strings.Contains(written, "RSVP=TRUE") {
+		t.Fatalf("and asked to answer:\n%s", written)
+	}
+}
+
+// What somebody has already said survives somebody else being added. Putting
+// them back to being asked would send them the invitation again for a change
+// that has nothing to do with them.
+func TestAddingAGuestDoesNotUnaskTheOthers(t *testing.T) {
+	first := mustBuild(t, nil, &Fields{
+		Summary: text("Planning"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		EndsAt:    moment(2026, time.September, 14, 11, 0),
+		Attendees: guests(Attendee{Address: "ada@example.com"}),
+		Organizer: "grace@example.com",
+	})
+	answered, err := Answer(first.Data, []Attendee{{Address: "ada@example.com", Participation: Accepted}})
+	if err != nil {
+		t.Fatalf("she accepted: %v", err)
+	}
+	widened := mustBuild(t, answered.Data, &Fields{
+		Attendees: guests(
+			Attendee{Address: "ada@example.com"},
+			Attendee{Address: "alan@example.com"},
+		),
+		Organizer: "grace@example.com",
+	})
+	for _, attendee := range widened.Attendees {
+		if attendee.Address == "ada@example.com" && attendee.Participation != "ACCEPTED" {
+			t.Fatalf("she is still coming: %+v", attendee)
+		}
+		if attendee.Address == "alan@example.com" && attendee.Participation != "NEEDS-ACTION" {
+			t.Fatalf("and he has not said: %+v", attendee)
+		}
+	}
+}
+
+// Somebody taken off the list in the browser comes off the event. A merge
+// would never remove anybody.
+func TestAGuestCanBeTakenOff(t *testing.T) {
+	first := mustBuild(t, nil, &Fields{
+		Summary: text("Planning"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		EndsAt: moment(2026, time.September, 14, 11, 0),
+		Attendees: guests(
+			Attendee{Address: "ada@example.com"},
+			Attendee{Address: "alan@example.com"},
+		),
+		Organizer: "grace@example.com",
+	})
+	fewer := mustBuild(t, first.Data, &Fields{
+		Attendees: guests(Attendee{Address: "ada@example.com"}),
+		Organizer: "grace@example.com",
+	})
+	if len(fewer.Attendees) != 1 || fewer.Attendees[0].Address != "ada@example.com" {
+		t.Fatalf("one guest left: %+v", fewer.Attendees)
+	}
+	// And taking everybody off leaves an appointment rather than a meeting
+	// nobody is coming to.
+	alone := mustBuild(t, fewer.Data, &Fields{Attendees: guests(), Organizer: "grace@example.com"})
+	if len(alone.Attendees) != 0 || alone.Organizer != "" {
+		t.Fatalf("nobody left, and nobody asking: %+v %q", alone.Attendees, alone.Organizer)
+	}
+}
+
+// An event with guests that has really changed says it is a new version, so
+// that everybody's program believes the new copy rather than filing it as a
+// duplicate of the one they hold.
+func TestAChangedMeetingSaysItIsNewer(t *testing.T) {
+	first := mustBuild(t, nil, &Fields{
+		Summary: text("Planning"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		EndsAt:    moment(2026, time.September, 14, 11, 0),
+		Attendees: guests(Attendee{Address: "ada@example.com"}),
+		Organizer: "grace@example.com",
+	})
+	if first.Sequence != 0 {
+		t.Fatalf("a new meeting starts at nought: %d", first.Sequence)
+	}
+	moved := mustBuild(t, first.Data, &Fields{
+		StartsAt: moment(2026, time.September, 14, 14, 0),
+		EndsAt:   moment(2026, time.September, 14, 15, 0),
+	})
+	if moved.Sequence != 1 {
+		t.Fatalf("moving it makes a new version: %d", moved.Sequence)
+	}
+	// Saving without changing anything is not a new version: otherwise
+	// opening and closing the form would tell everybody the meeting had
+	// moved.
+	again := mustBuild(t, moved.Data, &Fields{})
+	if again.Sequence != 1 {
+		t.Fatalf("nothing changed, so nothing to say: %d", again.Sequence)
+	}
+}
+
+// An appointment with nobody else in it does not carry a version at all:
+// there is nobody whose copy could be out of date.
+func TestAnAppointmentAloneNeedsNoVersion(t *testing.T) {
+	first := mustBuild(t, nil, &Fields{
+		Summary: text("Dentist"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		EndsAt: moment(2026, time.September, 14, 11, 0),
+	})
+	moved := mustBuild(t, first.Data, &Fields{StartsAt: moment(2026, time.September, 14, 14, 0)})
+	if moved.Sequence != 0 {
+		t.Fatalf("nobody to tell: %d", moved.Sequence)
+	}
+}
+
+// What goes to the people asked is the whole event, with the method that
+// makes a mail program show it as something to answer.
+func TestAnInvitationCarriesTheWholeEvent(t *testing.T) {
+	built := mustBuild(t, nil, &Fields{
+		Summary: text("Planning"), Location: text("The small room"),
+		StartsAt:  moment(2026, time.September, 14, 10, 0),
+		EndsAt:    moment(2026, time.September, 14, 11, 0),
+		Attendees: guests(Attendee{Address: "ada@example.com"}),
+		Organizer: "grace@example.com",
+	})
+	written, err := Invite(built.Data, "grace@example.com")
+	if err != nil {
+		t.Fatalf("inviting: %v", err)
+	}
+	text := string(Unfold(written))
+	for _, want := range []string{
+		"METHOD:REQUEST", "SUMMARY:Planning", "LOCATION:The small room",
+		"ORGANIZER:mailto:grace@example.com", "mailto:ada@example.com",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("an invitation needs %q:\n%s", want, text)
+		}
+	}
+
+	// And calling it off says so in the method and in the event, so a
+	// program that files it without reading the method still shows it
+	// struck through.
+	off, err := CallOff(built.Data, "grace@example.com")
+	if err != nil {
+		t.Fatalf("calling it off: %v", err)
+	}
+	offText := string(Unfold(off))
+	if !strings.Contains(offText, "METHOD:CANCEL") || !strings.Contains(offText, "STATUS:CANCELLED") {
+		t.Fatalf("both:\n%s", offText)
+	}
+}
+
+// There is nothing to send when nobody was asked, and nothing to send from
+// when nobody is asking.
+func TestThereIsNothingToSendToNobody(t *testing.T) {
+	alone := mustBuild(t, nil, &Fields{
+		Summary: text("Dentist"), StartsAt: moment(2026, time.September, 14, 10, 0),
+	})
+	if _, err := Invite(alone.Data, "grace@example.com"); err == nil {
+		t.Fatal("nobody to invite")
+	}
+	withGuests := mustBuild(t, nil, &Fields{
+		Summary: text("Planning"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		Attendees: guests(Attendee{Address: "ada@example.com"}),
+	})
+	if _, err := Invite(withGuests.Data, ""); err == nil {
+		t.Fatal("nobody asking")
+	}
+}
+
+// An address with a newline in it cannot be written into an event, because a
+// newline is where one property ends and the next begins.
+func TestAGuestCannotInjectAProperty(t *testing.T) {
+	if _, err := Build(nil, &Fields{
+		Summary: text("Planning"), StartsAt: moment(2026, time.September, 14, 10, 0),
+		Attendees: guests(Attendee{Address: "ada@example.com\r\nSUMMARY:Hijacked"}),
+		Organizer: "grace@example.com",
+	}); err == nil {
+		t.Fatal("a newline in an address should be refused")
+	}
+}
