@@ -2522,9 +2522,14 @@ body,
     min-width: 100%;
   }
 
+  /* Wrapping, because a row's controls are not always two buttons: the
+     skills list puts a dropdown beside them, and 160 pixels of dropdown
+     plus a button plus an icon will not fit on a phone. They go onto a
+     second line, still against the right edge, rather than squeezing. */
   .settings-row-actions {
     width: 100%;
     justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 

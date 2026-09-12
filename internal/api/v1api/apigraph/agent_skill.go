@@ -179,7 +179,7 @@ func (self *graph) ListAgentSkills(ctx context.Context) ([]*AgentSkillView, erro
 		return nil, err
 	}
 	var installed []*models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		installed, err = tx.ListAgentSkills()
 		return err
 	}); err != nil {
@@ -202,7 +202,7 @@ func (self *graph) SearchAgentSkills(ctx context.Context, arguments SearchAgentS
 		return nil, err
 	}
 	var installed []*models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		installed, err = tx.ListAgentSkills()
 		return err
 	}); err != nil {
@@ -274,7 +274,7 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 		return nil, fmt.Errorf("skills: the registry calls this %q and the file calls itself %q", entry.Name, parsed.Name)
 	}
 	var stored *models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// A skill an operator switched off stays off when it is updated;
 		// only a new one arrives switched on.
 		enabled := true
@@ -319,7 +319,7 @@ func (self *graph) RemoveAgentSkill(ctx context.Context, arguments AgentSkillArg
 		return false, err
 	}
 	var found *models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if found, err = tx.GetAgentSkill(arguments.Name); err != nil || found == nil {
 			return err
 		}
@@ -351,7 +351,7 @@ func (self *graph) SetAgentSkillScope(ctx context.Context, arguments SetAgentSki
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	var stored *models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.GetAgentSkill(arguments.Name)
 		if err != nil {
 			return err
@@ -374,7 +374,7 @@ func (self *graph) SetAgentSkillEnabled(ctx context.Context, arguments SetAgentS
 		return nil, err
 	}
 	var stored *models.AgentSkill
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.GetAgentSkill(arguments.Name)
 		if err != nil {
 			return err
@@ -437,7 +437,7 @@ func (self *graph) ListAgentSkillSecrets(ctx context.Context) ([]*AgentSkillSecr
 	}
 	var installed []*models.AgentSkill
 	var stored []*models.AgentSkillSecret
-	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if installed, err = tx.ListAgentSkills(); err != nil {
 			return err
 		}
@@ -502,7 +502,7 @@ func (self *graph) SetAgentSkillSecret(ctx context.Context, arguments SetAgentSk
 	if err != nil {
 		return nil, err
 	}
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		return tx.PutAgentSkillSecret(&models.AgentSkillSecret{
 			AgentID: found.ID, Skill: wanted.Skill, Key: key, Value: sealed,
 		})
@@ -527,7 +527,7 @@ func (self *graph) ClearAgentSkillSecret(ctx context.Context, arguments ClearAge
 	// Whether there was anything to forget, so that clearing a key that
 	// was never set does not read as having cleared one that was.
 	forgotten := false
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		stored, err := tx.ListAgentSkillSecrets(found.ID)
 		if err != nil {
 			return err
