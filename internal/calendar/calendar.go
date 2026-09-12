@@ -337,3 +337,40 @@ func addressOf(property *ical.Prop) string {
 	}
 	return strings.TrimSpace(value)
 }
+
+// Horizon is how far ahead and behind the times an event happens are worked
+// out and written down.
+//
+// An event that repeats with no end cannot be indexed for ever, so the index
+// reaches a horizon and no further. Two years ahead covers every view a
+// calendar draws and any reasonable amount of paging; a year behind covers
+// looking back at what happened. Measured from now rather than from the
+// event, so that a repeat set up years ago is still indexed over the part of
+// it anybody is going to look at.
+const (
+	HorizonAhead  = 2 * 366 * 24 * time.Hour
+	HorizonBehind = 366 * 24 * time.Hour
+)
+
+// Indexed is when an event happens, over the stretch worth writing down.
+//
+// It is here rather than beside either caller because both doors into a
+// calendar -- the dashboard's API and CalDAV -- index what they write, and
+// two doors that disagreed about the horizon would give a calendar whose
+// contents depended on which one last touched it.
+func Indexed(parsed *Parsed) ([]Occurrence, error) {
+	if parsed == nil {
+		return nil, fmt.Errorf("calendar: there is no event to index")
+	}
+	now := time.Now().UTC()
+	from, until := now.Add(-HorizonBehind), now.Add(HorizonAhead)
+	if !parsed.Recurring {
+		// An event that happens once is indexed wherever it is. Somebody
+		// who puts a date in for a graduation years away should see it
+		// when they get there, and it is one row.
+		from, until = parsed.StartsAt.Add(-time.Second), parsed.EndsAt.Add(time.Second)
+	} else if parsed.StartsAt.After(from) {
+		from = parsed.StartsAt.Add(-time.Second)
+	}
+	return Occurrences(parsed, from, until)
+}

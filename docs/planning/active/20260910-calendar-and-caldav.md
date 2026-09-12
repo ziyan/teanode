@@ -57,7 +57,10 @@ history, and every example here is written the way it should be copied.
 - [x] (2026-09-12) Milestone 2: the API and the calendar page -- month, week
       and agenda views, the event editor, and the strings in all three
       catalogues. `make test` 1220 green, `make lint-ci` clean.
-- [ ] Milestone 3: CalDAV read and write on the stack plan B left.
+- [x] (2026-09-12) Milestone 3: CalDAV read and write. The principal
+      advertises both home sets, a fetch and both reports are answered from
+      the stored bytes, and a calendar-query's time range is answered from the
+      occurrence index. 11 tests in `internal/dav`; 1232 green overall.
 - [ ] Milestone 4: free-busy.
 - [ ] Milestone 5: invitations arriving as mail.
 - [ ] Milestone 6: invitations and cancellations leaving as mail.

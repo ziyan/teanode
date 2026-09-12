@@ -182,6 +182,7 @@ github.com/emersion/go-vcard
 # github.com/emersion/go-webdav v0.7.0
 ## explicit; go 1.13
 github.com/emersion/go-webdav
+github.com/emersion/go-webdav/caldav
 github.com/emersion/go-webdav/carddav
 github.com/emersion/go-webdav/internal
 # github.com/felixge/httpsnoop v1.0.4

@@ -25,14 +25,15 @@ const aCard = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada Lovelace
 	"N:Lovelace;Ada;;;\r\nEMAIL:ada@example.com\r\nEND:VCARD\r\n"
 
 // world is a server with one account, one mailbox with one address and one
-// app password, and an address book.
+// app password, an address book and a calendar.
 type world struct {
-	server   *httptest.Server
-	database db.Database
-	userID   string
-	other    string
-	bookID   string
-	address  string
+	server     *httptest.Server
+	database   db.Database
+	userID     string
+	other      string
+	bookID     string
+	calendarID string
+	address    string
 }
 
 func newWorld(t *testing.T) (*world, func()) {
@@ -43,8 +44,10 @@ func newWorld(t *testing.T) (*world, func()) {
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		// A role that may keep an address book, and an account in it.
 		role, err := tx.CreateRole(&models.Role{
-			Name:        "member",
-			Permissions: []models.Permission{models.PermissionContactsUse, models.PermissionMailRead},
+			Name: "member",
+			Permissions: []models.Permission{
+				models.PermissionContactsUse, models.PermissionCalendarUse, models.PermissionMailRead,
+			},
 		})
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
@@ -94,6 +97,11 @@ func newWorld(t *testing.T) (*world, func()) {
 			t.Fatalf("CreateAddressBook: %s", err)
 		}
 		here.bookID = book.ID
+		calendar, err := tx.CreateCalendar(&models.Calendar{UserID: owner.ID, Name: "Calendar"})
+		if err != nil {
+			t.Fatalf("CreateCalendar: %s", err)
+		}
+		here.calendarID = calendar.ID
 	})
 
 	component, err := dav.New(database, config.NewMemoryStore(config.Default()), nil)

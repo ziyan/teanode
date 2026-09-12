@@ -462,32 +462,12 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 	return eventView(kept, true)
 }
 
-// indexedFor is how far ahead the times an event happens are worked out and
-// written down.
-//
-// An event that repeats with no end cannot be indexed for ever, so the index
-// reaches a horizon and no further. Two years covers every view the dashboard
-// draws and any reasonable amount of paging; past it a calendar answers from
-// the file itself. It is measured from now rather than from the event so that
-// a repeat set up years ago is still indexed over the part of it anybody is
-// going to look at.
-const indexedFor = 2 * 366 * 24 * time.Hour
-
-// indexedFrom is how far back, for the same reason in the other direction.
-const indexedFrom = 366 * 24 * time.Hour
-
 func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, error) {
-	now := time.Now().UTC()
-	from, until := now.Add(-indexedFrom), now.Add(indexedFor)
-	// An event that happens once, outside the horizon, is still indexed:
-	// somebody who puts a date in for their child's graduation should see
-	// it when they get there, and there is only one row to write.
-	if !parsed.Recurring {
-		from, until = parsed.StartsAt.Add(-time.Second), parsed.EndsAt.Add(time.Second)
-	} else if parsed.StartsAt.After(from) {
-		from = parsed.StartsAt.Add(-time.Second)
-	}
-	occurrences, err := calendar.Occurrences(parsed, from, until)
+	// The horizon lives in the calendar package, because CalDAV indexes
+	// what it writes too and two doors that disagreed about how far ahead
+	// to look would give a calendar whose contents depended on which one
+	// last touched it.
+	occurrences, err := calendar.Indexed(parsed)
 	if err != nil {
 		return nil, err
 	}
