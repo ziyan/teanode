@@ -4,8 +4,12 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/emersion/go-vcard"
+	"github.com/emersion/go-webdav/carddav"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -87,12 +91,22 @@ func (self *component) serveReport(writer http.ResponseWriter, request *http.Req
 		// Named cards. Each href is the client's, so each is resolved the
 		// long way round -- through the address book, which is checked to
 		// belong to whoever is signed in -- rather than trusted.
+		if len(asked.Hrefs) > maximumHrefs {
+			http.Error(writer, "that report asks for too many contacts at once", http.StatusForbidden)
+			return true
+		}
 		for _, href := range asked.Hrefs {
-			path := strings.TrimSpace(href)
+			// Percent-decoded before it is used as a path, and given back
+			// percent-encoded. A client sends back what the listing gave
+			// it, and the listing is a URL: a contact named "ada k.vcf"
+			// is listed as ada%20k.vcf, so taking the href literally
+			// looked for a file with a percent sign in its name and never
+			// found it.
+			path := decodeHref(strings.TrimSpace(href))
 			contact, err := backing.storedCard(ctx, path)
 			if err != nil {
 				status, _ := statusOf(err)
-				answers = append(answers, davResponse{Href: path, Status: statusLine(status)})
+				answers = append(answers, davResponse{Href: encodeHref(path), Status: statusLine(status)})
 				continue
 			}
 			answers = append(answers, found(signedIn, contact, wantsETag, wantsLength, wantsData))
@@ -109,7 +123,19 @@ func (self *component) serveReport(writer http.ResponseWriter, request *http.Req
 			http.Error(writer, message, status)
 			return true
 		}
+		var filter queryFilter
+		if err := xml.Unmarshal(body, &filter); err != nil {
+			http.Error(writer, "that filter could not be read", http.StatusBadRequest)
+			return true
+		}
 		for _, contact := range contacts {
+			matched, err := matchesQuery(&filter, contact)
+			if err != nil {
+				log.Debugf("a contact could not be matched against a filter: %s", err)
+			}
+			if !matched {
+				continue
+			}
 			answers = append(answers, found(signedIn, contact, wantsETag, wantsLength, wantsData))
 		}
 
@@ -146,11 +172,95 @@ func found(signedIn *session, contact *models.Contact, etag, length, data bool) 
 		held.AddressData = contact.Card
 	}
 	return davResponse{
-		Href:     contactPath(signedIn.userID, contact.AddressBookID, contact.ID),
+		Href:     encodeHref(contactPath(signedIn.userID, contact.AddressBookID, contact.ID)),
 		PropStat: []propStat{{Prop: held, Status: statusLine(http.StatusOK)}},
 	}
 }
 
 func statusLine(status int) string {
 	return fmt.Sprintf("HTTP/1.1 %d %s", status, http.StatusText(status))
+}
+
+// maximumHrefs is how many contacts one report may name. Each costs a look
+// through the database, and a body of eight megabytes holds a great many
+// hrefs; a phone asks for the handful that changed.
+const maximumHrefs = 5000
+
+// decodeHref is the path a client meant. An href is a URL reference, so what
+// arrives is percent-encoded, and a full URL is allowed as well as a path.
+func decodeHref(href string) string {
+	parsed, err := url.Parse(href)
+	if err != nil {
+		return href
+	}
+	return parsed.Path
+}
+
+// encodeHref writes a path as a client may read it back and send it again.
+func encodeHref(path string) string {
+	return (&url.URL{Path: path}).EscapedPath()
+}
+
+// queryFilter is the filter of an addressbook-query, as it arrives.
+//
+// It is read here rather than by the protocol library because the library
+// reads the whole request and then answers it with its own encoder, which is
+// the one this server replaced. Only the parts a client actually sends are
+// read: a filter of property filters, each with text matches.
+type queryFilter struct {
+	Filter struct {
+		Test        string `xml:"test,attr"`
+		PropFilters []struct {
+			Name         string    `xml:"name,attr"`
+			Test         string    `xml:"test,attr"`
+			IsNotDefined *struct{} `xml:"urn:ietf:params:xml:ns:carddav is-not-defined"`
+			TextMatches  []struct {
+				Text      string `xml:",chardata"`
+				Negate    string `xml:"negate-condition,attr"`
+				MatchType string `xml:"match-type,attr"`
+			} `xml:"urn:ietf:params:xml:ns:carddav text-match"`
+		} `xml:"urn:ietf:params:xml:ns:carddav prop-filter"`
+	} `xml:"urn:ietf:params:xml:ns:carddav filter"`
+}
+
+// asQuery is the filter in the form the library's matcher takes.
+func (self *queryFilter) asQuery() *carddav.AddressBookQuery {
+	query := &carddav.AddressBookQuery{FilterTest: carddav.FilterTest(self.Filter.Test)}
+	for _, filter := range self.Filter.PropFilters {
+		made := carddav.PropFilter{
+			Name:         filter.Name,
+			Test:         carddav.FilterTest(filter.Test),
+			IsNotDefined: filter.IsNotDefined != nil,
+		}
+		for _, match := range filter.TextMatches {
+			made.TextMatches = append(made.TextMatches, carddav.TextMatch{
+				Text:            strings.TrimSpace(match.Text),
+				NegateCondition: match.Negate == "yes",
+				MatchType:       carddav.MatchType(match.MatchType),
+			})
+		}
+		query.PropFilters = append(query.PropFilters, made)
+	}
+	return query
+}
+
+// matchesQuery says whether a stored card satisfies the filter.
+//
+// The card is decoded only in order to be matched; what is served is still
+// the stored text. Answering a filtered query with the whole book would be
+// allowed by the letter of the protocol -- a client must cope with more than
+// it asked for -- but a client using the query as a directory search would
+// then show every contact as a match, and every search would carry the whole
+// address book across the network.
+func matchesQuery(filter *queryFilter, contact *models.Contact) (bool, error) {
+	if len(filter.Filter.PropFilters) == 0 {
+		// No filter at all: everything, which is what a client asking for
+		// the whole book sends.
+		return true, nil
+	}
+	card, err := vcard.NewDecoder(strings.NewReader(contact.Card)).Decode()
+	if err != nil {
+		return true, err
+	}
+	return carddav.Match(filter.asQuery(), &carddav.AddressObject{Card: card})
 }

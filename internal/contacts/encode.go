@@ -160,10 +160,20 @@ func parameter(value string) string {
 		}
 		return letter
 	}, value)
-	if !strings.ContainsAny(value, needsQuoting) && !strings.Contains(value, "\"") {
+	// A backslash and a quotation mark both go, and neither is fussiness.
+	//
+	// The library's decoder reads a quoted parameter with Go's own
+	// unquoting, so a backslash inside quotes is taken as the start of an
+	// escape: a value ending in one escapes the closing quote, the
+	// parameters then fail to parse, and the whole property is dropped
+	// without a word -- an address destroyed the next time the card is
+	// read. A quotation mark has no escape inside quotes at all. Neither
+	// has any business in a parameter value, so neither is written.
+	value = strings.NewReplacer(`\`, "", `"`, "").Replace(value)
+	if !strings.ContainsAny(value, needsQuoting) {
 		return value
 	}
-	return `"` + strings.ReplaceAll(value, `"`, "") + `"`
+	return `"` + value + `"`
 }
 
 // withoutControls drops the characters that would end a line or split it,
@@ -187,48 +197,51 @@ func withoutControls(value string) string {
 // Broken between characters, never inside one: a continuation that begins
 // halfway through a multi-byte character is not text any more.
 func writeFold(out *bytes.Buffer, text string) {
-	if len(text) <= foldAt {
-		out.WriteString(text)
-		out.WriteString("\r\n")
-		return
-	}
 	written := 0
-	last := 0
-	for index := range text {
-		if index == 0 {
-			continue
-		}
-		// The first line may be foldAt octets; every later one is a space
-		// plus foldAt-1, so that the whole line is still within the limit.
+	first := true
+	for {
+		// The first line may be foldAt octets; every later one begins
+		// with a space, so it may be one less.
 		limit := foldAt
-		if written > 0 {
+		if !first {
 			limit = foldAt - 1
 		}
-		if index-written <= limit {
-			// A character boundary that still fits: remember it and
-			// carry on looking for a later one.
-			last = index
-			continue
+		if len(text)-written <= limit {
+			break
 		}
-		// This boundary is past the limit, so break at the last one that
-		// was not. Breaking here instead is how a line of snowmen came
-		// out at 77 octets: index moves a whole character at a time, so
-		// the chunk is already over the limit by the time it is noticed.
-		if last <= written {
-			last = index
+		// The last character boundary that still fits. Measured by where
+		// a character ends rather than where it starts: eighteen emoji
+		// all begin within seventy-five octets and the last of them ends
+		// at seventy-seven.
+		cut := written
+		for index := range text[written:] {
+			at := written + index
+			if at == written {
+				continue
+			}
+			if at-written > limit {
+				break
+			}
+			cut = at
 		}
-		if written > 0 {
+		if cut == written {
+			// One character longer than a whole line, which cannot be
+			// folded. Written as it is; a reader would rather have a long
+			// line than half a character.
+			break
+		}
+		if !first {
 			out.WriteByte(' ')
 		}
-		out.WriteString(text[written:last])
+		out.WriteString(text[written:cut])
 		out.WriteString("\r\n")
-		written = last
+		written = cut
+		first = false
 	}
-	if written < len(text) {
-		if written > 0 {
-			out.WriteByte(' ')
-		}
-		out.WriteString(text[written:])
+	// Whatever is left, which by now fits.
+	if !first {
+		out.WriteByte(' ')
 	}
+	out.WriteString(text[written:])
 	out.WriteString("\r\n")
 }

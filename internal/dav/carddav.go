@@ -384,20 +384,16 @@ func (self *backend) object(signedIn *session, contact *models.Contact) (*cardda
 	if err != nil {
 		return nil, fmt.Errorf("dav: a stored contact cannot be read back: %w", err)
 	}
-	// The length of what the protocol will write, not of what is stored.
-	// The library serves a card by re-encoding the parsed form, and
-	// re-encoding is not always byte-for-byte what went in; declaring the
-	// stored length and then writing one byte more had the body truncated
-	// by net/http, so a client fetched a card with its last line cut off
-	// and could not parse it.
-	served, err := contacts.Encode(card)
-	if err != nil {
-		return nil, err
-	}
+	// The length of what is stored, because that is what is served: a
+	// fetch and a report both write contact.Card byte for byte. Computing
+	// it by re-encoding instead was wrong twice over -- it is a second
+	// answer to a question with one right answer, and it went down a path
+	// that does not unescape semicolons, so it read two octets long for
+	// every semicolon in a note.
 	return &carddav.AddressObject{
 		Path:          contactPath(signedIn.userID, contact.AddressBookID, contact.ID),
 		ModTime:       contact.ModifiedAt,
-		ContentLength: int64(len(served)),
+		ContentLength: int64(len(contact.Card)),
 		ETag:          contact.ETag,
 		Card:          card,
 	}, nil

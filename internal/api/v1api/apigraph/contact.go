@@ -302,14 +302,22 @@ func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArgumen
 		// devices adding somebody at the same time pick different file
 		// names but agree on the identifier, and the second must land on
 		// the first rather than making a second copy of them.
-		if contact.ID == "" {
-			twin, err := tx.GetContactByUID(book.ID, contact.UID)
-			if err != nil {
-				return err
-			}
-			if twin != nil {
+		//
+		// When a contact is already named, a card carrying somebody
+		// else's identifier is refused instead. Leaving that to the unique
+		// index gave whoever asked a 500 carrying the index's name.
+		twin, err := tx.GetContactByUID(book.ID, contact.UID)
+		if err != nil {
+			return err
+		}
+		if twin != nil {
+			if contact.ID == "" {
 				contact.ID = twin.ID
 				contact.CreatedAt = twin.CreatedAt
+			} else if twin.ID != contact.ID {
+				refused = fmt.Errorf("%w: another contact in this address book already has that identifier",
+					api.ErrInvalidArguments)
+				return refused
 			}
 		}
 		kept, err = tx.PutContact(contact)

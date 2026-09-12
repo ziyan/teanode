@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -719,5 +720,111 @@ func TestChangingAnIdentifierToOneAlreadyHeldIsAConflict(t *testing.T) {
 	_ = text(t, answer)
 	if answer.StatusCode != http.StatusConflict {
 		t.Fatalf("rewriting a card to an identifier already held: %d, wanted 409", answer.StatusCode)
+	}
+}
+
+// A client sends back the href a listing gave it, and a listing is a URL: a
+// contact whose name needs escaping must be fetchable by the name it was
+// listed under.
+func TestAnHrefSurvivesBeingListedAndSentBack(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	name := "ada k"
+	where := fmt.Sprintf("%s/%s/contacts/%s/%s.vcf", dav.Prefix, here.userID, here.bookID, name)
+	put := here.ask(t, http.MethodPut, where, aCard, "Content-Type", "text/vcard")
+	_ = text(t, put)
+	if put.StatusCode >= 400 {
+		t.Fatalf("a contact named %q: %d", name, put.StatusCode)
+	}
+
+	listed := text(t, here.ask(t, "PROPFIND",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), propfindETags, "Depth", "1"))
+	found := regexp.MustCompile(`<href[^>]*>([^<]*\.vcf)</href>`).FindStringSubmatch(listed)
+	if found == nil {
+		t.Fatalf("the contact is listed:\n%s", listed)
+	}
+	href := found[1]
+	if !strings.Contains(href, "%20") {
+		t.Fatalf("a space in a name is escaped in the href: %q", href)
+	}
+
+	// Exactly what the listing said, handed straight back.
+	report := fmt.Sprintf(`<?xml version="1.0"?>
+<c:addressbook-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/><c:address-data/></d:prop>
+  <d:href>%s</d:href>
+</c:addressbook-multiget>`, href)
+	answer := here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), report, "Depth", "1")
+	body := text(t, answer)
+	if !strings.Contains(body, "BEGIN:VCARD") {
+		t.Fatalf("a multiget of the href that was listed must find the card:\n%s", body)
+	}
+	if strings.Contains(body, "404") {
+		t.Fatalf("and must not answer not-found:\n%s", body)
+	}
+}
+
+// A filtered query answers with what matches, not with the whole book.
+func TestAQueryAnswersWithWhatMatches(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	for name, who := range map[string]string{"ada": "Ada Lovelace", "grace": "Grace Hopper"} {
+		card := strings.Replace(strings.Replace(aCard, "Ada Lovelace", who, 1), "urn:uuid:ada", "urn:uuid:"+name, 1)
+		_ = text(t, here.ask(t, http.MethodPut,
+			fmt.Sprintf("%s/%s/contacts/%s/%s.vcf", dav.Prefix, here.userID, here.bookID, name),
+			card, "Content-Type", "text/vcard"))
+	}
+
+	query := `<?xml version="1.0"?>
+<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/><c:address-data/></d:prop>
+  <c:filter>
+    <c:prop-filter name="FN"><c:text-match>Hopper</c:text-match></c:prop-filter>
+  </c:filter>
+</c:addressbook-query>`
+	body := text(t, here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID), query, "Depth", "1"))
+	if !strings.Contains(body, "Grace Hopper") {
+		t.Fatalf("the match is there:\n%s", body)
+	}
+	if strings.Contains(body, "Ada Lovelace") {
+		t.Fatalf("and nothing else is:\n%s", body)
+	}
+
+	// No filter still means everybody, which is how a client asks for the
+	// whole book.
+	all := text(t, here.ask(t, "REPORT",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID),
+		`<?xml version="1.0"?><c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+  <d:prop><d:getetag/></d:prop></c:addressbook-query>`, "Depth", "1"))
+	if !strings.Contains(all, "ada.vcf") || !strings.Contains(all, "grace.vcf") {
+		t.Fatalf("an unfiltered query is the whole book:\n%s", all)
+	}
+}
+
+// What a listing says a card's length is has to be the length of the card.
+func TestTheAdvertisedLengthIsTheCardsLength(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	card := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:ada\r\nFN:Ada\r\n" +
+		"NOTE:call him\\; he knows\\; twice\r\nEND:VCARD\r\n"
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, here.bookID)
+	_ = text(t, here.ask(t, http.MethodPut, where, card, "Content-Type", "text/vcard"))
+	stored := text(t, here.ask(t, http.MethodGet, where, ""))
+
+	body := text(t, here.ask(t, "PROPFIND",
+		fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, here.bookID),
+		`<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getcontentlength/></d:prop></d:propfind>`,
+		"Depth", "1"))
+	found := regexp.MustCompile(`<getcontentlength[^>]*>(\d+)</getcontentlength>`).FindStringSubmatch(body)
+	if found == nil {
+		t.Fatalf("a length is advertised:\n%s", body)
+	}
+	if found[1] != fmt.Sprint(len(stored)) {
+		t.Fatalf("advertised %s, the card is %d bytes", found[1], len(stored))
 	}
 }
