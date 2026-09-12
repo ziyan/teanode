@@ -73,9 +73,9 @@ type Tool struct {
 	Actions     map[string][]*Step `yaml:"actions"`
 }
 
-// request is an http tool read as the one step it is, so that a tool and
+// Request is an http tool read as the one step it is, so that a tool and
 // a step are carried out by the same code.
-func (self *Tool) request() *Step {
+func (self *Tool) Request() *Step {
 	return &Step{
 		Name: self.Name, Type: KindHTTP, Method: self.Method, URL: self.URL,
 		Headers: self.Headers, Body: self.Body, Auth: self.Auth,
@@ -223,7 +223,7 @@ func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
 		}
 		return self.checkList(where, tool.Command, available, nil, secrets)
 	case KindHTTP:
-		return self.checkStep(where, tool.request(), available, nil, secrets)
+		return self.checkStep(where, tool.Request(), available, nil, secrets)
 	case KindWorkflow:
 		if tool.ActionField != "" {
 			if !available[tool.ActionField] {

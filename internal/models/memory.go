@@ -214,3 +214,26 @@ type AgentConnection struct {
 	LastError       string     `json:"lastError,omitempty"`
 	LastConnectedAt *time.Time `json:"lastConnectedAt,omitempty"`
 }
+
+// AgentSkill is a skill installed from a registry: a file of declarations
+// whose tools join everybody's catalog. Installed by an operator and
+// belonging to the server, not to a person, which is why there is no
+// agent here.
+type AgentSkill struct {
+	Name       string    `json:"name"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+
+	Version     string `json:"version"`
+	Publisher   string `json:"publisher"`
+	URL         string `json:"url"`
+	SHA256      string `json:"sha256"`
+	Description string `json:"description"`
+
+	// Content is the file as it was fetched and checked, kept so that a
+	// server that can no longer reach the registry still has it and an
+	// operator can read what is installed.
+	Content string `json:"-"`
+
+	Enabled bool `json:"enabled"`
+}

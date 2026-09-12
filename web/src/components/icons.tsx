@@ -501,6 +501,17 @@ export function FilterIcon(props: IconProps) {
   )
 }
 
+// A desktop computer: the person's own machine, which is not a server and
+// should not wear the server's stacked boxes.
+export function ComputerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="4" width="19" height="12" rx="2" />
+      <path d="M9 20h6M12 16v4" />
+    </Icon>
+  )
+}
+
 export function TerminalIcon(props: IconProps) {
   return (
     <Icon {...props}>

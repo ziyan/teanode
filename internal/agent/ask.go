@@ -547,6 +547,12 @@ func (self *AskRun) turn() error {
 			self.offered = append(self.offered, tool)
 		}
 	}
+	// The skills an operator installed, which everybody is offered.
+	for _, tool := range self.agent.SkillTools(ctx) {
+		if !listed(configuration.Agent.Tools.Disabled, tool) {
+			self.offered = append(self.offered, tool)
+		}
+	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor an attached tab to
 	// drive; a person's attached tab needs no Chrome beside the server,

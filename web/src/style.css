@@ -1400,7 +1400,10 @@ label span {
   justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: var(--space-6);
+  /* Room at the top for the language and appearance controls, which are
+     fixed in the corner with no shell to hold them: in a window as narrow
+     as a browser extension's they sat on the card. */
+  padding: max(56px, var(--space-6)) var(--space-6) var(--space-6);
   /* The rail's gray rather than the page's white, so the card is a card. On
      white it was a white rectangle held together by a hairline, and the eye
      had nothing to land on. */

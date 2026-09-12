@@ -21,12 +21,19 @@ import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } fro
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, GlobeIcon, PaperclipIcon, PencilIcon, ServerIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
+import { RelativeTime } from './relativeTime'
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, ComputerIcon, GlobeIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
+
+// DEVICES_EVERY is how often the drawer asks what is attached while it is
+// open. Attaching and detaching happen outside this page, so there is
+// nothing to be told by; often enough to feel immediate, rarely enough to
+// be three small reads a minute.
+const DEVICES_EVERY = 10_000
 
 // The drawer: the person talking to their agent from any page, in the one
 // continuous conversation or a named one, with what they have open told to
@@ -970,26 +977,47 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available])
 
-  // Whether the person's own tab is attached, asked when the drawer opens
-  // and again before each turn.
+  // What of the person's own is attached, and what today has cost. Asked
+  // when the drawer opens and before each turn -- and then kept up, because
+  // attaching a tab happens in the extension and detaching it happens in
+  // another window: waiting for the next turn left the mark showing a tab
+  // that had gone.
   useEffect(() => {
     if (!open || !available) return
-    graphql<{
-      ReadAgentTab: { attached: boolean; title?: string; url?: string }
-      ReadAgentComputers: { computers: { name: string }[] }
-      ReadAgent: { budget: Budget | null; timezone: string }
-    }>(TAB)
-      .then((response) => {
-        setTab(response.ReadAgentTab)
-        setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
-        setBudget(response.ReadAgent.budget)
-        setAgentZone(response.ReadAgent.timezone)
-      })
-      .catch(() => {
-        setTab(null)
-        setComputers([])
-        setBudget(null)
-      })
+    let stopped = false
+    const read = () => {
+      if (stopped || document.hidden) return
+      graphql<{
+        ReadAgentTab: { attached: boolean; title?: string; url?: string }
+        ReadAgentComputers: { computers: { name: string }[] }
+        ReadAgent: { budget: Budget | null; timezone: string }
+      }>(TAB)
+        .then((response) => {
+          if (stopped) return
+          setTab(response.ReadAgentTab)
+          setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
+          setBudget(response.ReadAgent.budget)
+          setAgentZone(response.ReadAgent.timezone)
+        })
+        .catch(() => {
+          if (stopped) return
+          setTab(null)
+          setComputers([])
+          setBudget(null)
+        })
+    }
+    read()
+    const every = window.setInterval(read, DEVICES_EVERY)
+    // A person who attached a tab in another window comes back to this one,
+    // and should not wait out the interval to see it.
+    window.addEventListener('focus', read)
+    document.addEventListener('visibilitychange', read)
+    return () => {
+      stopped = true
+      window.clearInterval(every)
+      window.removeEventListener('focus', read)
+      document.removeEventListener('visibilitychange', read)
+    }
   }, [open, available, runs.length])
 
   // A line arriving, when the transcript is following its end.
@@ -1677,7 +1705,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {computers.length > 0 && (
               <Tooltip label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
                 <span className="agent-drawer-device" aria-label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
-                  <ServerIcon size={14} />
+                  <ComputerIcon size={14} />
                 </span>
               </Tooltip>
             )}
@@ -1689,15 +1717,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onLeaving={leaving}
               />
             )}
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('agentDrawer.close')}
-              title={t('agentDrawer.close')}
-              onClick={toggle}
-            >
-              ×
-            </button>
+            {/* Framed by the extension, the panel around this has a bar
+                of its own with the close on it; two of them, one under
+                the other, is one too many. */}
+            {!standalone && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('agentDrawer.close')}
+                title={t('agentDrawer.close')}
+                onClick={toggle}
+              >
+                ×
+              </button>
+            )}
           </div>
           {showingList && (
             <>
@@ -1728,7 +1761,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 {[...(found ?? conversations)]
                   // The main conversation first, whatever was said last,
                   // and a rule under it: it is the one the drawer opens to.
-                  .sort((first, second) => Number(second.kind === 'main') - Number(first.kind === 'main'))
+                  // The rest by when they were last spoken in, because
+                  // that is how somebody looks for one.
+                  .sort(
+                    (first, second) =>
+                      Number(second.kind === 'main') - Number(first.kind === 'main') ||
+                      (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
+                  )
                   .map((conversation) => (
                   <div
                     key={conversation.id}
@@ -1779,9 +1818,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                             conversation.title || t('agentDrawer.untitled')
                           )}
                         </span>
-                        {conversation.summary ? (
-                          <span className="agent-drawer-list-summary muted">{conversation.summary}</span>
-                        ) : null}
+                        {/* When it was last spoken in, which is what
+                            tells one of these apart from the next; the
+                            summary is the row's tooltip. */}
+                        <span className="agent-drawer-list-summary muted">
+                          <RelativeTime value={conversation.lastAt} />
+                        </span>
                       </button>
                     )}
                     {conversation.kind !== 'main' && renaming?.id !== conversation.id && (

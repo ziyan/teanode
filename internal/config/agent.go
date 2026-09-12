@@ -39,6 +39,11 @@ type Agent struct {
 	// prices in euros says EUR here.
 	Currency string `yaml:"currency,omitempty"`
 
+	// SkillSecrets are the values the installed skills asked for: a skill
+	// declares the keys it needs and carries none of them, and an operator
+	// fills them in here.
+	SkillSecrets []AgentSkillSecret `yaml:"skillSecrets,omitempty"`
+
 	// Limits bound what a run may cost.
 	Limits AgentLimits `yaml:"limits"`
 
@@ -306,6 +311,7 @@ type AgentFeatures struct {
 	ConnectedServers *bool `yaml:"connectedServers,omitempty"`
 	Computer         *bool `yaml:"computer,omitempty"`
 	ChatApps         *bool `yaml:"chatApps,omitempty"`
+	Skills           *bool `yaml:"skills,omitempty"`
 }
 
 // featureOn resolves an unset feature to on.
@@ -375,12 +381,20 @@ type AgentTools struct {
 	Confirm  []string `yaml:"confirm,omitempty"`
 }
 
+// AgentSkillSecret is one value an installed skill needs, named by the
+// skill that asked for it and the key it asked for it under.
+type AgentSkillSecret struct {
+	Skill string `yaml:"skill"`
+	Key   string `yaml:"key"`
+	Value string `yaml:"value,omitempty" secret:"true"`
+}
+
 // AgentToolFamilies are the names the tool policy may use besides a tool's
 // own name. They are the families in internal/agent/tools, and they must
 // stay that list: two of the names here once said "access" and "mcp", which
 // name nothing, so a policy that switched off connected servers switched off
 // nothing and said so to nobody.
-var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer"}
+var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills"}
 
 // AgentBrowser is a headless browser reached over the DevTools protocol.
 type AgentBrowser struct {
@@ -620,6 +634,8 @@ func (self *Agent) FeatureOn(feature string) bool {
 		return featureOn(self.Features.Computer)
 	case "chatApps":
 		return featureOn(self.Features.ChatApps)
+	case "skills":
+		return featureOn(self.Features.Skills)
 	}
 	return false
 }

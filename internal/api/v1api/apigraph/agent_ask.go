@@ -452,6 +452,10 @@ func (self *graph) ListAgentTools(ctx context.Context) ([]*AgentToolView, error)
 	}
 	configuration := self.config.Current()
 	tools := worker.Catalog().Offered(principal.Permissions, &configuration.Agent.Tools)
+	// The skills an operator installed bring tools that are not compiled
+	// in, and an operator who cannot see them here cannot tell what a
+	// skill added or write a policy about it.
+	tools = append(tools, worker.SkillTools(ctx)...)
 	views := make([]*AgentToolView, 0, len(tools))
 	for _, tool := range tools {
 		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: agent.NeedsConfirmation(tool, nil, &configuration.Agent.Tools, found), Core: tool.Core})

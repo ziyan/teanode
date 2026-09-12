@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -174,6 +175,41 @@ func (self *Registry) Download(ctx context.Context, entry *Entry) ([]byte, error
 		return nil, fmt.Errorf("skills: %s is not what the registry signed for: it hashes to %s, and %s was signed", entry.Name, got, want)
 	}
 	return body, nil
+}
+
+// Publisher is who the registry says it is. It is not proof of anything
+// on its own -- the signatures are -- but it is what an operator sees
+// beside an installed skill.
+func (self *Registry) Publisher() string {
+	if strings.TrimSpace(self.Address) != "" {
+		return self.Address
+	}
+	return "github.com/teanode/teanode-skills"
+}
+
+// Newer says whether the first version is later than the second, read as
+// numbers separated by dots. Anything that is not a number sorts as zero,
+// so a version nobody can read never looks newer than one that can.
+func Newer(candidate, installed string) bool {
+	left := strings.Split(strings.TrimSpace(candidate), ".")
+	right := strings.Split(strings.TrimSpace(installed), ".")
+	for index := 0; index < len(left) || index < len(right); index++ {
+		if numberAt(left, index) != numberAt(right, index) {
+			return numberAt(left, index) > numberAt(right, index)
+		}
+	}
+	return false
+}
+
+func numberAt(parts []string, index int) int {
+	if index >= len(parts) {
+		return 0
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(parts[index]))
+	if err != nil {
+		return 0
+	}
+	return value
 }
 
 // Find is one entry of the index by name, already checked.

@@ -20,6 +20,10 @@ var notSecret = map[string]bool{
 	"Storage.S3.CredentialsFile":       true,
 	"DKIM.PrivateKeyFile":              true,
 	"Session.SessionKeyFile":           true,
+	// The name a skill asks for its secret under, not the secret: the
+	// value beside it is the one that is tagged, and an operator has to
+	// see the name to know what to fill in.
+	"Agent.SkillSecrets.Key": true,
 	// An AWS access key identifier is not a credential on its own, and is
 	// what an operator needs to see to know which account is in use.
 	"TLS.ACME.Route53.AccessKeyID": true,

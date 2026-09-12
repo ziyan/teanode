@@ -1160,6 +1160,17 @@ reached by the `shell` and `filesystem` tools while they are present.
 **`chatApps`** — A person's own Telegram or Discord bot, through which they
 talk to their agent's primary conversation.
 
+**`skills`** — Tools installed from the skill registry. Off here, nothing
+installed is offered and nothing can be installed.
+
+### `agent.skillSecrets`
+
+The values the installed skills need and do not carry. A skill declares the
+keys it wants; an operator fills them in here, one entry per value with the
+`skill` that asked for it, the `key` it asked under, and the `value`, which
+is a secret. `teanode agent skill list` says which keys each installed skill
+is waiting for.
+
 ### `agent.currency`
 
 What the providers' prices, and so every amount this server shows or caps,
@@ -1236,8 +1247,8 @@ which case the `web_search` tool is not offered.
 
 Risk classes are the floor; this can only make the agent more cautious.
 Both lists take family names — `mailbox`, `domains`, `audit`, `people`,
-`server`, `account`, `general`, `servers`, `browser`, `computer` — or tool
-names. `servers` is the family of the connected servers' tools, and `people`
+`server`, `account`, `general`, `servers`, `browser`, `computer`, `skills`
+— or tool names. `servers` is the family of the connected servers' tools, and `people`
 the family of the ones that reach accounts and access.
 
 **`disabled`** — Families or tools never offered to anybody.

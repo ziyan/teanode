@@ -92,6 +92,10 @@ type Agent struct {
 	connectionsMutex sync.Mutex
 	connections      map[string]*connectedServer
 
+	// skills are the installed skills read as tools, kept because they
+	// belong to the server and change only when one is installed.
+	skills skillCatalog
+
 	// tabs are the browser tabs people attached; contextsOpen counts the
 	// headless browser contexts in use under the operator's cap.
 	tabsMutex sync.Mutex

@@ -64,14 +64,16 @@ export function CommandLinePage({ username }: { username: string }) {
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // Outside the shell there is nothing else setting the tab's title.
+  // Outside the shell there is nothing else setting the tab's title, and
+  // what is asking is not always the command line.
+  const heading = forExtension ? t('cli.extensionTitle') : t('cli.title')
   useEffect(() => {
-    document.title = `${t('cli.title')} · ${t('app.name')}`
-  }, [t])
+    document.title = `${heading} · ${t('app.name')}`
+  }, [heading, t])
 
   if ((!/^\d+$/.test(port) && !forExtension) || !state) {
     return (
-      <AuthCard purpose={t('cli.title')} onSubmit={(event) => event.preventDefault()}>
+      <AuthCard purpose={heading} onSubmit={(event) => event.preventDefault()}>
         <p className="muted">{t('cli.notOpenedByCommand')}</p>
         <code className="auth-command">teanode auth login --url {window.location.origin}</code>
       </AuthCard>
@@ -143,7 +145,7 @@ export function CommandLinePage({ username }: { username: string }) {
 
   if (phase === 'delivered') {
     return (
-      <AuthCard purpose={t('cli.title')} onSubmit={(event) => event.preventDefault()}>
+      <AuthCard purpose={heading} onSubmit={(event) => event.preventDefault()}>
         <p>{t('cli.delivered')}</p>
       </AuthCard>
     )
@@ -180,7 +182,8 @@ export function CommandLinePage({ username }: { username: string }) {
   }
 
   return (
-    <AuthCard purpose={forExtension ? t('cli.extensionIntro', { id: extensionIdOf(redirect) }) : t('cli.intro')} onSubmit={(event) => void authorize(event)}>
+    <AuthCard purpose={forExtension ? t('cli.extensionIntro') : t('cli.intro')} onSubmit={(event) => void authorize(event)}>
+      {forExtension && <AuthField label={t('cli.extensionLabel')} value={extensionIdOf(redirect)} className="mono" readOnly />}
       <AuthField label={t('cli.signedInAs')} value={username} readOnly />
       <AuthField label={t('cli.tokenLabel')} value={tokenName} readOnly />
       <label className="auth-field">

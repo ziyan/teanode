@@ -35,6 +35,7 @@ const (
 	FamilyAccount  = tools.FamilyAccount
 	FamilyGeneral  = tools.FamilyGeneral
 	FamilyServers  = tools.FamilyServers
+	FamilySkills   = tools.FamilySkills
 	FamilyBrowser  = tools.FamilyBrowser
 	FamilyComputer = tools.FamilyComputer
 )

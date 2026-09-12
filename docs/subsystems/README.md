@@ -19,6 +19,7 @@ change with it.
 | `memory.md` | What an agent remembers, how it is recalled, and by what meaning |
 | `jobs-and-schedules.md` | The queue, claiming, retries, and work at a time somebody chose |
 | `devices.md` | A person's own computer and their own browser tab |
+| `skills.md` | Tools installed from a signed registry, and how they are carried out |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
 else. The words for the agent's own text are fixed in `AGENTS.md`: the

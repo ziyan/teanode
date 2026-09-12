@@ -6,6 +6,7 @@ import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
+import { SkillsSection } from './skillsSection'
 import { Tag } from '../../components/common'
 import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
@@ -226,6 +227,7 @@ export function AgentForm({ settings, onSaved }: Props) {
       <SearchForm settings={settings} onSaved={onSaved} />
       <BrowserForm settings={settings} onSaved={onSaved} />
       <ServersSection settings={settings} onSaved={onSaved} />
+      <SkillsSection />
     </>
   )
 }

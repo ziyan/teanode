@@ -28,7 +28,22 @@ const (
 	DocumentConnectAgentServer    = `mutation ($server: String!, $credential: String) { ConnectAgentServer(server: $server, credential: $credential) ` + serverFields + ` }`
 	DocumentDisconnectAgentServer = `mutation ($server: String!) { DisconnectAgentServer(server: $server) ` + serverFields + ` }`
 	DocumentBeginAgentServerOAuth = `mutation ($server: String!, $redirectUrl: String!) { BeginAgentServerOAuth(server: $server, redirectUrl: $redirectUrl) }`
+
+	documentFinishAgentServerOAuth = `mutation ($server: String!, $code: String!, $state: String!) {
+  FinishAgentServerOAuth(server: $server, code: $code, state: $state) { name status lastError tools }
+}`
 )
+
+// FinishAgentServerOAuth hands back what the authorization came back with.
+func FinishAgentServerOAuth(ctx context.Context, connection *Client, server, code, state string) (*AgentServer, error) {
+	var result struct {
+		FinishAgentServerOAuth *AgentServer `json:"FinishAgentServerOAuth"`
+	}
+	if err := connection.Execute(ctx, documentFinishAgentServerOAuth, map[string]any{"server": server, "code": code, "state": state}, &result); err != nil {
+		return nil, err
+	}
+	return result.FinishAgentServerOAuth, nil
+}
 
 // ListAgentServers is the declared servers and where the person stands.
 func ListAgentServers(ctx context.Context, connection *Client) ([]*AgentServer, error) {

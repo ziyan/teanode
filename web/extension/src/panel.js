@@ -46,6 +46,8 @@
       .name { font-weight: 600; flex: 1; }
       button { font: inherit; font-weight: 550; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--background); color: var(--text); cursor: pointer; }
       button:hover { background: var(--hover); }
+      button.close { border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; padding: 3px 7px; }
+      button.close:hover { background: var(--hover); color: var(--text); }
       button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
       iframe { flex: 1; border: 0; width: 100%; background: var(--background); }
     `
@@ -64,7 +66,12 @@
     name.textContent = 'TeaNode'
     const attach = document.createElement('button')
     attach.style.cursor = 'pointer'
-    bar.append(mark, name, attach)
+    const close = document.createElement('button')
+    close.className = 'close'
+    close.textContent = '\u00d7'
+    close.title = 'Close'
+    close.setAttribute('aria-label', 'Close')
+    bar.append(mark, name, attach, close)
     const frame = document.createElement('iframe')
     // The token goes in the frame's address, in the fragment: the server
     // never sees it, and neither does the page around the frame, which
@@ -142,7 +149,7 @@
     // crosses the frame, which would otherwise swallow the movement.
     let moving = null
     bar.addEventListener('pointerdown', (event) => {
-      if (event.target !== bar && event.target !== name && event.target !== mark) return
+      if (event.target !== bar && event.target !== name && event.target !== mark && !mark.contains(event.target)) return
       moving = { x: event.clientX - host.offsetLeft, y: event.clientY - host.offsetTop }
       bar.classList.add('dragging')
       bar.setPointerCapture(event.pointerId)
@@ -205,6 +212,9 @@
       attach.title = attached ? 'The agent can no longer act in this tab' : 'Let the agent read and act in this tab, with your session, while you watch'
     }
     draw()
+    close.addEventListener('click', () => {
+      host.hidden = true
+    })
     attach.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: attached ? 'panel:detach' : 'panel:attach' }, (state) => {
         attached = !!(state && state.attached)

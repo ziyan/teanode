@@ -62,6 +62,14 @@ type MemoryOperation interface {
 	// or before the moment, locked for the caller.
 	ListDueAgentSchedules(now time.Time, limit int) ([]*models.AgentSchedule, error)
 
+	// The skills the operator installed, which belong to the server and
+	// whose tools are offered to everybody. PutAgentSkill installs one or
+	// replaces the one of that name, which is what updating is.
+	ListAgentSkills() ([]*models.AgentSkill, error)
+	GetAgentSkill(name string) (*models.AgentSkill, error)
+	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)
+	DeleteAgentSkill(name string) error
+
 	CreateAgentTodo(todo *models.AgentTodo) (*models.AgentTodo, error)
 	UpdateAgentTodo(todoId string, modify func(*models.AgentTodo) error) (*models.AgentTodo, error)
 	DeleteAgentTodo(conversationId, todoId string) error

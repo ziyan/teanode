@@ -32,6 +32,7 @@ func newAgentMCPCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "credential", Usage: "your credential for the server; - reads it from stdin"},
+					&cli.BoolFlag{Name: "loopback", Usage: "bring the authorization back to this terminal, for a service that answers only to a loopback address"},
 				},
 				Action: runAgentMCPConnect,
 			},
@@ -95,11 +96,15 @@ func runAgentMCPConnect(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("there is no server %q", name)
 	}
 	if server.Auth == "oauth" {
+		if command.Bool("loopback") {
+			return connectThroughLoopback(ctx, command, connection, name)
+		}
 		address, err := client.BeginAgentServerOAuth(ctx, connection, name, strings.TrimSuffix(connection.URL(), "/")+"/agent?connect="+name)
 		if err != nil {
 			return describeError(command, err)
 		}
-		_, _ = fmt.Fprintf(command.Writer, "Open this address in your browser to authorize %s; the dashboard finishes the connection:\n\n%s\n", name, address)
+		_, _ = fmt.Fprintf(command.Writer, "Open this address in your browser to authorize %s; the dashboard finishes the connection:\n\n%s\n\n", name, address)
+		_, _ = fmt.Fprintf(command.Writer, "If the service will not send the authorization to this server, try --loopback,\nwhich brings it back to this terminal instead.\n")
 		return nil
 	}
 	credential, err := readValue(command, command.String("credential"))
@@ -137,5 +142,42 @@ func runAgentMCPDisconnect(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(view)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", name, view.Status)
+	return nil
+}
+
+// connectThroughLoopback authorizes with the code coming back to this
+// terminal rather than to the dashboard. Some services send an
+// authorization only to a loopback address, which is the flow meant for a
+// program on somebody's own machine; the code never leaves this computer
+// except to the server that asked for it.
+func connectThroughLoopback(ctx context.Context, command *cli.Command, connection *client.Client, name string) error {
+	listener, err := newOAuthLoopback(ctx)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	address, err := client.BeginAgentServerOAuth(ctx, connection, name, listener.Redirect())
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "Open this address in your browser to authorize %s:\n\n%s\n\nWaiting for it to come back to %s …\n", name, address, listener.Redirect())
+	_ = openBrowser(address)
+
+	result, err := listener.Wait(ctx, loginTimeout)
+	if err != nil {
+		return err
+	}
+	view, err := client.FinishAgentServerOAuth(ctx, connection, name, result.Code, result.State)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(view)
+	}
+	if view.Status == "error" {
+		return fmt.Errorf("%s did not answer: %s", name, view.LastError)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: %s, %d tool(s)\n", name, view.Status, view.Tools)
 	return nil
 }
