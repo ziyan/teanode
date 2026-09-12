@@ -347,8 +347,54 @@ way, as a confusing 404 or a silent 405.
 
 ## Outcomes & Retrospective
 
-To be written at the end of each milestone. Nothing to report yet: no code has
-been written.
+All five milestones are done, and the thing the Purpose promised is true: a
+person adds a CardDAV account on their phone with their mail address and an
+app password, and the contacts they keep here appear. A contact added on the
+phone is in the dashboard a moment later; a correction made in the dashboard
+reaches the phone next time it looks. It was exercised that way against a
+production deployment, and then against a real iPhone, which is where the last
+third of the work came from.
+
+**What the plan got right.** Building the address book with no protocol at all
+first (milestone 1) meant the storage and the editing could be seen working
+before anything was serving. Writing a throwaway program against the library
+before writing any of ours found four things that would each have cost a day
+later -- the missing sync-collection, the forced URL layout, the redirect that
+turns a PROPFIND into a GET, and the parse-time refusal of an empty query.
+
+**What it got wrong, and what that cost.** The plan assumed a vCard library's
+decoder and encoder are inverses. They are not, and this whole design rests on
+their being so: the ETag is taken over the stored card, and the promise to a
+client is that the version a listing names is the bytes a fetch returns. That
+one wrong assumption produced defects in five separate places -- GET, REPORT,
+PROPFIND, a fetch without the suffix, and the PUT path -- and each fix closed
+one door while leaving another open. Rounds one to three of review each found
+another. Had the plan said "write the encoder" from the start, most of that
+would not have happened.
+
+**The pattern worth carrying forward.** Every defect that mattered was found by
+running the thing and reading what came back, never by reading the code:
+
+- a 500 on every iPhone contact, because iOS names cards by a UUID and the
+  column was thirty-two characters;
+- an address destroyed on the second write, because the library does not quote
+  a parameter value that needs quoting;
+- an input type the schema called AddressInputInput, so that saving a contact
+  from the dashboard failed outright -- which nothing caught, because the only
+  documents naming it were in a .tsx file;
+- a semicolon typed into an address box shifting the town into the region;
+- a table that could not be scrolled to, on a page whose first real contact
+  had no email address and so showed a name and a gap.
+
+The last two came from a person using it for ten minutes. The tests written
+alongside the code all passed throughout, because the author of the tests was
+the author of the code and shared its assumptions.
+
+**What is not here.** `sync-collection`, deliberately and for the reasons in
+the Decision Log. A CardDAV client cannot reach a deployment through a content
+delivery network that does not forward PROPFIND, which is a fact about
+CloudFront rather than about this server, and the subsystem document says so.
+A second photograph will take a contact close to the one megabyte limit.
 
 ## Context and Orientation
 
