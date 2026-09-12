@@ -72,10 +72,18 @@
   const roomForTheTitle = (option) => {
     if (!option || !option.title || !option.title.subtext) return option
     const grid = option.grid
-    const said = Array.isArray(grid) ? grid.some((one) => one && one.top !== undefined) : grid && grid.top !== undefined
-    if (said) return option
-    const widened = Object.assign({}, grid, { top: 68 })
-    return Object.assign({}, option, { grid: widened })
+    // A chart may have several grids, and then grid is an array. Copying
+    // an array with Object.assign gives an object with numeric keys, which
+    // is not a grid at all and draws nothing -- so each one is widened on
+    // its own.
+    if (Array.isArray(grid)) {
+      if (grid.some((one) => one && one.top !== undefined)) return option
+      return Object.assign({}, option, {
+        grid: grid.map((one) => Object.assign({}, one, { top: 68 })),
+      })
+    }
+    if (grid && grid.top !== undefined) return option
+    return Object.assign({}, option, { grid: Object.assign({}, grid, { top: 68 }) })
   }
 
   const drawnCharts = new Set()
