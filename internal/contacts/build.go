@@ -12,13 +12,19 @@ import (
 // assemble vCard text would be a poor way to spend it, and a phone sends a
 // card. Both end at the same place, so a contact typed here and a contact
 // typed on a phone are the same kind of thing afterwards.
+//
+// Every field is a pointer, and that is the whole of the difference between
+// "leave this alone" and "empty it". A caller that sends only a name must not
+// thereby delete the note, the organization and the numbers; a form that
+// shows an empty box must be able to clear what was there. Nil is the first,
+// a pointer to an empty value is the second.
 type Fields struct {
-	Name         string
-	Organization string
-	Title        string
-	Emails       []string
-	Phones       []string
-	Note         string
+	Name         *string
+	Organization *string
+	Title        *string
+	Emails       *[]string
+	Phones       *[]string
+	Note         *string
 }
 
 // Build makes a card from filled-in boxes, keeping whatever a card already
@@ -40,27 +46,49 @@ func Build(existing []byte, fields *Fields) (*Parsed, error) {
 			return nil, err
 		}
 	}
-	name := strings.TrimSpace(fields.Name)
-	if name == "" && len(fields.Emails) == 0 {
-		return nil, fmt.Errorf("contacts: a contact needs a name or an email address")
-	}
-	if name != "" {
-		card.SetValue(vcard.FieldFormattedName, name)
+	previousName := strings.TrimSpace(card.PreferredValue(vcard.FieldFormattedName))
+	if fields.Name != nil {
+		name := strings.TrimSpace(*fields.Name)
+		setOne(card, vcard.FieldFormattedName, name)
 		// A structured name as well, because a phone sorts by the family
-		// name and has nowhere to get one otherwise. Split on the last
-		// space, which is right for most European names and wrong for
-		// some; the person can correct it on the device, and the card
-		// they correct is kept.
-		if card.Name() == nil {
+		// name and has nowhere else to get one. Re-derived whenever the
+		// displayed name changes: leaving the old one behind is how a
+		// contact renamed to "Ada King" goes on being filed under
+		// Lovelace. Split on the last space, which is right for most
+		// European names and wrong for some; a person can correct it on
+		// the device, and a correction made there is kept, because then
+		// the displayed name has not changed and this leaves it alone.
+		if name != "" && (card.Name() == nil || name != previousName) {
 			given, family := splitName(name)
+			// delete, not Set(field, nil): Set stores the nil, and the
+			// encoder dereferences whatever it finds.
+			delete(card, vcard.FieldName)
 			card.AddName(&vcard.Name{GivenName: given, FamilyName: family})
 		}
+		if name == "" {
+			delete(card, vcard.FieldName)
+		}
 	}
-	setAll(card, vcard.FieldEmail, fields.Emails)
-	setAll(card, vcard.FieldTelephone, fields.Phones)
-	setOne(card, vcard.FieldOrganization, fields.Organization)
-	setOne(card, vcard.FieldTitle, fields.Title)
-	setOne(card, vcard.FieldNote, fields.Note)
+	if fields.Emails != nil {
+		setAll(card, vcard.FieldEmail, *fields.Emails)
+	}
+	if fields.Phones != nil {
+		setAll(card, vcard.FieldTelephone, *fields.Phones)
+	}
+	if fields.Organization != nil {
+		setOne(card, vcard.FieldOrganization, *fields.Organization)
+	}
+	if fields.Title != nil {
+		setOne(card, vcard.FieldTitle, *fields.Title)
+	}
+	if fields.Note != nil {
+		setOne(card, vcard.FieldNote, *fields.Note)
+	}
+	// Whatever route was taken, a contact needs something to call it.
+	if strings.TrimSpace(card.PreferredValue(vcard.FieldFormattedName)) == "" &&
+		strings.TrimSpace(card.PreferredValue(vcard.FieldEmail)) == "" {
+		return nil, fmt.Errorf("contacts: a contact needs a name or an email address")
+	}
 	return fromCard(card)
 }
 

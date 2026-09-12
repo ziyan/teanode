@@ -34,6 +34,7 @@ type Parsed struct {
 	Organization string
 	Emails       []string
 	Phones       []string
+	Note         string
 
 	// Card is the canonical text: what was given, read and written out
 	// again, which is what gets stored and what the ETag is over.
@@ -84,6 +85,7 @@ func fromCard(card vcard.Card) (*Parsed, error) {
 		Organization: strings.TrimSpace(card.Value(vcard.FieldOrganization)),
 		Emails:       values(card, vcard.FieldEmail),
 		Phones:       values(card, vcard.FieldTelephone),
+		Note:         strings.TrimSpace(card.Value(vcard.FieldNote)),
 		Card:         encoded,
 	}, nil
 }

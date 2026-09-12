@@ -43,7 +43,7 @@ only when somebody presses "save to contacts".
 - [x] (2026-09-12 12:50Z) Researched the library question with a working spike;
       findings recorded in `Surprises & Discoveries` below.
 - [x] (2026-09-12 13:05Z) Wrote this plan in full from the outline.
-- [ ] Milestone 1: schema, model, database layer, API, dashboard.
+- [x] Milestone 1: schema, model, database layer, API, dashboard.
   - [x] (2026-09-12 13:10Z) Renamed the learned-contact methods to
         ListLearnedContacts and friends, so that the two kinds of contact
         cannot be confused.
@@ -59,7 +59,14 @@ only when somebody presses "save to contacts".
         tests against a real PostgreSQL.
   - [x] (2026-09-12 14:05Z) The API: ListAddressBooks, ListContacts,
         GetContact, SaveContact, DeleteContact, SaveAddressBook.
-  - [ ] The dashboard page.
+  - [x] (2026-09-12 14:40Z) The dashboard page: the address book above,
+        the learned addresses below a rule, with the two said to be
+        different things.
+  - [x] (2026-09-12 14:55Z) Exercised end to end against a development
+        server through the API; evidence in Artifacts and Notes.
+
+Milestone 1 is done. Milestone 2 is next: the DAV mount, sign-in with an
+app password, discovery, and read-only CardDAV.
 - [ ] Milestone 2: the DAV mount, sign-in, discovery, read-only CardDAV.
 - [ ] Milestone 3: writing, ETags, conflicts.
 - [ ] Milestone 4: discovery niceties, DNS advisories, CLI, documentation.
@@ -147,6 +154,46 @@ way, as a confusing 404 or a silent 405.
   This is what makes the storage decision below safe: the library hands the
   backend a parsed card rather than the bytes that arrived, so what we store
   is necessarily a re-encoding.
+
+- Observation: an argument of the reflected API is required unless it is a
+  pointer or carries `graphapi:"nullable"`, and the two are not the same. The
+  first attempt made every field of `SaveContact` a plain string, and sending
+  only a name silently deleted the note, the organization and the numbers,
+  because the resolver could not tell a field left out from a field emptied.
+  Evidence, after a rename that gave only the name:
+
+        BEGIN:VCARD ... FN:Ada King
+        (ORG, NOTE and TEL all gone)
+
+  Every optional field is a pointer now: nil leaves it alone, a pointer to an
+  empty value clears it. The dashboard sends every box, including the empty
+  ones, because its form shows them all.
+
+- Observation: renaming a contact left it filed under the old name. A vCard
+  carries both a displayed name (`FN`) and a structured one (`N`), and a phone
+  sorts by the family name in `N`. Setting only `FN` gave a card reading
+  `FN:Ada King` with `N:Lovelace;Ada`, so the phone went on filing her under
+  Lovelace. `N` is re-derived whenever the displayed name changes, and left
+  alone when it does not, so a correction made on a device survives an
+  unrelated edit made in a browser.
+
+- Observation: `vcard.Card.Set(field, nil)` stores the nil rather than
+  removing the field, and the encoder then dereferences it.
+  Evidence: a panic inside the library, from a test:
+
+        panic: runtime error: invalid memory address or nil pointer dereference
+        github.com/emersion/go-vcard.formatLine(...)
+        github.com/ziyan/teanode/internal/contacts.Encode(...)
+
+  Use `delete(card, field)`.
+
+- Observation: this repository has a test that reads its own source and fails
+  when a resolver does not call a recognized authorization helper
+  (`internal/api/v1api/apigraph/authorize_test.go`). A new resolver with a new
+  helper fails it until the helper is added to the list, which is the right
+  way round: the list is the audited set.
+  Evidence: `ListAddressBooks does not authorize the caller ... checked 193
+  resolvers`.
 
 - Observation: a refused write aborts the transaction it happened in, so a
   test that expects a refusal cannot go on using the same transaction.
@@ -689,7 +736,8 @@ offers, and see the contact appear in the dashboard and then on the phone.
 
 ## Concrete Steps
 
-Run everything from the repository root, `/home/ziyan/projects/ziyan/teanode`.
+Run everything from the root of this repository, which is the directory
+holding `go.mod` and `Makefile`.
 
 Before starting, confirm the tree is clean and the tests pass, so that any
 failure later is yours:
@@ -770,8 +818,46 @@ plainly rather than pretend otherwise.
 
 ## Artifacts and Notes
 
-The spike that produced the discoveries above is not checked in; it was a
-scratch program. Its output, which is the evidence quoted throughout:
+Milestone 1, exercised against a development server through the API. Adding a
+contact from filled-in boxes, and what was stored:
+
+    $ ... SaveContact(addressBookId: B, name: "Ada Lovelace",
+          organization: "Analytical Engines",
+          emails: ["ada@example.com", "ada@home.example"],
+          phones: ["+1-555-0100"], note: "met at the exhibition")
+    {"SaveContact":{"id":"01m2atxfbq...","uid":"urn:uuid:01m2atxfbp...",
+     "name":"Ada Lovelace"}}
+
+    $ ... GetContact(id: C) { card }
+    BEGIN:VCARD
+    VERSION:4.0
+    EMAIL:ada@example.com
+    EMAIL:ada@home.example
+    FN:Ada Lovelace
+    N:Lovelace;Ada;;;
+    NOTE:met at the exhibition
+    ORG:Analytical Engines
+    TEL:+1-555-0100
+    UID:urn:uuid:01m2atxfbp...
+    END:VCARD
+
+Leaving a field out and emptying it, which are different instructions:
+
+    $ ... SaveContact(id: N, name: "Grace Murray Hopper")     # only the name
+    {"name":"Grace Murray Hopper","note":"keeps a nanosecond in her pocket",
+     "organization":"Navy"}                                   # the rest stays
+
+    $ ... SaveContact(id: N, organization: "")                # emptied on purpose
+    {"name":"Grace Murray Hopper","note":"keeps a nanosecond in her pocket",
+     "organization":""}                                       # and only that goes
+
+And the address book created on first sight, so that nothing has to be set up:
+
+    $ ... ListAddressBooks { id name contacts }
+    [{"contacts":0,"id":"01m2atwt94...","name":"Contacts"}]
+
+The spike that produced the protocol discoveries above is not checked in; it
+was a scratch program. Its output, which is the evidence quoted throughout:
 
     principal: /dav/alice/ <nil>
     home set: /dav/alice/contacts/ <nil>

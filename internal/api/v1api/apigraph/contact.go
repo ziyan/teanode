@@ -71,13 +71,19 @@ type ContactView struct {
 	Organization string   `json:"organization,omitempty"`
 	Emails       []string `json:"emails"`
 	Phones       []string `json:"phones"`
+	Note         string   `json:"note,omitempty"`
 	Card         string   `json:"card,omitempty"`
 }
 
 type ListContactsArguments struct {
 	AddressBookID string `json:"addressBookId"`
-	Query         string `json:"query"`
-	First         int    `json:"first"`
+
+	// Narrows by name, organization, address or number; empty is all of
+	// them.
+	Query string `json:"query" graphapi:"nullable"`
+
+	// How many, at most 2000.
+	First int `json:"first" graphapi:"nullable"`
 }
 
 type ContactArguments struct {
@@ -88,23 +94,28 @@ type SaveContactArguments struct {
 	AddressBookID string `json:"addressBookId"`
 
 	// ID names a contact already kept; empty keeps a new one.
-	ID string `json:"id"`
+	ID string `json:"id" graphapi:"nullable"`
 
-	// Card is a whole vCard. When it is given the fields are ignored.
-	Card string `json:"card"`
+	// Card is a whole vCard, which is what a program that speaks the
+	// format sends. When it is given the fields below are ignored.
+	Card string `json:"card" graphapi:"nullable"`
 
-	Name         string   `json:"name"`
-	Organization string   `json:"organization"`
-	Title        string   `json:"title"`
-	Emails       []string `json:"emails"`
-	Phones       []string `json:"phones"`
-	Note         string   `json:"note"`
+	// Pointers, because leaving a field out and emptying it are different
+	// instructions: a caller that sends only a name must not thereby
+	// delete the note and the numbers, and a form whose box is empty must
+	// be able to clear what was there.
+	Name         *string   `json:"name" graphapi:"nullable"`
+	Organization *string   `json:"organization" graphapi:"nullable"`
+	Title        *string   `json:"title" graphapi:"nullable"`
+	Emails       *[]string `json:"emails" graphapi:"nullable"`
+	Phones       *[]string `json:"phones" graphapi:"nullable"`
+	Note         *string   `json:"note" graphapi:"nullable"`
 }
 
 type SaveAddressBookArguments struct {
 	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string `json:"name" graphapi:"nullable"`
+	Description string `json:"description" graphapi:"nullable"`
 }
 
 // requireAddressBookPerson is the caller, if they may keep contacts.
@@ -346,6 +357,13 @@ func contactView(contact *models.Contact, withCard bool) *ContactView {
 	}
 	if withCard {
 		view.Card = contact.Card
+		// The note is read out of the card rather than kept in a column of
+		// its own: the form needs it, one contact at a time, and a column
+		// would be a second copy to keep in step with the card for no
+		// reader that a single parse here does not already serve.
+		if parsed, err := contacts.Parse([]byte(contact.Card)); err == nil {
+			view.Note = parsed.Note
+		}
 	}
 	return view
 }

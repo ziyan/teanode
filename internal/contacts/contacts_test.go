@@ -90,7 +90,10 @@ func TestTheETagFollowsTheCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %s", err)
 	}
-	if ETag(first.Card) != ETag(first.Card) {
+	// The same bytes twice, through a copy, because asking whether a
+	// function equals itself is a question the linter answers for us.
+	same := append([]byte(nil), first.Card...)
+	if ETag(first.Card) != ETag(same) {
 		t.Fatal("the same card gives the same etag")
 	}
 	changed, err := Parse([]byte(strings.Replace(fromAPhone, "Ada Lovelace", "Ada King", 1)))
@@ -128,9 +131,9 @@ func TestEditingFromAFormKeepsWhatOnlyThePhoneKnows(t *testing.T) {
 		t.Fatalf("parse: %s", err)
 	}
 	edited, err := Build(kept.Card, &Fields{
-		Name:   "Ada King",
-		Emails: []string{"ada@example.com", "ada@work.example"},
-		Phones: []string{"+1-555-0100"},
+		Name:   text("Ada King"),
+		Emails: list("ada@example.com", "ada@work.example"),
+		Phones: list("+1-555-0100"),
 	})
 	if err != nil {
 		t.Fatalf("build: %s", err)
@@ -164,7 +167,7 @@ func TestANewContactNeedsSomethingToCallIt(t *testing.T) {
 	if _, err := Build(nil, &Fields{}); err == nil {
 		t.Fatal("a contact with neither a name nor an address is refused")
 	}
-	made, err := Build(nil, &Fields{Name: "Grace Hopper", Organization: "Navy"})
+	made, err := Build(nil, &Fields{Name: text("Grace Hopper"), Organization: text("Navy")})
 	if err != nil {
 		t.Fatalf("build: %s", err)
 	}
@@ -176,8 +179,80 @@ func TestANewContactNeedsSomethingToCallIt(t *testing.T) {
 		t.Errorf("a structured name is written for sorting:\n%s", made.Card)
 	}
 	// An address alone is enough, and becomes what the contact is called.
-	byAddress, err := Build(nil, &Fields{Emails: []string{"grace@example.com"}})
+	byAddress, err := Build(nil, &Fields{Emails: list("grace@example.com")})
 	if err != nil || byAddress.Name != "grace@example.com" {
 		t.Fatalf("an address alone: %+v %v", byAddress, err)
+	}
+}
+
+func text(value string) *string { return &value }
+
+func list(values ...string) *[]string { return &values }
+
+// Leaving a field out and emptying it are different instructions. A caller
+// that sends only a name must not thereby delete everything else, and a form
+// whose box has been cleared must be able to clear the field.
+func TestLeavingAFieldOutIsNotEmptyingIt(t *testing.T) {
+	kept, err := Parse([]byte(fromAPhone))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	// Only the name given: everything else stays.
+	renamed, err := Build(kept.Card, &Fields{Name: text("Ada King")})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	for _, want := range []string{"ORG:Analytical Engines", "NOTE:A long note", "+1-555-0100", "ada@home.example", "X-CUSTOM-THING"} {
+		if !strings.Contains(string(renamed.Card), want) {
+			t.Errorf("sending only a name lost %q:\n%s", want, renamed.Card)
+		}
+	}
+	// The same field, given empty: now it goes.
+	cleared, err := Build(kept.Card, &Fields{Organization: text(""), Note: text("")})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	for _, gone := range []string{"ORG:", "NOTE:"} {
+		if strings.Contains(string(cleared.Card), gone) {
+			t.Errorf("an emptied box should clear %q:\n%s", gone, cleared.Card)
+		}
+	}
+	if !strings.Contains(string(cleared.Card), "FN:Ada Lovelace") {
+		t.Errorf("and leaves the rest alone:\n%s", cleared.Card)
+	}
+}
+
+// A phone files people by family name and reads it from the card, so renaming
+// somebody has to move them.
+func TestRenamingSomebodyRefilesThem(t *testing.T) {
+	kept, err := Parse([]byte(fromAPhone))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if !strings.Contains(string(kept.Card), "N:Lovelace;Ada") {
+		t.Fatalf("the card starts filed under Lovelace:\n%s", kept.Card)
+	}
+	renamed, err := Build(kept.Card, &Fields{Name: text("Ada King")})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	if !strings.Contains(string(renamed.Card), "N:King;Ada") {
+		t.Errorf("renaming refiles her under King:\n%s", renamed.Card)
+	}
+	if strings.Contains(string(renamed.Card), "Lovelace") {
+		t.Errorf("and does not leave the old name behind:\n%s", renamed.Card)
+	}
+	// A name left alone leaves the structured name alone too, so that a
+	// correction made on a device is not undone from a browser.
+	corrected, err := Parse([]byte(strings.Replace(fromAPhone, "N:Lovelace;Ada;;;", "N:Lovelace;Ada;Byron;;", 1)))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	same, err := Build(corrected.Card, &Fields{Organization: text("Somewhere Else")})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	if !strings.Contains(string(same.Card), "N:Lovelace;Ada;Byron") {
+		t.Errorf("a correction made on a device survives an unrelated edit:\n%s", same.Card)
 	}
 }

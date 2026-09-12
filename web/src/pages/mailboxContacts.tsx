@@ -12,6 +12,7 @@ import { RelativeTime } from '../components/relativeTime'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { useMailboxes } from '../mailboxes'
+import { AddressBookSection } from './addressBook'
 
 const CONTACTS = `
   query ($mailboxId: String!, $first: Int) {
@@ -35,9 +36,15 @@ const DELETE_CONTACT = `
 
 type Contact = { address: string; name?: string; lastSeenAt: string; count: number; logoDomain?: string }
 
-// Everyone the mailbox has written to or heard from, and anyone added by
-// hand: the list the compose page completes addresses from, and a rule can
-// ask about. A page of its own, listed the way the other lists are.
+// Two lists, and they are not the same thing.
+//
+// Above: the address book, the people somebody chose to keep. It belongs to
+// the account, is edited here, and is what a phone synchronizes over CardDAV.
+//
+// Below: the addresses this mailbox has learned from traffic -- everyone it
+// has written to or heard from. That is what the compose page completes from
+// and what the "sender is known" rule asks about. It is per mailbox, it fills
+// itself in, and nobody chose any of it.
 export function MailboxContactsPage() {
   const { t, plural } = useTranslation()
   const toast = useToast()
@@ -178,7 +185,15 @@ export function MailboxContactsPage() {
 
   return (
     <>
-      <p className="muted">{t('mailboxSettings.contactsHint')}</p>
+      <AddressBookSection />
+
+      {/* A rule and a heading, so that the two lists are not read as one.
+          settings-subform is the divider the settings pages already use for
+          exactly this: a related thing below a line. */}
+      <div className="settings-subform">
+        <h4>{t('contacts.learned')}</h4>
+        <p className="muted">{t('mailboxSettings.contactsHint')}</p>
+      </div>
       <div className="page-actions">
         <button
           className="primary"
