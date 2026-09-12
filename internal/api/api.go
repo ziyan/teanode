@@ -11,7 +11,9 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"github.com/ziyan/teanode/internal/models"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/aggregate"
@@ -56,6 +58,17 @@ type Settings struct {
 	// shared with the submission listener so that a guess costs the same
 	// whichever door it comes through. Nil disables the limit.
 	AuthLimiter *ratelimit.Registry
+
+	// Agent is the part of the personal agent the API calls in the request
+	// rather than queues: work a person is waiting on. Nil when agents are
+	// off, in which case the API says so.
+	Agent AgentService
+}
+
+// AgentService is what the API asks the agent to do at once.
+type AgentService interface {
+	// DraftReply writes a reply for the person to read, change and send.
+	DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error)
 }
 
 // Aggregations is the filter, sort and distinct pipeline a list query can be

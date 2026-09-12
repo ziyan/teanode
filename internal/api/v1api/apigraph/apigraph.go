@@ -33,6 +33,10 @@ import (
 var log = logging.MustGetLogger("apigraph")
 
 type graph struct {
+	// locations throttles how often an account's zone and language are
+	// written; see location.go.
+	locations locationTouches
+
 	database db.Database
 	config   config.Store
 	storage  storage.Storage
@@ -80,9 +84,13 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 	}
 
 	graphApi := graphapi.New()
+	if worker := self.agentWorker(); worker != nil {
+		worker.SetOperationsFactory(self.operationsFor)
+	}
 	var query Query = self
 	var mutation Mutation = self
-	if err := graphApi.Register(&query, &mutation, nil); err != nil {
+	var subscription Subscription = self
+	if err := graphApi.Register(&query, &mutation, &subscription); err != nil {
 		return nil, err
 	}
 	schema, err := graphApi.Build()
@@ -95,10 +103,15 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 
 func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathGraphQL).Methods(http.MethodGet).HandlerFunc(self.webSocketView)
-	router.Path(api.PathGraphQL).Methods(http.MethodPost).HandlerFunc(self.graphView)
+	router.Path(api.PathGraphQL).Methods(http.MethodPost).HandlerFunc(self.withLocation(self.graphView))
+	router.Path(api.PathAgentTab).Methods(http.MethodGet).HandlerFunc(self.tabView)
+	router.Path(api.PathAgentComputer).Methods(http.MethodGet).HandlerFunc(self.computerView)
 	// Files for a draft go up as multipart bodies, not inside a query: a
 	// browser can stream them and show how far along each is.
 	router.Path(api.PathDraftAttachments).Methods(http.MethodPut).HandlerFunc(self.draftAttachmentsView)
 	router.Path(api.PathNewDraftAttachments).Methods(http.MethodPost).HandlerFunc(self.draftAttachmentsView)
+	// And files for a conversation with the agent, the same way.
+	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
+	router.Path(api.PathAgentAttachment).Methods(http.MethodGet).HandlerFunc(self.agentAttachmentView)
 	return nil
 }

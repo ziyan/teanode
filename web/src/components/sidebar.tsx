@@ -20,6 +20,7 @@ import {
   TerminalIcon,
   ListIcon,
   UserIcon,
+  SparkIcon,
 } from './icons'
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
@@ -47,7 +48,8 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
 }
 
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
-  profile: <UserIcon />,
+  preference: <UserIcon />,
+  agent: <SparkIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -300,7 +302,7 @@ export function Sidebar({
                     <NavLink
                       key={key}
                       to={`/mailbox/${folder.id}`}
-                      className={folder.unread > 0 ? 'unread' : undefined}
+                      className={folder.unread > 0 && folder.kind !== 'archive' ? 'unread' : undefined}
                       data-depth={Math.min(depth, 3)}
                       title={collapsed ? `${label}${folder.unread > 0 ? ` (${folder.unread})` : ''}` : undefined}
                     >
@@ -308,7 +310,9 @@ export function Sidebar({
                         <FolderKindIcon kind={folder.kind} />
                       </span>
                       <span className="sidebar-label">{label}</span>
-                      {folder.unread > 0 && (
+                      {/* The Archive is where read-later goes: a count there is
+                          a nag, not news. */}
+                      {folder.unread > 0 && folder.kind !== 'archive' && (
                         <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: folder.unread })}>
                           {folder.unread}
                         </span>
@@ -333,12 +337,41 @@ export function Sidebar({
                       <span className="sidebar-label">{t('mailbox.newMessage')}</span>
                     </NavLink>
                     {inbox.map(({ folder, depth }) => folderRow(folder, depth, folder.id))}
-                    <NavLink to="/mailbox/starred" title={collapsed ? t('mailbox.folder.starred') : undefined}>
+                    <NavLink
+                      to="/mailbox/starred"
+                      className={current.starredUnread > 0 ? 'unread' : undefined}
+                      title={collapsed ? t('mailbox.folder.starred') : undefined}
+                    >
                       <span className="sidebar-icon">
                         <FolderKindIcon kind="starred" />
                       </span>
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
+                      {current.starredUnread > 0 && (
+                        <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.starredUnread })}>
+                          {current.starredUnread}
+                        </span>
+                      )}
                     </NavLink>
+                    {/* What the agent said matters today. Only where the
+                        agent sorts this mailbox; a view that is always empty
+                        would be a question with no answer. */}
+                    {current.mailbox.agent?.granted && current.mailbox.agent.triage?.enabled && (
+                      <NavLink
+                        to="/mailbox/priority"
+                        className={current.priorityUnread > 0 ? 'unread' : undefined}
+                        title={collapsed ? t('mailbox.folder.priority') : undefined}
+                      >
+                        <span className="sidebar-icon">
+                          <FolderKindIcon kind="priority" />
+                        </span>
+                        <span className="sidebar-label">{t('mailbox.folder.priority')}</span>
+                        {current.priorityUnread > 0 && (
+                          <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.priorityUnread })}>
+                            {current.priorityUnread}
+                          </span>
+                        )}
+                      </NavLink>
+                    )}
                     {pinned.map(({ folder, depth }) => folderRow(folder, depth, `pinned-${folder.id}`))}
                     {/* What is always at the top — the inbox, what is
                         starred, and whatever has been pinned up there — ends
@@ -413,11 +446,7 @@ export function Sidebar({
             state you have to be able to leave: at the top there was no room
             for it once the rail had narrowed, and a control that disappears
             when you use it is a trap. */}
-        {(onToggle || account) && (
-          <div className="sidebar-account">
-            {account}
-          </div>
-        )}
+        {(onToggle || account) && <div className="sidebar-account">{account}</div>}
       </aside>
     </>
   )

@@ -1,4 +1,14 @@
-import { ArchiveIcon, DraftsIcon, FolderIcon, InboxIcon, JunkIcon, SentIcon, StarIcon, TrashIcon } from './icons'
+import {
+  ArchiveIcon,
+  DraftsIcon,
+  FolderIcon,
+  InboxIcon,
+  JunkIcon,
+  PriorityIcon,
+  SentIcon,
+  StarIcon,
+  TrashIcon,
+} from './icons'
 
 // The icon of a mailbox folder: one per built-in kind, a plain folder for the
 // ones people make, and a star for the view of every flagged message.
@@ -18,6 +28,8 @@ export function FolderKindIcon({ kind, size }: { kind?: string | null; size?: nu
       return <TrashIcon size={size} />
     case 'starred':
       return <StarIcon size={size} />
+    case 'priority':
+      return <PriorityIcon size={size} />
     default:
       return <FolderIcon size={size} />
   }

@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -147,14 +151,28 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			for key, value := range headers {
 				httpHeader.Add(key, value)
 			}
-			csrfCookie := ""
-			if cookie, _ := self.request.Cookie("csrftoken"); cookie != nil {
-				csrfCookie = cookie.Value
-			}
-			csrfToken := httpHeader.Get("X-CSRFToken")
-			if csrfToken != csrfCookie {
-				log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
-				return fmt.Errorf("apigraph: csrf token mismatch")
+			// A token in the first message is the sign-in of a page that
+			// has no session — the dashboard's drawer framed by another
+			// site — verified as an Authorization header would be. A
+			// token is nothing a cookie sent by itself, so the CSRF check
+			// is for sessions alone.
+			if token := httpHeader.Get("Authorization"); token != "" {
+				username := self.graph.usernameOfToken(self.request, strings.TrimPrefix(token, "Bearer "))
+				if username == "" {
+					log.Warningf("the token a websocket at %q opened with is not one this server takes", self.conn.RemoteAddr())
+					return fmt.Errorf("apigraph: the token is not one this server takes")
+				}
+				self.request.Header.Set(api.AuthenticatedUsernameHeader, username)
+			} else {
+				csrfCookie := ""
+				if cookie, _ := self.request.Cookie("csrftoken"); cookie != nil {
+					csrfCookie = cookie.Value
+				}
+				csrfToken := httpHeader.Get("X-CSRFToken")
+				if csrfToken != csrfCookie {
+					log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
+					return fmt.Errorf("apigraph: csrf token mismatch")
+				}
 			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err
@@ -204,21 +222,64 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				defer deferutil.Recover()
 				defer waitGroup.Done()
 
-				channel := graphql.Subscribe(graphql.Params{
-					Schema:         self.graph.schema,
-					RequestString:  data.Query,
-					VariableValues: data.Variables,
-					OperationName:  data.OperationName,
-					Context:        ctxWithCancel,
-				})
+				// As the signed-in person, resolved the way a request is:
+				// the subscription's resolver authorizes like any other,
+				// inside a short transaction that ends once it has.
+				channel, err := self.subscribe(ctxWithCancel, &data)
+				if err != nil {
+					_ = self.sendMessage(message.ID, "error", map[string]any{"message": err.Error()})
+					return
+				}
 				for result := range channel {
 					if err := self.sendMessage(message.ID, "data", result); err != nil {
 						return
 					}
 				}
+				// The subscription ended of itself: say so, so the client
+				// can tell an end from a dropped connection.
+				_ = self.sendMessage(message.ID, "complete", nil)
 			}()
 		default:
 			log.Warningf("received unhandled message type %q from websocket at %q", message.Type, self.conn.RemoteAddr())
 		}
 	}
+}
+
+// subscribe starts a subscription as the person the socket belongs to.
+func (self *webSocketConnection) subscribe(ctx context.Context, data *graphRequest) (chan *graphql.Result, error) {
+	username := api.UsernameFromRequest(self.request)
+	var user *models.User
+	if username != "" && username != localUsername {
+		found, err := self.graph.database.GetUserByUsername(username)
+		if err != nil {
+			return nil, err
+		}
+		if found == nil || found.Disabled() {
+			username = ""
+		} else {
+			user = found
+		}
+	}
+	ctx = api.ContextWithRequest(ctx, self.request)
+	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
+	var channel chan *graphql.Result
+	if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		ctx := api.ContextWithTransaction(ctx, tx)
+		principal, err := self.graph.resolvePrincipal(tx, username, user)
+		if err != nil {
+			return err
+		}
+		ctx = api.ContextWithPrincipal(ctx, principal)
+		channel = graphql.Subscribe(graphql.Params{
+			Schema:         self.graph.schema,
+			RequestString:  data.Query,
+			VariableValues: data.Variables,
+			OperationName:  data.OperationName,
+			Context:        ctx,
+		})
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return channel, nil
 }

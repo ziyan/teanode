@@ -82,6 +82,8 @@ func main() {
 			cmd.NewServerCommand(),
 			cmd.NewUpgradeCommand(),
 			cmd.NewMailboxCommand(),
+			cmd.NewAgentCommand(),
+			cmd.NewComputerCommand(),
 			cmd.NewMailCommand(),
 			cmd.NewDeliveryCommand(),
 			cmd.NewReportCommand(),

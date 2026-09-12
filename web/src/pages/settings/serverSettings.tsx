@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ErrorMessage, SaveRow } from '../../components/common'
 import { Link } from 'react-router-dom'
 
+import { Select } from '../../components/select'
 import { useTranslation } from '../../i18n/i18n'
 import {
   GeoIP,
@@ -526,14 +527,13 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
               and saving anything else would have quietly set the log level to
               debug. CRITICAL is offered because validation accepts it, though
               a mail server that only logs those is one nobody is watching. */}
-          <select value={logLevel.toUpperCase()} onChange={(event) => setLogLevel(event.target.value)}>
-            <option value="DEBUG">DEBUG</option>
-            <option value="INFO">INFO</option>
-            <option value="NOTICE">NOTICE</option>
-            <option value="WARNING">WARNING</option>
-            <option value="ERROR">ERROR</option>
-            <option value="CRITICAL">CRITICAL</option>
-          </select>
+          <Select
+            block
+            value={logLevel.toUpperCase()}
+            label={t('serverSettings.logLevel')}
+            options={['DEBUG', 'INFO', 'NOTICE', 'WARNING', 'ERROR', 'CRITICAL'].map((level) => ({ value: level, label: level }))}
+            onChange={setLogLevel}
+          />
         </label>
         <p className="muted field-hint">{t('serverSettings.logLevelHint')}</p>
 

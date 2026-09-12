@@ -193,6 +193,25 @@ export function StarIcon(props: IconProps) {
   )
 }
 
+// PriorityIcon marks the view of what the agent said matters today.
+export function PriorityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5" />
+      <path d="M12 16h.01" />
+    </Icon>
+  )
+}
+
+// SparkIcon marks the agent: what acts on the person's behalf.
+export function SparkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2zM5 17l.9 2.1L8 20l-2.1.9L5 23l-.9-2.1L2 20l2.1-.9L5 17z" />
+    </Icon>
+  )
+}
 export function QueueIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -482,6 +501,17 @@ export function FilterIcon(props: IconProps) {
   )
 }
 
+// A desktop computer: the person's own machine, which is not a server and
+// should not wear the server's stacked boxes.
+export function ComputerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="4" width="19" height="12" rx="2" />
+      <path d="M9 20h6M12 16v4" />
+    </Icon>
+  )
+}
+
 export function TerminalIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -544,6 +574,17 @@ export function QuoteIcon(props: IconProps) {
     <Icon {...props}>
       <path d="M8 6H5a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2c0 1.5-1 2.5-3 3" />
       <path d="M19 6h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2c0 1.5-1 2.5-3 3" />
+    </Icon>
+  )
+}
+
+// ExternalIcon marks a link that opens in a tab of its own.
+export function ExternalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 10 14" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
     </Icon>
   )
 }

@@ -89,6 +89,34 @@ readonly ALLOWED_HOSTS=(
   # published on purpose, which is the opposite of a private reference.
   .teanode.com
 
+  # The services the published skills call. They are in the fixtures under
+  # internal/skills/testdata, which are the registry's own files kept
+  # verbatim so that a change to what it publishes shows up as a test
+  # failure. Rewriting them to example.com would defeat that.
+  .openstreetmap.org
+  .weather.gov
+  .dictionaryapi.dev
+  .newsapi.org
+
+  # Where Chrome sends an extension's sign-in back to: a fixed name of the
+  # browser's, under which every extension has an address.
+  .chromiumapp.org
+
+  # The chat apps a person's own bot talks to, at their published API
+  # addresses, and the names Discord's gateways answer on.
+  .telegram.org
+  .discord.com
+  .discord.gg
+  .discordapp.com
+
+  # The model services and the search service the agent can be pointed at,
+  # as the defaults a provider of that kind is given when no base URL is
+  # set. Public API endpoints, named in their own documentation.
+  api.openai.com
+  api.anthropic.com
+  generativelanguage.googleapis.com
+  api.search.brave.com
+
   # Where the project lives, and what it is written in. The raw host is where
   # the deployment guide fetches the compose file from.
   .github.com

@@ -220,7 +220,7 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
     return (
       <div className="card">
         <h3>{t('setup.addressTitle')}</h3>
-        <p className="error" style={{ marginBottom: 0 }}>
+        <p className="warning" style={{ marginBottom: 0 }}>
           {addresses.error ?? t('setup.addressUnknown')} {t('setup.addressUnknownAdvice')}
         </p>
       </div>

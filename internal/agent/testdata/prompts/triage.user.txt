@@ -1,0 +1,46 @@
+Sort one message that just arrived in Alice Example's mailbox "Personal". Answer with one JSON object and nothing else:
+
+{"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "summary": "one line, under 140 characters, in English", "action_items": ["…"]}
+
+Categories, pick exactly one:
+- personal: a person writing to the person about their own life
+- work: about the person's job or business
+- newsletter: a periodical sent to many, usually with a way to unsubscribe
+- notification: a service telling the person something happened: a sign-in, a shipment, a comment
+- receipt: an order, an invoice, a payment, a booking confirmation
+- promotion: marketing: an offer, a sale, a product announcement
+- social: a social network or a community talking
+- invitation: an invitation to an event or a meeting
+- other: none of the above
+- club: anything from the sailing club
+
+Priority: high means the person should see it today and act — a real person waiting on them, a deadline, money, something broken; low means it can wait a week or forever — newsletters, promotions, notifications nobody acts on; everything else is normal.
+
+needs_reply is true when a real person expects an answer from Alice Example and wrote to them directly, not only in copy. A newsletter, a notification, a receipt, an automatic message, a mailing list, a community site's prompt never needs a reply, even when the text says "reply to this message".
+
+An automatic message from a service — a build that failed, a sign-in, an alert, a plan that ends — is a notification even when it concerns the person's work. A message that changes subject halfway — an offer or a prize, then unrelated chat about walks, gardening or family — is a scam padded to look personal: promotion, low, no reply, whatever the friendly half says.
+
+research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message, judged against these standing notes:
+- Look up parcel numbers with the tracker.
+
+
+action_items are the things the message asks the person to do, each a short imperative line, in English; empty when there are none.
+
+What Alice Example has told you about sorting their mail:
+- Mail from the landlord's agency is urgent even when it looks routine.
+
+How Alice Example corrected earlier sorting — match these:
+- A message from newsletter@example.org was sorted as work; Alice filed it as newsletter.
+
+The message:
+
+<message>
+From: Maria <maria@example.net>
+To: alice@example.com
+Date: 2026-09-10 09:00 UTC
+Subject: Thursday?
+Attachments: plan.pdf (application/pdf)
+Server facts: SPF: pass; DKIM: pass
+
+Can you do Thursday at 3? I need the key back too.
+</message>

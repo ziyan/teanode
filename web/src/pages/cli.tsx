@@ -5,6 +5,7 @@ import { graphql } from '../api'
 import { AuthCard, AuthField } from '../components/authCard'
 import { CopyButton } from '../components/settingsList'
 import { useTranslation } from '../i18n/i18n'
+import { Select } from '../components/select'
 
 // The page "teanode auth login" opens.
 //
@@ -52,27 +53,34 @@ export function CommandLinePage({ username }: { username: string }) {
   const state = query.get('state') ?? ''
   const profile = query.get('name') ?? ''
   const preset = query.has('lifetime') ? (query.get('lifetime') ?? '') : DEFAULT_LIFETIME
+  // The browser extension asks the same way, but has no port to post to:
+  // it gives an address of its own that only it receives, and the token
+  // goes there in the fragment, which never leaves the browser.
+  const redirect = query.get('redirect') ?? ''
+  const forExtension = isExtensionCallback(redirect)
 
   const [phase, setPhase] = useState<Phase>('consent')
   const [lifetime, setLifetime] = useState(preset)
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // Outside the shell there is nothing else setting the tab's title.
+  // Outside the shell there is nothing else setting the tab's title, and
+  // what is asking is not always the command line.
+  const heading = forExtension ? t('cli.extensionTitle') : t('cli.title')
   useEffect(() => {
-    document.title = `${t('cli.title')} · ${t('app.name')}`
-  }, [t])
+    document.title = `${heading} · ${t('app.name')}`
+  }, [heading, t])
 
-  if (!/^\d+$/.test(port) || !state) {
+  if ((!/^\d+$/.test(port) && !forExtension) || !state) {
     return (
-      <AuthCard purpose={t('cli.title')} onSubmit={(event) => event.preventDefault()}>
+      <AuthCard purpose={heading} onSubmit={(event) => event.preventDefault()}>
         <p className="muted">{t('cli.notOpenedByCommand')}</p>
         <code className="auth-command">teanode auth login --url {window.location.origin}</code>
       </AuthCard>
     )
   }
 
-  const tokenName = profile ? `teanode (${profile})` : 'teanode'
+  const tokenName = forExtension ? 'teanode extension' : profile ? `teanode (${profile})` : 'teanode'
   const lifetimes: { value: string; label: string }[] = LIFETIMES.map((option) => ({
     value: option.value,
     label: t(option.label),
@@ -107,6 +115,21 @@ export function CommandLinePage({ username }: { username: string }) {
     }
     setSecret(issued)
 
+    if (forExtension) {
+      const fragment = new URLSearchParams({ state, token: issued, tokenId, username })
+      // The address is built again from its checked parts, not taken as
+      // given: an extension's id and a plain path, nothing else.
+      const callback = extensionCallback(redirect)
+      if (!callback) {
+        setError(t('cli.noToken'))
+        setPhase('consent')
+        return
+      }
+      window.location.assign(`${callback}#${fragment.toString()}`)
+      setPhase('delivered')
+      return
+    }
+
     // Hand it over. The client checks the nonce before accepting it.
     try {
       const response = await fetch(`http://127.0.0.1:${port}/callback`, {
@@ -122,7 +145,7 @@ export function CommandLinePage({ username }: { username: string }) {
 
   if (phase === 'delivered') {
     return (
-      <AuthCard purpose={t('cli.title')} onSubmit={(event) => event.preventDefault()}>
+      <AuthCard purpose={heading} onSubmit={(event) => event.preventDefault()}>
         <p>{t('cli.delivered')}</p>
       </AuthCard>
     )
@@ -159,18 +182,19 @@ export function CommandLinePage({ username }: { username: string }) {
   }
 
   return (
-    <AuthCard purpose={t('cli.intro')} onSubmit={(event) => void authorize(event)}>
+    <AuthCard purpose={forExtension ? t('cli.extensionIntro') : t('cli.intro')} onSubmit={(event) => void authorize(event)}>
+      {forExtension && <AuthField label={t('cli.extensionLabel')} value={extensionIdOf(redirect)} className="mono" readOnly />}
       <AuthField label={t('cli.signedInAs')} value={username} readOnly />
       <AuthField label={t('cli.tokenLabel')} value={tokenName} readOnly />
       <label className="auth-field">
         <span>{t('tokens.lifetime')}</span>
-        <select value={lifetime} onChange={(event) => setLifetime(event.target.value)}>
-          {lifetimes.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          block
+          value={lifetime}
+          label={t('cli.lifetime')}
+          options={lifetimes.map((option) => ({ value: option.value, label: option.label }))}
+          onChange={setLifetime}
+        />
       </label>
 
       <ErrorMessage error={error} />
@@ -187,4 +211,30 @@ export function CommandLinePage({ username }: { username: string }) {
 // else as a --name, so a name that fails here was never the client's.
 export function isProfileName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(name)
+}
+
+// isExtensionCallback says whether an address is one a browser extension
+// receives for a web sign-in flow: Chrome gives each extension exactly one
+// such origin, made of its id, and hands what lands there to that extension
+// alone. Nothing else is accepted as a redirect.
+export function isExtensionCallback(address: string): boolean {
+  return extensionCallback(address) !== ''
+}
+
+// extensionCallback is the callback address built again from what it may
+// contain — the extension's id, a plain path — or '' when it is anything
+// else.
+export function extensionCallback(address: string): string {
+  const match = /^https:\/\/([a-p]{32})\.chromiumapp\.org\/([A-Za-z0-9._/-]*)$/.exec(address)
+  if (!match) return ''
+  const id = match[1].replace(/[^a-p]/g, '')
+  const path = match[2].replace(/[^A-Za-z0-9._/-]/g, '')
+  return `https://${id}.chromiumapp.org/${path}`
+}
+
+// extensionIdOf is the extension's id in its callback address, for the
+// card to name whom the token goes to.
+export function extensionIdOf(address: string): string {
+  const match = /^https:\/\/([a-p]{32})\.chromiumapp\.org\//.exec(address)
+  return match ? match[1] : ''
 }

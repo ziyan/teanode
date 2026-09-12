@@ -28,6 +28,8 @@ const (
 	PermissionRoleManage      Permission = "role:manage"
 	PermissionServerManage    Permission = "server:manage" // settings, upgrades, certificates
 	PermissionAuditRead       Permission = "audit:read"    // the audit log
+	PermissionAgentUse        Permission = "agent:use"     // have an agent, grant it one's mailboxes, talk to it
+	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
 )
 
 // PermissionKind is where a permission applies, declared with the vocabulary:
@@ -68,6 +70,8 @@ var permissionKinds = []struct {
 	{PermissionRoleManage, PermissionKindServer, ""},
 	{PermissionServerManage, PermissionKindServer, ""},
 	{PermissionAuditRead, PermissionKindServer, ""},
+	{PermissionAgentUse, PermissionKindServer, ""},
+	{PermissionAgentAudit, PermissionKindServer, ""},
 }
 
 // Permissions lists the whole vocabulary, in the order the role editor shows

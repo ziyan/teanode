@@ -5,9 +5,12 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/op/go-logging"
 
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/smtpc"
 )
@@ -69,4 +72,36 @@ type Exchange interface {
 
 	// handle received mail
 	HandleEnvelope(ctx context.Context, envelope *mailparse.Envelope) error
+
+	// SetAgentHook installs what is told about a message placed in a
+	// mailbox, inside the delivery transaction. Nil means nobody is told,
+	// which is the case while the agent is off.
+	SetAgentHook(hook AgentHook)
+
+	// RunInsightRules runs the rules that read the agent's insight — the
+	// second phase, once the insight exists — against a message in the
+	// Inbox. The first phase ran at delivery for the other rules.
+	RunInsightRules(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail, insight *models.MailInsight) error
+
+	// AutoReplyRefusal is why a message in a mailbox must not be answered
+	// automatically, or empty when it may be: the out-of-office reply's
+	// ladder, with the given quiet period per sender (zero for the
+	// out-of-office default).
+	AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error)
+}
+
+// The headers a draft carries for the composer: what it answers or
+// forwards, by item, and the Bcc the sent message will not show.
+const (
+	DraftHeaderBcc     = "X-TeaNode-Draft-Bcc"
+	DraftHeaderReplyTo = "X-TeaNode-Draft-Reply-To-Item"
+	DraftHeaderForward = "X-TeaNode-Draft-Forward-Item"
+)
+
+// AgentHook is told, inside the delivery transaction, that a message has
+// been placed in a mailbox. It queues work in that transaction and never
+// calls a model: a model outage must never bounce mail. Errors are its own
+// to log; delivery does not wait on it.
+type AgentHook interface {
+	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }

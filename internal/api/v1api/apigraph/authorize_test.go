@@ -38,6 +38,9 @@ var authorizing = map[string]bool{
 	"requireMailbox":      true,
 	"requireFolder":       true,
 	"requireItems":        true,
+	// requirePermission(agent:use), plus the caller's agent, which the Ask
+	// operations all need and none of which may run without.
+	"requireAgentPerson": true,
 	// The mailbox holding a draft, refused unless the caller owns it.
 	"requireDraftOwner": true,
 }

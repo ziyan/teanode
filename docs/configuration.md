@@ -1005,6 +1005,351 @@ repository can publish a binary, and this will install it. The repository is
 compiled in rather than configured, so a stolen dashboard session cannot point
 a server at somebody else's builds.
 
+### `agent`
+
+The secrets in this section — provider keys, the search key, what a
+connected server is reached with — are sealed with `server.secret` before
+they are stored and opened when they are read, the way the domain table's
+keys are. A database dump holds ciphertext; a server started with a
+different secret cannot read them and says so.
+
+The personal agent: which model services this server may call, which model
+does which work, what a deployment offers people at all, and the limits an
+operator puts on it. Off by default, and turning it on enables nothing for
+anybody — a person turns their own agent on and grants it their mailbox
+(`docs/decisions/20260910-agents-belong-to-people.md`).
+
+**`enabled`** — Whether people may have an agent at all. Off means no model
+service is ever contacted and nothing below is constructed.
+
+**`instructions`** — House instructions: standing words for every agent on
+this server, read after the fixed conduct and before a person's own —
+"this is a school; never answer a parent automatically".
+
+**`providers`** — The model services this server may call, one entry each.
+
+**`models`** — Which model does which work.
+
+**`features`** — What people may turn on at all.
+
+**`limits`** — What a run may cost.
+
+**`currency`** — The three-letter code every amount this server shows or
+caps is written in. Its own section below.
+
+**`skillSecrets`** — The values the installed skills need. Its own section
+below.
+
+**`retention`** — How long the agent's records are kept.
+
+**`search`** — The web search provider behind the `web_search` tool.
+
+**`tools`** — The operator's policy over the tool catalog.
+
+**`browser`** — A headless browser the operator runs beside the server.
+
+**`mcp`** — Servers speaking the Model Context Protocol whose tools join the
+catalog.
+
+### `agent.providers[]`
+
+**`name`** — What `provider:model` names. Any label, and stable: the models
+section and every usage row refer to it.
+
+**`kind`** — The API the service speaks: `openai` (also every compatible
+server — Ollama, vLLM, llama.cpp, OpenRouter, xAI, Mistral), `anthropic`,
+or `gemini`.
+
+**`baseUrl`** — Where it listens. Empty means the service's public
+endpoint; a local server is `http://ollama:11434/v1`.
+
+**`apiKey`** — Authenticates this server to the service. A secret; shown
+redacted, kept when a settings update leaves it blank.
+
+**`enabled`** — Keeps the key while switching the provider off. Unset means
+on. Work assigned to a disabled provider fails validation, so a provider
+cannot be switched off from under the models section by accident.
+
+**`models`** — A filter over what the service offers, with `allow` and
+`deny` lists of patterns matched against model names the way a shell
+matches file names (`qwen*`). Empty allow means everything; deny is applied
+after allow. Only admitted models may be assigned work.
+
+**`allow`**, **`deny`** — The two lists of the filter.
+
+**`pricing`** — What the service charges, per million tokens, with
+`input`, `output`, `cacheRead` and `cacheWrite`. Optional; it lets the usage view show
+money beside tokens, which is the number an operator budgets.
+
+**`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`** — The four
+prices. `cacheWrite` is what putting a prompt into the cache costs, which some
+services bill above the input price and report apart from it; left unset it
+costs nothing, which is right for a service that does not charge for it and
+wrong for one that does.
+
+**`modelPricing`** — Prices for particular models of this provider, since
+one service's models rarely cost alike: a small model and a large one behind
+the same key are priced apart. Each entry has a `model` and the same four
+prices. The `model` is the name after the provider's, matched the way `allow`
+and `deny` are, so `gpt-5*` prices a family; the first entry that matches a
+model is the one used, so exact names belong above the patterns that would
+also catch them. A model no entry matches costs what `pricing` above says.
+
+    providers:
+      - name: openai
+        pricing: { input: 0.15, output: 0.6, cacheRead: 0.075 }
+        modelPricing:
+          - { model: gpt-5.6-terra, input: 2, output: 12, cacheRead: 0.2 }
+          - { model: gpt-5.6-luna, input: 0.2, output: 1.2, cacheRead: 0.02 }
+
+### `agent.models`
+
+Every value is written `provider:model`, and the provider must be declared,
+enabled, and admit the model.
+
+**`default`** — The model for anything not named below. Required when the
+agent is enabled.
+
+**`fast`** — The model for the cheap kinds of work — sorting, summaries,
+compaction — unless one of them is overridden. Empty means `default`.
+
+**`embedding`** — The model that turns text into vectors, which enables
+search by meaning. Empty means no search by meaning. Changing it marks
+existing vectors stale, and the two kinds catch up differently: a person's
+memories are re-embedded a few per conversation turn, while mail is only
+re-embedded by a backfill, which runs when a mailbox is granted with sorting
+and its own backfill on. Mail vectors from the old model are left where they
+are; they match nothing, so that mailbox falls back to searching by words.
+
+**`triage`**, **`research`**, **`summarize`**, **`reply`**, **`ask`**,
+**`schedule`**, **`compact`** — Overrides per kind of work. Resolution is
+the override, else `fast` for triage, summarize and compact, else
+`default`.
+
+**`choices`** — Models a person may pick for their own conversations. Empty
+means no choice: everyone uses the `ask` model. Processing never takes a
+person's choice.
+
+### `agent.features`
+
+Each is on unless set to `false`. A feature that is off is hidden from
+every person's page, refused by the API with a message saying the operator
+has not enabled it, and — if it was on for somebody — stops without
+deleting anything, so turning it back on resumes.
+
+**`triage`** — Category, priority and whether a reply is needed, on
+arrival.
+
+**`summaries`** — Conversation summaries.
+
+**`draftReplies`** — Drafting a reply on request.
+
+**`search`** — Search by meaning. Needs an embedding model.
+
+**`research`** — Looking things up for a message: the web, the mailbox,
+connected servers.
+
+**`autoReply`** — Answering mail on a person's behalf.
+
+**`ask`** — Talking to the agent.
+
+**`schedules`** — Reminders and scheduled runs.
+
+**`browser`** — The browser. Needs one configured.
+
+**`connectedServers`** — Servers speaking the Model Context Protocol. Needs
+one declared.
+
+**`computer`** — A person's own computer, attached with `teanode computer`,
+reached by the `shell` and `filesystem` tools while they are present.
+
+**`chatApps`** — A person's own Telegram or Discord bot, through which they
+talk to their agent's primary conversation.
+
+**`skills`** — Tools installed from the skill registry. Off here, nothing
+installed is offered and nothing can be installed.
+
+### `agent.skillSecrets`
+
+The values the installed skills need and do not carry. A skill declares the
+keys it wants; an operator fills them in here, one entry per value with the
+`skill` that asked for it, the `key` it asked under, and the `value`, which
+is a secret. `teanode agent skill list` says which keys each installed skill
+is waiting for.
+
+Only the keys a skill scoped to the operator, which is the default. A key it
+scoped to the person is each person's own: they fill it in on their agent
+page or with `teanode agent skill secret set`, it is kept sealed in a row of
+their own rather than here, and a value written here for such a key is
+ignored.
+
+### `agent.currency`
+
+What the providers' prices, and so every amount this server shows or caps,
+are written in: a three-letter code such as `USD` or `EUR`, and `USD` when it
+is not set. It labels and formats; nothing is converted, so an operator whose
+prices are in euros enters them in euros and says `EUR` here.
+
+### `agent.limits`
+
+**`maxBodyCharacters`** — How much of a message a model is given; the rest
+is cut with a marker.
+
+**`maxAttachmentBytes`** — The most one upload to a conversation may carry,
+across its files; `25MB` by default. A picture is shown to the model, a
+text file is read to it, and anything else is named.
+
+**`dailyTokensPerAgent`** — The default budget per person per day, which an
+operator may override for one person. At the limit, processing for that
+person is deferred to the next day with the reason on the run, and
+conversations answer that the budget is used up. Resets at midnight in the
+person's time zone. Zero means unlimited.
+
+**`monthlyTokensPerServer`** — A cap for the whole server. The same
+behaviour for everyone until the first of the month; a warning is logged at
+80 %. Zero means no cap.
+
+**`dailyCostPerAgent`** — The same budget said in money rather than tokens:
+what one person's calls may cost in a day, at the prices their providers are
+configured with, in `agent.currency`. An operator may override it for one
+person. Where this and `dailyTokensPerAgent` are both set, whichever runs out
+first stops the day. Zero means no limit of this kind.
+
+**`monthlyCostPerServer`** — What everybody's agents may cost the deployment
+in a month, beside `monthlyTokensPerServer`, and warned about at 80 % the
+same way. Zero means no cap.
+
+**`maxRoundsPerAsk`** — How many times one conversation turn may go back to
+the model.
+
+**`maxRoundsPerResearch`** — The same for a research run.
+
+**`maxRoundsPerReply`** — Set, validated, and read by nothing: a reply is a
+single call to a model and has no rounds. Kept so a stored configuration does
+not fail to load.
+
+**`maxToolCallsPerRun`** — Set, validated, and read by nothing. What actually
+bounds a run is `maxRoundsPerAsk`, together with the rule that stops a turn
+when the same call has failed three times. Kept so a stored configuration does
+not fail to load.
+
+**`requestTimeout`** — How long one call to a provider may take.
+
+**`concurrency`** — How many runs a worker executes at once, per instance.
+Read when the worker is built, so a change needs a restart of that instance.
+
+### `agent.retention`
+
+**`runs`** — How long the record of work done without anybody watching is
+kept: run transcripts, finished and dead-lettered jobs, the replies the agent
+held or sent, and the files a run produced. Token and money usage is not swept
+by this, or by anything: those rows stay until the agent is deleted, because
+they are what a year's spending is added up from.
+
+**`corrections`** — How long a person's corrections are kept.
+
+### `agent.search`
+
+**`kind`** — The search provider: `brave`, or empty for no web search, in
+which case the `web_search` tool is not offered.
+
+**`apiKey`** — The provider's key. A secret.
+
+### `agent.tools`
+
+Risk classes are the floor; this can only make the agent more cautious.
+Both lists take family names — `mailbox`, `domains`, `audit`, `people`,
+`server`, `account`, `general`, `servers`, `browser`, `computer`, `skills`
+— or tool names. `servers` is the family of the connected servers' tools, and `people`
+the family of the ones that reach accounts and access.
+
+**`disabled`** — Families or tools never offered to anybody.
+
+**`confirm`** — Write tools raised to require confirmation before they run.
+
+### `agent.browser`
+
+**`enabled`** — Whether the headless browser is used. Off means nothing
+connects to it.
+
+**`cdpEndpoint`** — `host:port` of the DevTools debugger, for example
+`chrome:9222`, which is where the compose file's `browser` profile puts it.
+
+**`attachTabs`** — Whether a person may attach their own browser tab through
+the extension. Unset means yes.
+
+**`allowPrivateAddresses`** — Hosts the headless browser may reach inside
+the network, which the address guard would otherwise refuse.
+
+**`idleTimeout`** — How long a run's browser context outlives its last use.
+
+**`maxContexts`** — How many contexts may be open at once.
+
+### `agent.mcp`
+
+**`servers`** — The declared servers, one entry each.
+
+### `agent.mcp.servers[]`
+
+A server with a `command` is a subprocess of this server, on its host,
+which is why only the configuration can declare one
+(`docs/decisions/20260910-stdio-servers-are-the-operators.md`).
+
+**`name`** — Namespaces the server's tools as `mcp__<name>__<tool>`.
+Unique.
+
+**`transport`** — `http` (a URL) or `stdio` (a command). Empty is
+inferred: `stdio` when a command is set and no URL, otherwise `http`.
+
+**`url`** — The streamable HTTP endpoint, for the `http` transport.
+
+**`command`**, **`args`** — The executable and its arguments, for the
+`stdio` transport.
+
+**`env`** — Variables given to the subprocess over this server's own
+environment, each with a `name` and a `value`; how a stdio server is given
+its secrets. The values are secrets.
+
+**`value`** — One variable's value.
+
+**`workingDir`** — The subprocess's working directory. Empty uses the
+server's.
+
+**`auth`** — `none`; `static`, one Authorization value the operator holds,
+shared by everyone; `user`, each person supplies their own credential on
+the Agent page; or `oauth`, each person authorizes through OAuth 2.1 with
+PKCE. Empty is inferred: `static` when an authorization is set, otherwise
+`none`.
+
+**`authorization`** — The verbatim Authorization header value for the
+`static` mode. A secret.
+
+**`oauth`** — The client this server is at an OAuth-protected server:
+`clientId`, `clientSecret` (a secret; optional for a public client),
+`scopes`, and `authorizationUrl` and `tokenUrl`, which override discovery
+when set. Leave `clientId` empty and a client is registered with the
+server the first time somebody authorizes, which is how a server that
+publishes no client id of its own is reached; the client is kept with that
+person's authorization, so refreshing later uses the same one. Setting the
+two endpoints by hand skips discovery, and then a `clientId` is needed.
+
+**`clientId`**, **`clientSecret`**, **`scopes`**, **`authorizationUrl`**,
+**`tokenUrl`** — The OAuth client's fields.
+
+**`headless`** — Whether processing runs with nobody present may use the
+server's read-only tools.
+
+**`readOnly`** — The tools that only read, which need no confirmation and
+are the only ones a headless run may call. Every other tool of the server
+needs confirmation.
+
+**`disabled`** — Tools never offered.
+
+**`timeout`** — Bounds one call. Empty means 30 seconds.
+
+**`enabled`** — Whether the server is declared at all. Unset is on; off
+leaves the declaration in place and offers none of its tools.
+
 ### `users[].tokens[]`
 
 **`id`** — ID identifies the token, and is the half of the token string that

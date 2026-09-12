@@ -1,3 +1,4 @@
+import { authorization } from './api'
 // Uploading files with progress.
 //
 // fetch cannot report how much of a body has been sent, and XMLHttpRequest
@@ -73,6 +74,7 @@ export function uploadFiles(
     request.onabort = () => reject(new DOMException('The upload was canceled.', 'AbortError'))
     request.open(method, url)
     request.setRequestHeader('Accept', 'application/json')
+    for (const [name, value] of Object.entries(authorization())) request.setRequestHeader(name, value)
     request.send(body)
   })
 

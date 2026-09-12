@@ -16,6 +16,19 @@ const Prefix = "/api/v1"
 
 // The paths making up version 1.
 const (
+	// PathAgentTab is the websocket the browser extension attaches a tab
+	// through, for the person's agent.
+	PathAgentTab = Prefix + "/agent/tab"
+
+	// PathAgentComputer is the websocket `teanode computer` attaches the
+	// person's computer through.
+	PathAgentComputer = Prefix + "/agent/computer"
+
+	// PathAgentAttachments takes files for a conversation with the agent,
+	// as a multipart body; PathAgentAttachment hands one back to its owner.
+	PathAgentAttachments = Prefix + "/agent/attachments"
+	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
+
 	// PathGraphQL is the whole of the management API. POST executes a query
 	// or mutation; GET upgrades to a WebSocket for subscriptions.
 	PathGraphQL = Prefix + "/graphql"
@@ -137,7 +150,7 @@ const ()
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
-	return []string{PathGraphQL}
+	return []string{PathGraphQL, PathAgentTab, PathAgentComputer}
 }
 
 // PublicPrefixes are reachable without the middleware turning them away, for
@@ -151,5 +164,15 @@ func PublicPaths() []string {
 func PublicPrefixes() []string {
 	// Sending with an API key carries its own authentication; single
 	// sign-on is how somebody with no session yet gets one.
-	return []string{Prefix + "/send/", Prefix + "/sso/"}
+	//
+	// Fetching one file of a conversation is here because a picture and a
+	// framed artifact are fetched by the browser itself, which cannot be
+	// told to send a header: those carry the token in the address, and the
+	// handler checks it exactly as a header would be checked. The trailing
+	// slash keeps it to fetching one file by its id; uploading, which is
+	// the same path without it, stays behind the middleware. Without this
+	// the drawer framed into another site showed neither, because the
+	// middleware turned the request away before the handler could look at
+	// the token.
+	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/"}
 }

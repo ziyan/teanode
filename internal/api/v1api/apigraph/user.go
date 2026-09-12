@@ -64,6 +64,15 @@ type User struct {
 	// Locale the web UI greets them in, when they chose one
 	Locale string `json:"locale,omitempty"`
 
+	// LocaleSeen is the language their browser last said; what the agent
+	// writes in when no locale was chosen
+	LocaleSeen string `json:"localeSeen,omitempty"`
+
+	// Timezone is where they are, and TimezoneMode whether it follows the
+	// browser ("auto") or stays as set ("fixed")
+	Timezone     string `json:"timezone,omitempty"`
+	TimezoneMode string `json:"timezoneMode,omitempty"`
+
 	// The groups this person is in
 	GroupIDs []string `json:"groupIds"`
 
@@ -79,15 +88,18 @@ func describeUser(user *models.User) *User {
 		groupIds = []string{}
 	}
 	return &User{
-		ID:          user.ID,
-		Username:    user.Username,
-		Name:        user.Name,
-		Email:       user.Email,
-		DisabledAt:  user.DisabledAt,
-		HasPassword: user.PasswordHash != "",
-		Locale:      user.Locale,
-		GroupIDs:    groupIds,
-		CreatedAt:   user.CreatedAt,
+		ID:           user.ID,
+		Username:     user.Username,
+		Name:         user.Name,
+		Email:        user.Email,
+		DisabledAt:   user.DisabledAt,
+		HasPassword:  user.PasswordHash != "",
+		Locale:       user.Locale,
+		LocaleSeen:   user.LocaleSeen,
+		Timezone:     user.Timezone,
+		TimezoneMode: user.TimezoneMode,
+		GroupIDs:     groupIds,
+		CreatedAt:    user.CreatedAt,
 	}
 }
 
@@ -220,6 +232,11 @@ type UpdateUserArguments struct {
 
 	// Locale the web UI greets them in; empty means the browser's
 	Locale *string `json:"locale"`
+
+	// Where they are, as an IANA zone name, and whether it follows the
+	// browser ("auto", the default) or stays as set ("fixed")
+	Timezone     *string `json:"timezone"`
+	TimezoneMode *string `json:"timezoneMode"`
 }
 
 func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error) {
@@ -259,6 +276,12 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 		}
 		if arguments.Locale != nil {
 			user.Locale = strings.TrimSpace(*arguments.Locale)
+		}
+		if arguments.Timezone != nil {
+			user.Timezone = strings.TrimSpace(*arguments.Timezone)
+		}
+		if arguments.TimezoneMode != nil {
+			user.TimezoneMode = strings.TrimSpace(*arguments.TimezoneMode)
 		}
 		if arguments.Disabled != nil {
 			if *arguments.Disabled && user.ID == principal.UserID() {

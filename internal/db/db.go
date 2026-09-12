@@ -68,6 +68,19 @@ type Database interface {
 	// changes, until the context ends.
 	ListenFolderChanges(ctx context.Context) (<-chan string, error)
 
+	// NotifyAgentEvent tells every instance about an event of a turn, and
+	// ListenAgentEvents delivers what the others said, until the context
+	// ends. The payload is the instance's to shape; what a slow listener
+	// misses is not kept.
+	NotifyAgentEvent(payload string) error
+	ListenAgentEvents(ctx context.Context) (<-chan string, error)
+
+	// NotifyAgentCommand and ListenAgentCommands are the same for a word
+	// to a turn — stop, an answer, a decision on a card — from an instance
+	// that is not running it.
+	NotifyAgentCommand(payload string) error
+	ListenAgentCommands(ctx context.Context) (<-chan string, error)
+
 	// Sessions, API tokens and passkeys are read and written outside a
 	// transaction: every authenticated request looks one up, and wrapping
 	// that in a transaction would buy nothing.
@@ -119,6 +132,14 @@ type Transaction interface {
 	SubscriptionQuery
 	BimiQuery
 	IdentityOperation
+	AgentOperation
+	InsightOperation
+	AttachmentOperation
+	ReplyOperation
+	EmbeddingOperation
+	MemoryOperation
+	ConnectionOperation
+	ChannelOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

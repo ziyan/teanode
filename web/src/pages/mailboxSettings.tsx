@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { Tooltip } from '../components/tooltip'
 import { RelativeTime } from '../components/relativeTime'
+import { Combobox, Select } from '../components/select'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
@@ -12,6 +13,7 @@ import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../co
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
+import { SourceCard, useAgent } from './agent'
 import { FolderKindIcon } from '../components/folderIcon'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
 import {
@@ -37,6 +39,7 @@ const TABS: TabItem[] = [
   { id: 'rules', label: 'mailboxSettings.tabRules' },
   { id: 'autoreply', label: 'mailboxSettings.tabAutoReply' },
   { id: 'devices', label: 'mailboxSettings.tabDevices' },
+  { id: 'agent', label: 'mailboxSettings.tabAgent' },
 ]
 
 const APP_PASSWORDS = `
@@ -114,6 +117,7 @@ export function MailboxSettingsPage() {
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}
       {tab === 'autoreply' && <AutoReplyTab key={view.mailbox.id} view={view} />}
       {tab === 'devices' && <DevicesTab key={view.mailbox.id} view={view} />}
+      {tab === 'agent' && <AgentTab key={view.mailbox.id} view={view} />}
     </>
   )
 }
@@ -429,14 +433,16 @@ function FoldersTab({ view }: { view: MailboxView }) {
           </label>
           <label>
             {t('mailboxSettings.folderParent')}
-            <select value={parentId} onChange={(event) => setParentId(event.target.value)}>
-              <option value="">{t('mailboxSettings.folderTop')}</option>
-              {parents.map(({ folder, depth }) => (
-                <option key={folder.id} value={folder.id}>
-                  {'  '.repeat(depth) + folderLabel(t, folder)}
-                </option>
-              ))}
-            </select>
+            <Select
+              block
+              value={parentId}
+              label={t('mailboxSettings.folderParent')}
+              options={[
+                { value: '', label: t('mailboxSettings.folderTop') },
+                ...parents.map(({ folder, depth }) => ({ value: folder.id, label: '\u2003'.repeat(depth) + folderLabel(t, folder) })),
+              ]}
+              onChange={setParentId}
+            />
           </label>
         </FormDialog>
       )}
@@ -456,7 +462,35 @@ function FoldersTab({ view }: { view: MailboxView }) {
   )
 }
 
-const FIELDS = ['from', 'to', 'subject', 'header', 'score', 'sender-known', 'any'] as const
+const FIELDS = [
+  'from',
+  'to',
+  'subject',
+  'header',
+  'score',
+  'sender-known',
+  'category',
+  'priority',
+  'needs-reply',
+  'any',
+] as const
+
+// The fields that need no value: the condition is the field.
+const BARE_FIELDS = ['sender-known', 'needs-reply', 'any']
+
+// The categories the agent always knows; a person's own go in by name.
+const CATEGORIES = [
+  'personal',
+  'work',
+  'newsletter',
+  'notification',
+  'receipt',
+  'promotion',
+  'social',
+  'invitation',
+  'other',
+]
+const PRIORITIES = ['high', 'normal', 'low']
 const OPERATORS = ['contains', 'equals', 'matches', 'above', 'below'] as const
 const ACTIONS = ['move', 'markRead', 'flag', 'forward', 'delete'] as const
 
@@ -467,7 +501,15 @@ const FIELD_LABELS: Record<string, Key> = {
   header: 'mailboxSettings.fieldHeader',
   score: 'mailboxSettings.fieldScore',
   'sender-known': 'mailboxSettings.fieldSenderKnown',
+  category: 'mailboxSettings.fieldCategory',
+  priority: 'mailboxSettings.fieldPriority',
+  'needs-reply': 'mailboxSettings.fieldNeedsReply',
   any: 'mailboxSettings.fieldAny',
+}
+const PRIORITY_LABELS: Record<string, Key> = {
+  high: 'mailboxSettings.priorityHigh',
+  normal: 'mailboxSettings.priorityNormal',
+  low: 'mailboxSettings.priorityLow',
 }
 const OPERATOR_LABELS: Record<string, Key> = {
   contains: 'mailboxSettings.operatorContains',
@@ -485,12 +527,16 @@ const ACTION_LABELS: Record<string, Key> = {
 }
 
 // operatorsFor is what a condition's field can be compared with: a score
-// is above or below a number, everything else matches text.
+// is above or below a number, a priority is one of three, everything else
+// matches text.
 function operatorsFor(field: string): string[] {
   if (field === 'score') {
     return ['above', 'below']
   }
-  if (field === 'sender-known' || field === 'any') {
+  if (field === 'priority') {
+    return ['equals']
+  }
+  if (BARE_FIELDS.includes(field)) {
     return ['']
   }
   return OPERATORS.filter((operator) => operator !== 'above' && operator !== 'below')
@@ -517,7 +563,7 @@ function cleanRules(rules: MailboxRule[]): MailboxRule[] {
     conditions: rule.conditions.map((condition) => ({
       field: condition.field,
       header: condition.field === 'header' ? (condition.header ?? '') : '',
-      operator: ['sender-known', 'any'].includes(condition.field) ? '' : condition.operator,
+      operator: BARE_FIELDS.includes(condition.field) ? '' : condition.operator,
       value: condition.value ?? '',
     })),
     actions: rule.actions.map((action) => ({
@@ -537,12 +583,16 @@ function describeCondition(
   t: (key: Key, values?: Record<string, string | number>) => string,
 ): string {
   const field = t(FIELD_LABELS[condition.field] ?? 'mailboxSettings.fieldAny')
-  if (condition.field === 'sender-known' || condition.field === 'any') {
+  if (BARE_FIELDS.includes(condition.field)) {
     return field
   }
   const name = condition.field === 'header' && condition.header ? ` ${condition.header}` : ''
   const operator = t(OPERATOR_LABELS[condition.operator] ?? 'mailboxSettings.operatorContains')
-  return `${field}${name} ${operator} ${condition.value ?? ''}`.trim()
+  const value =
+    condition.field === 'priority' && PRIORITY_LABELS[condition.value ?? '']
+      ? t(PRIORITY_LABELS[condition.value ?? ''])
+      : (condition.value ?? '')
+  return `${field}${name} ${operator} ${value}`.trim()
 }
 
 function describeAction(
@@ -806,34 +856,29 @@ function RulesTab({ view }: { view: MailboxView }) {
           <div className="field-label">{t('mailboxSettings.conditions')}</div>
           {rule.conditions.map((condition, conditionIndex) => (
             <div className="rule-line" key={conditionIndex}>
-              <select
-                aria-label={t('mailboxSettings.conditions')}
+              <Select
+                label={t('mailboxSettings.conditions')}
                 value={condition.field}
-                onChange={(event) =>
+                options={FIELDS.map((field) => ({ value: field, label: t(FIELD_LABELS[field]) }))}
+                onChange={(value) =>
                   change((current) => ({
                     ...current,
                     conditions: current.conditions.map((item, at) =>
                       at === conditionIndex
                         ? {
                             ...item,
-                            field: event.target.value,
+                            field: value,
                             // A field has its own operators; keep one only if
                             // the new field can use it.
-                            operator: operatorsFor(event.target.value).includes(item.operator)
+                            operator: operatorsFor(value).includes(item.operator)
                               ? item.operator
-                              : operatorsFor(event.target.value)[0],
+                              : operatorsFor(value)[0],
                           }
                         : item,
                     ),
                   }))
                 }
-              >
-                {FIELDS.map((field) => (
-                  <option key={field} value={field}>
-                    {t(FIELD_LABELS[field])}
-                  </option>
-                ))}
-              </select>
+              />
               {condition.field === 'header' && (
                 <input
                   placeholder={t('mailboxSettings.headerName')}
@@ -849,38 +894,56 @@ function RulesTab({ view }: { view: MailboxView }) {
                   }
                 />
               )}
-              {!['sender-known', 'any'].includes(condition.field) && (
+              {!BARE_FIELDS.includes(condition.field) && (
                 <>
-                  <select
-                    aria-label={t('mailboxSettings.operator')}
+                  <Select
+                    label={t('mailboxSettings.operator')}
                     value={condition.operator}
-                    onChange={(event) =>
+                    options={operatorsFor(condition.field).map((operator) => ({ value: operator, label: t(OPERATOR_LABELS[operator]) }))}
+                    onChange={(value) =>
                       change((current) => ({
                         ...current,
                         conditions: current.conditions.map((item, at) =>
-                          at === conditionIndex ? { ...item, operator: event.target.value } : item,
-                        ),
-                      }))
-                    }
-                  >
-                    {operatorsFor(condition.field).map((operator) => (
-                      <option key={operator} value={operator}>
-                        {t(OPERATOR_LABELS[operator])}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    aria-label={t('mailboxSettings.value')}
-                    value={condition.value ?? ''}
-                    onChange={(event) =>
-                      change((current) => ({
-                        ...current,
-                        conditions: current.conditions.map((item, at) =>
-                          at === conditionIndex ? { ...item, value: event.target.value } : item,
+                          at === conditionIndex ? { ...item, operator: value } : item,
                         ),
                       }))
                     }
                   />
+                  {condition.field === 'priority' ? (
+                    <Select
+                      label={t('mailboxSettings.value')}
+                      value={PRIORITIES.includes(condition.value ?? '') ? (condition.value ?? '') : ''}
+                      options={[
+                        { value: '', label: t('mailboxSettings.choose') },
+                        ...PRIORITIES.map((level) => ({ value: level, label: t(PRIORITY_LABELS[level]) })),
+                      ]}
+                      onChange={(value) =>
+                        change((current) => ({
+                          ...current,
+                          conditions: current.conditions.map((item, at) =>
+                            at === conditionIndex ? { ...item, value } : item,
+                          ),
+                        }))
+                      }
+                    />
+                  ) : (
+                    <>
+                      <Combobox
+                        label={t('mailboxSettings.value')}
+                        suggestions={condition.field === 'category' ? CATEGORIES.filter((name) => name.includes((condition.value ?? '').toLowerCase())) : []}
+                        placeholder={condition.field === 'category' ? t('mailboxSettings.categoryHint') : undefined}
+                        value={condition.value ?? ''}
+                        onChange={(value) =>
+                          change((current) => ({
+                            ...current,
+                            conditions: current.conditions.map((item, at) =>
+                              at === conditionIndex ? { ...item, value } : item,
+                            ),
+                          }))
+                        }
+                      />
+                    </>
+                  )}
                 </>
               )}
               <Tooltip label={t('common.remove')}>
@@ -917,45 +980,30 @@ function RulesTab({ view }: { view: MailboxView }) {
           <div className="field-label">{t('mailboxSettings.actions')}</div>
           {rule.actions.map((action, actionIndex) => (
             <div className="rule-line" key={actionIndex}>
-              <select
-                aria-label={t('mailboxSettings.actions')}
+              <Select
+                label={t('mailboxSettings.actions')}
                 value={action.kind}
-                onChange={(event) =>
+                options={ACTIONS.map((kind) => ({ value: kind, label: t(ACTION_LABELS[kind]) }))}
+                onChange={(value) =>
                   change((current) => ({
                     ...current,
-                    actions: current.actions.map((item, at) =>
-                      at === actionIndex ? { ...item, kind: event.target.value } : item,
-                    ),
+                    actions: current.actions.map((item, at) => (at === actionIndex ? { ...item, kind: value } : item)),
                   }))
                 }
-              >
-                {ACTIONS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {t(ACTION_LABELS[kind])}
-                  </option>
-                ))}
-              </select>
+              />
               {action.kind === 'move' && (
-                <select
-                  aria-label={t('mailboxSettings.chooseFolder')}
+                <Select
+                  label={t('mailboxSettings.chooseFolder')}
                   value={action.folderId ?? ''}
-                  required
-                  onChange={(event) =>
+                  placeholder={t('mailboxSettings.chooseFolder')}
+                  options={folders.map(({ folder, depth }) => ({ value: folder.id, label: '\u2003'.repeat(depth) + folderLabel(t, folder) }))}
+                  onChange={(value) =>
                     change((current) => ({
                       ...current,
-                      actions: current.actions.map((item, at) =>
-                        at === actionIndex ? { ...item, folderId: event.target.value } : item,
-                      ),
+                      actions: current.actions.map((item, at) => (at === actionIndex ? { ...item, folderId: value } : item)),
                     }))
                   }
-                >
-                  <option value="">{t('mailboxSettings.chooseFolder')}</option>
-                  {folders.map(({ folder, depth }) => (
-                    <option key={folder.id} value={folder.id}>
-                      {'  '.repeat(depth) + folderLabel(t, folder)}
-                    </option>
-                  ))}
-                </select>
+                />
               )}
               {action.kind === 'forward' && (
                 <input
@@ -1376,3 +1424,33 @@ function DevicesTab({ view }: { view: MailboxView }) {
 // Whoever has written to the mailbox, and whoever its owner added. Names
 // here are what the compose page completes and what a rule's "sender is a
 // contact" reads.
+
+// AgentTab is this mailbox as a source of the owner's agent: the same card
+// the Agent page shows, so the policy is one thing edited in two places.
+function AgentTab({ view }: { view: MailboxView }) {
+  const { t } = useTranslation()
+  const agent = useAgent()
+  if (agent.loading && !agent.data) {
+    return <Loading />
+  }
+  if (agent.error) {
+    return <ErrorMessage error={agent.error} />
+  }
+  const agentView = agent.data!.ReadAgent
+  const source = agentView.sources.find((candidate) => candidate.mailboxId === view.mailbox.id)
+  return (
+    <div className="card">
+      <h3>{t('mailboxSettings.tabAgent')}</h3>
+      <p className="muted">{t('mailboxSettings.agentHint')}</p>
+      {!agentView.allowed.enabled ? (
+        <p className="muted">{t('agent.notOffered')}</p>
+      ) : !agentView.agent ? (
+        <p className="muted">
+          <Link to="/settings/agent">{t('mailboxSettings.agentTurnOn')}</Link>
+        </p>
+      ) : source ? (
+        <SourceCard source={source} view={agentView} onChanged={agent.reload} />
+      ) : null}
+    </div>
+  )
+}

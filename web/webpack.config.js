@@ -46,7 +46,13 @@ function developmentBackend() {
 module.exports = {
   mode: production ? 'production' : 'development',
   devtool: production ? false : 'inline-source-map',
-  entry: './src/index.tsx',
+  entry: {
+    teanode: './src/index.tsx',
+    // What a page the agent makes may link: the helper and the look, at
+    // fixed unhashed names, since the page is written by the model from
+    // those addresses. The chart library is copied below.
+    artifact: ['./src/artifact/artifact.js', './src/artifact/artifact.css'],
+  },
   module: {
     rules: [
       { test: /\.tsx?$/, use: 'ts-loader', exclude: /node_modules/ },
@@ -58,16 +64,19 @@ module.exports = {
   output: {
     path: output,
     publicPath: '/',
-    filename: production ? 'teanode.[contenthash].js' : 'teanode.js',
+    filename: (pathData) => (pathData.chunk.name === 'artifact' ? 'assets/artifact.js' : production ? 'teanode.[contenthash].js' : 'teanode.js'),
     clean: true,
   },
   plugins: [
-    new HtmlWebpackPlugin({ template: './public/index.html', favicon: './public/favicon.ico' }),
-    new MiniCssExtractPlugin({ filename: production ? 'teanode.[contenthash].css' : 'teanode.css' }),
+    new HtmlWebpackPlugin({ template: './public/index.html', favicon: './public/favicon.ico', chunks: ['teanode'] }),
+    new MiniCssExtractPlugin({ filename: (pathData) => (pathData.chunk.name === 'artifact' ? 'assets/artifact.css' : production ? 'teanode.[contenthash].css' : 'teanode.css') }),
     // Webpack empties the output directory first, which would delete the
     // committed placeholder that lets go:embed work on a clean checkout.
     new CopyWebpackPlugin({
-      patterns: [{ from: 'public/.gitkeep', to: '.gitkeep', toType: 'file', noErrorOnMissing: true }],
+      patterns: [
+        { from: 'public/.gitkeep', to: '.gitkeep', toType: 'file', noErrorOnMissing: true },
+        { from: 'node_modules/echarts/dist/echarts.min.js', to: 'assets/echarts.min.js' },
+      ],
     }),
   ],
   devServer: {

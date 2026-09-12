@@ -66,6 +66,10 @@ const (
 	// AuditActorRescue is teanode-server run on the host against the
 	// database, the one path that bypasses permissions.
 	AuditActorRescue AuditActorKind = "rescue"
+
+	// AuditActorAgent is a person's agent acting for them: the row names
+	// the person, and the kind says it was the agent's doing.
+	AuditActorAgent AuditActorKind = "agent"
 )
 
 // AuditAction is what happened to the row.
@@ -94,6 +98,7 @@ const (
 	AuditResourceToken              AuditResourceType = "token"
 	AuditResourcePasskey            AuditResourceType = "passkey"
 	AuditResourceConfiguration      AuditResourceType = "configuration"
+	AuditResourceAgent              AuditResourceType = "agent" // a person's agent, and its sources
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

@@ -2,9 +2,11 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/db"
@@ -65,6 +67,12 @@ type MailboxMutation interface {
 	// Set flags on items: read, flagged
 	SetMailboxItemFlags(ctx context.Context, arguments SetMailboxItemFlagsArguments) (int, error)
 
+	// Sort messages by hand: the category, the priority, whether a reply is
+	// needed, for every message named, with the fields left out kept as
+	// they are. What the agent had decided is recorded as a correction it
+	// learns from. Needs mail:write.
+	SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error)
+
 	// Move items to another folder of the same mailbox
 	MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error)
 
@@ -100,6 +108,12 @@ type MailboxView struct {
 
 	// Unread is the Inbox's unread count, for the switcher and the tab title.
 	Unread int64 `json:"unread"`
+
+	// StarredUnread and PriorityUnread are the unread counts of the two
+	// views that are not folders — every flagged message, every message
+	// the agent marked high — for their rows in the rail and their titles.
+	StarredUnread  int64 `json:"starredUnread"`
+	PriorityUnread int64 `json:"priorityUnread"`
 
 	// MaxMessageSize is the most a message may be, in bytes, so the compose
 	// page can refuse a selection of files before uploading it; zero when
@@ -197,6 +211,17 @@ func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox)
 			view.Unread = folder.Unread
 		}
 	}
+	unseen, flagged := true, true
+	tx := self.transaction(ctx)
+	aside := []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged, ExcludeKinds: aside}); err != nil {
+		return nil, err
+	}
+	if mailbox.Agent != nil && mailbox.Agent.Granted && mailbox.Agent.Triage != nil && mailbox.Agent.Triage.Enabled {
+		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high", ExcludeKinds: aside}); err != nil {
+			return nil, err
+		}
+	}
 	return view, nil
 }
 
@@ -259,6 +284,16 @@ type ListMailboxItemsArguments struct {
 	// How many, at most 200; and the item to continue after
 	First *int    `json:"first"`
 	After *string `json:"after"`
+
+	// Category, Priority and NeedsReply narrow to what the owner's agent
+	// worked out: one of the categories, high|normal|low, or messages
+	// waiting for an answer.
+	Category   *string `json:"category"`
+	Priority   *string `json:"priority"`
+	NeedsReply *bool   `json:"needsReply"`
+
+	// MailIDs keeps only these messages, for rows a search by meaning ranked.
+	MailIDs []string `json:"mailIds" graphapi:"nullable"`
 }
 
 // MailboxItemPage is one page of a folder, with how many the folder holds.
@@ -309,6 +344,23 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	if arguments.Search != nil {
 		options.Search = strings.TrimSpace(*arguments.Search)
 	}
+	if arguments.Category != nil {
+		options.Category = strings.ToLower(strings.TrimSpace(*arguments.Category))
+	}
+	if arguments.Priority != nil {
+		options.Priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+	}
+	// A view over the whole mailbox — Starred, Priority — leaves out what
+	// was thrown away or junked; those are reached in their own folders.
+	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
+		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	}
+	if arguments.NeedsReply != nil {
+		options.NeedsReply = arguments.NeedsReply
+	}
+	if len(arguments.MailIDs) > 0 {
+		options.MailIDs = arguments.MailIDs
+	}
 	if arguments.ThreadID != nil {
 		options.ThreadID = strings.TrimSpace(*arguments.ThreadID)
 	}
@@ -351,7 +403,36 @@ func (self *graph) attachMails(ctx context.Context, items []*models.MailboxItem)
 	for index, item := range items {
 		item.Mail = mails[index]
 	}
+	if err := self.attachInsights(ctx, items); err != nil {
+		return err
+	}
 	return self.attachLogos(ctx, mails)
+}
+
+// attachInsights hangs what the owner's agent worked out on each item. The
+// items of one call are one mailbox's, so the mailbox is the first item's
+// folder's; an insight belongs to a mailbox, not to a message.
+func (self *graph) attachInsights(ctx context.Context, items []*models.MailboxItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	tx := self.transaction(ctx)
+	folder, err := tx.GetFolder(items[0].FolderID)
+	if err != nil || folder == nil {
+		return err
+	}
+	mailIds := make([]string, 0, len(items))
+	for _, item := range items {
+		mailIds = append(mailIds, item.MailID)
+	}
+	insights, err := tx.GetMailInsights(folder.MailboxID, mailIds)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		item.Insight = insights[item.MailID]
+	}
+	return nil
 }
 
 // attachLogos hangs the sender's published mark on each message that has one
@@ -416,6 +497,16 @@ type ListMailboxThreadsArguments struct {
 	// How many to skip, and how many to return, at most 200
 	Offset *int `json:"offset"`
 	First  *int `json:"first"`
+
+	// Category, Priority and NeedsReply narrow to what the owner's agent
+	// worked out: one of the categories, high|normal|low, or messages
+	// waiting for an answer.
+	Category   *string `json:"category"`
+	Priority   *string `json:"priority"`
+	NeedsReply *bool   `json:"needsReply"`
+
+	// MailIDs keeps only these messages, for rows a search by meaning ranked.
+	MailIDs []string `json:"mailIds" graphapi:"nullable"`
 }
 
 // MailboxThreadPage is one page of a folder's conversations, with how many
@@ -465,6 +556,23 @@ func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailbox
 	}
 	if arguments.Search != nil {
 		options.Search = strings.TrimSpace(*arguments.Search)
+	}
+	if arguments.Category != nil {
+		options.Category = strings.ToLower(strings.TrimSpace(*arguments.Category))
+	}
+	if arguments.Priority != nil {
+		options.Priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+	}
+	// A view over the whole mailbox — Starred, Priority — leaves out what
+	// was thrown away or junked; those are reached in their own folders.
+	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
+		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	}
+	if arguments.NeedsReply != nil {
+		options.NeedsReply = arguments.NeedsReply
+	}
+	if len(arguments.MailIDs) > 0 {
+		options.MailIDs = arguments.MailIDs
 	}
 	if arguments.Offset != nil && *arguments.Offset > 0 {
 		options.Offset = *arguments.Offset
@@ -516,6 +624,31 @@ type MailboxThreadView struct {
 	// so that a reader showing it can say so rather than quietly leaving
 	// the oldest out.
 	Truncated bool `json:"truncated"`
+
+	// Summary is what the owner's agent wrote about the conversation, when
+	// the agent summarizes this mailbox; nil otherwise.
+	Summary *ThreadSummaryView `json:"summary"`
+
+	// HeldReply is the reply the owner's agent is holding for this
+	// conversation, if any: the reader offers to cancel it or take it over.
+	HeldReply *models.AgentReply `json:"heldReply"`
+}
+
+// ThreadSummaryView is a conversation's summary as the reader shows it: the
+// text, how far it reads, and whether a fresher one is on its way.
+type ThreadSummaryView struct {
+	Summary       string    `json:"summary"`
+	ThroughMailID string    `json:"throughMailId"`
+	MessageCount  int       `json:"messageCount"`
+	Model         string    `json:"model"`
+	CreatedAt     time.Time `json:"createdAt"`
+
+	// Stale says the conversation has grown past what the summary covers;
+	// Pending says a run has been queued to catch it up, so the reader may
+	// ask again in a moment. An empty summary that is pending is one being
+	// written for the first time.
+	Stale   bool `json:"stale"`
+	Pending bool `json:"pending"`
 }
 
 // threadLimit is how many messages of one conversation are returned. Long
@@ -606,7 +739,76 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 	if named.Item.Mail != nil {
 		view.Subject = threadSubject(named.Item.Mail.Subject)
 	}
+	view.Summary = self.threadSummary(ctx, mailbox, threadId, found)
+	if held, err := tx.ListAgentReplies(&db.AgentReplyFilter{MailboxID: mailbox.ID, ThreadID: threadId, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld}}, &db.Options{Limit: 1}); err != nil {
+		return nil, err
+	} else if len(held) > 0 {
+		view.HeldReply = held[0]
+	}
 	return view, nil
+}
+
+// threadSummary is the agent's summary of a conversation, for a mailbox the
+// agent summarizes. Opening a conversation the summary has fallen behind
+// on, or one that has none, queues the run that writes it: the reader is the
+// one place a summary is wanted at once, so it is the one place that asks.
+func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, threadId string, items []*models.MailboxItem) *ThreadSummaryView {
+	source := mailbox.Agent
+	if source == nil || !source.Granted || source.Summaries == nil || !source.Summaries.Enabled {
+		return nil
+	}
+	configuration := self.config.Current()
+	if !agent.FeatureAllowed(configuration, "summaries") {
+		return nil
+	}
+	tx := self.transaction(ctx)
+	summary, err := tx.GetThreadSummary(mailbox.ID, threadId)
+	if err != nil {
+		log.Warningf("cannot read the summary of conversation %q: %s", threadId, err)
+		return nil
+	}
+	// The newest message the mailbox has of the conversation, which is
+	// what a fresh summary reads through.
+	newest := ""
+	var newestAt time.Time
+	for _, item := range items {
+		if item.Mail != nil && (newest == "" || item.Mail.ReceivedAt.After(newestAt)) {
+			newest, newestAt = item.MailID, item.Mail.ReceivedAt
+		}
+	}
+	view := &ThreadSummaryView{}
+	if summary != nil {
+		view.Summary = summary.Summary
+		view.ThroughMailID = summary.ThroughMailID
+		view.MessageCount = summary.MessageCount
+		view.Model = summary.Model
+		view.CreatedAt = summary.CreatedAt
+		view.Stale = summary.ThroughMailID != newest
+	} else {
+		view.Stale = true
+	}
+	if !view.Stale {
+		return view
+	}
+	// A conversation of one is not worth a summary until it is opened by
+	// somebody who wants one anyway; the reader still shows nothing for
+	// it, so the run is not queued either.
+	if len(items) < 2 {
+		if summary == nil {
+			return nil
+		}
+		return view
+	}
+	owner, err := tx.GetAgentByUser(mailbox.UserID)
+	if err != nil || owner == nil || !owner.Active() {
+		return view
+	}
+	if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: owner.ID, MailboxID: mailbox.ID, Kind: models.AgentJobSummarize, SubjectID: threadId}); err != nil {
+		log.Warningf("cannot queue a summary of conversation %q: %s", threadId, err)
+		return view
+	}
+	view.Pending = true
+	return view
 }
 
 // threadViewOf turns a mailbox's items into what a reader shows: one entry per
@@ -704,6 +906,82 @@ func (self *graph) SetMailboxItemFlags(ctx context.Context, arguments SetMailbox
 	return int(changed), nil
 }
 
+type SortMailboxItemsArguments struct {
+	ItemIDs    []string `json:"itemIds"`
+	Category   *string  `json:"category"`
+	Priority   *string  `json:"priority"`
+	NeedsReply *bool    `json:"needsReply"`
+}
+
+func (self *graph) SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error) {
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs)
+	if err != nil {
+		return 0, err
+	}
+	var category, priority string
+	if arguments.Category != nil {
+		category = strings.ToLower(strings.TrimSpace(*arguments.Category))
+	}
+	if arguments.Priority != nil {
+		priority = strings.ToLower(strings.TrimSpace(*arguments.Priority))
+		switch priority {
+		case "high", "normal", "low":
+		default:
+			return 0, fmt.Errorf("%w: priority is high, normal or low", api.ErrInvalidArguments)
+		}
+	}
+	if category == "" && priority == "" && arguments.NeedsReply == nil {
+		return 0, api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	owner, err := tx.GetAgentByUser(mailbox.UserID)
+	if err != nil {
+		return 0, err
+	}
+	mailIds := make([]string, 0, len(items))
+	for _, item := range items {
+		mailIds = append(mailIds, item.MailID)
+	}
+	existing, err := tx.GetMailInsights(mailbox.ID, mailIds)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, item := range items {
+		before := existing[item.MailID]
+		after := &models.MailInsight{MailID: item.MailID, MailboxID: mailbox.ID, Category: "other", Priority: "normal"}
+		if before != nil {
+			copied := *before
+			after = &copied
+		} else if owner != nil {
+			after.AgentID = owner.ID
+		}
+		if category != "" {
+			after.Category = category
+		}
+		if priority != "" {
+			after.Priority = priority
+		}
+		if arguments.NeedsReply != nil {
+			after.NeedsReply = *arguments.NeedsReply
+		}
+		if err := tx.PutMailInsight(after); err != nil {
+			return changed, translateError(err)
+		}
+		if owner != nil {
+			mail, err := tx.GetMail(item.MailID, nil)
+			if err != nil {
+				return changed, err
+			}
+			if err := agent.RecordSorted(tx, owner.ID, mailbox.ID, mail, before, after); err != nil {
+				return changed, err
+			}
+		}
+		changed++
+	}
+	return changed, nil
+}
+
 type ShowMailboxItemImagesArguments struct {
 	// IDs of the items whose pictures were loaded
 	ItemIDs []string `json:"itemIds"`
@@ -735,7 +1013,7 @@ type MoveMailboxItemsArguments struct {
 }
 
 func (self *graph) MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error) {
-	_, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs)
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, arguments.ItemIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -746,14 +1024,55 @@ func (self *graph) MoveMailboxItems(ctx context.Context, arguments MoveMailboxIt
 	if target == nil || target.MailboxID != mailbox.ID {
 		return nil, api.ErrNotFound
 	}
-	moved, err := self.transaction(ctx).MoveItems(arguments.ItemIDs, target.ID)
+	tx := self.transaction(ctx)
+	// A sorted message the person files by hand is a correction, when it
+	// is their hand: the agent's own moves teach it nothing.
+	var corrections []*models.MailboxItem
+	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent && mailbox.Agent != nil && mailbox.Agent.Granted {
+		corrections = items
+	}
+	moved, err := tx.MoveItems(arguments.ItemIDs, target.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}
 	if err := self.attachMails(ctx, moved); err != nil {
 		return nil, err
 	}
+	if len(corrections) > 0 {
+		self.recordFiled(ctx, mailbox, corrections, target)
+	}
 	return moved, nil
+}
+
+// recordFiled records where the person filed messages the agent had
+// sorted, as corrections for the next sorting.
+func (self *graph) recordFiled(ctx context.Context, mailbox *models.Mailbox, items []*models.MailboxItem, target *models.MailboxFolder) {
+	tx := self.transaction(ctx)
+	found, err := tx.GetAgentByUser(mailbox.UserID)
+	if err != nil || found == nil {
+		return
+	}
+	mailIds := mailIdsOf(items)
+	insights, err := tx.GetMailInsights(mailbox.ID, mailIds)
+	if err != nil || len(insights) == 0 {
+		return
+	}
+	mails, err := tx.GetMails(mailIds, nil)
+	if err != nil {
+		return
+	}
+	for _, mail := range mails {
+		if mail == nil {
+			continue
+		}
+		insight := insights[mail.ID]
+		if insight == nil || target.Kind == models.MailboxFolderKindTrash || target.Kind == models.MailboxFolderKindJunk {
+			continue
+		}
+		if err := agent.RecordFiled(tx, found.ID, mailbox.ID, mail, insight, target.Name); err != nil {
+			log.Warningf("cannot record the correction for message %q: %s", mail.ID, err)
+		}
+	}
 }
 
 type DeleteMailboxItemsArguments struct {

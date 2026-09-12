@@ -31,6 +31,65 @@ export class APIError extends Error {
 // Once, and only for that. A server that answered, however it answered, is a
 // server whose answer we keep; retrying a real failure twice as fast is not
 // help.
+// Where this browser is, sent with every call so the server can tell time in
+// the person's own zone when nobody is looking — a scheduled brief, a held
+// reply's notification. The language goes as Accept-Language, which the
+// browser sends on its own.
+function locationHeaders(): Record<string, string> {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return zone ? { 'X-Timezone': zone } : {}
+  } catch {
+    return {}
+  }
+}
+
+// A page framed by another site — the drawer the browser extension puts
+// on whatever page the person is on — has no session cookie of this
+// origin to send. It signs in with the token the extension posts to it,
+// sent as an Authorization header on every call and in the websocket's
+// first message.
+let bearerToken = ''
+
+export function signInWithToken(token: string) {
+  bearerToken = token
+}
+
+// framedDrawer says whether this document is the drawer framed by the
+// browser extension into another site, decided once when it loaded: a
+// route change never turns the frame into the whole dashboard.
+export const framedDrawer = typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
+
+export function authorization(): Record<string, string> {
+  return bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}
+}
+
+// A picture in the transcript and a page the agent made are fetched by the
+// browser itself, which cannot be told to send a header. On the dashboard
+// the session cookie carries them. Framed into another site there is no
+// cookie of this origin, so the server signs an address for that one file,
+// good for a few hours: the person's own token never goes into an address,
+// where it would be written into every access log on the way and into
+// whatever they copied the link into.
+const sharedAddresses = new Map<string, Promise<string>>()
+
+export function sharedAttachment(attachmentId: string): Promise<string> {
+  const known = sharedAddresses.get(attachmentId)
+  if (known) return known
+  const asking = graphql<{ ShareAgentAttachment: string }>(
+    'query ($attachmentId: String!) { ShareAgentAttachment(attachmentId: $attachmentId) }',
+    { attachmentId },
+  )
+    .then((answer) => answer.ShareAgentAttachment)
+    .catch((reason) => {
+      // Asked for again next time rather than remembered as broken.
+      sharedAddresses.delete(attachmentId)
+      throw reason
+    })
+  sharedAddresses.set(attachmentId, asking)
+  return asking
+}
+
 async function send(
   query: string,
   variables: Record<string, unknown>,
@@ -39,7 +98,7 @@ async function send(
   const request = () =>
     fetch('/api/v1/graphql', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...locationHeaders(), ...authorization() },
       body: JSON.stringify({ query, variables }),
       // Given by useQuery, so a request nobody is waiting for any more is
       // dropped rather than left to finish and report.
@@ -605,6 +664,28 @@ export interface Mailbox {
   rules?: MailboxRule[]
   autoReply?: MailboxAutoReply | null
   addresses?: MailboxAddress[]
+  // What the owner's agent may do with this mailbox, when it has been
+  // granted access; null when it never was.
+  agent?: MailboxAgentGrant | null
+}
+
+// The parts of a mailbox's grant to the agent that the reader needs: whether
+// there is one, and whether sorting is on, which is what puts the Priority
+// view in the rail.
+export interface MailboxAgentGrant {
+  granted: boolean
+  draftReplies?: boolean
+  triage?: { enabled: boolean } | null
+}
+
+// What the agent worked out about a message for this mailbox.
+export interface MailInsight {
+  category: string
+  priority: string
+  needsReply: boolean
+  summary: string
+  actionItems?: string[]
+  notes?: string
 }
 
 export interface MailboxFolder {
@@ -623,6 +704,8 @@ export interface MailboxView {
   mailbox: Mailbox
   folders: MailboxFolder[]
   unread: number
+  starredUnread: number
+  priorityUnread: number
   // The most a message may be, in bytes; zero when there is no limit.
   maxMessageSize?: number
 }
@@ -641,6 +724,8 @@ export interface MailboxItem {
   addedAt: string
   // The list this arrived from, when it arrived from one.
   subscriptionId?: string
+  // What the agent worked out about it, once it has.
+  insight?: MailInsight | null
 }
 
 export interface MailboxItemPage {
@@ -681,4 +766,265 @@ export interface MailboxThreadView {
   subject: string
   items: MailboxThreadItem[]
   truncated: boolean
+  // The agent's summary of the conversation, where the agent summarizes
+  // this mailbox.
+  summary?: ThreadSummary | null
+  // The reply the agent is holding for this conversation, if any.
+  heldReply?: AgentReply | null
+}
+
+// A reply the agent wrote on the person's behalf, and where it stands.
+export interface AgentReply {
+  id: string
+  createdAt: string
+  mailboxId: string
+  mailId: string
+  threadId?: string
+  draftItemId?: string
+  status: 'held' | 'sent' | 'cancelled' | 'refused' | 'failed'
+  reason?: string
+  subject: string
+  from: string
+  to: string
+  text: string
+  sendAfter?: string | null
+  sentAt?: string | null
+}
+
+// A conversation's summary: the text, how far it reads, and whether a
+// fresher one is being written.
+export interface ThreadSummary {
+  summary: string
+  throughMailId: string
+  messageCount: number
+  createdAt: string
+  stale: boolean
+  pending: boolean
+}
+
+// subscribe follows a GraphQL subscription over the websocket the API
+// serves on the same path, and calls back with each result. The returned
+// function stops it. The socket speaks the same small protocol the server
+// does: connection_init with the CSRF token, start with the document, data
+// per result, ka to keep alive, stop to end.
+//
+// A socket that drops — a laptop lid, a phone in a pocket, a server
+// restarted — comes back on its own, a little later each time, and at
+// once when the network or the tab returns. Before each start, the first
+// included, `beforeStart` runs and is waited for: a chance to read what
+// was missed while away, so that what the subscription then replays
+// lands on a fresh picture. The subscription ends for good only when the
+// server says so — an error for the document, or complete — or when the
+// returned function is called.
+export interface SubscribeOptions {
+  beforeStart?: (reconnecting: boolean) => Promise<void> | void
+}
+
+// A socket that says nothing for this long — the server says "ka" every
+// second — is dead, whatever the browser thinks, and is replaced.
+const SUBSCRIBE_SILENCE = 15000
+
+export function subscribe<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  onData: (data: T) => void,
+  onEnd?: (error?: Error) => void,
+  options?: SubscribeOptions,
+): () => void {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const address = `${protocol}//${window.location.host}/api/v1/graphql`
+  let ended = false
+  let socket: WebSocket | null = null
+  let retry: number | undefined
+  let silence: number | undefined
+  let attempts = 0
+  let connections = 0
+  let started = ''
+  const end = (error?: Error) => {
+    if (ended) {
+      return
+    }
+    ended = true
+    window.removeEventListener('online', wake)
+    document.removeEventListener('visibilitychange', wake)
+    window.clearTimeout(retry)
+    window.clearTimeout(silence)
+    onEnd?.(error)
+  }
+  const csrf = () => {
+    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/)
+    return match ? decodeURIComponent(match[1]) : ''
+  }
+  const connect = () => {
+    if (ended) {
+      return
+    }
+    retry = undefined
+    const id = String(Date.now()) + Math.random().toString(36).slice(2)
+    const current = new WebSocket(address)
+    socket = current
+    connections += 1
+    const reconnecting = connections > 1
+    const heard = () => {
+      window.clearTimeout(silence)
+      silence = window.setTimeout(() => {
+        if (socket === current) current.close()
+      }, SUBSCRIBE_SILENCE)
+    }
+    current.onopen = () => {
+      heard()
+      current.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() } }))
+    }
+    current.onmessage = async (event) => {
+      heard()
+      let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[]; message?: string } }
+      try {
+        message = JSON.parse(String(event.data))
+      } catch {
+        return
+      }
+      switch (message.type) {
+        case 'connection_ack':
+          attempts = 0
+          try {
+            await options?.beforeStart?.(reconnecting)
+          } catch {
+            // What could not be read now is read when the next event
+            // asks for it; the subscription starts regardless.
+          }
+          if (ended || socket !== current || current.readyState !== WebSocket.OPEN) return
+          started = id
+          current.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
+          break
+        case 'data':
+          if (message.payload?.errors && message.payload.errors.length > 0) {
+            end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
+            current.close()
+            return
+          }
+          if (message.payload?.data) {
+            onData(message.payload.data)
+          }
+          break
+        case 'error':
+          // The document itself was refused: no socket will change that.
+          end(new APIError(message.payload?.message ?? 'the subscription was refused'))
+          current.close()
+          break
+        case 'complete':
+          end()
+          current.close()
+          break
+        default:
+          break
+      }
+    }
+    current.onerror = () => {
+      // The close that follows says what to do.
+    }
+    current.onclose = () => {
+      window.clearTimeout(silence)
+      if (ended || socket !== current) return
+      socket = null
+      attempts += 1
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempts - 1, 5)) + Math.random() * 500
+      retry = window.setTimeout(connect, delay)
+    }
+  }
+  // Back on the network, or back to the tab: no reason to keep waiting.
+  const wake = () => {
+    if (ended || socket || retry === undefined) return
+    if (document.visibilityState === 'hidden') return
+    window.clearTimeout(retry)
+    connect()
+  }
+  window.addEventListener('online', wake)
+  document.addEventListener('visibilitychange', wake)
+  connect()
+  return () => {
+    const current = socket
+    socket = null
+    if (current && current.readyState === WebSocket.OPEN) {
+      current.send(JSON.stringify({ id: started, type: 'stop' }))
+    }
+    current?.close()
+    end()
+  }
+}
+
+// A page pointing the agent at a thread. The drawer listens; when it is
+// there it opens with a chip for the thread and says so by marking the
+// event handled, and the caller sends the person to the agent page
+// otherwise.
+export const AGENT_ASK_EVENT = 'teanode:agent-ask'
+
+export interface AgentReference {
+  itemId?: string
+  threadId?: string
+  subject?: string
+  from?: string
+}
+
+export interface AgentAskDetail {
+  reference: AgentReference
+  handled: boolean
+}
+
+export function askAgentAbout(reference: AgentReference): boolean {
+  const detail: AgentAskDetail = { reference, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentAskDetail>(AGENT_ASK_EVENT, { detail }))
+  return detail.handled
+}
+
+// A page asking the drawer to open a conversation: a run's transcript from
+// the agent page. Handled the same way as a reference.
+export const AGENT_OPEN_EVENT = 'teanode:agent-open'
+
+export interface AgentOpenDetail {
+  conversationId: string
+  handled: boolean
+}
+
+export function openAgentConversation(conversationId: string): boolean {
+  const detail: AgentOpenDetail = { conversationId, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentOpenDetail>(AGENT_OPEN_EVENT, { detail }))
+  return detail.handled
+}
+
+// The agent changed mail — filed, flagged, drafted, sent, a rule or a
+// folder made — and the pages showing mail read again. Announced by the
+// drawer after such a tool answers; listened for by the mailbox.
+export const MAIL_CHANGED_EVENT = 'teanode:mail-changed'
+
+export function announceMailChanged() {
+  window.dispatchEvent(new Event(MAIL_CHANGED_EVENT))
+}
+
+// What a page has open, told to the agent with every turn as "this". A
+// page that shows something the address does not name — the mailing list
+// on the subscriptions page — says so here; the drawer reads the address
+// for the rest.
+export interface AgentViewing {
+  page?: string
+  itemId?: string
+  threadId?: string
+  subject?: string
+  mailboxId?: string
+  mailboxName?: string
+  folderId?: string
+  folderName?: string
+  listKey?: string
+  listName?: string
+}
+
+export const VIEWING_EVENT = 'teanode:viewing'
+let viewingNow: AgentViewing | null = null
+
+export function setAgentViewing(viewing: AgentViewing | null) {
+  viewingNow = viewing
+  window.dispatchEvent(new Event(VIEWING_EVENT))
+}
+
+export function agentViewing(): AgentViewing | null {
+  return viewingNow
 }

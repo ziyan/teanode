@@ -19,9 +19,10 @@ with the same side effects. See
 | `teanode-server config env` | write a starter environment file |
 | `teanode-server config init` | migrate the database and store what the environment describes |
 | `teanode-server config show\|validate` | inspect and check the stored configuration |
+| `teanode-server config rules import\|show` | the built-in spam filter's pattern rules: import a set, or show what is stored |
 | `teanode-server config import\|export` | load a `teanode.yaml` into the database, or write one out |
 | `teanode-server tls self-signed` | a certificate for local development |
-| `teanode-server user list\|add\|password\|remove\|reset` | recover the accounts without going through the server |
+| `teanode-server user list\|add\|password\|remove\|reset\|rescue` | recover the accounts without going through the server |
 | `teanode-server password` | hash a password for an exported configuration |
 
 These read the environment the server reads (`TEANODE_DATABASE_URL` and the
@@ -153,11 +154,15 @@ several, and a folder is named rather than identified:
     teanode mailbox rule apply
 
 A condition is `field:operator:value`, repeatable, and every one must match.
-The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known` and
-`any`; the operators are `contains`, `equals`, `matches` (a regular
-expression), `above` and `below`. A header condition names the header:
-`--when header:List-Id:contains:golang`. Two of the fields ask nothing of a
-value and are written alone: `--when sender-known` and `--when any`. The actions are flags: `--move`,
+The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known`,
+`category`, `priority`, `needs-reply` and `any`; the operators are
+`contains`, `equals`, `matches` (a regular expression), `above` and `below`.
+A header condition names the header: `--when header:List-Id:contains:golang`.
+Three of the fields ask nothing of a value and are written alone: `--when
+sender-known`, `--when needs-reply` and `--when any`. `category`, `priority`
+and `needs-reply` read what the agent decided about a message, so a rule
+with one of them runs once the agent has sorted the message rather than at
+delivery: `--when category:equals:newsletter --move Reading`. The actions are flags: `--move`,
 `--mark-read`, `--flag`, `--forward`, `--delete`, and `--stop` ends the run
 after this rule.
 
@@ -328,3 +333,68 @@ so, rather than making a change the server would overwrite the next time
 anything was saved from the dashboard. The exceptions live in the server's
 own program: `teanode-server user` for accounts, and `teanode-server config
 import` for a whole configuration.
+
+### teanode agent
+
+Your own agent, and — for an operator — everybody's. Every command goes
+through the API, so a change made here is the change the Agent page would
+have made.
+
+| Command | What it does |
+| --- | --- |
+| `teanode agent ask <message \| ->` | say something to your agent and print what it answers; `--new` starts a named conversation, `--conversation` continues one, `--attach FILE` (repeatable) hands it a file — a picture is shown to it, a text file read to it, anything else named — `--json` streams every event, `--quiet` prints the answer alone. A tool that needs your word asks on the terminal, y or n — never a flag |
+| `teanode agent chat` | the same, turn by turn, until an empty line |
+| `teanode agent conversation list\|show\|new\|rename\|main\|delete` | the main conversation and the named ones; `list --query` finds one by words in its title or in what was said; `main` makes a named conversation the main one, or starts a fresh main one and keeps the old as a named one; `delete` asks first and takes the files that came with it |
+| `teanode agent run list\|show` | what the agent did on its own: the transcripts of its sorting, summaries and replies |
+| `teanode agent tools` | the tools your agent has, as you may use them, with the risk class and whether it asks first |
+| `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
+| `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone; or a single moment, `"@at 2026-09-12 09:00"`, or a distance from now, `"@in 20m"`, which is stored as the moment it means and runs once |
+| `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
+| `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
+| `teanode agent skill list\|search\|install\|update\|remove\|enable\|disable\|scope\|secret` | tools installed from the skill registry, for everyone on this server: `search` says what there is, `install weather` checks the signature and the hash before keeping it, `update` with no name installs every newer version there is. `scope <name> operator|person|skill` settles who fills the skill's secrets in here — one set of values for the whole server, each person's own, or whatever the skill declares. Installing and scoping need `server:manage`. A skill that runs commands runs them on a computer you attached, asks first, and is never used by a run with nobody watching. `secret list\|set\|clear` is for the values a skill asks *you* for rather than the server: `secret set news NEWSAPI_KEY` reads the value from the terminal without echoing, or from standard input when there is no terminal |
+| `teanode agent mcp list\|connect\|disconnect` | the connected servers the operator declared and your connections to them; `connect tracker --credential -` reads your credential from standard input, and an authorizing server prints the address to open; `--loopback` brings the authorization back to this terminal instead, for a service that answers only to a loopback address |
+| `teanode agent settings show\|set` | your agent: `set enabled=true name=Bertie instructions=-` reads the long value from standard input; keys are listed by `set --help` |
+| `teanode agent settings categories add\|remove` | your own categories beside the fixed ones |
+| `teanode agent settings forget` | delete the agent and everything it learned; asks first |
+| `teanode agent source list\|grant\|revoke\|set` | the mailboxes the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` |
+| `teanode agent usage [--since] [--by day\|kind\|mailbox\|model]` | your tokens |
+| `teanode agent draft <item-id> [--say "…"]` | have the agent write a reply to a message, printed for you to use; nothing is saved or sent |
+| `teanode agent replies [--status held\|sent\|cancelled\|refused\|failed] [--mailbox]` | the replies the agent wrote for you and what became of each, with the reason when it left a message alone |
+| `teanode agent replies cancel <reply-id>` | cancel a held reply; the draft goes and nothing is sent |
+| `teanode agent admin usage\|list\|limit\|disable\|enable\|dead-letters\|retry` | everybody's agents, needing `agent:audit`: tokens by day, kind, mailbox, model or agent; each person's sources and today's spend; a per-person limit in tokens or, with `--cost`, in money; the switch-off; the jobs the worker gave up on |
+
+Every command sends the shell's time zone and language with the request,
+the way the dashboard sends the browser's, so a person who lives in the
+terminal is placed as well as one who lives in the browser.
+
+### teanode computer
+
+Your own computer, attached to your agent. While the program runs, the
+agent has two more tools — `shell`, which runs a command here, and
+`filesystem`, which reads, edits, writes, copies, lists, searches and greps your files —
+as you, anywhere on the machine, the way a terminal of yours would. Only a
+conversation you are present in may use them: a scheduled run, a sorting
+run, anything with nobody watching, never sees your computer. A command
+that changes the machine or reaches out of it (removing, moving,
+installing, sudo, pushing, ssh, and the graver shapes) asks you first, on
+the card in the drawer or on the terminal, and so do a file moved or
+deleted and a write into what the machine runs on its own (a shell's
+startup file, keys, autostart); nothing is refused on your behalf — your
+yes is the last word. The card is the server's: the program runs what
+the server sends, so it trusts the server the way a terminal trusts the
+person at it. The program signs in as you, with the active profile's
+token, never as the server. Several computers can be attached at once,
+told apart by name. A command runs under `/bin/sh -c` (`cmd /C` on
+Windows), not your login shell, so your aliases are not in scope. The
+program answers four requests at once and refuses a fifth rather than
+queueing it.
+
+| Command | What it does |
+| --- | --- |
+| `teanode computer start [--name NAME]` | run the program in the background; `--name` is what to call this computer (the host name by default). Its log is `~/.config/teanode/computer.log` |
+| `teanode computer status` | whether the program runs here, and which computers of yours the server sees |
+| `teanode computer stop` | end the program |
+| `teanode computer daemon [--name NAME]` | the same program in the foreground, reconnecting when the connection drops, until interrupted — for a terminal, or a service manager |
+
+The operator can keep computers off for the whole server with
+`agent.features.computer`.

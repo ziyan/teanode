@@ -2,10 +2,12 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"github.com/lib/pq"
 	"sync"
 	"time"
+
+	"github.com/lib/pq"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -40,6 +42,9 @@ type database struct {
 	// own rather than one from the pool: a listening connection is held for
 	// as long as the server runs.
 	dsn string
+	// listenDsnOnce settles listenDsnChosen, the listener's own variant.
+	listenDsnOnce   sync.Once
+	listenDsnChosen string
 
 	// sealer encrypts the domain table's secrets. Set once the server
 	// secret has been read from the settings; nil before, which is the
@@ -50,7 +55,10 @@ type database struct {
 
 // Open database.
 func Open(settings *Settings) (Database, error) {
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s", settings.Host, settings.Port, settings.User, settings.Password, settings.DBName, settings.SSLMode)
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s", settings.Host, settings.Port, settings.User, settings.Password, settings.DBName)
+	if settings.SSLMode != "" {
+		dsn += " sslmode=" + settings.SSLMode
+	}
 	if settings.SSLRootCertificate != "" {
 		dsn += " sslrootcert=" + settings.SSLRootCertificate
 	}
@@ -74,14 +82,69 @@ func Open(settings *Settings) (Database, error) {
 // while away is caught by the next poll, which is why every idler also
 // polls on a clock.
 func (self *database) ListenFolderChanges(ctx context.Context) (<-chan string, error) {
-	listener := pq.NewListener(self.dsn, time.Second, time.Minute, nil)
-	if err := listener.Listen(FolderChangedChannel); err != nil {
+	return self.listen(ctx, FolderChangedChannel)
+}
+
+// AgentEventChannel is what an instance LISTENs on to hear the events of
+// the turns running on the other instances.
+const AgentEventChannel = "agent_event"
+
+// AgentCommandChannel is what an instance LISTENs on for a word to a turn
+// it runs, given on another instance.
+const AgentCommandChannel = "agent_command"
+
+// NotifyAgentEvent is outside any transaction: an event is not a change
+// to keep, only a word to the instances listening now.
+func (self *database) NotifyAgentEvent(payload string) error {
+	return self.db.Exec("SELECT pg_notify(?, ?)", AgentEventChannel, payload).Error
+}
+
+func (self *database) NotifyAgentCommand(payload string) error {
+	return self.db.Exec("SELECT pg_notify(?, ?)", AgentCommandChannel, payload).Error
+}
+
+func (self *database) ListenAgentCommands(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, AgentCommandChannel)
+}
+
+// ListenAgentEvents delivers every payload any instance notifies, for as
+// long as the context lives. A listener that lost its connection reconnects
+// on its own, and what was said while it was away is gone: a drawer that
+// missed an event reads the transcript again when the turn is over.
+func (self *database) ListenAgentEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, AgentEventChannel)
+}
+
+// listenConnectWait is how long listen waits for the LISTEN to be in place
+// before handing back the channel regardless: the listener keeps trying on
+// its own, and whoever is waiting has a poll to fall back on.
+const listenConnectWait = 10 * time.Second
+
+// listen is a LISTEN on one channel, on a connection of its own, delivering
+// each notification's payload until the context ends.
+func (self *database) listen(ctx context.Context, channel string) (<-chan string, error) {
+	listener := pq.NewListener(self.listenDsn(), time.Second, time.Minute, func(event pq.ListenerEventType, err error) {
+		if err != nil {
+			log.Warningf("the LISTEN connection for %q: %s", channel, err)
+		}
+	})
+	listening := make(chan error, 1)
+	go func() { listening <- listener.Listen(channel) }()
+	select {
+	case err := <-listening:
+		if err != nil {
+			_ = listener.Close()
+			return nil, err
+		}
+	case <-time.After(listenConnectWait):
+		log.Warningf("still waiting to LISTEN on %q after %s; carrying on without it for now", channel, listenConnectWait)
+	case <-ctx.Done():
 		_ = listener.Close()
-		return nil, err
+		return nil, ctx.Err()
 	}
-	changes := make(chan string, 64)
+	payloads := make(chan string, 256)
 	go func() {
-		defer close(changes)
+		defer close(payloads)
 		defer func() { _ = listener.Close() }()
 		for {
 			select {
@@ -96,7 +159,7 @@ func (self *database) ListenFolderChanges(ctx context.Context) (<-chan string, e
 					continue
 				}
 				select {
-				case changes <- notification.Extra:
+				case payloads <- notification.Extra:
 				default:
 					// A slow consumer loses a wake-up, not a change: the
 					// change is in the database and the next poll finds it.
@@ -104,7 +167,32 @@ func (self *database) ListenFolderChanges(ctx context.Context) (<-chan string, e
 			}
 		}
 	}()
-	return changes, nil
+	return payloads, nil
+}
+
+// listenDsn is the connection string for the listening connection. The
+// pool's driver tries TLS and falls back when the server has none; the
+// listener's driver has no such fallback and reads an unset mode as
+// "require", which never connects to a server without TLS. So when no
+// mode is set, the listener finds out once which it is.
+func (self *database) listenDsn() string {
+	if self.settings.SSLMode != "" {
+		return self.dsn
+	}
+	self.listenDsnOnce.Do(func() {
+		self.listenDsnChosen = self.dsn + " sslmode=disable"
+		probe, err := sql.Open("postgres", self.dsn+" sslmode=require")
+		if err != nil {
+			return
+		}
+		defer func() { _ = probe.Close() }()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := probe.PingContext(ctx); err == nil {
+			self.listenDsnChosen = self.dsn + " sslmode=require"
+		}
+	})
+	return self.listenDsnChosen
 }
 
 func (self *database) Close() error {

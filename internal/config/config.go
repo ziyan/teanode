@@ -74,6 +74,9 @@ type Configuration struct {
 	// Checking for new releases, and installing them
 	Upgrade Upgrade `yaml:"upgrade"`
 
+	// The personal agent: model providers, what a deployment offers, limits
+	Agent Agent `yaml:"agent"`
+
 	// Directory holding the configuration file. Relative paths in the file
 	// resolve against it rather than against the process working directory,
 	// so that "teanode credential list" run from a different directory reads

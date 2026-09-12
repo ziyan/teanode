@@ -191,12 +191,16 @@ func MakeForwarderMiddleware(forwarderKey string) Middleware {
 func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
 	policy := securityPolicy(inlineScriptHashes, "connect-src 'self'")
 	commandLinePolicy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+CommandLineConnectSources)
+	drawerPolicy := strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors *", 1)
 
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			if request.URL.Path == CommandLinePagePath {
+			switch request.URL.Path {
+			case CommandLinePagePath:
 				response.Header().Set("Content-Security-Policy", commandLinePolicy)
-			} else {
+			case DrawerPagePath:
+				response.Header().Set("Content-Security-Policy", drawerPolicy)
+			default:
 				response.Header().Set("Content-Security-Policy", policy)
 			}
 			// Nothing is sniffed into a type the sender chose.
@@ -223,6 +227,15 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
 // CommandLinePagePath is the dashboard page the command line client opens to
 // sign in. The client names the same path.
 const CommandLinePagePath = "/cli"
+
+// DrawerPagePath is the dashboard's agent drawer on a page of its own, for
+// the browser extension to frame into whatever site the person is on. It
+// may be framed by any origin: framed without the token the extension
+// hands it, it shows nothing and can do nothing, and the session cookie
+// (SameSite=Lax) is not sent to a cross-site frame. A page on another host
+// of the same site would get the cookie; a server that serves other
+// people's pages on a sibling host should keep that in mind.
+const DrawerPagePath = "/drawer"
 
 // CommandLineConnectSources is what that page may connect to besides this
 // server: the client's listener, which is on the reader's own machine and so

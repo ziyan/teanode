@@ -6,21 +6,23 @@ import { useQuery } from '../../components/useQuery'
 import { useToast } from '../../components/toast'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
+import { useAgentPreferences } from '../../agentPreferences'
+import { Select } from '../../components/select'
 
-const CURRENT_USER = `{ GetCurrentUser { id username name email } }`
+const CURRENT_USER = `{ GetCurrentUser { id username name email timezone timezoneMode } }`
 
 // An account is named by its identifier, and "username" is the name to sign in
 // with from here on. This page used to send the old username as the identity
 // and the new one as "newUsername", which the schema stopped taking: saving
 // the page failed with "unknown argument" and nothing was changed.
 const UPDATE = `
-  mutation ($userId: String!, $username: String, $name: String, $email: String) {
-    UpdateUser(userId: $userId, username: $username, name: $name, email: $email) {
-      id username name email
+  mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String) {
+    UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode) {
+      id username name email timezone timezoneMode
     }
   }`
 
-type User = { id: string; username: string; name?: string; email?: string }
+type User = { id: string; username: string; name?: string; email?: string; timezone?: string; timezoneMode?: string }
 
 // The account itself: what to call you, what you sign in with, and where
 // notifications go. Where /settings lands, because it is the one page here
@@ -36,9 +38,10 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const [editedName, setEditedName] = useState<string | null>(null)
   const [editedUsername, setEditedUsername] = useState<string | null>(null)
   const [editedEmail, setEditedEmail] = useState<string | null>(null)
+  const [editedTimezone, setEditedTimezone] = useState<string | null>(null)
+  const [editedMode, setEditedMode] = useState<string | null>(null)
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
   const [confirmingRename, setConfirmingRename] = useState(false)
 
   if (loading && !data) {
@@ -58,24 +61,41 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const name = editedName ?? user.name ?? ''
   const username = editedUsername ?? user.username
   const email = editedEmail ?? user.email ?? ''
+  const timezone = editedTimezone ?? user.timezone ?? ''
+  const timezoneMode = editedMode ?? user.timezoneMode ?? 'auto'
+  const browserZone = (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone
+    } catch {
+      return ''
+    }
+  })()
 
   const renaming = username.trim() !== user.username
-  const changed = renaming || name.trim() !== (user.name ?? '') || email.trim() !== (user.email ?? '')
+  const changed =
+    renaming ||
+    name.trim() !== (user.name ?? '') ||
+    email.trim() !== (user.email ?? '') ||
+    timezone.trim() !== (user.timezone ?? '') ||
+    timezoneMode !== (user.timezoneMode || 'auto')
   const ready = changed && username.trim().length > 0 && !busy
 
   async function save() {
     setBusy(true)
-    setProblem(null)
     try {
       await graphql(UPDATE, {
         userId: user!.id,
         name: name.trim(),
         email: email.trim(),
         username: username.trim(),
+        timezone: timezoneMode === 'fixed' ? timezone.trim() : '',
+        timezoneMode,
       })
       setEditedName(null)
       setEditedUsername(null)
       setEditedEmail(null)
+      setEditedTimezone(null)
+      setEditedMode(null)
       toast.done(t('profile.saved'))
       await reload()
       // Always, not only on a rename. The rail greets you by your name, so
@@ -83,7 +103,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
       // appearing not to have worked — which is what it did.
       onSaved()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('profile.failed'))
+      toast.failure(caught, t('profile.failed'))
     } finally {
       setBusy(false)
     }
@@ -155,13 +175,44 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
             />
           </label>
           <p className='muted field-hint'>{t('profile.emailHint')}</p>
+
+          <label>
+            <span>{t('profile.timezone')}</span>
+            <Select
+              block
+              value={timezoneMode}
+              label={t('profile.timezone')}
+              options={[
+                { value: 'auto', label: t('profile.timezoneAuto', { zone: user.timezone || browserZone || '—' }) },
+                { value: 'fixed', label: t('profile.timezoneFixed') },
+              ]}
+              onChange={(value) => {
+                setEditedMode(value)
+                if (value === 'fixed' && !timezone) {
+                  setEditedTimezone(user.timezone || browserZone)
+                }
+              }}
+            />
+          </label>
+          {timezoneMode === 'fixed' ? (
+            <input
+              className='field-standalone'
+              aria-label={t('profile.timezone')}
+              value={timezone}
+              placeholder='Europe/Berlin'
+              onChange={(event) => {
+                setEditedTimezone(event.target.value)
+              }}
+            />
+          ) : null}
+          <p className='muted field-hint'>{t('profile.timezoneHint')}</p>
         </div>
 
-        {problem && <p className='error'>{problem}</p>}
         <button className='primary' type='submit' disabled={!ready}>
           {t('common.save')}
         </button>
       </form>
+      <AgentShownCard />
 
       {confirmingRename && (
         <ConfirmDialog
@@ -178,5 +229,35 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         />
       )}
     </>
+  )
+}
+
+// AgentShownCard is how the agent's work is drawn in the drawer: whether
+// each tool it used is shown, and what each turn cost. Kept in the browser,
+// since it is about this screen rather than the account.
+function AgentShownCard() {
+  const { t } = useTranslation()
+  const [preferences, setPreferences] = useAgentPreferences()
+  return (
+    <div className="card">
+      <h3>{t('preferences.agentShown')}</h3>
+      <p className="muted">{t('preferences.agentShownHint')}</p>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={preferences.showTools}
+          onChange={(event) => setPreferences({ showTools: event.target.checked })}
+        />
+        {t('agentDrawer.showTools')}
+      </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={preferences.showUsage}
+          onChange={(event) => setPreferences({ showUsage: event.target.checked })}
+        />
+        {t('agentDrawer.showUsage')}
+      </label>
+    </div>
   )
 }

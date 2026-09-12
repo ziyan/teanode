@@ -25,6 +25,10 @@ type Mailbox struct {
 	// AutoReply is the out-of-office setting; nil when never set.
 	AutoReply *MailboxAutoReply `json:"autoReply,omitempty"`
 
+	// Agent is this mailbox as a source of the owner's agent, with the
+	// processing policy for it; nil when never granted.
+	Agent *AgentMailbox `json:"agent,omitempty"`
+
 	// Addresses are the aliases of kind mailbox that deliver here, resolved
 	// when read: what "send as" is checked against.
 	Addresses []*MailboxAddress `json:"addresses,omitempty"`
@@ -44,6 +48,11 @@ func (self *Mailbox) Validate() error {
 	for index, rule := range self.Rules {
 		if err := rule.Validate(); err != nil {
 			errors.add("rules", "rule %d: %s", index, err)
+		}
+	}
+	if self.Agent != nil {
+		if err := self.Agent.Validate(); err != nil {
+			errors.add("agent", "%s", err)
 		}
 	}
 	return errors.ErrOrNil()
@@ -142,19 +151,23 @@ func (self *MailboxFolder) Validate() error {
 // MailboxItem is one message in one folder: the possession of it, with its
 // flags. The message is the existing Mail; this only refers to it.
 type MailboxItem struct {
-	ID        string    `json:"id"`
-	FolderID  string    `json:"folderId"`
-	MailID    string    `json:"mailId"`
-	Mail      *Mail     `json:"mail,omitempty"` // resolved when listed
-	UID       uint64    `json:"uid"`
-	ModSeq    uint64    `json:"modseq"`
-	Seen      bool      `json:"seen"`
-	Flagged   bool      `json:"flagged"`
-	Answered  bool      `json:"answered"`
-	Forwarded bool      `json:"forwarded"`
-	Draft     bool      `json:"draft"`
-	Deleted   bool      `json:"deleted"` // IMAP's \Deleted, awaiting EXPUNGE
-	AddedAt   time.Time `json:"addedAt"`
+	ID       string `json:"id"`
+	FolderID string `json:"folderId"`
+	MailID   string `json:"mailId"`
+	Mail     *Mail  `json:"mail,omitempty"` // resolved when listed
+
+	// Insight is what the owner's agent worked out about the message, when
+	// it has; resolved when listed for a mailbox.
+	Insight   *MailInsight `json:"insight,omitempty"`
+	UID       uint64       `json:"uid"`
+	ModSeq    uint64       `json:"modseq"`
+	Seen      bool         `json:"seen"`
+	Flagged   bool         `json:"flagged"`
+	Answered  bool         `json:"answered"`
+	Forwarded bool         `json:"forwarded"`
+	Draft     bool         `json:"draft"`
+	Deleted   bool         `json:"deleted"` // IMAP's \Deleted, awaiting EXPUNGE
+	AddedAt   time.Time    `json:"addedAt"`
 
 	// ImagesAt is when the reader chose to load this message's remote
 	// pictures. Set once and kept, so the choice is not asked for again every
@@ -329,7 +342,7 @@ func (self *MailboxRule) Validate() error {
 	}
 	for index, condition := range self.Conditions {
 		switch condition.Field {
-		case "from", "to", "subject", "header", "score", "sender-known", "any":
+		case "from", "to", "subject", "header", "score", "sender-known", "any", "category", "priority", "needs-reply":
 		default:
 			errors.add("conditions", "condition %d: %q is not a field", index, condition.Field)
 		}

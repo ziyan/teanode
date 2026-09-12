@@ -11,6 +11,7 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { MediaButton, imageTag } from '../components/media'
 import { useTranslation } from '../i18n/i18n'
 import { describeLayout } from './templates'
+import { Select } from '../components/select'
 
 const TEMPLATE = `
   query ($domainId: String!, $templateId: String!) {
@@ -222,14 +223,16 @@ export function TemplateEditorPage() {
           </div>
           <label>
             <span>{t('editor.layout')}</span>
-            <select value={form.layoutId} onChange={(event) => setForm({ ...form, layoutId: event.target.value })}>
-              <option value="">{t('editor.noLayout')}</option>
-              {(data.ListLayouts ?? []).map((layout) => (
-                <option key={layout.id} value={layout.id}>
-                  {describeLayout(layout, t)}
-                </option>
-              ))}
-            </select>
+            <Select
+              block
+              value={form.layoutId}
+              label={t('editor.layout')}
+              options={[
+                { value: '', label: t('editor.noLayout') },
+                ...(data.ListLayouts ?? []).map((layout) => ({ value: layout.id, label: describeLayout(layout, t) })),
+              ]}
+              onChange={(value) => setForm({ ...form, layoutId: value })}
+            />
           </label>
           <label>
             <span>{t('editor.comment')}</span>

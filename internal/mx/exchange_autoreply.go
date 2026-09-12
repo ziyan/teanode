@@ -44,7 +44,7 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 	if setting.Until != nil && now.After(*setting.Until) {
 		return
 	}
-	reason, err := self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now)
+	reason, err := self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now, autoReplyQuiet)
 	if err != nil {
 		log.Warningf("cannot decide the out-of-office reply for mailbox %q: %s", mailbox.ID, err)
 		return
@@ -67,8 +67,18 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 	}
 }
 
+// AutoReplyRefusal is the ladder as the agent climbs it before answering
+// on the person's behalf: the same refusals as the out-of-office reply,
+// with the agent's own quiet period per sender.
+func (self *exchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
+	if quiet <= 0 {
+		quiet = autoReplyQuiet
+	}
+	return self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now, quiet)
+}
+
 // autoReplyRefusal is why a reply is not sent, or empty when it is.
-func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error) {
+func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
 	// Still in the Inbox: not filed elsewhere or deleted by a rule, not in
 	// Junk, not classified as spam.
 	current, err := tx.GetItem(item.ID)
@@ -148,7 +158,7 @@ func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbo
 	if err != nil {
 		return "", err
 	}
-	if contact != nil && contact.AutoRepliedAt != nil && now.Sub(*contact.AutoRepliedAt) < autoReplyQuiet {
+	if contact != nil && contact.AutoRepliedAt != nil && now.Sub(*contact.AutoRepliedAt) < quiet {
 		return "the sender was replied to recently", nil
 	}
 	count, err := tx.CountAutoRepliesSince(mailbox.ID, now.Add(-time.Hour))

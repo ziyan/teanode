@@ -51,10 +51,19 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
   // cards pointing at six pages was a page whose only content was a menu, and
   // the rail is already that menu.
   {
-    segment: 'profile',
-    path: '/settings/profile',
-    label: 'profile.title',
-    description: 'settings.profile.description',
+    segment: 'preference',
+    path: '/settings/preference',
+    label: 'preferences.title',
+    description: 'settings.preferences.description',
+    category: 'account',
+  },
+  // The person's agent: what it may reach, what it remembers, what it does
+  // on its own. Under the account because it is theirs, not the server's.
+  {
+    segment: 'agent',
+    path: '/settings/agent',
+    label: 'agent.title',
+    description: 'settings.agent.description',
     category: 'account',
   },
   {
@@ -88,7 +97,7 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
 ]
 
 // Where /settings on its own goes. A path somebody typed is not a page.
-export const SETTINGS_LANDING = '/settings/profile'
+export const SETTINGS_LANDING = '/settings/preference'
 
 export function surfacesByCategory(category: SettingsCategory): SettingsSurface[] {
   return SETTINGS_SURFACES.filter((surface) => surface.category === category)

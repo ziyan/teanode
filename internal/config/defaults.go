@@ -82,6 +82,7 @@ func Default() *Configuration {
 			Host: "127.0.0.1",
 			Port: 3310,
 		},
+		Agent: defaultAgent(),
 		Antispam: Antispam{
 			// On by default, which it could not be while scoring required a
 			// second program to be running. The built-in filter needs

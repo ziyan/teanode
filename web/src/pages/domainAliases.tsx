@@ -10,6 +10,7 @@ import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { DomainTabProps } from './domainTabs'
+import { Select } from '../components/select'
 
 const MAILBOXES = `{ ListAllMailboxes { id name userId username userName } }`
 
@@ -153,26 +154,33 @@ export function DomainAliasesTab({ domain, run }: DomainTabProps) {
           </label>
           <label>
             <span>{t('domain.kind')}</span>
-            <select value={kind} onChange={(event) => setKind(event.target.value)}>
-              <option value="mailbox">{t('domain.kindMailbox')}</option>
-              <option value="email">{t('domain.kindEmail')}</option>
-              <option value="webhook">{t('domain.kindWebhook')}</option>
-              <option value="null">{t('domain.kindDiscard')}</option>
-            </select>
+            <Select
+              block
+              value={kind}
+              label={t('domain.kind')}
+              options={[
+                { value: 'mailbox', label: t('domain.kindMailbox') },
+                { value: 'email', label: t('domain.kindEmail') },
+                { value: 'webhook', label: t('domain.kindWebhook') },
+                { value: 'null', label: t('domain.kindDiscard') },
+              ]}
+              onChange={setKind}
+            />
           </label>
           {kind === 'mailbox' && (
             <label>
               <span>{t('domain.deliverInto')}</span>
-              <select value={mailboxId} onChange={(event) => setMailboxId(event.target.value)} required>
-                <option value="">{t('domain.chooseMailbox')}</option>
-                {(mailboxes.data?.ListAllMailboxes ?? []).map((mailbox) => (
-                  <option key={mailbox.id} value={mailbox.id}>
-                    {mailbox.username}
-                    {mailbox.userName && mailbox.userName !== mailbox.username ? ` (${mailbox.userName})` : ''} ·{' '}
-                    {mailbox.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                block
+                value={mailboxId}
+                label={t('domain.chooseMailbox')}
+                placeholder={t('domain.chooseMailbox')}
+                options={(mailboxes.data?.ListAllMailboxes ?? []).map((mailbox) => ({
+                  value: mailbox.id,
+                  label: `${mailbox.username}${mailbox.userName && mailbox.userName !== mailbox.username ? ` (${mailbox.userName})` : ''} · ${mailbox.name}`,
+                }))}
+                onChange={setMailboxId}
+              />
             </label>
           )}
           {kind !== 'null' && kind !== 'mailbox' && (

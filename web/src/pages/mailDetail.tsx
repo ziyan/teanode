@@ -970,7 +970,7 @@ function Authentication({ results }: { results: AuthenticationResults }) {
       )}
 
       {results.errors?.length ? (
-        <p className="error" style={{ marginBottom: 0 }}>
+        <p className="warning" style={{ marginBottom: 0 }}>
           {results.errors.join('; ')}
         </p>
       ) : null}

@@ -86,10 +86,9 @@ happens to a message.
     exchange_usage.go       in-memory counters flushed to the database
     exchange_utils.go       header formatting, the parallel authenticator
 
-**`internal/db`** — PostgreSQL through GORM. Holds only data that grows without
-bound: mail, deliveries, DMARC reports, usage counters, templates and layouts.
-One file per entity, each defining a GORM model separate from the shared struct
-in `internal/models`, so the storage shape can change without changing the API.
+**`internal/db`** is described above. One file per entity, each defining a GORM
+model separate from the shared struct in `internal/models`, so the storage
+shape can change without changing the API.
 
 **`internal/api`** — what every API version shares: error values, the request
 context, and the paths. Deliberately depends on almost nothing, so the
@@ -137,6 +136,73 @@ behalf: a message composed in the dashboard, a template rendered for the send
 endpoint. `Render` chooses a translation by locale and fills a template in;
 `Send` assembles a message from text, HTML and attachments and hands it to
 `mx` as outgoing mail from the domain.
+
+**`internal/llm`** — talking to language models, knowing nothing about mail:
+provider-neutral chat types with tool calls and streaming; clients for the
+OpenAI-compatible API (which is also Ollama, vLLM, OpenRouter and the rest),
+Anthropic's and Gemini's, over `net/http`; a registry built from the `agent`
+section that resolves `provider:model` names and picks a model per kind of
+work; `Extract`, which turns a model's answer into a typed value after
+repairing the JSON. Nothing is constructed when agents are off: `Open`
+returns nil.
+
+**`internal/agent`** — the personal agent. A queue of jobs in the database
+claimed with `SKIP LOCKED` and a worker that runs them: triage (`triage.go`),
+summaries, drafts, the reply that answers on the person's behalf and the
+send that follows the hold, embeddings for search by meaning, backfills. The
+delivery hook (`mx.AgentHook`) only queues; no model is ever called in the
+SMTP path. `ask.go` is the loop that talks to the person: the prompt in
+layers, overlays rebuilt each round, compaction, and the confirmation pause
+that a destructive or outward tool never gets past on its own. The tools
+live under `agent/tools/`: the kit (`tools`) says what a tool is — a
+family, a risk class, a schema, a run reached through the context — and
+holds the catalog, filtered by the person's permissions and the operator's
+policy; every tool is a package of its own beside it (`tools/datetime`,
+`tools/mailread`, `tools/browser`, one per family where the tools share a
+body, such as `tools/rule` and `tools/domain`), registering from its
+`init`; `tools/all` imports them all. Tools reach the server only through
+`Operations`, which the API package implements by executing its own
+operations as the person. The adapter that makes tools of a connected
+server's tools stays in `agent`, since it is not a tool but a bridge to
+many. Prompts are templates under `prompts/`, with golden files in
+`testdata/prompts`. How each part actually works — the loop and its rounds,
+the prompt's layers, compaction, the event feed and what crosses instances,
+memory and its vectors, the budgets — is written down in
+`docs/subsystems/`.
+
+**`internal/skills`** — skills: a file of declarations fetched from a registry
+that signs what it publishes, read here and carried out here. `registry.go`
+checks an entry's Ed25519 signature against a key embedded from `keys/` and
+the file against the hash that was signed; `skill.go` reads the header and
+refuses anything it could not carry out; `run.go` is the interpreter —
+templates, selection from an answer, a workflow's steps, and conditions. Its
+requests go through `util/safefetch`; its commands go to an attached computer
+through a `Shell` the caller hands in, never to this server. The tools it
+declares reach the catalog through `agent/tools_skill.go`.
+
+**`internal/mcp`** — a client for servers that speak the Model Context
+Protocol: JSON-RPC over streamable HTTP or a subprocess's standard streams,
+tool discovery and calls, and OAuth 2.1 with PKCE for the servers that want
+a person's authorization. Only tools are consumed; what a server answers is
+data. Tests speak to in-process servers.
+
+**`internal/computer`** — the person's own computer as their agent reaches
+it: the program `teanode computer` runs there, which signs in with the
+person's token, keeps a websocket to the server and answers the shell and
+filesystem tools' requests as that person, anywhere on the machine; and the
+rule the server applies, which asks the person first for what changes the
+machine or reaches off it and refuses nothing outright. The rule is the
+server's alone: the program runs what it is sent, the way a terminal does
+what the person at it types. It is their own
+assistant on their own computer, so it is not confined to a sandbox; the
+guard is the card they answer, not a directory. Tests speak to a fake
+connection. `docs/subsystems/devices.md` has the protocol and the rules.
+
+**`internal/browser`** — a DevTools client for the Chrome the operator runs
+beside the server: an isolated context per run, the page read as a tree the
+model can point into, click, type, scroll, wait, screenshot, with every
+navigation and request through the same address guard as fetching a page
+and downloads refused. Nothing launches Chrome; tests speak to a fake.
 
 **`internal/models`** — plain structs shared between `db`, `api` and `mx`. No
 behavior beyond enum helpers.

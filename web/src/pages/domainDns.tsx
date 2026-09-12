@@ -225,7 +225,7 @@ export function DomainDnsTab({ domain, run }: DomainTabProps) {
         {domain.hasDkimKey ? (
           <p className="muted">{t('domain.keyPresent', { selector: domain.dkimSelector ?? '' })}</p>
         ) : (
-          <p className="error" style={{ marginTop: 0 }}>
+          <p className="warning" style={{ marginTop: 0 }}>
             {t('domain.keyMissing')}
           </p>
         )}

@@ -36,6 +36,7 @@ const (
 	settingPasskey   = "passkey"
 	settingSSO       = "sso"
 	settingUpgrade   = "upgrade"
+	settingAgent     = "agent"
 )
 
 func (self *Configuration) sections() map[string]any {
@@ -55,6 +56,7 @@ func (self *Configuration) sections() map[string]any {
 		settingPasskey:   &self.Passkey,
 		settingSSO:       &self.SSO,
 		settingUpgrade:   &self.Upgrade,
+		settingAgent:     &self.Agent,
 	}
 }
 
@@ -75,13 +77,27 @@ func FromRows(rows *db.ConfigurationRows) (*Configuration, error) {
 			return nil, fmt.Errorf("config: cannot read the %q settings: %w", key, err)
 		}
 	}
+	// The agent's secrets were sealed with the server secret, which the
+	// server section has just supplied.
+	if err := openAgentSecrets(configuration); err != nil {
+		return nil, err
+	}
 	return configuration, nil
 }
 
 // ToRows turns a configuration into rows.
 func ToRows(self *Configuration, version int64) (*db.ConfigurationRows, error) {
+	// Sealed on a copy: the configuration in hand stays readable, and only
+	// what is written holds ciphertext.
+	sealed, err := clone(self)
+	if err != nil {
+		return nil, err
+	}
+	if err := sealAgentSecrets(sealed); err != nil {
+		return nil, err
+	}
 	rows := &db.ConfigurationRows{Version: version, Settings: map[string]string{}}
-	for key, value := range self.sections() {
+	for key, value := range sealed.sections() {
 		encoded, err := yaml.Marshal(value)
 		if err != nil {
 			return nil, fmt.Errorf("config: cannot write the %q settings: %w", key, err)

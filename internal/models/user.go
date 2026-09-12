@@ -50,6 +50,17 @@ type User struct {
 	// Locale is the language the web UI greets them in, when they chose one.
 	Locale string `json:"locale,omitempty"`
 
+	// LocaleSeen is the language their browser or command line last said,
+	// learned rather than chosen; what the agent writes in when Locale is
+	// empty.
+	LocaleSeen string `json:"localeSeen,omitempty"`
+
+	// Timezone is where they are, as an IANA name. Learned from the browser
+	// while TimezoneMode is auto; kept as set while it is fixed.
+	Timezone       string     `json:"timezone,omitempty"`
+	TimezoneMode   string     `json:"timezoneMode,omitempty"` // auto | fixed; empty is auto
+	TimezoneSeenAt *time.Time `json:"timezoneSeenAt,omitempty"`
+
 	// GroupIDs are the groups this person is in. Loaded with the user.
 	GroupIDs []string `json:"groupIds,omitempty"`
 }
@@ -99,6 +110,16 @@ func (self *User) Validate() error {
 	}
 	if self.Email != "" && !IsEmailAddress(self.Email) {
 		errors.add("email", "%q is not an email address", self.Email)
+	}
+	if self.Timezone != "" {
+		if _, err := time.LoadLocation(self.Timezone); err != nil {
+			errors.add("timezone", "%q is not a time zone name", self.Timezone)
+		}
+	}
+	switch self.TimezoneMode {
+	case "", "auto", "fixed":
+	default:
+		errors.add("timezoneMode", "%q is not auto or fixed", self.TimezoneMode)
 	}
 	return errors.ErrOrNil()
 }

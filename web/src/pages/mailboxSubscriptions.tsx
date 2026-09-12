@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { MailboxThreadItem, MailboxThreadView, graphql } from '../api'
+import { MailboxThreadItem, MailboxThreadView, graphql, setAgentViewing } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
@@ -298,6 +298,16 @@ export function MailboxSubscriptionsPage() {
   const reading =
     subscriptions.find((subscription) => subscription.id === readingId) ??
     (fetched?.id === readingId ? fetched : null)
+
+  // The list open here is what "this" means to the agent.
+  useEffect(() => {
+    setAgentViewing(
+      reading
+        ? { page: 'subscriptions', mailboxId, listKey: reading.key, listName: reading.name }
+        : { page: 'subscriptions', mailboxId },
+    )
+    return () => setAgentViewing(null)
+  }, [reading, mailboxId])
 
   useEffect(() => {
     if (!mailboxId || (!readingId && !legacyKey)) {

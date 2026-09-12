@@ -58,6 +58,7 @@ func (self *Configuration) Validate() error {
 	self.validateTls(validator)
 	self.validateDatabase(validator)
 	self.validateSmtp(validator)
+	self.validateAgent(validator)
 	self.validateDkim(validator)
 	self.validateSession(validator)
 	self.validateIntegrations(validator)

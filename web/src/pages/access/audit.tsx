@@ -132,8 +132,11 @@ export function AuditTab() {
           key={event.id}
           title={
             <>
-              {event.actorLabel || event.actorKind} <span className="muted">{t(`access.audit.${event.action}`)}</span>{' '}
-              {event.resourceType}{' '}
+              {event.actorLabel || event.actorKind}
+              {/* The person's agent acting for them: the row names the
+                  person, and this says it was not their hand. */}
+              {event.actorKind === 'agent' && <span className="mailbox-row-chip">{t('access.audit.viaAgent')}</span>}{' '}
+              <span className="muted">{t(`access.audit.${event.action}`)}</span> {event.resourceType}{' '}
               {/* What the thing is called, and a way to it. The id is what
                   the row stores and the one thing nobody can read, so it is
                   the fallback rather than the answer — and it is still on the

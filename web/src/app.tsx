@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
-import { Session, getSession, logout } from './api'
+import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
 import { MailPage } from './pages/mail'
 import { MailDetailPage } from './pages/mailDetail'
 import { MailboxPage } from './pages/mailbox'
 import { MailboxSettingsPage } from './pages/mailboxSettings'
+import { AgentPage } from './pages/agent'
 import { MailboxContactsPage } from './pages/mailboxContacts'
 import { MailboxSubscriptionsPage } from './pages/mailboxSubscriptions'
 import { MailboxComposePage } from './pages/mailboxCompose'
@@ -36,6 +37,7 @@ import { MenuIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
+import { AgentDrawer } from './components/agentDrawer'
 import { MailboxesProvider } from './mailboxes'
 import { Tooltip } from './components/tooltip'
 
@@ -46,6 +48,23 @@ export function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
   const location = useLocation()
+
+  // The drawer on a page of its own, framed by the browser extension into
+  // whatever site the person is on. It has no session: it signs in with
+  // the token the extension put in its address when it made the frame —
+  // in the fragment, which never reaches the server and which the page
+  // around the frame cannot read — and takes no token from a message,
+  // since the page around it is its parent too.
+  const framed = framedDrawer
+  const [framedToken] = useState(() => {
+    if (!framed) return ''
+    const token = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token') ?? ''
+    if (token) {
+      signInWithToken(token)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    return token
+  })
 
   const refresh = useCallback(async () => {
     try {
@@ -59,14 +78,40 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    if (framed && !framedToken) return
     void refresh()
-  }, [refresh])
+  }, [refresh, framed, framedToken])
+
+  // The panel around the frame is told who this drawer is signed in as,
+  // so that it can tell a frame somebody else navigated. Told to the
+  // page framing it and no other: the browser names that page's origin.
+  useEffect(() => {
+    if (!framed || !session?.authenticated) return
+    const parentOrigin = window.location.ancestorOrigins?.[0]
+    if (!parentOrigin || parentOrigin === 'null') return
+    window.parent.postMessage({ teanode: 'signedIn', username: session.username }, parentOrigin)
+  }, [framed, session])
 
   if (session === null) {
     // Nothing, not a word. Asking the server who you are takes a few
     // milliseconds, and "loading…" that appears and vanishes in that time is
     // a flicker on top of every page load.
     return <div className="content" />
+  }
+
+  if (framed) {
+    if (!session.authenticated) {
+      return <div className="drawer-page muted">{t('agentDrawer.framedNotSignedIn')}</div>
+    }
+    return (
+      <SessionProvider value={session}>
+        <MailboxesProvider>
+          <div className="drawer-page">
+            <AgentDrawer standalone />
+          </div>
+        </MailboxesProvider>
+      </SessionProvider>
+    )
   }
 
   // The language and appearance controls follow onto the pages that have no
@@ -191,6 +236,9 @@ export function App() {
                   <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                   <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
                   <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
+                  {/* The agent's page moved under the account's settings,
+                      where the rest of what is the person's own lives. */}
+                  <Route path="/agent" element={<Navigate to="/settings/agent" replace />} />
                   <Route path="/mailbox/:folderId" element={<MailboxPage />} />
                   <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
                   {/* The operator's view of every message needs mail:audit;
@@ -237,7 +285,9 @@ export function App() {
                   {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
                   <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
-                  <Route path="/settings/profile" element={<ProfilePage onSaved={refresh} />} />
+                  <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
+                  <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
+                  <Route path="/settings/agent" element={<AgentPage />} />
                   <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                   <Route path="/settings/passkeys" element={<PasskeysPage />} />
                   <Route path="/settings/tokens" element={<TokensPage />} />
@@ -259,6 +309,7 @@ export function App() {
                 </Routes>
               </main>
             </div>
+            {session.username && <AgentDrawer />}
           </div>
         </BreadcrumbProvider>
       </MailboxesProvider>

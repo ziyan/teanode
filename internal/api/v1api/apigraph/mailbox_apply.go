@@ -103,6 +103,14 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		return nil, err
 	}
 
+	// What the agent worked out about these messages, for the rules that
+	// read it; a message without an insight fails those conditions, as it
+	// would on arrival before the insight exists.
+	insights, err := tx.GetMailInsights(mailbox.ID, mailIdsOf(items))
+	if err != nil {
+		return nil, err
+	}
+
 	result := &MailboxRuleApplication{}
 	for _, item := range items {
 		if item.Mail == nil {
@@ -135,7 +143,7 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 				senderKnown = contact != nil && contact.Count > 1
 			}
 		}
-		fired := matchingRules(mailbox.Rules, item.Mail, senderKnown)
+		fired := matchingRules(mailbox.Rules, item.Mail, senderKnown, insights[item.Mail.ID])
 		if len(fired) == 0 {
 			continue
 		}
@@ -180,13 +188,13 @@ func count(done map[string]bool, kind string) int {
 
 // matchingRules is which rules fire for a message, in order, stopping after
 // one that says so: the same walk arrival makes.
-func matchingRules(rules []models.MailboxRule, mail *models.Mail, senderKnown bool) []int {
+func matchingRules(rules []models.MailboxRule, mail *models.Mail, senderKnown bool, insight *models.MailInsight) []int {
 	var fired []int
 	for index, rule := range rules {
 		if !rule.Enabled {
 			continue
 		}
-		if mx.RuleMatches(rule, mail, senderKnown) {
+		if mx.RuleMatches(rule, mail, senderKnown, insight) {
 			fired = append(fired, index)
 			if rule.Stop {
 				break
@@ -264,4 +272,15 @@ func (self *graph) applyRuleAction(tx db.Transaction, mailbox *models.Mailbox, a
 	default:
 		return item, nil
 	}
+}
+
+// mailIdsOf is the messages behind a page of items, for one lookup.
+func mailIdsOf(items []*models.MailboxItem) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Mail != nil {
+			ids = append(ids, item.Mail.ID)
+		}
+	}
+	return ids
 }

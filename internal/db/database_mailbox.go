@@ -151,6 +151,16 @@ type ItemOptions struct {
 	To      string
 	Subject string
 
+	// Category, Priority and NeedsReply narrow to what the owner's agent
+	// worked out about a message, when set.
+	Category   string
+	Priority   string
+	NeedsReply *bool
+
+	// MailIDs keeps only items of these messages: what a search by meaning
+	// ranked, read back as rows.
+	MailIDs []string
+
 	// Since and Before bound when the message was received.
 	Since  time.Time
 	Before time.Time
@@ -190,6 +200,7 @@ type mailboxModel struct {
 	SignatureText string    `gorm:"column:signature_text"`
 	Rules         []byte    `gorm:"column:rules;type:jsonb"`
 	AutoReply     []byte    `gorm:"column:autoreply;type:jsonb"`
+	Agent         []byte    `gorm:"column:agent;type:jsonb"`
 }
 
 func (mailboxModel) TableName() string { return "mailbox" }
@@ -286,6 +297,12 @@ func mailboxFromModel(model *mailboxModel) (*models.Mailbox, error) {
 			return nil, fmt.Errorf("db: cannot read the out-of-office setting of mailbox %q: %w", model.ID, err)
 		}
 	}
+	if len(model.Agent) > 0 && string(model.Agent) != "null" {
+		mailbox.Agent = &models.AgentMailbox{}
+		if err := json.Unmarshal(model.Agent, mailbox.Agent); err != nil {
+			return nil, fmt.Errorf("db: cannot read the agent policy of mailbox %q: %w", model.ID, err)
+		}
+	}
 	return mailbox, nil
 }
 
@@ -314,6 +331,13 @@ func mailboxToModel(mailbox *models.Mailbox) (*mailboxModel, error) {
 			return nil, err
 		}
 		model.AutoReply = encoded
+	}
+	if mailbox.Agent != nil {
+		encoded, err := json.Marshal(mailbox.Agent)
+		if err != nil {
+			return nil, err
+		}
+		model.Agent = encoded
 	}
 	return model, nil
 }
@@ -514,6 +538,10 @@ func (self *transaction) UpdateMailbox(mailboxId string, modify func(*models.Mai
 		autoReply := *before.AutoReply
 		after.AutoReply = &autoReply
 	}
+	if before.Agent != nil {
+		agent := *before.Agent
+		after.Agent = &agent
+	}
 	if err := modify(&after); err != nil {
 		return nil, err
 	}
@@ -532,7 +560,7 @@ func (self *transaction) UpdateMailbox(mailboxId string, modify func(*models.Mai
 		return tx.Model(&mailboxModel{}).Where("\"id\" = ?", mailboxId).Updates(map[string]any{
 			"modified_at": model.ModifiedAt, "name": model.Name,
 			"signature_html": model.SignatureHTML, "signature_text": model.SignatureText,
-			"rules": model.Rules, "autoreply": model.AutoReply,
+			"rules": model.Rules, "autoreply": model.AutoReply, "agent": model.Agent,
 		}).Error
 	}); err != nil {
 		return nil, err
@@ -909,6 +937,28 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 	}
 	if options.SinceModSeq > 0 {
 		query = query.Where("\"mailbox_item\".\"modseq\" > ?", options.SinceModSeq)
+	}
+	if options.Category != "" || options.Priority != "" || options.NeedsReply != nil {
+		// The insight is the owner's, so it is looked up through the item's
+		// folder's mailbox rather than by message alone.
+		insight := "SELECT 1 FROM \"mail_insight\" WHERE \"mail_insight\".\"mail_id\" = \"mailbox_item\".\"mail_id\" AND \"mail_insight\".\"mailbox_id\" = (SELECT \"mailbox_id\" FROM \"mailbox_folder\" WHERE \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\")"
+		var arguments []any
+		if options.Category != "" {
+			insight += " AND \"mail_insight\".\"category\" = ?"
+			arguments = append(arguments, options.Category)
+		}
+		if options.Priority != "" {
+			insight += " AND \"mail_insight\".\"priority\" = ?"
+			arguments = append(arguments, options.Priority)
+		}
+		if options.NeedsReply != nil {
+			insight += " AND \"mail_insight\".\"needs_reply\" = ?"
+			arguments = append(arguments, *options.NeedsReply)
+		}
+		query = query.Where("EXISTS ("+insight+")", arguments...)
+	}
+	if options != nil && len(options.MailIDs) > 0 {
+		query = query.Where("\"mailbox_item\".\"mail_id\" IN ?", options.MailIDs)
 	}
 	if needsMailJoin(options) {
 		query = query.Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"")
