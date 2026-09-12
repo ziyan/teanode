@@ -51,7 +51,8 @@ history, and every example here is written the way it should be copied.
 - [x] (2026-09-12 22:30Z) Researched the libraries with a working spike before
       writing the plan; findings in `Surprises & Discoveries`.
 - [x] (2026-09-12 22:45Z) Wrote this plan in full from the outline.
-- [ ] Milestone 1: schema, model, the iCalendar package, occurrences.
+- [x] (2026-09-12) Milestone 1, in progress: migration 0051, the models, and
+      `internal/calendar` with 18 tests passing. Database layer next.
 - [ ] Milestone 2: the API and the calendar page.
 - [ ] Milestone 3: CalDAV read and write on the stack plan B left.
 - [ ] Milestone 4: free-busy.
@@ -140,6 +141,25 @@ rework, and because two of these findings invert what that plan learned.
 
   The outline budgeted for vendoring and driving a recurrence library. That
   work is already done inside a dependency this plan needs anyway.
+
+- Observation (2026-09-12, while implementing milestone 1): **the version of
+  the iCalendar library that arrives by default has a defect in exactly this
+  area, and it must be pinned past it.** The WebDAV library asks for a 2024
+  revision, so that is what `go mod tidy` settles on unless a newer one is
+  named. In it, `RecurrenceSet` reads the exception dates a second time where
+  it means to read the added ones:
+
+        for _, rdateProp := range comp.Props[PropExceptionDates] {
+
+  so `RDATE` is ignored altogether and an occurrence somebody put in by hand
+  is simply not there. The 2025 revision fixes it. `EXDATE` is unharmed --
+  exclusion still wins over the date the bug re-adds -- so the exception test
+  passes either way and only the added-date test notices. That asymmetry is
+  the reason `TestADateAddedByHandHappens` exists and says so in its comment:
+  putting the defect back into the vendored copy fails that test and no other.
+  The version is pinned in `go.mod` as a direct dependency, which is also what
+  stops `go mod tidy` from quietly walking it back to the one the WebDAV
+  library asks for.
 
 - Observation: a recurrence set does **not** include DTSTART when DTSTART does
   not itself satisfy the rule. An event starting Tuesday the 15th with

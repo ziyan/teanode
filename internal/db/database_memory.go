@@ -89,6 +89,24 @@ type MemoryOperation interface {
 	DeleteContact(addressBookId, contactId string) error
 	CountContacts(addressBookId string) (int64, error)
 
+	// The calendar: a person's own events, kept as iCalendar text. The
+	// occurrences beside them are derived from that text and rewritten
+	// whenever it is, so that "what is on this week" and "when is this
+	// person busy" are answered by reading a window rather than by
+	// expanding every recurrence rule in the calendar.
+	ListCalendars(userId string) ([]*models.Calendar, error)
+	GetCalendar(calendarId string) (*models.Calendar, error)
+	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
+	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
+	DeleteCalendar(calendarId string) error
+	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)
+	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
+	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
+	PutCalendarObject(object *models.CalendarObject, occurrences []models.Occurrence) (*models.CalendarObject, error)
+	DeleteCalendarObject(calendarId, objectId string) error
+	CountCalendarObjects(calendarId string) (int64, error)
+	ListOccurrences(calendarId string, from, until time.Time) ([]*models.Occurrence, error)
+
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)
 	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)

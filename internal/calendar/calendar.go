@@ -1,0 +1,326 @@
+// Package calendar knows the iCalendar format, so that nothing else has to.
+//
+// An iCalendar file is how an appointment is written down: lines such as
+// "SUMMARY:Weekly sync" between BEGIN:VEVENT and END:VEVENT, wrapped in a
+// BEGIN:VCALENDAR. It is what a phone sends over CalDAV and what it is given
+// back, and this server keeps it as the event itself rather than as one
+// rendering of a set of columns. That way a property this server has never
+// heard of -- and calendar programs invent them freely, from travel time to
+// conferencing links -- survives a round trip through it untouched.
+//
+// Unlike the vCard side of this server, the library's own encoder is used as
+// it is: it was measured against the cases that destroy a vCard, including
+// parameters in quotes, and it returns them unchanged. The one thing it does
+// not do is fold long lines, which is done here.
+package calendar
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/emersion/go-ical"
+)
+
+// MaximumObject is how large one event may be. An event is text and a few
+// hundred bytes in the ordinary case; the limit is here because a file may
+// carry a long description, an attachment inline, or years of overridden
+// occurrences, and a client that decides to send a ten megabyte one should be
+// told no rather than have it kept.
+const MaximumObject = 1 << 20
+
+// ErrTooLarge is a file bigger than this server keeps. Named, because the
+// answer a client is given for it is a different one -- a status that makes
+// it stop resending rather than retry for ever -- and deciding that by
+// looking at the words in a message means rewording the message changes the
+// protocol.
+var ErrTooLarge = errors.New("calendar: that event is larger than this server keeps")
+
+// Attendee is one person asked to an event, as the file records them.
+type Attendee struct {
+	// Address is the "mailto:" the ATTENDEE line names, without the scheme.
+	Address string `json:"address"`
+	Name    string `json:"name,omitempty"`
+
+	// Participation is their PARTSTAT: NEEDS-ACTION, ACCEPTED, DECLINED or
+	// TENTATIVE. Role is CHAIR, REQ-PARTICIPANT or OPT-PARTICIPANT.
+	Participation string `json:"participation,omitempty"`
+	Role          string `json:"role,omitempty"`
+}
+
+// Parsed is what is kept beside the file, pulled out of it once when it is
+// written so that nothing later has to read iCalendar to list or search.
+//
+// Data is the file itself, in the form this server stores: what the library
+// returns, folded. Where Data and the fields beside it disagree, Data is
+// right -- it is what a device is given back, and the fields exist only to
+// answer questions about it quickly.
+type Parsed struct {
+	UID      string
+	Summary  string
+	Location string
+
+	// StartsAt and EndsAt are the first occurrence, in UTC. AllDay marks an
+	// event written as a date rather than a date and a time: a birthday
+	// belongs to the day everywhere, and must not be shifted into the day
+	// before by a time zone.
+	StartsAt time.Time
+	EndsAt   time.Time
+	AllDay   bool
+
+	// Recurring marks a file that carries a recurrence rule, so a caller
+	// knows to ask for occurrences rather than to trust StartsAt alone.
+	Recurring bool
+
+	// Status is the event's own STATUS, and Transparent marks an event its
+	// owner has said does not make them busy.
+	Status      string
+	Transparent bool
+
+	// Organizer and Attendees are who is arranging it and who is asked.
+	// Method is the file's METHOD: REQUEST, REPLY or CANCEL when it arrived
+	// as an invitation by mail, and empty for an ordinary event.
+	Organizer string
+	Attendees []Attendee
+	Method    string
+
+	// Sequence is the event's own SEQUENCE, which an organizer increments
+	// each time they change it. A REQUEST carrying a lower one than is
+	// already held is stale and must be ignored.
+	Sequence int
+
+	Data []byte
+
+	// calendar is kept so that occurrences can be expanded without decoding
+	// the text a second time.
+	calendar *ical.Calendar
+}
+
+// Parse reads one iCalendar file and returns what to keep beside it.
+//
+// The file is re-encoded before it is stored, because the library normalizes
+// as it decodes: what goes in is not byte for byte what comes out, but what
+// comes out is stable, so storing that and taking the ETag over it keeps the
+// promise that the version a listing names is the bytes a fetch returns.
+func Parse(data []byte) (*Parsed, error) {
+	if len(data) > MaximumObject {
+		return nil, ErrTooLarge
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, fmt.Errorf("calendar: there is nothing in that event")
+	}
+	decoded, err := ical.NewDecoder(bytes.NewReader(data)).Decode()
+	if err != nil {
+		return nil, fmt.Errorf("calendar: that is not an event this server can read: %w", err)
+	}
+	encoded, err := Encode(decoded)
+	if err != nil {
+		return nil, err
+	}
+	parsed := &Parsed{Data: encoded, calendar: decoded}
+	parsed.Method, _ = decoded.Props.Text(ical.PropMethod)
+	parsed.Method = strings.ToUpper(strings.TrimSpace(parsed.Method))
+
+	event := firstEvent(decoded)
+	if event == nil {
+		return nil, fmt.Errorf("calendar: there is no event in that file")
+	}
+	parsed.UID, _ = event.Props.Text(ical.PropUID)
+	parsed.UID = strings.TrimSpace(parsed.UID)
+	if parsed.UID == "" {
+		return nil, fmt.Errorf("calendar: that event has no identifier")
+	}
+	parsed.Summary, _ = event.Props.Text(ical.PropSummary)
+	parsed.Location, _ = event.Props.Text(ical.PropLocation)
+	if status, err := event.Status(); err == nil {
+		parsed.Status = strings.ToUpper(string(status))
+	}
+	if transparency, err := event.Props.Text(ical.PropTransparency); err == nil {
+		parsed.Transparent = strings.EqualFold(strings.TrimSpace(transparency), "TRANSPARENT")
+	}
+	if sequence := event.Props.Get(ical.PropSequence); sequence != nil {
+		parsed.Sequence, _ = sequence.Int()
+	}
+	parsed.Recurring = event.Props.Get(ical.PropRecurrenceRule) != nil ||
+		event.Props.Get(ical.PropRecurrenceDates) != nil
+
+	if start := event.Props.Get(ical.PropDateTimeStart); start != nil {
+		parsed.AllDay = start.ValueType() == ical.ValueDate
+	}
+	// Read in UTC. A property carrying its own TZID is resolved by the
+	// library from the VTIMEZONE beside it, and only one that carries
+	// neither a zone nor a Z falls back to this -- which is what a "floating"
+	// time means, and treating it as UTC is the only choice that does not
+	// invent a zone the file did not name.
+	if start, err := event.DateTimeStart(time.UTC); err == nil {
+		parsed.StartsAt = start.UTC()
+	}
+	if end, err := event.DateTimeEnd(time.UTC); err == nil {
+		parsed.EndsAt = end.UTC()
+	}
+	if parsed.EndsAt.Before(parsed.StartsAt) {
+		// A file whose end precedes its start describes nothing. Rather
+		// than refuse it -- some clients do send this, and refusing loses
+		// the event entirely -- it is treated as an instant.
+		parsed.EndsAt = parsed.StartsAt
+	}
+
+	parsed.Organizer = addressOf(event.Props.Get(ical.PropOrganizer))
+	for index := range event.Props[ical.PropAttendee] {
+		property := &event.Props[ical.PropAttendee][index]
+		address := addressOf(property)
+		if address == "" {
+			continue
+		}
+		parsed.Attendees = append(parsed.Attendees, Attendee{
+			Address:       address,
+			Name:          strings.TrimSpace(property.Params.Get(ical.ParamCommonName)),
+			Participation: strings.ToUpper(strings.TrimSpace(property.Params.Get(ical.ParamParticipationStatus))),
+			Role:          strings.ToUpper(strings.TrimSpace(property.Params.Get(ical.ParamRole))),
+		})
+	}
+	return parsed, nil
+}
+
+// Occurrence is one time an event happens.
+type Occurrence struct {
+	StartsAt time.Time
+	EndsAt   time.Time
+	AllDay   bool
+}
+
+// Occurrences are when an event happens between two moments, with its
+// recurrence rule applied.
+//
+// Three things about this are easy to get wrong, and each of them is a way to
+// show somebody a meeting that is not happening:
+//
+// An event that does not recur happens once, at its own time, whether or not
+// that is inside the window.
+//
+// A recurring event's occurrences are what the rule generates, which does not
+// include its own start unless the start satisfies the rule. An event
+// beginning on a Tuesday with "every Monday" first happens on the following
+// Monday, and prepending the start would put a meeting in the calendar that
+// nobody was invited to.
+//
+// An occurrence lasts as long as the first one did. It is the length that
+// repeats, not the end: an hour-long meeting recurring weekly is an hour long
+// every week, and using the original end would make every later occurrence
+// finish in the past.
+func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
+	if parsed == nil || parsed.calendar == nil {
+		return nil, fmt.Errorf("calendar: there is no event to expand")
+	}
+	event := firstEvent(parsed.calendar)
+	if event == nil {
+		return nil, fmt.Errorf("calendar: there is no event in that file")
+	}
+	length := parsed.EndsAt.Sub(parsed.StartsAt)
+	if length < 0 {
+		length = 0
+	}
+	set, err := event.RecurrenceSet(time.UTC)
+	if err != nil {
+		return nil, fmt.Errorf("calendar: that event's recurrence cannot be read: %w", err)
+	}
+	if set == nil {
+		if parsed.StartsAt.Before(from) && !parsed.EndsAt.After(from) {
+			return nil, nil
+		}
+		if !parsed.StartsAt.Before(until) {
+			return nil, nil
+		}
+		return []Occurrence{{
+			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, AllDay: parsed.AllDay,
+		}}, nil
+	}
+	// Asked from earlier than the window, because an occurrence that began
+	// before it and has not finished is still on: a person looking at
+	// Tuesday wants to see the meeting that started on Monday night.
+	starting := from.Add(-maximumLength)
+	occurrences := make([]Occurrence, 0, 8)
+	for _, when := range set.Between(starting, until, true) {
+		occurrence := Occurrence{
+			StartsAt: when.UTC(), EndsAt: when.Add(length).UTC(), AllDay: parsed.AllDay,
+		}
+		if !occurrence.EndsAt.After(from) && occurrence.StartsAt.Before(from) {
+			continue
+		}
+		occurrences = append(occurrences, occurrence)
+		if len(occurrences) >= MaximumOccurrences {
+			break
+		}
+	}
+	sort.Slice(occurrences, func(first, second int) bool {
+		return occurrences[first].StartsAt.Before(occurrences[second].StartsAt)
+	})
+	return occurrences, nil
+}
+
+// MaximumOccurrences is how many one file may contribute to one window.
+//
+// There has to be a number: a rule may repeat every minute for ever, and a
+// window is chosen by whoever is asking. It is high enough that no calendar a
+// person keeps reaches it -- a daily event fills eleven years -- and low
+// enough that one pathological rule cannot fill the memory of the server.
+const MaximumOccurrences = 4000
+
+// maximumLength is how far before a window an occurrence may have begun and
+// still be counted as inside it. A fortnight covers a conference or a
+// holiday, which are the longest things people actually put in a calendar,
+// without making every query read the whole year.
+const maximumLength = 14 * 24 * time.Hour
+
+// ETag names a version of an event.
+func ETag(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:16])
+}
+
+// firstEvent is the VEVENT a file is about.
+//
+// A file may hold several: an event that recurs, and beside it the individual
+// occurrences somebody moved or renamed, each with the same UID and its own
+// RECURRENCE-ID. The one without a RECURRENCE-ID is the event itself, and is
+// what the fields beside the file describe.
+func firstEvent(cal *ical.Calendar) *ical.Event {
+	events := cal.Events()
+	for index := range events {
+		if events[index].Props.Get(ical.PropRecurrenceID) == nil {
+			return &events[index]
+		}
+	}
+	if len(events) > 0 {
+		return &events[0]
+	}
+	return nil
+}
+
+// addressOf reads the mail address out of an ORGANIZER or ATTENDEE line,
+// which carries it as a URI: "mailto:ada@example.com".
+//
+// Anything that is not a mailto is left alone rather than guessed at -- a
+// room booking system may name a resource by some other scheme, and turning
+// that into an address would be inventing one.
+func addressOf(property *ical.Prop) string {
+	if property == nil {
+		return ""
+	}
+	value := strings.TrimSpace(property.Value)
+	if value == "" {
+		return ""
+	}
+	if scheme := strings.Index(value, ":"); scheme >= 0 {
+		if !strings.EqualFold(value[:scheme], "mailto") {
+			return ""
+		}
+		value = value[scheme+1:]
+	}
+	return strings.TrimSpace(value)
+}
