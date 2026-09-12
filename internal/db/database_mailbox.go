@@ -90,13 +90,18 @@ type MailboxOperation interface {
 	// ScavengeExpunged drops expunge rows older than the retention.
 	ScavengeExpunged(before time.Time) (int64, error)
 
-	// Contacts learned from traffic.
-	TouchContact(mailboxId, address, name string, at time.Time) error
-	ListContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error)
-	GetContact(mailboxId, address string) (*models.MailboxContact, error)
-	// SaveContact adds a contact, or renames one; DeleteContact removes it.
-	SaveContact(mailboxId, address, name string) (*models.MailboxContact, error)
-	DeleteContact(mailboxId, address string) error
+	// Addresses learned from traffic: everyone this mailbox has written to
+	// or heard from, which is what the compose page completes from and what
+	// the "sender is known" rule asks about. They are not the address book,
+	// which is the person's own and lives in database_contact.go; an address
+	// learned here becomes a contact there only when somebody saves it.
+	TouchLearnedContact(mailboxId, address, name string, at time.Time) error
+	ListLearnedContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error)
+	GetLearnedContact(mailboxId, address string) (*models.MailboxContact, error)
+	// SaveLearnedContact adds one, or renames one; DeleteLearnedContact
+	// forgets it.
+	SaveLearnedContact(mailboxId, address, name string) (*models.MailboxContact, error)
+	DeleteLearnedContact(mailboxId, address string) error
 	MarkContactAutoReplied(mailboxId, address string, at time.Time) error
 	ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error)
 	CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error)
@@ -1735,9 +1740,10 @@ func (self *transaction) ScavengeExpunged(before time.Time) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-// Contacts.
+// Addresses learned from traffic. The address book proper is in
+// database_contact.go.
 
-func (self *transaction) TouchContact(mailboxId, address, name string, at time.Time) error {
+func (self *transaction) TouchLearnedContact(mailboxId, address, name string, at time.Time) error {
 	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
 	name = truncateRunes(strings.TrimSpace(name), 255)
 	if mailboxId == "" || address == "" {
@@ -1761,7 +1767,7 @@ func contactFromModel(model *mailboxContactModel) *models.MailboxContact {
 	return contact
 }
 
-func (self *transaction) ListContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error) {
+func (self *transaction) ListLearnedContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error) {
 	query := self.tx.Where("\"mailbox_id\" = ?", mailboxId)
 	if prefix = strings.ToLower(strings.TrimSpace(prefix)); prefix != "" {
 		like := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix) + "%"
@@ -1856,7 +1862,7 @@ func (self *transaction) attachContactLogos(mailboxId string, contacts []*models
 	return nil
 }
 
-func (self *transaction) GetContact(mailboxId, address string) (*models.MailboxContact, error) {
+func (self *transaction) GetLearnedContact(mailboxId, address string) (*models.MailboxContact, error) {
 	var rows []mailboxContactModel
 	if err := self.tx.Where("\"mailbox_id\" = ? AND \"address\" = ?", mailboxId, strings.ToLower(strings.TrimSpace(address))).Limit(1).Find(&rows).Error; err != nil {
 		return nil, err
@@ -1867,7 +1873,7 @@ func (self *transaction) GetContact(mailboxId, address string) (*models.MailboxC
 	return contactFromModel(&rows[0]), nil
 }
 
-func (self *transaction) SaveContact(mailboxId, address, name string) (*models.MailboxContact, error) {
+func (self *transaction) SaveLearnedContact(mailboxId, address, name string) (*models.MailboxContact, error) {
 	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
 	name = truncateRunes(strings.TrimSpace(name), 255)
 	if mailboxId == "" || address == "" {
@@ -1877,10 +1883,10 @@ func (self *transaction) SaveContact(mailboxId, address, name string) (*models.M
 		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "name" = EXCLUDED."name"`, mailboxId, address, name, time.Now()).Error; err != nil {
 		return nil, err
 	}
-	return self.GetContact(mailboxId, address)
+	return self.GetLearnedContact(mailboxId, address)
 }
 
-func (self *transaction) DeleteContact(mailboxId, address string) error {
+func (self *transaction) DeleteLearnedContact(mailboxId, address string) error {
 	address = strings.ToLower(strings.TrimSpace(address))
 	return self.tx.Where("\"mailbox_id\" = ? AND \"address\" = ?", mailboxId, address).Delete(&mailboxContactModel{}).Error
 }

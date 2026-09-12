@@ -14,6 +14,8 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
+	github.com/emersion/go-vcard v0.1.0
+	github.com/emersion/go-webdav v0.7.0
 	github.com/flosch/pongo2/v4 v4.0.2
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/gorilla/handlers v1.5.2

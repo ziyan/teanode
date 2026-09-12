@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -417,6 +418,14 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// happens to be called.
 	recordSet.Records = append(recordSet.Records,
 		self.checkBimi(ctx, domain, dmarc, configuration.LinkHostFor(domain, domains)))
+
+	// Where a contacts application should look, for somebody who types only
+	// their address into it. Advisory: without it a person types the server
+	// and the port themselves, and everything works.
+	if service := self.checkContactsService(ctx, configuration, domain,
+		configuration.LinkHostFor(domain, domains)); service != nil {
+		recordSet.Records = append(recordSet.Records, service)
+	}
 
 	log.Debugf("took %s to check the records for %q", time.Since(start), domain.Domain)
 	return recordSet
@@ -970,4 +979,77 @@ func authorisesSending(record string) bool {
 		return true
 	}
 	return false
+}
+
+// checkContactsService is the SRV record that lets a contacts application find
+// this server from a mail address alone, as RFC 6764 describes.
+//
+// Nothing breaks without it. A person can type the server and the port into
+// their phone, and the .well-known redirect does the rest; this saves them
+// knowing either. It is offered only when this server has an HTTPS listener
+// of its own, because the record has to name a port and there is no honest
+// port to name when TLS is ended by something in front.
+func (self *verifier) checkContactsService(ctx context.Context, configuration *config.Configuration,
+	domain *models.Domain, linkHost string) *Record {
+	port := portOf(configuration.Listen.HTTPS)
+	if port == 0 {
+		return nil
+	}
+	// The domain's link host, which is the name whose port 443 is this
+	// server -- the same name the BIMI row uses, and for the same reason.
+	// The mail host is not always it: a deployment may answer mail on mx1
+	// and mx2 and serve the dashboard somewhere else entirely, and an
+	// operator who published what this page told them to would be sending
+	// every phone, with its app password, at a router's own web page.
+	//
+	// And only when that name is this domain's own. Every row on a domain's
+	// page has to be a record its reader can go and create; a domain whose
+	// mail is addressed to somebody else's name is advised nothing, because
+	// there is nothing it could publish.
+	target := strings.TrimSuffix(strings.TrimSpace(linkHost), ".")
+	if target == "" || !domain.InThisDomain(target) {
+		return nil
+	}
+	name := "_carddavs._tcp." + domain.Domain
+	// Priority and weight are meaningless with one server, and zero and one
+	// are what everybody writes.
+	expected := fmt.Sprintf("0 1 %d %s", port, target)
+
+	record := &Record{
+		Type:     "SRV",
+		Name:     name,
+		Expected: expected,
+		Optional: true,
+		Purpose: "lets a contacts application find this server from a mail address alone; " +
+			"without it a person types the server and the port into their phone themselves",
+	}
+	found, err := self.resolveService(ctx, name)
+	if err != nil {
+		return record
+	}
+	record.Found = found
+	for _, published := range found {
+		if strings.EqualFold(published, expected) {
+			record.Verified = true
+		}
+	}
+	return record
+}
+
+// portOf is the port a listen address binds, or zero when there is none to
+// read.
+func portOf(address string) int {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return 0
+	}
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return 0
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number <= 0 || number > 65535 {
+		return 0
+	}
+	return number
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/dav"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/frontend"
@@ -866,8 +867,17 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		return fmt.Errorf("cannot create the API: %w", err)
 	}
 
+	// Contacts over CardDAV, mounted before the dashboard's catch-all so
+	// that /dav and /.well-known/carddav reach it rather than the page a
+	// browser would be given.
+	davComponent, err := dav.New(self.database, self.store, self.authLimiter(configuration))
+	if err != nil {
+		return fmt.Errorf("cannot create the DAV service: %w", err)
+	}
+
 	webServer, err := web.NewServer(self.database, &web.Settings{}, []web.Component{
 		apiComponent,
+		davComponent,
 		web.NewStaticComponent(frontend.Handler()),
 	})
 	if err != nil {

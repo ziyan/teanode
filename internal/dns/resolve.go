@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -94,4 +95,28 @@ func (self *verifier) resolveAddresses(ctx context.Context, fqdn string) ([]stri
 	}
 	sort.Strings(addresses)
 	return addresses, nil
+}
+
+// resolveService returns the SRV records published at a name, each written the
+// way a zone file writes one: priority, weight, port and target.
+func (self *verifier) resolveService(ctx context.Context, fqdn string) ([]string, error) {
+	if self.client == nil || self.settings == nil {
+		return nil, fmt.Errorf("dns: no resolver to ask")
+	}
+	request := new(dns.Msg)
+	request.SetQuestion(dns.Fqdn(fqdn), dns.TypeSRV)
+	result, _, err := self.client.ExchangeContext(ctx, request, self.settings.Nameserver)
+	if err != nil {
+		log.Errorf("failed to resolve service records for %q: %s", fqdn, err)
+		return nil, err
+	}
+	var services []string
+	for _, answer := range result.Answer {
+		if record, ok := answer.(*dns.SRV); ok {
+			services = append(services, fmt.Sprintf("%d %d %d %s",
+				record.Priority, record.Weight, record.Port, strings.TrimSuffix(record.Target, ".")))
+		}
+	}
+	sort.Strings(services)
+	return services, nil
 }

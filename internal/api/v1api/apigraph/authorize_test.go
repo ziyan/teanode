@@ -43,6 +43,11 @@ var authorizing = map[string]bool{
 	"requireAgentPerson": true,
 	// The mailbox holding a draft, refused unless the caller owns it.
 	"requireDraftOwner": true,
+	// requirePermission(contacts:use), plus the caller's account; and the
+	// address book or the contact, each refused unless it is theirs.
+	"requireAddressBookPerson": true,
+	"requireOwnAddressBook":    true,
+	"ownContact":               true,
 }
 
 // unauthenticated are the operations that must work before the caller is
