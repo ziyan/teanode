@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 
+import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
 import { PictureIcon } from './icons'
 import { Tooltip } from './tooltip'
@@ -19,14 +20,13 @@ export type UploadedMedia = {
 
 export function useMediaUpload(domainId?: string) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function upload(file: File): Promise<UploadedMedia | null> {
     if (!domainId) {
       return null
     }
-    setError(null)
     setUploading(true)
     try {
       const body = new FormData()
@@ -37,19 +37,19 @@ export function useMediaUpload(domainId?: string) {
         // The server says what is wrong in words meant for a person — too
         // large, not a picture — so they are shown rather than replaced with
         // something vaguer.
-        setError((await response.text()).trim() || t('richText.uploadFailed'))
+        toast.failed((await response.text()).trim() || t('richText.uploadFailed'))
         return null
       }
       return (await response.json()) as UploadedMedia
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('richText.uploadFailed'))
+      toast.failure(caught, t('richText.uploadFailed'))
       return null
     } finally {
       setUploading(false)
     }
   }
 
-  return { upload, uploading, error, setError }
+  return { upload, uploading }
 }
 
 // MediaButton is the button and the hidden file input together. The caller
@@ -69,7 +69,7 @@ export function MediaButton({
 }) {
   const { t } = useTranslation()
   const picker = useRef<HTMLInputElement>(null)
-  const { upload, uploading, error } = useMediaUpload(domainId)
+  const { upload, uploading } = useMediaUpload(domainId)
 
   if (!domainId) {
     return null
@@ -111,7 +111,6 @@ export function MediaButton({
           })
         }}
       />
-      {error && <span className="error richtext-error">{error}</span>}
     </>
   )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 
 import { graphql } from '../../api'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -6,6 +6,7 @@ import { Tag } from '../../components/common'
 import { Tooltip } from '../../components/tooltip'
 import { TrashIcon } from '../../components/icons'
 import { ConfirmDialog } from '../../components/dialog'
+import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 
 // Skills: tools that arrive without a release. The operator installs one
@@ -57,7 +58,10 @@ export function SkillsSection() {
   const [installed, setInstalled] = useState<Skill[] | null>(null)
   const [offers, setOffers] = useState<Offer[] | null>(null)
   const [busy, setBusy] = useState('')
-  const [problem, setProblem] = useState<string | null>(null)
+  // What happened is said in a toast: a line of text at the top of the
+  // section was hundreds of pixels from the button that caused it, so a
+  // refused install looked like a button that did nothing.
+  const toast = useToast()
   const [removing, setRemoving] = useState<Skill | null>(null)
   const [browsing, setBrowsing] = useState(false)
 
@@ -74,19 +78,17 @@ export function SkillsSection() {
   // a fetch out of this server.
   const browse = async () => {
     setBrowsing(true)
-    setProblem(null)
     try {
       const answer = await graphql<{ SearchAgentSkills: Offer[] }>(OFFERED)
       setOffers(answer.SearchAgentSkills)
     } catch (reason) {
-      setProblem(reason instanceof Error ? reason.message : String(reason))
+      toast.failure(reason, t('agentSettings.skillRegistryFailed'))
       setBrowsing(false)
     }
   }
 
-  const act = async (name: string, work: () => Promise<unknown>) => {
+  const act = async (name: string, done: string, work: () => Promise<unknown>) => {
     setBusy(name)
-    setProblem(null)
     try {
       await work()
       await read()
@@ -94,8 +96,9 @@ export function SkillsSection() {
         const answer = await graphql<{ SearchAgentSkills: Offer[] }>(OFFERED)
         setOffers(answer.SearchAgentSkills)
       }
+      toast.done(done)
     } catch (reason) {
-      setProblem(reason instanceof Error ? reason.message : String(reason))
+      toast.failure(reason, t('agentSettings.skillFailed', { name }))
     } finally {
       setBusy('')
     }
@@ -115,7 +118,6 @@ export function SkillsSection() {
           </button>
         }
       >
-        {problem ? <p className="form-error">{problem}</p> : null}
         {installed !== null && installed.length === 0 ? <SettingsEmpty>{t('agentSettings.noSkills')}</SettingsEmpty> : null}
         {(installed ?? []).map((skill) => {
           const detail = [skill.description]
@@ -140,7 +142,13 @@ export function SkillsSection() {
                   <button
                     type="button"
                     disabled={busy === skill.name}
-                    onClick={() => void act(skill.name, () => graphql(SET_ENABLED, { name: skill.name, enabled: !skill.enabled }))}
+                    onClick={() =>
+                      void act(
+                        skill.name,
+                        skill.enabled ? t('agentSettings.skillDisabled', { name: skill.name }) : t('agentSettings.skillEnabled', { name: skill.name }),
+                        () => graphql(SET_ENABLED, { name: skill.name, enabled: !skill.enabled }),
+                      )
+                    }
                   >
                     {skill.enabled ? t('agentSettings.skillDisable') : t('agentSettings.skillEnable')}
                   </button>
@@ -167,8 +175,8 @@ export function SkillsSection() {
         <SettingsSection card title={t('agentSettings.skillRegistry')} description={t('agentSettings.skillRegistryDescription')}>
           {offers.length === 0 ? <SettingsEmpty>{t('agentSettings.noOffers')}</SettingsEmpty> : null}
           {offers.map((offer) => (
+            <Fragment key={offer.name}>
             <SettingsRow
-              key={offer.name}
               title={offer.name}
               badge={
                 <>
@@ -184,7 +192,11 @@ export function SkillsSection() {
                   type="button"
                   className={offer.installed && !offer.newer ? '' : 'primary'}
                   disabled={busy === offer.name || Boolean(offer.installed && !offer.newer)}
-                  onClick={() => void act(offer.name, () => graphql(INSTALL, { name: offer.name }))}
+                  onClick={() =>
+                    void act(offer.name, t('agentSettings.skillInstalledToast', { name: offer.name, version: offer.version }), () =>
+                      graphql(INSTALL, { name: offer.name }),
+                    )
+                  }
                 >
                   {offer.newer
                     ? t('agentSettings.skillUpdate', { version: offer.version })
@@ -194,6 +206,7 @@ export function SkillsSection() {
                 </button>
               }
             />
+            </Fragment>
           ))}
         </SettingsSection>
       )}
@@ -209,7 +222,7 @@ export function SkillsSection() {
           onConfirm={() => {
             const skill = removing
             setRemoving(null)
-            void act(skill.name, () => graphql(REMOVE, { name: skill.name }))
+            void act(skill.name, t('agentSettings.skillRemoved', { name: skill.name }), () => graphql(REMOVE, { name: skill.name }))
           }}
         />
       ) : null}

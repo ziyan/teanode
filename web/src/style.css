@@ -2631,11 +2631,6 @@ label.checkbox input {
   max-width: var(--measure);
 }
 
-/* An upload that failed says so where the button is, not in a corner. */
-.richtext-error {
-  font-size: var(--text-label);
-}
-
 /* --- highlighted markup ---------------------------------------------------
    Five colors and no more. A highlighter that gives every token type its own
    hue is a rainbow to read past; what a reader needs here is to tell the

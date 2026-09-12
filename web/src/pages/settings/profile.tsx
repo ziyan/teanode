@@ -42,7 +42,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const [editedMode, setEditedMode] = useState<string | null>(null)
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
   const [confirmingRename, setConfirmingRename] = useState(false)
 
   if (loading && !data) {
@@ -83,7 +82,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
 
   async function save() {
     setBusy(true)
-    setProblem(null)
     try {
       await graphql(UPDATE, {
         userId: user!.id,
@@ -105,7 +103,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
       // appearing not to have worked — which is what it did.
       onSaved()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : t('profile.failed'))
+      toast.failure(caught, t('profile.failed'))
     } finally {
       setBusy(false)
     }
@@ -210,7 +208,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           <p className='muted field-hint'>{t('profile.timezoneHint')}</p>
         </div>
 
-        {problem && <p className='error'>{problem}</p>}
         <button className='primary' type='submit' disabled={!ready}>
           {t('common.save')}
         </button>
