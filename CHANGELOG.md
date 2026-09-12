@@ -6,6 +6,29 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An address book, and your phone kept in step with it. The contacts page
+  gains the people you keep, above the addresses the mailbox learned from
+  traffic, which stay where they were and are a different thing. A contact is
+  the vCard itself rather than a set of columns, so a photograph, a birthday
+  or a label your phone invented survives you correcting a spelling in a
+  browser -- what you leave alone is left alone.
+
+  Your devices synchronize it over CardDAV, signing in the way a mail program
+  does: one of your addresses, and the app password you already made for that
+  device. The account password is never accepted, and it is HTTPS only. Two
+  devices editing the same person at once cannot silently overwrite one
+  another, and a device holding a stale copy cannot delete an edit it has
+  never seen.
+
+  `teanode contact list|show|add|edit|remove` does the same from a terminal,
+  and your agent can look somebody up or keep somebody for you -- forgetting a
+  contact asks first, because it reaches your phone too and there is no undo.
+  `docs/subsystems/contacts.md` says how it fits together, including what it
+  will not do: there is no `sync-collection`, and a content delivery network
+  that does not forward `PROPFIND` cannot carry any of it. (#74)
+
 ## [0.19.0] - 2026-09-12
 
 ### Added

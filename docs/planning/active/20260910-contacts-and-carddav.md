@@ -78,14 +78,42 @@ app password, discovery, and read-only CardDAV.
         HTTP server, including that a collection is never redirected.
   - [x] (2026-09-12 16:20Z) Exercised end to end against a development
         server with curl, in both directions; evidence below.
-- [ ] Milestone 4: discovery niceties, DNS advisories, CLI, documentation.
-      (Done already, ahead of its milestone, because the route had to exist
-      anyway: /.well-known/carddav and /.well-known/caldav redirect to the
-      mount. Remaining: the DNS advisory records, the CLI, and the subsystem
-      document.)
-- [ ] Milestone 5: the address book as an agent source.
+- [x] Milestone 4: discovery, CLI, documentation. (Completed: the
+      `.well-known` routes, `teanode contact`, a `contact_book` tool for the
+      agent, `docs/subsystems/contacts.md`, the command-line row, AGENTS.md
+      and project-structure.md, and the changelog. **Not done: the
+      `_carddavs._tcp` DNS advisory.** `internal/dns` has no notion of an SRV
+      record at all, so this is not adding a check but adding a record type,
+      a resolver path and the advice around it; and what the record should
+      point at is deployment-specific -- on the deployment this was built
+      against it would have to name the origin host and a non-standard port,
+      which is not something to guess at in an advisory an operator is meant
+      to act on. It is advisory, nothing breaks without it, and it is better
+      left than half-built.)
+- [ ] Milestone 5: the address book as an agent source. (Partly done ahead of
+      its milestone: the agent has a `contact_book` tool that lists, reads,
+      keeps and forgets. Remaining: "save to contacts" promoting a learned
+      address, and the learned addresses shown as suggestions beside the
+      book.)
+
+Four rounds of review were run over the finished code, each on the previous
+round's fixes. Rounds one to three each found defects that lost or corrupted a
+contact; round four found no HIGH and nothing touching security or data loss,
+and its two mediums were in the query filter added by round three. The
+findings and what they cost are in Surprises & Discoveries.
 
 ## Surprises & Discoveries
+
+The most expensive lesson of this plan, stated once here because it recurs
+below in six forms: **a vCard library's decoder and its encoder are not
+inverses, and everything in this design rests on their being so.** The ETag is
+taken over the stored card, and the promise to a client is that the version a
+listing names is the bytes a fetch returns. Every time a card went through the
+vendored encoder on its way out, that promise broke and a contact lost
+something -- an address, a parameter, a semicolon. The fix was to write the
+encoder here and to serve stored bytes on every path; the way it was found,
+four times over, was by reading what actually came back rather than by reading
+the code.
 
 Everything in this section came out of a throwaway program written against
 `github.com/emersion/go-webdav` v0.7.0 before any of this plan's code existed.

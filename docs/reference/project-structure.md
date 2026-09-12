@@ -43,6 +43,19 @@ read from storage when asked for, and an idling session is woken by the
 database's `folder_changed` notification. Nothing is held in memory that
 another instance would need.
 
+**`internal/contacts`** — the vCard format, and nothing else: parsing a card,
+writing one out, and naming a version of one with an ETag. It writes cards
+itself rather than through the vendored encoder, which does not quote a
+parameter value that needs quoting and does not fold; what it writes is a
+fixed point, which is what lets the ETag be taken over the stored text.
+
+**`internal/dav`** — a person's address book to their phone and their desktop,
+over CardDAV. Signs in with a mailbox address and an app password exactly as
+IMAP does, serves every card from the stored bytes rather than by re-encoding
+them, and mounts at `/dav` with no route that can be answered by a redirect,
+because a redirect turns a `PROPFIND` into a `GET`.
+`docs/subsystems/contacts.md` says how it fits together.
+
 **`internal/sso`** — signing in through an OpenID Connect provider: the
 authorization-code flow with PKCE, a signed and expiring state, and a client
 that will not talk to a private address. `internal/api/v1api/apisso` is the
