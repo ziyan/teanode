@@ -72,3 +72,56 @@ type Occurrence struct {
 	EndsAt     time.Time `json:"endsAt"`
 	AllDay     bool      `json:"allDay,omitempty"`
 }
+
+// CalendarInvitationStatus is how far an invitation that arrived as mail has
+// got.
+type CalendarInvitationStatus string
+
+const (
+	// Waiting: not read yet. Delivery writes this and does no more.
+	CalendarInvitationWaiting CalendarInvitationStatus = "waiting"
+	// Read: it was an invitation, and the calendar knows about it.
+	CalendarInvitationRead CalendarInvitationStatus = "read"
+	// Ignored: it carried nothing this server acts on, or it was refused.
+	// Error says which, and it is kept rather than deleted so that the
+	// same message is not picked up and refused again every time it is
+	// looked at.
+	CalendarInvitationIgnored CalendarInvitationStatus = "ignored"
+)
+
+// CalendarInvitationMethod is what a calendar part asks for.
+const (
+	CalendarMethodRequest = "REQUEST"
+	CalendarMethodReply   = "REPLY"
+	CalendarMethodCancel  = "CANCEL"
+)
+
+// CalendarInvitation is a message that carried a calendar part.
+//
+// It exists because reading one means fetching the message from storage and
+// decoding it, and that must not happen in the SMTP transaction: a slow read
+// or a failure there would bounce mail. Delivery writes the row; a worker
+// reads the message afterwards.
+type CalendarInvitation struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"userId"`
+	MailboxID  string    `json:"mailboxId"`
+	ItemID     string    `json:"itemId"`
+	MailID     string    `json:"mailId"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+
+	Status    CalendarInvitationStatus `json:"status"`
+	Attempts  int                      `json:"attempts"`
+	NotBefore *time.Time               `json:"notBefore,omitempty"`
+	ClaimedAt *time.Time               `json:"claimedAt,omitempty"`
+	ClaimedBy string                   `json:"claimedBy,omitempty"`
+	Error     string                   `json:"error,omitempty"`
+
+	Method     string `json:"method,omitempty"`
+	UID        string `json:"uid,omitempty"`
+	Sequence   int    `json:"sequence,omitempty"`
+	Organizer  string `json:"organizer,omitempty"`
+	CalendarID string `json:"calendarId,omitempty"`
+	ObjectID   string `json:"objectId,omitempty"`
+}

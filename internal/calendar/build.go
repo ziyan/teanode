@@ -277,3 +277,55 @@ func setText(event *ical.Event, name string, value *string) {
 func newUID() string {
 	return security.NewULID() + "@teanode"
 }
+
+// Answer applies what somebody said about coming to an event that is already
+// kept.
+//
+// A reply carries the answering attendee's own line and nothing else worth
+// keeping -- the summary and the times in it are the organizer's own words
+// echoed back, and a program that trusted them would let an invitee rewrite
+// the meeting by answering it. So exactly one thing is taken: the
+// participation of an attendee the event already names.
+//
+// An answer from somebody who was never invited is refused rather than added.
+// Adding them would let anybody who learns an event's identifier put
+// themselves on the guest list by sending a message.
+func Answer(previous []byte, answers []Attendee) (*Parsed, error) {
+	if len(bytes.TrimSpace(previous)) == 0 {
+		return nil, fmt.Errorf("calendar: there is no event to answer")
+	}
+	decoded, err := ical.NewDecoder(bytes.NewReader(previous)).Decode()
+	if err != nil {
+		return nil, fmt.Errorf("calendar: what is already kept cannot be read: %w", err)
+	}
+	event := firstEvent(decoded)
+	if event == nil {
+		return nil, fmt.Errorf("calendar: there is no event in that file")
+	}
+	changed := false
+	for _, answer := range answers {
+		address := strings.ToLower(strings.TrimSpace(answer.Address))
+		if address == "" || answer.Participation == "" {
+			continue
+		}
+		for index := range event.Props[ical.PropAttendee] {
+			property := &event.Props[ical.PropAttendee][index]
+			if !strings.EqualFold(addressOf(property), address) {
+				continue
+			}
+			property.Params.Set(ical.ParamParticipationStatus, answer.Participation)
+			// An answer settles it: the organizer no longer needs the
+			// reminder that this person has not said.
+			property.Params.Del("RSVP")
+			changed = true
+		}
+	}
+	if !changed {
+		return nil, fmt.Errorf("calendar: that answer is from somebody this event does not invite")
+	}
+	written, err := Encode(decoded)
+	if err != nil {
+		return nil, err
+	}
+	return Parse(written)
+}

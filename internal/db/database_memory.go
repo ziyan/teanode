@@ -107,6 +107,17 @@ type MemoryOperation interface {
 	CountCalendarObjects(calendarId string) (int64, error)
 	ListOccurrences(calendarId string, from, until time.Time) ([]*models.Occurrence, error)
 
+	// Invitations that arrived as mail. Delivery notes one and does no
+	// more; a worker claims it and reads the message afterwards, because
+	// fetching a message from storage inside the SMTP transaction would
+	// mean a slow read bouncing mail this server had already accepted.
+	NoteCalendarInvitation(invitation *models.CalendarInvitation) (*models.CalendarInvitation, error)
+	ClaimCalendarInvitations(instance string, limit int, now time.Time) ([]*models.CalendarInvitation, error)
+	FinishCalendarInvitation(invitation *models.CalendarInvitation) error
+	GetCalendarInvitationForItem(mailboxId, itemId string) (*models.CalendarInvitation, error)
+	GetCalendarInvitation(invitationId string) (*models.CalendarInvitation, error)
+	SweepCalendarInvitations(before time.Time) (int64, error)
+
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)
 	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)

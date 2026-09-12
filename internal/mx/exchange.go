@@ -50,6 +50,9 @@ type exchange struct {
 
 	agentHookMutex sync.RWMutex
 	agentHook      AgentHook
+
+	calendarHookMutex sync.RWMutex
+	calendarHook      CalendarHook
 }
 
 // SetAgentHook implements Exchange.
@@ -63,6 +66,19 @@ func (self *exchange) currentAgentHook() AgentHook {
 	self.agentHookMutex.RLock()
 	defer self.agentHookMutex.RUnlock()
 	return self.agentHook
+}
+
+// SetCalendarHook implements Exchange.
+func (self *exchange) SetCalendarHook(hook CalendarHook) {
+	self.calendarHookMutex.Lock()
+	defer self.calendarHookMutex.Unlock()
+	self.calendarHook = hook
+}
+
+func (self *exchange) currentCalendarHook() CalendarHook {
+	self.calendarHookMutex.RLock()
+	defer self.calendarHookMutex.RUnlock()
+	return self.calendarHook
 }
 
 func Open(database db.Database, configuration config.Store, storage storage.Storage, resolver resolver.Resolver, spamFilter spamfilter.Filter, clamav clamav.Client, locator geoip.Locator, settings *Settings) (Exchange, error) {

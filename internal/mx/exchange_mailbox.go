@@ -141,6 +141,12 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	if hook := self.currentAgentHook(); hook != nil {
 		hook.OnMailboxDelivery(tx, mailbox, item, mail)
 	}
+	// And the calendar, which notes the message in case it carries an
+	// invitation and reads it afterwards. Not the agent's job: somebody
+	// who has never turned an agent on still wants their meetings.
+	if hook := self.currentCalendarHook(); hook != nil {
+		hook.OnMailboxDelivery(tx, mailbox, item, mail)
+	}
 	// And the out-of-office reply, decided after the rules have had their
 	// say about where the message ended up.
 	self.maybeAutoReply(tx, mailbox, alias, recipient, item, mail)

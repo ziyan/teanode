@@ -144,6 +144,18 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 		"renaming a calendar": `mutation ($id: String!, $name: String, $colour: String, $timezone: String) {
   SaveCalendar(id: $id, name: $name, colour: $colour, timezone: $timezone) { id name colour timezone }
 }`,
+
+		// And the invitation card in the reader.
+		"the invitation on a message": `query ($itemId: String!) {
+  GetMailInvitation(itemId: $itemId) {
+    id status method uid because summary location startsAt endsAt allDay cancelled
+    organizer participation calendarId eventId
+    attendees { address name participation role }
+  }
+}`,
+		"answering one": `mutation ($itemId: String!, $answer: String!) {
+  AnswerMailInvitation(itemId: $itemId, answer: $answer) { id participation cancelled }
+}`,
 	} {
 		parsed, err := parser.Parse(parser.ParseParams{
 			Source: source.NewSource(&source.Source{Body: []byte(document), Name: name}),

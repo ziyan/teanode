@@ -54,6 +54,9 @@ var authorizing = map[string]bool{
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
 	"requireOwnCalendar":    true,
+	// requireItems(mail:read), plus the invitation the message carried --
+	// which is nothing at all unless the caller may read that mailbox.
+	"invitationFor": true,
 }
 
 // unauthenticated are the operations that must work before the caller is

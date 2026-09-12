@@ -66,7 +66,11 @@ history, and every example here is written the way it should be copied.
       cancelled and all-day events do not make somebody busy; stretches that
       touch are merged and cut to the window; the answer says when and
       nothing else. 6 tests; 1238 green overall.
-- [ ] Milestone 5: invitations arriving as mail.
+- [x] (2026-09-12) Milestone 5: invitations arriving as mail. Delivery notes
+      the message and a worker reads it afterwards; the reader shows a card
+      with Accept, Maybe and Decline, and pressing one marks the person's own
+      copy and sends the answer. 12 tests in `internal/scheduling`, 6 more in
+      `internal/calendar`; 1255 green overall.
 - [ ] Milestone 6: invitations and cancellations leaving as mail.
 - [ ] Milestone 7: the calendar as something the agent knows.
 

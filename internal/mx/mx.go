@@ -78,6 +78,10 @@ type Exchange interface {
 	// which is the case while the agent is off.
 	SetAgentHook(hook AgentHook)
 
+	// SetCalendarHook installs what is told about a message that may carry
+	// an invitation.
+	SetCalendarHook(hook CalendarHook)
+
 	// RunInsightRules runs the rules that read the agent's insight — the
 	// second phase, once the insight exists — against a message in the
 	// Inbox. The first phase ran at delivery for the other rules.
@@ -103,5 +107,16 @@ const (
 // calls a model: a model outage must never bounce mail. Errors are its own
 // to log; delivery does not wait on it.
 type AgentHook interface {
+	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
+}
+
+// CalendarHook is told the same thing, and for the same reason: a message may
+// carry an invitation, and working out whether it does means reading the
+// message from storage. It notes the message in the delivery transaction and
+// reads it afterwards.
+//
+// Separate from AgentHook because an invitation is not the agent's business:
+// a person who has never turned an agent on still wants their meetings.
+type CalendarHook interface {
 	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }

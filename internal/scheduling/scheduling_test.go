@@ -1,0 +1,401 @@
+package scheduling_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/scheduling"
+	"github.com/ziyan/teanode/internal/storage"
+)
+
+// held is a message store that keeps what it is given, so a test can put a
+// message where the worker will look for it without a disk.
+type held struct {
+	headers map[string][]string
+	bodies  map[string][]byte
+}
+
+func newHeld() *held {
+	return &held{headers: map[string][]string{}, bodies: map[string][]byte{}}
+}
+
+func (self *held) Put(ctx context.Context, id string, headers []string, body []byte) error {
+	self.headers[id] = headers
+	self.bodies[id] = body
+	return nil
+}
+
+func (self *held) Get(ctx context.Context, id string) ([]string, []byte, error) {
+	headers, ok := self.headers[id]
+	if !ok {
+		return nil, nil, storage.ErrNotFound
+	}
+	return headers, self.bodies[id], nil
+}
+
+func (self *held) Delete(ctx context.Context, id string) error { return nil }
+func (self *held) Close() error                                { return nil }
+
+func (self *held) PutFile(ctx context.Context, id string, content []byte) error { return nil }
+func (self *held) GetFile(ctx context.Context, id string) ([]byte, error) {
+	return nil, storage.ErrNotFound
+}
+func (self *held) DeleteFile(ctx context.Context, id string) error { return nil }
+
+// invitationMessage is a message carrying a calendar part, in the shape a
+// calendar program sends.
+func invitationMessage(method, uid, summary string, extra ...string) ([]string, []byte) {
+	lines := []string{
+		"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Example//EN", "METHOD:" + method,
+		"BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:20260912T120000Z",
+		"DTSTART:20260914T100000Z", "DTEND:20260914T110000Z", "SUMMARY:" + summary,
+	}
+	lines = append(lines, extra...)
+	lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+	text := strings.Join(lines, "\r\n") + "\r\n"
+	headers := []string{
+		"Content-Type: multipart/alternative; boundary=\"edge\"",
+		"MIME-Version: 1.0",
+	}
+	body := []byte("--edge\r\nContent-Type: text/plain\r\n\r\nPlease come\r\n" +
+		"--edge\r\nContent-Type: text/calendar; method=" + method + "; charset=utf-8\r\n\r\n" +
+		text + "--edge--\r\n")
+	return headers, body
+}
+
+// stage is a server with one account, a calendar, and a worker.
+type stage struct {
+	database  db.Database
+	store     *held
+	scheduler *scheduling.Scheduler
+	userID    string
+}
+
+func newStage(t *testing.T) (*stage, func()) {
+	t.Helper()
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	here := &stage{database: database, store: newHeld()}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		here.userID = owner.ID
+		if _, err := tx.CreateCalendar(&models.Calendar{UserID: owner.ID, Name: "Calendar"}); err != nil {
+			t.Fatalf("CreateCalendar: %s", err)
+		}
+	})
+	here.scheduler = scheduling.New(database, here.store, scheduling.Settings{Instance: "test"})
+	return here, closeDatabase
+}
+
+// deliver records a message, puts it in storage under the identifier the
+// database gave it, and notes it the way delivery would.
+//
+// The identifier comes back from the database rather than being chosen here,
+// because that is where it is minted -- a test that picks its own stores the
+// message somewhere the worker will never look.
+func (self *stage) deliver(t *testing.T, name string, passedDMARC bool, headers []string, body []byte) {
+	t.Helper()
+	var mailId string
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		mail := &models.Mail{ReceivedAt: time.Now()}
+		if passedDMARC {
+			mail.AuthenticationResults.DMARC = &models.DMARCResult{Result: "pass"}
+		} else {
+			mail.AuthenticationResults.DMARC = &models.DMARCResult{Result: "fail"}
+		}
+		created, err := tx.CreateMail(mail, nil)
+		if err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+		mailId = created.ID
+		if _, err := tx.NoteCalendarInvitation(&models.CalendarInvitation{
+			UserID: self.userID, MailboxID: "mailbox1", ItemID: "item-" + name, MailID: mailId,
+		}); err != nil {
+			t.Fatalf("NoteCalendarInvitation: %s", err)
+		}
+	})
+	if err := self.store.Put(context.Background(), mailId, headers, body); err != nil {
+		t.Fatalf("storing: %s", err)
+	}
+}
+
+// work runs one tick.
+func (self *stage) work(t *testing.T) {
+	t.Helper()
+	if err := self.scheduler.Tick(context.Background()); err != nil {
+		t.Fatalf("a tick: %s", err)
+	}
+}
+
+func (self *stage) invitation(t *testing.T, mailId string) *models.CalendarInvitation {
+	t.Helper()
+	var found *models.CalendarInvitation
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		found, err = tx.GetCalendarInvitationForItem("mailbox1", "item-"+mailId)
+		if err != nil {
+			t.Fatalf("reading it back: %s", err)
+		}
+	})
+	if found == nil {
+		t.Fatalf("no row for %q", mailId)
+	}
+	return found
+}
+
+func (self *stage) events(t *testing.T) []*models.CalendarObject {
+	t.Helper()
+	var found []*models.CalendarObject
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		calendars, err := tx.ListCalendars(self.userID)
+		if err != nil || len(calendars) == 0 {
+			t.Fatalf("listing calendars: %v %v", calendars, err)
+		}
+		if found, err = tx.ListCalendarObjects(calendars[0].ID); err != nil {
+			t.Fatalf("listing events: %s", err)
+		}
+	})
+	return found
+}
+
+// An invitation that arrives as mail becomes an event, waiting on an answer.
+func TestAnInvitationBecomesAnEvent(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail1", true, headers, body)
+	here.work(t)
+
+	invitation := here.invitation(t, "mail1")
+	if invitation.Status != models.CalendarInvitationRead {
+		t.Fatalf("it was read: %s %s", invitation.Status, invitation.Error)
+	}
+	if invitation.Method != models.CalendarMethodRequest || invitation.UID != "the-meeting" {
+		t.Fatalf("what it was: %+v", invitation)
+	}
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "Planning" {
+		t.Fatalf("one event: %+v", events)
+	}
+	if invitation.ObjectID != events[0].ID {
+		t.Fatalf("and the row points at it: %q %q", invitation.ObjectID, events[0].ID)
+	}
+}
+
+// An invitation from a sender that did not prove where it came from is filed
+// like any other message and is not an invitation.
+//
+// An invitation is an instruction to write something into somebody's
+// calendar. A forged one should not be, and "somebody sent you a meeting" is
+// an easy thing to fake convincingly.
+func TestAnUnprovenInvitationIsNotOne(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "forged", "Not really",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail1", false, headers, body)
+	here.work(t)
+
+	invitation := here.invitation(t, "mail1")
+	if invitation.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("it should have been left alone: %s", invitation.Status)
+	}
+	if len(here.events(t)) != 0 {
+		t.Fatal("and nothing should have been put in the calendar")
+	}
+}
+
+// An older copy of an event arriving late does not undo a change the person
+// has already seen. Mail is not ordered, so this happens.
+func TestAnOlderVersionArrivingLateIsIgnored(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	newer, newerBody := invitationMessage("REQUEST", "the-meeting", "Moved to the big room",
+		"SEQUENCE:5", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail1", true, newer, newerBody)
+	here.work(t)
+
+	older, olderBody := invitationMessage("REQUEST", "the-meeting", "The small room",
+		"SEQUENCE:2", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail2", true, older, olderBody)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "Moved to the big room" {
+		t.Fatalf("the newer version stands: %+v", events)
+	}
+	if got := here.invitation(t, "mail2"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("and the older one was left alone: %s %s", got.Status, got.Error)
+	}
+}
+
+// Only the organizer can call a meeting off. Anybody can send a message
+// saying one is cancelled, and taking their word for it is a way to delete
+// somebody's appointments by writing to them.
+func TestOnlyTheOrganizerCanCallItOff(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail1", true, headers, body)
+	here.work(t)
+
+	// From somebody else.
+	headers, body = invitationMessage("CANCEL", "the-meeting", "Planning",
+		"ORGANIZER:mailto:mallory@example.com")
+	here.deliver(t, "mail2", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Status == "CANCELLED" {
+		t.Fatalf("a stranger cannot call it off: %+v", events)
+	}
+	if got := here.invitation(t, "mail2"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("and it was left alone: %s %s", got.Status, got.Error)
+	}
+
+	// And from the organizer it works, and marks rather than deletes: the
+	// person is told the meeting is off, which is the useful thing.
+	headers, body = invitationMessage("CANCEL", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com")
+	here.deliver(t, "mail3", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 1 || events[0].Status != "CANCELLED" {
+		t.Fatalf("the organizer called it off: %+v", events)
+	}
+}
+
+// An answer from somebody who was invited updates what the organizer's copy
+// says about them, and changes nothing else.
+func TestAnAnswerUpdatesTheOrganizersCopy(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:grace@example.com")
+	here.deliver(t, "mail1", true, headers, body)
+	here.work(t)
+
+	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:grace@example.com")
+	here.deliver(t, "mail2", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 {
+		t.Fatalf("still one event: %+v", events)
+	}
+	parsed, err := calendar.Parse([]byte(events[0].Data))
+	if err != nil {
+		t.Fatalf("reading it back: %s", err)
+	}
+	if len(parsed.Attendees) != 1 || parsed.Attendees[0].Participation != "ACCEPTED" {
+		t.Fatalf("she is coming: %+v", parsed.Attendees)
+	}
+	if parsed.Summary != "Planning" {
+		t.Fatalf("and the event is otherwise untouched: %q", parsed.Summary)
+	}
+}
+
+// An answer from somebody who was never invited does not add them to the
+// guest list.
+func TestAnAnswerFromSomebodyNotInvitedChangesNothing(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:grace@example.com")
+	here.deliver(t, "mail1", true, headers, body)
+	here.work(t)
+
+	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:mallory@example.com")
+	here.deliver(t, "mail2", true, headers, body)
+	here.work(t)
+
+	parsed, err := calendar.Parse([]byte(here.events(t)[0].Data))
+	if err != nil {
+		t.Fatalf("reading it back: %s", err)
+	}
+	if len(parsed.Attendees) != 1 || parsed.Attendees[0].Address != "grace@example.com" {
+		t.Fatalf("the guest list is unchanged: %+v", parsed.Attendees)
+	}
+	if got := here.invitation(t, "mail2"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("and it was left alone: %s %s", got.Status, got.Error)
+	}
+}
+
+// An ordinary message carries nothing, and the row saying so is swept up
+// afterwards rather than kept for ever: a row per message ever delivered
+// would be a second copy of the mail table that nobody reads.
+func TestAnOrdinaryMessageIsForgotten(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	here.deliver(t, "mail1", true,
+		[]string{"Content-Type: text/plain", "MIME-Version: 1.0"}, []byte("hello\r\n"))
+	here.work(t)
+
+	if got := here.invitation(t, "mail1"); got.Status != models.CalendarInvitationIgnored || got.UID != "" {
+		t.Fatalf("nothing to act on: %+v", got)
+	}
+	// Old enough to forget.
+	var removed int64
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		var err error
+		removed, err = tx.SweepCalendarInvitations(time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("sweeping: %s", err)
+		}
+	})
+	if removed != 1 {
+		t.Fatalf("the row was swept up: %d", removed)
+	}
+}
+
+// What was actually an invitation is kept, because it is what the reader
+// looks up to draw the card and what an answer is recorded against.
+func TestARealInvitationIsNotSweptUp(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliver(t, "mail1", true, headers, body)
+	here.work(t)
+
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		removed, err := tx.SweepCalendarInvitations(time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("sweeping: %s", err)
+		}
+		if removed != 0 {
+			t.Fatalf("a real invitation is kept: %d removed", removed)
+		}
+	})
+}

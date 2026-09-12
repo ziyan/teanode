@@ -7018,3 +7018,101 @@ button.with-icon {
     width: 7rem;
   }
 }
+
+/* The invitation card, above a message that carried one. */
+.invitation-card,
+.invitation-note {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--rail);
+  padding: 0.75rem 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+.invitation-note {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.invitation-card.cancelled .invitation-summary {
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+
+.invitation-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.invitation-mark {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.invitation-off {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.invitation-summary {
+  margin: 0.3rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+/* Label and value in two columns, so the eye runs down the values rather
+   than hunting for them between labels of different widths. */
+.invitation-detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0;
+}
+
+.invitation-detail dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.invitation-detail dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitation-answers {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.invitation-answers .chosen {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.invitation-standing {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 480px) {
+  /* One column on a phone: two columns of a label and a value each become
+     two words a line, which is unreadable long before it is compact. */
+  .invitation-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .invitation-detail dt {
+    margin-top: 0.35rem;
+  }
+
+  .invitation-answers {
+    flex-wrap: wrap;
+  }
+}
