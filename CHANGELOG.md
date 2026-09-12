@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-12
+
 ### Added
 
 - An address book, and your phone kept in step with it. The contacts page
