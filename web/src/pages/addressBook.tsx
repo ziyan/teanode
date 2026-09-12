@@ -281,16 +281,33 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
   const rows = contacts.data?.ListContacts ?? []
   const editing = Boolean(draft?.id)
 
+  // The addresses this book holds, as one string.
+  //
+  // A string rather than the array, because the effect below depends on it
+  // and `rows` is a fresh array on every render while the query is loading
+  // -- `data?.ListContacts ?? []` builds a new empty one each time. Depending
+  // on that identity ran the effect on every render, which handed the parent
+  // a new object, which set state, which rendered again: a loop that spun
+  // until the contacts arrived. A value that is equal when nothing has
+  // changed is what a dependency list wants.
+  const heldKey = useMemo(
+    () =>
+      rows
+        .flatMap((contact) => (contact.emails ?? []).map((address) => address.trim().toLowerCase()))
+        .sort()
+        .join('\n'),
+    [rows],
+  )
+  const ready = Boolean(bookId) && !contacts.loading
+
   // Handed to the learned list below, so it can say which addresses are
   // already kept and offer to keep the rest. Promoting one is an ordinary
   // save: the address book has one way in, not two.
   useEffect(() => {
     if (!onReady) return
-    const held = new Set(
-      rows.flatMap((contact) => (contact.emails ?? []).map((address) => address.toLowerCase())),
-    )
+    const held = new Set(heldKey ? heldKey.split('\n') : [])
     onReady({
-      ready: Boolean(bookId) && !contacts.loading,
+      ready,
       has: (address) => held.has(address.trim().toLowerCase()),
       keep: async (address, name) => {
         await graphql(SAVE, {
@@ -305,7 +322,9 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
         await Promise.all([contacts.reload(), books.reload()])
       },
     })
-  }, [rows, bookId, contacts.loading, onReady])
+    // reload comes from useQuery and does not change; the rest are values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heldKey, bookId, ready, onReady])
 
   return (
     <>

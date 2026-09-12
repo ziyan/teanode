@@ -527,3 +527,127 @@ func TestThePictureTypeIsNotTheCardsToChoose(t *testing.T) {
 		}
 	}
 }
+
+// A URI value cannot carry a newline into the card: everything after it would
+// become a property of its own, and a card ending its own VCARD early loses
+// every property that sorts after it.
+func TestAURICannotInjectAProperty(t *testing.T) {
+	one := chr92()
+	for _, body := range []string{
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nTEL:+1-555-0100\r\n" +
+			"PHOTO:data:image/png;base64,AAAA" + one + "nEMAIL:attacker@example.invalid\r\nEND:VCARD\r\n",
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nTEL:+1-555-0100\r\n" +
+			"PHOTO:x" + one + "nEND:VCARD\r\nEND:VCARD\r\n",
+		"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:u\r\nFN:A\r\nTEL:+1-555-0100\r\n" +
+			"URL:https://example.invalid/" + one + "nX-EVIL:yes\r\nEND:VCARD\r\n",
+	} {
+		parsed, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatalf("parse: %s", err)
+		}
+		kept := string(parsed.Card)
+		// A property is a line. Text that merely mentions one, inside a
+		// value, is a value -- what must not happen is a line of its own.
+		for _, line := range strings.Split(kept, "\r\n") {
+			for _, injected := range []string{"EMAIL:attacker", "X-EVIL"} {
+				if strings.HasPrefix(line, injected) {
+					t.Errorf("a property was injected:\n%s", kept)
+				}
+			}
+		}
+		// And the card ends once, on a line of its own.
+		ends := 0
+		for _, line := range strings.Split(kept, "\r\n") {
+			if line == "END:VCARD" {
+				ends++
+			}
+		}
+		if ends != 1 {
+			t.Errorf("the card ends once, and on its own line:\n%s", kept)
+		}
+		// And nothing was lost on the way.
+		if !strings.Contains(kept, "TEL:+1-555-0100") || !strings.Contains(kept, "UID:u") {
+			t.Errorf("the card lost a property:\n%s", kept)
+		}
+		again, err := Parse(parsed.Card)
+		if err != nil {
+			t.Fatalf("reparse: %s", err)
+		}
+		if string(again.Card) != kept {
+			t.Errorf("and is not a fixed point:\n%s\n%s", kept, again.Card)
+		}
+	}
+}
+
+func chr92() string { return "\\" }
+
+// An edit made in a form must put each address back where it came from, even
+// when the card holds an empty one -- which a phone writes.
+func TestAnEditGoesBackOnTheAddressItCameFrom(t *testing.T) {
+	kept, err := Parse([]byte("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:u\r\nFN:A\r\n" +
+		"item1.ADR;TYPE=HOME:;;;;;;\r\n" +
+		"item2.ADR;TYPE=WORK:PO Box 42;Flat 3;1 Work St;London;;NW1;England\r\n" +
+		"END:VCARD\r\n"))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	shown := kept.Addresses
+	if len(shown) != 1 || shown[0].Street != "1 Work St" {
+		t.Fatalf("the form is shown one address: %+v", shown)
+	}
+
+	// Saved with nothing changed at all.
+	same := []Address{{
+		Street: shown[0].Street, Locality: shown[0].Locality, Region: shown[0].Region,
+		PostalCode: shown[0].PostalCode, Country: shown[0].Country,
+	}}
+	after, err := Build(kept.Card, &Fields{Addresses: &same})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	text := string(after.Card)
+	if !strings.Contains(text, "item2.ADR") || !strings.Contains(text, "TYPE=WORK") {
+		t.Errorf("the work address keeps its group and its label:\n%s", text)
+	}
+	if strings.Contains(text, "item1.ADR;TYPE=HOME:;;1 Work St") {
+		t.Errorf("and was not written onto the empty one:\n%s", text)
+	}
+	// The two components no form shows are carried through.
+	if !strings.Contains(text, "PO Box 42;Flat 3;1 Work St") {
+		t.Errorf("a post-office box and an extended address survive an edit:\n%s", text)
+	}
+}
+
+// A semicolon typed into an address box stays in the box it was typed into.
+func TestASemicolonInAnAddressStaysPut(t *testing.T) {
+	made, err := Build(nil, &Fields{
+		Name:      text("A"),
+		Addresses: &[]Address{{Street: "Apt 3; Building B", Locality: "London", Region: "Greater London"}},
+	})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	read, err := Parse(made.Card)
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if len(read.Addresses) != 1 {
+		t.Fatalf("one address: %+v", read.Addresses)
+	}
+	got := read.Addresses[0]
+	if got.Street != "Apt 3; Building B" || got.Locality != "London" || got.Region != "Greater London" {
+		t.Fatalf("the components did not shift: %+v", got)
+	}
+	// And saving it again does not shift them either.
+	again, err := Build(made.Card, &Fields{Addresses: &[]Address{got}})
+	if err != nil {
+		t.Fatalf("build: %s", err)
+	}
+	back, err := Parse(again.Card)
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if back.Addresses[0].Street != "Apt 3; Building B" || back.Addresses[0].Locality != "London" {
+		t.Fatalf("and not on the second save either: %+v", back.Addresses[0])
+	}
+}

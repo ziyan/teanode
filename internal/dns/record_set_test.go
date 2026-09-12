@@ -118,8 +118,7 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 	configuration.Listen.HTTPS = ":10443"
 	domain := &models.Domain{Domain: "example.com"}
 
-	ours := []mailHost{{Name: "mx.example.com."}}
-	record := checker.checkContactsService(context.Background(), configuration, domain, ours)
+	record := checker.checkContactsService(context.Background(), configuration, domain, "mail.example.com")
 	if record == nil {
 		t.Fatal("a server with an HTTPS listener has a record to advise")
 	}
@@ -128,8 +127,8 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 	}
 	// This domain's own mail host, not the server's name: every row on a
 	// domain's page has to be something its reader can publish.
-	if record.Expected != "0 1 10443 mx.example.com" {
-		t.Fatalf("names this domain's own host and the port: %q", record.Expected)
+	if record.Expected != "0 1 10443 mail.example.com" {
+		t.Fatalf("names this domain's own link host and the port: %q", record.Expected)
 	}
 	if !record.Optional {
 		t.Error("nothing breaks without it, so it is optional")
@@ -137,15 +136,14 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 
 	// A domain whose mail is addressed to somebody else's name has nothing
 	// it could publish, so it is advised nothing.
-	theirs := []mailHost{{Name: "mail.someone-else.test."}}
-	if record := checker.checkContactsService(context.Background(), configuration, domain, theirs); record != nil {
+	if record := checker.checkContactsService(context.Background(), configuration, domain, "mail.someone-else.test"); record != nil {
 		t.Errorf("a host outside this domain is not this domain's to publish: %+v", record)
 	}
 
 	// With TLS ended somewhere in front there is no port this server can
 	// honestly name, so it advises nothing rather than a wrong number.
 	configuration.Listen.HTTPS = ""
-	if record := checker.checkContactsService(context.Background(), configuration, domain, ours); record != nil {
+	if record := checker.checkContactsService(context.Background(), configuration, domain, "mail.example.com"); record != nil {
 		t.Errorf("with no HTTPS listener there is no honest port to advise: %+v", record)
 	}
 }

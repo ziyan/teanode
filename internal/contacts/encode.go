@@ -144,9 +144,14 @@ func line(name string, field *vcard.Field) string {
 	value := withoutControls(field.Value)
 	switch {
 	case uriValued[name]:
-		// Verbatim. A control character has already gone, and there is
-		// nothing else in a URI that needs saying differently.
-		built.WriteString(value)
+		// Verbatim apart from the newline, which withoutControls keeps
+		// because the other two branches escape it back to \n and this one
+		// does not. A newline written into a URI value ends the line, and
+		// everything after it becomes a property of its own: a card
+		// carrying PHOTO:...\nEMAIL:someone@example.invalid gained that
+		// address, and one carrying \nEND:VCARD lost every property that
+		// sorted after PHOTO. A URI cannot hold a newline anyway.
+		built.WriteString(strings.ReplaceAll(value, "\n", ""))
 	case structured[name]:
 		built.WriteString(escapeStructured(value))
 	default:

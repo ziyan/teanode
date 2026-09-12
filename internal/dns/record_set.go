@@ -422,7 +422,8 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// Where a contacts application should look, for somebody who types only
 	// their address into it. Advisory: without it a person types the server
 	// and the port themselves, and everything works.
-	if service := self.checkContactsService(ctx, configuration, domain, hosts); service != nil {
+	if service := self.checkContactsService(ctx, configuration, domain,
+		configuration.LinkHostFor(domain, domains)); service != nil {
 		recordSet.Records = append(recordSet.Records, service)
 	}
 
@@ -989,25 +990,24 @@ func authorisesSending(record string) bool {
 // of its own, because the record has to name a port and there is no honest
 // port to name when TLS is ended by something in front.
 func (self *verifier) checkContactsService(ctx context.Context, configuration *config.Configuration,
-	domain *models.Domain, hosts []mailHost) *Record {
+	domain *models.Domain, linkHost string) *Record {
 	port := portOf(configuration.Listen.HTTPS)
 	if port == 0 {
 		return nil
 	}
-	// The domain's own mail host, not this server's name. Every row on a
-	// domain's page has to be a record its reader can go and create, and a
-	// record pointing at the service operator's domain is not one of those --
-	// it is the same reason the address rows follow the MX names rather than
-	// server.name. A domain whose mail is addressed to somebody else's name
-	// gets no advice here, because there is nothing it could publish.
-	target := ""
-	for _, host := range hosts {
-		if domain.InThisDomain(host.Name) {
-			target = strings.TrimSuffix(host.Name, ".")
-			break
-		}
-	}
-	if target == "" {
+	// The domain's link host, which is the name whose port 443 is this
+	// server -- the same name the BIMI row uses, and for the same reason.
+	// The mail host is not always it: a deployment may answer mail on mx1
+	// and mx2 and serve the dashboard somewhere else entirely, and an
+	// operator who published what this page told them to would be sending
+	// every phone, with its app password, at a router's own web page.
+	//
+	// And only when that name is this domain's own. Every row on a domain's
+	// page has to be a record its reader can go and create; a domain whose
+	// mail is addressed to somebody else's name is advised nothing, because
+	// there is nothing it could publish.
+	target := strings.TrimSuffix(strings.TrimSpace(linkHost), ".")
+	if target == "" || !domain.InThisDomain(target) {
 		return nil
 	}
 	name := "_carddavs._tcp." + domain.Domain

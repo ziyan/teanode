@@ -2018,8 +2018,14 @@ pre.message-text {
      size, and the columns past the edge were simply unreachable. A contact
      with no email address showed its name, a gap, and nothing else.
      min-width: max-content lets the table grow to its content; width: 100%
-     still stretches it when there is room to spare. */
-  .table-surface table {
+     still stretches it when there is room to spare.
+
+     Not for a table with a column that wraps, though. max-content is measured
+     as if nothing wrapped, so a table holding subject lines would set its
+     width from the longest one and scroll for a screen and a half -- the
+     opposite of what the rule right above this does for those columns. Such a
+     table squeezes as it did before; it has a column that can give. */
+  .table-surface:not(:has(td.wrap, td.truncate)) table {
     min-width: max-content;
   }
 

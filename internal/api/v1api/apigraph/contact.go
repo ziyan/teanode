@@ -123,17 +123,20 @@ type SaveContactArguments struct {
 	// instructions: a caller that sends only a name must not thereby
 	// delete the note and the numbers, and a form whose box is empty must
 	// be able to clear what was there.
-	Name         *string         `json:"name" graphapi:"nullable"`
-	Organization *string         `json:"organization" graphapi:"nullable"`
-	Title        *string         `json:"title" graphapi:"nullable"`
-	Emails       *[]string       `json:"emails" graphapi:"nullable"`
-	Phones       *[]string       `json:"phones" graphapi:"nullable"`
-	Addresses    *[]AddressInput `json:"addresses" graphapi:"nullable"`
-	Note         *string         `json:"note" graphapi:"nullable"`
+	Name         *string    `json:"name" graphapi:"nullable"`
+	Organization *string    `json:"organization" graphapi:"nullable"`
+	Title        *string    `json:"title" graphapi:"nullable"`
+	Emails       *[]string  `json:"emails" graphapi:"nullable"`
+	Phones       *[]string  `json:"phones" graphapi:"nullable"`
+	Addresses    *[]Address `json:"addresses" graphapi:"nullable"`
+	Note         *string    `json:"note" graphapi:"nullable"`
 }
 
-// AddressInput is one postal address as a form sends it.
-type AddressInput struct {
+// Address is one postal address as a form sends it. Named without a suffix
+// because the schema generator appends "Input" to an input type's name:
+// calling this AddressInput produced AddressInputInput, and every document
+// that named AddressInput was refused with a type error.
+type Address struct {
 	Street     string `json:"street"`
 	Locality   string `json:"locality"`
 	Region     string `json:"region"`
@@ -447,9 +450,9 @@ func contactView(contact *models.Contact, withCard bool) *ContactView {
 	// address and no email address -- which is an ordinary thing to do --
 	// would otherwise see a row with nothing in it.
 	view.Addresses = []*AddressView{}
-	view.HasPhoto = contacts.HasPhoto([]byte(contact.Card))
 	if parsed, err := contacts.Parse([]byte(contact.Card)); err == nil {
 		view.Note = parsed.Note
+		view.HasPhoto = parsed.HasPhoto
 		for index := range parsed.Addresses {
 			address := parsed.Addresses[index]
 			view.Addresses = append(view.Addresses, &AddressView{

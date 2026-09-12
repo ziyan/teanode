@@ -27,7 +27,10 @@ development server and see a contact go out and come back:
       --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>' \
       https://localhost:10443/dav/USERID/contacts/default/
 
-and see a 207 listing one `.vcf` href per contact, each with an ETag.
+and see a 207 listing one `.vcf` href per contact, each with an ETag. Put the
+address and the app password in the environment rather than on the command
+line; a credential typed as an argument is a credential in the shell's
+history, and every example here is written the way it should be copied.
 
 Today the server already learns addresses from traffic: every address a
 mailbox has written to or heard from is remembered in the table

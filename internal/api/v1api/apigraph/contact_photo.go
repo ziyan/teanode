@@ -90,7 +90,12 @@ func (self *graph) contactPhotoView(response http.ResponseWriter, request *http.
 	// The card's own version names the picture: a picture cannot change
 	// without the card changing, so a browser that has it never asks again.
 	tag := `"` + found.ETag + `"`
-	if request.Header.Get("If-None-Match") == tag {
+	if matchesTag(request.Header.Get("If-None-Match"), tag) {
+		// The headers a cached entry needs to stay fresh go on the 304 as
+		// well, which RFC 9110 asks for: without them a store can lose the
+		// validator it was keeping.
+		response.Header().Set("ETag", tag)
+		response.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 		response.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -108,7 +113,11 @@ func (self *graph) contactPhotoView(response http.ResponseWriter, request *http.
 	// the ETag rather than held for a fixed time.
 	response.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	// It is a picture and nothing else, whatever it turns out to contain.
+	// The type is chosen from a short list rather than taken from the card,
+	// and this says the same thing a second way: nothing here loads
+	// anything, and nothing here runs.
 	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	response.Header().Set("Content-Disposition", "inline")
 	if request.Method == http.MethodHead {
 		return
@@ -116,4 +125,27 @@ func (self *graph) contactPhotoView(response http.ResponseWriter, request *http.
 	if _, err := response.Write(picture); err != nil {
 		log.Debugf("a contact's picture could not be written: %s", err)
 	}
+}
+
+// matchesTag says whether an If-None-Match names the version being served.
+//
+// The header may be a list, and a proxy may have weakened the validator by
+// marking it W/; comparing the whole string against one tag made every one of
+// those revalidate in full, every time.
+func matchesTag(given, tag string) bool {
+	given = strings.TrimSpace(given)
+	if given == "" {
+		return false
+	}
+	if given == "*" {
+		return true
+	}
+	for _, candidate := range strings.Split(given, ",") {
+		candidate = strings.TrimSpace(candidate)
+		candidate = strings.TrimPrefix(candidate, "W/")
+		if candidate == tag {
+			return true
+		}
+	}
+	return false
 }

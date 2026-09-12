@@ -47,6 +47,13 @@ type Address struct {
 	Region     string
 	PostalCode string
 	Country    string
+
+	// source is which ADR on the card this came from, so that an edit can
+	// be put back on the same one. Addresses with nothing in them are not
+	// returned, so counting the ones that are does not find it: a card
+	// whose first address is empty would have its second edited onto the
+	// first, taking the first's label and group and losing the rest.
+	source int
 }
 
 // Written is the address as somebody would write it on an envelope, for
@@ -74,6 +81,12 @@ type Parsed struct {
 	Phones       []string
 	Note         string
 	Addresses    []Address
+
+	// HasPhoto says whether the card carries a picture, so that a caller
+	// which has parsed the card already does not have to parse it again to
+	// find out. A card with a photograph on it takes milliseconds to read,
+	// and a listing reads one per row.
+	HasPhoto bool
 
 	// Card is the canonical text: what was given, read and written out
 	// again, which is what gets stored and what the ETag is over.
@@ -158,6 +171,7 @@ func fromCard(card vcard.Card) (*Parsed, error) {
 		Phones:       values(card, vcard.FieldTelephone),
 		Note:         strings.TrimSpace(card.Value(vcard.FieldNote)),
 		Addresses:    addressesIn(card),
+		HasPhoto:     hasPhotoIn(card),
 		Card:         encoded,
 	}, nil
 }
@@ -223,11 +237,11 @@ func values(card vcard.Card, field string) []string {
 // sends; the rest are what a person typed.
 func addressesIn(card vcard.Card) []Address {
 	var found []Address
-	for _, field := range card[vcard.FieldAddress] {
+	for index, field := range card[vcard.FieldAddress] {
 		if field == nil {
 			continue
 		}
-		components := strings.Split(field.Value, ";")
+		components := splitComponents(field.Value)
 		for len(components) < 7 {
 			components = append(components, "")
 		}
@@ -242,6 +256,7 @@ func addressesIn(card vcard.Card) []Address {
 		// X-ABLabel gives it, which is how iOS writes anything but home
 		// and work.
 		address.Label = labelFor(card, field)
+		address.source = index
 		if !address.Empty() {
 			found = append(found, address)
 		}
@@ -321,13 +336,18 @@ func Photo(card []byte) (picture []byte, mediaType string, err error) {
 	return decoded, imageTypeOf(field.Params.Get(vcard.ParamType)), nil
 }
 
-// HasPhoto says whether a card carries a picture, without decoding it.
+// HasPhoto says whether a card carries a picture. Prefer Parsed.HasPhoto
+// where the card has been read already: this reads it again.
 func HasPhoto(card []byte) bool {
 	parsed, err := vcard.NewDecoder(bytes.NewReader(card)).Decode()
 	if err != nil {
 		return false
 	}
-	field := parsed.Get(vcard.FieldPhoto)
+	return hasPhotoIn(parsed)
+}
+
+func hasPhotoIn(card vcard.Card) bool {
+	field := card.Get(vcard.FieldPhoto)
 	return field != nil && strings.TrimSpace(field.Value) != ""
 }
 
@@ -349,4 +369,38 @@ func imageTypeOf(said string) string {
 	default:
 		return "image/jpeg"
 	}
+}
+
+// splitComponents breaks a structured value into its components.
+//
+// On unescaped semicolons only: a semicolon somebody typed is written as an
+// escaped one, and splitting on that would put half a street into the town.
+// The escape is removed from each component on the way out, so what comes
+// back is what was typed.
+func splitComponents(value string) []string {
+	var components []string
+	var built strings.Builder
+	for index := 0; index < len(value); index++ {
+		letter := value[index]
+		if letter == '\\' && index+1 < len(value) {
+			// An escape: the next character stands for itself. Only the
+			// semicolon is unescaped here; everything else the decoder
+			// has already dealt with and must be left as it is.
+			if value[index+1] == ';' {
+				built.WriteByte(';')
+			} else {
+				built.WriteByte(letter)
+				built.WriteByte(value[index+1])
+			}
+			index++
+			continue
+		}
+		if letter == ';' {
+			components = append(components, built.String())
+			built.Reset()
+			continue
+		}
+		built.WriteByte(letter)
+	}
+	return append(components, built.String())
 }

@@ -86,7 +86,9 @@ func Build(existing []byte, fields *Fields) (*Parsed, error) {
 		setOne(card, vcard.FieldNote, *fields.Note)
 	}
 	if fields.Addresses != nil {
-		setAddresses(card, *fields.Addresses)
+		// Paired against the addresses as they were read out, which is
+		// what the form was shown and what it is sending back.
+		setAddresses(card, addressesIn(card), *fields.Addresses)
 	}
 	// Whatever route was taken, a contact needs something to call it.
 	if strings.TrimSpace(card.PreferredValue(vcard.FieldFormattedName)) == "" &&
@@ -155,36 +157,99 @@ func splitName(name string) (given, family string) {
 	return strings.Join(fields[:len(fields)-1], " "), fields[len(fields)-1]
 }
 
-// setAddresses replaces the postal addresses, keeping the type and the group
-// of the ones that are still there.
+// setAddresses replaces the postal addresses, keeping everything about the
+// ones that are still there which the form does not show.
 //
-// Kept by position, because an address has no identifier: the first box on
-// the form is the first ADR on the card. That is enough to keep a phone's
-// "home" label and the group that carries its own name for it through an
-// edit made in a browser, which is what would otherwise be lost.
-func setAddresses(card vcard.Card, wanted []Address) {
+// Paired through the addresses as they were read rather than by position in
+// the card: a card whose first ADR is empty -- which a phone writes -- offers
+// the form one address, and putting it back at position zero would label the
+// work address "home", move it into the wrong group, and drop the real one.
+func setAddresses(card vcard.Card, shown []Address, wanted []Address) {
 	previous := card[vcard.FieldAddress]
-	var kept []*vcard.Field
+	kept := make([]*vcard.Field, len(previous))
+	copy(kept, previous)
+
 	for index, address := range wanted {
+		// Where this one came from, when it came from anywhere.
+		source := -1
+		if index < len(shown) {
+			source = shown[index].source
+		}
 		if address.Empty() {
+			if source >= 0 && source < len(kept) {
+				kept[source] = nil
+			}
 			continue
 		}
 		field := &vcard.Field{}
-		if index < len(previous) && previous[index] != nil {
-			// The same address, edited: its parameters and its group are
-			// the phone's and are none of this form's business.
-			field.Params = previous[index].Params
-			field.Group = previous[index].Group
+		if source >= 0 && source < len(previous) && previous[source] != nil {
+			// The same address, edited: its parameters, its group and the
+			// two components no form shows are the phone's and are none of
+			// this form's business.
+			field.Params = previous[source].Params
+			field.Group = previous[source].Group
 		}
-		field.Value = strings.Join([]string{
-			"", "", address.Street, address.Locality,
-			address.Region, address.PostalCode, address.Country,
-		}, ";")
+		carried := ""
+		if source >= 0 && source < len(previous) && previous[source] != nil {
+			carried = previous[source].Value
+		}
+		field.Value = addressValue(carried, address)
+		if source >= 0 && source < len(kept) {
+			kept[source] = field
+			continue
+		}
 		kept = append(kept, field)
 	}
-	if len(kept) == 0 {
+
+	var remaining []*vcard.Field
+	for _, field := range kept {
+		if field != nil {
+			remaining = append(remaining, field)
+		}
+	}
+	if len(remaining) == 0 {
 		delete(card, vcard.FieldAddress)
 		return
 	}
-	card[vcard.FieldAddress] = kept
+	card[vcard.FieldAddress] = remaining
+}
+
+// addressValue is one ADR written out: seven components separated by
+// semicolons, the first two carried through from what was there.
+//
+// A semicolon somebody typed is escaped, because a bare one is the separator:
+// a street written "Apt 3; Building B" would otherwise shift the town into
+// the region and the region into the postcode, and shift again on every save
+// after that.
+func addressValue(carried string, address Address) string {
+	box, extended := "", ""
+	if carried != "" {
+		// The two components a form never shows, taken from the address
+		// that was there. Apple writes the extended one, and a
+		// post-office box is ordinary outside the United States; neither
+		// is this form's to discard. They are carried across still
+		// escaped, which is the form they have to go back in.
+		components := splitComponents(carried)
+		if len(components) > 0 {
+			box = escapeComponent(components[0])
+		}
+		if len(components) > 1 {
+			extended = escapeComponent(components[1])
+		}
+	}
+	parts := []string{
+		box, extended,
+		escapeComponent(address.Street), escapeComponent(address.Locality),
+		escapeComponent(address.Region), escapeComponent(address.PostalCode),
+		escapeComponent(address.Country),
+	}
+	return strings.Join(parts, ";")
+}
+
+// escapeComponent makes one component mean itself: a semicolon in it is
+// written as an escaped one, so that it stays inside the component it was
+// typed into. The backslash is left alone -- the encoder escapes it on the
+// way out, and setting aside the escaped semicolons is part of that.
+func escapeComponent(value string) string {
+	return strings.ReplaceAll(value, ";", "\\;")
 }
