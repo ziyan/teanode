@@ -312,9 +312,14 @@ Notable changes to TeaNode. The format follows
   want one that is yours, like your account with a service. A skill says
   which of its secrets are which; the operator fills in the first kind in
   the settings, and the second kind appears on your own agent page and in
-  `teanode agent skill secret`, sealed against your agent and used by
-  nothing else. A tool whose value you have not set refuses by naming it
-  and saying where to set it, rather than quietly using somebody else's.
+  `teanode agent skill secret`, kept sealed in a row of your own and used
+  by nothing else. A tool whose value you have not set refuses by naming
+  it and saying where to set it, rather than quietly using somebody
+  else's; only the values that tool actually uses are waited on. A skill
+  whose address is a value somebody fills in for themselves cannot also
+  carry the operator's credential, so no one person chooses where
+  everybody's key is sent. Taking a skill away, or updating it to one
+  that no longer asks for a key, forgets what people filled in for it.
   The agent can see which of yours are missing and tell you; it never
   asks you to type one to it, because what you type stays in the
   conversation. (#73)

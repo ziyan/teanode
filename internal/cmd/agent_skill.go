@@ -63,8 +63,8 @@ func newAgentSkillCommand() *cli.Command {
 					},
 					{
 						Name:      "set",
-						Usage:     "keep one of your values; - reads it from the terminal without echoing",
-						ArgsUsage: "<skill> <key> [value | -]",
+						Usage:     "keep one of your values; with no value it is read without echoing",
+						ArgsUsage: "<skill> <key> [value]",
 						Action:    runAgentSkillSecretSet,
 					},
 					{
@@ -193,8 +193,12 @@ func printInstalled(skill *client.AgentSkill) {
 		}
 	}
 	if len(skill.Secrets) > 0 {
-		fmt.Printf("  it needs %s filled in: teanode settings set agent skillSecrets:='[{\"skill\":\"%s\",\"key\":\"%s\",\"value\":\"…\"}]'\n",
+		fmt.Printf("  it needs %s filled in for the whole server: teanode settings set agent skillSecrets:='[{\"skill\":\"%s\",\"key\":\"%s\",\"value\":\"…\"}]'\n",
 			strings.Join(skill.Secrets, ", "), skill.Name, skill.Secrets[0])
+	}
+	if len(skill.PersonalSecrets) > 0 {
+		fmt.Printf("  it needs %s from each person, which only they can set: teanode agent skill secret set %s %s\n",
+			strings.Join(skill.PersonalSecrets, ", "), skill.Name, skill.PersonalSecrets[0])
 	}
 }
 
@@ -312,18 +316,22 @@ func runAgentSkillSecretList(ctx context.Context, command *cli.Command) error {
 
 func runAgentSkillSecretSet(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 2 {
-		return fmt.Errorf("give the skill and the key: teanode agent skill secret set news NEWSAPI_KEY -")
+		return fmt.Errorf("give the skill and the key: teanode agent skill secret set news NEWSAPI_KEY")
 	}
-	// A value on the command line is in the shell's history; "-" reads it
-	// from the terminal without echoing, which is how every other secret
-	// is given here.
-	value := "-"
-	if command.Args().Len() > 2 {
-		value = command.Args().Get(2)
+	// A value on the command line is in the shell's history; with none
+	// given it is read from the terminal without echoing, or from
+	// standard input when there is no terminal, as every other secret
+	// here is.
+	given := command.Args().Get(2)
+	if given == "" || given == "-" {
+		typed, err := ReadSecret("value: ")
+		if err != nil {
+			return err
+		}
+		given = typed
 	}
-	given, err := readValue(command, value)
-	if err != nil {
-		return err
+	if strings.TrimSpace(given) == "" {
+		return fmt.Errorf("give a value, or use `teanode agent skill secret clear` to take one away")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -345,8 +353,13 @@ func runAgentSkillSecretClear(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := client.ClearAgentSkillSecret(ctx, connection, command.Args().First(), command.Args().Get(1)); err != nil {
+	forgotten, err := client.ClearAgentSkillSecret(ctx, connection, command.Args().First(), command.Args().Get(1))
+	if err != nil {
 		return describeError(command, err)
+	}
+	if !forgotten {
+		fmt.Printf("you had no %s kept for %s\n", command.Args().Get(1), command.Args().First())
+		return nil
 	}
 	fmt.Printf("forgot your %s for %s\n", command.Args().Get(1), command.Args().First())
 	return nil

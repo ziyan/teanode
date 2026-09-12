@@ -58,7 +58,9 @@ would otherwise break every request from every person on the server; a
 condition the interpreter cannot work out; and a step that sends a credential
 to a host filled in when the tool is called, which would let whoever calls it
 be handed the operator's secret. The host must be written into the skill, or
-come from a secret the operator sets. A reference that
+come from a secret settled by somebody at least as trusted as the credential
+travelling with it: an operator's secret always, a person's own only when
+nothing the operator's is being sent. A reference that
 resolved to nothing would otherwise become an empty string in an address, and a
 skill that quietly fetches the wrong thing is worse than one that will not
 install.
@@ -86,10 +88,13 @@ in under `agent.skillSecrets`. That is right for something the deployment has:
 the address of a camera system, a licence, a key the organisation bought.
 
 **`scope: person`** is a value of each person's own. It is filled in on their
-own agent page, or with `teanode agent skill secret set`, and kept sealed with
-the server's secret against their agent — the same way a connected server's
-credential is. That is right for a credential that is theirs: their account
-with a service, their own key.
+own agent page, or with `teanode agent skill secret set`, and kept in a row of
+that person's own, its value sealed with the server's secret — the same way a
+connected server's credential is. The seal is over the value alone, not bound
+to the agent; what keeps one person's value out of another's requests is the
+row's key, and what a database copied without `server.secret` is worth is
+nothing. That is right for a credential that is theirs: their account with a
+service, their own key.
 
 The skill's author decides, because only they know which kind it is. Getting it
 wrong in one direction shares one person's account with everybody; in the other
@@ -101,7 +106,15 @@ Three rules follow from the split:
   value is written there. Falling back would defeat the point of scoping it.
 - A tool whose person-scoped secret is unset **refuses before it runs**, naming
   the key and where that person sets it, rather than making a request with a
-  hole in it.
+  hole in it. Only the keys *that tool* uses are waited on, so a skill whose
+  other tools want other keys still works.
+- A host written as `{{secret:…}}` may be a person's own only when nothing the
+  operator's is sent with it. Otherwise one person would be choosing where
+  everybody's credential goes, which is the same hole as a host named by a
+  caller — see below.
+- Taking a skill off the server forgets what everybody filled in for it, so a
+  sealed value cannot outlive the skill that asked for it and come back under a
+  later version that means something else by the same key.
 - The agent can ask which of a person's keys are unset, and is told never to
   ask for the value. A secret typed into a conversation is kept in the
   transcript and sent to a model.
@@ -184,7 +197,7 @@ data fetched from outside, never words addressed to the agent.
     teanode agent skill remove weather    take it away
 
     teanode agent skill secret list       what the skills ask you for
-    teanode agent skill secret set news NEWSAPI_KEY -
+    teanode agent skill secret set news NEWSAPI_KEY
                                           your own value, read without echo
     teanode agent skill secret clear news NEWSAPI_KEY
 

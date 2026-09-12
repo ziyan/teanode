@@ -1354,6 +1354,7 @@ export const ja: Catalog = {
   'agentSettings.noSkills': 'スキルはインストールされていません。',
   'agentSettings.skillBrings': '{tools} を追加します',
   'agentSettings.skillNeeds': 'agent.skillSecrets に {keys} の入力が必要です',
+  'agentSettings.skillNeedsPersonal': '各自が自分のエージェントページで {keys} を設定する必要があります',
   'agentSettings.skillRunsCommands': 'コマンドを実行',
   'agentSettings.skillUnreadable': '読み取れません',
   'agentSettings.skillEnable': '提供する',

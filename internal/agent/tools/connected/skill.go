@@ -70,15 +70,16 @@ type skillRequest struct {
 
 // skillView is an installed skill as the API describes it.
 type skillView struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Version     string   `json:"version"`
-	Publisher   string   `json:"publisher"`
-	Enabled     bool     `json:"enabled"`
-	Readable    bool     `json:"readable"`
-	Problem     string   `json:"problem,omitempty"`
-	Secrets     []string `json:"secrets"`
-	Tools       []*struct {
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Version         string   `json:"version"`
+	Publisher       string   `json:"publisher"`
+	Enabled         bool     `json:"enabled"`
+	Readable        bool     `json:"readable"`
+	Problem         string   `json:"problem,omitempty"`
+	Secrets         []string `json:"secrets"`
+	PersonalSecrets []string `json:"personalSecrets"`
+	Tools           []*struct {
 		Name          string `json:"name"`
 		Description   string `json:"description"`
 		Kind          string `json:"kind"`
@@ -106,12 +107,12 @@ type skillOffer struct {
 }
 
 const (
-	documentInstalledSkills = `query { ListAgentSkills { name description version publisher enabled readable problem secrets
+	documentInstalledSkills = `query { ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
 		tools { name description kind needsComputer } } }`
 
 	documentOfferedSkills = `query ($query: String) { SearchAgentSkills(query: $query) { name description version tags installed newer } }`
 
-	documentInstallSkill = `mutation ($name: String!) { InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets
+	documentInstallSkill = `mutation ($name: String!) { InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets personalSecrets
 		tools { name description kind needsComputer } } }`
 
 	documentRemoveSkill = `mutation ($name: String!) { RemoveAgentSkill(name: $name) }`
@@ -193,8 +194,18 @@ func runSkill(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		installed := answer.InstallAgentSkill
 		described := map[string]any{"installed": installed}
-		if installed != nil && len(installed.Secrets) > 0 {
-			described["do_this_next"] = fmt.Sprintf("It needs %s filled in under agent.skillSecrets before it will work. Tell the person, and say which values it is waiting for.", strings.Join(installed.Secrets, ", "))
+		if installed != nil {
+			var next []string
+			if len(installed.Secrets) > 0 {
+				next = append(next, fmt.Sprintf("An operator must put %s under agent.skillSecrets, once for the whole server.", strings.Join(installed.Secrets, ", ")))
+			}
+			if len(installed.PersonalSecrets) > 0 {
+				next = append(next, fmt.Sprintf("Each person fills in %s for themselves on their agent page, or with `teanode agent skill secret set %s %s`; an operator cannot set it for them, and you must not ask them to type it to you.",
+					strings.Join(installed.PersonalSecrets, ", "), installed.Name, installed.PersonalSecrets[0]))
+			}
+			if len(next) > 0 {
+				described["do_this_next"] = strings.Join(next, " ") + " Tell the person which values it is waiting for."
+			}
 		}
 		result, err := tools.JSONResult(described)
 		if err != nil {

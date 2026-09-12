@@ -1179,8 +1179,8 @@ is waiting for.
 
 Only the keys a skill scoped to the operator, which is the default. A key it
 scoped to the person is each person's own: they fill it in on their agent
-page or with `teanode agent skill secret set`, it is sealed against their
-agent rather than kept here, and a value written here for such a key is
+page or with `teanode agent skill secret set`, it is kept sealed in a row of
+their own rather than here, and a value written here for such a key is
 ignored.
 
 ### `agent.currency`

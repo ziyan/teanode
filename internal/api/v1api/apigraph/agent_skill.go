@@ -64,12 +64,15 @@ type AgentSkillView struct {
 	Enabled     bool      `json:"enabled"`
 	InstalledAt time.Time `json:"installedAt"`
 
-	// Tools are what it declares, by name; Secrets the values it needs an
-	// operator to fill in. Readable says whether the file still parses.
-	Tools    []*AgentSkillToolView `json:"tools"`
-	Secrets  []string              `json:"secrets"`
-	Readable bool                  `json:"readable"`
-	Problem  string                `json:"problem,omitempty"`
+	// Tools are what it declares, by name. Secrets are the values an
+	// operator fills in once for the whole server; PersonalSecrets the
+	// ones each person fills in for themselves, which the operator
+	// cannot set on their behalf. Readable says whether it still parses.
+	Tools           []*AgentSkillToolView `json:"tools"`
+	Secrets         []string              `json:"secrets"`
+	PersonalSecrets []string              `json:"personalSecrets"`
+	Readable        bool                  `json:"readable"`
+	Problem         string                `json:"problem,omitempty"`
 }
 
 // AgentSkillToolView is one tool a skill declares.
@@ -121,7 +124,8 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 	view := &AgentSkillView{
 		Name: row.Name, Description: row.Description, Version: row.Version,
 		Publisher: row.Publisher, URL: row.URL, Enabled: row.Enabled,
-		InstalledAt: row.CreatedAt, Tools: []*AgentSkillToolView{}, Secrets: []string{},
+		InstalledAt: row.CreatedAt, Tools: []*AgentSkillToolView{},
+		Secrets: []string{}, PersonalSecrets: []string{},
 	}
 	parsed, err := skills.Parse([]byte(row.Content))
 	if err != nil {
@@ -142,6 +146,10 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 		})
 	}
 	for _, secret := range parsed.Secrets {
+		if secret.ForPerson() {
+			view.PersonalSecrets = append(view.PersonalSecrets, secret.Key)
+			continue
+		}
 		view.Secrets = append(view.Secrets, secret.Key)
 	}
 	return view
@@ -260,6 +268,16 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 			enabled = existing.Enabled
 			created = existing.CreatedAt
 		}
+		// Values people filled in for keys this version no longer asks
+		// them for are forgotten. A later version that used the same key
+		// for something else would otherwise be handed the old value.
+		mine := map[string]bool{}
+		for _, secret := range parsed.PersonalSecrets() {
+			mine[secret.Key] = true
+		}
+		if err := tx.SweepAgentSkillSecretsExcept(entry.Name, mine); err != nil {
+			return err
+		}
 		stored, err = tx.PutAgentSkill(&models.AgentSkill{
 			Name: entry.Name, CreatedAt: created, Version: entry.Version, Publisher: registry.Publisher(),
 			URL: entry.URL, SHA256: entry.SHA256, Description: entry.Description,
@@ -280,6 +298,9 @@ func (self *graph) RemoveAgentSkill(ctx context.Context, arguments AgentSkillArg
 	var found *models.AgentSkill
 	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
 		if found, err = tx.GetAgentSkill(arguments.Name); err != nil || found == nil {
+			return err
+		}
+		if err := tx.SweepAgentSkillSecrets(arguments.Name); err != nil {
 			return err
 		}
 		return tx.DeleteAgentSkill(arguments.Name)
@@ -443,10 +464,27 @@ func (self *graph) ClearAgentSkillSecret(ctx context.Context, arguments ClearAge
 	if err != nil {
 		return false, err
 	}
+	skill := strings.TrimSpace(arguments.Skill)
+	if skill == "" {
+		return false, fmt.Errorf("%w: which skill", api.ErrInvalidArguments)
+	}
+	key := strings.TrimSpace(arguments.Key)
+	// Whether there was anything to forget, so that clearing a key that
+	// was never set does not read as having cleared one that was.
+	forgotten := false
 	if err := self.database.Transaction(func(tx db.Transaction) error {
-		return tx.DeleteAgentSkillSecret(found.ID, arguments.Skill, arguments.Key)
+		stored, err := tx.ListAgentSkillSecrets(found.ID)
+		if err != nil {
+			return err
+		}
+		for _, secret := range stored {
+			if strings.EqualFold(secret.Skill, skill) && (key == "" || secret.Key == key) {
+				forgotten = true
+			}
+		}
+		return tx.DeleteAgentSkillSecret(found.ID, skill, key)
 	}); err != nil {
 		return false, err
 	}
-	return true, nil
+	return forgotten, nil
 }

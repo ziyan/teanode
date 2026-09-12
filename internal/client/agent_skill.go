@@ -6,15 +6,16 @@ import "context"
 
 // AgentSkill is an installed skill.
 type AgentSkill struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Version     string            `json:"version"`
-	Publisher   string            `json:"publisher"`
-	Enabled     bool              `json:"enabled"`
-	Readable    bool              `json:"readable"`
-	Problem     string            `json:"problem,omitempty"`
-	Secrets     []string          `json:"secrets"`
-	Tools       []*AgentSkillTool `json:"tools"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Version         string            `json:"version"`
+	Publisher       string            `json:"publisher"`
+	Enabled         bool              `json:"enabled"`
+	Readable        bool              `json:"readable"`
+	Problem         string            `json:"problem,omitempty"`
+	Secrets         []string          `json:"secrets"`
+	PersonalSecrets []string          `json:"personalSecrets"`
+	Tools           []*AgentSkillTool `json:"tools"`
 }
 
 // AgentSkillTool is one tool a skill declares.
@@ -37,7 +38,7 @@ type AgentSkillOffer struct {
 
 const (
 	documentListAgentSkills = `query {
-  ListAgentSkills { name description version publisher enabled readable problem secrets
+  ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -46,7 +47,7 @@ const (
 }`
 
 	documentInstallAgentSkill = `mutation ($name: String!) {
-  InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets
+  InstallAgentSkill(name: $name) { name description version publisher enabled readable problem secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -153,10 +154,14 @@ func SetAgentSkillSecret(ctx context.Context, connection *Client, skill, key, va
 	return result.SetAgentSkillSecret, nil
 }
 
-// ClearAgentSkillSecret forgets one.
-func ClearAgentSkillSecret(ctx context.Context, connection *Client, skill, key string) error {
+// ClearAgentSkillSecret forgets one, and says whether there was one to
+// forget.
+func ClearAgentSkillSecret(ctx context.Context, connection *Client, skill, key string) (bool, error) {
 	var result struct {
 		ClearAgentSkillSecret bool `json:"ClearAgentSkillSecret"`
 	}
-	return connection.Execute(ctx, documentClearAgentSkillSecret, map[string]any{"skill": skill, "key": key}, &result)
+	if err := connection.Execute(ctx, documentClearAgentSkillSecret, map[string]any{"skill": skill, "key": key}, &result); err != nil {
+		return false, err
+	}
+	return result.ClearAgentSkillSecret, nil
 }

@@ -1314,6 +1314,7 @@ export const zh: Catalog = {
   'agentSettings.noSkills': '尚未安装任何技能。',
   'agentSettings.skillBrings': '带来 {tools}',
   'agentSettings.skillNeeds': '需要在 agent.skillSecrets 中填写 {keys}',
+  'agentSettings.skillNeedsPersonal': '需要每个人在自己的助理页面填写 {keys}',
   'agentSettings.skillRunsCommands': '运行命令',
   'agentSettings.skillUnreadable': '无法读取',
   'agentSettings.skillEnable': '启用',

@@ -24,6 +24,7 @@ type Skill = {
   readable: boolean
   problem?: string
   secrets: string[]
+  personalSecrets: string[]
   tools: SkillTool[]
 }
 
@@ -37,7 +38,7 @@ type Offer = {
 }
 
 const INSTALLED = `query {
-  ListAgentSkills { name description version publisher enabled readable problem secrets
+  ListAgentSkills { name description version publisher enabled readable problem secrets personalSecrets
     tools { name description kind needsComputer } }
 }`
 
@@ -123,6 +124,8 @@ export function SkillsSection() {
           const detail = [skill.description]
           if (skill.tools.length > 0) detail.push(t('agentSettings.skillBrings', { tools: skill.tools.map((tool) => tool.name).join(', ') }))
           if (skill.secrets.length > 0) detail.push(t('agentSettings.skillNeeds', { keys: skill.secrets.join(', ') }))
+          if (skill.personalSecrets.length > 0)
+            detail.push(t('agentSettings.skillNeedsPersonal', { keys: skill.personalSecrets.join(', ') }))
           if (!skill.readable) detail.push(skill.problem ?? '')
           return (
             <SettingsRow

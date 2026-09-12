@@ -187,7 +187,7 @@ func (self *Agent) skillRunner(skill *skills.Skill, toolName string) func(contex
 			return nil, err
 		}
 		run := tools.MustRun(ctx)
-		secrets, err := self.skillSecrets(ctx, run, skill)
+		secrets, err := self.skillSecrets(ctx, run, skill, toolName)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +243,7 @@ func runsCommandsNamed(skill *skills.Skill, toolName string) bool {
 // person's own, kept sealed against their agent. A key declared as the
 // person's is never taken from the operator's list, so one person's
 // account is not quietly used by everybody.
-func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skills.Skill) (skills.Secrets, error) {
+func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skills.Skill, toolName string) (skills.Secrets, error) {
 	filled := skills.Secrets{}
 	mine := map[string]bool{}
 	for _, secret := range skill.PersonalSecrets() {
@@ -280,9 +280,15 @@ func (self *Agent) skillSecrets(ctx context.Context, run tools.Run, skill *skill
 		}
 		filled[secret.Key] = opened
 	}
+	// Only what this tool asks for. A skill whose other tools want a key
+	// of their own must not be unusable until every one of them is set.
+	wanted := map[string]bool{}
+	for _, key := range skill.SecretsFor(toolName) {
+		wanted[key] = true
+	}
 	var waiting []string
 	for _, secret := range skill.PersonalSecrets() {
-		if strings.TrimSpace(filled[secret.Key]) == "" {
+		if wanted[secret.Key] && strings.TrimSpace(filled[secret.Key]) == "" {
 			waiting = append(waiting, secret.Key)
 		}
 	}

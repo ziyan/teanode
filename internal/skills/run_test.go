@@ -334,11 +334,88 @@ func TestACredentialCannotBeSentToAChosenHost(t *testing.T) {
 	if _, err := Parse([]byte(chosen)); err == nil || !strings.Contains(err.Error(), "chosen by whoever calls it") {
 		t.Fatalf("a host from a parameter must be refused: %v", err)
 	}
-	// The same skill with the host from a secret is fine: that is the
-	// operator's to set, not the caller's to name.
+	// The same skill with the host from a secret the operator sets is
+	// fine: the operator settles both where it goes and what is sent.
 	settled := strings.ReplaceAll(chosen, "{{host}}", "{{secret:HOST}}")
 	settled = strings.Replace(settled, "  - key: TOKEN\n", "  - key: TOKEN\n  - key: HOST\n", 1)
 	if _, err := Parse([]byte(settled)); err != nil {
 		t.Fatalf("a host from a secret is fine: %v", err)
+	}
+	// A host each person names for themselves, carrying a credential of
+	// the operator's, is the same hole by another route: one person would
+	// choose where everybody's token is sent.
+	theirs := strings.Replace(settled, "  - key: HOST\n", "  - key: HOST\n    scope: person\n", 1)
+	if _, err := Parse([]byte(theirs)); err == nil || !strings.Contains(err.Error(), "scope them the same way") {
+		t.Fatalf("a person's host with the operator's token must be refused: %v", err)
+	}
+	// Both of them the person's own is fine: their host, their token.
+	both := strings.Replace(theirs, "  - key: TOKEN\n", "  - key: TOKEN\n    scope: person\n", 1)
+	if _, err := Parse([]byte(both)); err != nil {
+		t.Fatalf("a person's own host and token together are fine: %v", err)
+	}
+}
+
+// A secret is declared once, with one scope, and under a key that can be
+// filled in: anything else is a skill nobody could ever use.
+func TestSecretsAreDeclaredOnceAndCanBeFilledIn(t *testing.T) {
+	shape := "---\nname: x\ndescription: x\nsecrets:\n%s" +
+		"tools:\n  - name: x_get\n    description: get\n    type: http\n    url: \"https://example.com/a\"\n" +
+		"    headers: {X: \"{{secret:TOKEN}}\"}\n    result: json\n    parameters: {type: object, properties: {}}\n---\n"
+	for _, refused := range []struct {
+		secrets string
+		says    string
+	}{
+		{"  - key: TOKEN\n  - key: TOKEN\n    scope: person\n", "twice"},
+		{"  - key: TOKEN\n  - key: " + strings.Repeat("L", 201) + "\n", "longer than"},
+		{"  - key: TOKEN\n    scope: nobody\n", "not operator or person"},
+	} {
+		if _, err := Parse([]byte(fmt.Sprintf(shape, refused.secrets))); err == nil || !strings.Contains(err.Error(), refused.says) {
+			t.Fatalf("want a refusal about %q, got %v", refused.says, err)
+		}
+	}
+	// A key written with a stray space is the key without it: a reference
+	// is trimmed when it is read, and so is a key on its way into the
+	// table, so anything else would name something unfillable.
+	skill, err := Parse([]byte(fmt.Sprintf(shape, "  - key: \" TOKEN \"\n    scope: person\n")))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mine := skill.PersonalSecrets()
+	if len(mine) != 1 || mine[0].Key != "TOKEN" {
+		t.Fatalf("the key is trimmed where it is declared: %+v", mine)
+	}
+	if got := skill.SecretsFor("x_get"); len(got) != 1 || got[0] != "TOKEN" {
+		t.Fatalf("the tool asks for TOKEN: %v", got)
+	}
+	if got := skill.SecretsFor("x_absent"); got != nil {
+		t.Fatalf("a tool that does not exist asks for nothing: %v", got)
+	}
+}
+
+// One tool waiting on a value of the person's own must not hold back the
+// skill's other tools, which may want nothing at all.
+func TestEachToolAsksOnlyForWhatItUses(t *testing.T) {
+	body := "---\nname: x\ndescription: x\nsecrets:\n  - key: MINE\n    scope: person\n  - key: OURS\n" +
+		"authenticationProfiles:\n  it: {type: bearer, token: \"{{secret:OURS}}\"}\n" +
+		"tools:\n" +
+		"  - name: x_one\n    description: one\n    type: http\n    url: \"https://example.com/a\"\n" +
+		"    headers: {X: \"{{secret:MINE}}\"}\n    result: json\n    parameters: {type: object, properties: {}}\n" +
+		"  - name: x_two\n    description: two\n    type: workflow\n    parameters: {type: object, properties: {}}\n" +
+		"    steps:\n      - name: only\n        type: http\n        url: \"https://example.com/b\"\n        auth: it\n        result: json\n" +
+		"  - name: x_three\n    description: three\n    type: http\n    url: \"https://example.com/c\"\n" +
+		"    result: json\n    parameters: {type: object, properties: {}}\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for name, want := range map[string][]string{
+		"x_one":   {"MINE"},
+		"x_two":   {"OURS"},
+		"x_three": nil,
+	} {
+		got := skill.SecretsFor(name)
+		if len(got) != len(want) || (len(want) == 1 && got[0] != want[0]) {
+			t.Fatalf("%s asks for %v, want %v", name, got, want)
+		}
 	}
 }

@@ -71,6 +71,8 @@ type MemoryOperation interface {
 	ListAgentSkillSecrets(agentId string) ([]*models.AgentSkillSecret, error)
 	PutAgentSkillSecret(secret *models.AgentSkillSecret) error
 	DeleteAgentSkillSecret(agentId, skill, key string) error
+	SweepAgentSkillSecrets(skill string) error
+	SweepAgentSkillSecretsExcept(skill string, keep map[string]bool) error
 
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)

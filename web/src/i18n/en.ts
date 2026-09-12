@@ -1358,6 +1358,7 @@ export const en = {
   'agentSettings.noSkills': 'No skills are installed.',
   'agentSettings.skillBrings': 'brings {tools}',
   'agentSettings.skillNeeds': 'needs {keys} filled in under agent.skillSecrets',
+  'agentSettings.skillNeedsPersonal': 'needs {keys} from each person, set on their own agent page',
   'agentSettings.skillRunsCommands': 'runs commands',
   'agentSettings.skillUnreadable': 'cannot be read',
   'agentSettings.skillEnable': 'Offer it',

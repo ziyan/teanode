@@ -139,6 +139,14 @@ const (
 	KindShell    = "shell"
 	KindHTTP     = "http"
 	KindWorkflow = "workflow"
+
+	// maximumSecretKey is the width of the key column a person's own
+	// values are kept in, and maximumSkillName the width of the name
+	// column a skill is kept in. Anything longer would be cut short on
+	// its way in and never match what the skill asks for, so it is
+	// refused here instead, where the author can see why.
+	maximumSecretKey = 200
+	maximumSkillName = 64
 )
 
 var (
@@ -193,6 +201,9 @@ func split(content []byte) ([]byte, string, error) {
 }
 
 func (self *Skill) validate() error {
+	if len(self.Name) > maximumSkillName {
+		return fmt.Errorf("skills: the name %q is longer than %d characters", self.Name, maximumSkillName)
+	}
 	if !skillShape.MatchString(self.Name) {
 		return fmt.Errorf("skills: %q is not a skill name: lower-case words, digits, underscores and hyphens", self.Name)
 	}
@@ -204,8 +215,19 @@ func (self *Skill) validate() error {
 	}
 	known := map[string]bool{}
 	for _, secret := range self.Secrets {
-		if strings.TrimSpace(secret.Key) == "" {
+		// Trimmed here and nowhere else: a reference to it is trimmed
+		// when it is read, and so is a key on its way into the table, so
+		// a declaration with a stray space would name something nobody
+		// could ever fill in.
+		secret.Key = strings.TrimSpace(secret.Key)
+		if secret.Key == "" {
 			return fmt.Errorf("skills: %s declares a secret with no key", self.Name)
+		}
+		if len(secret.Key) > maximumSecretKey {
+			return fmt.Errorf("skills: the secret key %q of %s is longer than %d characters", secret.Key, self.Name, maximumSecretKey)
+		}
+		if known[secret.Key] {
+			return fmt.Errorf("skills: %s declares the secret %s twice, so there is no saying which scope it has", self.Name, secret.Key)
 		}
 		switch strings.ToLower(strings.TrimSpace(secret.Scope)) {
 		case "", ScopeOperator, ScopePerson:
@@ -346,16 +368,16 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 		if step.Auth != "" && self.Profiles[step.Auth] == nil {
 			return fmt.Errorf("skills: the step %s authenticates as %q, which the skill does not declare", where, step.Auth)
 		}
-		// Where a credential is sent has to be settled by the skill, not by
-		// whoever calls the tool: with a name written into the host, a
-		// caller naming a host of their own would be handed the operator's
-		// secret. It counts however the credential travels -- a named
-		// authentication, or a secret written into a header or a body by
-		// hand, which used to go unchecked.
-		if step.Auth != "" || self.carriesSecret(step) {
-			if err := settledHost(step.URL); err != nil {
-				return fmt.Errorf("skills: the step %s sends a credential to %w", where, err)
-			}
+		// Where a credential is sent has to be settled by somebody at least
+		// as trusted as the credential itself. A host written into the
+		// skill is settled by its author; one from an operator's secret by
+		// the operator. A host from a person's own secret is settled by
+		// that person -- fine when everything travelling is theirs too,
+		// and not fine when the operator's server-wide credential goes
+		// with it, because then one person chooses where everybody's
+		// credential is sent.
+		if err := self.settledEnough(step); err != nil {
+			return fmt.Errorf("skills: the step %s sends a credential to %w", where, err)
 		}
 		values := []string{step.URL, step.Method}
 		for _, value := range step.Headers {
@@ -472,30 +494,69 @@ func (self *Skill) checkSecrets(value string, secrets map[string]bool) error {
 	return nil
 }
 
-// carriesSecret says whether anything this step sends holds a secret: the
-// address, a header, or the body.
-func (self *Skill) carriesSecret(step *Step) bool {
+// settledEnough refuses a step whose host is chosen by somebody less
+// trusted than the credential it carries.
+func (self *Skill) settledEnough(step *Step) error {
+	carried := self.secretsSent(step)
+	if step.Auth != "" {
+		if profile := self.Profiles[step.Auth]; profile != nil {
+			carried = append(carried, secretsIn(profile.Token, profile.Username, profile.Password, profile.Key, profile.Value)...)
+		}
+	}
+	if len(carried) == 0 {
+		return nil
+	}
+	// The host may be written in, or come from a secret -- but only from
+	// one whose owner is at least as trusted as everything being sent.
+	mine := map[string]bool{}
+	for _, secret := range self.PersonalSecrets() {
+		mine[secret.Key] = true
+	}
+	anyOperator := false
+	for _, key := range carried {
+		if !mine[key] {
+			anyOperator = true
+		}
+	}
+	for _, key := range secretsIn(step.URL) {
+		if mine[key] && anyOperator {
+			return fmt.Errorf("a host each person names for themselves, %q, while carrying a credential of the operator's; scope them the same way", "{{secret:"+key+"}}")
+		}
+	}
+	return settledHost(step.URL)
+}
+
+// secretsSent are the keys of every secret this step puts on the wire: in
+// the address, a header, or the body.
+func (self *Skill) secretsSent(step *Step) []string {
 	values := []string{step.URL}
 	for _, value := range step.Headers {
 		values = append(values, value)
 	}
 	values = append(values, bodyStrings(step.Body)...)
+	return secretsIn(values...)
+}
+
+// secretsIn are the secret keys named anywhere in these templates.
+func secretsIn(values ...string) []string {
+	var keys []string
 	for _, value := range values {
 		for _, match := range reference.FindAllStringSubmatch(value, -1) {
 			name, _ := SplitReference(strings.TrimSpace(match[1]))
-			if strings.HasPrefix(name, "secret:") {
-				return true
+			if key, found := strings.CutPrefix(name, "secret:"); found {
+				keys = append(keys, strings.TrimSpace(key))
 			}
 		}
 	}
-	return false
+	return keys
 }
 
 // settledHost refuses an address whose host is chosen by whoever calls the
 // tool. Everything after the host may be templated freely; the host itself
-// must be written into the skill or come from a secret, which is the
-// operator's to set. A host taken from a parameter would let a caller name
-// their own and be handed the operator's credential.
+// must be written into the skill or come from a secret. A host taken from
+// a parameter would let a caller name their own and be handed the
+// operator's credential. Which secrets may settle it is settledEnough's
+// question, not this one's.
 func settledHost(address string) error {
 	address = strings.TrimSpace(address)
 	scheme, rest, found := strings.Cut(address, "://")
@@ -592,4 +653,39 @@ func (self *Skill) PersonalSecrets() []*Secret {
 		}
 	}
 	return mine
+}
+
+// SecretsFor are the keys of the secrets one tool of this skill actually
+// uses: in its own request, in the steps it runs, and in whatever
+// authentication profile any of them names. A skill's other tools may
+// want other keys, and this one must not be held back waiting for them.
+func (self *Skill) SecretsFor(toolName string) []string {
+	tool := self.Tool(toolName)
+	if tool == nil {
+		return nil
+	}
+	steps := []*Step{{
+		URL: tool.URL, Headers: tool.Headers, Body: tool.Body,
+		Auth: tool.Auth, Command: tool.Command,
+	}}
+	steps = append(steps, tool.Steps...)
+	for _, routed := range tool.Actions {
+		steps = append(steps, routed...)
+	}
+	seen := map[string]bool{}
+	var keys []string
+	for _, step := range steps {
+		found := self.secretsSent(step)
+		found = append(found, secretsIn(step.Command...)...)
+		if profile := self.Profiles[step.Auth]; profile != nil {
+			found = append(found, secretsIn(profile.Token, profile.Username, profile.Password, profile.Key, profile.Value)...)
+		}
+		for _, key := range found {
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys
 }
