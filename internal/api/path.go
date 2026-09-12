@@ -90,6 +90,11 @@ const (
 	// browser, so that showing one does not tell the sender which address
 	// opened which message at what moment.
 	PathSenderLogo = Prefix + "/logo/{domain}"
+
+	// PathContactPhoto is the picture on a contact's card, served as an
+	// image so that a page can show it without carrying four hundred
+	// kilobytes of base64 through a listing.
+	PathContactPhoto = Prefix + "/contacts/{contactId}/photo"
 )
 
 // BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where

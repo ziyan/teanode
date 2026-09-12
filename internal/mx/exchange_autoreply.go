@@ -154,7 +154,7 @@ func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbo
 	}
 
 	// Once a week per sender, fifty an hour per mailbox.
-	contact, err := tx.GetContact(mailbox.ID, sender)
+	contact, err := tx.GetLearnedContact(mailbox.ID, sender)
 	if err != nil {
 		return "", err
 	}

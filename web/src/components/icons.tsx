@@ -145,6 +145,29 @@ export function ArrowDownIcon(props: IconProps) {
   )
 }
 
+// A person with a plus: keeping somebody who has only written to you.
+export function AddPersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M19 8v6" />
+      <path d="M22 11h-6" />
+    </Icon>
+  )
+}
+
+// The same person, already kept: a tick rather than a plus.
+export function KeptPersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M16 11l2 2 4-4" />
+    </Icon>
+  )
+}
+
 export function PinIcon(props: IconProps) {
   return (
     <Icon {...props}>

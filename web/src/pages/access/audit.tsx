@@ -78,6 +78,8 @@ const RESOURCE_TYPES = [
   'token',
   'passkey',
   'configuration',
+  'agent',
+  'addressbook',
 ]
 
 // AuditTab is the log of administrative changes, newest first: who, what,

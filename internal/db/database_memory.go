@@ -74,6 +74,21 @@ type MemoryOperation interface {
 	SweepAgentSkillSecrets(skill string) error
 	SweepAgentSkillSecretsExcept(skill string, keep map[string]bool) error
 
+	// The address book: a person's own contacts, kept as vCards. Distinct
+	// from the learned addresses above, which are what a mailbox has seen
+	// go past rather than what somebody chose to keep.
+	ListAddressBooks(userId string) ([]*models.AddressBook, error)
+	GetAddressBook(addressBookId string) (*models.AddressBook, error)
+	CreateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
+	UpdateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
+	DeleteAddressBook(addressBookId string) error
+	ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error)
+	GetContact(addressBookId, contactId string) (*models.Contact, error)
+	GetContactByUID(addressBookId, uid string) (*models.Contact, error)
+	PutContact(contact *models.Contact) (*models.Contact, error)
+	DeleteContact(addressBookId, contactId string) error
+	CountContacts(addressBookId string) (int64, error)
+
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)
 	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)
