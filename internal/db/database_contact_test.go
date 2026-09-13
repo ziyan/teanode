@@ -1,6 +1,8 @@
 package db_test
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -190,6 +192,57 @@ func TestAContactNeedsACardAndAnIdentifier(t *testing.T) {
 			} else if !strings.Contains(err.Error(), "db: a contact needs") {
 				t.Errorf("refused for the wrong reason: %s", err)
 			}
+		}
+	})
+}
+
+// A book is bounded by what it holds, not only by how many things are in it.
+//
+// A card may be a megabyte -- a photograph makes one -- so ten thousand of
+// them is ten gigabytes, and the listing a client reads is the whole book
+// built in memory and then serialised whole, because the protocol library has
+// no streaming. Two thousand individually legal cards were a way for one
+// account to take the server down for everybody on it.
+func TestAnAddressBookIsBoundedInBytes(t *testing.T) {
+	dbtest.RunTransaction(t, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "collector"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		book, err := tx.CreateAddressBook(&models.AddressBook{UserID: user.ID, Name: "Contacts"})
+		if err != nil {
+			t.Fatalf("CreateAddressBook: %s", err)
+		}
+		card := func(size int) string {
+			return "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Somebody\r\nNOTE:" +
+				strings.Repeat("x", size) + "\r\nEND:VCARD\r\n"
+		}
+		// Seven cards of eight megabytes fit; the eighth does not.
+		for index := 0; index < 7; index++ {
+			if _, err := tx.PutContact(&models.Contact{
+				AddressBookID: book.ID, UID: fmt.Sprintf("uid-%d", index),
+				ETag: "e", Card: card(8 << 20), Name: "Somebody",
+			}); err != nil {
+				t.Fatalf("card %d should fit: %s", index, err)
+			}
+		}
+		_, err = tx.PutContact(&models.Contact{
+			AddressBookID: book.ID, UID: "uid-over", ETag: "e", Card: card(8 << 20), Name: "Somebody",
+		})
+		if !errors.Is(err, db.ErrBookFull) {
+			t.Fatalf("the book is full and says so: %v", err)
+		}
+		// Replacing a card already there is measured against the book
+		// without it, so editing one is not refused because of its own
+		// size.
+		held, err := tx.GetContactByUID(book.ID, "uid-6")
+		if err != nil || held == nil {
+			t.Fatalf("the card is there: %v %v", held, err)
+		}
+		held.Card = card(8 << 20)
+		held.ETag = "e2"
+		if _, err := tx.PutContact(held); err != nil {
+			t.Fatalf("rewriting a card of the same size is not refused: %s", err)
 		}
 	})
 }

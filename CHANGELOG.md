@@ -8,6 +8,14 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- An address book and a calendar are bounded by what they hold as well as by
+  how many things are in them. A listing is read whole, so ten thousand
+  one-megabyte cards was a way to exhaust the server's memory.
+
+- A calendar part in a message is read only once the message has proved where
+  it came from, and a file naming hundreds of unknown time zones is read in a
+  fraction of the time it used to take.
+
 - The out-of-office reply is no longer sent to an address nothing vouched
   for. It goes to the envelope sender, which is not what DMARC checks -- so a
   stranger could send from a domain of their own while naming somebody else

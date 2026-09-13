@@ -328,40 +328,22 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 	if text == nil {
 		return ignored("no calendar part")
 	}
-	parsed, err := calendar.Parse(text)
-	if err != nil {
-		return ignored("the calendar part could not be read: %s", err)
-	}
-	if parsed.Method == "" {
-		// A calendar with no method is somebody sending an event to look
-		// at rather than asking anything of anybody. Not acted on: adding
-		// it to a calendar unasked is putting things in somebody's diary
-		// because they were sent a file.
-		return ignored("the calendar part asks for nothing")
-	}
 
-	// An invitation is an instruction to write into somebody's calendar,
-	// and a forged one should not be. A message that did not prove it came
-	// from where it says is filed like any other message and shown like
-	// any other message, but it is not an invitation.
+	// Everything that can be decided about the message itself is decided
+	// before the calendar part is read.
+	//
+	// Reading it is the expensive half -- an iCalendar file describing
+	// hundreds of zones this machine cannot name costs about a second of a
+	// core -- and it was being done for every message carrying such a part,
+	// including the ones about to be refused for having proved nothing about
+	// where they came from. So the work an attacker could ask for was not
+	// bounded by whether this server would act on their message at all.
 	if !mail.DMARCPassed() {
 		return ignored("the message did not prove where it came from")
 	}
-
-	// Nor a message the server's own checks distrusted. Proving where it
-	// came from is easy for anybody sending from a domain of their own, so
-	// DMARC alone let a message that went straight to Junk put its sender's
-	// chosen words into the calendar grid, onto the phone and in front of
-	// the agent. The reply this server sends automatically has refused
-	// these since it was written; the calendar was reading the same
-	// messages and asking none of it.
 	if mail.LooksLikeSpam() {
 		return ignored("the message looks like spam")
 	}
-	// Read from the message itself, which this server has in its hands
-	// here: the row beside it keeps the headers it was asked to keep, and
-	// depending on that would make this check quietly true or false
-	// depending on a setting somewhere else.
 	if header := strings.ToLower(strings.TrimSpace(
 		mailparse.FindHeaderValue(headers, "Precedence"))); header == "bulk" || header == "junk" {
 		return ignored("the message is bulk mail")
@@ -380,11 +362,21 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 	// Who actually sent it. DMARC proves the From domain is theirs to use,
 	// so this is the one identity in the message worth anything -- and every
 	// claim the file makes about who is speaking is checked against it.
-	// Without that the checks below are the sender marking their own
-	// homework: an attacker writes whatever ORGANIZER makes it work.
 	sender := strings.ToLower(strings.TrimSpace(mail.From))
 	if !strings.Contains(sender, "@") {
 		return ignored("the message does not say who it is from")
+	}
+
+	parsed, err := calendar.Parse(text)
+	if err != nil {
+		return ignored("the calendar part could not be read: %s", err)
+	}
+	if parsed.Method == "" {
+		// A calendar with no method is somebody sending an event to look
+		// at rather than asking anything of anybody. Not acted on: adding
+		// it to a calendar unasked is putting things in somebody's diary
+		// because they were sent a file.
+		return ignored("the calendar part asks for nothing")
 	}
 
 	switch parsed.Method {

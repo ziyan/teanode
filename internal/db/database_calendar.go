@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -234,6 +235,33 @@ func (self *transaction) DeleteCalendar(userId, calendarId string) error {
 // one of two doors is not a limit.
 const ObjectsPerCalendar = 10000
 
+// BytesPerCalendar is how much one calendar may hold, counted in the files
+// themselves.
+//
+// The count above bounds the wrong thing on its own: a file may be a megabyte
+// -- a long series with an override per occurrence makes one -- so ten
+// thousand of them is ten gigabytes, and a listing is the whole calendar
+// built in memory and serialised whole. The same number as an address book,
+// for the same reason, and far past any calendar a person keeps.
+const BytesPerCalendar = 64 << 20
+
+// ErrCalendarFull is a calendar that cannot take another event.
+var ErrCalendarFull = errors.New("db: that calendar is full")
+
+// calendarBytes is what a calendar holds now, not counting the file being
+// replaced.
+func (self *transaction) calendarBytes(calendarId, exceptId string) (int64, error) {
+	var total int64
+	query := self.tx.Model(&calendarObjectModel{}).Where("\"calendar_id\" = ?", calendarId)
+	if strings.TrimSpace(exceptId) != "" {
+		query = query.Where("\"id\" <> ?", strings.TrimSpace(exceptId))
+	}
+	if err := query.Select("COALESCE(SUM(LENGTH(\"data\")), 0)").Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // ListCalendarObjects are one calendar's, earliest first.
 func (self *transaction) ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error) {
 	var found []calendarObjectModel
@@ -373,6 +401,15 @@ func (self *transaction) PutCalendarObject(object *models.CalendarObject, occurr
 	}
 	if row.CreatedAt.IsZero() {
 		row.CreatedAt = now
+	}
+	// And the calendar has a size, not only a count.
+	held, err := self.calendarBytes(row.CalendarID, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	if held+int64(len(row.Data)) > BytesPerCalendar {
+		return nil, fmt.Errorf("%w: it holds %d bytes and this event is %d, against a limit of %d",
+			ErrCalendarFull, held, len(row.Data), BytesPerCalendar)
 	}
 	if err := self.tx.Save(row).Error; err != nil {
 		return nil, err

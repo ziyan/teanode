@@ -883,3 +883,43 @@ func TestARepeatThatCannotReachTodaySaysSo(t *testing.T) {
 			len(occurrences), until, occurrences[0].StartsAt)
 	}
 }
+
+// A file describing hundreds of zones nobody can name is read in time
+// proportional to its size, not to its size times the number of zones.
+//
+// Every unnameable zone walked every property of every component, so the cost
+// was the product of the two -- about a second of a core for a file at the
+// size limit, from anybody who can send mail to a served address.
+func TestManyUnnameableZonesAreSettledInOneWalk(t *testing.T) {
+	lines := []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//x//EN"}
+	for index := 0; index < 3000; index++ {
+		name := fmt.Sprintf("Nowhere %d Standard Time", index)
+		lines = append(lines,
+			"BEGIN:VTIMEZONE", "TZID:"+name,
+			"BEGIN:STANDARD", "DTSTART:16011101T020000",
+			"TZOFFSETFROM:-0430", "TZOFFSETTO:-0430", "END:STANDARD",
+			"END:VTIMEZONE")
+	}
+	lines = append(lines, "BEGIN:VEVENT", "UID:many", "DTSTAMP:20260912T120000Z",
+		"DTSTART;TZID=Nowhere 0 Standard Time:20260914T100000",
+		"DTEND;TZID=Nowhere 0 Standard Time:20260914T110000", "SUMMARY:Many zones")
+	for index := 0; index < 3000; index++ {
+		lines = append(lines, fmt.Sprintf("EXDATE;TZID=Nowhere %d Standard Time:2026092%dT100000", index, index%10))
+	}
+	lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+
+	started := time.Now()
+	parsed, err := Parse([]byte(crlf(lines...)))
+	took := time.Since(started)
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	if parsed.Summary != "Many zones" {
+		t.Fatalf("the event is read: %q", parsed.Summary)
+	}
+	// Generous: the quadratic version took the better part of a second for
+	// this input and grows with the square. This is a fuse, not a benchmark.
+	if took > 500*time.Millisecond {
+		t.Fatalf("reading it took %s, which is the shape of the bug", took)
+	}
+}

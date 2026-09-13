@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which twelve are fixed here. The ones that mattered:
+Forty findings, of which fourteen are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -994,6 +994,38 @@ of heap in two seconds and wrote 144,000 rows in one transaction; at the
 default message size that is about sixteen gigabytes. A message is now bounded
 at 32 reports and 20,000 records across all of its parts.
 
+### SEC-62 — A collection was bounded in items, not bytes (High, fixed)
+
+`ContactsPerBook` and `ObjectsPerCalendar` are both 10,000, and a card or an
+event may be a megabyte, so either collection could hold ten gigabytes. The
+listing a client reads is the whole collection: built as rows, copied into an
+answer, and serialised whole, because the protocol library has no streaming
+(`// TODO: streaming` in its own source). Two thousand individually legal
+cards were therefore a way for one account to exhaust the memory of a server
+shared with everybody else, with no per-request deadline to cut it short.
+
+Both collections now have a byte ceiling of 64 MiB as well as a count,
+checked where a card or an event is written — sixty thousand ordinary cards,
+or thirteen hundred carrying a photograph, and far past any address book or
+calendar a person keeps. Replacing something already there is measured against
+the collection without it, so editing is never refused for the size of the
+thing being edited.
+
+### SEC-63 — settleZones was quadratic, and ran before the message was judged (Medium, fixed)
+
+Every time zone in a file that this machine cannot name caused a walk over
+every property of every component, so the cost was the product of the two.
+Measured on a file well inside the size limit: **606 ms of one core**, against
+69 ms for the same file now, and the curve is quadratic, so the limit is worth
+about a second. One walk now settles every unnameable zone, matching a property
+by one lookup.
+
+Worse than the cost was when it was paid. `scheduling.consider` parsed the
+calendar part *before* asking whether the message had proved where it came
+from — so the work was done for messages that were about to be refused, which
+is every message an attacker sends. The checks that need only the message now
+come first: DMARC, the spam filter, bulk and list mail, and who the sender is.
+
 ### SEC-61 — The out-of-office reply was aimed at an unverified address (Medium, fixed)
 
 `authenticationVerdict` returns as soon as DMARC passes, which is right:
@@ -1100,11 +1132,6 @@ Ranked, with what each needs. Nothing below is fixed in this pass.
    property is a guarded proxy: `Target.createBrowserContext` takes a
    `proxyServer`, so a small CONNECT proxy inside this server, dialling
    through `safefetch`, would take every name resolution away from Chrome.
-2. **A DAV listing is bounded in items, not bytes** (High). 10,000 cards of
-   1 MiB each, materialised whole, then serialised whole: the protocol library
-   has no streaming. A per-account byte ceiling at write time is the fix.
-5. **`settleZones` is quadratic**, ~1 CPU-second per 1 MiB file, and the
-   calendar part of a message is parsed *before* the DMARC check (Medium).
 6. **One refused app-password sign-in costs up to twenty bcrypts** (Medium),
    and DAV re-runs the whole sign-in per request while only metering failures.
 7. **The IMAP listeners have no connection ceiling** (Medium) — the third
