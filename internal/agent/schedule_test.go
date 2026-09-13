@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A cron line is read in the person's zone: every weekday at eight is
@@ -34,4 +37,33 @@ func TestNextCron(t *testing.T) {
 			t.Fatalf("%q should not parse", bad)
 		}
 	}
+}
+
+// The brief is written in the language the person reads, by name rather than
+// by locale code: "English", not "en-us".
+func TestTheBriefAsksForThePersonsOwnLanguage(t *testing.T) {
+	t.Parallel()
+
+	english := BriefPrompt(&models.Agent{}, &models.User{Locale: "en-us"})
+	if !strings.Contains(english, "in English,") {
+		t.Fatalf("the language by name: %q", firstLine(english))
+	}
+	japanese := BriefPrompt(&models.Agent{Language: "ja"}, &models.User{Locale: "en-us"})
+	if strings.Contains(japanese, "in English,") {
+		t.Fatalf("the agent's own language wins over the account's: %q", firstLine(japanese))
+	}
+	// And it asks for the three things a morning needs: the day, what is
+	// waiting, what is held.
+	for _, want := range []string{"calendar today", "needs an answer", "holding a reply"} {
+		if !strings.Contains(english, want) {
+			t.Errorf("the brief should ask about %q:\n%s", want, english)
+		}
+	}
+}
+
+func firstLine(text string) string {
+	if index := strings.Index(text, "\n"); index > 0 {
+		return text[:index]
+	}
+	return text
 }

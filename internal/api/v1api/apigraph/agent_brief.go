@@ -72,7 +72,7 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 		}
 		schedule := &models.AgentSchedule{
 			AgentID: found.ID, Name: BriefName, Cron: cron,
-			Prompt: agent.BriefPrompt(agent.Language(found, principal.User)),
+			Prompt: agent.BriefPrompt(found, principal.User),
 			// The person's own words, because the person pressed the
 			// switch: a schedule the agent writes for itself arrives as a
 			// note about what to do rather than as an instruction.
@@ -95,7 +95,7 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 		schedule.Cron = cron
 		schedule.Enabled = arguments.Enabled
 		if strings.TrimSpace(schedule.Prompt) == "" {
-			schedule.Prompt = agent.BriefPrompt(agent.Language(found, principal.User))
+			schedule.Prompt = agent.BriefPrompt(found, principal.User)
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {

@@ -2061,7 +2061,7 @@ export function CollectionRow({
     setBusy(true)
     try {
       await graphql(GRANT_SOURCE, { kind: collection.kind, id: collection.id, granted })
-      toast.done(granted ? t('agent.granted') : t('agent.revoked'))
+      toast.done(granted ? t('agent.grantedCollection') : t('agent.revokedCollection'))
       await onChanged()
     } catch (caught) {
       toast.failed(messageOf(caught))
@@ -2091,7 +2091,7 @@ export function CollectionRow({
           </button>
         ) : (
           <button type="button" className="primary" disabled={busy || !view.agent} onClick={() => void set(true)}>
-            {t('agent.grant')}
+            {t('agent.grantCollection')}
           </button>
         )}
       </div>

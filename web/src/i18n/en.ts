@@ -1112,6 +1112,9 @@ export const en = {
   'agent.sourcesHint':
     'Each mailbox you own, and what the agent does there. Nothing from a mailbox you have not granted is ever sent to a model.',
   'agent.grant': 'Let it reach this mailbox',
+  'agent.grantCollection': 'Let it read this',
+  'agent.grantedCollection': 'It can read this now.',
+  'agent.revokedCollection': 'It can no longer read this.',
   'agent.granted': 'Granted. Sorting begins with the next message.',
   'agent.revoke': 'Revoke',
   'agent.revoked': 'Revoked. Queued work for this mailbox was cancelled.',

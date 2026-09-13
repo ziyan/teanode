@@ -1108,6 +1108,9 @@ export const ja: Catalog = {
   'agent.sourcesHint':
     'あなたの各メールボックスと、エージェントがそこで行うこと。許可していないメールボックスの内容がモデルに送られることはありません。',
   'agent.grant': 'このメールボックスに触れさせる',
+  'agent.grantCollection': 'これを読ませる',
+  'agent.grantedCollection': 'これを読めるようになりました。',
+  'agent.revokedCollection': 'これを読めなくなりました。',
   'agent.granted': '許可しました。次のメッセージから仕分けが始まります。',
   'agent.revoke': '取り消す',
   'agent.revoked': '取り消しました。このメールボックスの待機中の作業は取り消されました。',

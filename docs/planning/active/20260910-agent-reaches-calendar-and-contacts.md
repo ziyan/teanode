@@ -406,10 +406,10 @@ Tests that must exist by the end:
 
 - [x] ExecPlan written
 - [x] M0 tool consolidation — 84 tools to 54
-- [ ] M1 triage and reply with tools and rounds
-- [ ] M2 calendar and address book as granted sources
-- [ ] M3 extract and the proposal card
-- [ ] M4 the daily brief
+- [x] M1 triage and reply with tools and rounds
+- [x] M2 calendar and address book as granted sources
+- [x] M3 extract and the proposal card
+- [x] M4 the daily brief
 - [ ] M5 mail as a surface — **postponed** at the owner's word (2026-09-13);
       the plan for it stays below for whoever picks it up
 
@@ -487,4 +487,34 @@ same twice and never cached either way.
 
 ## Outcomes & Retrospective
 
-To be written at completion.
+Five of the six milestones are done; mail as a surface was postponed by the
+owner before it was started, and its milestone stays above for whoever picks
+it up.
+
+What a person can do now that they could not before: give their agent a
+calendar and an address book, one switch each, and see in the prompt which it
+has; have sorting and drafting look things up instead of guessing, and read
+the transcript of it doing so; be offered an appointment or a person's
+details that a message carried in its words, with the line it came from
+quoted, and add it with one press; and have a brief each morning from one
+switch. And the catalog they all run through is fifty-four tools rather than
+eighty-four.
+
+Three things worth carrying forward.
+
+**The merge found two bugs by refusing to build.** Making `Merge` panic when
+a member already takes an `action` turned a silent misdispatch into a startup
+failure, and that is how `group_manage` was found after `folder_manage` had
+already been found the hard way — by a test that stopped asking for
+confirmation before deleting a folder.
+
+**Measuring the prompt changed the design.** Sorting was going to have six
+tools; the measurement said two thirds of the added cost was tool definitions,
+so it has four. The calendar came out of the set because whether Thursday is
+free does not change what a message *is*.
+
+**The fallback is what makes the loop safe to ship.** Triage and reply end in
+prose when a small model cannot be talked into clean JSON, and the single call
+each of them used to make is still there behind the loop. Without it this
+change would have quietly stopped sorting mail for anybody running a local
+model.
