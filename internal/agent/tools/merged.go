@@ -113,6 +113,7 @@ func Merge(merged MergedTool) *Tool {
 		Name:        merged.Name,
 		Family:      merged.Family,
 		Description: strings.Join(lines, "\n"),
+		Actions:     verbs,
 		Risk:        gentlest(merged.Actions),
 		Parameters:  Object(properties, "action"),
 		Permissions: permissions,
@@ -368,4 +369,24 @@ var Renamed = map[string]string{
 	"mail_audit_content": "mail_audit", "mail_audit_mark": "mail_audit",
 	"account_get": "account", "account_update": "account",
 	"settings_get": "settings", "settings_update": "settings",
+}
+
+// Rename maps a list of tool names onto what those tools are called now,
+// keeping the order and dropping the duplicates a merge creates: a policy
+// naming rule_add and rule_remove names the rule tool once.
+func Rename(names []string) []string {
+	renamed := make([]string, 0, len(names))
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if merged, found := Renamed[strings.ToLower(name)]; found {
+			name = merged
+		}
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		renamed = append(renamed, name)
+	}
+	return renamed
 }

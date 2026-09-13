@@ -85,6 +85,12 @@ type Tool struct {
 	// behind tool_search when the catalog is long.
 	Core bool
 
+	// Actions are the verbs a merged tool takes, in the order they are
+	// described. Empty for a tool that is one thing. Said separately from
+	// the description so that a policy page can list what one line of
+	// policy covers without printing every action's own sentence.
+	Actions []string
+
 	// Headless says a run with nobody present may use it: a remote tool
 	// the operator marked read-only on a headless server.
 	Headless bool

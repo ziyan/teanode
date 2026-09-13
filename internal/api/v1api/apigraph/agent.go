@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -281,6 +282,13 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 	if err != nil {
 		return nil, err
 	}
+	// The person's own "always ask me" list, under the names the catalog
+	// has now: what the page shows and what the server enforces have to be
+	// the same list, and a list written before the tools were merged names
+	// verbs that are actions today.
+	if found != nil {
+		found.Confirm = agenttools.Rename(found.Confirm)
+	}
 	view := &AgentView{
 		Agent:       found,
 		Sources:     []*AgentSource{},
@@ -472,7 +480,12 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 			agent.Notifications = &notifications
 		}
 		if arguments.Confirm != nil {
-			agent.Confirm = *arguments.Confirm
+			// Written under the names the catalog has now. A list saved
+			// before the tools were merged names verbs that are actions
+			// today; the server still honours those, but a page that shows
+			// the catalog cannot show them, so what is saved from that page
+			// says the same thing in the names it can show.
+			agent.Confirm = agenttools.Rename(*arguments.Confirm)
 		}
 		if arguments.AskModel != nil {
 			choice := strings.TrimSpace(*arguments.AskModel)

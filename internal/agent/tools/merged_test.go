@@ -198,3 +198,37 @@ func TestAnUnknownActionDoesNothing(t *testing.T) {
 		}
 	}
 }
+
+// A policy written before the merge says the same thing afterwards, and says
+// it in names the page can show.
+//
+// The lists are written down by name -- the operator's agent.tools.disabled
+// and confirm, and a person's own "always ask me" -- and they were written
+// when every verb had a name. The server honours the old names either way;
+// what this is for is the page, which lists the catalog and can only show a
+// name that is in it. A list that still said rule_add would show nothing
+// ticked while the server went on asking about rules.
+func TestAPolicyWrittenBeforeTheMergeStillSaysIt(t *testing.T) {
+	t.Parallel()
+
+	got := Rename([]string{"rule_add", "rule_remove", "mail_send", "domain_get", "", " calendar_agenda "})
+	want := []string{"rule", "mail_send", "domain", "calendar"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	// Three verbs of one tool are that tool, once: a list is a set of
+	// things to switch off, not a tally.
+	if once := Rename([]string{"user_add", "user_remove", "user_update"}); len(once) != 1 || once[0] != "user" {
+		t.Fatalf("one name: %v", once)
+	}
+	// A name nobody renamed is left exactly as it was, including a family
+	// name, which these lists may also carry.
+	if kept := Rename([]string{"mailbox", "browser", "skill"}); len(kept) != 3 {
+		t.Fatalf("what was not renamed is untouched: %v", kept)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"strings"
 	"time"
 
@@ -255,7 +256,11 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Corrections: agent.Retention.Corrections.String(),
 		},
 		Search: &AgentSearchSettings{Kind: agent.Search.Kind, HasAPIKey: agent.Search.APIKey != ""},
-		Tools:  &AgentToolsSettings{Disabled: nonNil(agent.Tools.Disabled), Confirm: nonNil(agent.Tools.Confirm), Catalog: toolCatalog()},
+		Tools: &AgentToolsSettings{
+			Disabled: nonNil(agenttools.Rename(agent.Tools.Disabled)),
+			Confirm:  nonNil(agenttools.Rename(agent.Tools.Confirm)),
+			Catalog:  toolCatalog(),
+		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
@@ -595,6 +600,13 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	if parameters.Tools != nil {
 		applyStrings(&agent.Tools.Disabled, parameters.Tools.Disabled)
 		applyStrings(&agent.Tools.Confirm, parameters.Tools.Confirm)
+		// Under the names the catalog has now, so that what the page shows
+		// and what the server enforces are the same list. A policy written
+		// before the tools were merged names verbs that are actions today;
+		// those still reach the tool they became, but they cannot be shown
+		// on a page that lists the catalog.
+		agent.Tools.Disabled = agenttools.Rename(agent.Tools.Disabled)
+		agent.Tools.Confirm = agenttools.Rename(agent.Tools.Confirm)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser
@@ -761,7 +773,12 @@ func toolCatalog() []*AgentToolView {
 	tools := agent.FullCatalog().All()
 	views := make([]*AgentToolView, 0, len(tools))
 	for _, tool := range tools {
-		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward, Core: tool.Core})
+		views = append(views, &AgentToolView{
+			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
+			Description: leadSentence(tool.Description),
+			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
+			Core:        tool.Core, Actions: append([]string{}, tool.Actions...),
+		})
 	}
 	return views
 }

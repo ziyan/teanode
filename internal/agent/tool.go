@@ -43,6 +43,7 @@ const (
 
 var (
 	NewCatalog        = tools.NewCatalog
+	RenameTools       = tools.Rename
 	NeedsConfirmation = tools.NeedsConfirmation
 	Split             = tools.Split
 	Search            = tools.Search

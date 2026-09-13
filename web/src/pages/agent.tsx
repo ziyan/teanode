@@ -1850,7 +1850,7 @@ function RepliesCard() {
   )
 }
 
-const TOOLS = `{ ListAgentTools { name family risk description confirms core } }`
+const TOOLS = `{ ListAgentTools { name family risk description confirms core actions } }`
 
 // ConfirmForm: the tools the agent must always ask about first, by
 // family, each with a word — as usual, or ask me first — and a word for

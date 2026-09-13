@@ -47,6 +47,13 @@ Notable changes to TeaNode. The format follows
   anything, and seventeen names for the operator's domains was seventeen
   paragraphs spent on grammar.
 
+  The tool policy pages -- the operator's and your own "always ask me" --
+  show what each line covers: `domain` with `list get add update remove dns`
+  beside it, and the tool's own sentence rather than every action's. A policy
+  written before the merge still means what it meant, and is rewritten into
+  the new names the next time it is saved, so what the page shows and what
+  the server enforces are the same list.
+
   Each action keeps its own risk and its own permission: reading a diary is
   still a read, taking an appointment out of it still asks first, and somebody
   who may list groups but not change them is refused the half they may not

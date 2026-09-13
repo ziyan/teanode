@@ -12,7 +12,16 @@ import { useTranslation } from '../i18n/i18n'
 // (allowed, ask first, off); a person's are two. A family's word covers
 // its tools unless a tool says otherwise.
 
-export type PolicyTool = { name: string; family: string; description: string; confirms: boolean }
+export type PolicyTool = {
+  name: string
+  family: string
+  description: string
+  confirms: boolean
+  // The verbs a tool takes, for the ones that are one thing with several:
+  // one line of policy covers all of them, and a page that does not say
+  // which is a page nobody can reason about.
+  actions?: string[]
+}
 
 export function ToolPolicyAccordion({
   families,
@@ -51,7 +60,12 @@ export function ToolPolicyAccordion({
               >
                 {open[family] ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
                 <strong>{family}</strong>
-                <span className="muted">{plural(members.length, { one: 'agentSettings.familyToolsOne', other: 'agentSettings.familyToolsOther' })}</span>
+                <span className="muted">
+                  {plural(members.length, {
+                    one: 'agentSettings.familyToolsOne',
+                    other: 'agentSettings.familyToolsOther',
+                  })}
+                </span>
               </button>
               <Select
                 value={familyWord}
@@ -66,7 +80,16 @@ export function ToolPolicyAccordion({
                   <SettingsRow
                     key={tool.name}
                     title={tool.name}
-                    badge={tool.confirms ? <Tag value={t('agentSettings.asksByRisk')} /> : undefined}
+                    badge={
+                      <>
+                        {tool.confirms ? <Tag value={t('agentSettings.asksByRisk')} /> : null}
+                        {(tool.actions ?? []).map((action) => (
+                          <code className="tag" key={action}>
+                            {action}
+                          </code>
+                        ))}
+                      </>
+                    }
                     subtitle={tool.description}
                     actions={
                       <Select
@@ -77,7 +100,10 @@ export function ToolPolicyAccordion({
                             ? options
                             : options.map((option) =>
                                 option.value === defaultWord
-                                  ? { ...option, label: t('agentSettings.policyInherits', { word: labelOf(familyWord) }) }
+                                  ? {
+                                      ...option,
+                                      label: t('agentSettings.policyInherits', { word: labelOf(familyWord) }),
+                                    }
                                   : option,
                               )
                         }
