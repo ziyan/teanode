@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.21.5] - 2026-09-13
+
 ### Changed
 
 - The dashboard arrives in pieces rather than all at once. What a session
