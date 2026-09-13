@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-09-13
+
 ### Fixed
 
 - An invitation that arrives as mail is read whether or not it was encoded on
