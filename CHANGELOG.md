@@ -108,6 +108,13 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- Delete sits in the footer of the event dialog beside Cancel and Save, where
+  the other buttons that end the dialog are, rather than under the last field.
+
+- The mark on today is a circle whatever the date. A box sized around the
+  digits made it an oval for two of them, and on a phone -- where every button
+  is given a comfortable height -- it was an oval for all of them.
+
 - Weeks in the calendar start on Sunday. A calendar can be set the other way
   with `teanode calendar set --week-start monday`; the five-day view stays
   Monday to Friday whichever it is, because that is what a working week is.

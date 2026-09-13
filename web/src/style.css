@@ -593,6 +593,15 @@ a.tile:hover strong {
   background: var(--background);
 }
 
+/* An action that is neither the way forward nor the way out -- deleting what
+   is being edited -- sits at the other end of the footer, away from Save.
+   Together with it, because it also ends the dialog; apart from it, because
+   pressing it by accident is not the same size of mistake. */
+.dialog-actions-other {
+  margin-right: auto;
+}
+
+
 /* --- the rail ------------------------------------------------------------- */
 /* The product, at the top of its own rail. */
 .sidebar-brand {
@@ -2101,6 +2110,7 @@ pre.message-text {
     min-width: 40px;
     min-height: 40px;
   }
+
 
   /* iOS zooms the whole page in when a field smaller than 16px takes focus,
      and does not zoom back out. Sizing the fields at 16px is the only way to
@@ -6911,20 +6921,43 @@ button.with-icon {
   color: var(--accent-text);
 }
 
+/* A square box with the date centred in it, so the mark on today is a circle
+   rather than a pill. Padding around the digits makes the shape depend on how
+   many there are -- one digit round, two an oval -- and a date that changes
+   shape through the month is the kind of thing that looks like a mistake
+   because it is one. */
 .calendar-day-number {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
   border: none;
   background: none;
   color: var(--text);
   font: inherit;
   font-variant-numeric: tabular-nums;
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 50%;
   cursor: pointer;
 }
 
 .calendar-day-number:hover {
   background: var(--sidebar-hover);
+}
+
+/* On a touch screen every button is given a comfortable height, and that made
+   this one taller without making it wider: the mark on today came out an oval.
+   A target has two dimensions -- the same reason the toast's cross and the
+   conversation star are widened -- and a circle is what a calendar draws round
+   today. Here rather than beside those, because it has to win against the size
+   set above it, and between two rules of the same weight the later one wins. */
+@media (max-width: 760px) {
+  .calendar-day-number {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .calendar-day.today .calendar-day-number:hover {
@@ -7073,18 +7106,24 @@ button.with-icon {
   color: var(--muted);
 }
 
+/* A square box with the date centred in it, so the mark on today below is a
+   circle rather than a pill whose shape depends on how many digits the date
+   has. */
 .calendar-grid-date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
   font-size: 1.15rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 
-/* Today's date reads as today at a glance, the way every calendar marks it. */
 .calendar-grid-head.today .calendar-grid-date {
   background: var(--accent);
   color: var(--accent-text);
-  border-radius: 999px;
-  padding: 0.05rem 0.45rem;
+  border-radius: 50%;
 }
 
 .calendar-grid-head.today .calendar-grid-weekday {

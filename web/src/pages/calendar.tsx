@@ -873,6 +873,21 @@ export function CalendarPage() {
           busy={busy}
           error={problem}
           canSubmit={draft.summary.trim().length > 0 && draft.startDate.length > 0}
+          otherAction={
+            draft.id ? (
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  const held = found.find((event) => event.id === draft.id)
+                  setDraft(null)
+                  if (held) setDeleting(held)
+                }}
+              >
+                {t('common.delete')}
+              </button>
+            ) : null
+          }
           onClose={() => setDraft(null)}
           onSubmit={() =>
             void run(
@@ -1006,21 +1021,6 @@ export function CalendarPage() {
               onChange={(event) => setDraft({ ...draft, description: event.target.value })}
             />
           </label>
-          {draft.id && (
-            <div className="page-actions">
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  const held = found.find((event) => event.id === draft.id)
-                  setDraft(null)
-                  if (held) setDeleting(held)
-                }}
-              >
-                {t('common.delete')}
-              </button>
-            </div>
-          )}
         </FormDialog>
       )}
 
