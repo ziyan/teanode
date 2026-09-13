@@ -1761,7 +1761,6 @@ export const zh: Catalog = {
   'invitation.said.declined': '已拒绝，并已通知发起人',
   'invitation.said.tentative': '已回复待定，并已通知发起人',
   'invitation.failed': '操作没有成功',
-  'calendar.title': '日历',
   'calendar.hint': '你的日程安排。手机和电脑可以通过 CalDAV 同步，用邮件地址和应用密码登录。',
   'calendar.new': '新建日程',
   'calendar.newOn': '在 {day} 新建日程',

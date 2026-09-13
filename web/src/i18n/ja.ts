@@ -1818,7 +1818,6 @@ export const ja: Catalog = {
   'invitation.said.declined': '不参加と回答し、主催者に伝えました',
   'invitation.said.tentative': '未定と回答し、主催者に伝えました',
   'invitation.failed': 'うまくいきませんでした',
-  'calendar.title': 'カレンダー',
   'calendar.hint': '予定の一覧です。メールアドレスとアプリパスワードでサインインすれば、スマートフォンやパソコンと CalDAV で同期できます。',
   'calendar.new': '新しい予定',
   'calendar.newOn': '{day} に予定を作成',

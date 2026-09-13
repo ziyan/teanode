@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
+import { TabItem, Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
@@ -123,6 +124,91 @@ function namedRepeat(rule: string): boolean {
 // week five, the week seven -- all the same drawing, differing only in how
 // many days it starts from and how many it shows.
 const COLUMNS: Partial<Record<View, number>> = { day: 1, workweek: 5, week: 7 }
+
+// The order the views are offered in: widest span to narrowest, then the list.
+const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda']
+
+// How tall an hour is drawn, in pixels, and where the grid opens.
+//
+// A day is twenty-four hours and almost nobody has anything in the first
+// seven, so the grid is scrolled to the morning rather than made shorter:
+// something at six is still there to scroll to, which a grid that started at
+// eight would have hidden.
+const HOUR = 48
+const OPENS_AT = 7
+
+// minutesInto is how far into a day a moment falls, clamped to it. An event
+// that began yesterday and runs into today starts at the top rather than
+// above it.
+function minutesInto(day: Date, at: Date): number {
+  const start = startOfDay(day).getTime()
+  return Math.max(0, Math.min(24 * 60, (at.getTime() - start) / 60000))
+}
+
+// placed is one event with the slot it occupies: how far down, how tall, and
+// -- when things overlap -- which of the side-by-side columns it takes.
+type Placed = { event: CalendarEvent; top: number; height: number; column: number; columns: number }
+
+// layOut puts a day's timed events side by side where they overlap.
+//
+// A calendar that draws overlapping events on top of one another hides the
+// one underneath, and the whole reason to look at a day is to see the clash.
+// Events are swept in start order; anything that begins before the running
+// group has finished joins that group, and the group is then shared out.
+function layOut(day: Date, events: CalendarEvent[]): Placed[] {
+  const spans = events
+    .filter((event) => !event.allDay)
+    .map((event) => {
+      const starts = new Date(event.startsAt)
+      const ends = new Date(event.endsAt)
+      const from = minutesInto(day, starts)
+      // A moment-long event still has to be clickable, so every one is
+      // drawn at least twenty minutes tall.
+      const until = Math.max(from + 20, minutesInto(day, ends))
+      return { event, from, until }
+    })
+    .sort((first, second) => first.from - second.from || first.until - second.until)
+
+  const placed: Placed[] = []
+  let group: typeof spans = []
+  let groupEnds = -1
+
+  const settle = () => {
+    // Within a group, each event takes the first column that is free.
+    const columns: number[] = []
+    const taken = group.map((span) => {
+      let index = columns.findIndex((until) => until <= span.from)
+      if (index < 0) {
+        index = columns.length
+      }
+      columns[index] = span.until
+      return index
+    })
+    group.forEach((span, index) => {
+      placed.push({
+        event: span.event,
+        top: (span.from / 60) * HOUR,
+        height: ((span.until - span.from) / 60) * HOUR,
+        column: taken[index],
+        columns: columns.length,
+      })
+    })
+    group = []
+    groupEnds = -1
+  }
+
+  for (const span of spans) {
+    if (group.length > 0 && span.from >= groupEnds) {
+      settle()
+    }
+    group.push(span)
+    groupEnds = Math.max(groupEnds, span.until)
+  }
+  if (group.length > 0) {
+    settle()
+  }
+  return placed
+}
 
 // dayKey names a day the way a date input does, in local time. Not the ISO
 // string, which is in UTC and so is the wrong day for anybody east or west of
@@ -335,6 +421,25 @@ export function CalendarPage() {
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }), [])
   const titleFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }), [])
   const weekdayFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { weekday: 'short' }), [])
+  const hourFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { hour: 'numeric' }), [])
+
+  // The line across today moves, so it is state rather than a value read
+  // once: a calendar left open all afternoon showing the morning's line is
+  // worse than showing none.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 60 * 1000)
+    return () => clearInterval(tick)
+  }, [])
+
+  // The grid opens at the working day rather than at midnight, and again
+  // whenever the view or the day changes -- moving to next week should not
+  // land wherever the last one happened to be scrolled.
+  const grid = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!COLUMNS[view] || !grid.current) return
+    grid.current.scrollTop = OPENS_AT * HOUR
+  }, [view, on.getTime()])
 
   const heading =
     view === 'day'
@@ -379,8 +484,32 @@ export function CalendarPage() {
 
   return (
     <>
-      <h3>{t('calendar.title')}</h3>
       <p className="muted">{t('calendar.hint')}</p>
+
+      {/* The views are a row of tabs, the same component the server and
+          domain pages use: five of them is what a tab strip is for, and it
+          scrolls sideways on a narrow screen rather than being cut off. */}
+      <Tabs
+        items={VIEWS.map((which) => ({
+          id: which,
+          label: `calendar.view${which[0].toUpperCase()}${which.slice(1)}` as TabItem['label'],
+        }))}
+        active={view}
+        onSelect={(id) => move({ view: id as View })}
+        actions={
+          <button
+            className="primary"
+            type="button"
+            disabled={!calendarId}
+            onClick={() => {
+              setProblem(null)
+              setDraft(blank(on))
+            }}
+          >
+            {t('calendar.new')}
+          </button>
+        }
+      />
 
       <div className="calendar-bar">
         <div className="calendar-move">
@@ -398,29 +527,6 @@ export function CalendarPage() {
             </button>
           </Tooltip>
           <span className="calendar-heading">{heading}</span>
-        </div>
-        <div className="calendar-views">
-          {(['month', 'week', 'workweek', 'day', 'agenda'] as View[]).map((which) => (
-            <button
-              key={which}
-              type="button"
-              className={view === which ? 'chosen' : undefined}
-              onClick={() => move({ view: which })}
-            >
-              {t(`calendar.view${which[0].toUpperCase()}${which.slice(1)}` as Parameters<typeof t>[0])}
-            </button>
-          ))}
-          <button
-            className="primary"
-            type="button"
-            disabled={!calendarId}
-            onClick={() => {
-              setProblem(null)
-              setDraft(blank(on))
-            }}
-          >
-            {t('calendar.new')}
-          </button>
         </div>
       </div>
 
@@ -465,30 +571,117 @@ export function CalendarPage() {
       )}
 
       {!loading && COLUMNS[view] && (
-        <div className="calendar-week-scroll">
-          <div className="calendar-week" style={{ gridTemplateColumns: `repeat(${COLUMNS[view]}, minmax(0, 1fr))` }}>
-            {Array.from({ length: COLUMNS[view] as number }, (_, index) =>
-              addDays(COLUMNS[view] === 1 ? startOfDay(on) : startOfWeek(on), index),
-            ).map((day) => {
-              const key = dayKey(day)
-              return (
-                <div key={key} className={`calendar-day${key === today ? ' today' : ''}`}>
-                  <button
-                    type="button"
-                    className="calendar-day-number"
-                    onClick={() => {
-                      setProblem(null)
-                      setDraft(blank(day))
-                    }}
-                    title={t('calendar.newOn', { day: dayFormat.format(day) })}
-                  >
-                    {dayFormat.format(day)}
-                  </button>
-                  <div className="calendar-day-entries">{(byDay.get(key) ?? []).map(entry)}</div>
+        <div className="calendar-grid-scroll" ref={grid}>
+          {(() => {
+            const span = COLUMNS[view] as number
+            const days = Array.from({ length: span }, (_, index) =>
+              addDays(span === 1 ? startOfDay(on) : startOfWeek(on), index),
+            )
+            const columns = `4rem repeat(${span}, minmax(0, 1fr))`
+            const anyAllDay = days.some((day) => (byDay.get(dayKey(day)) ?? []).some((event) => event.allDay))
+            return (
+              <div className="calendar-grid" style={{ gridTemplateColumns: columns }}>
+                {/* The day names stay put while the hours scroll under them:
+                    a week scrolled to the afternoon with no dates on it is a
+                    grid of numbers nobody can read. */}
+                <div className="calendar-grid-corner" />
+                {days.map((day) => {
+                  const key = dayKey(day)
+                  return (
+                    <button
+                      key={`head-${key}`}
+                      type="button"
+                      className={`calendar-grid-head${key === today ? ' today' : ''}`}
+                      onClick={() => move({ view: 'day', on: day })}
+                      title={t('calendar.viewDay')}
+                    >
+                      <span className="calendar-grid-weekday">{weekdayFormat.format(day)}</span>
+                      <span className="calendar-grid-date">{day.getDate()}</span>
+                    </button>
+                  )
+                })}
+
+                {/* Anything that belongs to the whole day sits above the
+                    hours rather than pretending to start at midnight. The
+                    strip is there only when something is in it. */}
+                {anyAllDay && (
+                  <div className="calendar-grid-corner calendar-grid-allday-label">{t('calendar.allDay')}</div>
+                )}
+                {anyAllDay &&
+                  days.map((day) => (
+                    <div key={`allday-${dayKey(day)}`} className="calendar-grid-allday">
+                      {(byDay.get(dayKey(day)) ?? []).filter((event) => event.allDay).map(entry)}
+                    </div>
+                  ))}
+
+                <div className="calendar-hours">
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <div key={hour} className="calendar-hour" style={{ height: HOUR }}>
+                      {hour > 0 && <span>{hourFormat.format(new Date(2026, 0, 1, hour))}</span>}
+                    </div>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
+                {days.map((day) => {
+                  const key = dayKey(day)
+                  const placed = layOut(day, byDay.get(key) ?? [])
+                  return (
+                    <div
+                      key={`col-${key}`}
+                      className={`calendar-column${key === today ? ' today' : ''}`}
+                      style={{ height: 24 * HOUR }}
+                      onClick={(clicked) => {
+                        // A click on empty space makes something at that
+                        // hour, which is what every calendar does and what
+                        // stops a person editing the time they were just
+                        // pointing at.
+                        if (clicked.target !== clicked.currentTarget) return
+                        const box = clicked.currentTarget.getBoundingClientRect()
+                        const hour = Math.floor(((clicked.clientY - box.top) / HOUR) * 2) / 2
+                        const at = new Date(day)
+                        at.setHours(Math.floor(hour), hour % 1 ? 30 : 0, 0, 0)
+                        setProblem(null)
+                        setDraft(blank(at))
+                      }}
+                    >
+                      {Array.from({ length: 24 }, (_, hour) => (
+                        <div key={hour} className="calendar-slot" style={{ height: HOUR }} />
+                      ))}
+                      {placed.map(({ event, top, height, column, columns: across }) => (
+                        <button
+                          key={event.id + event.startsAt}
+                          type="button"
+                          className={`calendar-placed${opening === event.id ? ' busy' : ''}${
+                            event.status === 'CANCELLED' ? ' cancelled' : ''
+                          }`}
+                          style={{
+                            top,
+                            height,
+                            left: `calc(${(column / across) * 100}% + 2px)`,
+                            width: `calc(${(1 / across) * 100}% - 4px)`,
+                          }}
+                          onClick={() => void edit(event)}
+                          title={event.summary || t('calendar.untitled')}
+                        >
+                          <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
+                          <span className="calendar-placed-title">{event.summary || t('calendar.untitled')}</span>
+                          {event.location && height > 40 && (
+                            <span className="calendar-placed-where">{event.location}</span>
+                          )}
+                        </button>
+                      ))}
+                      {key === today && (
+                        <div
+                          className="calendar-now"
+                          style={{ top: (minutesInto(day, now) / 60) * HOUR }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
       )}
 

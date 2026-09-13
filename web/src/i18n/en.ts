@@ -1824,7 +1824,6 @@ export const en = {
   'invitation.said.declined': 'Declined, and the organizer has been told',
   'invitation.said.tentative': 'Answered maybe, and the organizer has been told',
   'invitation.failed': 'That did not work',
-  'calendar.title': 'Calendar',
   'calendar.hint': 'What you have on. Your phone and your computer can synchronize this over CalDAV, signing in with a mail address and an app password.',
   'calendar.new': 'New event',
   'calendar.newOn': 'New event on {day}',

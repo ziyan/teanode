@@ -6787,8 +6787,7 @@ button.with-icon {
   margin: 0.75rem 0;
 }
 
-.calendar-move,
-.calendar-views {
+.calendar-move {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -6801,15 +6800,12 @@ button.with-icon {
   font-variant-numeric: tabular-nums;
 }
 
-.calendar-views .chosen {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
-
 .calendar-month {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* One row for the weekday names, then six weeks that share what is left. */
+  grid-template-rows: auto repeat(6, minmax(6.5rem, 1fr));
+  min-height: min(68vh, 44rem);
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -6830,6 +6826,8 @@ button.with-icon {
 .calendar-day {
   background: var(--surface);
   min-height: 6.5rem;
+  /* Fills whatever the grid is given; the minimum above is the floor. */
+  height: 100%;
   padding: 0.3rem;
   display: flex;
   flex-direction: column;
@@ -6876,7 +6874,11 @@ button.with-icon {
   flex-direction: column;
   gap: 0.15rem;
   overflow-y: auto;
-  max-height: 8rem;
+  /* Takes what the cell has left rather than a fixed slice of it, and
+     min-height:0 is what lets it shrink enough to scroll instead of
+     stretching the row. */
+  flex: 1;
+  min-height: 0;
 }
 
 .calendar-entry {
@@ -6928,22 +6930,215 @@ button.with-icon {
   white-space: nowrap;
 }
 
-.calendar-week {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
+/* The time grid: hours down the side, a column per day, and events placed
+   where they actually fall. A calendar that lists a day's events in order
+   tells you what is on; one that places them tells you what your day looks
+   like, which is the question people open a calendar to answer. */
+.calendar-grid-scroll {
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: auto;
+  max-height: min(72vh, 48rem);
+  background: var(--surface);
+}
+
+.calendar-grid {
+  display: grid;
+  /* The columns are set from the view: a gutter, then one per day. */
+  position: relative;
+}
+
+/* The day names stay visible while the hours scroll under them. */
+.calendar-grid-head,
+.calendar-grid-corner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--rail);
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-grid-corner {
+  border-right: 1px solid var(--border);
+}
+
+.calendar-grid-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.4rem 0.25rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.calendar-grid-head:hover {
+  background: var(--sidebar-hover);
+}
+
+.calendar-grid-weekday {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.calendar-grid-date {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Today's date reads as today at a glance, the way every calendar marks it. */
+.calendar-grid-head.today .calendar-grid-date {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+
+.calendar-grid-head.today .calendar-grid-weekday {
+  color: var(--text);
+}
+
+.calendar-grid-allday-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  padding: 0.3rem 0.4rem;
+  text-align: right;
+  position: sticky;
+  top: 3.4rem;
+  z-index: 2;
+}
+
+.calendar-grid-allday {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 3.4rem;
+  z-index: 1;
+}
+
+.calendar-hours {
+  border-right: 1px solid var(--border);
+}
+
+/* The label sits at the line it names rather than inside the hour below it,
+   which is what makes it read as "this is where nine o'clock is". */
+.calendar-hour {
+  position: relative;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-hour span {
+  position: absolute;
+  top: -0.55rem;
+  right: 0.4rem;
+}
+
+.calendar-column {
+  position: relative;
+  border-left: 1px solid var(--border);
+}
+
+.calendar-column.today {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.calendar-slot {
+  border-bottom: 1px solid var(--border);
+  /* The pointer says the empty space is something you can use. */
+  cursor: pointer;
+}
+
+.calendar-slot:hover {
+  background: var(--sidebar-hover);
+}
+
+/* An event sits where it starts and is as tall as it lasts. */
+.calendar-placed {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
   overflow: hidden;
+  text-align: left;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
-.calendar-week .calendar-day {
-  min-height: 12rem;
+.calendar-placed:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
 }
 
-.calendar-week .calendar-day-entries {
-  max-height: none;
+.calendar-placed.busy {
+  opacity: 0.6;
+}
+
+.calendar-placed.cancelled .calendar-placed-title {
+  text-decoration: line-through;
+}
+
+.calendar-placed-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+}
+
+.calendar-placed-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-placed-where {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where we are now. Drawn over the events so it is not buried by a meeting
+   that is happening, which is exactly when somebody looks for it. */
+.calendar-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid #d1453b;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.calendar-now::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1453b;
 }
 
 .calendar-agenda {
@@ -7000,28 +7195,41 @@ button.with-icon {
 
 /* On a phone the month grid keeps its seven columns -- a month restacked into
    a list is not a month -- and scrolls sideways instead, wide enough that a
-   day is still a day. The agenda view is there for reading one day at a
-   time. */
+   day is still a day. The day view and the agenda are the ones worth reaching
+   for on a phone, and neither needs sideways room. */
 @media (max-width: 640px) {
-  .calendar-month,
-  .calendar-week {
+  .calendar-month {
     display: grid;
     min-width: 40rem;
   }
 
-  /* A single day needs no sideways room: it is one column, and on a phone
-     that is the view worth reaching for. */
-  .calendar-week:has(> .calendar-day:only-of-type) {
+  .calendar-month-scroll {
+    overflow-x: auto;
+  }
+
+  /* A week of seven columns on a phone is seven unreadable slivers, so the
+     grid keeps a width a column can be read at and scrolls. A single day is
+     one column and fits as it is. */
+  .calendar-grid {
+    min-width: 34rem;
+  }
+
+  .calendar-grid:has(> .calendar-column:only-of-type) {
     min-width: 0;
   }
 
-  .calendar-month-scroll,
-  .calendar-week-scroll {
-    overflow-x: auto;
+  .calendar-grid-scroll {
+    max-height: min(64vh, 40rem);
   }
 
   .calendar-agenda-when {
     width: 7rem;
+  }
+
+  /* A row of five tabs and a button does not fit; the tab strip already
+     scrolls sideways, so the action goes under it rather than squeezing it. */
+  .calendar-bar {
+    gap: 0.5rem;
   }
 }
 
