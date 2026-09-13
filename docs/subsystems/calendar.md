@@ -210,6 +210,16 @@ Free-busy has no server side either, so it is intercepted before the library
 sees the REPORT — the same place and the same way `addressbook-query` is. It is
 also the one report that answers with a calendar rather than with XML.
 
+**How a phone finds any of it.** `/.well-known/caldav` redirects to the mount,
+and a domain may publish `_caldavs._tcp` beside the address book's
+`_carddavs._tcp`; the domain page advises both. On a deployment reached at a
+port of its own these matter more than they look. Discovery from a bare name
+goes to port 443, and whatever answers there is what the phone finds — on the
+deployment this was written for, a router's administration page on a
+certificate for another name entirely. Without the SRV record the phone does
+not fail; it finds the wrong thing, and the person types the host and port by
+hand instead.
+
 ## What makes somebody busy
 
 Four judgements, and each is a way to tell somebody a time is taken when it is

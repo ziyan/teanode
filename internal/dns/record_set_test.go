@@ -135,6 +135,23 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 		t.Error("nothing breaks without it, so it is optional")
 	}
 
+	// And the calendar, at the same address. A phone told only a mail
+	// address looks up both, and advising one and not the other is how
+	// somebody ends up with their address book synchronizing and their
+	// calendar not -- which is what happened: the calendar was served for
+	// a fortnight with nothing telling anybody where.
+	calendar := checker.checkCalendarService(context.Background(), configuration, domain,
+		"mail.example.com", configuration.LinkPortFor(domain, nil))
+	if calendar == nil {
+		t.Fatal("the calendar has a record to advise too")
+	}
+	if calendar.Type != "SRV" || calendar.Name != "_caldavs._tcp.example.com" {
+		t.Fatalf("the calendar record: %+v", calendar)
+	}
+	if calendar.Expected != "0 1 10443 mail.example.com" {
+		t.Fatalf("the same host and port as the address book: %q", calendar.Expected)
+	}
+
 	// A domain whose mail is addressed to somebody else's name has nothing
 	// it could publish, so it is advised nothing.
 	if record := checker.checkContactsService(context.Background(), configuration, domain,

@@ -108,6 +108,12 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- A domain's page advises the SRV record that lets a calendar application find
+  this server from a mail address alone, beside the one the address book
+  already had. Without it a phone given only the domain looks on port 443 and
+  finds whatever answers there, which on a server reached at a port of its own
+  is something else entirely.
+
 - A whole-day event in the dashboard ends on the day it ends on. It used to
   show the day after, and asking for the fourteenth to the fifteenth made a
   one-day event. On the command line `--ends` is the last day it is on.
