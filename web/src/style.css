@@ -116,6 +116,17 @@ td a:hover {
   font-weight: 600;
   min-width: 0;
   overflow: hidden;
+}
+
+/* The label inside it, not the crumb: a crumb is a flex row — the chevron and
+   the word — and text-overflow says nothing about a flex item, so a subject
+   too long for the bar was cut off mid-word with no sign that there was more
+   of it. The word itself is what has to give way, and an ellipsis is what
+   says so. */
+.topbar .breadcrumb .crumb.current > a,
+.topbar .breadcrumb .crumb.current > span:not(.separator) {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

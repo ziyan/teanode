@@ -6,6 +6,26 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- On a phone the trail at the top of the mailbox says where you are and gets
+  you back. A message opened in a folder now reads "Inbox > the subject", with
+  the folder a link back to the list you came from — and to the search you had
+  narrowed it to, which the way back carries with it. Before, the message had
+  no name in the trail and the folder no link, so on a screen where the
+  message takes the place of the list there was nothing to return to.
+
+- A folder no longer names itself twice. "Mailbox > Inbox" was one place with
+  two words for it, the first of them a link to the second; the folder is now
+  the top of the trail. Neither does the composer: "Reply" alone rather than
+  "Compose > Reply".
+
+- The page you are on is not a link to itself. Every top-level page on a phone
+  was a single crumb pointing at the page it was already on.
+
+- A subject too long for the phone's bar ends in an ellipsis rather than being
+  cut off mid-word with nothing to say there was more of it.
+
 ## [0.21.3] - 2026-09-13
 
 ### Fixed
