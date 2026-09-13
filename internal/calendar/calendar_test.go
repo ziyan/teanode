@@ -891,35 +891,59 @@ func TestARepeatThatCannotReachTodaySaysSo(t *testing.T) {
 // was the product of the two -- about a second of a core for a file at the
 // size limit, from anybody who can send mail to a served address.
 func TestManyUnnameableZonesAreSettledInOneWalk(t *testing.T) {
-	lines := []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//x//EN"}
-	for index := 0; index < 3000; index++ {
-		name := fmt.Sprintf("Nowhere %d Standard Time", index)
-		lines = append(lines,
-			"BEGIN:VTIMEZONE", "TZID:"+name,
-			"BEGIN:STANDARD", "DTSTART:16011101T020000",
-			"TZOFFSETFROM:-0430", "TZOFFSETTO:-0430", "END:STANDARD",
-			"END:VTIMEZONE")
-	}
-	lines = append(lines, "BEGIN:VEVENT", "UID:many", "DTSTAMP:20260912T120000Z",
-		"DTSTART;TZID=Nowhere 0 Standard Time:20260914T100000",
-		"DTEND;TZID=Nowhere 0 Standard Time:20260914T110000", "SUMMARY:Many zones")
-	for index := 0; index < 3000; index++ {
-		lines = append(lines, fmt.Sprintf("EXDATE;TZID=Nowhere %d Standard Time:2026092%dT100000", index, index%10))
-	}
-	lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+	// How long the same file takes at two sizes. What is timed is the parse
+	// alone; the file is built first, and the best of two runs is taken so
+	// that one pause on a shared machine does not decide the answer.
+	measure := func(zones int) time.Duration {
+		lines := []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//x//EN"}
+		for index := 0; index < zones; index++ {
+			name := fmt.Sprintf("Nowhere %d Standard Time", index)
+			lines = append(lines,
+				"BEGIN:VTIMEZONE", "TZID:"+name,
+				"BEGIN:STANDARD", "DTSTART:16011101T020000",
+				"TZOFFSETFROM:-0430", "TZOFFSETTO:-0430", "END:STANDARD",
+				"END:VTIMEZONE")
+		}
+		lines = append(lines, "BEGIN:VEVENT", "UID:many", "DTSTAMP:20260912T120000Z",
+			"DTSTART;TZID=Nowhere 0 Standard Time:20260914T100000",
+			"DTEND;TZID=Nowhere 0 Standard Time:20260914T110000", "SUMMARY:Many zones")
+		for index := 0; index < zones; index++ {
+			lines = append(lines, fmt.Sprintf("EXDATE;TZID=Nowhere %d Standard Time:2026092%dT100000", index, index%10))
+		}
+		lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+		file := []byte(crlf(lines...))
 
-	started := time.Now()
-	parsed, err := Parse([]byte(crlf(lines...)))
-	took := time.Since(started)
-	if err != nil {
-		t.Fatalf("parse: %s", err)
+		best := time.Duration(0)
+		for attempt := 0; attempt < 2; attempt++ {
+			started := time.Now()
+			parsed, err := Parse(file)
+			took := time.Since(started)
+			if err != nil {
+				t.Fatalf("parse: %s", err)
+			}
+			if parsed.Summary != "Many zones" {
+				t.Fatalf("the event is read: %q", parsed.Summary)
+			}
+			if best == 0 || took < best {
+				best = took
+			}
+		}
+		return best
 	}
-	if parsed.Summary != "Many zones" {
-		t.Fatalf("the event is read: %q", parsed.Summary)
-	}
-	// Generous: the quadratic version took the better part of a second for
-	// this input and grows with the square. This is a fuse, not a benchmark.
-	if took > 500*time.Millisecond {
-		t.Fatalf("reading it took %s, which is the shape of the bug", took)
+
+	// A bound in milliseconds would say more about the machine than about
+	// the code -- the same file takes ten times as long under the race
+	// detector on a shared runner as it does on a desktop, and a fuse set
+	// for one of those blows on the other. The shape is what is being
+	// asserted, and the shape does not move: four times the file is four
+	// times the work when the walk happens once, and sixteen times the work
+	// when it happens once per zone. Measured, on this file: just under four
+	// when the walk happens once, and between nine and ten when it does not.
+	// Six is the line between them, with half again either side of it.
+	small := measure(750)
+	large := measure(3000)
+	t.Logf("750 zones in %s, 3000 in %s", small, large)
+	if large > 6*small {
+		t.Fatalf("four times the file took %s against %s, which is the shape of the bug", large, small)
 	}
 }
