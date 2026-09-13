@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which fourteen are fixed here. The ones that mattered:
+Forty findings, of which eighteen are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -993,6 +993,59 @@ one. Measured: a 1.2 MB message of sixteen compressed parts decoded to 273 MB
 of heap in two seconds and wrote 144,000 rows in one transaction; at the
 default message size that is about sixteen gigabytes. A message is now bounded
 at 32 reports and 20,000 records across all of its parts.
+
+### SEC-64 — One wrong guess cost twenty password hashes (Medium, fixed)
+
+A refused app-password sign-in tries every app password the mailbox has, one
+bcrypt each at cost 12 — about a sixth of a second apiece. The limiter counted
+one attempt whatever that cost, so a mailbox at the ceiling of twenty devices
+sold **twenty times as much of this server's time per token** as an empty one:
+three seconds of a core for one packet, on IMAP, submission and DAV alike.
+
+Two changes. The limiter is charged in hashes rather than in tries, so the
+budget now measures work. And the passwords are tried most-recently-used
+first, so the ordinary sign-in — the same device as yesterday — costs one hash
+instead of as many as the mailbox has devices, which also takes most of the
+cost off the successful path that DAV walks on *every request*.
+
+### SEC-65 — The IMAP listeners had no connection ceiling (Medium, fixed)
+
+The mail listeners have had `MaxConnections` since the second review, for the
+reason recorded there. The IMAP listeners had none, and both ports are open to
+anybody: every accepted connection is a goroutine with its TLS buffers, a bare
+`NOOP` resets the read deadline, and nothing but the file-descriptor limit
+bounded them. The same ceiling now applies, and a connection past it is closed
+rather than queued.
+
+### SEC-66 — Invitations went out without the permission to send (Medium, fixed)
+
+`SaveCalendarEvent`, `DeleteCalendarEvent` and `AnswerMailInvitation` all put
+mail on the wire — up to a hundred addresses per call, with a subject, a body
+and an attachment the caller controls, from the person's own address, signed
+and aligned. Each asked only for `calendar:use`. Every other outbound path in
+the program asks for `mail:send`: composing, leaving a mailing list, a rule
+that forwards, the out-of-office reply. So did the agent's own calendar tool's
+comment, while its declaration did not. They ask for it now.
+
+### SEC-67 — MCP OAuth trusted a document written by the far end (Medium, fixed)
+
+Discovery fetches `/.well-known/oauth-protected-resource` from the connected
+server, takes the `authorization_servers` it names, and fetches each of them —
+with a plain client that follows redirects. The endpoints that come back were
+then used as given: no scheme requirement, and no check that the metadata
+names the server it was fetched from. What goes to those endpoints is the
+person's authorization code, the PKCE verifier and, where the operator set
+one, the client secret.
+
+Three rules now, the same three single sign-on has had since it was written.
+An endpoint must be `https`, unless it is on this machine, where plain HTTP
+carries nothing anybody else can read — an operator running a connected server
+beside this one is the case that exception exists for. A metadata document
+must name the origin it was fetched from. And an address the *server* named is
+followed with the address guard on, so it cannot point this server at the
+metadata service or at its own API — unless the operator declared the server
+at a private address themselves, in which case private addresses are the
+deployment and the operator's network is the trust boundary.
 
 ### SEC-62 — A collection was bounded in items, not bytes (High, fixed)
 
@@ -1132,21 +1185,12 @@ Ranked, with what each needs. Nothing below is fixed in this pass.
    property is a guarded proxy: `Target.createBrowserContext` takes a
    `proxyServer`, so a small CONNECT proxy inside this server, dialling
    through `safefetch`, would take every name resolution away from Chrome.
-6. **One refused app-password sign-in costs up to twenty bcrypts** (Medium),
-   and DAV re-runs the whole sign-in per request while only metering failures.
-7. **The IMAP listeners have no connection ceiling** (Medium) — the third
-    bullet of SEC-19, on the listener it was not applied to.
-8. **Calendar invitations send mail without `mail:send`** (Medium): every
-    other outbound path in the program checks it.
-9. **MCP OAuth discovery runs over an unguarded client** with no `https`
-    requirement and no issuer check (Medium), and a connected server may be
-    declared at an `http://` address with the person's token on it.
-10. **`user:manage` is transitively full administration** (Medium), and the
+2. **`user:manage` is transitively full administration** (Medium), and the
     comment beside it says the opposite.
-11. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
+3. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
     the only thing between a same-site page and a cookie-authenticated
     mutation, and `/drawer` now allows framing.
-12. Smaller, recorded in full in the reviewers' reports: the shell rule asks
+4. Smaller, recorded in full in the reviewers' reports: the shell rule asks
     about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
     recover; `secretish()` in the redaction test cannot see `token`,
     `authorization` or `value`; `listen.debug` will bind anywhere; the

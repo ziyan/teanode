@@ -296,13 +296,28 @@ var dummyPasswordHash = sync.OnceValue(func() []byte {
 // password that matched too, for a session that wants to check later that
 // it still exists.
 func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string) (*models.Mailbox, *models.MailboxAppPassword, error) {
+	mailbox, appPassword, _, err := AuthenticateAppPasswordCounting(tx, username, password)
+	return mailbox, appPassword, err
+}
+
+// AuthenticateAppPasswordCounting is the same, and says how many password
+// hashes it spent.
+//
+// A refusal tries every app password the mailbox has, and a hash costs about
+// a sixth of a second on purpose. Counted as one attempt, a mailbox with
+// twenty devices therefore sold twenty times as much of this server's time per
+// token as an empty one -- three seconds of a core for one packet, from
+// anybody, on every port that takes an app password. A caller with a rate
+// limiter charges it this many.
+func AuthenticateAppPasswordCounting(tx db.Transaction, username, password string) (*models.Mailbox, *models.MailboxAppPassword, int, error) {
+	tried := 0
 	// Every way of being wrong is one answer, and takes one bcrypt: an
 	// address with no mailbox behind it used to be refused at once, and an
 	// address with one after a hash, which told a caller which addresses
 	// have mailboxes by how long the refusal took.
-	refuse := func() (*models.Mailbox, *models.MailboxAppPassword, error) {
+	refuse := func() (*models.Mailbox, *models.MailboxAppPassword, int, error) {
 		_, _ = security.VerifyPassword(dummyPasswordHash(), password)
-		return nil, nil, ErrInvalidAppPassword
+		return nil, nil, tried + 1, ErrInvalidAppPassword
 	}
 	address, err := mailparse.ParseAddress(strings.TrimSpace(username))
 	if err != nil {
@@ -311,7 +326,7 @@ func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string)
 	localPart, domainName := mailparse.SplitAddress(address)
 	domain, err := tx.GetDomainByName(domainName)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, tried, err
 	}
 	if domain == nil {
 		return refuse()
@@ -331,45 +346,61 @@ func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string)
 	}
 	mailbox, err := tx.GetMailbox(mailboxId)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, tried, err
 	}
 	if mailbox == nil {
 		return refuse()
 	}
 	user, err := tx.GetUser(mailbox.UserID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, tried, err
 	}
 	if user == nil || user.Disabled() {
 		return refuse()
 	}
 	permissions, err := tx.EffectivePermissions(user.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, tried, err
 	}
 	if !permissions.Has(models.PermissionMailRead) {
 		return refuse()
 	}
 	appPasswords, err := tx.ListAppPasswords(mailbox.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, tried, err
 	}
 	if len(appPasswords) == 0 {
 		return refuse()
 	}
+	// The most recently used first, so the ordinary sign-in -- the same
+	// device as last time -- costs one hash rather than as many as the
+	// mailbox has app passwords. A wrong password still costs all of them,
+	// which is why the caller charges for the work; see PasswordsTried.
+	sort.SliceStable(appPasswords, func(first, second int) bool {
+		return lastUsed(appPasswords[first]).After(lastUsed(appPasswords[second]))
+	})
 	for _, appPassword := range appPasswords {
+		tried++
 		ok, err := security.VerifyPassword([]byte(appPassword.PasswordHash), password)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, tried, err
 		}
 		if ok {
 			if err := tx.TouchAppPassword(appPassword.ID, time.Now()); err != nil {
-				return nil, nil, err
+				return nil, nil, tried, err
 			}
-			return mailbox, appPassword, nil
+			return mailbox, appPassword, tried, nil
 		}
 	}
-	return nil, nil, ErrInvalidAppPassword
+	return nil, nil, tried, ErrInvalidAppPassword
+}
+
+// lastUsed is when an app password was last accepted, or when it was made.
+func lastUsed(appPassword *models.MailboxAppPassword) time.Time {
+	if appPassword.LastUsedAt != nil {
+		return *appPassword.LastUsedAt
+	}
+	return appPassword.CreatedAt
 }
 
 // ErrInvalidAppPassword is every way an app-password sign-in can be wrong.

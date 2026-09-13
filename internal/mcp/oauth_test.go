@@ -33,7 +33,9 @@ func TestBeginRegistersAClientWhenThereIsNone(t *testing.T) {
 	}))
 	defer server.Close()
 
-	settings := &OAuthSettings{ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/agent?connect=broker", ClientName: "TeaNode", Scopes: []string{"internal"}}
+	// A client of the test server's own: the guarded one this package
+	// uses by default refuses a loopback address, which is the point of it.
+	settings := &OAuthSettings{Client: server.Client(), ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/agent?connect=broker", ClientName: "TeaNode", Scopes: []string{"internal"}}
 	authorization, err := Begin(context.Background(), settings)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -49,7 +51,7 @@ func TestBeginRegistersAClientWhenThereIsNone(t *testing.T) {
 	}
 	// A configured client id is used as it is, and nothing is registered.
 	registered = 0
-	authorization, err = Begin(context.Background(), &OAuthSettings{ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/x", ClientID: "by-hand"})
+	authorization, err = Begin(context.Background(), &OAuthSettings{Client: server.Client(), ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/x", ClientID: "by-hand"})
 	if err != nil || registered != 0 || authorization.ClientID != "by-hand" {
 		t.Fatalf("a configured client is left alone: %d %q %v", registered, authorization.ClientID, err)
 	}
@@ -67,7 +69,7 @@ func TestBeginSaysWhenThereIsNoWayToGetAClient(t *testing.T) {
 		writer.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
-	_, err := Begin(context.Background(), &OAuthSettings{ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/x"})
+	_, err := Begin(context.Background(), &OAuthSettings{Client: server.Client(), ServerURL: server.URL + "/mcp", RedirectURL: "https://mail.example/x"})
 	if err == nil || !strings.Contains(err.Error(), "oauth.clientId") {
 		t.Fatalf("it names the setting to fill in: %v", err)
 	}
@@ -86,4 +88,51 @@ func TestWellKnownTriesBothShapes(t *testing.T) {
 
 func baseOf(request *http.Request) string {
 	return "http://" + request.Host
+}
+
+// Where a person's credentials may be sent, and which addresses this server
+// will follow a connected server's word to.
+//
+// The endpoints come out of a document the far end writes, and what goes to
+// them is the authorization code, the PKCE verifier and the client secret.
+func TestWhereCredentialsMayBeSent(t *testing.T) {
+	t.Parallel()
+
+	if err := usableEndpoint("https://auth.example.com/token"); err != nil {
+		t.Fatalf("an ordinary https endpoint: %s", err)
+	}
+	if err := usableEndpoint("http://auth.example.com/token"); err == nil {
+		t.Fatal("plain http across the network is refused")
+	}
+	// Except on this machine, where nothing else can read it -- an operator
+	// running a connected server beside this one.
+	for _, address := range []string{"http://127.0.0.1:9000/token", "http://localhost:9000/token", "http://[::1]:9000/token"} {
+		if err := usableEndpoint(address); err != nil {
+			t.Fatalf("%s is on this machine: %s", address, err)
+		}
+	}
+	if err := usableEndpoint("ftp://auth.example.com/token"); err == nil {
+		t.Fatal("and nothing else is an address to send a credential to")
+	}
+
+	// A document has to name itself: fetched from one origin and claiming
+	// another, it is somebody else's metadata.
+	if !sameIssuer("https://auth.example.com", "https://auth.example.com/.well-known/oauth-authorization-server") {
+		t.Fatal("its own origin")
+	}
+	if sameIssuer("https://auth.example.com", "https://elsewhere.test/.well-known/oauth-authorization-server") {
+		t.Fatal("somebody else's")
+	}
+
+	// Whether the server named by the far end is followed with the guard on
+	// depends on where the operator put the server itself.
+	if !declaredPrivately("http://127.0.0.1:3000/mcp") {
+		t.Fatal("a server on this machine is a private deployment")
+	}
+	if !declaredPrivately("http://10.1.2.3:3000/mcp") {
+		t.Fatal("and so is one on a private network")
+	}
+	if declaredPrivately("https://example.com/mcp") {
+		t.Fatal("a server out on the internet is not a private deployment")
+	}
 }

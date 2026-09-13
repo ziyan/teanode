@@ -273,6 +273,11 @@ func (self *graph) sendInvitationReply(ctx context.Context, object *models.Calen
 	if self.mailer == nil {
 		return fmt.Errorf("this server cannot send mail")
 	}
+	// Answering an invitation writes to the organizer, so it asks for the
+	// permission to send, the way everything else that sends does.
+	if _, err := self.requirePermission(ctx, models.PermissionMailSend); err != nil {
+		return err
+	}
 	parsed, err := calendar.Parse([]byte(object.Data))
 	if err != nil {
 		return fmt.Errorf("that event cannot be read back")

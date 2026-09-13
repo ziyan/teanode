@@ -827,6 +827,17 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 	if self.mailer == nil {
 		return fmt.Errorf("this server cannot send mail")
 	}
+	// Sending is what this does, so it asks for the permission to send.
+	//
+	// Everything else that puts mail on the wire checks it -- composing,
+	// leaving a mailing list, a rule that forwards, the out-of-office reply
+	// -- and this did not: keeping a calendar was enough. An account with
+	// calendar:use and no mail:send could put text of its own choosing in
+	// front of a hundred addresses per call, from this server's domains,
+	// signed and aligned.
+	if _, err := self.requirePermission(ctx, models.PermissionMailSend); err != nil {
+		return err
+	}
 	to := make([]string, 0, len(asked))
 	for _, address := range asked {
 		if noReplyAddress(address) {

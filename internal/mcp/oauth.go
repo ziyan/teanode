@@ -9,10 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // OAuth 2.1 for a server that wants a person's authorization: the
@@ -69,11 +72,88 @@ type OAuthSettings struct {
 	Client *http.Client
 }
 
+// client is for an address the operator typed: the connected server's own.
+// Unguarded, because declaring a server at a private address is a thing an
+// operator does on purpose -- one running beside this on the same host, or
+// inside the same network -- and they may already declare one that runs as a
+// command.
 func (self *OAuthSettings) client() *http.Client {
 	if self.Client != nil {
 		return self.Client
 	}
 	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// followed is for an address the connected *server* chose: the authorization
+// servers its own metadata names.
+//
+// Guarded when the declared server is out on the internet, because then a
+// document written by the far end is choosing where this server connects, and
+// unguarded that reaches private addresses, the metadata service, and this
+// server's own API on loopback.
+//
+// Not guarded when the operator declared the server at a private or loopback
+// address, because then private addresses are the deployment: a connected
+// server inside somebody's network naming an authorization server inside the
+// same network is the ordinary case, and refusing it would be refusing what
+// they set up. The trust boundary is the operator's network, and they put the
+// server inside it on purpose.
+func (self *OAuthSettings) followed() *http.Client {
+	if self.Client != nil {
+		return self.Client
+	}
+	if declaredPrivately(self.ServerURL) {
+		return &http.Client{Timeout: 30 * time.Second}
+	}
+	return safefetch.Client()
+}
+
+// declaredPrivately is whether the address the operator typed for this server
+// is one only their own network can reach.
+func declaredPrivately(address string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(address))
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if loopback(host) {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+	resolved, err := net.LookupIP(host)
+	if err != nil || len(resolved) == 0 {
+		return false
+	}
+	for _, ip := range resolved {
+		if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
+			return false
+		}
+	}
+	return true
+}
+
+// usableEndpoint refuses an authorization or token endpoint this server will
+// not send a person's secrets to.
+//
+// The endpoints come out of a document the connected server chose, and what
+// goes to them is the authorization code, the PKCE verifier and, where the
+// operator configured one, the client secret. Single sign-on has required an
+// https issuer that names itself since it was written; this is the same rule,
+// in the place it was missing.
+func usableEndpoint(endpoint string) error {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return fmt.Errorf("mcp: %q is not an address", endpoint)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") && !loopback(parsed.Hostname()) {
+		return fmt.Errorf("mcp: %s is not https, and a person's credentials are not sent over anything else", endpoint)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("mcp: %q names no host", endpoint)
+	}
+	return nil
 }
 
 // Discover reads the authorization server's metadata: the protected
@@ -89,30 +169,85 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 	origin := server.Scheme + "://" + server.Host
 	candidates := []string{}
 	// The protected resource may name its authorization server.
+	named := map[string]bool{}
 	if resource, err := fetchJSON[struct {
 		AuthorizationServers []string `json:"authorization_servers"`
 	}](ctx, settings.client(), origin+"/.well-known/oauth-protected-resource"); err == nil {
 		for _, authorizationServer := range resource.AuthorizationServers {
-			candidates = append(candidates, wellKnown(authorizationServer, "oauth-authorization-server")...)
+			for _, candidate := range wellKnown(authorizationServer, "oauth-authorization-server") {
+				// The server named this one, so it is followed with the
+				// guard on.
+				named[candidate] = true
+				candidates = append(candidates, candidate)
+			}
 		}
 	}
 	candidates = append(candidates, wellKnown(settings.ServerURL, "oauth-authorization-server")...)
 	candidates = append(candidates, origin+"/.well-known/oauth-authorization-server", origin+"/.well-known/openid-configuration")
 	var lastErr error
 	for _, candidate := range candidates {
-		metadata, err := fetchJSON[Metadata](ctx, settings.client(), candidate)
+		fetch := settings.client()
+		if named[candidate] {
+			fetch = settings.followed()
+		}
+		metadata, err := fetchJSON[Metadata](ctx, fetch, candidate)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if metadata.AuthorizationEndpoint != "" && metadata.TokenEndpoint != "" {
-			return &metadata, nil
+		if metadata.AuthorizationEndpoint == "" || metadata.TokenEndpoint == "" {
+			continue
 		}
+		if err := usableEndpoint(metadata.AuthorizationEndpoint); err != nil {
+			lastErr = err
+			continue
+		}
+		if err := usableEndpoint(metadata.TokenEndpoint); err != nil {
+			lastErr = err
+			continue
+		}
+		// A document has to name itself. Fetched from one address and
+		// claiming another, it is somebody else's metadata -- which is the
+		// whole point of the issuer field.
+		if metadata.Issuer != "" && !sameIssuer(metadata.Issuer, candidate) {
+			lastErr = fmt.Errorf("mcp: the metadata at %s says it belongs to %s", candidate, metadata.Issuer)
+			continue
+		}
+		return &metadata, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no authorization endpoints published")
 	}
 	return nil, fmt.Errorf("mcp: cannot discover the authorization server of %s: %w", settings.ServerURL, lastErr)
+}
+
+// loopback is a host that never leaves this machine, where plain HTTP carries
+// nothing anybody else can read. An operator running a connected server beside
+// this one is the case this exists for.
+func loopback(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "localhost" {
+		return true
+	}
+	if address := net.ParseIP(host); address != nil {
+		return address.IsLoopback()
+	}
+	return false
+}
+
+// sameIssuer is whether a document fetched from one address may claim to
+// belong to an issuer. The issuer names an origin; the document lives under
+// it, at a well-known path.
+func sameIssuer(issuer, fetched string) bool {
+	claimed, err := url.Parse(strings.TrimSpace(issuer))
+	if err != nil {
+		return false
+	}
+	from, err := url.Parse(strings.TrimSpace(fetched))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(claimed.Scheme, from.Scheme) && strings.EqualFold(claimed.Host, from.Host)
 }
 
 // wellKnown is where an issuer publishes a document, in both the shapes

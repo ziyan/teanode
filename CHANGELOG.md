@@ -8,6 +8,22 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A wrong app password costs this server what it costs, and no more. A refused
+  sign-in tries every app password on the mailbox, so a mailbox with twenty
+  devices was twenty times as expensive to guess at as an empty one; and the
+  password a device used last time is tried first, so signing in normally
+  costs one check rather than twenty.
+
+- The IMAP listeners serve only so many connections at once, as the mail
+  listeners already did.
+
+- Sending an invitation, calling a meeting off, and answering one all need
+  permission to send mail, which every other way of sending already needed.
+
+- A connected server can no longer point this server at an address of its
+  choosing while it is being set up, and a person's credentials are only sent
+  to an endpoint reached over HTTPS.
+
 - An address book and a calendar are bounded by what they hold as well as by
   how many things are in them. A listing is read whole, so ten thousand
   one-megabyte cards was a way to exhaust the server's memory.

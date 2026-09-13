@@ -53,6 +53,17 @@ type Settings struct {
 
 	// AuthLimiter bounds how often one address may attempt to sign in.
 	AuthLimiter *ratelimit.Registry
+
+	// MaxConnections bounds how many connections are served at once; past
+	// it, a new one is closed rather than queued. Zero is unbounded.
+	//
+	// The mail listeners have had one since an earlier audit; this one did
+	// not, and the two ports it serves are open to anybody. Every accepted
+	// connection is a goroutine with TLS buffers behind it, a bare NOOP
+	// resets the read deadline, so connections can be held open for as long
+	// as somebody likes and nothing but the file descriptor limit stopped
+	// them.
+	MaxConnections int
 }
 
 // Delimiter between a folder and its children in a name.
@@ -108,10 +119,52 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 		<-ctx.Done()
 		_ = server.Close()
 	}()
+	if settings.MaxConnections > 0 {
+		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections)}
+	}
 	err = server.Serve(listener)
 	if ctx.Err() != nil {
 		return nil
 	}
+	return err
+}
+
+// boundedListener serves only so many connections at once. One past the
+// ceiling is closed immediately rather than queued: a client that is refused
+// reconnects, and one that is queued sits on a goroutine and a buffer, which
+// is the thing being bounded.
+type boundedListener struct {
+	net.Listener
+	held chan struct{}
+}
+
+func (self *boundedListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := self.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case self.held <- struct{}{}:
+			return &boundedConn{Conn: conn, release: self.held}, nil
+		default:
+			log.Warningf("refusing a connection from %s: %d are already being served",
+				conn.RemoteAddr(), cap(self.held))
+			_ = conn.Close()
+		}
+	}
+}
+
+// boundedConn gives its place back once, however many times it is closed.
+type boundedConn struct {
+	net.Conn
+	release chan struct{}
+	once    sync.Once
+}
+
+func (self *boundedConn) Close() error {
+	err := self.Conn.Close()
+	self.once.Do(func() { <-self.release })
 	return err
 }
 
@@ -198,9 +251,14 @@ func (self *session) Login(username, password string) error {
 	var mailbox *models.Mailbox
 	var appPassword *models.MailboxAppPassword
 	var canWrite bool
+	spent := 1
 	err := self.settings.Database.Transaction(func(tx db.Transaction) error {
 		var err error
-		mailbox, appPassword, err = access.AuthenticateAppPasswordWithID(tx, username, password)
+		var tried int
+		mailbox, appPassword, tried, err = access.AuthenticateAppPasswordCounting(tx, username, password)
+		if tried > 0 {
+			spent = tried
+		}
 		if err != nil {
 			return err
 		}
@@ -209,6 +267,14 @@ func (self *session) Login(username, password string) error {
 	})
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidAppPassword) {
+			// Charged in password hashes rather than in tries: a refusal
+			// tries every app password the mailbox has, and each one is a
+			// sixth of a second on purpose. One token for twenty hashes
+			// was twenty times as much of this server's time per packet
+			// for a mailbox with twenty devices.
+			if self.settings.AuthLimiter != nil && self.remote != "" && spent > 1 {
+				self.settings.AuthLimiter.For(self.remote).Take(int64(spent - 1))
+			}
 			log.Noticef("refused imap sign-in as %q from %s", username, self.remote)
 			return imapserver.ErrAuthFailed
 		}
