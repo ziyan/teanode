@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/graphql-go/graphql"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/web"
 )
 
 type graphRequest struct {
@@ -26,7 +28,42 @@ type graphRequest struct {
 // with files goes through its own route, which has its own cap.
 const maximumRequestSize = 1 << 20
 
+// readableAsJSON refuses a request that is not declared as JSON, when the
+// thing authorizing it is a cookie.
+//
+// A form on another site can post to this address with the person's cookie
+// attached, and the browser sends it without asking permission first as long
+// as the request looks like one a form could make -- which means a content
+// type of text/plain, a form encoding, or none. It cannot read the answer,
+// but the mutation has already run. Requiring the JSON type takes that shape
+// away, because a browser will not let a cross-origin page set it without
+// asking this server first.
+//
+// Only for a cookie, because that is the only credential a browser attaches
+// by itself. A request carrying a token is one somebody wrote on purpose, and
+// a script posting with no content type at all should keep working.
+func readableAsJSON(request *http.Request) error {
+	if request.Method != http.MethodPost {
+		return nil
+	}
+	if request.Header.Get("Authorization") != "" {
+		return nil
+	}
+	if _, err := request.Cookie(web.SessionCookieName); err != nil {
+		return nil
+	}
+	kind, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || !strings.EqualFold(kind, "application/json") {
+		return fmt.Errorf("this address takes application/json")
+	}
+	return nil
+}
+
 func (self *graph) graphView(response http.ResponseWriter, request *http.Request) {
+	if err := readableAsJSON(request); err != nil {
+		http.Error(response, err.Error(), http.StatusUnsupportedMediaType)
+		return
+	}
 	var data graphRequest
 	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestSize)
 	if err := json.NewDecoder(request.Body).Decode(&data); err != nil {

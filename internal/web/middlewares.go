@@ -188,7 +188,7 @@ func MakeForwarderMiddleware(forwarderKey string) Middleware {
 // on the reader's own machine. That page, and only that page, may reach a
 // loopback address. The page is a document of its own — the client opens it
 // directly — so the policy is chosen by the path the document was served at.
-func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
+func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies func() []string) Middleware {
 	policy := securityPolicy(inlineScriptHashes, "connect-src 'self'")
 	commandLinePolicy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+CommandLineConnectSources)
 	drawerPolicy := strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors *", 1)
@@ -207,10 +207,19 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string) Middleware {
 			response.Header().Set("X-Content-Type-Options", "nosniff")
 			// A browser that has reached this server over TLS is told to
 			// keep doing so, so that a typed hostname does not go to the
-			// plain listener first. Only over TLS: the header means nothing
-			// on a plain response, and a proxy that terminates TLS sets its
-			// own.
-			if request.TLS != nil {
+			// plain listener first.
+			//
+			// Asked the way the session cookie asks it, rather than by
+			// looking for TLS on this connection: where something in front
+			// ends the TLS -- which is how this is usually deployed -- the
+			// connection here is plain, and the header was silently never
+			// sent. The proxy has to be a trusted one for its word to count,
+			// which is what IsSecure settles.
+			secure := request.TLS != nil
+			if !secure && trustedProxies != nil {
+				secure = api.IsSecure(request, trustedProxies())
+			}
+			if secure {
 				response.Header().Set("Strict-Transport-Security", "max-age=31536000")
 			}
 			// A dashboard URL carries a message identifier, so it is not sent

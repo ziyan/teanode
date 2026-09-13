@@ -8,6 +8,20 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A page on another site cannot make your browser run a dashboard action by
+  posting a form at it.
+
+- The agent asks before a command on your computer fetches from the network,
+  which it already did for commands that reach another machine by other means.
+
+- The debugging listener, which answers anybody, refuses to start on an
+  address other than this machine's own.
+
+- A browser that reaches this server through a proxy is told to keep using
+  HTTPS, which it was not being told when the proxy ended the encryption.
+
+- Identifiers are drawn from the system's cryptographic randomness.
+
 - Nobody can hand out a permission they do not hold themselves. Changing who
   is in a group, moving an account between groups, setting somebody else's
   password and writing a permission into a role are all bounded by what the

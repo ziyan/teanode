@@ -1,8 +1,8 @@
 package security
 
 import (
+	"crypto/rand"
 	"io"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -10,9 +10,23 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
+// The entropy an identifier is made from.
+//
+// From crypto/rand, not from a clock-seeded math/rand: this is the default
+// identifier for sessions, tokens, credentials, mail, agent runs, attachments
+// and the ceremonies a passkey sign-in parks its challenge in, and somebody
+// who saw one from a given pool entry could work out the next.
+//
+// Nothing today rests on a ULID being unguessable -- a session and a token
+// each carry a separate secret half from crypto/rand, and every row is scoped
+// to its owner -- but the code itself shows the trap: the media link's token
+// says in its own comment that it is sixteen random bytes and "not a ULID",
+// because one that can be guessed from another lets a stranger fetch somebody
+// else's picture. Somebody already had to reason their way around this. The
+// reasoning is not needed if the identifiers are not guessable.
 var ulidEntropyPool = &sync.Pool{
 	New: func() interface{} {
-		return ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
+		return ulid.Monotonic(rand.Reader, 0)
 	},
 }
 

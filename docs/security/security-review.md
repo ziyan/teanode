@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which nineteen are fixed here. The ones that mattered:
+Forty findings, of which twenty-five are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -993,6 +993,43 @@ one. Measured: a 1.2 MB message of sixteen compressed parts decoded to 273 MB
 of heap in two seconds and wrote 144,000 rows in one transaction; at the
 default message size that is about sixteen gigabytes. A message is now bounded
 at 32 reports and 20,000 records across all of its parts.
+
+### SEC-69 — Six smaller ones (fixed)
+
+- **A cookie-authenticated GraphQL POST has to be declared as JSON.** The
+  endpoint decoded any content type, so a form on a same-site page could post
+  a mutation with the person's cookie attached and the browser would send it
+  without asking this server first. Requiring the JSON type takes that shape
+  away; a request carrying a token is unaffected, because a browser never
+  attaches one by itself.
+- **The shell rule asks about fetching.** It asked about `ssh`, `scp` and
+  `nc` under "reaches another machine" and said nothing about `curl` or
+  `wget` unless they were piped into a shell — while the tool's description
+  promised that reaching out asks first. One line sends any file on the
+  machine anywhere.
+- **The redaction guard can see three more kinds of secret.** `secretish()`
+  matched `secret`, `password`, `key` and `hash`, so a connected server's
+  `Authorization` header, an MCP environment value and a skill secret's value
+  were invisible to it: all three are tagged today, and deleting a tag would
+  have left the value in the YAML the agent's settings tool hands a model,
+  with the test still passing.
+- **`listen.debug` takes a loopback address or none.** It answers anybody who
+  asks — the runtime's profiles, goroutine stacks, the command line, and a CPU
+  profile whose length the caller chooses — with no authentication and no
+  deadlines, and it is a free-text field on the settings page. "Bind it to
+  localhost only" was a comment; it is a check now.
+- **The TLS header survives a proxy.** `Strict-Transport-Security` was sent
+  only when `request.TLS` was set, so on the ordinary deployment — TLS ended
+  by something in front — it was silently never sent. It asks the question
+  the session cookie asks, which believes a proxy only when the operator
+  listed it.
+- **Identifiers come from `crypto/rand`.** `NewULID` seeded `math/rand` from
+  the clock, in a package called `security`, for sessions, tokens, mail, runs,
+  attachments and the ceremonies a passkey sign-in parks its challenge in.
+  Nothing rested on their being unguessable — the code shows somebody already
+  reasoning around it, in the media link's comment saying it is "not a ULID"
+  for exactly this reason — and now nothing has to. A hundred thousand of them
+  take 31 ms.
 
 ### SEC-68 — user:manage was transitively every permission (Medium, fixed)
 
@@ -1219,9 +1256,6 @@ Ranked, with what each needs. Nothing below is fixed in this pass.
    through `safefetch`, would take every name resolution away from Chrome.
 2. **`user:manage` is transitively full administration** (Medium), and the
     comment beside it says the opposite.
-2. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
-    the only thing between a same-site page and a cookie-authenticated
-    mutation, and `/drawer` now allows framing.
 3. Smaller, recorded in full in the reviewers' reports: the shell rule asks
     about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
     recover; `secretish()` in the redaction test cannot see `token`,

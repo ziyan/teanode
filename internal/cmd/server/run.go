@@ -897,7 +897,8 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// authority arrives with no session.
 	self.handler = web.ApplyMiddlewares(webServer,
 		web.MakeServerNameMiddleware(fmt.Sprintf("teanode/%s", version.Version())),
-		web.MakeSecurityHeadersMiddleware(frontend.InlineScriptHashes()),
+		web.MakeSecurityHeadersMiddleware(frontend.InlineScriptHashes(),
+			func() []string { return self.store.Current().Server.TrustedProxies }),
 		web.MakeAuthenticationMiddleware(authenticator, autoacme.ChallengePath),
 		web.NoStoreMiddleware,
 		web.LoggingMiddleware,
