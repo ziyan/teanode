@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -417,13 +416,14 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// the one it publishes pictures under, rather than whatever this node
 	// happens to be called.
 	recordSet.Records = append(recordSet.Records,
-		self.checkBimi(ctx, domain, dmarc, configuration.LinkHostFor(domain, domains)))
+		self.checkBimi(ctx, domain, dmarc, configuration.LinkAuthorityFor(domain, domains)))
 
 	// Where a contacts application should look, for somebody who types only
 	// their address into it. Advisory: without it a person types the server
 	// and the port themselves, and everything works.
 	if service := self.checkContactsService(ctx, configuration, domain,
-		configuration.LinkHostFor(domain, domains)); service != nil {
+		configuration.LinkHostFor(domain, domains),
+		configuration.LinkPortFor(domain, domains)); service != nil {
 		recordSet.Records = append(recordSet.Records, service)
 	}
 
@@ -990,8 +990,10 @@ func authorisesSending(record string) bool {
 // of its own, because the record has to name a port and there is no honest
 // port to name when TLS is ended by something in front.
 func (self *verifier) checkContactsService(ctx context.Context, configuration *config.Configuration,
-	domain *models.Domain, linkHost string) *Record {
-	port := portOf(configuration.Listen.HTTPS)
+	domain *models.Domain, linkHost string, port int) *Record {
+	// The port the name is reached on from outside, which is the setting's
+	// when it names one. What this server binds is the right answer only
+	// when nothing sits in front of it.
 	if port == 0 {
 		return nil
 	}
@@ -1034,22 +1036,4 @@ func (self *verifier) checkContactsService(ctx context.Context, configuration *c
 		}
 	}
 	return record
-}
-
-// portOf is the port a listen address binds, or zero when there is none to
-// read.
-func portOf(address string) int {
-	address = strings.TrimSpace(address)
-	if address == "" {
-		return 0
-	}
-	_, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return 0
-	}
-	number, err := strconv.Atoi(port)
-	if err != nil || number <= 0 || number > 65535 {
-		return 0
-	}
-	return number
 }

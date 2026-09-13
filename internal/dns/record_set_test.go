@@ -118,7 +118,8 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 	configuration.Listen.HTTPS = ":10443"
 	domain := &models.Domain{Domain: "example.com"}
 
-	record := checker.checkContactsService(context.Background(), configuration, domain, "mail.example.com")
+	record := checker.checkContactsService(context.Background(), configuration, domain, "mail.example.com",
+		configuration.LinkPortFor(domain, nil))
 	if record == nil {
 		t.Fatal("a server with an HTTPS listener has a record to advise")
 	}
@@ -136,25 +137,40 @@ func TestTheContactsServiceRecordIsAdvisedWhenThereIsAPortToAdvise(t *testing.T)
 
 	// A domain whose mail is addressed to somebody else's name has nothing
 	// it could publish, so it is advised nothing.
-	if record := checker.checkContactsService(context.Background(), configuration, domain, "mail.someone-else.test"); record != nil {
+	if record := checker.checkContactsService(context.Background(), configuration, domain,
+		"mail.someone-else.test", configuration.LinkPortFor(domain, nil)); record != nil {
 		t.Errorf("a host outside this domain is not this domain's to publish: %+v", record)
 	}
 
 	// With TLS ended somewhere in front there is no port this server can
 	// honestly name, so it advises nothing rather than a wrong number.
 	configuration.Listen.HTTPS = ""
-	if record := checker.checkContactsService(context.Background(), configuration, domain, "mail.example.com"); record != nil {
+	if record := checker.checkContactsService(context.Background(), configuration, domain,
+		"mail.example.com", configuration.LinkPortFor(domain, nil)); record != nil {
 		t.Errorf("with no HTTPS listener there is no honest port to advise: %+v", record)
 	}
 }
 
-func TestAListenAddressYieldsItsPort(t *testing.T) {
-	for address, want := range map[string]int{
-		":10443": 10443, "127.0.0.1:443": 443, "[::]:8443": 8443,
-		"": 0, "nonsense": 0, ":0": 0, ":70000": 0,
-	} {
-		if got := portOf(address); got != want {
-			t.Errorf("portOf(%q) = %d, want %d", address, got, want)
-		}
+// A link host that names its own port is advised that port.
+//
+// The name may be reached through something that forwards a different one, so
+// what this server binds is not always the number a phone should dial. The
+// setting says how the name is reached from outside, and that is what goes
+// into the record.
+func TestTheAdvisedPortIsTheOneTheNameIsReachedOn(t *testing.T) {
+	checker := &verifier{}
+	configuration := config.Default()
+	configuration.Server.Name = "mail.example.com"
+	// This server binds one port; the name says it is reached on another.
+	configuration.Listen.HTTPS = ":8443"
+	domain := &models.Domain{Domain: "example.com", LinkHost: "mail.example.com:10443"}
+
+	record := checker.checkContactsService(context.Background(), configuration, domain,
+		configuration.LinkHostFor(domain, nil), configuration.LinkPortFor(domain, nil))
+	if record == nil {
+		t.Fatal("there is a record to advise")
+	}
+	if record.Expected != "0 1 10443 mail.example.com" {
+		t.Fatalf("the port the name is reached on, and the name without it: %q", record.Expected)
 	}
 }

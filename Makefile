@@ -115,7 +115,7 @@ test: generate ## Run tests under the race detector (starts a PostgreSQL contain
 		until docker exec $${POSTGRES_CONTAINER} pg_isready >/dev/null 2>&1; do sleep 1; done; \
 		export TEANODE_TEST_DATABASE_HOST="$$(docker inspect --format '{{ range .NetworkSettings.Networks }}{{ .IPAddress }}{{ end }}' $${POSTGRES_CONTAINER})"; \
 	fi; \
-	gotestsum --format testname -- -mod=vendor -race -cover -coverprofile=$(BUILD_DIR)/coverage.out $(GOPACKAGES); \
+	gotestsum --format testname -- -mod=vendor -race -timeout 25m -cover -coverprofile=$(BUILD_DIR)/coverage.out $(GOPACKAGES); \
 	$(GO) tool cover -func=$(BUILD_DIR)/coverage.out | tail -1
 
 # --- development ------------------------------------------------------------

@@ -43,6 +43,17 @@ Notable changes to TeaNode. The format follows
 - Your agent can read the calendar: what you have on, when you are free, and --
   asking first -- putting something in.
 
+### Fixed
+
+- A domain's link host may now name the port it is reached on --
+  `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other
+  than the usual port. The addresses this server writes into mail, such as the
+  pictures in a template, are built from it, and without the port they pointed
+  at a port nothing was listening on. The port belongs to the name rather than
+  to what this server binds: the same server may be reached under one name
+  directly and under another through something that forwards 443, and only the
+  name knows which.
+
 ## [0.20.1] - 2026-09-12
 
 ### Fixed

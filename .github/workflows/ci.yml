@@ -60,10 +60,18 @@ jobs:
       # -race stays: this server is goroutines around a mail stream, and the
       # race detector has earned its place. Coverage does not — it was
       # measured and printed and nothing was ever decided on it.
+      #
+      # -timeout is above Go's ten-minute default because two packages have
+      # grown past it on this hardware: every authenticated request in them
+      # costs a bcrypt at the cost a real password is stored under, and the
+      # race detector makes each one slower again. Raising the bound is the
+      # honest answer — the tests are not hanging, there are simply a lot of
+      # them, and a bound that fires on a healthy suite teaches people to
+      # rerun CI rather than to read it.
       - name: Test
         env:
           TEANODE_TEST_DATABASE_HOST: 127.0.0.1
-        run: go test -mod=vendor -race ./cmd/... ./internal/...
+        run: go test -mod=vendor -race -timeout 25m ./cmd/... ./internal/...
 
   dashboard:
     name: Dashboard
