@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.21.4] - 2026-09-13
+
 ### Changed
 
 - On a phone the trail at the top of the mailbox says where you are and gets
