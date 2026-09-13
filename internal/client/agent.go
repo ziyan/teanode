@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -143,6 +144,12 @@ const (
 	DocumentGrantAgentSource = `mutation ($kind: String!, $id: String!, $granted: Boolean!) {
 		GrantAgentSource(kind: $kind, id: $id, granted: $granted) ` + agentViewSelection + `
 	}`
+
+	DocumentSetAgentBrief = `mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
+		SetAgentBrief(enabled: $enabled, at: $at, days: $days) ` + scheduleFields + `
+	}`
+
+	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow ` + scheduleFields + ` }`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
 		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
@@ -316,6 +323,35 @@ func GrantAgentSource(ctx context.Context, connection *Client, kind, id string, 
 		return nil, err
 	}
 	return result.GrantAgentSource, nil
+}
+
+// SetAgentBrief turns the daily brief on or off and says when it comes.
+func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at string, days []int) (*AgentSchedule, error) {
+	var result struct {
+		SetAgentBrief *AgentSchedule `json:"SetAgentBrief"`
+	}
+	variables := map[string]any{"enabled": enabled}
+	if strings.TrimSpace(at) != "" {
+		variables["at"] = at
+	}
+	if len(days) > 0 {
+		variables["days"] = days
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentBrief, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentBrief, nil
+}
+
+// RunAgentBriefNow sends one immediately.
+func RunAgentBriefNow(ctx context.Context, connection *Client) (*AgentSchedule, error) {
+	var result struct {
+		RunAgentBriefNow *AgentSchedule `json:"RunAgentBriefNow"`
+	}
+	if err := connection.Execute(ctx, DocumentRunAgentBriefNow, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.RunAgentBriefNow, nil
 }
 
 // AgentUsage is the caller's own token use.

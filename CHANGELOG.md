@@ -8,6 +8,12 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- A brief each morning, from one switch: what the day holds, what arrived
+  overnight that wants an answer, what is being held. It is sent to you as
+  mail, and it writes an ordinary schedule called "Daily brief" -- so it is in
+  the Schedules card afterwards, where you can change what it asks for or when
+  it comes. `teanode agent brief on --at 07:30` is the same switch.
+
 - An appointment in the words of a message, or somebody's details in a
   signature, is offered above the message: the fields filled in, the line they
   came from quoted underneath, and a button. Until now only an invitation that

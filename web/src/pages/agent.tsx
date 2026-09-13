@@ -235,6 +235,7 @@ export function AgentPage() {
         ))}
       </SettingsSection>
       <MemoryCard />
+      <BriefCard />
       <SchedulesCard />
       <ServersCard />
       <SkillSecretsCard />
@@ -648,6 +649,11 @@ const SAVE_SCHEDULE = `
     SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
   }`
 
+const SET_BRIEF = `
+  mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
+    SetAgentBrief(enabled: $enabled, at: $at, days: $days) { id name cron prompt deliver enabled nextRunAt }
+  }`
+const RUN_BRIEF = `mutation { RunAgentBriefNow { id name } }`
 const DELETE_SCHEDULE = `
   mutation ($scheduleId: String!) {
     DeleteAgentSchedule(scheduleId: $scheduleId)
@@ -1364,6 +1370,113 @@ interface Schedule {
 }
 
 // SchedulesCard is what the agent does on its own at set times.
+// The daily brief: one switch, a time, and the days.
+//
+// It writes an ordinary schedule called "Daily brief", which is why the card
+// says where it went: the Schedules card below is where to change what it
+// actually asks for, and anybody who rewrites the prompt has made it theirs.
+function BriefCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, loading, reload } = useQuery(
+    () => graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {}),
+    [],
+  )
+  const [busy, setBusy] = useState(false)
+  const brief = (data?.ListAgentSchedules ?? []).find((schedule) => schedule.name === 'Daily brief')
+  const [at, setAt] = useState('')
+  const [days, setDays] = useState('')
+
+  // What the cron line says, for the two fields: "30 7 * * 1-5".
+  const fields = (brief?.cron ?? '30 7 * * 1-5').split(/\s+/)
+  const time = at || `${(fields[1] ?? '7').padStart(2, '0')}:${(fields[0] ?? '30').padStart(2, '0')}`
+  const chosenDays = days || (fields[4] ?? '1-5')
+
+  const save = async (enabled: boolean) => {
+    setBusy(true)
+    try {
+      const parsed = chosenDays
+        .split(',')
+        .flatMap((part) => {
+          const range = part.split('-')
+          if (range.length === 2) {
+            const from = Number(range[0])
+            const until = Number(range[1])
+            return Number.isNaN(from) || Number.isNaN(until)
+              ? []
+              : Array.from({ length: until - from + 1 }, (_, index) => from + index)
+          }
+          const one = Number(part)
+          return Number.isNaN(one) ? [] : [one === 0 ? 7 : one]
+        })
+        .filter((day) => day >= 1 && day <= 7)
+      await graphql(SET_BRIEF, { enabled, at: time, days: parsed.length > 0 ? parsed : undefined })
+      toast.done(enabled ? t('agent.briefOn') : t('agent.briefOff'))
+      await reload()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendNow = async () => {
+    setBusy(true)
+    try {
+      await graphql(RUN_BRIEF, {})
+      toast.done(t('agent.briefSending'))
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <SettingsSection card title={t('agent.brief')} description={t('agent.briefHint')}>
+      {error ? <ErrorMessage error={error} /> : null}
+      {loading && !data ? <Loading /> : null}
+      <div className="form-narrow">
+        <div className="row">
+          <label>
+            <span>{t('agent.briefAt')}</span>
+            <input type="time" value={time} disabled={busy} onChange={(change) => setAt(change.target.value)} />
+          </label>
+          <label>
+            <span>{t('agent.briefDays')}</span>
+            <input
+              value={chosenDays}
+              disabled={busy}
+              placeholder="1-5"
+              onChange={(change) => setDays(change.target.value)}
+            />
+          </label>
+        </div>
+        <div className="page-actions-end">
+          {brief?.enabled ? (
+            <>
+              <button type="button" disabled={busy} onClick={() => void sendNow()}>
+                {t('agent.briefNow')}
+              </button>
+              <button type="button" disabled={busy} onClick={() => void save(false)}>
+                {t('agent.briefStop')}
+              </button>
+              <button type="button" className="primary" disabled={busy} onClick={() => void save(true)}>
+                {t('agent.briefSave')}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="primary" disabled={busy} onClick={() => void save(true)}>
+              {t('agent.briefStart')}
+            </button>
+          )}
+        </div>
+        <p className="muted">{brief ? t('agent.briefWhere') : t('agent.briefNotYet')}</p>
+      </div>
+    </SettingsSection>
+  )
+}
+
 function SchedulesCard() {
   const { t } = useTranslation()
   const toast = useToast()

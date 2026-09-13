@@ -164,6 +164,12 @@ const (
 	WrittenByAgent  = "agent"
 )
 
+// Where a schedule's answer goes.
+const (
+	AgentDeliverMail   = "mail"
+	AgentDeliverDrawer = "drawer"
+)
+
 // KnownWriter is one of those two, or empty for anything else.
 func KnownWriter(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {

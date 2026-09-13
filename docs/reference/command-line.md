@@ -354,6 +354,7 @@ have made.
 | `teanode agent tools` | the tools your agent has, as you may use them, with the risk class and whether it asks first |
 | `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
 | `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone; or a single moment, `"@at 2026-09-12 09:00"`, or a distance from now, `"@in 20m"`, which is stored as the moment it means and runs once |
+| `teanode agent brief on\|off\|now` | a brief each morning, by mail: what the day holds, what is waiting for an answer, what is being held. `on --at 07:30 --days 1-5` says when; `now` sends one immediately. It writes an ordinary schedule called "Daily brief", so `agent schedule list` shows it and anybody may rewrite what it asks for |
 | `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
 | `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
 | `teanode contact list\|show\|add\|edit\|remove` | your address book: the people you keep, which your phone and your computer synchronize over CardDAV. `add --name "Ada Lovelace" --email ada@example.com` keeps one; `edit <id> --name "Ada King"` changes only what you give and leaves the rest of the card alone, so correcting a name does not throw away the photograph a phone put there; `--card -` reads a whole vCard from standard input. Not the same as `mailbox contact`, which is the addresses a mailbox has corresponded with |
@@ -365,7 +366,7 @@ have made.
 | `teanode agent settings show\|set` | your agent: `set enabled=true name=Bertie instructions=-` reads the long value from standard input; keys are listed by `set --help` |
 | `teanode agent settings categories add\|remove` | your own categories beside the fixed ones |
 | `teanode agent settings forget` | delete the agent and everything it learned; asks first |
-| `teanode agent source list\|grant\|revoke\|set` | the mailboxes the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` |
+| `teanode agent source list\|grant\|revoke\|set\|allow\|deny` | what the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` for a mailbox; `allow calendar` and `deny addressbook` for the other two kinds of source, which carry a switch and no policy. Nothing from a source you have not granted is ever sent to a model |
 | `teanode agent usage [--since] [--by day\|kind\|mailbox\|model]` | your tokens |
 | `teanode agent draft <item-id> [--say "…"]` | have the agent write a reply to a message, printed for you to use; nothing is saved or sent |
 | `teanode agent replies [--status held\|sent\|cancelled\|refused\|failed] [--mailbox]` | the replies the agent wrote for you and what became of each, with the reason when it left a message alone |

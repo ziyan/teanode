@@ -39,6 +39,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentChannelCommand(),
 			newAgentSettingsCommand(),
 			newAgentSourceCommand(),
+			newAgentBriefCommand(),
 			{
 				Name:  "usage",
 				Usage: "your tokens, by day, kind, mailbox or model",
@@ -254,6 +255,127 @@ func newAgentSourceCommand() *cli.Command {
 			},
 		},
 	}
+}
+
+// newAgentBriefCommand is the daily brief: the same switch the dashboard has.
+func newAgentBriefCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "brief",
+		Usage: "a brief each morning, by mail: what the day holds and what is waiting",
+		Description: "It writes an ordinary schedule called \"Daily brief\", which \"teanode agent\n" +
+			"schedule list\" shows and anybody may rewrite.\n\n" +
+			"  teanode agent brief on --at 07:30 --days 1-5\n" +
+			"  teanode agent brief now\n" +
+			"  teanode agent brief off",
+		Commands: []*cli.Command{
+			{
+				Name:  "on",
+				Usage: "turn the brief on, or change when it comes",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "at", Usage: "the time of day in your own zone, as HH:MM"},
+					&cli.StringFlag{Name: "days", Usage: "which days, 1 (Monday) to 7 (Sunday): 1-5, or 1,3,5"},
+				},
+				Action: runAgentBriefOn,
+			},
+			{
+				Name:   "off",
+				Usage:  "stop the brief; the schedule stays, switched off",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentBriefOff,
+			},
+			{
+				Name:   "now",
+				Usage:  "send one immediately",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentBriefNow,
+			},
+		},
+	}
+}
+
+func runAgentBriefOn(ctx context.Context, command *cli.Command) error {
+	return setBrief(ctx, command, true)
+}
+
+func runAgentBriefOff(ctx context.Context, command *cli.Command) error {
+	return setBrief(ctx, command, false)
+}
+
+func setBrief(ctx context.Context, command *cli.Command, enabled bool) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	days, err := readDays(command.String("days"))
+	if err != nil {
+		return err
+	}
+	schedule, err := client.SetAgentBrief(ctx, connection, enabled, command.String("at"), days)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(schedule)
+	}
+	if schedule == nil {
+		fmt.Println("there was no brief to stop")
+		return nil
+	}
+	when := "off"
+	if schedule.Enabled {
+		when = schedule.Cron
+		if schedule.NextRunAt != nil {
+			when += ", next " + schedule.NextRunAt.Local().Format("Mon 2 Jan 15:04")
+		}
+	}
+	fmt.Printf("%s: %s\n", schedule.Name, when)
+	return nil
+}
+
+// readDays turns "1-5" or "1,3,5" into the days themselves.
+func readDays(value string) ([]int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	days := []int{}
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if from, until, found := strings.Cut(part, "-"); found {
+			first, err := strconv.Atoi(strings.TrimSpace(from))
+			last, secondErr := strconv.Atoi(strings.TrimSpace(until))
+			if err != nil || secondErr != nil || first < 1 || last > 7 || first > last {
+				return nil, fmt.Errorf("%q is not a range of days", part)
+			}
+			for day := first; day <= last; day++ {
+				days = append(days, day)
+			}
+			continue
+		}
+		day, err := strconv.Atoi(part)
+		if err != nil || day < 1 || day > 7 {
+			return nil, fmt.Errorf("%q is not a day; they are 1 (Monday) to 7 (Sunday)", part)
+		}
+		days = append(days, day)
+	}
+	return days, nil
+}
+
+func runAgentBriefNow(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	schedule, err := client.RunAgentBriefNow(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(schedule)
+	}
+	fmt.Println("sending; it will arrive in a moment")
+	return nil
 }
 
 func newAgentAdminCommand() *cli.Command {
