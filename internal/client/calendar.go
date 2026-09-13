@@ -12,6 +12,7 @@ type Calendar struct {
 	Description string `json:"description,omitempty"`
 	Colour      string `json:"colour,omitempty"`
 	Timezone    string `json:"timezone,omitempty"`
+	WeekStart   string `json:"weekStart,omitempty"`
 	Events      int    `json:"events"`
 }
 
@@ -55,7 +56,7 @@ type CalendarAttendee struct {
 }
 
 const (
-	DocumentListCalendars = `query { ListCalendars { id name description colour timezone events } }`
+	DocumentListCalendars = `query { ListCalendars { id name description colour timezone weekStart events } }`
 
 	DocumentListCalendarEvents = `query ($calendarId: String!, $from: String!, $until: String!) {
   ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
@@ -87,9 +88,11 @@ const (
 }`
 
 	DocumentSaveCalendar = `mutation ($id: String!, $name: String, $description: String,
-    $colour: String, $timezone: String) {
+    $colour: String, $timezone: String, $weekStart: String) {
   SaveCalendar(id: $id, name: $name, description: $description,
-    colour: $colour, timezone: $timezone) { id name description colour timezone events }
+    colour: $colour, timezone: $timezone, weekStart: $weekStart) {
+    id name description colour timezone weekStart events
+  }
 }`
 )
 
@@ -199,12 +202,13 @@ func DeleteCalendarEvent(ctx context.Context, connection *Client, calendarId, id
 }
 
 // SaveCalendar renames one, or changes how it is shown.
-func SaveCalendar(ctx context.Context, connection *Client, id, name, description, colour, timezone string) (*Calendar, error) {
+func SaveCalendar(ctx context.Context, connection *Client, id, name, description, colour, timezone, weekStart string) (*Calendar, error) {
 	var result struct {
 		SaveCalendar *Calendar `json:"SaveCalendar"`
 	}
 	if err := connection.Execute(ctx, DocumentSaveCalendar, map[string]any{
-		"id": id, "name": name, "description": description, "colour": colour, "timezone": timezone,
+		"id": id, "name": name, "description": description, "colour": colour,
+		"timezone": timezone, "weekStart": weekStart,
 	}, &result); err != nil {
 		return nil, err
 	}

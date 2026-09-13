@@ -26,6 +26,7 @@ type calendarModel struct {
 	Description string    `gorm:"column:description"`
 	Colour      string    `gorm:"column:colour"`
 	Timezone    string    `gorm:"column:time_zone"`
+	WeekStart   string    `gorm:"column:week_start"`
 }
 
 func (calendarModel) TableName() string { return "calendar" }
@@ -34,7 +35,7 @@ func (self *calendarModel) toModel() *models.Calendar {
 	return &models.Calendar{
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
-		Colour: self.Colour, Timezone: self.Timezone,
+		Colour: self.Colour, Timezone: self.Timezone, WeekStart: self.WeekStart,
 	}
 }
 
@@ -140,9 +141,15 @@ func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Cale
 		// does not know is still what the person asked for, and refusing it
 		// would make a calendar undeliverable because of a missing package.
 		Timezone: truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
+		// Sunday unless this person says otherwise, and never a word this
+		// server does not know: the dashboard draws its columns from this.
+		WeekStart: models.KnownWeekStart(calendar.WeekStart),
 	}
 	if row.Name == "" {
 		row.Name = "Calendar"
+	}
+	if row.WeekStart == "" {
+		row.WeekStart = models.WeekStartsSunday
 	}
 	if err := self.applyMutation(models.AuditResourceCalendar, row.ID, models.AuditActionCreate,
 		nil, row.toModel(), func(tx *gorm.DB) error {
@@ -168,11 +175,18 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 	row := &calendarModel{
 		ID: calendar.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(calendar.Name), 200), Description: calendar.Description,
-		Colour:   truncateRunes(strings.TrimSpace(calendar.Colour), 16),
-		Timezone: truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
+		Colour:    truncateRunes(strings.TrimSpace(calendar.Colour), 16),
+		Timezone:  truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
+		WeekStart: models.KnownWeekStart(calendar.WeekStart),
 	}
 	if row.Name == "" {
 		row.Name = before.Name
+	}
+	if row.WeekStart == "" {
+		row.WeekStart = models.KnownWeekStart(before.WeekStart)
+	}
+	if row.WeekStart == "" {
+		row.WeekStart = models.WeekStartsSunday
 	}
 	if err := self.applyMutation(models.AuditResourceCalendar, row.ID, models.AuditActionUpdate,
 		before, row.toModel(), func(tx *gorm.DB) error {
@@ -180,6 +194,7 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 				Updates(map[string]any{
 					"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description,
 					"colour": row.Colour, "time_zone": row.Timezone,
+					"week_start": row.WeekStart,
 				}).Error
 		}); err != nil {
 		return nil, err

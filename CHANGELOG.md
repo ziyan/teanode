@@ -108,6 +108,19 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- Weeks in the calendar start on Sunday. A calendar can be set the other way
+  with `teanode calendar set --week-start monday`; the five-day view stays
+  Monday to Friday whichever it is, because that is what a working week is.
+
+- Clicking a date in the month view opens that day. Making something on a day
+  is the empty space below the date, which is where it already was.
+
+- The line marking the current time no longer draws itself through the date at
+  the top of a week or a day.
+
+- An empty agenda says so in the middle of the space rather than in its
+  top-left corner, where it read as something that had failed to load.
+
 - The agent can change and remove things in the calendar, not only add them,
   and the agenda it reads now names each event so it can say which one it
   means. Anything that sends mail -- inviting people, or telling the people

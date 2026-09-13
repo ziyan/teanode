@@ -1823,6 +1823,7 @@ export const ja: Catalog = {
   'invitation.failed': 'うまくいきませんでした',
   'calendar.new': '新しい予定',
   'calendar.newOn': '{day} に予定を作成',
+  'calendar.openDay': '{day} を開く',
   'calendar.edit': '予定を編集',
   'calendar.today': '今日',
   'calendar.previous': '前へ',

@@ -98,6 +98,7 @@ func NewCalendarCommand() *cli.Command {
 					&cli.StringFlag{Name: "description", Usage: "what it is for"},
 					&cli.StringFlag{Name: "colour", Usage: "what a client paints it, as #rrggbb"},
 					&cli.StringFlag{Name: "timezone", Usage: "the zone a new event is written in, as an IANA name"},
+					&cli.StringFlag{Name: "week-start", Usage: "the day a week is drawn from, sunday or monday"},
 				},
 				Action: runCalendarSet,
 			},
@@ -546,13 +547,13 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(calendars)
 	}
 	rows := make([][]string, 0, len(calendars))
-	for _, calendar := range calendars {
+	for _, found := range calendars {
 		rows = append(rows, []string{
-			calendar.Name, calendar.Timezone, calendar.Colour,
-			fmt.Sprintf("%d", calendar.Events), calendar.ID,
+			found.Name, found.Timezone, found.WeekStart, found.Colour,
+			fmt.Sprintf("%d", found.Events), found.ID,
 		})
 	}
-	return printTable([]string{"name", "timezone", "colour", "events", "id"}, rows)
+	return printTable([]string{"name", "timezone", "week starts", "colour", "events", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {
@@ -566,6 +567,7 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	}
 	name, description := kept.Name, kept.Description
 	colour, timezone := kept.Colour, kept.Timezone
+	weekStart := kept.WeekStart
 	if command.IsSet("name") {
 		name = command.String("name")
 	}
@@ -578,7 +580,10 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("timezone") {
 		timezone = command.String("timezone")
 	}
-	saved, err := client.SaveCalendar(ctx, connection, kept.ID, name, description, colour, timezone)
+	if command.IsSet("week-start") {
+		weekStart = command.String("week-start")
+	}
+	saved, err := client.SaveCalendar(ctx, connection, kept.ID, name, description, colour, timezone, weekStart)
 	if err != nil {
 		return describeError(command, err)
 	}

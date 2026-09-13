@@ -6869,6 +6869,7 @@ button.with-icon {
 
 .calendar-day {
   background: var(--surface);
+  position: relative;
   min-height: 6.5rem;
   /* Fills whatever the grid is given; the minimum above is the floor. */
   height: 100%;
@@ -6880,6 +6881,25 @@ button.with-icon {
 
 .calendar-day.outside {
   background: var(--rail);
+}
+
+/* The empty part of a day, which is where somebody presses to put something
+   in it. Underneath the date and the entries so that those keep their own
+   clicks, and invisible: the cell itself is the affordance. */
+.calendar-day-add {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.calendar-day-number,
+.calendar-day-entries {
+  position: relative;
+  z-index: 1;
 }
 
 .calendar-day.outside .calendar-day-number {
@@ -7010,12 +7030,16 @@ button.with-icon {
   position: relative;
 }
 
-/* The day names stay visible while the hours scroll under them. */
+/* The day names stay visible while the hours scroll under them.
+   Above everything the hours carry, the line marking now included: that
+   line is drawn over the events on purpose, and painting it over the date
+   as well put a red rule through "SUN 13" whenever now was earlier than
+   the hour the grid had been scrolled to. */
 .calendar-grid-head,
 .calendar-grid-corner {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 5;
   background: var(--rail);
   border-bottom: 1px solid var(--border);
 }
@@ -7074,7 +7098,7 @@ button.with-icon {
   text-align: right;
   position: sticky;
   top: var(--calendar-head, 3.4rem);
-  z-index: 2;
+  z-index: 4;
 }
 
 .calendar-grid-allday {
@@ -7087,7 +7111,9 @@ button.with-icon {
   background: var(--surface);
   position: sticky;
   top: var(--calendar-head, 3.4rem);
-  z-index: 1;
+  /* Sticky like the row above it, and over the hours for the same reason:
+     what stays put has to cover what scrolls under it. */
+  z-index: 4;
 }
 
 .calendar-hours {
@@ -7198,7 +7224,9 @@ button.with-icon {
 }
 
 /* Where we are now. Drawn over the events so it is not buried by a meeting
-   that is happening, which is exactly when somebody looks for it. */
+   that is happening, which is exactly when somebody looks for it -- and
+   under the day names and the whole-day row, which stay put while it
+   scrolls past them. */
 .calendar-now {
   position: absolute;
   left: 0;

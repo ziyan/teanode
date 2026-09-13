@@ -1766,6 +1766,7 @@ export const zh: Catalog = {
   'invitation.failed': '操作没有成功',
   'calendar.new': '新建日程',
   'calendar.newOn': '在 {day} 新建日程',
+  'calendar.openDay': '查看 {day}',
   'calendar.edit': '编辑日程',
   'calendar.today': '今天',
   'calendar.previous': '上一页',

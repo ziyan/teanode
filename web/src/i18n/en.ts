@@ -1829,6 +1829,7 @@ export const en = {
   'invitation.failed': 'That did not work',
   'calendar.new': 'New event',
   'calendar.newOn': 'New event on {day}',
+  'calendar.openDay': 'Open {day}',
   'calendar.edit': 'Edit event',
   'calendar.today': 'Today',
   'calendar.previous': 'Back',

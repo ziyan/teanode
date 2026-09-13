@@ -21,7 +21,7 @@ import { useTranslation } from '../i18n/i18n'
 // per time something happens, so a weekly meeting arrives once for each week
 // in view and this page never has to know what a repeat rule means.
 
-const CALENDARS = `query { ListCalendars { id name description colour timezone events } }`
+const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events } }`
 
 const EVENTS = `
   query ($calendarId: String!, $from: String!, $until: String!) {
@@ -57,6 +57,7 @@ type Calendar = {
   description?: string
   colour?: string
   timezone?: string
+  weekStart?: string
   events: number
 }
 
@@ -83,6 +84,10 @@ type CalendarEvent = {
 }
 
 type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda'
+
+// The two conventions worth keeping. The server holds this per calendar and
+// answers with one of these, so the page never has to guess.
+type WeekStart = 'sunday' | 'monday'
 
 // A form's worth of one event. The times are held as the two halves a browser
 // edits them in -- a date and a clock time -- because that is what the native
@@ -284,19 +289,28 @@ function addDays(at: Date, days: number): Date {
   return moved
 }
 
-// startOfWeek is the Monday on or before a day. Monday because the rest of
-// this server's dates are written the way most of the world writes them.
-function startOfWeek(at: Date): Date {
+// startOfWeek is the first day of the week a day falls in, counted from
+// whichever day this calendar starts its weeks on. Where a week begins is a
+// local convention rather than a fact -- Sunday here, Monday elsewhere -- so
+// it is read from the calendar rather than decided in this file.
+function startOfWeek(at: Date, weekStart: WeekStart): Date {
   const day = startOfDay(at)
-  const weekday = (day.getDay() + 6) % 7
-  return addDays(day, -weekday)
+  const first = weekStart === 'monday' ? 1 : 0
+  return addDays(day, -((day.getDay() - first + 7) % 7))
+}
+
+// The working week is Monday to Friday wherever a week is drawn from. Five
+// days counted from a Sunday start would be Sunday to Thursday, which is not
+// a working week anywhere this server is likely to be read.
+function startOfWorkWeek(at: Date): Date {
+  return startOfWeek(at, 'monday')
 }
 
 // The six weeks a month view draws: whole weeks, so the grid is rectangular
 // and the days either side of the month are shown greyed rather than blank.
-function monthGrid(at: Date): Date[] {
+function monthGrid(at: Date, weekStart: WeekStart): Date[] {
   const first = new Date(at.getFullYear(), at.getMonth(), 1)
-  const start = startOfWeek(first)
+  const start = startOfWeek(first, weekStart)
   const days: Date[] = []
   for (let index = 0; index < 42; index += 1) days.push(addDays(start, index))
   return days
@@ -329,19 +343,23 @@ export function CalendarPage() {
   const calendars = useQuery(() => graphql<{ ListCalendars: Calendar[] }>(CALENDARS), [], { refresh: false })
   const calendar = calendars.data?.ListCalendars?.[0] ?? null
   const calendarId = calendar?.id ?? ''
+  // Sunday unless this calendar says Monday. The server answers with one of
+  // the two, so this only has to cope with an answer that has not arrived.
+  const weekStart: WeekStart = calendar?.weekStart === 'monday' ? 'monday' : 'sunday' 
 
   // The window asked for is whole weeks for a month, the week for a week, and
   // a month ahead for an agenda.
   const [from, until] = useMemo<[Date, Date]>(() => {
     const columns = COLUMNS[view]
     if (columns) {
-      const start = columns === 1 ? startOfDay(on) : startOfWeek(on)
+      const start =
+        columns === 1 ? startOfDay(on) : view === 'workweek' ? startOfWorkWeek(on) : startOfWeek(on, weekStart)
       return [start, addDays(start, columns)]
     }
     if (view === 'agenda') return [startOfDay(on), addDays(startOfDay(on), 31)]
-    const grid = monthGrid(on)
+    const grid = monthGrid(on, weekStart)
     return [grid[0], addDays(grid[41], 1)]
-  }, [view, on.getTime()])
+  }, [view, on.getTime(), weekStart])
 
   const events = useQuery(
     () =>
@@ -532,7 +550,9 @@ export function CalendarPage() {
           year: 'numeric',
         }).format(on)
       : view === 'week' || view === 'workweek'
-        ? t('calendar.weekOf', { day: dayFormat.format(startOfWeek(on)) })
+        ? t('calendar.weekOf', {
+            day: dayFormat.format(view === 'workweek' ? startOfWorkWeek(on) : startOfWeek(on, weekStart)),
+          })
         : view === 'agenda'
           ? t('calendar.agendaFrom', { day: dayFormat.format(on) })
           : titleFormat.format(on)
@@ -543,7 +563,10 @@ export function CalendarPage() {
     // week, so that Friday's "next" is the following Monday rather than the
     // weekend the view does not draw.
     if (columns === 1) return move({ on: addDays(on, direction) })
-    if (columns) return move({ on: addDays(startOfWeek(on), direction * 7) })
+    if (columns) {
+      const start = view === 'workweek' ? startOfWorkWeek(on) : startOfWeek(on, weekStart)
+      return move({ on: addDays(start, direction * 7) })
+    }
     if (view === 'agenda') return move({ on: addDays(on, direction * 31) })
     return move({ on: new Date(on.getFullYear(), on.getMonth() + direction, 1) })
   }
@@ -626,14 +649,14 @@ export function CalendarPage() {
       {!loading && view === 'month' && (
         <div className="calendar-month-scroll">
           <div className="calendar-month" role="grid" aria-label={heading}>
-            {monthGrid(on)
+            {monthGrid(on, weekStart)
               .slice(0, 7)
               .map((day) => (
                 <div key={`head-${day.getTime()}`} className="calendar-weekday" role="columnheader">
                   {weekdayFormat.format(day)}
                 </div>
               ))}
-            {monthGrid(on).map((day) => {
+            {monthGrid(on, weekStart).map((day) => {
               const key = dayKey(day)
               const outside = day.getMonth() !== on.getMonth()
               return (
@@ -642,18 +665,32 @@ export function CalendarPage() {
                   role="gridcell"
                   className={`calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}`}
                 >
+                  {/* The date opens the day, which is what a date in a month
+                      is for. Making something on that day is the empty space
+                      below it, so the two are not the same click. */}
                   <button
                     type="button"
                     className="calendar-day-number"
+                    onClick={() => move({ view: 'day', on: day })}
+                    title={t('calendar.openDay', { day: dayFormat.format(day) })}
+                  >
+                    {day.getDate()}
+                  </button>
+                  <div className="calendar-day-entries">{(byDay.get(key) ?? []).map(entry)}</div>
+                  {/* Behind the date and the entries rather than around them:
+                      a button inside a button is not a thing, and the empty
+                      part of a day is the natural place to press to put
+                      something in it. */}
+                  <button
+                    type="button"
+                    className="calendar-day-add"
                     onClick={() => {
                       setProblem(null)
                       setDraft(blank(day))
                     }}
                     title={t('calendar.newOn', { day: dayFormat.format(day) })}
-                  >
-                    {day.getDate()}
-                  </button>
-                  <div className="calendar-day-entries">{(byDay.get(key) ?? []).map(entry)}</div>
+                    aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
+                  />
                 </div>
               )
             })}
@@ -666,7 +703,10 @@ export function CalendarPage() {
           {(() => {
             const span = COLUMNS[view] as number
             const days = Array.from({ length: span }, (_, index) =>
-              addDays(span === 1 ? startOfDay(on) : startOfWeek(on), index),
+              addDays(
+                span === 1 ? startOfDay(on) : view === 'workweek' ? startOfWorkWeek(on) : startOfWeek(on, weekStart),
+                index,
+              ),
             )
             const columns = `4rem repeat(${span}, minmax(0, 1fr))`
             const leastWidth = span === 1 ? undefined : `calc(4rem + ${span} * 7.5rem)`

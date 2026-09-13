@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Calendar is a person's own. It belongs to the account rather than to a
 // mailbox: somebody with two mailboxes has one calendar, and reaches it
@@ -22,6 +25,32 @@ type Calendar struct {
 	// otherwise, as an IANA name such as "Europe/London".
 	Colour   string `json:"colour,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
+
+	// WeekStart is the day a week is drawn from: "sunday" or "monday".
+	// Where the columns of a month or a week begin is a local convention
+	// rather than a fact, so it is written down rather than assumed.
+	WeekStart string `json:"weekStart,omitempty"`
+}
+
+// Week starts, which are the two conventions worth keeping: much of the world
+// writes a week from Sunday and much of the rest from Monday.
+const (
+	WeekStartsSunday = "sunday"
+	WeekStartsMonday = "monday"
+)
+
+// KnownWeekStart is a week start this server writes down, or empty for
+// anything else. Checked rather than stored as given: the dashboard draws its
+// columns from this, and a word it does not know would silently become one of
+// the two anyway.
+func KnownWeekStart(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case WeekStartsSunday:
+		return WeekStartsSunday
+	case WeekStartsMonday:
+		return WeekStartsMonday
+	}
+	return ""
 }
 
 // CalendarObject is one iCalendar file: usually one event, sometimes an event

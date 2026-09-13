@@ -59,7 +59,11 @@ type CalendarView struct {
 	Description string `json:"description,omitempty"`
 	Colour      string `json:"colour,omitempty"`
 	Timezone    string `json:"timezone,omitempty"`
-	Events      int    `json:"events"`
+
+	// WeekStart is the day this person's weeks are drawn from: "sunday" or
+	// "monday".
+	WeekStart string `json:"weekStart,omitempty"`
+	Events    int    `json:"events"`
 }
 
 // CalendarEventView is one event, and when it happens.
@@ -166,6 +170,19 @@ type SaveCalendarArguments struct {
 	Description string `json:"description" graphapi:"nullable"`
 	Colour      string `json:"colour" graphapi:"nullable"`
 	Timezone    string `json:"timezone" graphapi:"nullable"`
+
+	// WeekStart is "sunday" or "monday", and nothing else.
+	WeekStart string `json:"weekStart" graphapi:"nullable"`
+}
+
+// weekStartOf is the day a calendar's weeks are drawn from, and Sunday for a
+// calendar made before this was written down. Answered here rather than left
+// empty so that nothing drawing a week has to invent a default of its own.
+func weekStartOf(found *models.Calendar) string {
+	if known := models.KnownWeekStart(found.WeekStart); known != "" {
+		return known
+	}
+	return models.WeekStartsSunday
 }
 
 // longestWindow is how much of a calendar may be asked for at once.
@@ -242,7 +259,8 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 		}
 		views = append(views, &CalendarView{
 			ID: found.ID, Name: found.Name, Description: found.Description,
-			Colour: found.Colour, Timezone: found.Timezone, Events: int(count),
+			Colour: found.Colour, Timezone: found.Timezone,
+			WeekStart: weekStartOf(found), Events: int(count),
 		})
 	}
 	return views, nil
@@ -767,12 +785,19 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 				api.ErrInvalidArguments, zone)
 		}
 	}
+	// Refused rather than quietly turned into Sunday: a person who typed
+	// something else meant something, and being told is how they find out
+	// there are two answers here and not seven.
+	if given := strings.TrimSpace(arguments.WeekStart); given != "" && models.KnownWeekStart(given) == "" {
+		return nil, fmt.Errorf("%w: a week starts on sunday or on monday", api.ErrInvalidArguments)
+	}
 	var kept *models.Calendar
 	var count int64
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if kept, err = tx.UpdateCalendar(&models.Calendar{
 			ID: found.ID, Name: arguments.Name, Description: arguments.Description,
 			Colour: arguments.Colour, Timezone: arguments.Timezone,
+			WeekStart: arguments.WeekStart,
 		}); err != nil {
 			return err
 		}
@@ -786,7 +811,8 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 	}
 	return &CalendarView{
 		ID: kept.ID, Name: kept.Name, Description: kept.Description,
-		Colour: kept.Colour, Timezone: kept.Timezone, Events: int(count),
+		Colour: kept.Colour, Timezone: kept.Timezone, WeekStart: weekStartOf(kept),
+		Events: int(count),
 	}, nil
 }
 
