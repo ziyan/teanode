@@ -1444,6 +1444,8 @@ const CATEGORY_LABELS: Record<string, Key> = {
   promotion: 'mailbox.category.promotion',
   social: 'mailbox.category.social',
   invitation: 'mailbox.category.invitation',
+  phishing: 'mailbox.category.phishing',
+  junk: 'mailbox.category.junk',
   other: 'mailbox.category.other',
 }
 

@@ -35,6 +35,29 @@ moved or is off — is *outward*, so the person is asked first, and an event wit
 guests on it is refused outright until the call says they are to be told.
 `docs/subsystems/calendar.md` has the reasoning.
 
+## Sorting, and the two words that earn a rule
+
+Triage answers with a category from a fixed list -- personal, work,
+newsletter, notification, receipt, promotion, social, invitation, phishing,
+junk, other -- plus whatever the person has added. Fixed so the chips
+translate and a rule written today still means the same thing next year.
+
+Two of them are there for one purpose. **Phishing** is a message written to
+take something by pretending to be somebody it is not, and the tell is the
+sender against the claim: a password notice about an address at one domain,
+sent from another. **Junk** is mail nobody asked for from somebody with no
+reason to write, which is not the same as a promotion -- a promotion comes
+from a sender the person actually deals with, however much of it there is.
+
+Neither is a verdict from a check. The spam filter and DMARC run first and
+refuse what they can; what reaches the agent is the mail that passed both and
+is still a lie. And neither files anything by itself: the agent says what a
+message is, and a **rule** says what to do about it, because filing belongs
+where the person can see it, change it and turn it off. One rule covers both:
+
+    teanode mailbox rule add "Unwanted" \
+      --when category:matches:^(phishing|junk)$ --move Junk --mark-read --stop
+
 ## Three switches, in order
 
 A feature has to pass all three:

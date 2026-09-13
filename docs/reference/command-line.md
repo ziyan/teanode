@@ -162,7 +162,12 @@ Three of the fields ask nothing of a value and are written alone: `--when
 sender-known`, `--when needs-reply` and `--when any`. `category`, `priority`
 and `needs-reply` read what the agent decided about a message, so a rule
 with one of them runs once the agent has sorted the message rather than at
-delivery: `--when category:equals:newsletter --move Reading`. The actions are flags: `--move`,
+delivery: `--when category:equals:newsletter --move Reading`. The categories
+are `personal`, `work`, `newsletter`, `notification`, `receipt`, `promotion`,
+`social`, `invitation`, `phishing`, `junk` and `other`, plus any the person
+added. The last two are what a standing rule about unwanted mail is written
+against, and `matches` takes both at once:
+`--when category:matches:^(phishing|junk)$ --move Junk --mark-read --stop`. The actions are flags: `--move`,
 `--mark-read`, `--flag`, `--forward`, `--delete`, and `--stop` ends the run
 after this rule.
 

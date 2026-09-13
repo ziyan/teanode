@@ -108,6 +108,19 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- The agent can say that a message is phishing or junk, which are two new
+  categories beside the others it sorts into. Phishing is a message that
+  pretends to be somebody it is not -- a password notice about your own
+  address, sent from a domain that is not yours; junk is mail nobody asked
+  for from a sender with no reason to write. A rule does the filing, as with
+  every other category: `--when category:matches:^(phishing|junk)$ --move
+  Junk --mark-read --stop`.
+
+- The agent can write mailbox rules again. Every attempt failed with an error
+  about element numbers: a tool calling the API inside the server handed it
+  the rules as they were, and the query engine reads an input object only as
+  plain data, so it refused all of them.
+
 - Delete sits in the footer of the event dialog beside Cancel and Save, where
   the other buttons that end the dialog are, rather than under the last field.
 

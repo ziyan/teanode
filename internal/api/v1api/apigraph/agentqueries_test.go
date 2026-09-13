@@ -148,3 +148,51 @@ func readAgentDocuments(t *testing.T) []clientOperation {
 	}
 	return documents
 }
+
+// The agent's tools call the API in this process, with whatever Go values
+// they have to hand: a list of rules is a slice of structs. The query engine
+// checks an input object by asserting it is a map, so a struct reached it as
+// "not an object" and every rule the agent tried to write was refused -- with
+// an error about element numbers that named neither the tool nor the reason.
+//
+// Over HTTP the same variables have been through JSON already, which is why
+// the dashboard never saw this and the one door the agent uses always did.
+func TestVariablesReachTheQueryAsJSONValues(t *testing.T) {
+	t.Parallel()
+
+	type condition struct {
+		Field string `json:"field"`
+		Value string `json:"value"`
+	}
+	type rule struct {
+		Name       string      `json:"name"`
+		Enabled    bool        `json:"enabled"`
+		Conditions []condition `json:"conditions"`
+	}
+	asked, err := asJSONValues(map[string]any{
+		"mailboxId": "mb1",
+		"rules": []rule{
+			{Name: "GitHub", Enabled: true, Conditions: []condition{{Field: "from", Value: "@github.com"}}},
+			{Name: "Junk", Enabled: true, Conditions: []condition{{Field: "subject", Value: "password"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalising: %s", err)
+	}
+	rules, ok := asked["rules"].([]any)
+	if !ok || len(rules) != 2 {
+		t.Fatalf("a list of rules stays a list: %#v", asked["rules"])
+	}
+	for index, given := range rules {
+		object, ok := given.(map[string]any)
+		if !ok {
+			t.Fatalf("rule %d is an object the query engine can read: %#v", index, given)
+		}
+		if _, ok := object["conditions"].([]any); !ok {
+			t.Fatalf("and so is everything inside it: %#v", object["conditions"])
+		}
+	}
+	if asked["mailboxId"] != "mb1" {
+		t.Fatalf("the rest is left as it was: %#v", asked["mailboxId"])
+	}
+}

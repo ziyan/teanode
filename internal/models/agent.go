@@ -88,7 +88,18 @@ type AgentCategory struct {
 
 // AgentCategories is the fixed vocabulary every insight draws from, beside
 // the person's own. Fixed so that chips translate and rules stay portable.
-var AgentCategories = []string{"personal", "work", "newsletter", "notification", "receipt", "promotion", "social", "invitation", "other"}
+//
+// "phishing" and "junk" are here rather than left to each person to invent,
+// because they are the categories somebody wants a standing rule about on the
+// day they first need one, and a rule is only portable if the word is. Both
+// are judgements about a message rather than verdicts from a check: the spam
+// filter and DMARC catch what they can, and what reaches these is the mail
+// that passed both. Phishing is a lie with a purpose -- a real domain nobody
+// has ever written from, asking for a password. Junk is mail nobody asked
+// for from somebody with no reason to write, which is a different thing from
+// a promotion, and the difference is whether the person has a relationship
+// with the sender at all.
+var AgentCategories = []string{"personal", "work", "newsletter", "notification", "receipt", "promotion", "social", "invitation", "phishing", "junk", "other"}
 
 // AgentPriorities are the three levels an insight assigns.
 var AgentPriorities = []string{"high", "normal", "low"}

@@ -2194,6 +2194,8 @@ export const ja: Catalog = {
   'mailbox.category.promotion': 'プロモーション',
   'mailbox.category.social': 'ソーシャル',
   'mailbox.category.invitation': '招待',
+  'mailbox.category.phishing': 'フィッシング',
+  'mailbox.category.junk': '迷惑メール',
   'mailbox.category.other': 'その他',
   'mailbox.pin': '固定',
   'mailbox.pinToTop': '上部に固定',

@@ -2128,6 +2128,8 @@ export const zh: Catalog = {
   'mailbox.category.promotion': '促销',
   'mailbox.category.social': '社交',
   'mailbox.category.invitation': '邀请',
+  'mailbox.category.phishing': '钓鱼邮件',
+  'mailbox.category.junk': '垃圾邮件',
   'mailbox.category.other': '其他',
   'mailbox.pin': '固定',
   'mailbox.pinToTop': '固定到顶部',

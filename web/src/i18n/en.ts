@@ -2199,6 +2199,8 @@ export const en = {
   'mailbox.category.promotion': 'Promotion',
   'mailbox.category.social': 'Social',
   'mailbox.category.invitation': 'Invitation',
+  'mailbox.category.phishing': 'Phishing',
+  'mailbox.category.junk': 'Junk',
   'mailbox.category.other': 'Other',
   'mailbox.pin': 'Pin',
   'mailbox.pinToTop': 'Pin to top',
