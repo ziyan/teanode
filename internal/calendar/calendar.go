@@ -263,12 +263,25 @@ type Occurrence struct {
 // every week, and using the original end would make every later occurrence
 // finish in the past.
 func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
+	occurrences, _, err := occurrencesWithin(parsed, from, until)
+	return occurrences, err
+}
+
+// occurrencesWithin is Occurrences, and whether it stopped at the cap rather
+// than at the end of the window.
+//
+// The difference matters to whoever writes down how far an event has been
+// worked out. Stopping at the cap means the index reaches the last occurrence
+// kept and no further, and recording the window's end instead says the event
+// was indexed over a stretch where nothing was written -- which is how a
+// standing meeting disappears while a fetch of it still works.
+func occurrencesWithin(parsed *Parsed, from, until time.Time) ([]Occurrence, bool, error) {
 	if parsed == nil || parsed.calendar == nil {
-		return nil, fmt.Errorf("calendar: there is no event to expand")
+		return nil, false, fmt.Errorf("calendar: there is no event to expand")
 	}
 	event := firstEvent(parsed.calendar)
 	if event == nil {
-		return nil, fmt.Errorf("calendar: there is no event in that file")
+		return nil, false, fmt.Errorf("calendar: there is no event in that file")
 	}
 	length := parsed.EndsAt.Sub(parsed.StartsAt)
 	if length < 0 {
@@ -276,18 +289,18 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	}
 	set, err := event.RecurrenceSet(time.UTC)
 	if err != nil {
-		return nil, fmt.Errorf("calendar: that event's recurrence cannot be read: %w", err)
+		return nil, false, fmt.Errorf("calendar: that event's recurrence cannot be read: %w", err)
 	}
 	if set == nil {
 		if parsed.StartsAt.Before(from) && !parsed.EndsAt.After(from) {
-			return nil, nil
+			return nil, false, nil
 		}
 		if !parsed.StartsAt.Before(until) {
-			return nil, nil
+			return nil, false, nil
 		}
 		return []Occurrence{{
 			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, AllDay: parsed.AllDay,
-		}}, nil
+		}}, false, nil
 	}
 	// Asked from earlier than the window, because an occurrence that began
 	// before it and has not finished is still on: a person looking at
@@ -304,6 +317,7 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	// that rule was enough to take the server down. Pulling them one by one
 	// means the bound is a bound on what is done, not on what is kept.
 	next := set.Iterator()
+	capped := false
 	walked := 0
 	for ; walked < maximumSteps; walked++ {
 		when, ok := next()
@@ -324,6 +338,7 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 		}
 		occurrences = append(occurrences, occurrence)
 		if len(occurrences) >= MaximumOccurrences {
+			capped = true
 			break
 		}
 	}
@@ -334,12 +349,17 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	// today, and the event then vanished from every view while a fetch of
 	// it still worked.
 	if walked >= maximumSteps && len(occurrences) == 0 {
-		return nil, fmt.Errorf("calendar: that repeat is too fine to work out over this stretch of time")
+		return nil, false, fmt.Errorf("calendar: that repeat is too fine to work out over this stretch of time")
+	}
+	// Walking out of steps is stopping short just as surely as filling the
+	// list is.
+	if walked >= maximumSteps {
+		capped = true
 	}
 	sort.Slice(occurrences, func(first, second int) bool {
 		return occurrences[first].StartsAt.Before(occurrences[second].StartsAt)
 	})
-	return occurrences, nil
+	return occurrences, capped, nil
 }
 
 // MaximumOccurrences is how many one file may contribute to one window.
@@ -448,13 +468,38 @@ func Indexed(parsed *Parsed) ([]Occurrence, time.Time, error) {
 	} else if parsed.StartsAt.After(from) {
 		from = parsed.StartsAt.Add(-time.Second)
 	}
-	occurrences, err := Occurrences(parsed, from, until)
+	occurrences, capped, err := occurrencesWithin(parsed, from, until)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	// How far this was worked out to, which is what says when it needs
-	// doing again. Not the furthest occurrence: a series that has finished
-	// has none here, and would otherwise look like it needed extending for
-	// ever.
-	return occurrences, until, nil
+	if !capped {
+		// How far this was worked out to, which is what says when it
+		// needs doing again. Not the furthest occurrence: a series that
+		// has finished has none here, and would otherwise look like it
+		// needed extending for ever.
+		return occurrences, until, nil
+	}
+	// A repeat fine enough to fill the cap is a different matter, and
+	// saying "indexed to the horizon" about it is simply untrue. Two things
+	// follow.
+	//
+	// The cap is spent on what is ahead rather than on what has already
+	// happened. Worked out from a year back, an hourly repeat filled the
+	// whole list with last spring and had nothing in it for today, so the
+	// event was nowhere in the calendar while every fetch of it worked.
+	// Looking back at a repeat that fine is the thing given up, and it is
+	// the right thing to give up.
+	if from.Before(now) {
+		if ahead, _, err := occurrencesWithin(parsed, now, until); err == nil && len(ahead) > 0 {
+			occurrences = ahead
+		}
+	}
+	// And the horizon is the last moment actually written down. Recording
+	// the window's end instead left the index reaching five months out
+	// while the row claimed two years, so nothing ever extended it and the
+	// event stopped appearing with nothing to show for it.
+	if len(occurrences) == 0 {
+		return occurrences, now, nil
+	}
+	return occurrences, occurrences[len(occurrences)-1].StartsAt, nil
 }

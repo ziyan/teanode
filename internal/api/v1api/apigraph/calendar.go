@@ -271,7 +271,7 @@ func (self *graph) ListCalendarEvents(ctx context.Context, arguments ListCalenda
 	tx := self.transaction(ctx)
 	occurrences, err := tx.ListOccurrences(found.ID, from, until)
 	if err != nil {
-		return nil, err
+		return nil, translateError(err)
 	}
 	// Read each event once, however many times it happens in the window.
 	objects := make(map[string]*models.CalendarObject, len(occurrences))
@@ -478,6 +478,8 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 			return refused
 		}
 		object.IndexedUntil = &indexedUntil
+		indexedAt := time.Now().UTC()
+		object.IndexedAt = &indexedAt
 		kept, err = tx.PutCalendarObject(object, occurrences)
 		return err
 	}); err != nil {

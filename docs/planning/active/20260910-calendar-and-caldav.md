@@ -376,6 +376,33 @@ catch-all mailbox. None of those existed before the fix. A fix is a change, and
 a change wants the same suspicion as the thing it replaces; the rounds are not
 a formality.
 
+**Round four: forty-three, and the count is the point.** Ten more, and the
+worst was the same hole for the fourth time. Round three's narrowing — SENT-BY
+counts once the file agrees with the held copy about whose event it is — was
+satisfied by copying an address every guest already has. Three rewrites of one
+check, each one described in its own comment as the fix for the last, and all
+three asked the sender to vouch for the sender. What finally worked was
+refusing to take anything from the file at all: the sender's domain, which
+DMARC aligned, against the organizer's. The lesson is not "be careful with
+SENT-BY". It is that a check written against a field in the attacker's document
+is not a check, however many other fields in that same document it consults
+first.
+
+Round four's other nine were in the parts earlier rounds had spent least time
+on, which is the second lesson: three rounds of staring at the trust decisions
+and the time zones left an `If-Match` that could not prevent a lost update, a
+home set that reported itself empty to a synchronizing phone, a free-busy that
+said "free" for twenty-two months because an occurrence list was capped with a
+number meant for events, and every all-day event in the dashboard ending a day
+late in both directions. None of those are subtle. Nobody had looked.
+
+And the tests kept passing. The collision test read the zone it was not about;
+the slashless-URL test asserted a status code and not a body; the all-day tests
+encoded the off-by-one on both sides so they agreed with each other. Every
+round, the tests written beside the code shared its blind spot — which is why
+each fix in this round was made to fail first, against the old code, before it
+was believed.
+
 **Two small things worth keeping.** The naming check earned its place: this
 work introduced `TimeZone` where the repository says `Timezone` sixty-seven
 times, and the same thing having two names is exactly what the convention

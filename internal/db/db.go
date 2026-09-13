@@ -17,6 +17,13 @@ var (
 	ErrInvalidEmail     = errors.New("db: invalid email")
 	ErrInvalidArguments = errors.New("db: invalid arguments")
 	ErrNotFound         = errors.New("db: not found")
+
+	// ErrTooMuchAsked is a question whose answer is larger than this server
+	// will build: a stretch of time holding more times something happens
+	// than it will describe at once. The asker is told, because the
+	// alternative -- the first hundred thousand, silently -- answers "when
+	// is this person busy" with a window that stops in the middle.
+	ErrTooMuchAsked = errors.New("db: more was asked for than this server answers at once")
 )
 
 type Options struct {

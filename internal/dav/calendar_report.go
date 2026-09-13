@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-ical"
+
 	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -74,13 +76,26 @@ type calendarQuery struct {
 }
 
 type compFilter struct {
-	Name         string       `xml:"name,attr"`
-	IsNotDefined *struct{}    `xml:"urn:ietf:params:xml:ns:caldav is-not-defined"`
-	TimeRange    *timeRange   `xml:"urn:ietf:params:xml:ns:caldav time-range"`
-	Children     []compFilter `xml:"urn:ietf:params:xml:ns:caldav comp-filter"`
-	PropFilters  []struct {
-		Name string `xml:"name,attr"`
-	} `xml:"urn:ietf:params:xml:ns:caldav prop-filter"`
+	Name         string               `xml:"name,attr"`
+	IsNotDefined *struct{}            `xml:"urn:ietf:params:xml:ns:caldav is-not-defined"`
+	TimeRange    *timeRange           `xml:"urn:ietf:params:xml:ns:caldav time-range"`
+	Children     []compFilter         `xml:"urn:ietf:params:xml:ns:caldav comp-filter"`
+	Test         string               `xml:"test,attr"`
+	PropFilters  []calendarPropFilter `xml:"urn:ietf:params:xml:ns:caldav prop-filter"`
+}
+
+// calendarPropFilter is a condition on one property of an event: that it is
+// there, that it is not, or that its value matches some text.
+type calendarPropFilter struct {
+	Name         string    `xml:"name,attr"`
+	Test         string    `xml:"test,attr"`
+	IsNotDefined *struct{} `xml:"urn:ietf:params:xml:ns:caldav is-not-defined"`
+	TextMatches  []struct {
+		Text      string `xml:",chardata"`
+		Negate    string `xml:"negate-condition,attr"`
+		MatchType string `xml:"match-type,attr"`
+		Collation string `xml:"collation,attr"`
+	} `xml:"urn:ietf:params:xml:ns:caldav text-match"`
 }
 
 type timeRange struct {
@@ -123,34 +138,150 @@ func readMoment(value string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// eventFilter is the VEVENT filter inside a query, if there is one, and
-// whether the query is one this server can carry out at all.
+// eventFilter is the VEVENT filter inside a query: the filter itself, whether
+// the query asks for something this calendar can never hold, and whether it is
+// a query this server can carry out at all.
 //
 // A filter this server cannot carry out is refused rather than answered
 // emptily. Skipping every event would tell a client whose query was slightly
 // out of spec that the calendar is empty, which a client enumerating with a
 // query reads as everything having been deleted.
-func (self *calendarQuery) eventFilter() (*compFilter, bool) {
+//
+// The three answers have to be three. Written as two, "matches nothing" and
+// "no filter at all" were both a nil filter, and the caller read nil the
+// second way: a query for the to-dos this server does not keep came back
+// carrying every event in the calendar, and a client that asked for to-dos
+// and events together had its time range thrown away with the to-do filter.
+func (self *calendarQuery) eventFilter() (filter *compFilter, nothing bool, usable bool) {
 	outer := self.Filter.CompFilter
 	if outer.Name != "" && !strings.EqualFold(outer.Name, "VCALENDAR") {
-		return nil, false
+		return nil, false, false
 	}
+	other := false
 	for index := range outer.Children {
 		child := &outer.Children[index]
 		switch {
 		case strings.EqualFold(child.Name, "VEVENT"):
-			return child, true
+			// The events are what this server keeps, so this is the part
+			// of the question it can answer, whatever else was asked
+			// beside it.
+			return child, false, true
 		case child.Name == "":
 			continue
 		default:
-			// A to-do, a journal or a free-busy component. This server
-			// keeps events, so a filter asking for anything else matches
-			// nothing -- which is the truth rather than a refusal.
-			return nil, true
+			// A to-do, a journal or a free-busy component.
+			other = true
 		}
 	}
+	if other {
+		// Asked only for kinds of thing this server does not keep, which
+		// matches nothing -- the truth rather than a refusal.
+		return nil, true, true
+	}
 	// No inner filter: every event in the calendar.
-	return nil, true
+	return nil, false, true
+}
+
+// matches says whether one event satisfies the property conditions in a
+// filter.
+//
+// Applied here rather than left to the client, for the reason the address
+// book gives: a client using the query as its only filter would otherwise be
+// told that every event in the calendar matches, and would carry the whole
+// calendar across the network to find out otherwise.
+//
+// An event whose file cannot be read matches, on the principle that something
+// nobody can read is better shown than silently withheld.
+func (self *compFilter) matches(data string) bool {
+	if self == nil || len(self.PropFilters) == 0 {
+		return true
+	}
+	decoded, err := ical.NewDecoder(strings.NewReader(data)).Decode()
+	if err != nil {
+		return true
+	}
+	event := firstEventOf(decoded)
+	if event == nil {
+		return true
+	}
+	all := self.Test == "allof"
+	for _, filter := range self.PropFilters {
+		held := event.Props[strings.ToUpper(strings.TrimSpace(filter.Name))]
+		got := false
+		switch {
+		case filter.IsNotDefined != nil:
+			got = len(held) == 0
+		case len(filter.TextMatches) == 0:
+			got = len(held) > 0
+		default:
+			got = filter.matchesText(held)
+		}
+		if all && !got {
+			return false
+		}
+		if !all && got {
+			return true
+		}
+	}
+	return all
+}
+
+// matchesText is one property filter's text matches against the values an
+// event holds for it. Case-insensitively, which is the protocol's default
+// collation and the only one this server offers.
+func (self *calendarPropFilter) matchesText(held []ical.Prop) bool {
+	all := self.Test == "allof"
+	for _, match := range self.TextMatches {
+		wanted := strings.ToLower(strings.TrimSpace(match.Text))
+		found := false
+		for _, property := range held {
+			value := strings.ToLower(property.Value)
+			switch match.MatchType {
+			case "equals":
+				found = value == wanted
+			case "starts-with":
+				found = strings.HasPrefix(value, wanted)
+			case "ends-with":
+				found = strings.HasSuffix(value, wanted)
+			default:
+				found = strings.Contains(value, wanted)
+			}
+			if found {
+				break
+			}
+		}
+		if match.Negate == "yes" {
+			found = !found
+		}
+		if all && !found {
+			return false
+		}
+		if !all && found {
+			return true
+		}
+	}
+	return all
+}
+
+// firstEventOf is the first VEVENT in a decoded file, which is the event a
+// filter is about.
+func firstEventOf(cal *ical.Calendar) *ical.Component {
+	if cal == nil {
+		return nil
+	}
+	for _, child := range cal.Children {
+		if child != nil && child.Name == ical.CompEvent {
+			return child
+		}
+	}
+	return nil
+}
+
+// addressesACalendar is whether a path names a calendar itself rather than
+// something inside it. A query and a free-busy request are about a collection;
+// a multiget may name one file, which is what its hrefs are for.
+func addressesACalendar(path string) bool {
+	return len(segmentsOf(path)) == 3
 }
 
 // serveCalendarReport answers a REPORT if it is one this package handles, and
@@ -205,28 +336,46 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 		}
 
 	case "free-busy-query":
+		if !addressesACalendar(request.URL.Path) {
+			http.Error(writer, "that report is about a calendar, not one event in it",
+				http.StatusForbidden)
+			return true
+		}
 		self.serveFreeBusy(writer, request, backing, body)
 		return true
 
 	case "calendar-query":
+		// Addressed to the calendar. Asked about one event's own address
+		// the path still resolved to the calendar it is in, so a report
+		// about a single file answered with every file in the calendar.
+		if !addressesACalendar(request.URL.Path) {
+			http.Error(writer, "that report is about a calendar, not one event in it",
+				http.StatusForbidden)
+			return true
+		}
 		var query calendarQuery
 		if err := xml.Unmarshal(body, &query); err != nil {
 			http.Error(writer, "that filter could not be read", http.StatusBadRequest)
 			return true
 		}
-		filter, usable := query.eventFilter()
+		filter, nothing, usable := query.eventFilter()
 		if !usable {
 			http.Error(writer, "this server does not answer that filter", http.StatusBadRequest)
 			return true
 		}
-		objects, err := self.eventsMatching(ctx, backing, request.URL.Path, filter)
-		if err != nil {
-			status, message := statusOf(err)
-			http.Error(writer, message, status)
-			return true
-		}
-		for _, object := range objects {
-			answers = append(answers, foundEvent(signedIn, object, wantsETag, wantsLength, wantsData))
+		if !nothing {
+			objects, err := self.eventsMatching(ctx, backing, request.URL.Path, filter)
+			if err != nil {
+				status, message := statusOf(err)
+				http.Error(writer, message, status)
+				return true
+			}
+			for _, object := range objects {
+				if !filter.matches(object.Data) {
+					continue
+				}
+				answers = append(answers, foundEvent(signedIn, object, wantsETag, wantsLength, wantsData))
+			}
 		}
 
 	default:

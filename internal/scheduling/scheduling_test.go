@@ -789,3 +789,71 @@ func TestNamingYourselfAsOrganizerDoesNotMakeYouOne(t *testing.T) {
 		t.Fatalf("an assistant may send for the organizer: %+v", events)
 	}
 }
+
+// TestSayingSomebodyElseSentForYouIsNotADelegation is the fourth round of the
+// same hole. Copying the organizer's address out of the invitation everybody
+// was sent, and writing SENT-BY with one's own name, satisfied both halves of
+// the check that was supposed to stop exactly this.
+func TestSayingSomebodyElseSentForYouIsNotADelegation(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "The small room",
+		"SEQUENCE:1", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "asked", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	// Mallory writes the organizer the event already has, and says she
+	// posted it for her. Every guest on the original knows that address.
+	headers, body = invitationMessage("REQUEST", "the-meeting", "PWNED",
+		"SEQUENCE:99", `ORGANIZER;SENT-BY="mailto:mallory@evil.example":mailto:grace@example.com`,
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "The small room" {
+		t.Fatalf("a stranger's SENT-BY does not rewrite somebody's meeting: %+v", events)
+	}
+
+	headers, body = invitationMessage("CANCEL", "the-meeting", "The small room",
+		`ORGANIZER;SENT-BY="mailto:mallory@evil.example":mailto:grace@example.com`)
+	here.deliverFrom(t, "forgedOff", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 1 || events[0].Status == "CANCELLED" {
+		t.Fatalf("nor call it off: %+v", events)
+	}
+}
+
+// TestAnInventedOrganizerIsNotAnInvitation is the same field on a file this
+// server holds nothing about, where there is no held copy to disagree with.
+func TestAnInventedOrganizerIsNotAnInvitation(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	// An event attributed to somebody who never called it.
+	headers, body := invitationMessage("REQUEST", "invented", "Quarterly review",
+		`ORGANIZER;SENT-BY="mailto:mallory@evil.example":mailto:ceo@example.com`,
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "invented", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	if events := here.events(t); len(events) != 0 {
+		t.Fatalf("nobody may put an event in somebody else's name: %+v", events)
+	}
+
+	// And the same field naming the recipient as the organizer, with no
+	// guests at all, which walked past the check that an invitation has to
+	// ask the person it was sent to.
+	headers, body = invitationMessage("REQUEST", "planted", "Pay this invoice",
+		`ORGANIZER;SENT-BY="mailto:mallory@evil.example":mailto:alice@example.com`)
+	here.deliverFrom(t, "planted", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	if events := here.events(t); len(events) != 0 {
+		t.Fatalf("an event nobody was asked to is not put in their calendar: %+v", events)
+	}
+}

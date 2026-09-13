@@ -247,16 +247,30 @@ func settleZones(cal *ical.Calendar) {
 			continue
 		}
 		known := knownAs(tzid)
-		// Renamed only when the name is free and the zone it names agrees
-		// with what this file says the offset is.
-		if known != "" && known != tzid && (taken[known] || !agreesWith(known, child, when)) {
+		// Renamed only when the zone that name belongs to agrees with what
+		// this file says the offset is.
+		if known != "" && known != tzid && !agreesWith(known, child, when) {
 			known = ""
 		}
 		if known != "" {
 			if known != tzid {
+				// Everything that pointed at the old name points at the
+				// new one either way. What the name being taken settles
+				// is only whether this component may take it too: two
+				// components under one identifier is not a calendar a
+				// strict client will read, and this file is stored and
+				// served back to phones.
+				//
+				// Refusing the whole rename over that was worse than the
+				// collision. The zone fell through to the times being
+				// frozen as instants, so a weekly meeting at nine in New
+				// York became eight for the rest of the year -- from a
+				// file that described the zone correctly, twice.
 				renames[tzid] = known
-				property.Value = known
-				taken[known] = true
+				if !taken[known] {
+					property.Value = known
+					taken[known] = true
+				}
 			}
 			continue
 		}

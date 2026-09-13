@@ -63,6 +63,12 @@ type CalendarObject struct {
 	// the index reaches a horizon and something extends it as that horizon
 	// approaches; this is what says which events still need it.
 	IndexedUntil *time.Time `json:"indexedUntil,omitempty"`
+
+	// IndexedAt is when that work was last done. An event whose repeat is
+	// too fine to reach the horizon is worked out only as far as its last
+	// written occurrence, so it is always running out; this is what keeps
+	// it from being done again on every tick, ahead of everybody else's.
+	IndexedAt *time.Time `json:"indexedAt,omitempty"`
 }
 
 // Occurrence is one time an event happens.

@@ -92,7 +92,7 @@ func eventFlags() []cli.Flag {
 		JSONFlag(),
 		&cli.StringFlag{Name: "summary", Aliases: []string{"title"}, Usage: "what it is"},
 		&cli.StringFlag{Name: "starts", Usage: "when it starts, as YYYY-MM-DDTHH:MM in your calendar's zone"},
-		&cli.StringFlag{Name: "ends", Usage: "when it ends, the same way; an hour after it starts by default"},
+		&cli.StringFlag{Name: "ends", Usage: "when it ends, the same way; an hour after it starts by default. For a whole-day event it is the last day it is on, so the same date at both ends is one day"},
 		&cli.StringFlag{Name: "location", Usage: "where"},
 		&cli.StringFlag{Name: "notes", Usage: "anything else worth writing down"},
 		&cli.BoolFlag{Name: "all-day", Usage: "something that belongs to the day rather than to a time"},
@@ -253,7 +253,22 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 	if starts, err := time.Parse(time.RFC3339, event.StartsAt); err == nil {
 		local := starts.In(where)
 		if event.AllDay {
-			fmt.Printf("  %s, all day\n", starts.UTC().Format("Monday, 2 January 2006"))
+			// Named by the last day it is on. The file writes the end as
+			// the morning after, so a two-day event said "all day" beside
+			// one date and looked like one day.
+			last := starts.UTC()
+			if ends, err := time.Parse(time.RFC3339, event.EndsAt); err == nil {
+				if finish := ends.UTC().AddDate(0, 0, -1); finish.After(last) {
+					last = finish
+				}
+			}
+			if last.After(starts.UTC()) {
+				fmt.Printf("  %s to %s, all day\n",
+					starts.UTC().Format("Monday, 2 January 2006"),
+					last.Format("Monday, 2 January 2006"))
+			} else {
+				fmt.Printf("  %s, all day\n", starts.UTC().Format("Monday, 2 January 2006"))
+			}
 		} else {
 			finish := ""
 			if ends, err := time.Parse(time.RFC3339, event.EndsAt); err == nil {
@@ -348,6 +363,14 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar, wasAllDay 
 			allDay = command.Bool("all-day")
 		}
 		if allDay {
+			// The last day it is on, the way a person says it, rather
+			// than the morning after, the way the format writes it.
+			// "--starts 14 --ends 14" is one day and "--ends 15" is two;
+			// taken literally the first was no days at all and the
+			// second was one.
+			if name == "ends" {
+				moment = moment.AddDate(0, 0, 1)
+			}
 			written := moment.Format("2006-01-02") + "T00:00:00Z"
 			*field = &written
 			continue

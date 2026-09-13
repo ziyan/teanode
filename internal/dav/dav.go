@@ -159,6 +159,25 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 		segments = strings.Split(rest, "/")
 	}
 
+	// A collection's address ends in a slash and a file's does not.
+	//
+	// Written down here because /dav is deliberately exempt from the
+	// redirect that would otherwise add one -- a redirect turns a PROPFIND
+	// into a GET, which is how a phone comes back with the wrong thing
+	// entirely. Without it the library compared a slashless home set
+	// against its own idea of that address, matched nothing, and answered
+	// 207 with an empty list: to a client synchronizing, every calendar in
+	// the account had just been deleted.
+	if len(segments) > 0 && len(segments) < 4 && !strings.HasSuffix(request.URL.Path, "/") {
+		request.URL.Path += "/"
+	}
+	// And the other way: a file's address with a slash on the end is a
+	// collection that does not exist, not the file.
+	if len(segments) >= 4 && strings.HasSuffix(request.URL.Path, "/") {
+		http.Error(response, "no such collection", http.StatusNotFound)
+		return
+	}
+
 	// The mount itself: the one question a client asks before it knows
 	// anything, which is who it is signed in as.
 	if len(segments) == 0 {

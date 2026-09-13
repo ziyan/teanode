@@ -757,4 +757,73 @@ func TestRenamingDoesNotCollideWithAZoneAlreadyThere(t *testing.T) {
 	if got := strings.Count(string(Unfold(parsed.Data)), "TZID:America/New_York"); got != 1 {
 		t.Fatalf("one zone under that name, not %d:\n%s", got, parsed.Data)
 	}
+
+	// And the event that names the taken-over zone keeps its own clock.
+	// Refusing the rename outright dropped it into fixed offsets, so a
+	// weekly nine o'clock in New York became eight o'clock the moment the
+	// clocks went back -- out of a file that described the zone correctly,
+	// twice over.
+	lines = lines[:len(lines)-8]
+	lines = append(lines,
+		"BEGIN:VEVENT", "UID:weekly", "DTSTAMP:20261001T120000Z",
+		"DTSTART;TZID=Eastern Standard Time:20261026T090000",
+		"DTEND;TZID=Eastern Standard Time:20261026T100000",
+		"RRULE:FREQ=WEEKLY;COUNT=4", "SUMMARY:Nine in New York",
+		"END:VEVENT", "END:VCALENDAR")
+	parsed = mustParse(t, crlf(lines...))
+	occurrences, err := Occurrences(parsed,
+		time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("expand: %s", err)
+	}
+	where, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("this machine has no zone database: %v", err)
+	}
+	if len(occurrences) != 4 {
+		t.Fatalf("four of them: %d", len(occurrences))
+	}
+	for _, occurrence := range occurrences {
+		if hour := occurrence.StartsAt.In(where).Hour(); hour != 9 {
+			t.Fatalf("nine o'clock stays nine o'clock, not %d: %s",
+				hour, occurrence.StartsAt)
+		}
+	}
+}
+
+// TestTheHorizonIsWhereTheIndexActuallyStops is the repeat too fine to work
+// out over the whole stretch. Saying it was indexed to the horizon when the
+// list filled up five months in meant nothing ever extended it, so the event
+// stopped appearing while every fetch of it still worked -- which is the exact
+// failure the horizon column was added to abolish.
+func TestTheHorizonIsWhereTheIndexActuallyStops(t *testing.T) {
+	start := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Hour)
+	text := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:hourly\r\nDTSTAMP:20260912T120000Z\r\n" +
+		"DTSTART:" + start.Format("20060102T150405Z") + "\r\n" +
+		"DTEND:" + start.Add(30*time.Minute).Format("20060102T150405Z") + "\r\n" +
+		"SUMMARY:On the hour\r\nRRULE:FREQ=HOURLY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	parsed, err := Parse([]byte(text))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	occurrences, until, err := Indexed(parsed)
+	if err != nil {
+		t.Fatalf("index: %s", err)
+	}
+	if len(occurrences) != MaximumOccurrences {
+		t.Fatalf("this repeat fills the list: %d", len(occurrences))
+	}
+	last := occurrences[len(occurrences)-1].StartsAt
+	if !until.Equal(last) {
+		t.Fatalf("the horizon is the last moment written down, not %s past it: %s vs %s",
+			until.Sub(last), until, last)
+	}
+	// And the cap is spent on what is ahead. Worked out from a year back it
+	// filled up with last spring, so the event was nowhere in today's
+	// calendar.
+	if !occurrences[0].StartsAt.After(time.Now().UTC().Add(-time.Hour)) {
+		t.Fatalf("a repeat that cannot be indexed in full is indexed forwards: %s", occurrences[0].StartsAt)
+	}
 }

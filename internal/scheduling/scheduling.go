@@ -137,6 +137,18 @@ func (self *Scheduler) Tick(ctx context.Context) error {
 // meeting is extended long before anybody could scroll to the end of it.
 const indexedAhead = 300 * 24 * time.Hour
 
+// reindexedWithin is how long an event is left alone after its occurrences
+// have been worked out.
+//
+// For the repeat that cannot reach the horizon however hard it is worked at:
+// its index ends at its last written occurrence, which is inside the stretch
+// the worker asks about, so it is running out the moment it is done. Without
+// a rest it came back on the next tick and for ever after, in front of every
+// event that could actually be extended. An hour is far shorter than any
+// horizon this moves and long enough that such an event costs one expansion
+// an hour rather than a hundred and twenty.
+const reindexedWithin = time.Hour
+
 // putOff moves an event that cannot be extended to the back of the queue.
 //
 // The horizon is written as though it had been done, so it is asked about
@@ -147,6 +159,8 @@ const indexedAhead = 300 * 24 * time.Hour
 func (self *Scheduler) putOff(tx db.Transaction, object *models.CalendarObject) {
 	until := time.Now().Add(calendar.HorizonAhead)
 	object.IndexedUntil = &until
+	doneAt := time.Now().UTC()
+	object.IndexedAt = &doneAt
 	if _, err := tx.TouchCalendarObjectHorizon(object.CalendarID, object.ID, until); err != nil {
 		log.Debugf("an event that cannot be extended could not be put off: %s", err)
 	}
@@ -165,7 +179,8 @@ const reindexPerTick = 20
 // repeat whose start was past the old horizon was never indexed at all.
 func (self *Scheduler) reindex(ctx context.Context) {
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		running, err := tx.ListCalendarObjectsRunningOut(time.Now().Add(indexedAhead), reindexPerTick)
+		running, err := tx.ListCalendarObjectsRunningOut(
+			time.Now().Add(indexedAhead), time.Now().Add(-reindexedWithin), reindexPerTick)
 		if err != nil {
 			return err
 		}
@@ -197,6 +212,8 @@ func (self *Scheduler) reindex(ctx context.Context) {
 			// ever after -- which also kept it permanently in front of
 			// the repeats that genuinely needed extending.
 			object.IndexedUntil = &indexedUntil
+			doneAt := time.Now().UTC()
+			object.IndexedAt = &doneAt
 			if _, err := tx.PutCalendarObject(object, occurrences); err != nil {
 				return err
 			}
@@ -360,6 +377,12 @@ var recipientsRecordedFrom = time.Date(2026, time.September, 13, 0, 0, 0, 0, tim
 // addressedTo is whether an invitation actually asks the person it was sent
 // to -- as an attendee, or as the organizer of their own event coming back.
 //
+// Their own event means their own: the organizer is only believed to be them
+// when the message came from them. Taken from the file alone it let a stranger
+// past this check entirely, by naming the recipient as the organizer and
+// listing no guests at all -- so an event nobody was asked to, apparently
+// called by the person it was planted on, landed in their calendar.
+//
 // Against the address the message was delivered to, which is the one the
 // sender wrote. Checking a mailbox's advertised addresses instead was wrong in
 // a way that lost mail: a mailbox reached by a catch-all advertises none --
@@ -369,7 +392,8 @@ var recipientsRecordedFrom = time.Date(2026, time.September, 13, 0, 0, 0, 0, tim
 // The mailbox's own addresses are still accepted beside it, because a message
 // may reach a mailbox at one address while the invitation names another of
 // theirs.
-func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.CalendarInvitation, parsed *calendar.Parsed) (bool, error) {
+func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.CalendarInvitation,
+	parsed *calendar.Parsed, sender string) (bool, error) {
 	theirs := map[string]bool{}
 	if delivered := strings.ToLower(strings.TrimSpace(invitation.Recipient)); delivered != "" {
 		theirs[delivered] = true
@@ -398,7 +422,8 @@ func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.Calen
 		}
 		return false, fmt.Errorf("the address this was delivered to was not recorded")
 	}
-	if theirs[strings.ToLower(strings.TrimSpace(parsed.Organizer))] {
+	if strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) &&
+		theirs[strings.ToLower(strings.TrimSpace(parsed.Organizer))] {
 		return true, nil
 	}
 	for _, attendee := range parsed.Attendees {
@@ -412,16 +437,25 @@ func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.Calen
 // mayActFor is whether the sender may act on an event the held copy says
 // somebody else called.
 //
-// The sender is that organizer, or the arriving file names that same organizer
-// and says the sender posted it on their behalf. Both halves of the second
-// case matter, and leaving one out is how this was wrong twice:
+// The sender is that organizer, or somebody at the organizer's own domain who
+// says in the file that they posted it for them. Nothing else will do, and
+// three rounds of this were wrong in the same way:
 //
 // Written as "or the sender is the organizer of the arriving file", the check
 // asks whether the sender is who the sender says they are, which is always
-// true -- the arriving file is the attacker's. That is worse than no check.
-// So SENT-BY is only consulted once the arriving file has agreed with the held
-// copy about whose event it is; it says who put a message in the post, not
-// whose meeting it is.
+// true -- the arriving file is the attacker's. Narrowed to "and the arriving
+// file agrees with the held copy about whose event it is", it still asks
+// nothing: the held organizer's address is on the original invitation, so
+// every guest knows it, and copying it in is free. Both halves were the
+// sender's to write.
+//
+// The one thing the sender did not write is their own address, which DMARC
+// aligned to a domain they demonstrably hold. So a delegate is believed only
+// within that domain: an assistant may move their employer's meeting, and
+// SENT-BY from anywhere else is a stranger's word about a stranger. A booking
+// service that sends for somebody at a domain of its own is refused, which is
+// the right answer -- it may ask this person to a meeting under its own name,
+// but it may not quietly move one it did not call.
 //
 // An event naming no organizer is nobody's to act on from outside: it is an
 // appointment its owner made for themselves.
@@ -438,20 +472,51 @@ func mayActFor(organizer string, parsed *calendar.Parsed, sender string) bool {
 	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), held) {
 		return false
 	}
-	return parsed.SentBy != "" && strings.EqualFold(parsed.SentBy, sender)
+	return postedFor(held, parsed.SentBy, sender)
 }
 
 // speaksFor is whether the sender may send an invitation as this file's
-// organizer: they are that organizer, or the file says they posted it for
-// them.
+// organizer: they are that organizer, or they are at the organizer's domain
+// and the file says they posted it for them.
 //
 // Only for a file this server holds nothing about yet, where there is no held
 // copy to agree with. Where there is one, mayActFor is the question.
 func speaksFor(parsed *calendar.Parsed, sender string) bool {
-	if strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) {
+	organizer := strings.TrimSpace(parsed.Organizer)
+	if strings.EqualFold(organizer, sender) {
 		return true
 	}
-	return parsed.SentBy != "" && strings.EqualFold(parsed.SentBy, sender)
+	return postedFor(organizer, parsed.SentBy, sender)
+}
+
+// postedFor is whether the sender may be believed when a file says they put it
+// in the post for the organizer.
+//
+// Two things have to hold. The file has to say so -- SENT-BY naming the sender
+// and nobody else -- and the sender has to be at the organizer's own domain,
+// which is the only part of this a forger cannot simply type, because it is
+// the domain their message was aligned to.
+func postedFor(organizer, sentBy, sender string) bool {
+	if sentBy == "" || !strings.EqualFold(strings.TrimSpace(sentBy), sender) {
+		return false
+	}
+	return sameDomain(organizer, sender)
+}
+
+// sameDomain is whether two addresses are at the same domain. An address with
+// no domain, or either one missing, is never at anybody's.
+func sameDomain(first, second string) bool {
+	return domainOf(first) != "" && strings.EqualFold(domainOf(first), domainOf(second))
+}
+
+// domainOf is what follows the last at sign, which is the domain even when the
+// local part contains one of its own.
+func domainOf(address string) string {
+	at := strings.LastIndex(strings.TrimSpace(address), "@")
+	if at < 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimSpace(address)[at+1:])
 }
 
 // calendarFor is the calendar an invitation goes into: the person's own,
@@ -480,7 +545,7 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 	// write an event with a title of their choosing into anybody's
 	// calendar -- an invitation naming only strangers still landed, which
 	// makes a calendar somewhere to put text in front of a person.
-	asked, err := self.addressedTo(ctx, invitation, parsed)
+	asked, err := self.addressedTo(ctx, invitation, parsed, sender)
 	if err != nil {
 		return nil, err
 	}

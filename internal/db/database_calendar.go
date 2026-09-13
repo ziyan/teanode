@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -59,6 +60,7 @@ type calendarObjectModel struct {
 	Recurring    bool       `gorm:"column:recurring"`
 	Status       string     `gorm:"column:status"`
 	IndexedUntil *time.Time `gorm:"column:indexed_until"`
+	IndexedAt    *time.Time `gorm:"column:indexed_at"`
 }
 
 func (calendarObjectModel) TableName() string { return "calendar_object" }
@@ -69,7 +71,7 @@ func (self *calendarObjectModel) toModel() *models.CalendarObject {
 		ModifiedAt: self.ModifiedAt, UID: self.UID, ETag: self.ETag, Data: self.Data,
 		Summary: self.Summary, Location: self.Location,
 		AllDay: self.AllDay, Recurring: self.Recurring, Status: self.Status,
-		IndexedUntil: self.IndexedUntil,
+		IndexedUntil: self.IndexedUntil, IndexedAt: self.IndexedAt,
 	}
 	if self.StartsAt != nil {
 		object.StartsAt = *self.StartsAt
@@ -187,10 +189,18 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 
 // DeleteCalendar takes one away, with everything in it: the events and their
 // occurrences are removed by the foreign keys, not by further statements here.
-func (self *transaction) DeleteCalendar(calendarId string) error {
+//
+// Whose it is has to be said, and is checked. An identifier alone is not
+// permission to remove something -- every other door into a calendar resolves
+// it through the account, and one that did not would be the way somebody
+// deletes a calendar that is not theirs.
+func (self *transaction) DeleteCalendar(userId, calendarId string) error {
 	before, err := self.GetCalendar(calendarId)
 	if err != nil || before == nil {
 		return err
+	}
+	if before.UserID != userId {
+		return ErrNotFound
 	}
 	return self.applyMutation(models.AuditResourceCalendar, calendarId, models.AuditActionDelete,
 		before, nil, func(tx *gorm.DB) error {
@@ -230,8 +240,29 @@ func (self *transaction) ListCalendarObjects(calendarId string) ([]*models.Calen
 }
 
 func (self *transaction) GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error) {
+	return self.calendarObject(calendarId, objectId, false)
+}
+
+// LockCalendarObject is GetCalendarObject for a caller about to write it: the
+// row is held for the rest of the transaction.
+//
+// Two devices holding the same version both ask "is it still this version",
+// both are told yes, and both write -- and the first one's change is gone,
+// which is exactly what the version is there to prevent. Reading the row
+// under a lock makes the second wait and see the first one's answer. A row
+// nobody has written yet cannot be locked, so a file being created is settled
+// by the unique index on the identifier instead.
+func (self *transaction) LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error) {
+	return self.calendarObject(calendarId, objectId, true)
+}
+
+func (self *transaction) calendarObject(calendarId, objectId string, holding bool) (*models.CalendarObject, error) {
+	query := self.tx
+	if holding {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var found []calendarObjectModel
-	if err := self.tx.Where("\"calendar_id\" = ? AND \"id\" = ?", calendarId, objectId).
+	if err := query.Where("\"calendar_id\" = ? AND \"id\" = ?", calendarId, objectId).
 		Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
@@ -285,7 +316,7 @@ func (self *transaction) PutCalendarObject(object *models.CalendarObject, occurr
 		Location: truncateRunes(strings.TrimSpace(object.Location), 512),
 		AllDay:   object.AllDay, Recurring: object.Recurring,
 		Status:       truncateRunes(strings.ToUpper(strings.TrimSpace(object.Status)), 32),
-		IndexedUntil: object.IndexedUntil,
+		IndexedUntil: object.IndexedUntil, IndexedAt: object.IndexedAt,
 	}
 	if row.ID == "" {
 		row.ID = newID()
@@ -365,6 +396,18 @@ func (self *transaction) CountCalendarObjects(calendarId string) (int64, error) 
 	return count, err
 }
 
+// OccurrencesPerWindow is how many times something happening this server will
+// describe in one answer.
+//
+// There has to be a number, because the window is chosen by whoever is asking
+// and every occurrence in it is written out. It is not the number of events a
+// calendar may hold: one repeating file contributes thousands of these, so
+// bounding occurrences by that number cut a three-year window off after a few
+// months -- and because the rows come back in order, what was cut was always
+// the far end. Free-busy then reported somebody free for the rest of the
+// window, which is the one mistake that code is written not to make.
+const OccurrencesPerWindow = 100000
+
 // ListOccurrences is what is on between two moments.
 //
 // Overlapping the window, not contained by it: a conference that began on
@@ -378,8 +421,16 @@ func (self *transaction) ListOccurrences(calendarId string, from, until time.Tim
 		"\"calendar_id\" = ? AND \"starts_at\" < ? AND \"ends_at\" > ?",
 		calendarId, until.UTC(), from.UTC()).
 		Order("\"starts_at\" ASC, \"object_id\" ASC").
-		Limit(ObjectsPerCalendar + 1).Find(&found).Error; err != nil {
+		Limit(OccurrencesPerWindow + 1).Find(&found).Error; err != nil {
 		return nil, err
+	}
+	if len(found) > OccurrencesPerWindow {
+		// Said rather than done quietly. Handing back the first hundred
+		// thousand would answer "what is on" and "when is this person
+		// busy" with a window that stops somewhere in the middle, and
+		// nothing downstream could tell that it had.
+		return nil, fmt.Errorf("%w: that stretch of time holds more than %d times something happens; ask about a shorter one",
+			ErrTooMuchAsked, OccurrencesPerWindow)
 	}
 	occurrences := make([]*models.Occurrence, 0, len(found))
 	for index := range found {
@@ -396,13 +447,19 @@ func (self *transaction) ListOccurrences(calendarId string, from, until time.Tim
 // already finished has no occurrence in the window at all, so by the second
 // question it is always running out -- rewritten every tick for ever, and
 // permanently in front of the events that genuinely need extending.
-func (self *transaction) ListCalendarObjectsRunningOut(before time.Time, limit int) ([]*models.CalendarObject, error) {
+//
+// And not the ones just done, however short they fell. A repeat too fine to
+// reach the horizon never stops running out however often it is worked out,
+// so without this it came straight back and held up every other account's --
+// the same jam by a different road.
+func (self *transaction) ListCalendarObjectsRunningOut(before, since time.Time, limit int) ([]*models.CalendarObject, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var found []calendarObjectModel
 	if err := self.tx.Where(
-		"\"recurring\" AND (\"indexed_until\" IS NULL OR \"indexed_until\" < ?)", before).
+		"\"recurring\" AND (\"indexed_until\" IS NULL OR \"indexed_until\" < ?)"+
+			" AND (\"indexed_at\" IS NULL OR \"indexed_at\" < ?)", before, since).
 		Order("\"indexed_until\" ASC NULLS FIRST").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
@@ -423,6 +480,6 @@ func (self *transaction) ListCalendarObjectsRunningOut(before time.Time, limit i
 func (self *transaction) TouchCalendarObjectHorizon(calendarId, objectId string, until time.Time) (bool, error) {
 	result := self.tx.Model(&calendarObjectModel{}).
 		Where("\"calendar_id\" = ? AND \"id\" = ?", calendarId, objectId).
-		Update("indexed_until", until)
+		Updates(map[string]any{"indexed_until": until, "indexed_at": time.Now().UTC()})
 	return result.RowsAffected > 0, result.Error
 }

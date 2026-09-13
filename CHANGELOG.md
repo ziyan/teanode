@@ -90,6 +90,28 @@ Notable changes to TeaNode. The format follows
   description in the invitation itself, so a zone whose rules have changed
   cannot quietly move every occurrence.
 
+- A repeating event too fine to work out to the end of the stretch this server
+  indexes no longer stops appearing part of the way along. What it reaches is
+  what is written down, and it is worked out again as that runs out.
+
+- A calendar or an address book asked for without the slash on the end answers
+  with what is in it. It used to answer that it was empty, which a phone reads
+  as everything in it having been deleted.
+
+- Two devices writing the same event or the same contact at the same moment can
+  no longer lose one another's change.
+
+- A calendar asked "what is on" over a stretch of time too long to answer says
+  so, instead of answering about part of it and leaving the rest looking free.
+
+- A calendar asked for to-dos, which this server does not keep, no longer
+  answers with every event in the calendar; a search for one event by its
+  identifier answers with that one.
+
+- A whole-day event in the dashboard ends on the day it ends on. It used to
+  show the day after, and asking for the fourteenth to the fifteenth made a
+  one-day event. On the command line `--ends` is the last day it is on.
+
 
 - A domain's link host may now name the port it is reached on --
   `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other

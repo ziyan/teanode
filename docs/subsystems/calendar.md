@@ -79,7 +79,16 @@ starting past the horizon was never indexed at all. The scheduler extends the
 repeats that are running out, nearest horizon first, a few at a time; there is
 no hurry, since what is being fixed is a year away.
 
-An event that cannot be extended is moved on anyway, as though it had been.
+An event that cannot be reached in full — a repeat fine enough to fill the cap
+on how many occurrences one file may contribute — records the last moment
+actually written down, and is left alone for an hour afterwards. Recording the
+window's end instead was a plain untruth: the index stopped five months out
+while the row claimed two years, so nothing ever extended it and the event
+disappeared with nothing to show for it. And the cap is spent on what is ahead
+rather than on what has already happened, because worked out from a year back
+it filled with last spring and had nothing in it for today.
+
+An event that cannot be extended at all is moved on anyway, as though it had been.
 Skipping it left it exactly where the query looks first, so it came back every
 thirty seconds for ever — and because the question is asked of the whole table
 with no account in it, twenty such rows stopped re-indexing for every account
@@ -214,7 +223,13 @@ why the attendee has to be matched against the addresses of the mailbox the
 client signed in with.
 
 Getting any of these wrong is worse than having no free-busy at all: whoever is
-arranging the meeting will believe it.
+arranging the meeting will believe it. Which is also why no answer here is ever
+cut short. The occurrence index was read with a limit meant for events, and one
+repeating file contributes thousands of those, so a long window came back
+truncated — in order, so it was always the far end that went missing, and the
+person was reported free for the twenty-two months nobody had looked at. A
+window with more in it than this server will describe is now **refused, out
+loud**, and the asker is told to narrow it.
 
 ## Invitations arriving
 
@@ -237,14 +252,30 @@ out of it and cancel the meeting for everybody.
 
 So, in order:
 
-**Speaking for somebody is not the same as being them.** An assistant or a
-booking system may send for an organizer — that is what `SENT-BY` is for — but
-the file saying so is the sender's own claim, so it only counts once the file
-has agreed with the held copy about *whose* event it is. Written without that,
-the check fell through to "is the sender the organizer of the arriving file",
-and the arriving file is the attacker's: it asked whether the sender is who the
-sender says they are, which is always true. That was worse than no check, and
-it is the single worst defect this feature has had.
+**Speaking for somebody is not the same as being them.** An assistant may send for their
+employer — that is what `SENT-BY` is for — but the file saying so is the
+sender's own claim, and a claim is only worth what it is checked against.
+
+This took four rounds to get right, and the first three failed the same way.
+Written as "or the sender is the organizer of the arriving file", the check
+asked whether the sender is who the sender says they are, which is always true.
+Narrowed to "and the arriving file agrees with the held copy about whose event
+it is", it still asked nothing: the held organizer's address is printed on the
+invitation every guest received, so copying it in costs a forger nothing. Both
+halves were the sender's to write.
+
+The one thing a sender does not write is their own address, which DMARC aligned
+to a domain they demonstrably hold. So `SENT-BY` is believed only **within that
+domain**: an assistant at the organizer's own domain may move the meeting, and
+a booking service that sends from a domain of its own is refused — it may ask
+this person to a meeting under its own name, but it may not quietly move one it
+did not call.
+
+The same field defeated the check beside it. An invitation naming the recipient
+as the organizer, with no guests at all, satisfied "is this addressed to them"
+— so a stranger could plant an event that appeared to have been called by the
+person it was planted on. The organizer is only believed to be them when the
+message came from them.
 
 Every one of these fails **closed**. Written the other way round — "if it
 parses, and it names an organizer, and that is not the sender" — the check let
@@ -302,6 +333,30 @@ collection asked for without its slash with a redirect — and an HTTP client
 turns a redirect into a `GET`, so a `PROPFIND` arrives as a `GET` and is
 refused. The whole mount is one route with the boundary checked in Go, and
 there is a test that fails if anybody makes it redirectable.
+
+Which leaves the slash to be added here instead, and for a while it was not.
+The library computes what kind of resource a path names by counting segments
+but then compares the path against its own idea of the address, which ends in a
+slash — so a slashless home set matched nothing and came back `207` with an
+empty list. A client synchronizing reads that as every calendar in the account
+having just been deleted. The test that covered the URL checked the status code
+and not the body, so it passed throughout. A collection's address now gets its
+slash before anything looks at it, and a file's address with one is a `404`.
+
+**A version check is only as good as the row it was read from.** `If-Match` was
+read outside any lock, so two devices holding the same version were both told
+it was still theirs and both wrote — the check that exists to stop one device
+overwriting another silently permitted it. Both the calendar and the address
+book read the row `FOR UPDATE` before deciding.
+
+**A filter that matches nothing is not the same as no filter.** Both were a nil
+filter inside, and the caller read nil as "no filter", so a query for the
+to-dos this server does not keep answered with every event in the calendar —
+and a client asking for to-dos and events together had its time range thrown
+away with the to-do filter. The property conditions in a query were read off
+the wire and then never applied, which told a client using one as its only
+filter that everything matched. Both are now carried out, the way the address
+book already carried out its own.
 
 **Each collection has its own permission.** `contacts:use` for the address
 books, `calendar:use` for the calendars, chosen from the path. Checking only

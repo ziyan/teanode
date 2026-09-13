@@ -210,6 +210,10 @@ func translateError(err error) error {
 		return api.ErrAlreadyExists
 	case errors.Is(err, db.ErrInvalidArguments):
 		return api.ErrInvalidArguments
+	case errors.Is(err, db.ErrTooMuchAsked):
+		// The caller's to narrow, so the caller is told rather than shown
+		// a server that looks broken.
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	var validation models.ValidationErrors
 	if errors.As(err, &validation) {

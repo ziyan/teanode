@@ -367,6 +367,17 @@ func TestACalendarWithoutItsSlashIsAnsweredNotRedirected(t *testing.T) {
 			t.Fatalf("%s: %d", path, answer.StatusCode)
 		}
 	}
+
+	// And answered with what is there. Checking the status alone passed
+	// while the home set came back as an empty multistatus, which to a
+	// client synchronizing means every calendar in the account has been
+	// deleted.
+	answer := here.ask(t, "PROPFIND", dav.Prefix+"/"+here.userID+"/calendars",
+		propfindETags, "Depth", "1")
+	body := text(t, answer)
+	if !strings.Contains(body, here.calendarPath()) {
+		t.Fatalf("the calendars are in the answer:\n%s", body)
+	}
 }
 
 // A filter this server cannot carry out is refused rather than answered
@@ -579,5 +590,65 @@ func TestFreeBusyNeedsAWindow(t *testing.T) {
 	_ = text(t, answer)
 	if answer.StatusCode != http.StatusBadRequest {
 		t.Fatalf("a free-busy with no window: %d", answer.StatusCode)
+	}
+}
+
+// A query for something this server does not keep is answered with nothing,
+// and a query that names a property is answered with the events that have it.
+//
+// Both used to come back carrying the whole calendar. "Matches nothing" and
+// "no filter at all" were the same answer inside, and the caller read it the
+// second way; the property conditions were read off the wire and then never
+// looked at. A client using either as its only filter was told that every
+// event in the calendar matched.
+func TestAQueryAnswersOnlyWhatWasAskedFor(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "weekly", anEvent)
+	here.putEvent(t, "other", strings.NewReplacer(
+		"9C1F2A3B-4D5E-6789-ABCD-EF0123456789", "other-one",
+		"Weekly sync", "Other thing",
+	).Replace(anEvent))
+
+	report := func(filter string) string {
+		t.Helper()
+		answer := here.ask(t, "REPORT", here.calendarPath(), `<?xml version="1.0"?>
+			<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+			  <d:prop><d:getetag/><c:calendar-data/></d:prop>
+			  <c:filter><c:comp-filter name="VCALENDAR">`+filter+
+			`</c:comp-filter></c:filter>
+			</c:calendar-query>`, "Depth", "1")
+		body := text(t, answer)
+		if answer.StatusCode != http.StatusMultiStatus {
+			t.Fatalf("querying: %d %s", answer.StatusCode, body)
+		}
+		return body
+	}
+
+	// This server keeps events. Asked for the to-dos it does not keep, the
+	// honest answer is none of them.
+	if body := report(`<c:comp-filter name="VTODO"/>`); strings.Contains(body, "Weekly sync") {
+		t.Fatalf("a query for to-dos does not answer with the events:\n%s", body)
+	}
+
+	// And a time range beside a to-do filter is still a time range.
+	body := report(`<c:comp-filter name="VTODO"/>
+		<c:comp-filter name="VEVENT">
+		  <c:time-range start="20301001T000000Z" end="20301002T000000Z"/>
+		</c:comp-filter>`)
+	if strings.Contains(body, "Weekly sync") {
+		t.Fatalf("the window was thrown away with the to-do filter:\n%s", body)
+	}
+
+	// One event by its own identifier, which is what a client looking for
+	// a particular event sends.
+	body = report(`<c:comp-filter name="VEVENT">
+		  <c:prop-filter name="UID">
+		    <c:text-match>other-one</c:text-match>
+		  </c:prop-filter>
+		</c:comp-filter>`)
+	if !strings.Contains(body, "Other thing") || strings.Contains(body, "Weekly sync") {
+		t.Fatalf("only the event that was asked for:\n%s", body)
 	}
 }

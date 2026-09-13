@@ -84,6 +84,7 @@ type MemoryOperation interface {
 	DeleteAddressBook(addressBookId string) error
 	ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error)
 	GetContact(addressBookId, contactId string) (*models.Contact, error)
+	LockContact(addressBookId, contactId string) (*models.Contact, error)
 	GetContactByUID(addressBookId, uid string) (*models.Contact, error)
 	PutContact(contact *models.Contact) (*models.Contact, error)
 	DeleteContact(addressBookId, contactId string) error
@@ -98,15 +99,16 @@ type MemoryOperation interface {
 	GetCalendar(calendarId string) (*models.Calendar, error)
 	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
-	DeleteCalendar(calendarId string) error
+	DeleteCalendar(userId, calendarId string) error
 	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)
 	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
+	LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
 	PutCalendarObject(object *models.CalendarObject, occurrences []models.Occurrence) (*models.CalendarObject, error)
 	DeleteCalendarObject(calendarId, objectId string) error
 	CountCalendarObjects(calendarId string) (int64, error)
 	ListOccurrences(calendarId string, from, until time.Time) ([]*models.Occurrence, error)
-	ListCalendarObjectsRunningOut(before time.Time, limit int) ([]*models.CalendarObject, error)
+	ListCalendarObjectsRunningOut(before, since time.Time, limit int) ([]*models.CalendarObject, error)
 	TouchCalendarObjectHorizon(calendarId, objectId string, until time.Time) (bool, error)
 
 	// Invitations that arrived as mail. Delivery notes one and does no

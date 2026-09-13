@@ -238,6 +238,17 @@ function dayOf(event: { startsAt: string; allDay: boolean }): string {
   return dayKey(at)
 }
 
+// dayShifted is a date box's value moved by so many days, in dates rather
+// than in moments, so the answer does not depend on the reader's zone.
+function dayShifted(day: string, by: number): string {
+  const at = new Date(`${day}T00:00:00Z`)
+  if (Number.isNaN(at.getTime())) return day
+  at.setUTCDate(at.getUTCDate() + by)
+  const month = `${at.getUTCMonth() + 1}`.padStart(2, '0')
+  const date = `${at.getUTCDate()}`.padStart(2, '0')
+  return `${at.getUTCFullYear()}-${month}-${date}`
+}
+
 // noonOf is the event's day as something a date formatter can be handed.
 // Midday, so that formatting it in any zone still names the right date.
 function noonOf(event: { startsAt: string; allDay: boolean }): Date {
@@ -407,7 +418,13 @@ export function CalendarPage() {
         description: full.description ?? '',
         startDate: dayOf(full),
         startTime: clockKey(starts),
-        endDate: full.allDay ? dayOf({ startsAt: full.endsAt, allDay: true }) : dayKey(ends),
+        // A whole-day event's end is the morning after in the file, which
+        // is not what anybody means by "ends". An event on the 14th said
+        // it ended on the 15th, and typing the 14th and the 15th to mean
+        // two days made one.
+        endDate: full.allDay
+          ? dayShifted(dayOf({ startsAt: full.endsAt, allDay: true }), -1)
+          : dayKey(ends),
         endTime: clockKey(ends),
         allDay: full.allDay,
         recurrence: full.recurrence ?? '',
@@ -821,7 +838,7 @@ export function CalendarPage() {
                   description: draft.description.trim(),
                   startsAt: draft.allDay ? `${draft.startDate}T00:00:00Z` : joined(draft.startDate, draft.startTime),
                   endsAt: draft.allDay
-                    ? `${draft.endDate || draft.startDate}T00:00:00Z`
+                    ? `${dayShifted(draft.endDate || draft.startDate, 1)}T00:00:00Z`
                     : joined(draft.endDate || draft.startDate, draft.endTime),
                   allDay: draft.allDay,
                   // The calendar's own zone, so that a repeat keeps its

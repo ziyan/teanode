@@ -74,9 +74,14 @@ func TestACalendarHoldsEventsAndTakesThemWithIt(t *testing.T) {
 			t.Fatalf("one event: %d %v", count, err)
 		}
 
+		// And not by somebody else asking for it by its identifier.
+		if err := tx.DeleteCalendar("somebody-else", calendar.ID); err == nil {
+			t.Fatal("a calendar is not deleted by whoever knows its identifier")
+		}
+
 		// Deleting the calendar takes the events and the occurrences with
 		// it, by the foreign keys rather than by further statements.
-		if err := tx.DeleteCalendar(calendar.ID); err != nil {
+		if err := tx.DeleteCalendar(calendar.UserID, calendar.ID); err != nil {
 			t.Fatalf("DeleteCalendar: %s", err)
 		}
 		gone, err := tx.GetCalendarObject(calendar.ID, kept.ID)

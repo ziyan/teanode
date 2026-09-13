@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-ical"
 	"github.com/emersion/go-webdav"
@@ -207,6 +208,7 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 	if err != nil {
 		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 	}
+	indexedAt := time.Now().UTC()
 	occurrences := make([]models.Occurrence, 0, len(expanded))
 	for _, occurrence := range expanded {
 		occurrences = append(occurrences, models.Occurrence{
@@ -219,11 +221,17 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 		Summary: parsed.Summary, Location: parsed.Location,
 		StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
 		AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
-		IndexedUntil: &indexedUntil,
+		IndexedUntil: &indexedUntil, IndexedAt: &indexedAt,
 	}
 	var stored *models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetCalendarObject(found.ID, objectId)
+		// Held for the rest of the transaction, because the conditional
+		// headers below are only as good as the row they were checked
+		// against. Read without a lock, two devices holding the same
+		// version both asked "is it still this version", were both told
+		// yes, and both wrote -- so the check that exists to stop one
+		// device overwriting another silently permitted it.
+		existing, err := tx.LockCalendarObject(found.ID, objectId)
 		if err != nil {
 			return unexpectedCalendar(err)
 		}
@@ -305,7 +313,10 @@ func (self *calendarBackend) DeleteCalendarObject(ctx context.Context, address s
 	}
 	wanted := webdav.ConditionalMatch(ifMatchFrom(ctx))
 	return self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetCalendarObject(found.ID, objectId)
+		// Held, so that "remove it only if it is still the version I
+		// read" cannot be answered about a version somebody else is in
+		// the middle of replacing.
+		existing, err := tx.LockCalendarObject(found.ID, objectId)
 		if err != nil {
 			return unexpectedCalendar(err)
 		}
@@ -436,6 +447,15 @@ func (self *calendarBackend) storedEvents(ctx context.Context, address string) (
 func unexpectedCalendar(err error) error {
 	if err == nil {
 		return nil
+	}
+	// Except for the one thing a client can do something about: a window so
+	// wide that describing it would mean building an answer this server
+	// does not build. That is the client's to narrow, and telling it so is
+	// the difference between a request it can fix and a server that looks
+	// broken.
+	if errors.Is(err, db.ErrTooMuchAsked) {
+		return webdav.NewHTTPError(http.StatusForbidden,
+			fmt.Errorf("that stretch of time is too long to answer at once; ask about a shorter one"))
 	}
 	log.Errorf("a calendar request could not be served: %s", err)
 	return webdav.NewHTTPError(http.StatusInternalServerError,
