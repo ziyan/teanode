@@ -72,6 +72,16 @@ Notable changes to TeaNode. The format follows
   away from a role takes the phones with it, and an account with a calendar and
   no address book is no longer refused.
 
+- An invitation that does not ask you is no longer put in your calendar, and
+  one arriving by mail counts against how much a calendar holds like anything
+  else -- so nobody can fill your calendar with text of their choosing.
+
+- An invitation sent on somebody's behalf, by an assistant or a room booking
+  system, is accepted again.
+
+- A repeating event too fine to work out over the stretch asked for now says
+  so, rather than looking like an event with nothing in it.
+
 
 - A domain's link host may now name the port it is reached on --
   `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other

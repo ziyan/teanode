@@ -241,7 +241,7 @@ func (self *graph) AnswerMailInvitation(ctx context.Context, arguments AnswerMai
 		if err != nil {
 			return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 		}
-		occurrences, err := occurrencesOf(updated)
+		occurrences, indexedUntil, err := occurrencesOf(updated)
 		if err != nil {
 			return err
 		}
@@ -251,6 +251,7 @@ func (self *graph) AnswerMailInvitation(ctx context.Context, arguments AnswerMai
 			Data: string(updated.Data), Summary: updated.Summary, Location: updated.Location,
 			StartsAt: updated.StartsAt, EndsAt: updated.EndsAt,
 			AllDay: updated.AllDay, Recurring: updated.Recurring, Status: updated.Status,
+			IndexedUntil: &indexedUntil,
 		}, occurrences)
 		return err
 	}); err != nil {

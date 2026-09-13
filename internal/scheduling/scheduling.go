@@ -154,6 +154,9 @@ func (self *Scheduler) reindex(ctx context.Context) {
 			return err
 		}
 		for _, object := range running {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			parsed, err := calendar.Parse([]byte(object.Data))
 			if err != nil {
 				// Kept text that cannot be read is this server's problem,
@@ -161,11 +164,16 @@ func (self *Scheduler) reindex(ctx context.Context) {
 				log.Debugf("a kept event could not be read to extend it: %s", err)
 				continue
 			}
-			occurrences, err := indexed(parsed)
+			occurrences, indexedUntil, err := indexed(parsed)
 			if err != nil {
 				log.Debugf("a repeat could not be worked out further: %s", err)
 				continue
 			}
+			// Recorded, so this one is done once per advance of the
+			// horizon rather than found again on the next tick and for
+			// ever after -- which also kept it permanently in front of
+			// the repeats that genuinely needed extending.
+			object.IndexedUntil = &indexedUntil
 			if _, err := tx.PutCalendarObject(object, occurrences); err != nil {
 				return err
 			}
@@ -320,6 +328,78 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 	return ignored("this server does not act on %s", parsed.Method)
 }
 
+// addressedTo is whether an invitation actually asks the person whose mailbox
+// it arrived in -- as an attendee, or as the organizer of their own event
+// coming back to them.
+//
+// Checked against every address of the mailbox it was delivered to, since
+// that is the one the sender wrote to.
+func (self *Scheduler) addressedTo(ctx context.Context, mailboxId string, parsed *calendar.Parsed) (bool, error) {
+	theirs := map[string]bool{}
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		mailbox, err := tx.GetMailbox(mailboxId)
+		if err != nil || mailbox == nil {
+			return err
+		}
+		for _, address := range mailbox.Addresses {
+			theirs[strings.ToLower(strings.TrimSpace(address.Address))] = true
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	if len(theirs) == 0 {
+		// Nothing to check against, which should not happen: the message
+		// was delivered to this mailbox, so an address routed it there.
+		// Treated as a failure rather than as permission -- the invitation
+		// waits and is read again -- because the alternative is a check
+		// that turns itself off exactly when it cannot see.
+		return false, fmt.Errorf("the mailbox this arrived at has no address to check against")
+	}
+	if theirs[strings.ToLower(strings.TrimSpace(parsed.Organizer))] {
+		return true, nil
+	}
+	for _, attendee := range parsed.Attendees {
+		if theirs[strings.ToLower(strings.TrimSpace(attendee.Address))] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// mayActFor is whether the sender may act on an event this organizer called:
+// they are that organizer, or the arriving file says they sent it on that
+// organizer's behalf.
+//
+// An event naming no organizer is nobody's to act on from outside -- it is an
+// appointment its owner made for themselves, and treating an absent organizer
+// as nobody-to-check-against made every one of them replaceable by a stranger.
+func mayActFor(organizer string, parsed *calendar.Parsed, sender string) bool {
+	if strings.TrimSpace(organizer) == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(organizer), sender) {
+		return true
+	}
+	return speaksFor(parsed, sender)
+}
+
+// speaksFor is whether the sender is entitled to speak as the organizer of
+// this file: they are the organizer, or the file says they sent it on the
+// organizer's behalf.
+//
+// SENT-BY is how an assistant, a room booking system or a sending service
+// says so, and it is the sender's own claim -- but it is a claim about an
+// address the message has proven, which is the part that matters. It lets
+// somebody send as an organizer they name; it does not let them touch an
+// event they were not already able to.
+func speaksFor(parsed *calendar.Parsed, sender string) bool {
+	if strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) {
+		return true
+	}
+	return parsed.SentBy != "" && strings.EqualFold(parsed.SentBy, sender)
+}
+
 // calendarFor is the calendar an invitation goes into: the person's own,
 // made if they have never had one.
 func (self *Scheduler) calendarFor(tx db.Transaction, userId string) (*models.Calendar, error) {
@@ -339,8 +419,19 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 	// An invitation is from the person calling the meeting. One that names
 	// somebody else as the organizer is either forwarded -- in which case it
 	// is not an invitation to this person -- or forged.
-	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) {
+	if !speaksFor(parsed, sender) {
 		return ignored("an invitation from somebody who is not its organizer")
+	}
+	// And it has to be addressed to them. Without this, any sender could
+	// write an event with a title of their choosing into anybody's
+	// calendar -- an invitation naming only strangers still landed, which
+	// makes a calendar somewhere to put text in front of a person.
+	asked, err := self.addressedTo(ctx, invitation.MailboxID, parsed)
+	if err != nil {
+		return nil, err
+	}
+	if !asked {
+		return ignored("an invitation that does not ask this person")
 	}
 	result := &outcome{
 		status: models.CalendarInvitationRead, method: parsed.Method,
@@ -356,14 +447,44 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 		if err != nil {
 			return err
 		}
+		// A calendar holds only so much, and this door went straight to
+		// the storage while the other two counted first -- so anybody who
+		// could send mail could write into somebody's calendar without
+		// limit. A ceiling enforced at two doors of three is not one.
+		if existing == nil {
+			held, err := tx.CountCalendarObjects(found.ID)
+			if err != nil {
+				return err
+			}
+			if held >= db.ObjectsPerCalendar {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "this calendar already holds as many events as this server keeps"
+				return nil
+			}
+		}
 		if existing != nil {
+			// Only the organizer the event already names may change it.
+			// Without this, anybody the file was ever forwarded to could
+			// rewrite the time and the title of a meeting somebody else
+			// called, with nothing kept to recover from.
+			//
+			// Closed on every doubt, which took two goes. Written as "if
+			// it parses, and it names an organizer, and that is not the
+			// sender", it let two whole populations through: an event
+			// this server can no longer read -- and tightening what it
+			// will read is exactly what creates those -- and an event
+			// with no organizer at all, which is every appointment
+			// somebody made for themselves. Both were then replaceable by
+			// any stranger who knew the identifier, which every other
+			// guest on the original invitation does.
 			held, err := calendar.Parse([]byte(existing.Data))
-			// And only the organizer the event already names may change
-			// it. Without this, anybody the file was ever forwarded to
-			// could rewrite the time and the title of a meeting somebody
-			// else called, with nothing kept to recover from.
-			if err == nil && held.Organizer != "" &&
-				!strings.EqualFold(held.Organizer, sender) {
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "a change to an event this server can no longer read"
+				result.objectId = existing.ID
+				return nil
+			}
+			if !mayActFor(held.Organizer, parsed, sender) {
 				result.status = models.CalendarInvitationIgnored
 				result.because = "a change to an event from somebody who is not its organizer"
 				result.objectId = existing.ID
@@ -374,14 +495,14 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 			// held is an older copy arriving late -- mail is not ordered
 			// -- and acting on it would undo a change the person has
 			// already seen.
-			if err == nil && parsed.Sequence < held.Sequence {
+			if parsed.Sequence < held.Sequence {
 				result.status = models.CalendarInvitationIgnored
 				result.because = "an older version of an event already here"
 				result.objectId = existing.ID
 				return nil
 			}
 		}
-		occurrences, err := indexed(parsed)
+		occurrences, indexedUntil, err := indexed(parsed)
 		if err != nil {
 			return err
 		}
@@ -390,6 +511,7 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 			Data: string(parsed.Data), Summary: parsed.Summary, Location: parsed.Location,
 			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
 			AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
+			IndexedUntil: &indexedUntil,
 		}
 		if existing != nil {
 			object.ID = existing.ID
@@ -425,6 +547,21 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 		if err != nil {
 			return err
 		}
+		// A calendar holds only so much, and this door went straight to
+		// the storage while the other two counted first -- so anybody who
+		// could send mail could write into somebody's calendar without
+		// limit. A ceiling enforced at two doors of three is not one.
+		if existing == nil {
+			held, err := tx.CountCalendarObjects(found.ID)
+			if err != nil {
+				return err
+			}
+			if held >= db.ObjectsPerCalendar {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "this calendar already holds as many events as this server keeps"
+				return nil
+			}
+		}
 		if existing == nil {
 			result.status = models.CalendarInvitationIgnored
 			result.because = "an event this calendar does not have"
@@ -443,7 +580,7 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 		// -- that line is written by whoever sent it, so comparing the two
 		// only proved the attacker could copy a name out of an invitation
 		// they had been forwarded.
-		if held.Organizer == "" || !strings.EqualFold(held.Organizer, sender) {
+		if !mayActFor(held.Organizer, parsed, sender) {
 			result.status = models.CalendarInvitationIgnored
 			result.because = "a cancellation from somebody who is not the organizer"
 			return nil
@@ -457,7 +594,7 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 		if err != nil {
 			return err
 		}
-		occurrences, err := indexed(cancelled)
+		occurrences, indexedUntil, err := indexed(cancelled)
 		if err != nil {
 			return err
 		}
@@ -467,6 +604,7 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 			Data: string(cancelled.Data), Summary: cancelled.Summary, Location: cancelled.Location,
 			StartsAt: cancelled.StartsAt, EndsAt: cancelled.EndsAt,
 			AllDay: cancelled.AllDay, Recurring: cancelled.Recurring, Status: cancelled.Status,
+			IndexedUntil: &indexedUntil,
 		}, occurrences)
 		return err
 	}); err != nil {
@@ -491,6 +629,21 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 		existing, err := tx.GetCalendarObjectByUID(found.ID, parsed.UID)
 		if err != nil {
 			return err
+		}
+		// A calendar holds only so much, and this door went straight to
+		// the storage while the other two counted first -- so anybody who
+		// could send mail could write into somebody's calendar without
+		// limit. A ceiling enforced at two doors of three is not one.
+		if existing == nil {
+			held, err := tx.CountCalendarObjects(found.ID)
+			if err != nil {
+				return err
+			}
+			if held >= db.ObjectsPerCalendar {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "this calendar already holds as many events as this server keeps"
+				return nil
+			}
 		}
 		if existing == nil {
 			result.status = models.CalendarInvitationIgnored
@@ -521,7 +674,7 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 			result.because = err.Error()
 			return nil
 		}
-		occurrences, err := indexed(updated)
+		occurrences, indexedUntil, err := indexed(updated)
 		if err != nil {
 			return err
 		}
@@ -531,6 +684,7 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 			Data: string(updated.Data), Summary: updated.Summary, Location: updated.Location,
 			StartsAt: updated.StartsAt, EndsAt: updated.EndsAt,
 			AllDay: updated.AllDay, Recurring: updated.Recurring, Status: updated.Status,
+			IndexedUntil: &indexedUntil,
 		}, occurrences)
 		return err
 	}); err != nil {
@@ -540,10 +694,10 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 }
 
 // indexed is when an event happens, as rows.
-func indexed(parsed *calendar.Parsed) ([]models.Occurrence, error) {
-	expanded, err := calendar.Indexed(parsed)
+func indexed(parsed *calendar.Parsed) ([]models.Occurrence, time.Time, error) {
+	expanded, indexedUntil, err := calendar.Indexed(parsed)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	rows := make([]models.Occurrence, 0, len(expanded))
 	for _, occurrence := range expanded {
@@ -551,7 +705,7 @@ func indexed(parsed *calendar.Parsed) ([]models.Occurrence, error) {
 			StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
 		})
 	}
-	return rows, nil
+	return rows, indexedUntil, nil
 }
 
 func statusText(value string) *string { return &value }

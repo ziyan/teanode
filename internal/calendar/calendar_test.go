@@ -579,3 +579,87 @@ func TestAWholeDayEventWithOneDateLastsTheDay(t *testing.T) {
 		t.Fatalf("on the day it is on: %d %v", len(occurrences), err)
 	}
 }
+
+// A zone written the way Windows writes it becomes the zone everybody else
+// means, so everything after it is the ordinary path.
+//
+// The first attempt worked around the library at each place a time was read,
+// expanding recurrences in wall clock and putting the offset back per
+// occurrence. That left EXDATE and UNTIL -- both real instants -- comparing
+// against wall clock, so a cancelled occurrence came back and the last of a
+// series went missing, and it rescanned the zone on every step of every rule.
+// Renaming the zone once, up front, is what makes those disappear.
+func TestAWindowsZoneBecomesTheZoneItMeans(t *testing.T) {
+	if _, err := time.LoadLocation("Europe/Berlin"); err != nil {
+		t.Skipf("this machine has no zone database: %v", err)
+	}
+	// The same file twice, differing only in what the zone is called. They
+	// have to behave identically.
+	for _, shape := range []struct {
+		what  string
+		extra []string
+		want  string
+	}{
+		{"a cancelled occurrence stays cancelled",
+			[]string{"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4", "EXDATE:20260323T090000Z"},
+			"2026-03-16T09:00:00Z 2026-03-30T08:00:00Z 2026-04-06T08:00:00Z"},
+		{"the last of a series survives",
+			[]string{"RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260420T083000Z"},
+			"2026-03-16T09:00:00Z 2026-03-23T09:00:00Z 2026-03-30T08:00:00Z " +
+				"2026-04-06T08:00:00Z 2026-04-13T08:00:00Z 2026-04-20T08:00:00Z"},
+	} {
+		for _, tzid := range []string{"Europe/Berlin", "W. Europe Standard Time"} {
+			parsed := mustParse(t, exchangeEvent(tzid, "20260316T100000", shape.extra))
+			occurrences, err := Occurrences(parsed,
+				time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+				time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatalf("%s (%s): %v", shape.what, tzid, err)
+			}
+			var when []string
+			for _, occurrence := range occurrences {
+				when = append(when, occurrence.StartsAt.Format(time.RFC3339))
+			}
+			if got := strings.Join(when, " "); got != shape.want {
+				t.Errorf("%s (%s):\n got  %s\n want %s", shape.what, tzid, got, shape.want)
+			}
+		}
+	}
+}
+
+// And the offset is right on the days the literal dates in a VTIMEZONE
+// disagree with the rules beside them.
+//
+// Reading the offset out of the file took the observance's own 1601 date and
+// shifted it to the event's year, which is several days out from the rule
+// that actually governs: the European change is the last Sunday in March, and
+// the literal date is the 25th. An event on the 26th was stored an hour early.
+func TestTheOffsetIsRightNearAChangeOfClocks(t *testing.T) {
+	if _, err := time.LoadLocation("Europe/Berlin"); err != nil {
+		t.Skipf("this machine has no zone database: %v", err)
+	}
+	// The 26th of March 2026 is before the real change on the 29th, so ten
+	// o'clock in Berlin is nine o'clock UTC.
+	parsed := mustParse(t, exchangeEvent("W. Europe Standard Time", "20260326T100000", nil))
+	if got := parsed.StartsAt.Format(time.RFC3339); got != "2026-03-26T09:00:00Z" {
+		t.Fatalf("ten o'clock in Berlin on the 26th: %s", got)
+	}
+}
+
+// A repeat too fine to reach the window says so rather than looking empty.
+//
+// The step bound stops the walk, and returning what had been gathered meant a
+// rule fine enough and old enough -- every hour, six years back -- spent the
+// whole bound getting to today and then reported that nothing was happening.
+// The event vanished from every view while a fetch of it still worked.
+func TestARepeatTooFineToReachTheWindowSaysSo(t *testing.T) {
+	old := time.Now().AddDate(-6, 0, 0).UTC().Format("20060102T150405Z")
+	parsed := mustParse(t, wrap(
+		"UID:fine", "DTSTAMP:20260912T120000Z",
+		"DTSTART:"+old, "DTEND:"+old,
+		"RRULE:FREQ=HOURLY", "SUMMARY:Every hour, for years"))
+	_, _, err := Indexed(parsed)
+	if err == nil {
+		t.Fatal("a repeat that cannot be reached is not the same as one with nothing in it")
+	}
+}

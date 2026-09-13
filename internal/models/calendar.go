@@ -57,6 +57,12 @@ type CalendarObject struct {
 
 	// Status is the event's own STATUS: CONFIRMED, TENTATIVE or CANCELLED.
 	Status string `json:"status,omitempty"`
+
+	// IndexedUntil is how far ahead the times this event happens have been
+	// worked out. A repeat with no end cannot be worked out for ever, so
+	// the index reaches a horizon and something extends it as that horizon
+	// approaches; this is what says which events still need it.
+	IndexedUntil *time.Time `json:"indexedUntil,omitempty"`
 }
 
 // Occurrence is one time an event happens.

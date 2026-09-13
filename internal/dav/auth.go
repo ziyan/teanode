@@ -161,9 +161,21 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	// and writing, and would even have a calendar made for them on the way
 	// in. It also refused CalDAV to anyone who had calendar:use without
 	// contacts:use.
-	wanted, refusal := models.PermissionContactsUse, "this account does not keep an address book here"
-	if wantsCalendar(request.URL.Path) {
-		wanted, refusal = models.PermissionCalendarUse, "this account does not keep a calendar here"
+	// The principal and the mount are neither collection: they are what a
+	// client reads before it knows what this server has, so either
+	// permission opens them and what they advertise is filtered separately.
+	// Requiring the address book's there meant somebody with a calendar and
+	// no address book was refused at the first step of discovery and never
+	// reached the calendar they were allowed.
+	wanted, refusal := []models.Permission{models.PermissionContactsUse, models.PermissionCalendarUse},
+		"this account keeps neither an address book nor a calendar here"
+	switch collectionAt(request.URL.Path) {
+	case contactsSegment:
+		wanted, refusal = []models.Permission{models.PermissionContactsUse},
+			"this account does not keep an address book here"
+	case calendarsSegment:
+		wanted, refusal = []models.Permission{models.PermissionCalendarUse},
+			"this account does not keep a calendar here"
 	}
 	allowed := false
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
@@ -171,7 +183,11 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		if err != nil {
 			return err
 		}
-		allowed = permissions.Has(wanted)
+		for _, permission := range wanted {
+			if permissions.Has(permission) {
+				allowed = true
+			}
+		}
 		return nil
 	}); err != nil {
 		log.Errorf("cannot read what a DAV caller may do: %s", err)
@@ -185,18 +201,18 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	return signedIn, true
 }
 
-// wantsCalendar is whether a path reaches into the calendars rather than the
-// address books.
-//
-// The principal itself is neither, and is left to the address book's
-// permission: it is the one page a client reads before it knows what this
-// server has, and refusing it would leave a calendar client with nothing to
-// discover even where it is allowed the calendar. What it advertises is
-// filtered separately.
-func wantsCalendar(path string) bool {
+// collectionAt is which of the two a path reaches into, or empty for the
+// principal and the mount, which are neither.
+func collectionAt(path string) string {
 	rest := strings.Trim(strings.TrimPrefix(path, Prefix), "/")
+	if rest == "" {
+		return ""
+	}
 	segments := strings.Split(rest, "/")
-	return len(segments) > 1 && segments[1] == calendarsSegment
+	if len(segments) < 2 {
+		return ""
+	}
+	return segments[1]
 }
 
 func (self *component) askForCredentials(response http.ResponseWriter) {

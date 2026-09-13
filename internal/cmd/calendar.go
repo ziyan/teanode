@@ -299,7 +299,7 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 
 // eventFieldsFrom reads the flags that were actually given. A flag left out
 // means "leave it alone"; a flag given empty means "clear it".
-func eventFieldsFrom(command *cli.Command, calendar *client.Calendar) (*client.SaveCalendarEventFields, error) {
+func eventFieldsFrom(command *cli.Command, calendar *client.Calendar, wasAllDay bool) (*client.SaveCalendarEventFields, error) {
 	fields := &client.SaveCalendarEventFields{CalendarID: calendar.ID}
 	if file := strings.TrimSpace(command.String("file")); file != "" {
 		content, err := readValueOrStandardInput(file)
@@ -339,7 +339,15 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar) (*client.S
 		// Sent as midnight where the person is, it arrives as the day
 		// before for everybody east of Greenwich -- the same trap the
 		// dashboard documents and avoids.
-		if command.Bool("all-day") {
+		// Whether this is a whole-day event, not whether the flag was
+		// typed this time: editing the date of one without repeating
+		// --all-day sent a moment, and the server wrote it as the date it
+		// falls on in UTC -- the day before, east of Greenwich.
+		allDay := wasAllDay
+		if command.IsSet("all-day") {
+			allDay = command.Bool("all-day")
+		}
+		if allDay {
 			written := moment.Format("2006-01-02") + "T00:00:00Z"
 			*field = &written
 			continue
@@ -357,7 +365,11 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar) (*client.S
 	}
 	// The zone the times were read in, so the server anchors them to it and
 	// a repeat keeps its hour when the clocks change.
-	if !command.Bool("all-day") {
+	allDay := wasAllDay
+	if command.IsSet("all-day") {
+		allDay = command.Bool("all-day")
+	}
+	if !allDay {
 		fields.Timezone = calendar.Timezone
 	}
 	return fields, nil
@@ -372,7 +384,7 @@ func runCalendarAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
-	fields, err := eventFieldsFrom(command, calendar)
+	fields, err := eventFieldsFrom(command, calendar, command.Bool("all-day"))
 	if err != nil {
 		return err
 	}
@@ -408,7 +420,13 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
-	fields, err := eventFieldsFrom(command, calendar)
+	// What the event is now, so that editing the date of a whole-day one
+	// without saying --all-day again does not turn it into a moment.
+	wasAllDay := command.Bool("all-day")
+	if existing, err := client.GetCalendarEvent(ctx, connection, calendar.ID, command.Args().First()); err == nil && existing != nil {
+		wasAllDay = existing.AllDay
+	}
+	fields, err := eventFieldsFrom(command, calendar, wasAllDay)
 	if err != nil {
 		return err
 	}

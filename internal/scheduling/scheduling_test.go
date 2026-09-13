@@ -75,6 +75,7 @@ type stage struct {
 	store     *held
 	scheduler *scheduling.Scheduler
 	userID    string
+	mailboxID string
 }
 
 func newStage(t *testing.T) (*stage, func()) {
@@ -89,6 +90,22 @@ func newStage(t *testing.T) (*stage, func()) {
 		here.userID = owner.ID
 		if _, err := tx.CreateCalendar(&models.Calendar{UserID: owner.ID, Name: "Calendar"}); err != nil {
 			t.Fatalf("CreateCalendar: %s", err)
+		}
+		// A mailbox with an address, because an invitation has to be
+		// addressed to the person whose calendar it enters.
+		domain, err := tx.CreateDomain(&models.Domain{ID: "example.com", Domain: "example.com"})
+		if err != nil {
+			t.Fatalf("CreateDomain: %s", err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: owner.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		here.mailboxID = mailbox.ID
+		if _, err := tx.CreateAlias(&models.Alias{
+			DomainID: domain.ID, Pattern: "^alice$", Kind: models.AliasKindMailbox, MailboxID: mailbox.ID,
+		}); err != nil {
+			t.Fatalf("CreateAlias: %s", err)
 		}
 	})
 	here.scheduler = scheduling.New(database, here.store, scheduling.Settings{Instance: "test"})
@@ -124,7 +141,7 @@ func (self *stage) deliverFrom(t *testing.T, name, from string, passedDMARC bool
 		}
 		mailId = created.ID
 		if _, err := tx.NoteCalendarInvitation(&models.CalendarInvitation{
-			UserID: self.userID, MailboxID: "mailbox1", ItemID: "item-" + name, MailID: mailId,
+			UserID: self.userID, MailboxID: self.mailboxID, ItemID: "item-" + name, MailID: mailId,
 		}); err != nil {
 			t.Fatalf("NoteCalendarInvitation: %s", err)
 		}
@@ -147,7 +164,7 @@ func (self *stage) invitation(t *testing.T, mailId string) *models.CalendarInvit
 	var found *models.CalendarInvitation
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
 		var err error
-		found, err = tx.GetCalendarInvitationForItem("mailbox1", "item-"+mailId)
+		found, err = tx.GetCalendarInvitationForItem(self.mailboxID, "item-"+mailId)
 		if err != nil {
 			t.Fatalf("reading it back: %s", err)
 		}
@@ -529,4 +546,138 @@ func TestOnlyTheOrganizerMayChangeAnEventAlreadyHere(t *testing.T) {
 	if len(events) != 1 || events[0].Summary != "The small room" {
 		t.Fatalf("the organizer's own words stand: %+v", events)
 	}
+}
+
+// An event this server can no longer read cannot be replaced by a stranger.
+//
+// The organizer check was written as "if it parses, and it names an organizer,
+// and that is not the sender" -- which let two whole populations through. This
+// is the first: tightening what the parser accepts is exactly what creates
+// events the parser now refuses, and every one of them became replaceable by
+// anyone who knew the identifier, which is every other guest on the original
+// invitation.
+func TestAnEventThatCannotBeReadIsNotReplaceableByAStranger(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	// Something stored that this server will not parse back.
+	var calendarId string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		calendars, err := tx.ListCalendars(here.userID)
+		if err != nil || len(calendars) == 0 {
+			t.Fatalf("listing calendars: %v %v", calendars, err)
+		}
+		calendarId = calendars[0].ID
+		if _, err := tx.PutCalendarObject(&models.CalendarObject{
+			ID: "unreadable", CalendarID: calendarId, UID: "the-board-meeting",
+			ETag: "e", Data: "this is not a calendar at all", Summary: "The board meeting",
+			StartsAt: time.Now(), EndsAt: time.Now().Add(time.Hour),
+		}, nil); err != nil {
+			t.Fatalf("storing: %s", err)
+		}
+	})
+
+	headers, body := invitationMessage("REQUEST", "the-board-meeting", "Pay me instead",
+		"SEQUENCE:99", "ORGANIZER:mailto:mallory@evil.example",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	var after *models.CalendarObject
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		found, err := tx.GetCalendarObject(calendarId, "unreadable")
+		if err != nil {
+			t.Fatalf("reading back: %s", err)
+		}
+		after = found
+	})
+	if after == nil || after.Summary != "The board meeting" {
+		t.Fatalf("the stored event stands: %+v", after)
+	}
+}
+
+// And an event with no organizer -- every appointment somebody made for
+// themselves -- cannot be replaced by a stranger either.
+//
+// This is the second population the old check let through: Build writes no
+// ORGANIZER unless there are guests, so every personal appointment had none,
+// and an empty organizer read as "nobody to check against".
+func TestAnAppointmentWithNoOrganizerIsNotReplaceableByAStranger(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	var calendarId string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		calendars, err := tx.ListCalendars(here.userID)
+		if err != nil || len(calendars) == 0 {
+			t.Fatalf("listing calendars: %v %v", calendars, err)
+		}
+		calendarId = calendars[0].ID
+	})
+	// Made the way the dashboard makes one: no guests, so no organizer.
+	mine, err := calendar.Build(nil, &calendar.Fields{
+		Summary: stringOf("Dentist"), StartsAt: momentOf(2026, 9, 14, 10),
+		EndsAt: momentOf(2026, 9, 14, 11),
+	})
+	if err != nil {
+		t.Fatalf("building: %s", err)
+	}
+	if mine.Organizer != "" {
+		t.Fatalf("an appointment alone has no organizer: %q", mine.Organizer)
+	}
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		if _, err := tx.PutCalendarObject(&models.CalendarObject{
+			ID: "mine", CalendarID: calendarId, UID: mine.UID, ETag: calendar.ETag(mine.Data),
+			Data: string(mine.Data), Summary: mine.Summary,
+			StartsAt: mine.StartsAt, EndsAt: mine.EndsAt,
+		}, nil); err != nil {
+			t.Fatalf("storing: %s", err)
+		}
+	})
+
+	headers, body := invitationMessage("REQUEST", mine.UID, "Pay me bitcoin",
+		"SEQUENCE:99", "ORGANIZER:mailto:mallory@evil.example",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		found, err := tx.GetCalendarObject(calendarId, "mine")
+		if err != nil {
+			t.Fatalf("reading back: %s", err)
+		}
+		if found == nil || found.Summary != "Dentist" {
+			t.Fatalf("their own appointment stands: %+v", found)
+		}
+	})
+}
+
+// An invitation that does not ask this person is not put in their calendar.
+//
+// Otherwise any sender who passes DMARC can write an event with a title of
+// their choosing into anybody's calendar -- which makes a calendar somewhere
+// to put text in front of a person.
+func TestAnInvitationThatAsksSomebodyElseIsIgnored(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "not-for-you", "Nothing to do with you",
+		"ORGANIZER:mailto:mallory@evil.example",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:nobody@elsewhere.example")
+	here.deliverFrom(t, "stranger", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	if got := here.invitation(t, "stranger"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("it asks somebody else: %s %s", got.Status, got.Error)
+	}
+	if len(here.events(t)) != 0 {
+		t.Fatal("and nothing goes in the calendar")
+	}
+}
+
+func stringOf(value string) *string { return &value }
+
+func momentOf(year, month, day, hour int) *time.Time {
+	at := time.Date(year, time.Month(month), day, hour, 0, 0, 0, time.UTC)
+	return &at
 }

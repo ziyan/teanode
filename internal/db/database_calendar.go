@@ -53,11 +53,12 @@ type calendarObjectModel struct {
 	// Nullable, because a file may describe something with no time at all --
 	// a to-do, or a journal entry -- and a zero time would be read as the
 	// first day of year one and sort in front of everything.
-	StartsAt  *time.Time `gorm:"column:starts_at"`
-	EndsAt    *time.Time `gorm:"column:ends_at"`
-	AllDay    bool       `gorm:"column:all_day"`
-	Recurring bool       `gorm:"column:recurring"`
-	Status    string     `gorm:"column:status"`
+	StartsAt     *time.Time `gorm:"column:starts_at"`
+	EndsAt       *time.Time `gorm:"column:ends_at"`
+	AllDay       bool       `gorm:"column:all_day"`
+	Recurring    bool       `gorm:"column:recurring"`
+	Status       string     `gorm:"column:status"`
+	IndexedUntil *time.Time `gorm:"column:indexed_until"`
 }
 
 func (calendarObjectModel) TableName() string { return "calendar_object" }
@@ -68,6 +69,7 @@ func (self *calendarObjectModel) toModel() *models.CalendarObject {
 		ModifiedAt: self.ModifiedAt, UID: self.UID, ETag: self.ETag, Data: self.Data,
 		Summary: self.Summary, Location: self.Location,
 		AllDay: self.AllDay, Recurring: self.Recurring, Status: self.Status,
+		IndexedUntil: self.IndexedUntil,
 	}
 	if self.StartsAt != nil {
 		object.StartsAt = *self.StartsAt
@@ -282,7 +284,8 @@ func (self *transaction) PutCalendarObject(object *models.CalendarObject, occurr
 		Summary:  truncateRunes(strings.TrimSpace(object.Summary), 512),
 		Location: truncateRunes(strings.TrimSpace(object.Location), 512),
 		AllDay:   object.AllDay, Recurring: object.Recurring,
-		Status: truncateRunes(strings.ToUpper(strings.TrimSpace(object.Status)), 32),
+		Status:       truncateRunes(strings.ToUpper(strings.TrimSpace(object.Status)), 32),
+		IndexedUntil: object.IndexedUntil,
 	}
 	if row.ID == "" {
 		row.ID = newID()
@@ -385,34 +388,22 @@ func (self *transaction) ListOccurrences(calendarId string, from, until time.Tim
 	return occurrences, nil
 }
 
-// ListCalendarObjectsRunningOut are the recurring events whose worked-out
-// occurrences stop before a given moment.
+// ListCalendarObjectsRunningOut are the recurring events worked out no
+// further than a given moment.
 //
-// The occurrence index reaches a horizon, and the horizon is set when an
-// event is written. Nothing moved it afterwards, so a standing meeting saved
-// today simply stopped appearing two years from now -- in the dashboard, in
-// free-busy, and in what a phone is told -- while a fetch of the event itself
-// still returned it. This is how they are found again and worked out further.
-//
-// Ordered by how soon they run out, so the ones about to disappear are done
-// first however many there are.
+// Asked of the horizon each event was last worked out to, rather than of its
+// furthest occurrence. Those are not the same question: a series that has
+// already finished has no occurrence in the window at all, so by the second
+// question it is always running out -- rewritten every tick for ever, and
+// permanently in front of the events that genuinely need extending.
 func (self *transaction) ListCalendarObjectsRunningOut(before time.Time, limit int) ([]*models.CalendarObject, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var found []calendarObjectModel
-	// A recurring event whose furthest known occurrence is before the
-	// moment asked about -- including one with no occurrences at all, which
-	// is what a repeat starting past the old horizon left behind.
-	if err := self.tx.Raw(`
-		SELECT o.* FROM "calendar_object" o
-		LEFT JOIN (
-			SELECT "calendar_id", "object_id", MAX("starts_at") AS "furthest"
-			FROM "calendar_occurrence" GROUP BY "calendar_id", "object_id"
-		) x ON x."calendar_id" = o."calendar_id" AND x."object_id" = o."id"
-		WHERE o."recurring" AND (x."furthest" IS NULL OR x."furthest" < ?)
-		ORDER BY x."furthest" ASC NULLS FIRST
-		LIMIT ?`, before, limit).Scan(&found).Error; err != nil {
+	if err := self.tx.Where(
+		"\"recurring\" AND (\"indexed_until\" IS NULL OR \"indexed_until\" < ?)", before).
+		Order("\"indexed_until\" ASC NULLS FIRST").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	objects := make([]*models.CalendarObject, 0, len(found))

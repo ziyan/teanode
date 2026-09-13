@@ -1,7 +1,6 @@
 package calendar
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -10,52 +9,256 @@ import (
 
 // Reading a zone the machine has never heard of.
 //
-// A file names its zone with a TZID and carries a VTIMEZONE describing it.
-// The library resolves the name with time.LoadLocation and ignores the
-// description entirely -- which works for "Europe/Berlin" and fails for
-// everything Microsoft writes, because Exchange and Outlook name zones their
-// own way: "W. Europe Standard Time", "Pacific Standard Time". Those are the
-// commonest invitations there are.
+// A file names its zone with a TZID and carries a VTIMEZONE describing it. The
+// library resolves the name with time.LoadLocation and ignores the description
+// entirely -- which works for "Europe/Berlin" and fails for everything
+// Microsoft writes, because Exchange and Outlook name zones their own way:
+// "W. Europe Standard Time", "Pacific Standard Time". Those are the commonest
+// invitations there are.
 //
-// Failing there is quiet and bad: the moment comes back as the zero time, the
-// event is stored starting in the year one, and it then appears in no window
-// anybody ever asks about -- not the calendar, not free-busy, not a phone.
+// Failing there was quiet and bad: the moment came back as the zero time, the
+// event was stored starting in the year one, and it then appeared in no window
+// anybody ever asked about.
 //
-// So when the name means nothing, the description beside it is used. It is
-// there in the file, it is what the sender meant, and it is what every other
-// calendar program falls back to.
+// The fix is to make the file say something the library can read, once, before
+// anything else looks at it -- rather than to work around the library at every
+// place a time is read. The first attempt did the latter: it expanded
+// recurrences in wall clock and put the offset back one occurrence at a time,
+// which cost a scan of the zone per step, got the offset wrong for the few
+// days a year the rules disagree with the literal dates, and left EXDATE and
+// UNTIL -- both written as real instants -- comparing against wall clock, so a
+// cancelled occurrence came back and the last of a series went missing.
+//
+// So: a Windows name becomes the IANA name it means, everywhere in the file.
+// Everything downstream is then the ordinary path, and daylight saving,
+// exceptions and end dates are the library's business again.
 
-// zoneFromFile is the zone a file describes under this name, or nil.
+// windowsZones maps the names Windows uses to the ones everybody else does.
 //
-// The observance in force at a given moment is the one whose own start is the
-// latest that is not after it. That is what the format says, and for the
-// ordinary file -- one STANDARD and one DAYLIGHT, each with a yearly rule --
-// it is enough to get the offset right without expanding those rules: the
-// pair differ only in which half of the year they cover, so the question is
-// which of the two the date falls in.
-func zoneFromFile(cal *ical.Calendar, tzid string, at time.Time) *time.Location {
-	wanted := strings.TrimSpace(tzid)
-	if cal == nil || wanted == "" {
-		return nil
+// From the CLDR mapping, limited to the zones that actually turn up in mail.
+// A name not here falls back to the description in the file.
+var windowsZones = map[string]string{
+	"afghanistan standard time":       "Asia/Kabul",
+	"alaskan standard time":           "America/Anchorage",
+	"arab standard time":              "Asia/Riyadh",
+	"arabian standard time":           "Asia/Dubai",
+	"arabic standard time":            "Asia/Baghdad",
+	"argentina standard time":         "America/Argentina/Buenos_Aires",
+	"atlantic standard time":          "America/Halifax",
+	"aus central standard time":       "Australia/Darwin",
+	"aus eastern standard time":       "Australia/Sydney",
+	"azores standard time":            "Atlantic/Azores",
+	"bangladesh standard time":        "Asia/Dhaka",
+	"canada central standard time":    "America/Regina",
+	"cape verde standard time":        "Atlantic/Cape_Verde",
+	"caucasus standard time":          "Asia/Yerevan",
+	"cen. australia standard time":    "Australia/Adelaide",
+	"central america standard time":   "America/Guatemala",
+	"central asia standard time":      "Asia/Almaty",
+	"central brazilian standard time": "America/Cuiaba",
+	"central europe standard time":    "Europe/Budapest",
+	"central european standard time":  "Europe/Warsaw",
+	"central pacific standard time":   "Pacific/Guadalcanal",
+	"central standard time":           "America/Chicago",
+	"central standard time (mexico)":  "America/Mexico_City",
+	"china standard time":             "Asia/Shanghai",
+	"e. africa standard time":         "Africa/Nairobi",
+	"e. australia standard time":      "Australia/Brisbane",
+	"e. europe standard time":         "Europe/Chisinau",
+	"e. south america standard time":  "America/Sao_Paulo",
+	"eastern standard time":           "America/New_York",
+	"egypt standard time":             "Africa/Cairo",
+	"fiji standard time":              "Pacific/Fiji",
+	"fle standard time":               "Europe/Kiev",
+	"georgian standard time":          "Asia/Tbilisi",
+	"gmt standard time":               "Europe/London",
+	"greenwich standard time":         "Atlantic/Reykjavik",
+	"gtb standard time":               "Europe/Bucharest",
+	"hawaiian standard time":          "Pacific/Honolulu",
+	"india standard time":             "Asia/Kolkata",
+	"iran standard time":              "Asia/Tehran",
+	"israel standard time":            "Asia/Jerusalem",
+	"jordan standard time":            "Asia/Amman",
+	"korea standard time":             "Asia/Seoul",
+	"middle east standard time":       "Asia/Beirut",
+	"morocco standard time":           "Africa/Casablanca",
+	"mountain standard time":          "America/Denver",
+	"mountain standard time (mexico)": "America/Mazatlan",
+	"myanmar standard time":           "Asia/Yangon",
+	"n. central asia standard time":   "Asia/Novosibirsk",
+	"nepal standard time":             "Asia/Kathmandu",
+	"new zealand standard time":       "Pacific/Auckland",
+	"newfoundland standard time":      "America/St_Johns",
+	"north asia east standard time":   "Asia/Irkutsk",
+	"north asia standard time":        "Asia/Krasnoyarsk",
+	"pacific sa standard time":        "America/Santiago",
+	"pacific standard time":           "America/Los_Angeles",
+	"pacific standard time (mexico)":  "America/Tijuana",
+	"pakistan standard time":          "Asia/Karachi",
+	"romance standard time":           "Europe/Paris",
+	"russian standard time":           "Europe/Moscow",
+	"sa eastern standard time":        "America/Cayenne",
+	"sa pacific standard time":        "America/Bogota",
+	"sa western standard time":        "America/La_Paz",
+	"se asia standard time":           "Asia/Bangkok",
+	"singapore standard time":         "Asia/Singapore",
+	"south africa standard time":      "Africa/Johannesburg",
+	"sri lanka standard time":         "Asia/Colombo",
+	"taipei standard time":            "Asia/Taipei",
+	"tasmania standard time":          "Australia/Hobart",
+	"tokyo standard time":             "Asia/Tokyo",
+	"tonga standard time":             "Pacific/Tongatapu",
+	"turkey standard time":            "Europe/Istanbul",
+	"us eastern standard time":        "America/Indiana/Indianapolis",
+	"us mountain standard time":       "America/Phoenix",
+	"utc":                             "UTC",
+	"venezuela standard time":         "America/Caracas",
+	"vladivostok standard time":       "Asia/Vladivostok",
+	"w. australia standard time":      "Australia/Perth",
+	"w. central africa standard time": "Africa/Lagos",
+	"w. europe standard time":         "Europe/Berlin",
+	"west asia standard time":         "Asia/Tashkent",
+	"west pacific standard time":      "Pacific/Port_Moresby",
+	"yakutsk standard time":           "Asia/Yakutsk",
+}
+
+// knownAs is the name this machine knows a zone by, or empty.
+//
+// A file may also prefix a real name with a publisher and a version, the way
+// some calendar programs do -- a leading slash, two segments of their own, and
+// then the zone -- which is the same zone said at greater length.
+func knownAs(tzid string) string {
+	name := strings.TrimSpace(tzid)
+	if name == "" {
+		return ""
 	}
+	if _, err := time.LoadLocation(name); err == nil {
+		return name
+	}
+	if mapped, found := windowsZones[strings.ToLower(name)]; found {
+		if _, err := time.LoadLocation(mapped); err == nil {
+			return mapped
+		}
+	}
+	if at := strings.LastIndex(name, "/"); at > 0 {
+		// The last two segments of a prefixed name are the zone itself.
+		parts := strings.Split(name, "/")
+		if len(parts) >= 2 {
+			tail := parts[len(parts)-2] + "/" + parts[len(parts)-1]
+			if _, err := time.LoadLocation(tail); err == nil {
+				return tail
+			}
+		}
+	}
+	return ""
+}
+
+// settleZones makes a file say something the library can read.
+//
+// A zone whose name this machine knows by another spelling is renamed to it,
+// everywhere -- the VTIMEZONE and every property that points at it. A zone
+// nobody can name at all has its times rewritten as the instants they are,
+// using the offsets the file itself gives, so that everything afterwards --
+// the start, the end, the exceptions, the end of a series -- is talking about
+// the same thing.
+func settleZones(cal *ical.Calendar) {
+	if cal == nil {
+		return
+	}
+	renames := map[string]string{}
+	unnameable := map[string]*ical.Component{}
 	for _, child := range cal.Children {
 		if child.Name != ical.CompTimezone {
 			continue
 		}
-		name, err := child.Props.Text(ical.PropTimezoneID)
-		if err != nil || !strings.EqualFold(strings.TrimSpace(name), wanted) {
+		property := child.Props.Get(ical.PropTimezoneID)
+		if property == nil {
 			continue
 		}
-		if offset, found := offsetIn(child, at); found {
-			// Named with the file's own name rather than with an offset,
-			// so anything written back out says what the sender said.
-			return time.FixedZone(wanted, offset)
+		tzid := strings.TrimSpace(property.Value)
+		if tzid == "" {
+			continue
+		}
+		if known := knownAs(tzid); known != "" {
+			if known != tzid {
+				renames[tzid] = known
+				property.Value = known
+			}
+			continue
+		}
+		unnameable[tzid] = child
+	}
+	// A property may also name a zone the file never describes.
+	for _, component := range cal.Children {
+		for name := range component.Props {
+			for index := range component.Props[name] {
+				property := &component.Props[name][index]
+				tzid := strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID))
+				if tzid == "" {
+					continue
+				}
+				if renamed, found := renames[tzid]; found {
+					property.Params.Set(ical.ParamTimezoneID, renamed)
+					continue
+				}
+				if _, described := unnameable[tzid]; described {
+					continue
+				}
+				if known := knownAs(tzid); known != "" && known != tzid {
+					property.Params.Set(ical.ParamTimezoneID, known)
+				}
+			}
 		}
 	}
-	return nil
+	// What is left is a zone nobody can name. Its times become instants.
+	for tzid, zone := range unnameable {
+		asInstants(cal, tzid, zone)
+	}
+}
+
+// asInstants rewrites every time anchored to a zone that cannot be named into
+// the moment it stands for, taken from the offsets the file gives.
+//
+// Written as instants rather than left as wall-clock times so that the start,
+// the exceptions and the end of a series are all the same kind of thing. The
+// cost is that the offset is the one in force at the event's start: a series
+// in an unnameable zone does not follow that zone through a change. Nobody can
+// say which zone it is, so there is nothing better to follow -- and it is far
+// better than the event not existing.
+func asInstants(cal *ical.Calendar, tzid string, zone *ical.Component) {
+	for _, component := range cal.Children {
+		if component.Name == ical.CompTimezone {
+			continue
+		}
+		for name := range component.Props {
+			for index := range component.Props[name] {
+				property := &component.Props[name][index]
+				if !strings.EqualFold(strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID)), tzid) {
+					continue
+				}
+				value := strings.TrimSpace(property.Value)
+				local, err := time.ParseInLocation("20060102T150405", value, time.UTC)
+				if err != nil {
+					continue
+				}
+				offset, found := offsetIn(zone, local)
+				if !found {
+					continue
+				}
+				property.Params.Del(ical.ParamTimezoneID)
+				property.Value = local.Add(-time.Duration(offset) * time.Second).Format("20060102T150405Z")
+			}
+		}
+	}
 }
 
 // offsetIn is the offset an observance gives at a moment, in seconds.
+//
+// The observance in force is the one whose own start is the latest that is not
+// after the moment. The literal dates are used rather than the yearly rules
+// beside them, which is right to within the few days a year they disagree --
+// and this is only reached for a zone nobody can name at all, where the
+// alternative is no event.
 func offsetIn(zone *ical.Component, at time.Time) (int, bool) {
 	best, bestAt, found := 0, time.Time{}, false
 	for _, observance := range zone.Children {
@@ -66,9 +269,6 @@ func offsetIn(zone *ical.Component, at time.Time) (int, bool) {
 		if !ok {
 			continue
 		}
-		// The observance's own start, which is a local time with no zone.
-		// Compared against the event's local wall clock, which is the only
-		// comparison the format defines here.
 		start := observance.Props.Get(ical.PropDateTimeStart)
 		if start == nil {
 			continue
@@ -77,14 +277,9 @@ func offsetIn(zone *ical.Component, at time.Time) (int, bool) {
 		if err != nil {
 			continue
 		}
-		// Which half of the year: an observance with a yearly rule repeats,
-		// so only the month and day it begins on matter for choosing
-		// between the two. Shifted to the event's own year.
 		began = time.Date(at.Year(), began.Month(), began.Day(),
 			began.Hour(), began.Minute(), began.Second(), 0, time.UTC)
 		if began.After(at) {
-			// It has not come round yet this year, so the one in force is
-			// last year's turn of the same observance.
 			began = began.AddDate(-1, 0, 0)
 		}
 		if !found || began.After(bestAt) {
@@ -127,117 +322,4 @@ func offsetOf(property *ical.Prop) (int, bool) {
 		seconds = int(digits[4]-'0')*10 + int(digits[5]-'0')
 	}
 	return sign * (hours*3600 + minutes*60 + seconds), true
-}
-
-// momentOf reads a date-time property, resolving the zone the way the library
-// does except that a TZID it cannot resolve falls back to the description in
-// the file rather than failing.
-//
-// The library returns an error there, and the caller then had a zero time it
-// could not tell from a missing one. Everything else -- a value ending in Z,
-// a plain date, a name this machine knows -- is left to the library so there
-// is one implementation of the ordinary case.
-func momentOf(cal *ical.Calendar, property *ical.Prop, fallback *time.Location) (time.Time, error) {
-	if property == nil {
-		return time.Time{}, nil
-	}
-	tzid := strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID))
-	if tzid == "" {
-		return property.DateTime(fallback)
-	}
-	if _, err := time.LoadLocation(tzid); err == nil {
-		return property.DateTime(fallback)
-	}
-	// A name this machine does not know. The value is a local time; the
-	// file says what the offset is.
-	value := strings.TrimSpace(property.Value)
-	local, err := time.ParseInLocation("20060102T150405", value, time.UTC)
-	if err != nil {
-		// Not a date-time at all: a date, which has no zone anyway.
-		return property.DateTime(fallback)
-	}
-	where := zoneFromFile(cal, tzid, local)
-	if where == nil {
-		return time.Time{}, fmt.Errorf("calendar: this server does not know the time zone %q, and the event does not describe it", tzid)
-	}
-	return time.ParseInLocation("20060102T150405", value, where)
-}
-
-// lengthOf is how long an event lasts, from its end or from its duration, the
-// way the library works it out -- but reading the end with momentOf so an
-// unknown zone does not lose it.
-func lengthOf(cal *ical.Calendar, event *ical.Event, starts time.Time, fallback *time.Location) (time.Time, error) {
-	if end := event.Props.Get(ical.PropDateTimeEnd); end != nil {
-		return momentOf(cal, end, fallback)
-	}
-	if duration := event.Props.Get(ical.PropDuration); duration != nil {
-		length, err := duration.Duration()
-		if err != nil {
-			return time.Time{}, err
-		}
-		return starts.Add(length), nil
-	}
-	if start := event.Props.Get(ical.PropDateTimeStart); start != nil && start.ValueType() == ical.ValueDate {
-		// A whole day, which is what a date with no end means.
-		return starts.Add(24 * time.Hour), nil
-	}
-	return starts, nil
-}
-
-// wallClockCopy is the event with its zone names taken off the properties that
-// decide a recurrence, so the rule can be expanded as wall-clock times.
-//
-// The library resolves a TZID with LoadLocation and fails on a name this
-// machine does not know, which is every name Microsoft writes -- so a
-// recurring invitation from Exchange could not be expanded at all. Stripped
-// of the name, the same properties parse as the local times they are, and the
-// caller puts the offset back one occurrence at a time. Doing it that way
-// round is what keeps "ten o'clock every Monday" at ten through a change of
-// offset: the rule works in wall clock, which is what it means.
-func wallClockCopy(event *ical.Event) *ical.Event {
-	copied := ical.NewEvent()
-	for name, properties := range event.Props {
-		kept := make([]ical.Prop, 0, len(properties))
-		for _, property := range properties {
-			one := property
-			one.Params = ical.Params{}
-			for key, values := range property.Params {
-				if strings.EqualFold(key, ical.ParamTimezoneID) {
-					continue
-				}
-				one.Params[key] = append([]string(nil), values...)
-			}
-			kept = append(kept, one)
-		}
-		copied.Props[name] = kept
-	}
-	return copied
-}
-
-// atOffsetIn is the moment a wall-clock time names in the zone a file
-// describes: the same clock face, with the offset that zone had on that date.
-func atOffsetIn(cal *ical.Calendar, tzid string, wall time.Time) time.Time {
-	where := zoneFromFile(cal, tzid, wall)
-	if where == nil {
-		return wall
-	}
-	return time.Date(wall.Year(), wall.Month(), wall.Day(),
-		wall.Hour(), wall.Minute(), wall.Second(), 0, where)
-}
-
-// describedZone is the zone name a file uses that this machine cannot resolve,
-// or empty when there is no such problem to work around.
-func describedZone(event *ical.Event) string {
-	start := event.Props.Get(ical.PropDateTimeStart)
-	if start == nil {
-		return ""
-	}
-	tzid := strings.TrimSpace(start.Params.Get(ical.ParamTimezoneID))
-	if tzid == "" {
-		return ""
-	}
-	if _, err := time.LoadLocation(tzid); err == nil {
-		return ""
-	}
-	return tzid
 }

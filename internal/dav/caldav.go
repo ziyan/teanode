@@ -203,7 +203,7 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 
 	// Indexed over the same stretch the dashboard indexes, because the
 	// horizon is a property of the calendar rather than of the door.
-	expanded, err := calendar.Indexed(parsed)
+	expanded, indexedUntil, err := calendar.Indexed(parsed)
 	if err != nil {
 		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 	}
@@ -219,6 +219,7 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 		Summary: parsed.Summary, Location: parsed.Location,
 		StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
 		AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
+		IndexedUntil: &indexedUntil,
 	}
 	var stored *models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {

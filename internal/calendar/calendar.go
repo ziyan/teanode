@@ -94,6 +94,11 @@ type Parsed struct {
 	// Method is the file's METHOD: REQUEST, REPLY or CANCEL when it arrived
 	// as an invitation by mail, and empty for an ordinary event.
 	Organizer string
+
+	// SentBy is who put it in the post on the organizer's behalf, when the
+	// file says somebody did.
+	SentBy string
+
 	Attendees []Attendee
 	Method    string
 
@@ -126,6 +131,11 @@ func Parse(data []byte) (*Parsed, error) {
 	if err != nil {
 		return nil, fmt.Errorf("calendar: that is not an event this server can read: %w", err)
 	}
+	// Before anything reads a time out of it: a zone named the way Windows
+	// names them becomes the name this machine knows, and one nobody can
+	// name has its times turned into the instants they stand for. Done once,
+	// here, so everything afterwards is the ordinary path.
+	settleZones(decoded)
 	encoded, err := Encode(decoded)
 	if err != nil {
 		return nil, err
@@ -175,18 +185,20 @@ func Parse(data []byte) (*Parsed, error) {
 	// back as the zero time and was stored as an event in the year one,
 	// appearing in no window anybody ever asks about. Where that happens the
 	// description in the file is used instead.
-	starts, err := momentOf(decoded, event.Props.Get(ical.PropDateTimeStart), time.UTC)
+	// Read the ordinary way. The zones were settled before anything looked
+	// at the file, so a name this machine does not know has either been
+	// renamed to one it does or had its times turned into instants.
+	starts, err := event.DateTimeStart(time.UTC)
 	if err != nil {
 		return nil, fmt.Errorf("calendar: that event's start cannot be read: %w", err)
 	}
 	parsed.StartsAt = starts.UTC()
-	if ends, err := lengthOf(decoded, event, starts, time.UTC); err == nil {
+	if ends, err := event.DateTimeEnd(time.UTC); err == nil {
 		parsed.EndsAt = ends.UTC()
 	}
 	if parsed.StartsAt.IsZero() {
-		// Nothing readable. Stored with no time would be an event that
-		// exists and can never be found, so it is refused instead.
-		return nil, fmt.Errorf("calendar: that event's start cannot be read")
+		// An event with no time is one that exists and can never be found.
+		return nil, fmt.Errorf("calendar: that event has no start")
 	}
 	if parsed.EndsAt.Before(parsed.StartsAt) {
 		// A file whose end precedes its start describes nothing. Rather
@@ -196,6 +208,18 @@ func Parse(data []byte) (*Parsed, error) {
 	}
 
 	parsed.Organizer = addressOf(event.Props.Get(ical.PropOrganizer))
+	// Who actually put it in the post, when that is somebody else. An
+	// assistant, a room booking system, a service that sends for a person:
+	// SENT-BY exists for exactly that, and refusing it turns every
+	// delegated invitation into nothing.
+	if organizer := event.Props.Get(ical.PropOrganizer); organizer != nil {
+		parsed.SentBy = strings.TrimPrefix(
+			strings.ToLower(strings.TrimSpace(organizer.Params.Get("SENT-BY"))), "mailto:")
+		parsed.SentBy = strings.Trim(parsed.SentBy, "\"")
+		if at := strings.Index(parsed.SentBy, ":"); at >= 0 {
+			parsed.SentBy = strings.TrimPrefix(parsed.SentBy[at+1:], "//")
+		}
+	}
 	for index := range event.Props[ical.PropAttendee] {
 		property := &event.Props[ical.PropAttendee][index]
 		address := addressOf(property)
@@ -250,16 +274,7 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	if length < 0 {
 		length = 0
 	}
-	// A zone this machine cannot resolve is expanded as wall-clock times and
-	// given its offset back one occurrence at a time, which is what keeps
-	// ten o'clock at ten through a change of offset. Without it a recurring
-	// invitation from Exchange could not be expanded at all.
-	described := describedZone(event)
-	expanding := event
-	if described != "" {
-		expanding = wallClockCopy(event)
-	}
-	set, err := expanding.RecurrenceSet(time.UTC)
+	set, err := event.RecurrenceSet(time.UTC)
 	if err != nil {
 		return nil, fmt.Errorf("calendar: that event's recurrence cannot be read: %w", err)
 	}
@@ -289,13 +304,11 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	// that rule was enough to take the server down. Pulling them one by one
 	// means the bound is a bound on what is done, not on what is kept.
 	next := set.Iterator()
-	for seen := 0; seen < maximumSteps; seen++ {
+	walked := 0
+	for ; walked < maximumSteps; walked++ {
 		when, ok := next()
 		if !ok {
 			break
-		}
-		if described != "" {
-			when = atOffsetIn(parsed.calendar, described, when)
 		}
 		if when.Before(starting) {
 			continue
@@ -313,6 +326,15 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 		if len(occurrences) >= MaximumOccurrences {
 			break
 		}
+	}
+	// Running out of steps before reaching the window is not the same as
+	// there being nothing in it, and returning an empty list for both said
+	// the event simply was not happening. A rule fine enough and old enough
+	// -- every hour, six years back -- spends the whole bound getting to
+	// today, and the event then vanished from every view while a fetch of
+	// it still worked.
+	if walked >= maximumSteps && len(occurrences) == 0 {
+		return nil, fmt.Errorf("calendar: that repeat is too fine to work out over this stretch of time")
 	}
 	sort.Slice(occurrences, func(first, second int) bool {
 		return occurrences[first].StartsAt.Before(occurrences[second].StartsAt)
@@ -412,9 +434,9 @@ const (
 // calendar -- the dashboard's API and CalDAV -- index what they write, and
 // two doors that disagreed about the horizon would give a calendar whose
 // contents depended on which one last touched it.
-func Indexed(parsed *Parsed) ([]Occurrence, error) {
+func Indexed(parsed *Parsed) ([]Occurrence, time.Time, error) {
 	if parsed == nil {
-		return nil, fmt.Errorf("calendar: there is no event to index")
+		return nil, time.Time{}, fmt.Errorf("calendar: there is no event to index")
 	}
 	now := time.Now().UTC()
 	from, until := now.Add(-HorizonBehind), now.Add(HorizonAhead)
@@ -426,5 +448,13 @@ func Indexed(parsed *Parsed) ([]Occurrence, error) {
 	} else if parsed.StartsAt.After(from) {
 		from = parsed.StartsAt.Add(-time.Second)
 	}
-	return Occurrences(parsed, from, until)
+	occurrences, err := Occurrences(parsed, from, until)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	// How far this was worked out to, which is what says when it needs
+	// doing again. Not the furthest occurrence: a series that has finished
+	// has none here, and would otherwise look like it needed extending for
+	// ever.
+	return occurrences, until, nil
 }

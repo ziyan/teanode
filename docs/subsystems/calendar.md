@@ -79,6 +79,13 @@ starting past the horizon was never indexed at all. The scheduler extends the
 repeats that are running out, nearest horizon first, a few at a time; there is
 no hurry, since what is being fixed is a year away.
 
+Which ones need it is asked of `calendar_object.indexed_until` — the horizon
+each was last worked out to — and not of its furthest occurrence. Those are
+different questions, and the second one has no answer for a series that has
+already finished: it has no occurrence in the window at all, so it looks like
+it is running out for ever. Asked that way the worker rewrote the same twenty
+rows every thirty seconds and never reached the events it existed to extend.
+
 Expansion is bounded in the work it costs, not only in what it returns. Asking
 the rule library for a window builds the whole list before handing it back, so
 a cap on the result was no cap at all: `FREQ=SECONDLY` over the stretch this
@@ -99,10 +106,27 @@ time, the event was stored starting in the year one, and it then appeared in no
 window anybody ever asked about — not the calendar page, not the agent, not
 free-busy, not a phone — while a fetch of the event itself still returned it.
 
-So where the name means nothing, the description in the file is used instead. A
-recurrence in such a zone is expanded as wall-clock times and given the offset
-back one occurrence at a time, which keeps ten o'clock at ten through a change
-of offset — the rule works in wall clock, which is what it means.
+The fix is to make the file say something the library can read, **once**,
+before anything else looks at it — a Windows name becomes the IANA name it
+means, everywhere in the file. Everything downstream is then the ordinary path,
+and daylight saving, exceptions and end dates are the library's business again.
+
+The first attempt worked around the library at each place a time was read
+instead: it expanded recurrences in wall clock and put the offset back one
+occurrence at a time. That looked right and was wrong in four ways at once. It
+rescanned the zone on every step of every rule, so a file with ten thousand
+observances and a per-second rule took 53 seconds inside a database
+transaction. It took the observance's literal date rather than the rule beside
+it, so the offset was an hour out for the few days a year those disagree. And
+`EXDATE` and `UNTIL` are written as real instants, so neither lined up with a
+wall-clock expansion — a cancelled occurrence came back, and the last of a
+series went missing. Renaming the zone once makes all four disappear.
+
+A zone nobody can name at all — no mapping and no match — has its times
+rewritten as the instants they stand for, using the offsets the file itself
+gives. Such a series does not follow its zone through a change of offset, but
+nobody can say which zone it is, and it is far better than the event not
+existing.
 
 ## Recurrence, and the three ways to get it wrong
 
@@ -195,7 +219,17 @@ out of it and cancel the meeting for everybody.
 
 So, in order:
 
+Every one of these fails **closed**. Written the other way round — "if it
+parses, and it names an organizer, and that is not the sender" — the check let
+two whole populations through: an event this server can no longer read, which
+is exactly what tightening the parser creates, and an event with no organizer,
+which is every appointment somebody made for themselves. Both were then
+replaceable by anyone who knew the identifier, which every other guest on the
+original invitation does.
+
 - a message that did not prove where it came from is not an invitation;
+- an assistant or a booking system may send for an organizer, which is what
+  `SENT-BY` is for, but only from an address the message has proven;
 - an invitation is acted on only when its organizer *is* the sender;
 - an event already held may be changed only by the organizer it already names,
   again matched against the sender — otherwise anybody the file reached could
@@ -205,6 +239,10 @@ So, in order:
 - a cancellation is honoured only from the organizer the event names, and it
   marks the event rather than deleting it — being told a meeting is off is the
   useful part;
+- an invitation that does not ask this person is not put in their calendar,
+  and the ceiling on how much a calendar holds applies here as at the other two
+  doors — otherwise any sender who passes DMARC can write unlimited events,
+  with text of their choosing, in front of somebody;
 - a reply changes what *the sender* said and nothing else. A reply carries
   attendee lines, and applying all of them let one message mark several other
   people as not coming. An answer from somebody the event does not invite is

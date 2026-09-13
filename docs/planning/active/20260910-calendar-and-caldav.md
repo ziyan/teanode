@@ -332,6 +332,34 @@ the code, and they encoded the same misunderstanding. What caught these was
 someone reading the code adversarially and asking, each time, *what does the
 attacker control?*
 
+**And what a second review found in the first round's fixes, which is the part
+worth remembering.** Twelve more, and several were *created* by the fixes. The
+sharpest: the new organizer check read "if it parses, and it names an
+organizer, and that is not the sender" — and the zone fix had just made a whole
+population of stored events unparseable, so those became replaceable by any
+stranger who knew the identifier. A security fix that fails open on the exact
+condition another fix introduced is worse than the hole it closed.
+
+The zone fix itself was right in aim and wrong in method. Working around the
+library at each place a time is read meant rescanning the zone per recurrence
+step, reading the literal date rather than the rule beside it, and leaving
+EXDATE and UNTIL — real instants — compared against wall clock. Renaming the
+zone once, before anything reads the file, deleted all four problems and most
+of the code. The lesson: when a dependency cannot read the input, fix the
+input, not every reader of it.
+
+And a bound that was not one, twice over. The step bound stopped the walk and
+returned what it had, so a fine enough rule reported that nothing was
+happening. The re-index found work by asking for the furthest occurrence, which
+a finished series does not have, so it rewrote the same rows every thirty
+seconds for ever and never reached the events it existed to fix.
+
+Two rounds, twenty-four confirmed defects, and the pattern across both is the
+same: *the check was written against something the attacker or the edge case
+controls.* Reviews by somebody who did not write the code found every one of
+them; the tests written alongside the code encoded the same misunderstandings
+and passed throughout.
+
 **Two small things worth keeping.** The naming check earned its place: this
 work introduced `TimeZone` where the repository says `Timezone` sixty-seven
 times, and the same thing having two names is exactly what the convention

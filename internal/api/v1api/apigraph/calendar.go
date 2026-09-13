@@ -472,11 +472,12 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 				return refused
 			}
 		}
-		occurrences, err := occurrencesOf(parsed)
+		occurrences, indexedUntil, err := occurrencesOf(parsed)
 		if err != nil {
 			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 			return refused
 		}
+		object.IndexedUntil = &indexedUntil
 		kept, err = tx.PutCalendarObject(object, occurrences)
 		return err
 	}); err != nil {
@@ -567,14 +568,14 @@ func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarOb
 	return self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
 }
 
-func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, error) {
+func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, time.Time, error) {
 	// The horizon lives in the calendar package, because CalDAV indexes
 	// what it writes too and two doors that disagreed about how far ahead
 	// to look would give a calendar whose contents depended on which one
 	// last touched it.
-	occurrences, err := calendar.Indexed(parsed)
+	occurrences, indexedUntil, err := calendar.Indexed(parsed)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	rows := make([]models.Occurrence, 0, len(occurrences))
 	for _, occurrence := range occurrences {
@@ -582,7 +583,7 @@ func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, error) {
 			StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
 		})
 	}
-	return rows, nil
+	return rows, indexedUntil, nil
 }
 
 // buildSaved turns what was sent into a file: whole iCalendar text when a
