@@ -405,16 +405,36 @@ Tests that must exist by the end:
 ## Progress
 
 - [x] ExecPlan written
-- [ ] M0 tool consolidation
+- [x] M0 tool consolidation — 84 tools to 54
 - [ ] M1 triage and reply with tools and rounds
 - [ ] M2 calendar and address book as granted sources
 - [ ] M3 extract and the proposal card
 - [ ] M4 the daily brief
-- [ ] M5 mail as a surface
+- [ ] M5 mail as a surface — **postponed** at the owner's word (2026-09-13);
+      the plan for it stays below for whoever picks it up
 
 ## Surprises & Discoveries
 
-Nothing yet.
+**Two tools already took an action of their own, and the merge would have
+dispatched to the wrong half.** `folder_manage` takes `action: rename|delete`
+and `group_manage` takes `action: update`; merged into a `folder` or a `group`
+tool, the merged tool's own `action` field sits on top of theirs and every
+call goes to the wrong place. Nothing failed loudly: the first sign was a test
+asserting that deleting a folder asks first, which stopped asking.
+
+    --- FAIL: TestCatalogIsWellFormedAndFiltered
+        tool_test.go:68: deleting a folder should ask
+
+`Merge` now refuses to build such a tool at all, which turned the second
+collision into a panic at startup rather than a silent misdispatch:
+
+    panic: tools: group_manage takes an action of its own and cannot be an
+    action of group
+
+So `folder_list`/`folder_manage`, `group_list`/`group_manage` and
+`role_list`/`role_manage` keep their names. The catalog is 54 rather than the
+49 the plan estimated, and the five that did not merge are the five that were
+already action-shaped.
 
 ## Decision Log
 
@@ -434,6 +454,14 @@ Nothing yet.
 - **Mail as a surface checks the sender, not the address** (2026-09-13).
   Taken straight from SEC-51, where a linked group chat spoke with the
   owner's voice because the channel was the whole of the check.
+- **Milestone 5 is postponed** (2026-09-13), at the owner's word, after the
+  plan was written and before it was started. Its milestone stays as written
+  so that whoever picks it up has the reasoning, particularly the sender
+  check.
+- **A tool that already takes an action cannot be an action** (2026-09-13).
+  Found by building it; see Surprises. The guard is a panic while the catalog
+  is being built, because a capability that quietly dispatches to the wrong
+  half is worse than a server that will not start.
 
 ## Outcomes & Retrospective
 
