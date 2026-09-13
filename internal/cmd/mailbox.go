@@ -1534,7 +1534,18 @@ func readValueOrStandardInput(value string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot read standard input: %w", err)
 	}
-	return strings.TrimRight(string(content), "\n"), nil
+	return withoutTrailingNewline(string(content)), nil
+}
+
+// withoutTrailingNewline drops the line ending a file ends with.
+//
+// The carriage return as well as the newline. The formats piped in here -- a
+// vCard, an iCalendar file -- end every line with both by definition, so
+// trimming only the newline left the last line as "END:VCARD\r" and the file
+// was then refused as malformed: a correctly written file was the one thing
+// this could not read.
+func withoutTrailingNewline(content string) string {
+	return strings.TrimRight(content, "\r\n")
 }
 
 // itoa is strconv.Itoa under a shorter name, for table cells.
