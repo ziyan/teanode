@@ -7368,6 +7368,14 @@ button.with-icon {
   overflow-wrap: anywhere;
 }
 
+/* One guest a line, so a long list reads as a list rather than as a
+   paragraph of names. */
+.invitation-who {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .invitation-answers {
   display: flex;
   gap: 0.4rem;
@@ -7396,7 +7404,15 @@ button.with-icon {
     margin-top: 0.35rem;
   }
 
-  .invitation-answers {
+  /* One guest a line, so a long list reads as a list rather than as a
+   paragraph of names. */
+.invitation-who {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invitation-answers {
     flex-wrap: wrap;
   }
 }

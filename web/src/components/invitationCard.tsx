@@ -152,7 +152,30 @@ export function InvitationCard({ itemId }: { itemId: string }) {
         {(found.attendees ?? []).length > 0 && (
           <>
             <dt>{t('invitation.who')}</dt>
-            <dd>{(found.attendees ?? []).map((attendee) => attendee.name || attendee.address).join(', ')}</dd>
+            <dd>
+              {/* With what each of them said. Somebody deciding whether to go
+                  wants to know who else is going, and the answer is already
+                  here -- listing the names alone threw it away. */}
+              <ul className="invitation-who">
+                {(found.attendees ?? []).map((attendee) => (
+                  <li key={attendee.address}>
+                    {attendee.name || attendee.address}
+                    {attendee.participation && attendee.participation !== 'NEEDS-ACTION' && (
+                      <span className="muted">
+                        {' '}
+                        {t(
+                          attendee.participation === 'ACCEPTED'
+                            ? 'invitation.saidYes'
+                            : attendee.participation === 'DECLINED'
+                              ? 'invitation.saidNo'
+                              : 'invitation.saidMaybe',
+                        )}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </dd>
           </>
         )}
       </dl>
