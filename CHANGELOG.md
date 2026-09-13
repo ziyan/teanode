@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-09-13
+
 ### Changed
 
 - A third security review, over everything built since the last one: the
