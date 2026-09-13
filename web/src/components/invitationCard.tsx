@@ -72,7 +72,13 @@ export function InvitationCard({ itemId }: { itemId: string }) {
     const starts = new Date(found.startsAt)
     const ends = found.endsAt ? new Date(found.endsAt) : null
     if (found.allDay) {
-      return starts.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+      // Read from the parts the server wrote rather than from what they
+      // become here: a whole-day event is its date everywhere, and turning
+      // it into a local time names the day before west of Greenwich.
+      return new Date(starts.getUTCFullYear(), starts.getUTCMonth(), starts.getUTCDate(), 12).toLocaleDateString(
+        undefined,
+        { weekday: 'long', day: 'numeric', month: 'long' },
+      )
     }
     const day = starts.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
     const from = starts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })

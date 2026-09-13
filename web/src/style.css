@@ -6887,8 +6887,8 @@ button.with-icon {
   gap: 0.35rem;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--border);
-  background: var(--field);
+  border: 1px solid color-mix(in srgb, var(--leaf) 35%, transparent);
+  background: color-mix(in srgb, var(--leaf) 14%, var(--surface));
   color: var(--text);
   border-radius: 5px;
   padding: 0.15rem 0.35rem;
@@ -6905,10 +6905,13 @@ button.with-icon {
   opacity: 0.6;
 }
 
+/* Whole-day things read as the same kind of thing as the rest, tinted the
+   same way; they are told apart by sitting in the all-day strip and by the
+   solid edge, not by being a different colour entirely. */
 .calendar-entry.all-day {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--leaf) 22%, var(--surface));
+  border-color: color-mix(in srgb, var(--leaf) 45%, transparent);
+  border-left: 3px solid var(--leaf);
 }
 
 .calendar-entry-time {
@@ -6918,9 +6921,7 @@ button.with-icon {
   flex: none;
 }
 
-.calendar-entry.all-day .calendar-entry-time {
-  color: var(--accent-text);
-}
+
 
 /* A title too long for its box is cut rather than wrapped, so a day with one
    long title stays the height of a day with one short one. */
@@ -7066,7 +7067,10 @@ button.with-icon {
   background: var(--sidebar-hover);
 }
 
-/* An event sits where it starts and is as tall as it lasts. */
+/* An event sits where it starts and is as tall as it lasts.
+   Coloured rather than grey: on a grid of faint hour lines an event has to
+   read as a thing on the page, and the accent here is deliberately not a
+   colour, so the leaf is what there is. */
 .calendar-placed {
   position: absolute;
   display: flex;
@@ -7075,10 +7079,10 @@ button.with-icon {
   overflow: hidden;
   text-align: left;
   padding: 0.15rem 0.3rem;
-  border: 1px solid var(--accent);
-  border-left: 3px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--leaf) 45%, transparent);
+  border-left: 3px solid var(--leaf);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
   color: var(--text);
   font: inherit;
   font-size: 0.75rem;
@@ -7087,7 +7091,21 @@ button.with-icon {
 }
 
 .calendar-placed:hover {
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  background: color-mix(in srgb, var(--leaf) 30%, var(--surface));
+}
+
+/* Too short for two lines: the time and the title share one, because a
+   half-hour meeting that shows only "09:00" has lost the one thing it had
+   to say. */
+.calendar-placed.compact {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding-top: 0.05rem;
+}
+
+.calendar-placed.compact .calendar-placed-title {
+  min-width: 0;
 }
 
 .calendar-placed.busy {

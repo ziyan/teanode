@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
@@ -219,6 +219,32 @@ function dayKey(at: Date): string {
   return `${at.getFullYear()}-${month}-${day}`
 }
 
+// A whole-day event belongs to its date everywhere, so its day is read from
+// the parts the server wrote rather than from what those parts become in the
+// reader's own zone.
+//
+// The server keeps it as a date -- midnight UTC -- and turning that into a
+// local time lands on the day before for anybody west of Greenwich. This is
+// the same mistake the format itself invites, and the reason a birthday is
+// written as a date and not as a moment; getting it right on the server and
+// then undoing it here would have shown every all-day event on the wrong day.
+function dayOf(event: { startsAt: string; allDay: boolean }): string {
+  const at = new Date(event.startsAt)
+  if (event.allDay) {
+    const month = `${at.getUTCMonth() + 1}`.padStart(2, '0')
+    const day = `${at.getUTCDate()}`.padStart(2, '0')
+    return `${at.getUTCFullYear()}-${month}-${day}`
+  }
+  return dayKey(at)
+}
+
+// noonOf is the event's day as something a date formatter can be handed.
+// Midday, so that formatting it in any zone still names the right date.
+function noonOf(event: { startsAt: string; allDay: boolean }): Date {
+  const [year, month, day] = dayOf(event).split('-').map(Number)
+  return new Date(year, month - 1, day, 12)
+}
+
 function clockKey(at: Date): string {
   const hour = `${at.getHours()}`.padStart(2, '0')
   const minute = `${at.getMinutes()}`.padStart(2, '0')
@@ -371,14 +397,17 @@ export function CalendarPage() {
       const full = answer.GetCalendarEvent
       const starts = new Date(full.startsAt)
       const ends = new Date(full.endsAt)
+      // A whole-day event's dates are read from its own parts, not from what
+      // they become in this reader's zone -- opening one west of Greenwich
+      // and saving it would otherwise move it a day earlier every time.
       setDraft({
         id: full.id,
         summary: full.summary ?? '',
         location: full.location ?? '',
         description: full.description ?? '',
-        startDate: dayKey(starts),
+        startDate: dayOf(full),
         startTime: clockKey(starts),
-        endDate: dayKey(ends),
+        endDate: full.allDay ? dayOf({ startsAt: full.endsAt, allDay: true }) : dayKey(ends),
         endTime: clockKey(ends),
         allDay: full.allDay,
         recurrence: full.recurrence ?? '',
@@ -400,7 +429,7 @@ export function CalendarPage() {
   const byDay = useMemo(() => {
     const grouped = new Map<string, CalendarEvent[]>()
     for (const event of found) {
-      const key = dayKey(new Date(event.startsAt))
+      const key = dayOf(event)
       const already = grouped.get(key)
       if (already) already.push(event)
       else grouped.set(key, [event])
@@ -436,10 +465,6 @@ export function CalendarPage() {
   // whenever the view or the day changes -- moving to next week should not
   // land wherever the last one happened to be scrolled.
   const grid = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!COLUMNS[view] || !grid.current) return
-    grid.current.scrollTop = OPENS_AT * HOUR
-  }, [view, on.getTime()])
 
   const heading =
     view === 'day'
@@ -469,6 +494,15 @@ export function CalendarPage() {
   const today = dayKey(new Date())
   const loading = (events.loading && !events.data) || (calendars.loading && !calendars.data)
 
+  // Scrolled before the first paint rather than after it, so the grid is
+  // never shown at midnight and then jumped to the morning. It depends on
+  // loading too: while the page is loading there is no grid to scroll, and an
+  // effect that only watched the view found nothing and never ran again.
+  useLayoutEffect(() => {
+    if (loading || !COLUMNS[view] || !grid.current) return
+    grid.current.scrollTop = OPENS_AT * HOUR
+  }, [view, on.getTime(), loading])
+
   const entry = (event: CalendarEvent) => (
     <button
       key={event.id + event.startsAt}
@@ -496,19 +530,6 @@ export function CalendarPage() {
         }))}
         active={view}
         onSelect={(id) => move({ view: id as View })}
-        actions={
-          <button
-            className="primary"
-            type="button"
-            disabled={!calendarId}
-            onClick={() => {
-              setProblem(null)
-              setDraft(blank(on))
-            }}
-          >
-            {t('calendar.new')}
-          </button>
-        }
       />
 
       <div className="calendar-bar">
@@ -528,6 +549,17 @@ export function CalendarPage() {
           </Tooltip>
           <span className="calendar-heading">{heading}</span>
         </div>
+        <button
+          className="primary"
+          type="button"
+          disabled={!calendarId}
+          onClick={() => {
+            setProblem(null)
+            setDraft(blank(on))
+          }}
+        >
+          {t('calendar.new')}
+        </button>
       </div>
 
       {loading && <p className="muted">{t('common.loading')}</p>}
@@ -650,9 +682,14 @@ export function CalendarPage() {
                         <button
                           key={event.id + event.startsAt}
                           type="button"
-                          className={`calendar-placed${opening === event.id ? ' busy' : ''}${
-                            event.status === 'CANCELLED' ? ' cancelled' : ''
-                          }`}
+                          className={[
+                            'calendar-placed',
+                            height < 34 ? 'compact' : '',
+                            opening === event.id ? 'busy' : '',
+                            event.status === 'CANCELLED' ? 'cancelled' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
                           style={{
                             top,
                             height,
@@ -664,7 +701,7 @@ export function CalendarPage() {
                         >
                           <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
                           <span className="calendar-placed-title">{event.summary || t('calendar.untitled')}</span>
-                          {event.location && height > 40 && (
+                          {event.location && height > 56 && (
                             <span className="calendar-placed-where">{event.location}</span>
                           )}
                         </button>
@@ -691,7 +728,7 @@ export function CalendarPage() {
           {found.map((event) => (
             <div key={event.id + event.startsAt} className="calendar-agenda-row">
               <div className="calendar-agenda-when">
-                <span>{dayFormat.format(new Date(event.startsAt))}</span>
+                <span>{dayFormat.format(noonOf(event))}</span>
                 <span className="muted">
                   {event.allDay ? t('calendar.allDay') : timeFormat.format(new Date(event.startsAt))}
                 </span>
@@ -749,8 +786,10 @@ export function CalendarPage() {
                   summary: draft.summary.trim(),
                   location: draft.location.trim(),
                   description: draft.description.trim(),
-                  startsAt: joined(draft.startDate, draft.allDay ? '00:00' : draft.startTime),
-                  endsAt: joined(draft.endDate || draft.startDate, draft.allDay ? '00:00' : draft.endTime),
+                  startsAt: draft.allDay ? `${draft.startDate}T00:00:00Z` : joined(draft.startDate, draft.startTime),
+                  endsAt: draft.allDay
+                    ? `${draft.endDate || draft.startDate}T00:00:00Z`
+                    : joined(draft.endDate || draft.startDate, draft.endTime),
                   allDay: draft.allDay,
                   // The calendar's own zone, so that a repeat keeps its
                   // hour when the clocks change. An all-day event is a
