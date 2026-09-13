@@ -168,6 +168,49 @@ func (self *exchange) receivedBy(envelope *mailparse.Envelope) string {
 	return self.settings.Server
 }
 
+// ownNames are the names this server answers to, for deciding whether a
+// header claiming to be from it is a forgery.
+//
+// Every one of them is this server's own: what it is configured as, the mail
+// hosts of the domains it serves, and the name it stamps on this message. Not
+// receivedBy, which prefers the name the client asked for in its TLS hello --
+// a sender who picks their own SNI would then be the only one whose forged
+// header is kept, since the comparison is against the name they chose rather
+// than against a name this server owns. They could then leave behind an
+// Authentication-Results naming the real MX and saying whatever they liked
+// about DKIM and DMARC, which travels with the message to every reader after
+// this one.
+func (self *exchange) ownNames(envelope *mailparse.Envelope) []string {
+	own := make([]string, 0, 4)
+	if self.settings != nil && self.settings.Server != "" {
+		own = append(own, self.settings.Server)
+	}
+	configuration := self.config.Current()
+	if configuration != nil {
+		domains := self.allDomains()
+		for _, name := range configuration.Server.MailServers {
+			if trimmed := strings.TrimSpace(name); trimmed != "" {
+				own = append(own, trimmed)
+			}
+		}
+		for _, domain := range domains {
+			if host := configuration.MailHostFor(domain, domains); host != "" {
+				own = append(own, host)
+			}
+		}
+	}
+	// And the name this server is about to stamp, when that is one of its
+	// own rather than the client's choosing.
+	if stamped := self.receivedBy(envelope); stamped != "" {
+		for _, name := range own {
+			if strings.EqualFold(name, stamped) {
+				return own
+			}
+		}
+	}
+	return own
+}
+
 func (self *exchange) formatReceivedSpfHeader(results []authres.Result, envelope *mailparse.Envelope) string {
 	for _, result := range results {
 		spfResult, ok := result.(*authres.SPFResult)
@@ -834,10 +877,7 @@ func dkimVerdict(results []*dkim.Verification, spfResult spf.Result) error {
 // names that count as this server's are the one it answers as for this
 // message and the one it is configured as, which are what it writes.
 func (self *exchange) withoutOwnAuthenticationResults(envelope *mailparse.Envelope) []string {
-	own := []string{self.receivedBy(envelope)}
-	if self.settings != nil && self.settings.Server != "" {
-		own = append(own, self.settings.Server)
-	}
+	own := self.ownNames(envelope)
 	kept := make([]string, 0, len(envelope.Headers))
 	for _, header := range envelope.Headers {
 		key, value := mailparse.SplitHeader(header)

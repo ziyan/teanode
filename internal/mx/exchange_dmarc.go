@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"mime"
 	"net"
@@ -167,9 +168,19 @@ const (
 	maximumReportSize    = 16 * 1024 * 1024
 	maximumReportRecords = 10000
 	maximumReportFiles   = 16
-	maximumReportLookups = 256
-	reportLookupTimeout  = 30 * time.Second
-	reportLookupWorkers  = 8
+
+	// And bounds on the message carrying them. The three above are each
+	// per report, and one message may hold as many reports as it has parts:
+	// sixteen compressed parts of nine thousand padded records each is a
+	// 1.2 MB message that decodes to 273 MB of heap and writes 144,000
+	// rows -- measured -- and the message size limit allows far more than
+	// sixteen. The address these arrive at is published in every DMARC
+	// record this server writes, so anybody may send one.
+	maximumReportsPerMessage = 32
+	maximumRecordsPerMessage = 20000
+	maximumReportLookups     = 256
+	reportLookupTimeout      = 30 * time.Second
+	reportLookupWorkers      = 8
 )
 
 // domainOfReportAddress is the domain whose report address a message came
@@ -231,6 +242,20 @@ func decodeReport(reader io.Reader) (*dmarc.Feedback, error) {
 
 func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dmarc.Feedback, error) {
 	var feedbacks []*dmarc.Feedback
+	records := 0
+	// kept is what a decoded report costs the message's budget, and says
+	// whether there is room for another.
+	kept := func(feedback *dmarc.Feedback) error {
+		if len(feedbacks) >= maximumReportsPerMessage {
+			return fmt.Errorf("the message carries more than %d reports", maximumReportsPerMessage)
+		}
+		records += len(feedback.Records)
+		if records > maximumRecordsPerMessage {
+			return fmt.Errorf("the message carries more than %d records", maximumRecordsPerMessage)
+		}
+		feedbacks = append(feedbacks, feedback)
+		return nil
+	}
 	if err := mailparse.TraverseParts(headers, body, func(header textproto.MIMEHeader, reader io.Reader) error {
 		mediaType, _, err := mime.ParseMediaType(header.Get("Content-Type"))
 		if err != nil {
@@ -258,8 +283,7 @@ func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dm
 				if err != nil {
 					return err
 				}
-				feedbacks = append(feedbacks, feedback)
-				return nil
+				return kept(feedback)
 			}()
 		case "application/zip":
 			data, err := io.ReadAll(reader)
@@ -285,8 +309,7 @@ func (self *exchange) decodeDmarcFeedbacks(headers []string, body []byte) ([]*dm
 					if err != nil {
 						return err
 					}
-					feedbacks = append(feedbacks, feedback)
-					return nil
+					return kept(feedback)
 				}(file); err != nil {
 					return err
 				}

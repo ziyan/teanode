@@ -1,6 +1,7 @@
 package mx
 
 import (
+	"crypto/tls"
 	"strings"
 	"testing"
 
@@ -40,6 +41,47 @@ func TestAForgedAuthenticationResultsHeaderIsRemovedOnArrival(t *testing.T) {
 	}
 	if kept[1] != "From: someone@example.net\r\n" {
 		t.Errorf("From was not kept: %q", kept)
+	}
+}
+
+// And the sender does not get to choose which names count as this server's.
+//
+// The set of "our own names" began with the name this server stamps, which
+// prefers whatever the client asked for in its TLS hello. So a sender who
+// picked their own name was the one sender whose forgery survived: they could
+// leave behind a header naming the real mail host, saying whatever they liked
+// about DKIM and DMARC, and it travelled with the message to every reader
+// after this one.
+func TestAChosenServerNameDoesNotSaveAForgedHeader(t *testing.T) {
+	t.Parallel()
+
+	exchange := &exchange{
+		config:    servedConfiguration(t),
+		settings:  &Settings{Server: "mail.primary.test"},
+		directory: directory{source: servedDomains()},
+	}
+	envelope := &mailparse.Envelope{
+		Sender:     "someone@example.net",
+		Recipients: []string{"someone@other.test"},
+		// The name the sender asked for, which is not one of ours.
+		TLS: &tls.ConnectionState{ServerName: "attacker.chosen.test"},
+		Headers: []string{
+			// Naming the host this domain's mail actually arrives at,
+			// which is what a reader downstream would believe.
+			"Authentication-Results: mx.other.test; dkim=pass header.d=bank.test dmarc=pass header.from=bank.test\r\n",
+			"From: someone@example.net\r\n",
+		},
+	}
+	kept := exchange.withoutOwnAuthenticationResults(envelope)
+	for _, header := range kept {
+		if strings.HasPrefix(header, "Authentication-Results:") {
+			t.Fatalf("a header claiming to be ours is removed whatever the sender called us: %q", kept)
+		}
+	}
+
+	// A name this server does own is still recognised.
+	if names := exchange.ownNames(envelope); len(names) < 2 {
+		t.Fatalf("this server knows what it is called: %q", names)
 	}
 }
 

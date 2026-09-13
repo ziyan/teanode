@@ -41,6 +41,13 @@ Notable changes to TeaNode. The format follows
 - A chat bot's token, a mail program's password and a skill's secret no
   longer reach the log, the database or the model that is being talked to.
 
+- One message can no longer carry an unbounded number of compressed DMARC
+  reports, which a stranger could use to spend the server's memory.
+
+- A sender who chooses their own name in the TLS handshake can no longer leave
+  behind a forged statement about who checked their mail. It named the real
+  mail host and travelled with the message to everybody after this server.
+
 ## [0.21.0] - 2026-09-13
 
 ### Added
