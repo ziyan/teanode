@@ -120,6 +120,9 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 
 		// And one per shape the calendar page sends.
 		"the calendars": `query { ListCalendars { id name description colour timezone events } }`,
+		"where a device connects": `query {
+  GetMailProgramSettings { imapHost imapPort imapsPort submissionHost submissionPort davHost }
+}`,
 		"what is on": `query ($calendarId: String!, $from: String!, $until: String!) {
   ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
     id calendarId uid summary location startsAt endsAt allDay recurring occurrence status

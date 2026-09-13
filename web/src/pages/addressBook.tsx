@@ -329,7 +329,6 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
   return (
     <>
       <h3>{t('addressBook.title')}</h3>
-      <p className="muted">{t('addressBook.hint')}</p>
       <div className="page-actions">
         <button
           className="primary"
