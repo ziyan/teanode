@@ -142,6 +142,13 @@ type AgentSchedule struct {
 	Cron   string `json:"cron"`
 	Prompt string `json:"prompt"`
 
+	// WrittenBy is who wrote that prompt: the person, or the agent through
+	// a tool. A schedule runs with nobody watching and its prompt arrives
+	// as the user turn, which is the most trusted thing in a conversation
+	// -- right for the person's own standing instruction, and wrong for one
+	// the agent wrote on the strength of something it read.
+	WrittenBy string `json:"writtenBy,omitempty"`
+
 	// Deliver is where the answer goes: mail, to the account's
 	// notification address, or drawer, into the main conversation.
 	Deliver string `json:"deliver"`
@@ -149,6 +156,23 @@ type AgentSchedule struct {
 
 	LastRunAt *time.Time `json:"lastRunAt,omitempty"`
 	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
+}
+
+// Who wrote a schedule's prompt.
+const (
+	WrittenByPerson = "person"
+	WrittenByAgent  = "agent"
+)
+
+// KnownWriter is one of those two, or empty for anything else.
+func KnownWriter(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case WrittenByPerson:
+		return WrittenByPerson
+	case WrittenByAgent:
+		return WrittenByAgent
+	}
+	return ""
 }
 
 // Validate reports everything wrong with a schedule.

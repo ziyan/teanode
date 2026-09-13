@@ -41,6 +41,24 @@ Notable changes to TeaNode. The format follows
 - A chat bot's token, a mail program's password and a skill's secret no
   longer reach the log, the database or the model that is being talked to.
 
+- One message can no longer carry an unbounded number of compressed DMARC
+  reports, which a stranger could use to spend the server's memory.
+
+- A standing instruction the agent wrote for itself arrives as a note about
+  what to do rather than as your own words. It ran with nobody watching and
+  with everything the agent can reach, so a message that talked it into
+  writing one was a message that wrote your instructions.
+
+- What the agent may do with a tab you have attached is a list of what is
+  allowed rather than a list of what is not, and speaking the browser's
+  debugging protocol on your own tab asks you first. Four ways past the old
+  list reached the whole browser -- one of them wrote a file of its choosing
+  to a folder of its choosing.
+
+- A sender who chooses their own name in the TLS handshake can no longer leave
+  behind a forged statement about who checked their mail. It named the real
+  mail host and travelled with the message to everybody after this server.
+
 ## [0.21.0] - 2026-09-13
 
 ### Added

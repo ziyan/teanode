@@ -441,6 +441,7 @@ type agentScheduleModel struct {
 	Name       string     `gorm:"column:name"`
 	Cron       string     `gorm:"column:cron"`
 	Prompt     string     `gorm:"column:prompt"`
+	WrittenBy  string     `gorm:"column:written_by"`
 	Deliver    string     `gorm:"column:deliver"`
 	Enabled    bool       `gorm:"column:enabled"`
 	LastRunAt  *time.Time `gorm:"column:last_run_at"`
@@ -450,11 +451,11 @@ type agentScheduleModel struct {
 func (agentScheduleModel) TableName() string { return "agent_schedule" }
 
 func scheduleToModel(schedule *models.AgentSchedule) *agentScheduleModel {
-	return &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, Deliver: schedule.Deliver, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
+	return &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
 }
 
 func (self *agentScheduleModel) toModel() *models.AgentSchedule {
-	return &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, Deliver: self.Deliver, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
+	return &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
 }
 
 func (self *transaction) CreateAgentSchedule(schedule *models.AgentSchedule) (*models.AgentSchedule, error) {
@@ -470,6 +471,12 @@ func (self *transaction) CreateAgentSchedule(schedule *models.AgentSchedule) (*m
 	created.ModifiedAt = created.CreatedAt
 	if created.Deliver == "" {
 		created.Deliver = "drawer"
+	}
+	// The person's, unless whoever wrote it said otherwise. A schedule made
+	// before this was recorded was made from the dashboard or the command
+	// line, which is the person.
+	if models.KnownWriter(created.WrittenBy) == "" {
+		created.WrittenBy = models.WrittenByPerson
 	}
 	if err := self.tx.Create(scheduleToModel(&created)).Error; err != nil {
 		return nil, err

@@ -94,7 +94,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}
 		var created *models.AgentSchedule
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, Prompt: arguments.Prompt, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: &next})
+			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: &next})
 			return err
 		}); err != nil {
 			return nil, err

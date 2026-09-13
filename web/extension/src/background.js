@@ -303,31 +303,51 @@ const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
 
-// What the protocol may be asked for. The line is not "the agent is
-// trusted" -- it is their agent and their tab -- but what the attached tab
-// is: everything the page's own origin can reach, plus real input and what
-// the page asks the network for. A handful of methods reach past that tab
-// into the whole browser, and those are refused however they are asked
-// for, because nothing about attaching one tab says yes to them.
-const CDP_REFUSED = [
-  // Every site's cookies, not this one's.
-  'Network.getAllCookies',
-  'Network.getCookies',
-  'Network.setCookie',
-  'Network.setCookies',
-  'Network.deleteCookies',
-  'Storage.getCookies',
-  'Storage.setCookies',
-  'Storage.clearCookies',
-  // Rewriting or holding the page's own requests, on a tab signed in as
-  // the person: a different thing from watching them.
-  'Fetch.',
-  // The browser itself rather than this page: downloads, permissions,
-  // other windows, other targets.
-  'Browser.',
-  'Target.',
-  'SystemInfo.',
-  'Tethering.',
+// What the protocol may be asked for, as a list of what is allowed.
+//
+// The line is not "the agent is trusted" -- it is their agent and their tab --
+// but what attaching one tab is: everything that tab's own origin can reach,
+// plus real input and what the page asks the network for. Anything that
+// reaches past the tab into the browser is not that.
+//
+// Written as a list of refusals it kept losing, because the protocol grows
+// every release and a refusal only covers what somebody thought of. Three
+// methods with exactly the reach the list describes were outside it:
+// Page.setDownloadBehavior -- the deprecated twin of the Browser. one, which
+// was refused -- writes a file of the caller's choosing to a directory of its
+// choosing, and Network.clearBrowserCookies, Network.clearBrowserCache and
+// Storage.clearDataForOrigin are the whole browser rather than this page. A
+// list of what is allowed cannot lose that way: something new is refused
+// until somebody decides otherwise.
+const CDP_ALLOWED = [
+  // Real input, which is what driving a page is.
+  'Input.',
+  // Watching what the page asks the network for, and reading a body back.
+  // Not Network.setCookie and friends, which are every site's cookies, and
+  // not the clearBrowser* pair, which are the whole browser.
+  'Network.enable',
+  'Network.disable',
+  'Network.getResponseBody',
+  'Network.getRequestPostData',
+  'Network.setCacheDisabled',
+  'Network.setExtraHTTPHeaders',
+  // The page itself: what it is, what it looks like, where it is going.
+  'Page.enable',
+  'Page.disable',
+  'Page.navigate',
+  'Page.reload',
+  'Page.captureSnapshot',
+  'Page.getLayoutMetrics',
+  'Page.getFrameTree',
+  'Page.getNavigationHistory',
+  // Reading and running in the page's own world, which evaluate already is.
+  'Runtime.',
+  'DOM.',
+  'DOMSnapshot.',
+  'CSS.',
+  'Accessibility.',
+  'Emulation.setEmulatedMedia',
+  'Log.',
 ]
 
 function cdpRefusal(method) {
@@ -335,13 +355,11 @@ function cdpRefusal(method) {
   if (!/^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$/.test(asked)) {
     return 'a method is written Domain.method, for example Input.dispatchMouseEvent'
   }
-  for (const refused of CDP_REFUSED) {
-    const matches = refused.endsWith('.') ? asked.startsWith(refused) : asked === refused
-    if (matches) {
-      return `${asked} reaches past this tab into the whole browser, which attaching one tab does not allow; what this page itself holds is reachable with storage, fetch and evaluate`
-    }
+  for (const allowed of CDP_ALLOWED) {
+    const matches = allowed.endsWith('.') ? asked.startsWith(allowed) : asked === allowed
+    if (matches) return ''
   }
-  return ''
+  return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
 }
 
 async function debuggerFor(tabId) {
