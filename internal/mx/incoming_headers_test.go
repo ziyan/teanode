@@ -112,3 +112,43 @@ func TestARuleDoesNotForwardAMessageBackWhereItHasBeen(t *testing.T) {
 		t.Error("a message that has crossed too many hosts was forwarded")
 	}
 }
+
+// The away reply goes to the envelope sender, and DMARC says nothing about
+// the envelope sender.
+//
+// A message may pass DMARC on its From domain while naming somebody else
+// entirely in MAIL FROM. Accepting it is right; answering it is a reflector,
+// because the answer is this server's own mail, signed by the operator's
+// domain, sent to a person who never wrote to anybody.
+func TestTheAwayReplyNeedsSomethingBehindTheAddressItAnswers(t *testing.T) {
+	t.Parallel()
+
+	// SPF passing for the envelope domain is the question "may this host
+	// send as that address", which is exactly what is being asked.
+	vouched := &models.Mail{Sender: "somebody@example.net", From: "somebody@example.net"}
+	vouched.AuthenticationResults.SPF = &models.SPFResult{Result: "pass"}
+	if reason := unvouchedSender(vouched, "somebody@example.net"); reason != "" {
+		t.Fatalf("SPF passing is enough: %s", reason)
+	}
+
+	// So is DMARC, when the envelope sender is the address DMARC aligned.
+	aligned := &models.Mail{Sender: "somebody@example.net", From: "somebody@example.net"}
+	aligned.AuthenticationResults.DMARC = &models.DMARCResult{Result: "pass"}
+	if reason := unvouchedSender(aligned, "somebody@example.net"); reason != "" {
+		t.Fatalf("the domain that authorized it is the one being written to: %s", reason)
+	}
+
+	// The reflector: DMARC passes for the attacker's own domain while the
+	// envelope names their victim.
+	reflected := &models.Mail{Sender: "victim@target.example", From: "attacker@evil.test"}
+	reflected.AuthenticationResults.DMARC = &models.DMARCResult{Result: "pass"}
+	if reason := unvouchedSender(reflected, "victim@target.example"); reason == "" {
+		t.Fatal("nothing vouched for the victim's address, so nothing is written to it")
+	}
+
+	// And a message with no authentication at all.
+	bare := &models.Mail{Sender: "somebody@example.net", From: "somebody@example.net"}
+	if reason := unvouchedSender(bare, "somebody@example.net"); reason == "" {
+		t.Fatal("an unauthenticated envelope sender is not written to either")
+	}
+}
