@@ -277,14 +277,28 @@ func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	// Whose calendar this is, by address, so that "which of these
-	// attendees is me" can be answered and an event they declined does not
-	// make them look busy.
+	// Whose calendar this is, by address, so that "which of these attendees
+	// is me" can be answered and an event they declined does not make them
+	// look busy.
+	//
+	// Every address of theirs, not just the mailbox this client signed in
+	// with: a calendar belongs to the account, and somebody with two
+	// mailboxes who declined a meeting under the other one was reported
+	// busy for a meeting they had said no to.
 	theirs := make(map[string]bool)
-	if signedIn.mailbox != nil {
-		for _, address := range signedIn.mailbox.Addresses {
-			theirs[strings.ToLower(strings.TrimSpace(address.Address))] = true
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		mailboxes, err := tx.ListMailboxes(signedIn.userID)
+		if err != nil {
+			return err
 		}
+		for _, mailbox := range mailboxes {
+			for _, address := range mailbox.Addresses {
+				theirs[strings.ToLower(strings.TrimSpace(address.Address))] = true
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("cannot read the addresses of a calendar's owner: %s", err)
 	}
 
 	var busy []calendar.Occurrence

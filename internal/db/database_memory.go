@@ -106,6 +106,7 @@ type MemoryOperation interface {
 	DeleteCalendarObject(calendarId, objectId string) error
 	CountCalendarObjects(calendarId string) (int64, error)
 	ListOccurrences(calendarId string, from, until time.Time) ([]*models.Occurrence, error)
+	ListCalendarObjectsRunningOut(before time.Time, limit int) ([]*models.CalendarObject, error)
 
 	// Invitations that arrived as mail. Delivery notes one and does no
 	// more; a worker claims it and reads the message afterwards, because

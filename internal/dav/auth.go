@@ -154,13 +154,24 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	// Reading and writing an address book is something a member does with
 	// their own account. An operator who takes the permission away from a
 	// role takes the phones with it.
+	// Each collection has its own permission, and the one that matters is
+	// the one being reached for. Checking only the address book's meant an
+	// operator who took calendar:use away from a role took it away from the
+	// dashboard and the agent and not from the phones -- which kept reading
+	// and writing, and would even have a calendar made for them on the way
+	// in. It also refused CalDAV to anyone who had calendar:use without
+	// contacts:use.
+	wanted, refusal := models.PermissionContactsUse, "this account does not keep an address book here"
+	if wantsCalendar(request.URL.Path) {
+		wanted, refusal = models.PermissionCalendarUse, "this account does not keep a calendar here"
+	}
 	allowed := false
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
 		permissions, err := tx.EffectivePermissions(signedIn.userID)
 		if err != nil {
 			return err
 		}
-		allowed = permissions.Has(models.PermissionContactsUse)
+		allowed = permissions.Has(wanted)
 		return nil
 	}); err != nil {
 		log.Errorf("cannot read what a DAV caller may do: %s", err)
@@ -168,10 +179,24 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		return nil, false
 	}
 	if !allowed {
-		http.Error(response, "this account does not keep an address book here", http.StatusForbidden)
+		http.Error(response, refusal, http.StatusForbidden)
 		return nil, false
 	}
 	return signedIn, true
+}
+
+// wantsCalendar is whether a path reaches into the calendars rather than the
+// address books.
+//
+// The principal itself is neither, and is left to the address book's
+// permission: it is the one page a client reads before it knows what this
+// server has, and refusing it would leave a calendar client with nothing to
+// discover even where it is allowed the calendar. What it advertises is
+// filtered separately.
+func wantsCalendar(path string) bool {
+	rest := strings.Trim(strings.TrimPrefix(path, Prefix), "/")
+	segments := strings.Split(rest, "/")
+	return len(segments) > 1 && segments[1] == calendarsSegment
 }
 
 func (self *component) askForCredentials(response http.ResponseWriter) {

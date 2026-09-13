@@ -200,11 +200,13 @@ func runCalendarList(ctx context.Context, command *cli.Command) error {
 	for _, event := range events {
 		when, ends := "", ""
 		if starts, err := time.Parse(time.RFC3339, event.StartsAt); err == nil {
-			local := starts.In(where)
 			if event.AllDay {
-				when = local.Format("2006-01-02") + " (all day)"
+				// Its own date, read from the parts the server wrote: a
+				// birthday belongs to the day everywhere, and putting it
+				// through a zone names the day before west of Greenwich.
+				when = starts.UTC().Format("2006-01-02") + " (all day)"
 			} else {
-				when = local.Format("2006-01-02 15:04")
+				when = starts.In(where).Format("2006-01-02 15:04")
 			}
 		}
 		if finish, err := time.Parse(time.RFC3339, event.EndsAt); err == nil && !event.AllDay {
@@ -251,7 +253,7 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 	if starts, err := time.Parse(time.RFC3339, event.StartsAt); err == nil {
 		local := starts.In(where)
 		if event.AllDay {
-			fmt.Printf("  %s, all day\n", local.Format("Monday, 2 January 2006"))
+			fmt.Printf("  %s, all day\n", starts.UTC().Format("Monday, 2 January 2006"))
 		} else {
 			finish := ""
 			if ends, err := time.Parse(time.RFC3339, event.EndsAt); err == nil {
@@ -332,6 +334,15 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar) (*client.S
 		moment, err := momentIn(given, where)
 		if err != nil {
 			return nil, err
+		}
+		// A whole-day event is a date, so it is sent as one: midnight UTC.
+		// Sent as midnight where the person is, it arrives as the day
+		// before for everybody east of Greenwich -- the same trap the
+		// dashboard documents and avoids.
+		if command.Bool("all-day") {
+			written := moment.Format("2006-01-02") + "T00:00:00Z"
+			*field = &written
+			continue
 		}
 		written := moment.UTC().Format(time.RFC3339)
 		*field = &written

@@ -144,10 +144,15 @@ func (self *transaction) FinishCalendarInvitation(invitation *models.CalendarInv
 	if invitation == nil || strings.TrimSpace(invitation.ID) == "" {
 		return fmt.Errorf("db: which invitation")
 	}
+	// Cut to the columns rather than handed over whole. A message may carry
+	// an identifier or an organizer longer than anything real, and a write
+	// that fails on the length leaves the row waiting -- to be claimed again
+	// every few minutes, for ever, re-reading the same message. Twenty of
+	// those starve every real invitation on the server.
 	updates := map[string]any{
-		"status": string(invitation.Status), "error": invitation.Error,
-		"method": invitation.Method, "uid": invitation.UID,
-		"sequence": invitation.Sequence, "organizer": invitation.Organizer,
+		"status": string(invitation.Status), "error": truncateRunes(invitation.Error, 2000),
+		"method": truncateRunes(invitation.Method, 32), "uid": truncateRunes(invitation.UID, 255),
+		"sequence": invitation.Sequence, "organizer": truncateRunes(invitation.Organizer, 320),
 		"modified_at": time.Now(), "not_before": invitation.NotBefore,
 	}
 	if invitation.CalendarID != "" {

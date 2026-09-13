@@ -439,3 +439,143 @@ func TestARuleThatNeverEndsIsBounded(t *testing.T) {
 		t.Fatalf("bounded at %d, got %d", MaximumOccurrences, len(occurrences))
 	}
 }
+
+// A zone named the way Microsoft names them is read from the description the
+// file carries, not from this machine's table.
+//
+// Exchange and Outlook write "W. Europe Standard Time" rather than
+// "Europe/Berlin", and the library resolves a TZID with LoadLocation and
+// ignores the VTIMEZONE beside it. That failed quietly: the moment came back
+// as the zero time, the event was stored starting in the year one, and it
+// then appeared in no window anybody ever asked about -- not the calendar,
+// not free-busy, not a phone. It is the commonest inbound invitation there is.
+func TestAZoneThisMachineDoesNotKnowIsReadFromTheFile(t *testing.T) {
+	written := exchangeEvent("W. Europe Standard Time", "20260310T100000", nil)
+	parsed := mustParse(t, written)
+	if parsed.StartsAt.IsZero() {
+		t.Fatal("the start has to be readable")
+	}
+	// The tenth of March is the winter side of the European change, so the
+	// offset is one hour: ten o'clock local is nine o'clock UTC.
+	if got := parsed.StartsAt.Format(time.RFC3339); got != "2026-03-10T09:00:00Z" {
+		t.Fatalf("ten o'clock in that zone: %s", got)
+	}
+	if got := parsed.EndsAt.Sub(parsed.StartsAt); got != time.Hour {
+		t.Fatalf("an hour long: %v", got)
+	}
+}
+
+// And a repeat in such a zone still keeps its hour when the clocks change.
+func TestARepeatInAZoneFromTheFileKeepsItsHour(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skipf("this machine has no zone database: %v", err)
+	}
+	written := exchangeEvent("W. Europe Standard Time", "20260316T100000",
+		[]string{"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"})
+	parsed := mustParse(t, written)
+	occurrences, err := Occurrences(parsed,
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(occurrences) != 4 {
+		t.Fatalf("four Mondays: %d %v", len(occurrences), err)
+	}
+	offsets := map[string]bool{}
+	for _, occurrence := range occurrences {
+		local := occurrence.StartsAt.In(berlin)
+		if got := local.Format("15:04"); got != "10:00" {
+			t.Fatalf("%s was at %s in Berlin", local.Format("2006-01-02"), got)
+		}
+		offsets[local.Format("-0700")] = true
+	}
+	// The clocks changed inside that span, so this tested something.
+	if len(offsets) != 2 {
+		t.Fatalf("the offset never changed, so this proved nothing: %v", offsets)
+	}
+}
+
+// exchangeEvent is a file shaped the way Exchange writes one: a zone named its
+// way, described in full beside the event.
+func exchangeEvent(tzid, start string, extra []string) []byte {
+	lines := []string{
+		"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Microsoft Exchange Server 2019//EN",
+		"BEGIN:VTIMEZONE", "TZID:" + tzid,
+		"BEGIN:STANDARD", "DTSTART:16011028T030000", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100",
+		"RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10", "END:STANDARD",
+		"BEGIN:DAYLIGHT", "DTSTART:16010325T020000", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0200",
+		"RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3", "END:DAYLIGHT",
+		"END:VTIMEZONE",
+		"BEGIN:VEVENT", "UID:from-exchange", "DTSTAMP:20260912T120000Z",
+		"DTSTART;TZID=" + tzid + ":" + start,
+		"DTEND;TZID=" + tzid + ":" + start[:9] + "110000",
+		"SUMMARY:From Exchange",
+	}
+	lines = append(lines, extra...)
+	return crlf(append(lines, "END:VEVENT", "END:VCALENDAR")...)
+}
+
+// A rule that repeats for ever is bounded in the work it costs, not only in
+// what it returns.
+//
+// Between builds the whole list before handing it back, so a cap applied to
+// the result limited the answer and not the work: "every second" over the
+// stretch this server indexes is ninety million moments built in memory. One
+// message carrying that rule was enough to take the server down, and it
+// needed no account -- an invitation from any sender reaches this.
+func TestARuleThatRepeatsForEverIsBoundedInWorkNotJustInAnswer(t *testing.T) {
+	parsed := mustParse(t, wrap(
+		"UID:spin", "DTSTAMP:20260912T120000Z",
+		"DTSTART:20260101T000000Z", "DTEND:20260101T000100Z",
+		"RRULE:FREQ=SECONDLY", "SUMMARY:Every second, for ever"))
+
+	// A window years wide, asked for the way the index asks for it. If the
+	// work were proportional to the rule rather than to the bound this
+	// would allocate gigabytes; the deadline is what says it does not.
+	done := make(chan int, 1)
+	go func() {
+		occurrences, err := Occurrences(parsed,
+			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2029, 1, 1, 0, 0, 0, 0, time.UTC))
+		if err != nil {
+			done <- -1
+			return
+		}
+		done <- len(occurrences)
+	}()
+	select {
+	case got := <-done:
+		if got != MaximumOccurrences {
+			t.Fatalf("bounded at %d, got %d", MaximumOccurrences, got)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("expanding a rule that repeats every second did not finish")
+	}
+}
+
+// A whole-day event given the same date at both ends lasts the day.
+//
+// The format writes the end of a date range as the day after, so equal dates
+// mean no time at all: the event fell out of every window that asked for it,
+// including the day view of the day it was on. A form that offers one date
+// sends exactly this.
+func TestAWholeDayEventWithOneDateLastsTheDay(t *testing.T) {
+	built, err := Build(nil, &Fields{
+		Summary:  text("Moving day"),
+		StartsAt: moment(2026, time.March, 15, 0, 0),
+		EndsAt:   moment(2026, time.March, 15, 0, 0),
+		AllDay:   flag(true),
+	})
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	if got := built.EndsAt.Sub(built.StartsAt); got != 24*time.Hour {
+		t.Fatalf("a day: %v", got)
+	}
+	// And it is found by a window covering that day.
+	occurrences, err := Occurrences(built,
+		time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(occurrences) != 1 {
+		t.Fatalf("on the day it is on: %d %v", len(occurrences), err)
+	}
+}

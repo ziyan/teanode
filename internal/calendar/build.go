@@ -296,9 +296,13 @@ func setWhen(cal *ical.Calendar, event *ical.Event, fields *Fields) error {
 	if starts.IsZero() {
 		return fmt.Errorf("calendar: an event has to start somewhere")
 	}
-	if ends.IsZero() || ends.Before(starts) {
-		// Nothing said, or something impossible said. An hour is what a
-		// calendar means by an appointment, and a day by an all-day one.
+	if ends.IsZero() || !ends.After(starts) {
+		// Nothing said, or something impossible said, or -- for a whole-day
+		// event -- the same date at both ends, which is how a form that
+		// offers one date sends a single day. The format writes the end of
+		// a date range as the day after, so equal ends means nothing at
+		// all: the event occupied no time and fell out of every window
+		// that asked for it.
 		if allDay {
 			ends = starts.Add(24 * time.Hour)
 		} else {

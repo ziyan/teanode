@@ -72,6 +72,38 @@ calendar — the dashboard and CalDAV — index over the same one, because two
 doors that disagreed would give a calendar whose contents depended on which one
 last touched it. The horizon lives in `calendar.Indexed`.
 
+**And it is moved.** The horizon is set when an event is written, so a standing
+meeting saved today simply stopped appearing two years from now — everywhere
+the index is read, while the event itself was still there to fetch. A repeat
+starting past the horizon was never indexed at all. The scheduler extends the
+repeats that are running out, nearest horizon first, a few at a time; there is
+no hurry, since what is being fixed is a year away.
+
+Expansion is bounded in the work it costs, not only in what it returns. Asking
+the rule library for a window builds the whole list before handing it back, so
+a cap on the result was no cap at all: `FREQ=SECONDLY` over the stretch this
+server indexes is ninety million moments built in memory, and one message
+carrying that rule was enough to take the server down — from any sender, with
+no account. Occurrences are pulled one at a time now, so the bound is on what
+is done.
+
+## Zones a machine has never heard of
+
+The library resolves a `TZID` with `time.LoadLocation` and ignores the
+`VTIMEZONE` beside it. That works for `Europe/Berlin` and fails for everything
+Microsoft writes — `W. Europe Standard Time`, `Pacific Standard Time` — which
+is the commonest inbound invitation there is.
+
+It failed quietly, which was the bad part: the moment came back as the zero
+time, the event was stored starting in the year one, and it then appeared in no
+window anybody ever asked about — not the calendar page, not the agent, not
+free-busy, not a phone — while a fetch of the event itself still returned it.
+
+So where the name means nothing, the description in the file is used instead. A
+recurrence in such a zone is expanded as wall-clock times and given the offset
+back one occurrence at a time, which keeps ten o'clock at ten through a change
+of offset — the rule works in wall clock, which is what it means.
+
 ## Recurrence, and the three ways to get it wrong
 
 Every one of them shows somebody a meeting that is not happening.
@@ -153,19 +185,30 @@ So a row is written for every delivered message and most come to nothing; those
 are swept up after a couple of days, because a row per message ever delivered
 is a second copy of the mail table nobody reads.
 
-Four things are refused, and each is a way for a stranger with an address to
-change what somebody believes about their own week:
+**Every claim the file makes about who is speaking is checked against the
+address the message came from**, which DMARC has proven is theirs to use. This
+took two goes to get right. The first version compared the `ORGANIZER` line in
+the arriving file against the `ORGANIZER` line in the stored one — which is the
+sender marking their own homework, since both are written by whoever sent the
+message. Anyone ever forwarded an invitation could copy the organizer's name
+out of it and cancel the meeting for everybody.
+
+So, in order:
 
 - a message that did not prove where it came from is not an invitation;
-- a request carrying a lower `SEQUENCE` than what is already held is an older
-  copy arriving late, and mail is not ordered;
-- a cancellation is honoured only from the organizer the event already names,
-  and it marks the event rather than deleting it — being told a meeting is off
-  is the useful part;
-- a reply changes exactly one thing, what that person said. A reply carries the
-  organizer's own words echoed back, and a program that trusted them would let
-  an invitee rewrite the meeting by answering it. An answer from somebody never
-  invited is refused rather than added to the guest list.
+- an invitation is acted on only when its organizer *is* the sender;
+- an event already held may be changed only by the organizer it already names,
+  again matched against the sender — otherwise anybody the file reached could
+  rewrite the time and the title, with nothing kept to recover from;
+- a request carrying a lower `SEQUENCE` than what is held is an older copy
+  arriving late, and mail is not ordered;
+- a cancellation is honoured only from the organizer the event names, and it
+  marks the event rather than deleting it — being told a meeting is off is the
+  useful part;
+- a reply changes what *the sender* said and nothing else. A reply carries
+  attendee lines, and applying all of them let one message mark several other
+  people as not coming. An answer from somebody the event does not invite is
+  refused rather than added to the guest list.
 
 ## Invitations leaving
 
@@ -194,6 +237,13 @@ collection asked for without its slash with a redirect — and an HTTP client
 turns a redirect into a `GET`, so a `PROPFIND` arrives as a `GET` and is
 refused. The whole mount is one route with the boundary checked in Go, and
 there is a test that fails if anybody makes it redirectable.
+
+**Each collection has its own permission.** `contacts:use` for the address
+books, `calendar:use` for the calendars, chosen from the path. Checking only
+the first meant an operator who took `calendar:use` away from a role took it
+from the dashboard and the agent and not from the phones. The principal
+advertises only the home sets the account may actually reach, because telling a
+phone about a collection it is then refused sends it round a loop.
 
 **The file name is the client's.** It is unique only within one collection, and
 it is wide: a phone names a file after its UID, which is a 36-character UUID.

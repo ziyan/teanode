@@ -125,8 +125,62 @@ func (self *Scheduler) Tick(ctx context.Context) error {
 		self.read(ctx, invitation)
 	}
 	self.sweep(ctx)
+	self.reindex(ctx)
 	return nil
 }
+
+// indexedAhead is how close to running out a repeat may get before its
+// occurrences are worked out further.
+//
+// Comfortably inside the horizon the index is written to, so a standing
+// meeting is extended long before anybody could scroll to the end of it.
+const indexedAhead = 300 * 24 * time.Hour
+
+// reindexPerTick bounds the work: extending a repeat costs an expansion and a
+// write, and there is no hurry -- what is being fixed is a year away.
+const reindexPerTick = 20
+
+// reindex works out further occurrences for the repeats that are running out.
+//
+// The index reaches a horizon set when an event was written, and nothing
+// moved it: a weekly meeting saved today stopped appearing two years from
+// now, everywhere the index is read -- the calendar page, the agent, free-busy
+// and what a phone is told -- while the event itself was still there. A
+// repeat whose start was past the old horizon was never indexed at all.
+func (self *Scheduler) reindex(ctx context.Context) {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		running, err := tx.ListCalendarObjectsRunningOut(time.Now().Add(indexedAhead), reindexPerTick)
+		if err != nil {
+			return err
+		}
+		for _, object := range running {
+			parsed, err := calendar.Parse([]byte(object.Data))
+			if err != nil {
+				// Kept text that cannot be read is this server's problem,
+				// and re-reading it every tick would say so every tick.
+				log.Debugf("a kept event could not be read to extend it: %s", err)
+				continue
+			}
+			occurrences, err := indexed(parsed)
+			if err != nil {
+				log.Debugf("a repeat could not be worked out further: %s", err)
+				continue
+			}
+			if _, err := tx.PutCalendarObject(object, occurrences); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("the repeats that are running out could not be extended: %s", err)
+	}
+}
+
+// retryAfter is how long to wait before reading a message again after a
+// failure, doubled on each attempt. The first wait is short because most
+// failures are a moment of storage being busy; the last is long enough to
+// outlive an outage rather than spending every attempt inside one.
+const retryAfter = 30 * time.Second
 
 // keptAfterNothing is how long a message that carried no invitation is
 // remembered. Long enough that a worker restarting does not read the same
@@ -154,6 +208,15 @@ func (self *Scheduler) read(ctx context.Context, invitation *models.CalendarInvi
 	if err != nil {
 		invitation.Status = models.CalendarInvitationWaiting
 		invitation.Error = err.Error()
+		// Waited on before it is tried again, and for longer each time.
+		// Claiming set this in the database, but the row in hand still
+		// carried what it had before -- nil -- and finishing wrote that
+		// back, so a failure was claimable again on the next tick. Storage
+		// being unreachable for three minutes burnt every attempt and lost
+		// the invitation for good.
+		wait := retryAfter << min(invitation.Attempts, 5)
+		when := time.Now().Add(wait)
+		invitation.NotBefore = &when
 		if invitation.Attempts >= db.MaximumInvitationAttempts {
 			// A message that cannot be read will not become readable.
 			invitation.Status = models.CalendarInvitationIgnored
@@ -236,13 +299,23 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 		return ignored("the message did not prove where it came from")
 	}
 
+	// Who actually sent it. DMARC proves the From domain is theirs to use,
+	// so this is the one identity in the message worth anything -- and every
+	// claim the file makes about who is speaking is checked against it.
+	// Without that the checks below are the sender marking their own
+	// homework: an attacker writes whatever ORGANIZER makes it work.
+	sender := strings.ToLower(strings.TrimSpace(mail.From))
+	if !strings.Contains(sender, "@") {
+		return ignored("the message does not say who it is from")
+	}
+
 	switch parsed.Method {
 	case models.CalendarMethodRequest:
-		return self.request(ctx, invitation, parsed)
+		return self.request(ctx, invitation, parsed, sender)
 	case models.CalendarMethodCancel:
-		return self.callOff(ctx, invitation, parsed)
+		return self.callOff(ctx, invitation, parsed, sender)
 	case models.CalendarMethodReply:
-		return self.reply(ctx, invitation, parsed)
+		return self.reply(ctx, invitation, parsed, sender)
 	}
 	return ignored("this server does not act on %s", parsed.Method)
 }
@@ -262,7 +335,13 @@ func (self *Scheduler) calendarFor(tx db.Transaction, userId string) (*models.Ca
 
 // request is somebody asking this person to a meeting.
 func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarInvitation,
-	parsed *calendar.Parsed) (*outcome, error) {
+	parsed *calendar.Parsed, sender string) (*outcome, error) {
+	// An invitation is from the person calling the meeting. One that names
+	// somebody else as the organizer is either forwarded -- in which case it
+	// is not an invitation to this person -- or forged.
+	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) {
+		return ignored("an invitation from somebody who is not its organizer")
+	}
 	result := &outcome{
 		status: models.CalendarInvitationRead, method: parsed.Method,
 		uid: parsed.UID, sequence: parsed.Sequence, organizer: parsed.Organizer,
@@ -278,12 +357,23 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 			return err
 		}
 		if existing != nil {
+			held, err := calendar.Parse([]byte(existing.Data))
+			// And only the organizer the event already names may change
+			// it. Without this, anybody the file was ever forwarded to
+			// could rewrite the time and the title of a meeting somebody
+			// else called, with nothing kept to recover from.
+			if err == nil && held.Organizer != "" &&
+				!strings.EqualFold(held.Organizer, sender) {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "a change to an event from somebody who is not its organizer"
+				result.objectId = existing.ID
+				return nil
+			}
 			// An organizer increments the sequence each time they change
 			// an event. One carrying a lower number than what is already
 			// held is an older copy arriving late -- mail is not ordered
 			// -- and acting on it would undo a change the person has
 			// already seen.
-			held, err := calendar.Parse([]byte(existing.Data))
 			if err == nil && parsed.Sequence < held.Sequence {
 				result.status = models.CalendarInvitationIgnored
 				result.because = "an older version of an event already here"
@@ -320,7 +410,7 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 // callOff is the organizer calling a meeting off. Not named cancel: that
 // is the context's, and a field and a method cannot share a name.
 func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarInvitation,
-	parsed *calendar.Parsed) (*outcome, error) {
+	parsed *calendar.Parsed, sender string) (*outcome, error) {
 	result := &outcome{
 		status: models.CalendarInvitationRead, method: parsed.Method,
 		uid: parsed.UID, sequence: parsed.Sequence, organizer: parsed.Organizer,
@@ -349,7 +439,11 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 		if err != nil {
 			return fmt.Errorf("a kept event could not be read back: %w", err)
 		}
-		if held.Organizer == "" || !strings.EqualFold(held.Organizer, parsed.Organizer) {
+		// Against the sender, not against the ORGANIZER line in the message
+		// -- that line is written by whoever sent it, so comparing the two
+		// only proved the attacker could copy a name out of an invitation
+		// they had been forwarded.
+		if held.Organizer == "" || !strings.EqualFold(held.Organizer, sender) {
 			result.status = models.CalendarInvitationIgnored
 			result.because = "a cancellation from somebody who is not the organizer"
 			return nil
@@ -383,7 +477,7 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 
 // reply is somebody this person invited saying whether they are coming.
 func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInvitation,
-	parsed *calendar.Parsed) (*outcome, error) {
+	parsed *calendar.Parsed, sender string) (*outcome, error) {
 	result := &outcome{
 		status: models.CalendarInvitationRead, method: parsed.Method,
 		uid: parsed.UID, sequence: parsed.Sequence, organizer: parsed.Organizer,
@@ -407,7 +501,21 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 		// A reply carries the answering attendee's own line and nothing
 		// else worth keeping, so what is applied is exactly that: their
 		// participation, onto the event already held.
-		updated, err := calendar.Answer([]byte(existing.Data), parsed.Attendees)
+		// Only for themselves. A reply carries attendee lines, and taking
+		// all of them meant anybody who could send mail could mark anybody
+		// else as not coming -- several at once, in one message.
+		var theirs []calendar.Attendee
+		for _, attendee := range parsed.Attendees {
+			if strings.EqualFold(strings.TrimSpace(attendee.Address), sender) {
+				theirs = append(theirs, attendee)
+			}
+		}
+		if len(theirs) == 0 {
+			result.status = models.CalendarInvitationIgnored
+			result.because = "an answer on behalf of somebody else"
+			return nil
+		}
+		updated, err := calendar.Answer([]byte(existing.Data), theirs)
 		if err != nil {
 			result.status = models.CalendarInvitationIgnored
 			result.because = err.Error()

@@ -186,7 +186,9 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		starts, ends := moments(entry, where)
 		row := map[string]any{"what": entry.Summary}
 		if entry.AllDay {
-			row["day"] = starts.Format("2006-01-02")
+			// Its own date rather than what it becomes in a zone, which
+			// names the day before west of Greenwich.
+			row["day"] = parsedStart(entry).UTC().Format("2006-01-02")
 		} else {
 			row["starts"] = starts.Format("2006-01-02 15:04")
 			row["ends"] = ends.Format("15:04")
@@ -213,6 +215,15 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// information, not this server's word.
 	result.Untrusted = true
 	return result, nil
+}
+
+// parsedStart is the moment an entry begins, as it was written.
+func parsedStart(entry occurrence) time.Time {
+	starts, err := time.Parse(time.RFC3339, entry.StartsAt)
+	if err != nil {
+		return time.Time{}
+	}
+	return starts
 }
 
 func moments(entry occurrence, where *time.Location) (time.Time, time.Time) {
@@ -385,6 +396,12 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	starts, err := momentOf(arguments.Starts, where, arguments.AllDay)
 	if err != nil {
 		return nil, err
+	}
+	if arguments.AllDay {
+		// A whole day is a date, the same date everywhere. Read in the
+		// person's own zone and then sent as a moment, it arrives as the
+		// day before for everybody east of Greenwich.
+		starts = time.Date(starts.Year(), starts.Month(), starts.Day(), 0, 0, 0, 0, time.UTC)
 	}
 	ends := starts.Add(time.Hour)
 	if arguments.AllDay {

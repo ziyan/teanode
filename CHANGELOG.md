@@ -51,6 +51,28 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- Invitations arriving as mail are now checked against the address the message
+  came from rather than against what the message says about itself. Before,
+  anybody who had been forwarded an invitation could cancel the meeting for
+  everybody, rewrite an event you were holding, or mark other guests as not
+  coming.
+
+- An invitation from Outlook or Exchange no longer disappears. Those name time
+  zones their own way, and an event in one was stored starting in the year one
+  and then showed up nowhere -- not your calendar, not free-busy, not your
+  phone -- while still being there to fetch.
+
+- A repeating event with no end no longer stops appearing two years on: the
+  times it happens are worked out further as they run out.
+
+- A repeat that fires every second no longer takes the server down when it
+  arrives by mail.
+
+- `calendar:use` is now what governs the calendar over CalDAV, so taking it
+  away from a role takes the phones with it, and an account with a calendar and
+  no address book is no longer refused.
+
+
 - A domain's link host may now name the port it is reached on --
   `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other
   than the usual port. The addresses this server writes into mail, such as the

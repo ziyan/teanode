@@ -165,16 +165,28 @@ func Parse(data []byte) (*Parsed, error) {
 		parsed.AllDay = start.ValueType() == ical.ValueDate
 		parsed.Timezone = strings.TrimSpace(start.Params.Get(ical.ParamTimezoneID))
 	}
-	// Read in UTC. A property carrying its own TZID is resolved by the
-	// library from the VTIMEZONE beside it, and only one that carries
-	// neither a zone nor a Z falls back to this -- which is what a "floating"
-	// time means, and treating it as UTC is the only choice that does not
-	// invent a zone the file did not name.
-	if start, err := event.DateTimeStart(time.UTC); err == nil {
-		parsed.StartsAt = start.UTC()
+	// Read in the zone the file names, and in UTC when it names none --
+	// which is what a "floating" time means, and treating it as UTC is the
+	// only choice that does not invent a zone the file did not give.
+	//
+	// The library resolves a TZID with time.LoadLocation and ignores the
+	// VTIMEZONE beside it, so a name this machine does not know -- every
+	// name Microsoft writes, "W. Europe Standard Time" and the rest -- came
+	// back as the zero time and was stored as an event in the year one,
+	// appearing in no window anybody ever asks about. Where that happens the
+	// description in the file is used instead.
+	starts, err := momentOf(decoded, event.Props.Get(ical.PropDateTimeStart), time.UTC)
+	if err != nil {
+		return nil, fmt.Errorf("calendar: that event's start cannot be read: %w", err)
 	}
-	if end, err := event.DateTimeEnd(time.UTC); err == nil {
-		parsed.EndsAt = end.UTC()
+	parsed.StartsAt = starts.UTC()
+	if ends, err := lengthOf(decoded, event, starts, time.UTC); err == nil {
+		parsed.EndsAt = ends.UTC()
+	}
+	if parsed.StartsAt.IsZero() {
+		// Nothing readable. Stored with no time would be an event that
+		// exists and can never be found, so it is refused instead.
+		return nil, fmt.Errorf("calendar: that event's start cannot be read")
 	}
 	if parsed.EndsAt.Before(parsed.StartsAt) {
 		// A file whose end precedes its start describes nothing. Rather
@@ -238,7 +250,16 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	if length < 0 {
 		length = 0
 	}
-	set, err := event.RecurrenceSet(time.UTC)
+	// A zone this machine cannot resolve is expanded as wall-clock times and
+	// given its offset back one occurrence at a time, which is what keeps
+	// ten o'clock at ten through a change of offset. Without it a recurring
+	// invitation from Exchange could not be expanded at all.
+	described := describedZone(event)
+	expanding := event
+	if described != "" {
+		expanding = wallClockCopy(event)
+	}
+	set, err := expanding.RecurrenceSet(time.UTC)
 	if err != nil {
 		return nil, fmt.Errorf("calendar: that event's recurrence cannot be read: %w", err)
 	}
@@ -258,7 +279,30 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 	// Tuesday wants to see the meeting that started on Monday night.
 	starting := from.Add(-maximumLength)
 	occurrences := make([]Occurrence, 0, 8)
-	for _, when := range set.Between(starting, until, true) {
+
+	// Walked one at a time rather than asked for the window in one go.
+	//
+	// Between builds the whole list before returning it, so the bound below
+	// would have limited the answer and not the work: "every second, for
+	// ever" over the stretch this server indexes is ninety million moments
+	// built in memory before a single one is thrown away. One email carrying
+	// that rule was enough to take the server down. Pulling them one by one
+	// means the bound is a bound on what is done, not on what is kept.
+	next := set.Iterator()
+	for seen := 0; seen < maximumSteps; seen++ {
+		when, ok := next()
+		if !ok {
+			break
+		}
+		if described != "" {
+			when = atOffsetIn(parsed.calendar, described, when)
+		}
+		if when.Before(starting) {
+			continue
+		}
+		if !when.Before(until) {
+			break
+		}
 		occurrence := Occurrence{
 			StartsAt: when.UTC(), EndsAt: when.Add(length).UTC(), AllDay: parsed.AllDay,
 		}
@@ -283,6 +327,16 @@ func Occurrences(parsed *Parsed, from, until time.Time) ([]Occurrence, error) {
 // person keeps reaches it -- a daily event fills eleven years -- and low
 // enough that one pathological rule cannot fill the memory of the server.
 const MaximumOccurrences = 4000
+
+// maximumSteps is how many moments a rule may be walked through before this
+// server stops, however few of them land in the window asked about.
+//
+// Separate from MaximumOccurrences, which bounds what is kept: a rule that
+// repeats every second inside a window that wants none of them does no work
+// worth keeping and unbounded work getting there. Ten times the cap leaves
+// room for a rule that genuinely steps past a great many -- an anniversary
+// among daily standups -- without letting one walk for ever.
+const maximumSteps = 10 * MaximumOccurrences
 
 // maximumLength is how far before a window an occurrence may have begun and
 // still be counted as inside it. A fortnight covers a conference or a

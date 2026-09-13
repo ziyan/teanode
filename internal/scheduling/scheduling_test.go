@@ -103,9 +103,16 @@ func newStage(t *testing.T) (*stage, func()) {
 // message somewhere the worker will never look.
 func (self *stage) deliver(t *testing.T, name string, passedDMARC bool, headers []string, body []byte) {
 	t.Helper()
+	self.deliverFrom(t, name, "grace@example.com", passedDMARC, headers, body)
+}
+
+// deliverFrom is the same, from a named sender: what the file claims about
+// who is speaking is checked against this, so it is the interesting variable.
+func (self *stage) deliverFrom(t *testing.T, name, from string, passedDMARC bool, headers []string, body []byte) {
+	t.Helper()
 	var mailId string
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
-		mail := &models.Mail{ReceivedAt: time.Now()}
+		mail := &models.Mail{ReceivedAt: time.Now(), From: from}
 		if passedDMARC {
 			mail.AuthenticationResults.DMARC = &models.DMARCResult{Result: "pass"}
 		} else {
@@ -174,7 +181,7 @@ func TestAnInvitationBecomesAnEvent(t *testing.T) {
 	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
 		"ORGANIZER:mailto:grace@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
-	here.deliver(t, "mail1", true, headers, body)
+	here.deliverFrom(t, "mail1", "grace@example.com", true, headers, body)
 	here.work(t)
 
 	invitation := here.invitation(t, "mail1")
@@ -227,13 +234,13 @@ func TestAnOlderVersionArrivingLateIsIgnored(t *testing.T) {
 	newer, newerBody := invitationMessage("REQUEST", "the-meeting", "Moved to the big room",
 		"SEQUENCE:5", "ORGANIZER:mailto:grace@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
-	here.deliver(t, "mail1", true, newer, newerBody)
+	here.deliverFrom(t, "mail1", "grace@example.com", true, newer, newerBody)
 	here.work(t)
 
 	older, olderBody := invitationMessage("REQUEST", "the-meeting", "The small room",
 		"SEQUENCE:2", "ORGANIZER:mailto:grace@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
-	here.deliver(t, "mail2", true, older, olderBody)
+	here.deliverFrom(t, "mail2", "grace@example.com", true, older, olderBody)
 	here.work(t)
 
 	events := here.events(t)
@@ -245,43 +252,30 @@ func TestAnOlderVersionArrivingLateIsIgnored(t *testing.T) {
 	}
 }
 
-// Only the organizer can call a meeting off. Anybody can send a message
-// saying one is cancelled, and taking their word for it is a way to delete
-// somebody's appointments by writing to them.
-func TestOnlyTheOrganizerCanCallItOff(t *testing.T) {
+// The organizer calling their own meeting off marks it rather than deleting
+// it: being told a meeting is off is the useful part.
+//
+// Whether a stranger can do it is decided by who sent the message, which
+// TestACancellationIsCheckedAgainstTheSenderNotTheFile covers; here the
+// organizer is the sender throughout.
+func TestTheOrganizerCanCallItOff(t *testing.T) {
 	here, done := newStage(t)
 	defer done()
 
 	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
 		"ORGANIZER:mailto:grace@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
-	here.deliver(t, "mail1", true, headers, body)
+	here.deliverFrom(t, "asked", "grace@example.com", true, headers, body)
 	here.work(t)
 
-	// From somebody else.
 	headers, body = invitationMessage("CANCEL", "the-meeting", "Planning",
-		"ORGANIZER:mailto:mallory@example.com")
-	here.deliver(t, "mail2", true, headers, body)
+		"ORGANIZER:mailto:grace@example.com")
+	here.deliverFrom(t, "off", "grace@example.com", true, headers, body)
 	here.work(t)
 
 	events := here.events(t)
-	if len(events) != 1 || events[0].Status == "CANCELLED" {
-		t.Fatalf("a stranger cannot call it off: %+v", events)
-	}
-	if got := here.invitation(t, "mail2"); got.Status != models.CalendarInvitationIgnored {
-		t.Fatalf("and it was left alone: %s %s", got.Status, got.Error)
-	}
-
-	// And from the organizer it works, and marks rather than deletes: the
-	// person is told the meeting is off, which is the useful thing.
-	headers, body = invitationMessage("CANCEL", "the-meeting", "Planning",
-		"ORGANIZER:mailto:grace@example.com")
-	here.deliver(t, "mail3", true, headers, body)
-	here.work(t)
-
-	events = here.events(t)
 	if len(events) != 1 || events[0].Status != "CANCELLED" {
-		t.Fatalf("the organizer called it off: %+v", events)
+		t.Fatalf("marked off rather than removed: %+v", events)
 	}
 }
 
@@ -294,13 +288,14 @@ func TestAnAnswerUpdatesTheOrganizersCopy(t *testing.T) {
 	headers, body := invitationMessage("REQUEST", "my-meeting", "Planning",
 		"ORGANIZER:mailto:alice@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:grace@example.com")
-	here.deliver(t, "mail1", true, headers, body)
+	here.deliverFrom(t, "mail1", "alice@example.com", true, headers, body)
 	here.work(t)
 
+	// Her own answer, from her.
 	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
 		"ORGANIZER:mailto:alice@example.com",
 		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:grace@example.com")
-	here.deliver(t, "mail2", true, headers, body)
+	here.deliverFrom(t, "mail2", "grace@example.com", true, headers, body)
 	here.work(t)
 
 	events := here.events(t)
@@ -328,13 +323,14 @@ func TestAnAnswerFromSomebodyNotInvitedChangesNothing(t *testing.T) {
 	headers, body := invitationMessage("REQUEST", "my-meeting", "Planning",
 		"ORGANIZER:mailto:alice@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:grace@example.com")
-	here.deliver(t, "mail1", true, headers, body)
+	here.deliverFrom(t, "mail1", "alice@example.com", true, headers, body)
 	here.work(t)
 
+	// Mallory answers for herself, and was never asked.
 	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
 		"ORGANIZER:mailto:alice@example.com",
 		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:mallory@example.com")
-	here.deliver(t, "mail2", true, headers, body)
+	here.deliverFrom(t, "mail2", "mallory@example.com", true, headers, body)
 	here.work(t)
 
 	parsed, err := calendar.Parse([]byte(here.events(t)[0].Data))
@@ -386,7 +382,7 @@ func TestARealInvitationIsNotSweptUp(t *testing.T) {
 	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
 		"ORGANIZER:mailto:grace@example.com",
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
-	here.deliver(t, "mail1", true, headers, body)
+	here.deliverFrom(t, "mail1", "grace@example.com", true, headers, body)
 	here.work(t)
 
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
@@ -398,4 +394,139 @@ func TestARealInvitationIsNotSweptUp(t *testing.T) {
 			t.Fatalf("a real invitation is kept: %d removed", removed)
 		}
 	})
+}
+
+// An invitation is acted on only when the person sending it is the organizer
+// it names.
+//
+// The organizer is a line in the sender's own attachment, so comparing it
+// against the organizer in another copy of the file only proved the sender
+// could copy a name out of something they had been forwarded. What ties the
+// claim to a person is the address the message came from, which DMARC has
+// already proven.
+func TestAnInvitationFromSomebodyWhoIsNotTheOrganizerIsIgnored(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	// Mallory has a domain of her own and passes DMARC for it.
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	if got := here.invitation(t, "forged"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("an invitation from somebody who is not its organizer: %s %s", got.Status, got.Error)
+	}
+	if len(here.events(t)) != 0 {
+		t.Fatal("and nothing goes in the calendar")
+	}
+}
+
+// Only the organizer may call a meeting off, and that is decided by who sent
+// the message rather than by what the message says about itself.
+func TestACancellationIsCheckedAgainstTheSenderNotTheFile(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "asked", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	// Mallory copies the organizer line out of the invitation she was
+	// forwarded and sends a cancellation from her own domain.
+	headers, body = invitationMessage("CANCEL", "the-meeting", "Planning",
+		"ORGANIZER:mailto:grace@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Status == "CANCELLED" {
+		t.Fatalf("a stranger cannot call off somebody else's meeting: %+v", events)
+	}
+	if got := here.invitation(t, "forged"); got.Status != models.CalendarInvitationIgnored {
+		t.Fatalf("and it is left alone: %s %s", got.Status, got.Error)
+	}
+}
+
+// Somebody may answer for themselves and nobody else.
+//
+// A reply carries attendee lines, and applying all of them meant anybody who
+// could send mail could mark anybody else as not coming -- several people at
+// once, in a single message.
+func TestAnAnswerOnSomebodyElsesBehalfIsIgnored(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alan@example.com")
+	here.deliverFrom(t, "mine", "alice@example.com", true, headers, body)
+	here.work(t)
+
+	// Mallory says, on her own authority, that both of them have declined.
+	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=DECLINED:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=DECLINED:mailto:alan@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	parsed, err := calendar.Parse([]byte(here.events(t)[0].Data))
+	if err != nil {
+		t.Fatalf("reading it back: %s", err)
+	}
+	for _, attendee := range parsed.Attendees {
+		if attendee.Participation == "DECLINED" {
+			t.Fatalf("%s did not decline; a stranger said so: %+v", attendee.Address, parsed.Attendees)
+		}
+	}
+
+	// And the person themselves is believed.
+	headers, body = invitationMessage("REPLY", "my-meeting", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:grace@example.com")
+	here.deliverFrom(t, "hers", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	parsed, err = calendar.Parse([]byte(here.events(t)[0].Data))
+	if err != nil {
+		t.Fatalf("reading it back: %s", err)
+	}
+	var said string
+	for _, attendee := range parsed.Attendees {
+		if attendee.Address == "grace@example.com" {
+			said = attendee.Participation
+		}
+	}
+	if said != "ACCEPTED" {
+		t.Fatalf("she answered for herself: %q", said)
+	}
+}
+
+// An event already here may only be changed by the organizer it names.
+func TestOnlyTheOrganizerMayChangeAnEventAlreadyHere(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "The small room",
+		"SEQUENCE:1", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "asked", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	// Somebody the file was forwarded to rewrites the meeting.
+	headers, body = invitationMessage("REQUEST", "the-meeting", "Somewhere else entirely",
+		"SEQUENCE:99", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "The small room" {
+		t.Fatalf("the organizer's own words stand: %+v", events)
+	}
 }

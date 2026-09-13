@@ -309,6 +309,29 @@ will believe it.
 inside a dependency this plan needed anyway. The outline had budgeted a
 milestone for vendoring and driving a recurrence library.
 
+**What an adversarial review found afterwards, and it was the important
+half.** Twelve confirmed defects, and the pattern in the worst of them is one
+thing: *a claim was checked against another copy of itself*. The cancellation
+rule compared the `ORGANIZER` in the arriving file against the `ORGANIZER` in
+the stored file — both written by whoever sent the message — so anybody ever
+forwarded an invitation could call off somebody else's meeting. The same shape
+let a stranger rewrite an event already held, and let one message mark several
+other people as not coming. The fix in every case is the same: check against
+the sender, which DMARC has already proven. Writing "only the organizer may
+cancel" in a comment and a test is not the same as enforcing it, and the test
+passed the whole time because it varied the very field the attacker controls.
+
+Two more worth naming. Expansion was bounded in what it *returned* and not in
+what it *did*, so one email carrying `FREQ=SECONDLY` allocated gigabytes — the
+cap read like a bound and was not one. And a `TZID` this machine cannot resolve
+made an event start in the year one and vanish from every view, which is the
+worst kind of failure: silent, and on the commonest inbound format there is.
+
+The lesson worth carrying: the tests here were written by the person who wrote
+the code, and they encoded the same misunderstanding. What caught these was
+someone reading the code adversarially and asking, each time, *what does the
+attacker control?*
+
 **Two small things worth keeping.** The naming check earned its place: this
 work introduced `TimeZone` where the repository says `Timezone` sixty-seven
 times, and the same thing having two names is exactly what the convention

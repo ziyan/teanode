@@ -33,6 +33,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -299,13 +300,32 @@ func (self *component) serveEvent(response http.ResponseWriter, request *http.Re
 // own helper in the library -- and discovery stops at the first step without
 // it.
 func (self *component) servePrincipal(response http.ResponseWriter, request *http.Request, signedIn *session) {
+	// Only what this account may actually reach. Advertising a calendar to
+	// somebody who is then refused it sends their phone into a loop asking
+	// for a collection it has been told about and cannot have.
+	var permissions *models.EffectivePermissions
+	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) (err error) {
+		permissions, err = tx.EffectivePermissions(signedIn.userID)
+		return err
+	}); err != nil {
+		log.Errorf("cannot read what a DAV caller may do: %s", err)
+		http.Error(response, "cannot check that just now", http.StatusServiceUnavailable)
+		return
+	}
+	var homeSets []webdav.BackendSuppliedHomeSet
+	var capabilities []webdav.Capability
+	if permissions.Has(models.PermissionContactsUse) {
+		homeSets = append(homeSets, carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, carddav.CapabilityAddressBook)
+	}
+	if permissions.Has(models.PermissionCalendarUse) {
+		homeSets = append(homeSets, caldav.NewCalendarHomeSet(calendarHomeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, caldav.CapabilityCalendar)
+	}
 	webdav.ServePrincipal(response, request, &webdav.ServePrincipalOptions{
 		CurrentUserPrincipalPath: principalPath(signedIn.userID),
-		HomeSets: []webdav.BackendSuppliedHomeSet{
-			carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)),
-			caldav.NewCalendarHomeSet(calendarHomeSetPath(signedIn.userID)),
-		},
-		Capabilities: []webdav.Capability{carddav.CapabilityAddressBook, caldav.CapabilityCalendar},
+		HomeSets:                 homeSets,
+		Capabilities:             capabilities,
 	})
 }
 
