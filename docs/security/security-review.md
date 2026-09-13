@@ -1263,6 +1263,14 @@ host name, unresolved, and the proxy dials through a `net.Dialer` whose
 primitive `safefetch` uses, and the only place the check cannot be raced,
 because it runs on the address the socket is about to be opened to.
 
+One detail decides whether any of that is real: `proxyBypassList` is set to
+`<-loopback>`. Chrome bypasses a proxy for localhost and link-local names by
+default -- precisely the set a page must not reach -- so with the list unset
+the context reported a proxy and read 127.0.0.1 straight through. It was
+measured against a real Chrome, and the test that measured it is in the
+package (`TEANODE_TEST_CHROME`), because the fake one answers whatever it is
+asked and would have gone on saying this worked.
+
 The proxy asks for a password only this server and its Chrome know, because
 Chrome is a container of its own in the compose file and the proxy therefore
 cannot live on the loopback address alone. It binds the one address Chrome
