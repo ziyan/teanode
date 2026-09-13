@@ -465,6 +465,36 @@ export function CalendarPage() {
   // whenever the view or the day changes -- moving to next week should not
   // land wherever the last one happened to be scrolled.
   const grid = useRef<HTMLDivElement>(null)
+  const page = useRef<HTMLDivElement>(null)
+
+  // The page fills what is left of the content column, so the column itself
+  // never scrolls and the grid is the only thing that does.
+  //
+  // Measured rather than set to 100%: the breadcrumb and the page title are
+  // siblings inside that column, so a full-height child overshoots by exactly
+  // their height and gives the two nested scrollbars this is here to avoid.
+  // Watched, because it changes with the window and with a title that wraps.
+  useEffect(() => {
+    const fill = () => {
+      const here = page.current
+      const column = here?.closest('main') as HTMLElement | null
+      if (!here || !column) return
+      const style = getComputedStyle(column)
+      const room =
+        column.clientHeight -
+        (here.getBoundingClientRect().top - column.getBoundingClientRect().top) -
+        parseFloat(style.paddingBottom || '0')
+      here.style.height = `${Math.max(280, room)}px`
+    }
+    fill()
+    const watch = new ResizeObserver(fill)
+    if (page.current) watch.observe(page.current.closest('main') as Element)
+    window.addEventListener('resize', fill)
+    return () => {
+      watch.disconnect()
+      window.removeEventListener('resize', fill)
+    }
+  }, [view])
 
   const heading =
     view === 'day'
@@ -501,6 +531,10 @@ export function CalendarPage() {
   useLayoutEffect(() => {
     if (loading || !COLUMNS[view] || !grid.current) return
     grid.current.scrollTop = OPENS_AT * HOUR
+    const head = grid.current.querySelector('.calendar-grid-head')
+    if (head) {
+      grid.current.style.setProperty('--calendar-head', `${head.getBoundingClientRect().height}px`)
+    }
   }, [view, on.getTime(), loading])
 
   const entry = (event: CalendarEvent) => (
@@ -517,9 +551,7 @@ export function CalendarPage() {
   )
 
   return (
-    <>
-      <p className="muted">{t('calendar.hint')}</p>
-
+    <div className="calendar-page" ref={page}>
       {/* The views are a row of tabs, the same component the server and
           domain pages use: five of them is what a tab strip is for, and it
           scrolls sideways on a narrow screen rather than being cut off. */}
@@ -610,9 +642,10 @@ export function CalendarPage() {
               addDays(span === 1 ? startOfDay(on) : startOfWeek(on), index),
             )
             const columns = `4rem repeat(${span}, minmax(0, 1fr))`
+            const leastWidth = span === 1 ? undefined : `calc(4rem + ${span} * 7.5rem)`
             const anyAllDay = days.some((day) => (byDay.get(dayKey(day)) ?? []).some((event) => event.allDay))
             return (
-              <div className="calendar-grid" style={{ gridTemplateColumns: columns }}>
+              <div className="calendar-grid" style={{ gridTemplateColumns: columns, minWidth: leastWidth }}>
                 {/* The day names stay put while the hours scroll under them:
                     a week scrolled to the afternoon with no dates on it is a
                     grid of numbers nobody can read. */}
@@ -939,7 +972,7 @@ export function CalendarPage() {
           }
         />
       )}
-    </>
+    </div>
   )
 }
 

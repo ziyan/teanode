@@ -229,7 +229,13 @@ export function PageHeading() {
   return <h1 className="page-heading">{last.label || '\u00a0'}</h1>
 }
 
-export function Breadcrumb() {
+// Breadcrumb is the way back up.
+//
+// current says to keep the page's own name on the end of the trail and mark
+// it. That is for the phone bar, where the trail stands in for the heading
+// instead of sitting above it: there the name has to be there, because
+// nothing else on the screen says what you are looking at.
+export function Breadcrumb({ current }: { current?: boolean } = {}) {
   const full = useTrail()
 
   // Ancestors only, and every one of them a link. The page's own name is the
@@ -237,7 +243,7 @@ export function Breadcrumb() {
   // same word twice, and on a top-level page it was the only crumb — a trail
   // that went nowhere. What is left is the way back up, which is the part a
   // trail is for.
-  const trail = full.slice(0, -1)
+  const trail = current ? full : full.slice(0, -1)
   if (trail.length === 0) {
     return null
   }
@@ -245,7 +251,11 @@ export function Breadcrumb() {
   return (
     <nav className="breadcrumb" aria-label="breadcrumb">
       {trail.map((crumb, index) => (
-        <span className="crumb" key={index}>
+        <span
+          className={index === trail.length - 1 && current ? 'crumb current' : 'crumb'}
+          key={index}
+          aria-current={index === trail.length - 1 && current ? 'page' : undefined}
+        >
           {index > 0 && (
             <span className="separator" aria-hidden="true">
               <ChevronRightIcon size={16} />

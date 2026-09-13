@@ -207,6 +207,11 @@ export function App() {
                       <MenuIcon />
                     </button>
                   </Tooltip>
+                  {/* The way back up sits on the bar rather than on the page.
+                      The bar is otherwise empty here, and on a phone a line
+                      of its own for two words is a line the calendar or the
+                      message could have had. */}
+                  <Breadcrumb current />
                   <div className="topbar-controls">
                     {!session.username && <span className="muted">{t('nav.noAuthentication')}</span>}
                   </div>
@@ -220,11 +225,15 @@ export function App() {
                 is never asked. */}
                 {session.username && <PasskeyNudge username={session.username} />}
                 {/* The way back up, then the name of where you are. Together
-                rather than one on the bar and one in the page: they answer
-                the same question, and split apart neither of them read as an
-                answer. */}
-                <Breadcrumb />
-                <PageHeading />
+                on a wide screen: they answer the same question, and split
+                apart neither of them reads as an answer. On a phone the
+                breadcrumb goes to the bar instead -- there is a bar there
+                already, with room on it, and the page has none to spare. */}
+                {desktop && <Breadcrumb />}
+                {/* On a phone the bar above already names the page, and a
+                    second copy of it in 30px is a third of the screen spent
+                    saying the same word twice. */}
+                {desktop && <PageHeading />}
                 <Routes>
                   {/* Home is the mailbox, for anyone who has one. The console
                   and an account without mail:read land on the first

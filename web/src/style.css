@@ -101,6 +101,25 @@ td a:hover {
   z-index: 20;
 }
 
+/* On the bar the trail stands in for the page heading, so the page's own name
+   is on the end of it and carries the weight; the way back up stays quiet
+   behind it. */
+.topbar .breadcrumb {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-body);
+}
+
+.topbar .breadcrumb .crumb.current {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topbar-controls {
   display: flex;
   align-items: center;
@@ -6235,6 +6254,31 @@ p.notice.domain-logo-note {
   overflow: hidden auto;
 }
 
+/* On a phone a dialog is the screen rather than a card floating on it.
+   A 420px card inside a 390px window left a margin on either side and a
+   scrim behind it that did nothing but take the width away from the form --
+   and a form is what a dialog on a phone almost always is. Full width, full
+   height, square, so every field gets the whole screen. */
+@media (max-width: 640px) {
+  .dialog-scrim {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .dialog {
+    max-width: none;
+    width: 100%;
+    max-height: none;
+    min-height: 100dvh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    /* Room under the last control for the home bar, so the buttons are not
+       sitting on it. */
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 760px) {
   /* A checkbox is not a thumb-sized control: the row around it is. Sizing
      the box itself to 40px stretched every line of a list of people into
@@ -6805,7 +6849,7 @@ button.with-icon {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   /* One row for the weekday names, then six weeks that share what is left. */
   grid-template-rows: auto repeat(6, minmax(6.5rem, 1fr));
-  min-height: min(68vh, 44rem);
+  height: 100%;
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -6931,6 +6975,20 @@ button.with-icon {
   white-space: nowrap;
 }
 
+/* The page fills the area it is given and does not grow past it.
+   The shell already has one scroller -- the content column -- and a grid with
+   its own height inside it made two nested ones: you scrolled the grid, hit
+   its end, and then the page moved. One scrollbar, on the thing with more to
+   show than fits. */
+.calendar-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The height is measured and set from the page itself; see the comment
+     there. A percentage cannot see the breadcrumb and the title it sits
+     below, and overshoots by exactly their height. */
+}
+
 /* The time grid: hours down the side, a column per day, and events placed
    where they actually fall. A calendar that lists a day's events in order
    tells you what is on; one that places them tells you what your day looks
@@ -6939,7 +6997,10 @@ button.with-icon {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: auto;
-  max-height: min(72vh, 48rem);
+  /* Takes what the page has left rather than a guessed fraction of the
+     window; min-height:0 is what lets a flex child shrink enough to scroll. */
+  flex: 1;
+  min-height: 0;
   background: var(--surface);
 }
 
@@ -7012,7 +7073,7 @@ button.with-icon {
   padding: 0.3rem 0.4rem;
   text-align: right;
   position: sticky;
-  top: 3.4rem;
+  top: var(--calendar-head, 3.4rem);
   z-index: 2;
 }
 
@@ -7025,7 +7086,7 @@ button.with-icon {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   position: sticky;
-  top: 3.4rem;
+  top: var(--calendar-head, 3.4rem);
   z-index: 1;
 }
 
@@ -7164,7 +7225,9 @@ button.with-icon {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .calendar-agenda-row {
@@ -7223,17 +7286,6 @@ button.with-icon {
 
   .calendar-month-scroll {
     overflow-x: auto;
-  }
-
-  /* A week of seven columns on a phone is seven unreadable slivers, so the
-     grid keeps a width a column can be read at and scrolls. A single day is
-     one column and fits as it is. */
-  .calendar-grid {
-    min-width: 34rem;
-  }
-
-  .calendar-grid:has(> .calendar-column:only-of-type) {
-    min-width: 0;
   }
 
   .calendar-grid-scroll {
