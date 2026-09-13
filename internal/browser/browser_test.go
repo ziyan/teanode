@@ -3,8 +3,11 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -239,11 +242,81 @@ func TestEveryContextGoesOutThroughTheGuardedProxy(t *testing.T) {
 	if !strings.Contains(created, `"proxyServer":"`+browser.proxy.URL()+`"`) {
 		t.Fatalf("the context is given the proxy: %s", created)
 	}
-	if strings.Contains(created, "proxyBypassList") {
-		t.Fatalf("and nothing bypasses it: %s", created)
+	// Chrome bypasses a proxy for localhost by default, which is the one set
+	// of addresses this must not let through.
+	if !strings.Contains(created, `"proxyBypassList":"\u003c-loopback\u003e"`) && !strings.Contains(created, `"proxyBypassList":"<-loopback>"`) {
+		t.Fatalf("and nothing may bypass it, least of all this machine: %s", created)
 	}
 	// The proxy asks for a password, so Chrome has to be able to answer.
 	if fetch := chrome.paramsOf("Fetch.enable"); !strings.Contains(fetch, `"handleAuthRequests":true`) {
 		t.Fatalf("Chrome must be able to answer the proxy: %s", fetch)
+	}
+}
+
+// The same thing against a real Chrome, which is where the protocol details
+// either hold or quietly do not: whether a context honours proxyServer,
+// whether Chrome asks this server for the proxy's password, and whether the
+// page can reach anything without going through it.
+//
+// Skipped unless a Chrome is named, because the suite must not need one:
+//
+//	google-chrome --headless=new --remote-debugging-port=19222 \
+//	  --user-data-dir=$(mktemp -d) about:blank
+//	TEANODE_TEST_CHROME=http://127.0.0.1:19222 go test ./internal/browser/
+func TestARealChromeReachesTheWebOnlyThroughTheProxy(t *testing.T) {
+	endpoint := os.Getenv("TEANODE_TEST_CHROME")
+	if endpoint == "" {
+		t.Skip("set TEANODE_TEST_CHROME to a DevTools endpoint to run this")
+	}
+
+	// What a page must never be able to read: something on this machine,
+	// reached by a name.
+	const secret = "the-metadata-service"
+	inside := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(response, "<html><body>"+secret+"</body></html>")
+	}))
+	defer inside.Close()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(inside.URL, "http://"))
+	if err != nil {
+		t.Fatalf("the server's address: %s", err)
+	}
+	address := "http://localhost:" + port + "/"
+
+	read := func(t *testing.T, allow []string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		browser, err := Connect(ctx, &Settings{Endpoint: endpoint, AllowPrivate: allow, ProxyListen: "127.0.0.1:0"})
+		if err != nil {
+			t.Fatalf("Connect: %s", err)
+		}
+		defer func() { _ = browser.Close() }()
+		// The guard in this process is not what is being tested; the proxy
+		// is, and it is the only thing between the page and the address.
+		browser.guard = func(string) error { return nil }
+		page, err := browser.NewContext(ctx)
+		if err != nil {
+			t.Fatalf("NewContext: %s", err)
+		}
+		defer func() { _ = page.Close() }()
+		if _, err := page.Navigate(ctx, address); err != nil {
+			return "navigation refused: " + err.Error()
+		}
+		text, err := page.Evaluate(ctx, "document.body ? document.body.innerText : ''", 1000)
+		if err != nil {
+			return "nothing readable: " + err.Error()
+		}
+		return text
+	}
+
+	if got := read(t, nil); strings.Contains(got, secret) {
+		t.Fatalf("the page read something on this machine: %q", got)
+	}
+	// And the operator's own host is reached, through the same proxy, with
+	// the same password: if the proxy were not being used at all, the first
+	// half of this test would pass for the wrong reason.
+	if got := read(t, []string{"localhost"}); !strings.Contains(got, secret) {
+		t.Fatalf("a host the operator allowed should be reached: %q", got)
 	}
 }

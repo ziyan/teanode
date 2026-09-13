@@ -159,12 +159,17 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 		BrowserContextID string `json:"browserContextId"`
 	}
 	// Every request this context makes goes through the guarded proxy, which
-	// is where the name is resolved and where the address is checked. The
-	// bypass list is empty on purpose: there is nothing this page may reach
-	// directly, not even a name that looks local.
+	// is where the name is resolved and where the address is checked.
+	//
+	// "<-loopback>" is the whole of the second line, and leaving it out made
+	// the first line a decoration: Chrome bypasses a proxy for localhost and
+	// for link-local names by default, which is precisely the set a page must
+	// not be able to reach. Measured against a real Chrome -- with the list
+	// unset the page read a server on 127.0.0.1 straight through.
 	if err := self.connection.call(ctx, "", "Target.createBrowserContext", map[string]any{
 		"disposeOnDetach": true,
 		"proxyServer":     self.proxy.URL(),
+		"proxyBypassList": "<-loopback>",
 	}, &created); err != nil {
 		return nil, err
 	}
