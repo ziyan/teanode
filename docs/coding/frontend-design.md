@@ -145,6 +145,17 @@ The breakpoints are 900px, 760px and 600px, and a phone is the narrow end.
 Check a change at 390px before sending it: a row of buttons, a wide table and
 a dialog all behave differently there, and all three are easy to get wrong.
 
+Where you are is one answer in two places, both from `useTrail()` in
+`components/breadcrumb.tsx`: on a wide screen the crumbs above the page say
+how you got here and `PageHeading` says what it is, and on a phone the bar at
+the top carries the trail on its own, ending in the page's own name. A page
+does not declare where it sits — the route does — and the one thing a page
+supplies is `useBreadcrumbDetail()`, the name of the thing it is showing. Two
+rules fall out of the phone bar: the last crumb is never a link, because it is
+the page you are on, and a step that is only a step on a phone — a message
+that takes the screen its folder's list had — is added only when the window
+is narrow.
+
 `web/.prettierrc.json` is the formatter, and `npx prettier --write` on a file
 you are already changing is welcome. Running it over files you are not is not:
 most of the tree predates the config and the diff would bury the change.

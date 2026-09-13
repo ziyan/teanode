@@ -69,7 +69,14 @@ const PAGE_SIZE = 50
 export const STARRED = 'starred'
 
 function starredFolder(view: MailboxView): MailboxFolder {
-  return { id: STARRED, mailboxId: view.mailbox.id, name: 'Starred', kind: STARRED, unread: view.starredUnread ?? 0, total: 0 }
+  return {
+    id: STARRED,
+    mailboxId: view.mailbox.id,
+    name: 'Starred',
+    kind: STARRED,
+    unread: view.starredUnread ?? 0,
+    total: 0,
+  }
 }
 
 // PRIORITY is the path segment of the view of every message the agent marked
@@ -77,7 +84,14 @@ function starredFolder(view: MailboxView): MailboxFolder {
 export const PRIORITY = 'priority'
 
 function priorityFolder(view: MailboxView): MailboxFolder {
-  return { id: PRIORITY, mailboxId: view.mailbox.id, name: 'Priority', kind: PRIORITY, unread: view.priorityUnread ?? 0, total: 0 }
+  return {
+    id: PRIORITY,
+    mailboxId: view.mailbox.id,
+    name: 'Priority',
+    kind: PRIORITY,
+    unread: view.priorityUnread ?? 0,
+    total: 0,
+  }
 }
 
 const THREADS = `
@@ -390,7 +404,6 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   const session = useSession()
   const addresses = mailboxes.current?.mailbox.addresses ?? []
   const managesDomains = hasAnywhere(session.permissions, 'domain:manage')
-  useBreadcrumbDetail(folderLabel(t, folder))
 
   // What the list is narrowed to lives in the address. It was state, so a
   // search could not be linked to, survived neither a reload nor the back
@@ -467,6 +480,21 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   // The messages a sort dialog is open for, when one is.
   const [sorting, setSorting] = useState<string[] | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+
+  // Where you are: the folder, and the message inside it when one is open.
+  // The subject comes from the row the message was opened from, so the trail
+  // names it at once rather than a moment later — the two are the same words.
+  // The list does not always hold that row, though: a narrowed list, or an
+  // address opened straight from somewhere else. Then the reader below is the
+  // only thing that knows, and it says so when the conversation arrives.
+  const [read, setRead] = useState<{ itemId: string; subject: string } | null>(null)
+  const row = itemId ? threads.find((each) => each.item.id === itemId || each.itemIds.includes(itemId)) : undefined
+  const named = read && read.itemId === itemId ? read.subject : null
+  const subject = row ? (row.item.mail?.subject ?? '') : named
+  useBreadcrumbDetail(
+    folderLabel(t, folder),
+    itemId ? (subject === null ? '…' : subject || t('mailbox.noSubject')) : undefined,
+  )
 
   const variables = useMemo(
     () => ({
@@ -888,7 +916,10 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
   // the same thing to both.
   const owning = mailboxes.views.find((candidate) => candidate.mailbox.id === folder.mailboxId)
   const sortable = !!owning?.mailbox.agent?.granted && !!owning.mailbox.agent.triage?.enabled
-  const archive = folderOfKind({ mailbox: undefined as never, folders, unread: 0, starredUnread: 0, priorityUnread: 0 }, 'archive')
+  const archive = folderOfKind(
+    { mailbox: undefined as never, folders, unread: 0, starredUnread: 0, priorityUnread: 0 },
+    'archive',
+  )
   const inTrash = folder.kind === 'trash'
   const inJunk = folder.kind === 'junk'
   const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
@@ -1211,6 +1242,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
             onDelete={(itemIds) => deleteItems(itemIds)}
             onSort={sortable ? (itemIds) => setSorting(itemIds) : undefined}
+            onSubject={(value) => setRead({ itemId, subject: value })}
             onDiscarded={(discarded) => {
               remove([discarded])
               openNext([discarded])
@@ -1397,7 +1429,10 @@ function SortDialog({ itemIds, onClose }: { itemIds: string[]; onClose: () => vo
           label={t('mailbox.sortCategory')}
           options={[
             { value: '', label: t('mailbox.sortUnchanged') },
-            ...categories.map((name) => ({ value: name, label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name })),
+            ...categories.map((name) => ({
+              value: name,
+              label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name,
+            })),
           ]}
           onChange={setCategory}
         />
@@ -1588,6 +1623,7 @@ function Reader({
   onJunk,
   onDelete,
   onSort,
+  onSubject,
   onDiscarded,
   onBack,
 }: {
@@ -1602,6 +1638,9 @@ function Reader({
   onJunk: (itemIds: string[], notJunk: boolean) => void
   onDelete: (itemIds: string[]) => void
   onSort?: (itemIds: string[]) => void
+  // What the conversation is called, for the trail above: the folder's list
+  // is where that normally comes from, and this is for when it is not in it.
+  onSubject: (subject: string) => void
   // A draft thrown away from the composer below. The list is the folder's,
   // not this pane's, so taking the row out of it belongs to the folder.
   onDiscarded: (itemId: string) => void
@@ -1619,6 +1658,16 @@ function Reader({
     return () => window.removeEventListener(MAIL_CHANGED_EVENT, listener)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId])
+
+  // The trail above names the conversation, and the list it was opened from
+  // is usually where that name comes from. When it is not, this is.
+  const named = thread.data?.GetMailboxThread?.subject
+  useEffect(() => {
+    if (named !== undefined) {
+      onSubject(named)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [named])
 
   // A summary on its way is asked for again in a moment, a few times; the
   // run is quick when the model is, and a reader who has moved on stops

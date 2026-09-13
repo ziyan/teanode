@@ -5,6 +5,7 @@ import { useMailboxes } from '../mailboxes'
 import { Key, useTranslation } from '../i18n/i18n'
 import { matchSettingsSurface } from '../pages/settings/nav'
 import { ChevronRightIcon } from './icons'
+import { useIsDesktop } from './sidebar'
 
 // The section a path belongs to. Derived from the route rather than declared
 // by each page, so a new page cannot forget to say where it is — the only
@@ -103,6 +104,7 @@ function useTrail(): { label: string; to?: string }[] {
   const { t } = useTranslation()
   const location = useLocation()
   const details = useContext(DetailContext)
+  const desktop = useIsDesktop()
   const detail = details[0] ?? null
   const item = details[1] ?? null
 
@@ -120,8 +122,35 @@ function useTrail(): { label: string; to?: string }[] {
     const sectionPage = SECTION_PAGES.find(
       (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
     )
-    if (sectionPage) {
+    // Only when the page has no name of its own to give. The composer's name
+    // says which kind of message is being written — a reply, a forward — and
+    // "Compose" in front of it was the same word twice, which on a phone bar
+    // is three crumbs for two words of information.
+    if (sectionPage && !detail) {
       crumbs.push({ label: t(sectionPage.label), to: undefined })
+    }
+
+    // The mailbox is its folders. /mailbox is whichever folder you are in, so
+    // a "Mailbox" crumb above the folder's own name was a link to the page it
+    // was already on, and the trail read "Mailbox > Inbox" — one place, named
+    // twice. The folder is the top of the trail here.
+    //
+    // A message opened inside a folder is the step below it, and only on a
+    // phone: there the message takes the screen the list had, so the folder
+    // crumb is the way back to the list — the one thing the trail was not
+    // saying. On a wide screen the message is beside the list rather than
+    // instead of it, and the page is still the folder.
+    //
+    // The search the list was narrowed to is in the address, so the way back
+    // carries it: returning to the folder means returning to the list that
+    // was there, not to all of it.
+    const [, section, folderId, itemId] = location.pathname.split('/')
+    if (section === 'mailbox' && !sectionPage && detail) {
+      if (itemId && !desktop) {
+        const list = (folderId ? `/mailbox/${folderId}` : '/mailbox') + location.search
+        return [{ label: detail, to: list }, { label: item ?? '…' }]
+      }
+      return [{ label: detail }]
     }
 
     if (detail) {
@@ -150,7 +179,7 @@ function useTrail(): { label: string; to?: string }[] {
       return [...crumbs, { label: '' }]
     }
     return crumbs
-  }, [location.pathname, detail, item, t])
+  }, [location.pathname, location.search, desktop, detail, item, t])
 }
 
 // DocumentTitle keeps the tab label in step with the breadcrumb, most specific
@@ -261,10 +290,15 @@ export function Breadcrumb({ current }: { current?: boolean } = {}) {
               <ChevronRightIcon size={16} />
             </span>
           )}
-          {/* A grouping with no page behind it is not a link. Every crumb has
-              somewhere to go today, but the shape allows for one that does
-              not. */}
-          {crumb.to ? <Link to={crumb.to}>{crumb.label}</Link> : <span>{crumb.label}</span>}
+          {/* A grouping with no page behind it is not a link — and neither is
+              the page you are on: on the phone bar the trail keeps its own
+              name on the end, and every top-level page was a single crumb
+              linking to itself. */}
+          {crumb.to && !(current && index === trail.length - 1) ? (
+            <Link to={crumb.to}>{crumb.label}</Link>
+          ) : (
+            <span>{crumb.label}</span>
+          )}
         </span>
       ))}
     </nav>
