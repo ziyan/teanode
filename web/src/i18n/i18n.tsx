@@ -3,8 +3,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { MenuButton } from '../components/menuButton'
 import { GlobeIcon } from '../components/icons'
 import { en } from './en'
-import { ja } from './ja'
-import { zh } from './zh'
 
 // No i18n library. The dashboard needs lookup and substitution, which is forty
 // lines; a library would be more code than the thing it translates, and this
@@ -26,7 +24,38 @@ export const LANGUAGES = {
 
 export type Language = keyof typeof LANGUAGES
 
-const CATALOGS: Record<Language, Catalog> = { en, zh, ja }
+// English ships with the dashboard: it is the source of truth, and the one
+// the other two are typed against. They are fetched when somebody reads in
+// them -- a catalog is a hundred kilobytes of text, and nobody reads three
+// languages at once.
+const CATALOGS: Partial<Record<Language, Catalog>> = { en }
+
+async function load(language: Language): Promise<Catalog> {
+  const already = CATALOGS[language]
+  if (already) {
+    return already
+  }
+  try {
+    const catalog =
+      language === 'zh'
+        ? (await import(/* webpackChunkName: "catalog-zh" */ './zh')).zh
+        : (await import(/* webpackChunkName: "catalog-ja" */ './ja')).ja
+    CATALOGS[language] = catalog
+    return catalog
+  } catch {
+    // The file did not arrive -- an upgrade took the old build's chunks away
+    // under a page that was left open, or the network went. English is not
+    // what they asked for, but it is a dashboard rather than a blank page.
+    return en
+  }
+}
+
+// loadCatalog is what the page waits for before it draws anything, so that a
+// reader of Chinese is not shown a screen of English first and corrected a
+// moment later.
+export async function loadCatalog(language: Language): Promise<void> {
+  await load(language)
+}
 
 const STORAGE_KEY = 'teanode.language'
 
@@ -88,14 +117,20 @@ const TranslationContext = createContext<Translation | null>(null)
 
 export function TranslationProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>(detectLanguage)
+  const [catalog, setCatalog] = useState<Catalog>(() => CATALOGS[detectLanguage()] ?? en)
 
   useEffect(() => {
     // Screen readers and hyphenation both depend on this being right.
     document.documentElement.lang = language === 'zh' ? 'zh-Hans' : language
   }, [language])
 
+  // Both at once, when the words are there: a language set before its catalog
+  // arrived would draw one screen in the old words under the new name.
   const setLanguage = useCallback((next: Language) => {
-    setLanguageState(next)
+    void load(next).then((catalog) => {
+      setCatalog(catalog)
+      setLanguageState(next)
+    })
     try {
       window.localStorage.setItem(STORAGE_KEY, next)
     } catch {
@@ -104,7 +139,6 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
   }, [])
 
   const value = useMemo<Translation>(() => {
-    const catalog = CATALOGS[language]
     const rules = new Intl.PluralRules(language)
     const t = (key: Key, values?: Values) => translate(catalog, key, values)
 
@@ -115,7 +149,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
       language,
       setLanguage,
     }
-  }, [language, setLanguage])
+  }, [catalog, language, setLanguage])
 
   return <TranslationContext.Provider value={value}>{children}</TranslationContext.Provider>
 }

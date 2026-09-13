@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard arrives in pieces rather than all at once. What a session
+  needs to start is half of what it was: the libraries are a file of their own
+  and survive an upgrade in the browser's cache, a page nobody has opened is
+  fetched when they open it, and a catalogue is the one language being read
+  rather than all three. The first download is 619 KB where it was 1.13 MB.
+
 ## [0.21.4] - 2026-09-13
 
 ### Changed
