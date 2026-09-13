@@ -8,6 +8,17 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- Nobody can hand out a permission they do not hold themselves. Changing who
+  is in a group, moving an account between groups, setting somebody else's
+  password and writing a permission into a role are all bounded by what the
+  person doing it may do -- so the permission to manage accounts is no longer
+  a way to become an administrator by joining the group that already is one.
+
+- A new app password carries a short tag saying which password it is, so
+  signing in is one check instead of one per device on the mailbox. The
+  username is unchanged -- still your address -- and passwords made before
+  this keep working.
+
 - A wrong app password costs this server what it costs, and no more. A refused
   sign-in tries every app password on the mailbox, so a mailbox with twenty
   devices was twenty times as expensive to guess at as an empty one; and the

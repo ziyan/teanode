@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which eighteen are fixed here. The ones that mattered:
+Forty findings, of which nineteen are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -994,6 +994,29 @@ of heap in two seconds and wrote 144,000 rows in one transaction; at the
 default message size that is about sixteen gigabytes. A message is now bounded
 at 32 reports and 20,000 records across all of its parts.
 
+### SEC-68 — user:manage was transitively every permission (Medium, fixed)
+
+The comment beside the check said that somebody with only `user:manage` "may
+not touch the roles or domains, which is where the reach comes from". The
+reach is the membership. A group already carries its roles, so
+`UpdateGroup(groupId: <Administrators>, userIds: [..., me])` sets only
+`userIds`, passes the `membershipOnly` branch on `user:manage` alone, and —
+because permissions are re-resolved per request — is answered with every
+permission on the server from the next request onwards. `UpdateUser` with
+`groupIds` is the same move through another door, and `SetUserPassword` is
+shorter still: it took `user:manage` with no restriction on whose password,
+so resetting an administrator's password was becoming one.
+
+Nothing shipped is affected — no seeded role grants `user:manage` except
+Administrator — but the comment is what an operator reads before building a
+"Helpdesk" role, and it told them the wrong thing.
+
+The rule now is the ordinary one: **nobody hands out what they do not hold.**
+`EffectivePermissions.Covers` answers it, and it is asked before a group's
+membership changes, before an account's groups change, before a password is
+set for somebody else, and before a permission is written into a role. The
+console is unaffected: it holds everything by construction.
+
 ### SEC-64 — One wrong guess cost twenty password hashes (Medium, fixed)
 
 A refused app-password sign-in tries every app password the mailbox has, one
@@ -1002,11 +1025,20 @@ one attempt whatever that cost, so a mailbox at the ceiling of twenty devices
 sold **twenty times as much of this server's time per token** as an empty one:
 three seconds of a core for one packet, on IMAP, submission and DAV alike.
 
-Two changes. The limiter is charged in hashes rather than in tries, so the
-budget now measures work. And the passwords are tried most-recently-used
-first, so the ordinary sign-in — the same device as yesterday — costs one hash
-instead of as many as the mailbox has devices, which also takes most of the
-cost off the successful path that DAV walks on *every request*.
+Three changes, and the third is the one that ends it. The limiter is charged
+in hashes rather than in tries, so the budget measures work. The passwords are
+tried most-recently-used first, so the ordinary sign-in costs one hash. And a
+password now **says which password it is**: a new one carries a six-character
+tag naming its own row (migration 0061), so a sign-in is one lookup and one
+hash whether it is right or wrong.
+
+The username stays the mailbox's address, which is what a mail program asks
+for and what autoconfiguration fills in — putting the tag in the password
+rather than in the username is what keeps that true, and it is how this
+server's SMTP credentials already worked. A password made before the tag
+existed still works, by the old route; the old route is only taken when the
+mailbox still holds one, so a mailbox whose passwords have all been remade
+never walks it again.
 
 ### SEC-65 — The IMAP listeners had no connection ceiling (Medium, fixed)
 
@@ -1187,10 +1219,10 @@ Ranked, with what each needs. Nothing below is fixed in this pass.
    through `safefetch`, would take every name resolution away from Chrome.
 2. **`user:manage` is transitively full administration** (Medium), and the
     comment beside it says the opposite.
-3. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
+2. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
     the only thing between a same-site page and a cookie-authenticated
     mutation, and `/drawer` now allows framing.
-4. Smaller, recorded in full in the reviewers' reports: the shell rule asks
+3. Smaller, recorded in full in the reviewers' reports: the shell rule asks
     about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
     recover; `secretish()` in the redaction test cannot see `token`,
     `authorization` or `value`; `listen.debug` will bind anywhere; the

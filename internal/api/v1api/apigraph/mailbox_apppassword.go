@@ -73,6 +73,28 @@ const appPasswordAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
 // room to spare.
 const maximumAppPasswords = 20
 
+// appPasswordSelectorLength is how long the tag in front of a password is.
+// Six characters of the alphabet above is a million to one against a
+// collision within one mailbox, which holds twenty at most.
+const appPasswordSelectorLength = 6
+
+// freeSelector is a tag no other password of this mailbox carries.
+func (self *graph) freeSelector(ctx context.Context, mailboxId string, existing []*models.MailboxAppPassword) (string, error) {
+	taken := make(map[string]bool, len(existing))
+	for _, appPassword := range existing {
+		if appPassword.Selector != "" {
+			taken[appPassword.Selector] = true
+		}
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		selector := security.GenerateRandomString(appPasswordSelectorLength, appPasswordAlphabet)
+		if !taken[selector] {
+			return selector, nil
+		}
+	}
+	return "", fmt.Errorf("cannot find a free name for this password; try again")
+}
+
 func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments CreateMailboxAppPasswordArguments) (*CreatedAppPassword, error) {
 	mailbox, err := self.requireMailbox(ctx, models.PermissionMailboxManage, arguments.MailboxID)
 	if err != nil {
@@ -95,8 +117,19 @@ func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments Creat
 	}
 	// Twenty characters of a 32-letter alphabet is a hundred bits, and the
 	// grouping makes it possible to type from a phone's screen.
+	//
+	// In front of them, a tag naming this password's own row. The username a
+	// mail program sends is the mailbox's address, which is the same for
+	// every device, so without the tag a sign-in had to try each of the
+	// mailbox's passwords in turn -- a hash apiece, and a hash is slow on
+	// purpose. The tag is not a secret: it says which password is being
+	// offered, not what it is, and the hundred bits behind it are unchanged.
+	selector, err := self.freeSelector(ctx, mailbox.ID, existing)
+	if err != nil {
+		return nil, err
+	}
 	raw := security.GenerateRandomString(20, appPasswordAlphabet)
-	password := strings.Join([]string{raw[0:5], raw[5:10], raw[10:15], raw[15:20]}, "-")
+	password := strings.Join([]string{selector, raw[0:5], raw[5:10], raw[10:15], raw[15:20]}, "-")
 	hash, err := security.HashPassword(password)
 	if err != nil {
 		return nil, err
@@ -104,6 +137,7 @@ func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments Creat
 	created, err := self.transaction(ctx).CreateAppPassword(&models.MailboxAppPassword{
 		MailboxID:    mailbox.ID,
 		Name:         name,
+		Selector:     selector,
 		PasswordHash: string(hash),
 	})
 	if err != nil {

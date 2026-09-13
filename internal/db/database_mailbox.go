@@ -108,6 +108,10 @@ type MailboxOperation interface {
 
 	// App passwords, one per device.
 	ListAppPasswords(mailboxId string) ([]*models.MailboxAppPassword, error)
+
+	// GetAppPasswordBySelector is the one password a sign-in offers, named
+	// by the tag the password carries.
+	GetAppPasswordBySelector(mailboxId, selector string) (*models.MailboxAppPassword, error)
 	GetAppPassword(appPasswordId string) (*models.MailboxAppPassword, error)
 	CreateAppPassword(appPassword *models.MailboxAppPassword) (*models.MailboxAppPassword, error)
 	TouchAppPassword(appPasswordId string, at time.Time) error
@@ -271,6 +275,7 @@ type mailboxAppPasswordModel struct {
 	CreatedAt    time.Time  `gorm:"column:created_at"`
 	MailboxID    string     `gorm:"column:mailbox_id"`
 	Name         string     `gorm:"column:name"`
+	Selector     string     `gorm:"column:selector"`
 	PasswordHash string     `gorm:"column:password_hash"`
 	LastUsedAt   *time.Time `gorm:"column:last_used_at"`
 }
@@ -1937,7 +1942,7 @@ func (self *transaction) CountAutoRepliesSince(mailboxId string, since time.Time
 func appPasswordFromModel(model *mailboxAppPasswordModel) *models.MailboxAppPassword {
 	appPassword := &models.MailboxAppPassword{
 		ID: model.ID, CreatedAt: model.CreatedAt.In(time.Local), MailboxID: model.MailboxID,
-		Name: model.Name, PasswordHash: model.PasswordHash,
+		Name: model.Name, Selector: model.Selector, PasswordHash: model.PasswordHash,
 	}
 	if model.LastUsedAt != nil {
 		at := model.LastUsedAt.In(time.Local)
@@ -1981,12 +1986,32 @@ func (self *transaction) CreateAppPassword(appPassword *models.MailboxAppPasswor
 	}
 	if err := self.applyMutation(models.AuditResourceMailboxAppPassword, created.ID, models.AuditActionCreate, nil, &created, func(tx *gorm.DB) error {
 		return tx.Create(&mailboxAppPasswordModel{
-			ID: created.ID, CreatedAt: created.CreatedAt, MailboxID: created.MailboxID, Name: created.Name, PasswordHash: created.PasswordHash,
+			ID: created.ID, CreatedAt: created.CreatedAt, MailboxID: created.MailboxID, Name: created.Name,
+			Selector: created.Selector, PasswordHash: created.PasswordHash,
 		}).Error
 	}); err != nil {
 		return nil, err
 	}
 	return &created, nil
+}
+
+// GetAppPasswordBySelector is the one password a sign-in is offering, named
+// by the tag the password itself carries. One row and one hash, instead of
+// every password the mailbox has.
+func (self *transaction) GetAppPasswordBySelector(mailboxId, selector string) (*models.MailboxAppPassword, error) {
+	selector = strings.TrimSpace(selector)
+	if mailboxId == "" || selector == "" {
+		return nil, nil
+	}
+	var found []mailboxAppPasswordModel
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"selector\" = ?", mailboxId, selector).
+		Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return appPasswordFromModel(&found[0]), nil
 }
 
 func (self *transaction) TouchAppPassword(appPasswordId string, at time.Time) error {

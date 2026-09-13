@@ -372,10 +372,45 @@ func AuthenticateAppPasswordCounting(tx db.Transaction, username, password strin
 	if len(appPasswords) == 0 {
 		return refuse()
 	}
-	// The most recently used first, so the ordinary sign-in -- the same
-	// device as last time -- costs one hash rather than as many as the
-	// mailbox has app passwords. A wrong password still costs all of them,
-	// which is why the caller charges for the work; see PasswordsTried.
+	// The password says which password it is. Everything made since that was
+	// written down carries a tag in front of it naming its own row, so a
+	// sign-in is one lookup and one hash -- however many devices the mailbox
+	// has, and whether the password is right or wrong.
+	//
+	// Without it the username is the only name a sign-in carries, and that is
+	// the mailbox's address, the same for every device: the only way to know
+	// which password was meant was to try them all.
+	if selector := selectorOf(password); selector != "" {
+		offered, err := tx.GetAppPasswordBySelector(mailbox.ID, selector)
+		if err != nil {
+			return nil, nil, tried, err
+		}
+		if offered != nil {
+			tried++
+			ok, err := security.VerifyPassword([]byte(offered.PasswordHash), password)
+			if err != nil {
+				return nil, nil, tried, err
+			}
+			if !ok {
+				return nil, nil, tried, ErrInvalidAppPassword
+			}
+			if err := tx.TouchAppPassword(offered.ID, time.Now()); err != nil {
+				return nil, nil, tried, err
+			}
+			return mailbox, offered, tried, nil
+		}
+		// A tag naming nothing is only worth trying the long way round
+		// when this mailbox still holds a password made before tags
+		// existed. Otherwise it is a guess, and costs one hash.
+		if !anyWithoutSelector(appPasswords) {
+			return refuse()
+		}
+	}
+
+	// The old way, for a password made before the tag existed. The most
+	// recently used first, so the ordinary sign-in costs one hash rather
+	// than as many as the mailbox has; a wrong one still costs all of them,
+	// which is why the caller charges for the work rather than for the try.
 	sort.SliceStable(appPasswords, func(first, second int) bool {
 		return lastUsed(appPasswords[first]).After(lastUsed(appPasswords[second]))
 	})
@@ -394,6 +429,41 @@ func AuthenticateAppPasswordCounting(tx db.Transaction, username, password strin
 	}
 	return nil, nil, tried, ErrInvalidAppPassword
 }
+
+// selectorOf is the tag in front of a password, or empty when it carries
+// none. The tag is the first group, and it is longer than the others, which
+// is what tells a tagged password from one made before tags existed.
+func selectorOf(password string) string {
+	first, _, found := strings.Cut(strings.TrimSpace(password), "-")
+	if !found || len(first) != appPasswordSelectorLength {
+		return ""
+	}
+	for _, letter := range first {
+		if !strings.ContainsRune(appPasswordAlphabet, letter) {
+			return ""
+		}
+	}
+	return first
+}
+
+// anyWithoutSelector is whether this mailbox still holds a password made
+// before tags existed, which is the only reason to try every one of them.
+func anyWithoutSelector(appPasswords []*models.MailboxAppPassword) bool {
+	for _, appPassword := range appPasswords {
+		if strings.TrimSpace(appPassword.Selector) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// appPasswordSelectorLength and appPasswordAlphabet are how a tagged password
+// is written; they are here as well as where one is made because this is
+// where one is read.
+const (
+	appPasswordSelectorLength = 6
+	appPasswordAlphabet       = "abcdefghijkmnpqrstuvwxyz23456789"
+)
 
 // lastUsed is when an app password was last accepted, or when it was made.
 func lastUsed(appPassword *models.MailboxAppPassword) time.Time {
