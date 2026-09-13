@@ -169,3 +169,23 @@ func TestMessageAttachmentsAndNames(t *testing.T) {
 		t.Fatalf("words %q group %v chat %q from %q", message.Said(), message.Group(), message.ChatName(), message.From.Name())
 	}
 }
+
+// A failed request does not carry the bot's token out with it.
+//
+// The token is in the path of every request this service takes, so Go's own
+// error names it -- and that error is logged, written to the row the bot is
+// configured in, and answered from the API. The token is sealed in that same
+// table, which is the whole point of sealing it.
+func TestAFailedRequestDoesNotCarryTheToken(t *testing.T) {
+	client := New("SECRET-TOKEN-VALUE", &http.Client{Timeout: time.Millisecond}, "http://127.0.0.1:1")
+	_, err := client.Me(context.Background())
+	if err == nil {
+		t.Fatal("that request cannot succeed")
+	}
+	if strings.Contains(err.Error(), "SECRET-TOKEN-VALUE") {
+		t.Fatalf("the token is not in the error: %s", err)
+	}
+	if !strings.Contains(err.Error(), "the bot's token") {
+		t.Fatalf("and what is left says what was taken out: %s", err)
+	}
+}

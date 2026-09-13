@@ -24,16 +24,39 @@ var ErrTooDeeplyNested = errors.New("mailparse: message is nested too deeply")
 // handful.
 const maximumPartDepth = 32
 
+// ErrTooManyParts is a message carrying more parts than this server walks.
+var ErrTooManyParts = errors.New("mailparse: message has too many parts")
+
+// maximumParts bounds how many parts one message is walked through, across
+// every level of it.
+//
+// Depth was bounded and breadth was not, and the callers are what makes that
+// expensive: one of them opens a connection to the virus scanner per part,
+// another decodes every compressed part it finds. A megabyte of "--b" repeated
+// is two hundred thousand parts -- measured -- so a message nobody looks twice
+// at became two hundred thousand connections, which exhausts the scanner and
+// silently stops scanning for everybody else while it runs.
+//
+// A thousand is far past any real message: a photograph album from a phone is
+// dozens, and the largest thing anybody has sent through this server is a
+// hundred and change.
+const maximumParts = 1000
+
 func TraverseParts(headers []string, body []byte, callback func(textproto.MIMEHeader, io.Reader) error) error {
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Type", FindHeaderValue(headers, "Content-Type"))
 	header.Set("Content-Transfer-Encoding", FindHeaderValue(headers, "Content-Transfer-Encoding"))
-	return traverseParts(header, bytes.NewReader(body), callback, 0)
+	walked := 0
+	return traverseParts(header, bytes.NewReader(body), callback, 0, &walked)
 }
 
-func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(textproto.MIMEHeader, io.Reader) error, depth int) error {
+func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(textproto.MIMEHeader, io.Reader) error, depth int, walked *int) error {
 	contentType := header.Get("Content-Type")
 	if contentType == "" {
+		*walked++
+		if *walked > maximumParts {
+			return ErrTooManyParts
+		}
 		return callback(header, reader)
 	}
 	mediaType, parameters, err := mime.ParseMediaType(contentType)
@@ -41,6 +64,10 @@ func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(
 		return err
 	}
 	if !strings.HasPrefix(mediaType, "multipart/") || parameters["boundary"] == "" {
+		*walked++
+		if *walked > maximumParts {
+			return ErrTooManyParts
+		}
 		return callback(header, reader)
 	}
 	if depth >= maximumPartDepth {
@@ -56,7 +83,7 @@ func traverseParts(header textproto.MIMEHeader, reader io.Reader, callback func(
 		if err != nil {
 			return err
 		}
-		if err := traverseParts(part.Header, part, callback, depth+1); err != nil {
+		if err := traverseParts(part.Header, part, callback, depth+1, walked); err != nil {
 			return err
 		}
 	}

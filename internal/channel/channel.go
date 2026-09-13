@@ -338,6 +338,31 @@ func (self *chatState) handle(ctx context.Context, incoming *Incoming, chat Chat
 		_, _ = chat.Send(ctx, "This bot is linked to another chat. Unlink it on the agent page to link this one.", incoming.MessageID)
 		return
 	}
+	// And from the person who linked it. The chat was the whole of the
+	// check, so in a group every member -- and everybody they invite --
+	// spoke with the owner's voice: their mail, their tools, and the
+	// confirmation cards answered by whoever typed next, because the
+	// pending question belonged to the chat rather than to a person.
+	//
+	// A bot linked before this was recorded is refused rather than trusted.
+	// Saying so is the whole of the fix for it: linking again takes one
+	// message and records who sent it.
+	if channel.LinkedSenderID == "" {
+		if incoming.Group && !incoming.ToBot {
+			return
+		}
+		_, _ = chat.Send(ctx, "This bot was linked before it recorded who linked it, so it cannot tell you apart from anybody else here. Unlink it on the agent page and link it again.", incoming.MessageID)
+		return
+	}
+	if incoming.SenderID != channel.LinkedSenderID {
+		if incoming.Group {
+			// Silent in a group: the bot is not there to answer
+			// everybody, and saying so to each of them in turn is noise.
+			return
+		}
+		_, _ = chat.Send(ctx, "This bot answers the person who linked it.", incoming.MessageID)
+		return
+	}
 	if incoming.Group && !incoming.ToBot && name != "ask" && name == "" {
 		// In a group the bot answers what is said to it, not everything.
 		return
@@ -403,6 +428,10 @@ func (self *chatState) link(ctx context.Context, channel *models.AgentChannel, i
 	if err := self.manager.settings.Database.Transaction(func(tx db.Transaction) error {
 		channel.LinkedID = incoming.ChatID
 		channel.LinkedName = name
+		// Who sent the code, as well as where they sent it from. A chat is
+		// a room; this is the person in it whose agent this is.
+		channel.LinkedSenderID = incoming.SenderID
+		channel.LinkedSenderName = incoming.SenderName
 		channel.LinkCode = ""
 		_, err := tx.PutAgentChannel(channel)
 		return err
@@ -425,6 +454,7 @@ func (self *chatState) command(ctx context.Context, channel *models.AgentChannel
 	case "unlink":
 		if err := self.manager.settings.Database.Transaction(func(tx db.Transaction) error {
 			channel.LinkedID, channel.LinkedName = "", ""
+			channel.LinkedSenderID, channel.LinkedSenderName = "", ""
 			channel.LinkCode = newCode()
 			_, err := tx.PutAgentChannel(channel)
 			return err

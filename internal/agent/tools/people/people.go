@@ -29,7 +29,9 @@ func init() {
 				},
 			},
 			{
-				Name: "user_add", Family: tools.FamilyPeople, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionUserManage},
+				// Granting: an account in a group holds whatever that
+				// group holds, from its first sign-in.
+				Name: "user_add", Family: tools.FamilyPeople, Risk: tools.RiskGranting, Permissions: []models.Permission{models.PermissionUserManage},
 				Description: "Make an account. Without a password the person signs in another way — a passkey, single sign-on, or a password set later.",
 				Parameters: tools.Object(map[string]any{
 					"username":  tools.StringProperty("the username"),
@@ -70,7 +72,27 @@ func init() {
 				},
 			},
 			{
+				// Changing the groups an account is in is changing what it
+				// may do, and moving one into the administrators is the
+				// shortest way to everything. Asked about whenever the
+				// call names groups; renaming somebody is an ordinary
+				// write.
 				Name: "user_update", Family: tools.FamilyPeople, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionUserManage},
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					var asked struct {
+						GroupIDs []string `json:"group_ids"`
+						Disabled *bool    `json:"disabled"`
+					}
+					if err := json.Unmarshal(arguments, &asked); err == nil {
+						if asked.GroupIDs != nil {
+							return tools.RiskGranting
+						}
+						if asked.Disabled != nil {
+							return tools.RiskDestructive
+						}
+					}
+					return tools.RiskWrite
+				},
 				Description: "Change an account: name, notification address, groups, or whether it may sign in.",
 				Parameters: tools.Object(map[string]any{
 					"user_id":   tools.StringProperty("the account, from user_list"),
@@ -141,7 +163,12 @@ func init() {
 				},
 			},
 			{
-				Name: "group_manage", Family: tools.FamilyPeople, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionGroupManage},
+				// A group is a bundle of permissions and the people who
+				// hold them, so every change to one is a change to who may
+				// do what -- including adding oneself to a group that
+				// already holds everything, which needs no permission
+				// beyond the one to manage groups.
+				Name: "group_manage", Family: tools.FamilyPeople, Risk: tools.RiskGranting, Permissions: []models.Permission{models.PermissionGroupManage},
 				Description: "Make, change or delete a group: its members, roles and domains. Deleting asks first.",
 				Parameters: tools.Object(map[string]any{
 					"action":      tools.EnumProperty("what to do", "create", "update", "delete"),
@@ -156,7 +183,7 @@ func init() {
 					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
 					}
-					return tools.RiskWrite
+					return tools.RiskGranting
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -224,7 +251,8 @@ func init() {
 				},
 			},
 			{
-				Name: "role_manage", Family: tools.FamilyPeople, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionRoleManage},
+				// A role is the permissions themselves.
+				Name: "role_manage", Family: tools.FamilyPeople, Risk: tools.RiskGranting, Permissions: []models.Permission{models.PermissionRoleManage},
 				Description: "Make, change or delete a role and its permissions. Deleting asks first.",
 				Parameters: tools.Object(map[string]any{
 					"action":      tools.EnumProperty("what to do", "create", "update", "delete"),
@@ -237,7 +265,7 @@ func init() {
 					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
 					}
-					return tools.RiskWrite
+					return tools.RiskGranting
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {

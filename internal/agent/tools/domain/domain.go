@@ -391,7 +391,9 @@ func init() {
 				},
 			},
 			{
-				Name: "credential_create", Family: tools.FamilyDomains, Risk: tools.RiskWrite, Permissions: manage,
+				// Granting: what comes back is a password that sends mail
+				// as this domain, signed and aligned, from anywhere.
+				Name: "credential_create", Family: tools.FamilyDomains, Risk: tools.RiskGranting, Permissions: manage,
 				Description: "Make a sending credential for a domain. The secret is shown once, to the person, exactly; never keep it.",
 				Parameters:  tools.Object(map[string]any{"domain": tools.StringProperty("the domain, by name or id"), "comment": tools.StringProperty("what it is for"), "alias": tools.StringProperty("the address it sends as, when limited to one")}, "domain"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {

@@ -234,3 +234,37 @@ score  NAME_SHOUTS     1.0
 		t.Errorf("NAME_SHOUTS should match the display name: %v", fired)
 	}
 }
+
+// A message with thousands of repeated headers is read in time proportional
+// to its size, not to its size squared.
+//
+// Appending each repeat to the value already gathered copied everything
+// before it. A message may carry four thousand headers of sixty-four
+// kilobytes, and the copying alone was eighteen seconds of one core --
+// measured, from one message, sent by anybody who can reach port 25.
+func TestRepeatedHeadersAreNotCopiedOverAndOver(t *testing.T) {
+	value := strings.Repeat("x", 16*1024)
+	headers := make([]string, 0, 4096)
+	for index := 0; index < 4096; index++ {
+		headers = append(headers, "X-Padding: "+value)
+	}
+	message := &spamfilter.Message{Headers: headers, Body: []byte("hello")}
+
+	started := time.Now()
+	subjects := newRuleSubjects(message)
+	took := time.Since(started)
+
+	if got := subjects.headers["x-padding"]; len(got) < len(value) {
+		t.Fatalf("the values are still gathered: %d", len(got))
+	}
+	// The header block is bounded; "full" is that block and the body,
+	// each bounded in its own right.
+	if len(subjects.full) > 2*bodyLimit+2 {
+		t.Fatalf("and the block is still bounded: %d", len(subjects.full))
+	}
+	// Generous: the quadratic version took seconds for this input, and a
+	// linear one is milliseconds. This is not a benchmark, it is a fuse.
+	if took > 2*time.Second {
+		t.Fatalf("reading the headers took %s, which is the shape of the bug", took)
+	}
+}

@@ -33,27 +33,29 @@ type ChannelOperation interface {
 }
 
 type agentChannelModel struct {
-	ID           string     `gorm:"column:id;primaryKey"`
-	CreatedAt    time.Time  `gorm:"column:created_at"`
-	ModifiedAt   time.Time  `gorm:"column:modified_at"`
-	AgentID      string     `gorm:"column:agent_id"`
-	Kind         string     `gorm:"column:kind"`
-	Token        string     `gorm:"column:token"`
-	BotName      string     `gorm:"column:bot_name"`
-	LinkedID     string     `gorm:"column:linked_id"`
-	LinkedName   string     `gorm:"column:linked_name"`
-	LinkCode     string     `gorm:"column:link_code"`
-	Enabled      bool       `gorm:"column:enabled"`
-	LastError    string     `gorm:"column:last_error"`
-	LastSeenAt   *time.Time `gorm:"column:last_seen_at"`
-	ClaimedBy    string     `gorm:"column:claimed_by"`
-	ClaimedUntil *time.Time `gorm:"column:claimed_until"`
+	ID               string     `gorm:"column:id;primaryKey"`
+	CreatedAt        time.Time  `gorm:"column:created_at"`
+	ModifiedAt       time.Time  `gorm:"column:modified_at"`
+	AgentID          string     `gorm:"column:agent_id"`
+	Kind             string     `gorm:"column:kind"`
+	Token            string     `gorm:"column:token"`
+	BotName          string     `gorm:"column:bot_name"`
+	LinkedID         string     `gorm:"column:linked_id"`
+	LinkedName       string     `gorm:"column:linked_name"`
+	LinkedSenderID   string     `gorm:"column:linked_sender_id"`
+	LinkedSenderName string     `gorm:"column:linked_sender_name"`
+	LinkCode         string     `gorm:"column:link_code"`
+	Enabled          bool       `gorm:"column:enabled"`
+	LastError        string     `gorm:"column:last_error"`
+	LastSeenAt       *time.Time `gorm:"column:last_seen_at"`
+	ClaimedBy        string     `gorm:"column:claimed_by"`
+	ClaimedUntil     *time.Time `gorm:"column:claimed_until"`
 }
 
 func (agentChannelModel) TableName() string { return "agent_channel" }
 
 func (self *agentChannelModel) toModel() *models.AgentChannel {
-	return &models.AgentChannel{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Kind: models.AgentChannelKind(self.Kind), Token: self.Token, BotName: self.BotName, LinkedID: self.LinkedID, LinkedName: self.LinkedName, LinkCode: self.LinkCode, Enabled: self.Enabled, LastError: self.LastError, LastSeenAt: self.LastSeenAt, ClaimedBy: self.ClaimedBy, ClaimedUntil: self.ClaimedUntil}
+	return &models.AgentChannel{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Kind: models.AgentChannelKind(self.Kind), Token: self.Token, BotName: self.BotName, LinkedID: self.LinkedID, LinkedName: self.LinkedName, LinkedSenderID: self.LinkedSenderID, LinkedSenderName: self.LinkedSenderName, LinkCode: self.LinkCode, Enabled: self.Enabled, LastError: self.LastError, LastSeenAt: self.LastSeenAt, ClaimedBy: self.ClaimedBy, ClaimedUntil: self.ClaimedUntil}
 }
 
 func (self *transaction) PutAgentChannel(channel *models.AgentChannel) (*models.AgentChannel, error) {
@@ -73,10 +75,10 @@ func (self *transaction) PutAgentChannel(channel *models.AgentChannel) (*models.
 		stored.ID = newID()
 		stored.CreatedAt = stored.ModifiedAt
 	}
-	model := &agentChannelModel{ID: stored.ID, CreatedAt: stored.CreatedAt, ModifiedAt: stored.ModifiedAt, AgentID: stored.AgentID, Kind: string(stored.Kind), Token: stored.Token, BotName: stored.BotName, LinkedID: stored.LinkedID, LinkedName: stored.LinkedName, LinkCode: stored.LinkCode, Enabled: stored.Enabled, LastError: stored.LastError, LastSeenAt: stored.LastSeenAt}
+	model := &agentChannelModel{ID: stored.ID, CreatedAt: stored.CreatedAt, ModifiedAt: stored.ModifiedAt, AgentID: stored.AgentID, Kind: string(stored.Kind), Token: stored.Token, BotName: stored.BotName, LinkedID: stored.LinkedID, LinkedName: stored.LinkedName, LinkedSenderID: stored.LinkedSenderID, LinkedSenderName: stored.LinkedSenderName, LinkCode: stored.LinkCode, Enabled: stored.Enabled, LastError: stored.LastError, LastSeenAt: stored.LastSeenAt}
 	if err := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "agent_id"}, {Name: "kind"}},
-		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "token", "bot_name", "linked_id", "linked_name", "link_code", "enabled", "last_error", "last_seen_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "token", "bot_name", "linked_id", "linked_name", "linked_sender_id", "linked_sender_name", "link_code", "enabled", "last_error", "last_seen_at"}),
 	}).Create(model).Error; err != nil {
 		return nil, err
 	}

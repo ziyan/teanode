@@ -2,6 +2,7 @@ package mailparse_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -176,5 +177,48 @@ func TestTraverseRefusesAMessageNestedTooDeeply(t *testing.T) {
 	}
 	if parts != 1 {
 		t.Errorf("got %d parts, want 1", parts)
+	}
+}
+
+// Depth was bounded and breadth was not.
+//
+// A megabyte of "--b" repeated is two hundred thousand parts, and the callers
+// are what makes that expensive: one opens a connection to the virus scanner
+// per part, another decodes every compressed part it finds. So a message
+// nobody looks twice at became two hundred thousand connections, and virus
+// scanning silently stopped for everybody else while it ran.
+func TestAMessageOfNothingButBoundariesIsRefused(t *testing.T) {
+	var body bytes.Buffer
+	body.WriteString("--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n")
+	for index := 0; index < 5000; index++ {
+		body.WriteString("--b\r\n\r\n")
+	}
+	body.WriteString("--b--\r\n")
+
+	walked := 0
+	err := mailparse.TraverseParts(
+		[]string{"Content-Type: multipart/mixed; boundary=b"}, body.Bytes(),
+		func(_ textproto.MIMEHeader, _ io.Reader) error {
+			walked++
+			return nil
+		})
+	if !errors.Is(err, mailparse.ErrTooManyParts) {
+		t.Fatalf("a message with thousands of parts is refused: %v after %d", err, walked)
+	}
+	if walked > 1001 {
+		t.Fatalf("and refused before doing the work: %d parts walked", walked)
+	}
+
+	// An ordinary message is untouched.
+	walked = 0
+	ordinary := "--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n" +
+		"--b\r\nContent-Type: text/html\r\n\r\n<p>hello</p>\r\n--b--\r\n"
+	if err := mailparse.TraverseParts(
+		[]string{"Content-Type: multipart/alternative; boundary=b"}, []byte(ordinary),
+		func(_ textproto.MIMEHeader, _ io.Reader) error {
+			walked++
+			return nil
+		}); err != nil || walked != 2 {
+		t.Fatalf("two parts, no complaint: %d %v", walked, err)
 	}
 }

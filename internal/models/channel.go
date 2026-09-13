@@ -35,6 +35,17 @@ type AgentChannel struct {
 	LinkedID   string `json:"linkedId,omitempty"`
 	LinkedName string `json:"linkedName,omitempty"`
 
+	// LinkedSenderID is who sent the code, and LinkedSenderName what the
+	// app calls them. The bot answers that person and nobody else: a chat
+	// is a room, and in a group every member of it -- and everybody they
+	// invite -- would otherwise be speaking with the owner's voice and
+	// answering the agent's confirmations.
+	//
+	// Empty for a bot linked before this was kept, which is refused rather
+	// than trusted.
+	LinkedSenderID   string `json:"linkedSenderId,omitempty"`
+	LinkedSenderName string `json:"linkedSenderName,omitempty"`
+
 	// LinkCode is what a chat sends the bot to become the linked one; a
 	// new one is drawn whenever the link is dropped.
 	LinkCode string `json:"linkCode,omitempty"`

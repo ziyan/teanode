@@ -110,6 +110,37 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- A third security review, over everything built since the last one: the
+  agent and its tools, connected servers, skills, the browser and computer
+  devices, the address book and the calendar. Forty findings; what is fixed
+  and what is open is in `docs/security/security-review.md`.
+
+- The question the agent asks before it acts is asked of what it is about to
+  do. A tool call written loosely was judged by the tool's own class rather
+  than the call's, so writing it with single quotes turned something that
+  should have asked -- a rule that forwards every message to a stranger, an
+  invitation to a list of them -- into an ordinary change that asked nobody.
+
+- Handing out a way into the account -- an API token, an app password, a
+  sending credential -- or changing who may do what now asks first. None of
+  those are destructive and none of them send anything, so they had been
+  ordinary changes.
+
+- Text the agent reads from somewhere else cannot end the marking that says
+  where it came from. A message carrying the closing mark ended it, and what
+  followed was read as instructions.
+
+- A chat app bot answers the person who linked it. It answered whoever spoke
+  in the linked chat, which in a group is every member -- including answering
+  the questions the agent asks before it does something.
+
+- A message carrying thousands of repeated headers, or thousands of parts, no
+  longer costs the server seconds of work or thousands of connections to the
+  virus scanner.
+
+- A chat bot's token, a mail program's password and a skill's secret no
+  longer reach the log, the database or the model that is being talked to.
+
 - The agent can say that a message is phishing or junk, which are two new
   categories beside the others it sorts into. Phishing is a message that
   pretends to be somebody it is not -- a password notice about your own

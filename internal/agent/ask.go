@@ -861,6 +861,28 @@ func (self *AskRun) chat(ctx context.Context, provider llm.Provider, request *ll
 	return response, nil
 }
 
+// fenced marks content this server did not write, so what is inside is read
+// as something to consider rather than as something to do.
+//
+// The closing tag is taken out of the content first. Written as a bare join,
+// a message carrying the closing tag ended the fence itself, and everything
+// after it read as the loop's own words -- which is the whole attack the
+// fence exists to stop, available to anybody who can send mail.
+func fenced(content string) string {
+	return untrustedOpen + "\n" + strings.ReplaceAll(content, untrustedClose, untrustedCloseSaid) +
+		"\n" + untrustedClose
+}
+
+const (
+	untrustedOpen  = "<untrusted-data>"
+	untrustedClose = "</untrusted-data>"
+
+	// What the closing tag becomes when it turns up inside the content.
+	// Said rather than dropped, so a message that genuinely discusses the
+	// marking still reads sensibly.
+	untrustedCloseSaid = "&lt;/untrusted-data&gt;"
+)
+
 // runTool runs one call: an unknown tool answers so, a tool that needs the
 // person's word waits for it, and what a tool answers is bounded and, when
 // it came from outside, marked as data.
@@ -908,14 +930,14 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		if len(said) > askResultCharacters {
 			said = said[:askResultCharacters] + "\n[cut here: it went on]"
 		}
-		return self.toolAnswer(toolCall, "<untrusted-data>\n"+fmt.Sprintf(`{"error": %q}`, said)+"\n</untrusted-data>")
+		return self.toolAnswer(toolCall, fenced(fmt.Sprintf(`{"error": %q}`, said)))
 	}
 	content := result.Content
 	if len(content) > askResultCharacters {
 		content = content[:askResultCharacters] + "\n[cut here: the result goes on]"
 	}
 	if result.Untrusted {
-		content = "<untrusted-data>\n" + content + "\n</untrusted-data>"
+		content = fenced(content)
 	}
 	if result.ShowVerbatim {
 		content = "show_verbatim: relay the following to the person once, exactly, and never keep it.\n" + content

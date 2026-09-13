@@ -519,7 +519,15 @@ func newRuleSubjects(message *spamfilter.Message) *ruleSubjects {
 	}
 	raw := string(body)
 
-	headers := make(map[string]string, len(message.Headers))
+	// Repeated headers of one name are gathered and joined once. Appended
+	// to the value already held, each one copied everything before it: a
+	// message may carry four thousand headers of sixty-four kilobytes, and
+	// copying that block on every repeat is a hundred and forty gigabytes
+	// of memory traffic -- eighteen seconds of one core, measured, from one
+	// message that anybody may send. It is the shape a header split was
+	// fixed for in an earlier audit, in a file that audit did not open.
+	gathered := make(map[string][]string, len(message.Headers))
+	order := make([]string, 0, len(message.Headers))
 	for _, header := range message.Headers {
 		name, value, found := strings.Cut(header, ":")
 		if !found {
@@ -527,11 +535,14 @@ func newRuleSubjects(message *spamfilter.Message) *ruleSubjects {
 		}
 		name = strings.ToLower(strings.TrimSpace(name))
 		value = strings.TrimSpace(value)
-		if existing, ok := headers[name]; ok {
-			headers[name] = existing + " " + value
-			continue
+		if _, seen := gathered[name]; !seen {
+			order = append(order, name)
 		}
-		headers[name] = value
+		gathered[name] = append(gathered[name], value)
+	}
+	headers := make(map[string]string, len(gathered))
+	for _, name := range order {
+		headers[name] = strings.Join(gathered[name], " ")
 	}
 
 	// Capped: a message full of links must not make the rule pass
@@ -540,11 +551,23 @@ func newRuleSubjects(message *spamfilter.Message) *ruleSubjects {
 
 	// The header block is bounded the same way the body is: a "full"
 	// rule runs over both, and a message is allowed more header than the
-	// patterns should be run across.
-	joinedHeaders := strings.Join(message.Headers, "\n")
-	if len(joinedHeaders) > bodyLimit {
-		joinedHeaders = joinedHeaders[:bodyLimit]
+	// patterns should be run across. Built up to the bound rather than
+	// joined and then cut, so a seventy megabyte block is never one string.
+	var block strings.Builder
+	for _, header := range message.Headers {
+		if block.Len() >= bodyLimit {
+			break
+		}
+		if block.Len() > 0 {
+			block.WriteByte('\n')
+		}
+		if room := bodyLimit - block.Len(); len(header) > room {
+			block.WriteString(header[:room])
+			break
+		}
+		block.WriteString(header)
 	}
+	joinedHeaders := block.String()
 
 	return &ruleSubjects{
 		headers: headers,

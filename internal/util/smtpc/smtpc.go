@@ -268,7 +268,13 @@ func (self *client) sendCommand(expectedStatusCode int, format string, arguments
 		return 0, "", err
 	}
 
-	log.Debugf("%s: sending: %s", self, fmt.Sprintf(format, arguments...))
+	// Said in full except for AUTH, whose argument is the operator's
+	// password for the server being relayed through.
+	if written := fmt.Sprintf(format, arguments...); strings.HasPrefix(strings.ToUpper(written), "AUTH ") {
+		log.Debugf("%s: sending: AUTH <the credential>", self)
+	} else {
+		log.Debugf("%s: sending: %s", self, written)
+	}
 	id, err := self.text.Cmd(format, arguments...)
 	if err != nil {
 		return 0, "", err

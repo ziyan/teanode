@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -127,5 +128,62 @@ func TestEveryFamilyIsAPolicyName(t *testing.T) {
 		if !found {
 			t.Errorf("config.AgentToolFamilies offers %q, which is no family", name)
 		}
+	}
+}
+
+// The question a call is judged by and the act it performs read the same
+// bytes.
+//
+// They did not. A tool that tells its risks apart reads the arguments
+// strictly and falls back to its own class when they will not parse; the tool
+// then decodes the same arguments with the repair a model's output needs, and
+// does the thing. So writing the call sloppily -- single quotes are enough --
+// turned an outward call into an ordinary write and walked past the
+// confirmation: a rule that forwards every message to a stranger, an
+// invitation to a list of them, a token, a command on the person's machine.
+func TestALooselyWrittenCallIsJudgedByWhatItDoes(t *testing.T) {
+	t.Parallel()
+
+	outward := &Tool{
+		Name: "example", Risk: RiskWrite,
+		RiskOf: func(arguments json.RawMessage) Risk {
+			var asked struct {
+				Tell []string `json:"tell"`
+			}
+			if err := json.Unmarshal(arguments, &asked); err == nil && len(asked.Tell) > 0 {
+				return RiskOutward
+			}
+			return ""
+		},
+	}
+	strict := json.RawMessage(`{"tell":["ada@example.com"]}`)
+	loose := json.RawMessage(`{'tell':['ada@example.com'],}`)
+
+	if got := outward.RiskFor(strict); got != RiskOutward {
+		t.Fatalf("written strictly it is outward: %q", got)
+	}
+	if got := outward.RiskFor(loose); got != RiskOutward {
+		t.Fatalf("and written loosely it is the same call: %q", got)
+	}
+	if !NeedsConfirmation(outward, loose, nil, nil) {
+		t.Fatal("so it is asked about either way")
+	}
+
+	// And what the tool then reads is what was judged: the settled form is
+	// what every reader gets.
+	var asked struct {
+		Tell []string `json:"tell"`
+	}
+	if err := json.Unmarshal(SettledArguments(loose), &asked); err != nil || len(asked.Tell) != 1 {
+		t.Fatalf("the settled arguments are the ones the tool acts on: %v %v", asked, err)
+	}
+	// Arguments that are already JSON are handed back untouched.
+	if string(SettledArguments(strict)) != string(strict) {
+		t.Fatalf("an ordinary call is not rewritten: %s", SettledArguments(strict))
+	}
+	// Something that is not JSON at all is left for the tool to refuse in
+	// its own words rather than silently becoming an empty call.
+	if got := SettledArguments(json.RawMessage("not json")); string(got) != "not json" {
+		t.Fatalf("nonsense is passed through: %s", got)
 	}
 }

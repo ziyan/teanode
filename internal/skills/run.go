@@ -3,9 +3,11 @@ package skills
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -315,7 +317,18 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 	}
 	response, err := self.running.client(allowed).Do(request)
 	if err != nil {
-		return nil, err
+		// The reason, without the address it was reaching. A step may
+		// carry a secret in its query string -- the skill's author chooses
+		// that -- and Go wraps a failed request in an error quoting the
+		// whole URL. That error becomes the tool's answer, which is kept
+		// in the run and sent to the model's provider. The two reports
+		// below already say only the host; this one said everything.
+		cause := err
+		var wrapped *url.Error
+		if errors.As(err, &wrapped) {
+			cause = wrapped.Err
+		}
+		return nil, fmt.Errorf("%s did not answer: %w", target.Host, cause)
 	}
 	defer func() { _ = response.Body.Close() }()
 	// What the step asks for, up or down, within the hard cap: asking for

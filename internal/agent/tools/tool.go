@@ -30,12 +30,22 @@ type Risk string
 
 // The risk classes. Read changes nothing; write changes something the
 // person can change back; destructive cannot be undone; outward leaves the
-// server — a message sent, a request made on the person's behalf.
+// server — a message sent, a request made on the person's behalf; granting
+// hands out a way in, or changes who may do what.
+//
+// Granting is its own class because it is neither of the two it kept being
+// filed under. Minting an API token is not destructive -- nothing is lost --
+// and it is not outward -- nothing leaves. It was therefore an ordinary
+// write, so an agent following instructions it read in a message could mint a
+// token for the whole account, and the person was never asked. What a
+// credential costs is not measured by what it changes; it is measured by what
+// somebody holding it can do afterwards.
 const (
 	RiskRead        Risk = "read"
 	RiskWrite       Risk = "write"
 	RiskDestructive Risk = "destructive"
 	RiskOutward     Risk = "outward"
+	RiskGranting    Risk = "granting"
 )
 
 // Family is a tool's group, which is also what the operator's policy can
@@ -237,13 +247,46 @@ func Listed(entries []string, tool *Tool) bool {
 
 // RiskFor is what a call would cost: the call's own class when the tool
 // tells them apart, the tool's otherwise.
+//
+// Judged from the arguments as the tool will read them, which is why they are
+// settled first. Read strictly here and repaired there, the two disagreed
+// about the same call: a RiskOf that cannot parse what it is given falls back
+// to the tool's own class, and the tool then repaired the braces and did the
+// thing. Writing the arguments sloppily was enough to turn an outward call
+// into an ordinary write and walk past the question -- a rule that forwards
+// every message to a stranger, an invitation to a list of them, a token, a
+// command. The gate and the act have to read the same bytes.
 func (self *Tool) RiskFor(arguments json.RawMessage) Risk {
-	if self.RiskOf != nil && len(arguments) > 0 {
-		if risk := self.RiskOf(arguments); risk != "" {
+	settled := SettledArguments(arguments)
+	if self.RiskOf != nil && len(settled) > 0 {
+		if risk := self.RiskOf(settled); risk != "" {
 			return risk
 		}
 	}
 	return self.Risk
+}
+
+// SettledArguments are a call's arguments as everything that reads them must
+// see them: repaired once, so that what a call is judged by and what it does
+// cannot be two different things.
+//
+// Arguments that are already JSON are returned untouched, which is nearly
+// every call. Anything else is put through the same repair the tool's own
+// decoding would have done, and what will not parse even then is given back
+// as it came, for the tool to refuse in its own words.
+func SettledArguments(arguments json.RawMessage) json.RawMessage {
+	raw := strings.TrimSpace(string(arguments))
+	if raw == "" {
+		return arguments
+	}
+	if json.Valid([]byte(raw)) {
+		return arguments
+	}
+	repaired, err := llm.ExtractJSON(raw)
+	if err != nil {
+		return arguments
+	}
+	return json.RawMessage(repaired)
 }
 
 // NeedsConfirmation says whether a call must wait for the person: the risk
@@ -251,7 +294,7 @@ func (self *Tool) RiskFor(arguments json.RawMessage) Risk {
 // arguments it answers for the tool as a whole.
 func NeedsConfirmation(tool *Tool, arguments json.RawMessage, policy *config.AgentTools, agent *models.Agent) bool {
 	risk := tool.RiskFor(arguments)
-	if risk == RiskDestructive || risk == RiskOutward {
+	if risk == RiskDestructive || risk == RiskOutward || risk == RiskGranting {
 		return true
 	}
 	if policy != nil && Listed(policy.Confirm, tool) {

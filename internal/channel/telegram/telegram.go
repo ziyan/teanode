@@ -43,6 +43,25 @@ func New(token string, httpClient *http.Client, base string) *Client {
 	return &Client{token: token, base: base + "/bot" + token, files: base + "/file/bot" + token, http: httpClient}
 }
 
+// withoutToken takes the bot's token out of an error before anybody keeps it.
+//
+// This service carries the token in the path of every request, and Go puts the
+// whole URL in the error it makes when a request does not complete -- so a
+// name that will not resolve, a blocked egress, a timeout, anything at all,
+// hands back a string with the credential in it. That string is logged, and
+// written to the row this bot is configured in, and answered from the API. The
+// token is sealed in that same table for exactly the reason this defeats.
+//
+// Nobody has to attack anything for this to happen: a network that fails
+// twenty-one times in a row is enough, which on a mail server is Tuesday.
+func (self *Client) withoutToken(err error) error {
+	if err == nil || self.token == "" {
+		return err
+	}
+	said := strings.ReplaceAll(err.Error(), self.token, "<the bot's token>")
+	return errors.New(said)
+}
+
 // User is a Telegram account, a bot's included.
 type User struct {
 	ID        int64  `json:"id"`
@@ -153,7 +172,7 @@ func (self *Client) call(ctx context.Context, method string, parameters any, res
 func (self *Client) do(request *http.Request, result any) error {
 	response, err := self.http.Do(request)
 	if err != nil {
-		return err
+		return self.withoutToken(err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	var decoded answer
@@ -266,7 +285,7 @@ func (self *Client) Download(ctx context.Context, fileId string) ([]byte, error)
 	}
 	response, err := self.http.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, self.withoutToken(err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {

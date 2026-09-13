@@ -808,7 +808,17 @@ func (self *session) readCommand() (string, string, error) {
 		verb = strings.ToUpper(line)
 		arguments = ""
 	}
-	log.Debugf("%s: received: %s %s", self, verb, arguments)
+	// Everything but the argument of AUTH, which is the credential itself.
+	// "AUTH PLAIN <base64>" on one line is what nearly every client sends,
+	// and base64 is not a disguise: at debug level this wrote every device's
+	// submission password into the log. An earlier audit took a password out
+	// of a debug line for the same reason; this is the same line, on the
+	// other side of the connection.
+	if verb == "AUTH" {
+		log.Debugf("%s: received: %s <the credential>", self, verb)
+	} else {
+		log.Debugf("%s: received: %s %s", self, verb, arguments)
+	}
 	return verb, arguments, nil
 }
 

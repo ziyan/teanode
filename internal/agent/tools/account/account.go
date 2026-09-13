@@ -68,11 +68,17 @@ func init() {
 				Name: "token_manage", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
 				Description: "The person's API tokens: make one (shown once, to them, exactly) or revoke one.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("create or revoke", "create", "revoke"), "name": tools.StringProperty("for create: what the token is for"), "token_id": tools.StringProperty("for revoke: the token"), "lifetime": tools.StringProperty("for create: how long it lives, such as 30d")}, "action"),
+				// Making one hands out a way into the whole account, for
+				// as long as it lives, to whoever ends up holding it --
+				// so the person is asked. It was an ordinary write, and
+				// the answer carries the token itself, so an agent
+				// following instructions it read in a message could mint
+				// one and nobody was ever asked anything.
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					if tools.ActionOf(arguments) == "revoke" {
 						return tools.RiskDestructive
 					}
-					return tools.RiskWrite
+					return tools.RiskGranting
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -143,7 +149,9 @@ func init() {
 					if tools.ActionOf(arguments) == "list" {
 						return tools.RiskRead
 					}
-					return tools.RiskWrite
+					// Making one is a password for the mailbox, which
+					// reads and sends mail from any program that has it.
+					return tools.RiskGranting
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
