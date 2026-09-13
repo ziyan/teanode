@@ -64,6 +64,10 @@ type CalendarView struct {
 	// "monday".
 	WeekStart string `json:"weekStart,omitempty"`
 	Events    int    `json:"events"`
+
+	// AgentGranted says the person has given their agent this calendar. The
+	// agent's own tools read it: what is not granted is not theirs to see.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // CalendarEventView is one event, and when it happens.
@@ -261,6 +265,7 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 			ID: found.ID, Name: found.Name, Description: found.Description,
 			Colour: found.Colour, Timezone: found.Timezone,
 			WeekStart: weekStartOf(found), Events: int(count),
+			AgentGranted: found.AgentGranted,
 		})
 	}
 	return views, nil
@@ -812,7 +817,7 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 	return &CalendarView{
 		ID: kept.ID, Name: kept.Name, Description: kept.Description,
 		Colour: kept.Colour, Timezone: kept.Timezone, WeekStart: weekStartOf(kept),
-		Events: int(count),
+		Events: int(count), AgentGranted: kept.AgentGranted,
 	}, nil
 }
 

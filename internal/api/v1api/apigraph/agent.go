@@ -48,6 +48,7 @@ type AgentMutation interface {
 	// Let the agent reach one of the caller's mailboxes, with the policy for
 	// it; called again, it changes the policy. Needs agent:use.
 	GrantAgentMailbox(ctx context.Context, arguments GrantAgentMailboxArguments) (*AgentView, error)
+	GrantAgentSource(ctx context.Context, arguments GrantAgentSourceArguments) (*AgentView, error)
 
 	// Have the agent write a reply to a message, for the caller to read,
 	// change and send; the text comes back, nothing is saved or sent. The
@@ -102,6 +103,11 @@ type AgentView struct {
 	// Sources are every mailbox the caller owns, with its policy where the
 	// agent has been granted it.
 	Sources []*AgentSource `json:"sources"`
+
+	// Collections are the caller's calendars and address books, each with
+	// its own switch. A mailbox carries a policy and these do not, which is
+	// why they are a list of their own rather than more sources.
+	Collections []*AgentCollection `json:"collections"`
 
 	// Allowed is what the deployment offers, resolved against what is
 	// configured: a feature that needs an embedding model or a browser is
@@ -274,19 +280,25 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 		return nil, err
 	}
 	view := &AgentView{
-		Agent:      found,
-		Sources:    []*AgentSource{},
-		Allowed:    self.allowed(),
-		Choices:    append([]string{}, self.config.Current().Agent.Models.Choices...),
-		Timezone:   agent.Location(user).String(),
-		Language:   agent.Language(found, user),
-		Categories: found.CategoryNames(),
+		Agent:       found,
+		Sources:     []*AgentSource{},
+		Collections: []*AgentCollection{},
+		Allowed:     self.allowed(),
+		Choices:     append([]string{}, self.config.Current().Agent.Models.Choices...),
+		Timezone:    agent.Location(user).String(),
+		Language:    agent.Language(found, user),
+		Categories:  found.CategoryNames(),
 	}
 	sources, err := self.sourcesOf(tx, user.ID)
 	if err != nil {
 		return nil, err
 	}
 	view.Sources = sources
+	collections, err := self.collectionsOf(tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	view.Collections = collections
 	if found != nil {
 		budget, err := agent.CheckBudget(tx, self.config.Current(), found, user, time.Now())
 		if err != nil {

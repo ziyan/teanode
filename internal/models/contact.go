@@ -16,6 +16,11 @@ type AddressBook struct {
 
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+
+	// AgentGranted says the person has given their agent this address book.
+	// False until they do: nothing from a source the person has not granted
+	// is ever sent to a model.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // Contact is one person in an address book.

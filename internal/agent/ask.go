@@ -1117,6 +1117,16 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	if len(others) > 0 {
 		lines = append(lines, "Mailboxes they have not given you: "+strings.Join(others, ", ")+".")
 	}
+	// The calendar and the address book are sources in the same sense, with
+	// a switch each. Said here because a model that does not know it has a
+	// diary does not look at one, and a model that thinks it has one it has
+	// not been given spends a turn being refused.
+	if granted, withheld := self.collections(ctx); len(granted) > 0 {
+		lines = append(lines, "Also yours to read:")
+		lines = append(lines, granted...)
+	} else if len(withheld) > 0 {
+		lines = append(lines, "They have not given you "+strings.Join(withheld, " or ")+".")
+	}
 	// The zone, not the time: the time changes every minute, and a system
 	// prompt that changes every minute is one no provider can cache. The
 	// <now> overlay carries the time, after the history.
@@ -1131,6 +1141,54 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// collections is the calendars and address books the agent may read, said in
+// a line each, and the kinds it may not as a short list.
+func (self *AskRun) collections(ctx context.Context) (granted []string, withheld []string) {
+	var answer struct {
+		ListCalendars []struct {
+			Name         string `json:"name"`
+			Events       int    `json:"events"`
+			AgentGranted bool   `json:"agentGranted"`
+		} `json:"ListCalendars"`
+		ListAddressBooks []struct {
+			Name         string `json:"name"`
+			Contacts     int    `json:"contacts"`
+			AgentGranted bool   `json:"agentGranted"`
+		} `json:"ListAddressBooks"`
+	}
+	if err := self.settings.Operations.Execute(ctx,
+		`query { ListCalendars { name events agentGranted } ListAddressBooks { name contacts agentGranted } }`,
+		nil, &answer); err != nil {
+		// Not an error worth failing a turn over: a person without the
+		// permission for either has neither, and the prompt says nothing
+		// about them.
+		log.Debugf("cannot list the collections of %q for the prompt: %s", self.settings.Owner.Username, err)
+		return nil, nil
+	}
+	calendars, books := 0, 0
+	for _, calendar := range answer.ListCalendars {
+		if !calendar.AgentGranted {
+			calendars++
+			continue
+		}
+		granted = append(granted, fmt.Sprintf("- the calendar %q, with %d events in it", calendar.Name, calendar.Events))
+	}
+	for _, book := range answer.ListAddressBooks {
+		if !book.AgentGranted {
+			books++
+			continue
+		}
+		granted = append(granted, fmt.Sprintf("- the address book %q, with %d people in it", book.Name, book.Contacts))
+	}
+	if calendars > 0 {
+		withheld = append(withheld, "their calendar")
+	}
+	if books > 0 {
+		withheld = append(withheld, "their address book")
+	}
+	return granted, withheld
 }
 
 // sources lists the mailboxes, granted and not, as the situation says them.

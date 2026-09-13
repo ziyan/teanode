@@ -26,6 +26,8 @@ type addressBookModel struct {
 	ModifiedAt  time.Time `gorm:"column:modified_at"`
 	Name        string    `gorm:"column:name"`
 	Description string    `gorm:"column:description"`
+	// AgentGranted is the person's switch for this book as a source.
+	AgentGranted bool `gorm:"column:agent_granted"`
 }
 
 func (addressBookModel) TableName() string { return "addressbook" }
@@ -34,6 +36,7 @@ func (self *addressBookModel) toModel() *models.AddressBook {
 	return &models.AddressBook{
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
+		AgentGranted: self.AgentGranted,
 	}
 }
 
@@ -139,6 +142,7 @@ func (self *transaction) UpdateAddressBook(book *models.AddressBook) (*models.Ad
 	row := &addressBookModel{
 		ID: book.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(book.Name), 200), Description: book.Description,
+		AgentGranted: book.AgentGranted,
 	}
 	if row.Name == "" {
 		row.Name = before.Name
@@ -146,7 +150,8 @@ func (self *transaction) UpdateAddressBook(book *models.AddressBook) (*models.Ad
 	if err := self.applyMutation(models.AuditResourceAddressBook, row.ID, models.AuditActionUpdate,
 		before, row.toModel(), func(tx *gorm.DB) error {
 			return tx.Model(&addressBookModel{}).Where("\"id\" = ?", row.ID).
-				Updates(map[string]any{"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description}).Error
+				Updates(map[string]any{"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description,
+					"agent_granted": row.AgentGranted}).Error
 		}); err != nil {
 		return nil, err
 	}

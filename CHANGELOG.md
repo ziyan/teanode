@@ -8,6 +8,13 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- A calendar and an address book are things you give your agent, the way a
+  mailbox is: a switch each on the agent's page, and `teanode agent source
+  allow calendar` from a terminal. Until you do, it cannot read them and says
+  so. **They start switched off, including the ones you already have** — an
+  agent that could read your diary yesterday cannot today until you say so,
+  which is the direction a default like this should be wrong in.
+
 - Sorting a message and drafting an answer to it can look things up, and take
   more than one turn to do it. Both were a single call at a single prompt: the
   sorting run could not tell whether a sender had ever written before, and the

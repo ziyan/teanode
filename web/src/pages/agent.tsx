@@ -1,10 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
-import { ErrorMessage, Loading, SaveRow, Tag, budgetNearness, formatClock, formatCount, formatMoney, formatTime } from '../components/common'
+import {
+  ErrorMessage,
+  Loading,
+  SaveRow,
+  Tag,
+  budgetNearness,
+  formatClock,
+  formatCount,
+  formatMoney,
+  formatTime,
+} from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { PencilIcon, PinIcon, PinOffIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
+import {
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  RefreshIcon,
+  ToggleOffIcon,
+  ToggleOnIcon,
+  TrashIcon,
+} from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -58,9 +76,18 @@ export type Agent = {
   operatorDisabledAt?: string | null
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
+// A calendar or an address book as a source: a switch, and how much is in it.
+export type AgentCollection = {
+  id: string
+  name: string
+  kind: 'calendar' | 'addressBook'
+  granted: boolean
+  items: number
+}
 export type AgentView = {
   agent: Agent | null
   sources: AgentSource[]
+  collections: AgentCollection[]
   allowed: Record<string, boolean>
   budget: { used: number; limit: number; resetsAt: string; cost: number; costLimit: number; currency: string } | null
   choices: string[]
@@ -78,6 +105,7 @@ const VIEW = `{
     triage { enabled backfill replyExpectation }
     summaries { enabled minimumMessages style }
     autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
+  collections { id name kind granted items }
   allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
   budget { used limit resetsAt cost costLimit currency }
   choices timezone language categories
@@ -92,6 +120,10 @@ const UPDATE_AGENT = `
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
+const GRANT_SOURCE = `
+  mutation ($kind: String!, $id: String!, $granted: Boolean!) {
+    GrantAgentSource(kind: $kind, id: $id, granted: $granted) ${VIEW}
+  }`
 
 export function useAgent(options: { refresh?: boolean } = {}) {
   return useQuery(() => graphql<{ ReadAgent: AgentView }>(READ_AGENT), [], options)
@@ -198,6 +230,9 @@ export function AgentPage() {
         {view.sources.map((source) => (
           <SourceCard key={source.mailboxId} source={source} view={view} onChanged={reload} />
         ))}
+        {view.collections.map((collection) => (
+          <CollectionRow key={collection.id} collection={collection} view={view} onChanged={reload} />
+        ))}
       </SettingsSection>
       <MemoryCard />
       <SchedulesCard />
@@ -276,14 +311,18 @@ function BudgetBar({ budget, zone }: { budget: AgentView['budget']; zone: string
   if (tokens < 0 && money < 0) {
     return (
       <p className="muted">
-        {t('agent.budgetNone')} {t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') })}
+        {t('agent.budgetNone')}{' '}
+        {t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') })}
       </p>
     )
   }
   const byMoney = money >= tokens
   const fraction = Math.max(0, Math.min(1, byMoney ? money : tokens))
   const said = byMoney
-    ? t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency) })
+    ? t('agent.budgetMoney', {
+        used: formatMoney(budget.cost, budget.currency),
+        limit: formatMoney(budget.costLimit, budget.currency),
+      })
     : t('agent.budgetTokens', { used: formatCount(budget.used), limit: formatCount(budget.limit) })
   return (
     <div className="agent-budget">
@@ -292,7 +331,9 @@ function BudgetBar({ budget, zone }: { budget: AgentView['budget']; zone: string
           {said}
           {/* What it came to, whichever way the budget is counted: a
               number of tokens is not something anybody can act on. */}
-          {!byMoney && budget.cost > 0 ? <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span> : null}
+          {!byMoney && budget.cost > 0 ? (
+            <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span>
+          ) : null}
         </span>
         <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt, zone) })}</span>
       </div>
@@ -304,7 +345,10 @@ function BudgetBar({ budget, zone }: { budget: AgentView['budget']; zone: string
         aria-valuenow={Math.round(fraction * 100)}
         aria-label={said}
       >
-        <span className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`} style={{ width: `${Math.round(fraction * 100)}%` }} />
+        <span
+          className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`}
+          style={{ width: `${Math.round(fraction * 100)}%` }}
+        />
       </div>
     </div>
   )
@@ -447,11 +491,17 @@ function VoiceForm({ agent, busy, onSave }: SaveProps) {
         <div className="row">
           <label>
             <span>{t('agent.voiceGreeting')}</span>
-            <input value={voice.greeting ?? ''} onChange={(event) => setVoice({ ...voice, greeting: event.target.value })} />
+            <input
+              value={voice.greeting ?? ''}
+              onChange={(event) => setVoice({ ...voice, greeting: event.target.value })}
+            />
           </label>
           <label>
             <span>{t('agent.voiceSignoff')}</span>
-            <input value={voice.signoff ?? ''} onChange={(event) => setVoice({ ...voice, signoff: event.target.value })} />
+            <input
+              value={voice.signoff ?? ''}
+              onChange={(event) => setVoice({ ...voice, signoff: event.target.value })}
+            />
           </label>
         </div>
       </div>
@@ -540,7 +590,9 @@ function CategoriesSection({ agent, view, busy, onSave }: SaveProps & { view: Ag
             <input
               value={editing.category.name}
               maxLength={40}
-              onChange={(event) => setEditing({ ...editing, category: { ...editing.category, name: event.target.value } })}
+              onChange={(event) =>
+                setEditing({ ...editing, category: { ...editing.category, name: event.target.value } })
+              }
             />
           </label>
           <label>
@@ -674,7 +726,9 @@ const CHAT_APP_KINDS = ['telegram', 'discord'] as const
 function ChatAppsCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, reload } = useQuery(() => graphql<{ ListAgentChannels: ChatApp[] }>(CHAT_APPS, {}), [], { refresh: false })
+  const { data, error, reload } = useQuery(() => graphql<{ ListAgentChannels: ChatApp[] }>(CHAT_APPS, {}), [], {
+    refresh: false,
+  })
   const [editing, setEditing] = useState<string | null>(null)
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -791,7 +845,12 @@ function ChatAppsCard() {
           <p className="muted">{howOf(editing)}</p>
           <label>
             <span>{t('agent.chatAppToken')}</span>
-            <input type="password" value={token} autoComplete="off" onChange={(event) => setToken(event.target.value)} />
+            <input
+              type="password"
+              value={token}
+              autoComplete="off"
+              onChange={(event) => setToken(event.target.value)}
+            />
           </label>
         </FormDialog>
       )}
@@ -802,7 +861,9 @@ function ChatAppsCard() {
 function ServersCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, reload } = useQuery(() => graphql<{ ListAgentServers: AgentServer[] }>(SERVERS, {}), [], { refresh: false })
+  const { data, error, reload } = useQuery(() => graphql<{ ListAgentServers: AgentServer[] }>(SERVERS, {}), [], {
+    refresh: false,
+  })
   const [connecting, setConnecting] = useState<AgentServer | null>(null)
   const [credential, setCredential] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
@@ -1055,7 +1116,12 @@ function SkillSecretsCard() {
                   {secret.set ? t('agent.skillSecretReplace') : t('agent.skillSecretSet')}
                 </button>
                 {secret.set ? (
-                  <button type="button" className="danger" disabled={busy === secret.key} onClick={() => void forget(secret)}>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busy === secret.key}
+                    onClick={() => void forget(secret)}
+                  >
                     {t('agent.skillSecretForget')}
                   </button>
                 ) : null}
@@ -1105,7 +1171,9 @@ const AUDIENCES = ['ask', 'triage', 'reply', 'summaries', 'research'] as const
 function MemoryCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentMemories: Memory[] }>(MEMORIES, {}), [], { refresh: false })
+  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentMemories: Memory[] }>(MEMORIES, {}), [], {
+    refresh: false,
+  })
   // The dialog makes a memory or changes one: editing is the id it keeps.
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
@@ -1165,7 +1233,9 @@ function MemoryCard() {
   const words = filter.trim().toLowerCase()
   const shown = words
     ? memories.filter((memory) =>
-        [memory.title, memory.content, ...memory.tags, ...memory.appliesTo].some((text) => text.toLowerCase().includes(words)),
+        [memory.title, memory.content, ...memory.tags, ...memory.appliesTo].some((text) =>
+          text.toLowerCase().includes(words),
+        ),
       )
     : memories
   return (
@@ -1499,7 +1569,9 @@ type Run = { id: string; title: string; jobKind: string; lastAt: string }
 
 function ActivityCard() {
   const { t, plural } = useTranslation()
-  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [], { refresh: false })
+  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [], {
+    refresh: false,
+  })
   const runs = data?.ListAgentRuns ?? []
   if (error) {
     return null
@@ -1638,7 +1710,8 @@ function RepliesCard() {
       {replies.map((reply) => {
         const detail = [reply.to, formatTime(reply.sentAt ?? reply.createdAt)]
         if (reply.reason) detail.push(reply.reason)
-        if (reply.status === 'held' && reply.sendAfter) detail.push(t('agent.replySends', { time: formatTime(reply.sendAfter) }))
+        if (reply.status === 'held' && reply.sendAfter)
+          detail.push(t('agent.replySends', { time: formatTime(reply.sendAfter) }))
         return (
           <SettingsRow
             key={reply.id}
@@ -1688,7 +1761,11 @@ function ConfirmForm({ agent, busy, onSave }: SaveProps) {
       onSubmit={(event) => {
         event.preventDefault()
         void onSave(
-          { confirm: Object.entries(policy).filter(([, word]) => word === 'confirm').map(([name]) => name) },
+          {
+            confirm: Object.entries(policy)
+              .filter(([, word]) => word === 'confirm')
+              .map(([name]) => name),
+          },
           t('agent.saved'),
         )
       }}
@@ -1750,7 +1827,12 @@ function Check({
 }) {
   return (
     <label className="checkbox">
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
       {label}
     </label>
   )
@@ -1842,6 +1924,65 @@ export function SourceCard({
           }}
         />
       ) : null}
+    </div>
+  )
+}
+
+// A calendar or an address book as a source: one switch, no policy. A
+// mailbox carries what to do with what arrives in it; these carry nothing,
+// because reading a diary is reading a diary.
+export function CollectionRow({
+  collection,
+  view,
+  onChanged,
+}: {
+  collection: AgentCollection
+  view: AgentView
+  onChanged: () => Promise<unknown>
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+
+  const set = async (granted: boolean) => {
+    setBusy(true)
+    try {
+      await graphql(GRANT_SOURCE, { kind: collection.kind, id: collection.id, granted })
+      toast.done(granted ? t('agent.granted') : t('agent.revoked'))
+      await onChanged()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const what =
+    collection.kind === 'calendar'
+      ? t('agent.collection.events', { count: collection.items })
+      : t('agent.collection.people', { count: collection.items })
+
+  return (
+    <div className="agent-source">
+      <div className="settings-section-head">
+        <div>
+          <h4>{collection.name}</h4>
+          <p className="muted">
+            {collection.kind === 'calendar' ? t('agent.collection.calendar') : t('agent.collection.addressBook')} ·{' '}
+            {what}
+          </p>
+        </div>
+        {collection.granted ? (
+          <button type="button" className="danger" disabled={busy} onClick={() => void set(false)}>
+            {t('agent.revoke')}
+          </button>
+        ) : (
+          <button type="button" className="primary" disabled={busy || !view.agent} onClick={() => void set(true)}>
+            {t('agent.grant')}
+          </button>
+        )}
+      </div>
+      {collection.granted ? null : <p className="muted">{t('agent.notGrantedCollection')}</p>}
     </div>
   )
 }
@@ -1964,7 +2105,11 @@ function SummariesForm({ policy, allowed, busy, onSave }: PolicyProps) {
 // HelpForm: the three things it does when asked or when sorting says so.
 function HelpForm({ policy, allowed, busy, onSave }: PolicyProps) {
   const { t } = useTranslation()
-  const [help, setHelp] = useState({ draftReplies: policy.draftReplies, search: policy.search, research: policy.research })
+  const [help, setHelp] = useState({
+    draftReplies: policy.draftReplies,
+    search: policy.search,
+    research: policy.research,
+  })
   useEffect(() => {
     setHelp({ draftReplies: policy.draftReplies, search: policy.search, research: policy.research })
   }, [policy.draftReplies, policy.search, policy.research])
@@ -2011,9 +2156,17 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
   const setReply = (change: Partial<AgentAutoReply>) => setReplyState({ ...reply, ...change })
   // The three lists as typed, commas and all; split when saved, or a
   // comma would vanish under the cursor.
-  const [lists, setLists] = useState({ allow: joinList(policy.autoReply?.allow), never: joinList(policy.autoReply?.never), categories: joinList(policy.autoReply?.categories) })
+  const [lists, setLists] = useState({
+    allow: joinList(policy.autoReply?.allow),
+    never: joinList(policy.autoReply?.never),
+    categories: joinList(policy.autoReply?.categories),
+  })
   useEffect(() => {
-    setLists({ allow: joinList(policy.autoReply?.allow), never: joinList(policy.autoReply?.never), categories: joinList(policy.autoReply?.categories) })
+    setLists({
+      allow: joinList(policy.autoReply?.allow),
+      never: joinList(policy.autoReply?.never),
+      categories: joinList(policy.autoReply?.categories),
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(policy.autoReply)])
 
@@ -2022,7 +2175,14 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
       className="settings-subform"
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave({ autoReply: { ...reply, allow: splitList(lists.allow), never: splitList(lists.never), categories: splitList(lists.categories) } })
+        void onSave({
+          autoReply: {
+            ...reply,
+            allow: splitList(lists.allow),
+            never: splitList(lists.never),
+            categories: splitList(lists.categories),
+          },
+        })
       }}
     >
       <h4>{t('agent.answering')}</h4>

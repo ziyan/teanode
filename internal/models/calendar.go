@@ -30,6 +30,12 @@ type Calendar struct {
 	// Where the columns of a month or a week begin is a local convention
 	// rather than a fact, so it is written down rather than assumed.
 	WeekStart string `json:"weekStart,omitempty"`
+
+	// AgentGranted says the person has given their agent this calendar.
+	// False until they do, including for calendars that existed before
+	// there was a switch: nothing from a source the person has not granted
+	// is ever sent to a model.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // Week starts, which are the two conventions worth keeping: much of the world

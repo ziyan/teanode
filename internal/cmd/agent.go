@@ -200,13 +200,31 @@ func newAgentSettingsCommand() *cli.Command {
 func newAgentSourceCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "source",
-		Usage: "the mailboxes your agent may reach, and what it does in each",
+		Usage: "what your agent may reach -- mailboxes, calendars, address books -- and what it does in each",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
-				Usage:  "every mailbox you own, and whether the agent may reach it",
+				Usage:  "everything you own that the agent could read, and whether it may",
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runAgentSourceList,
+			},
+			{
+				Name:      "allow",
+				Usage:     "let the agent read a calendar or an address book",
+				ArgsUsage: "calendar|addressbook [name]",
+				Description: "The switch a mailbox has, for the other two collections. With no name, the\n" +
+					"only one of that kind; with a name, the one called that.\n\n" +
+					"  teanode agent source allow calendar\n" +
+					"  teanode agent source allow addressbook Work",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentSourceAllow,
+			},
+			{
+				Name:      "deny",
+				Usage:     "stop the agent reading a calendar or an address book",
+				ArgsUsage: "calendar|addressbook [name]",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentSourceDeny,
 			},
 			{
 				Name:   "grant",
@@ -560,7 +578,7 @@ func sourceByFlag(command *cli.Command, view *client.AgentView) (*client.AgentSo
 
 func printSources(command *cli.Command, view *client.AgentView) error {
 	if command.Bool("json") {
-		return PrintJSON(view.Sources)
+		return PrintJSON(map[string]any{"sources": view.Sources, "collections": view.Collections})
 	}
 	rows := [][]string{}
 	for _, source := range view.Sources {
@@ -578,7 +596,73 @@ func printSources(command *cli.Command, view *client.AgentView) error {
 		}
 		rows = append(rows, []string{source.Name, source.MailboxID, yesNo(policy.Granted), on(policy.Triage), on(policy.Summaries), on(policy.AutoReply), strings.Join(source.Addresses, ", ")})
 	}
-	return printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows)
+	if err := printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows); err != nil {
+		return err
+	}
+	if len(view.Collections) == 0 {
+		return nil
+	}
+	// The other two kinds of source, which carry a switch and no policy.
+	collections := [][]string{}
+	for _, collection := range view.Collections {
+		collections = append(collections, []string{collection.Name, collection.ID, collection.Kind, yesNo(collection.Granted), fmt.Sprintf("%d", collection.Items)})
+	}
+	fmt.Println()
+	return printTable([]string{"COLLECTION", "ID", "KIND", "GRANTED", "ITEMS"}, collections)
+}
+
+// runAgentSourceAllow and runAgentSourceDeny are the calendar's and the
+// address book's switch, which a mailbox has had since the agent did.
+func runAgentSourceAllow(ctx context.Context, command *cli.Command) error {
+	return setCollection(ctx, command, true)
+}
+
+func runAgentSourceDeny(ctx context.Context, command *cli.Command) error {
+	return setCollection(ctx, command, false)
+}
+
+func setCollection(ctx context.Context, command *cli.Command, granted bool) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	kind := strings.ToLower(strings.TrimSpace(command.Args().First()))
+	switch kind {
+	case "calendar":
+		kind = "calendar"
+	case "addressbook", "address-book", "contacts":
+		kind = "addressBook"
+	default:
+		return fmt.Errorf("say which: calendar or addressbook")
+	}
+	name := strings.TrimSpace(strings.Join(command.Args().Tail(), " "))
+	view, err := client.ReadAgent(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var found *client.AgentCollection
+	matches := 0
+	for _, collection := range view.Collections {
+		if collection.Kind != kind {
+			continue
+		}
+		if name != "" && !strings.EqualFold(collection.Name, name) {
+			continue
+		}
+		found = collection
+		matches++
+	}
+	if found == nil {
+		return fmt.Errorf("no %s called %q", kind, name)
+	}
+	if matches > 1 {
+		return fmt.Errorf("there is more than one; say which by name")
+	}
+	updated, err := client.GrantAgentSource(ctx, connection, found.Kind, found.ID, granted)
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printSources(command, updated)
 }
 
 func runAgentSourceList(ctx context.Context, command *cli.Command) error {

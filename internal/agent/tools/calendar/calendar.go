@@ -151,23 +151,36 @@ func outwardWhenAnybodyIsTold(arguments json.RawMessage) tools.Risk {
 	return ""
 }
 
-// theCalendar is the person's own, and the identifier everything else needs.
-func theCalendar(ctx context.Context, run tools.Run) (string, string, error) {
+// theCalendar is the first calendar the person has given the agent, and the
+// identifier everything else here needs.
+//
+// Granted, not merely owned. A calendar is a source like a mailbox: nothing
+// from one the person has not handed over is ever sent to a model, and an
+// agent granted a mailbox has not thereby been shown the diary. The refusal
+// is worded for the model to relay, because "there is no calendar" would be
+// a lie -- there is one, and it is not the agent's to read.
+func theCalendar(ctx context.Context, operations tools.Operations) (string, string, error) {
 	var result struct {
 		ListCalendars []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Timezone string `json:"timezone"`
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Timezone     string `json:"timezone"`
+			AgentGranted bool   `json:"agentGranted"`
 		} `json:"ListCalendars"`
 	}
-	if err := run.Operations().Execute(ctx,
-		`query { ListCalendars { id name timezone } }`, nil, &result); err != nil {
+	if err := operations.Execute(ctx,
+		`query { ListCalendars { id name timezone agentGranted } }`, nil, &result); err != nil {
 		return "", "", err
 	}
 	if len(result.ListCalendars) == 0 {
 		return "", "", fmt.Errorf("there is no calendar")
 	}
-	return result.ListCalendars[0].ID, result.ListCalendars[0].Timezone, nil
+	for _, calendar := range result.ListCalendars {
+		if calendar.AgentGranted {
+			return calendar.ID, calendar.Timezone, nil
+		}
+	}
+	return "", "", fmt.Errorf("they have not given you their calendar; it is a switch on their agent's page, beside the mailboxes")
 }
 
 type windowArguments struct {
@@ -256,7 +269,7 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +351,7 @@ func runFree(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +469,7 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if strings.TrimSpace(arguments.Summary) == "" {
 		return nil, fmt.Errorf("an event needs a title")
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +578,7 @@ func runEdit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +700,7 @@ func runRemove(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, _, err := theCalendar(ctx, run)
+	calendarId, _, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}

@@ -86,7 +86,7 @@ type contactBookArguments struct {
 }
 
 const (
-	documentBooks = `query { ListAddressBooks { id name contacts } }`
+	documentBooks = `query { ListAddressBooks { id name contacts agentGranted } }`
 
 	documentBookContacts = `query ($addressBookId: String!, $query: String, $first: Int) {
   ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
@@ -108,9 +108,10 @@ const (
 )
 
 type bookView struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Contacts int    `json:"contacts"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Contacts     int    `json:"contacts"`
+	AgentGranted bool   `json:"agentGranted"`
 }
 
 type contactView struct {
@@ -149,7 +150,19 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	if len(books.ListAddressBooks) == 0 {
 		return nil, fmt.Errorf("this person has no address book")
 	}
-	book := books.ListAddressBooks[0]
+	// Granted, not merely owned: an address book is a source like a
+	// mailbox, and what the person has not handed over is not the agent's
+	// to read.
+	var book *bookView
+	for _, candidate := range books.ListAddressBooks {
+		if candidate.AgentGranted {
+			book = candidate
+			break
+		}
+	}
+	if book == nil {
+		return nil, fmt.Errorf("they have not given you their address book; it is a switch on their agent's page, beside the mailboxes")
+	}
 
 	switch arguments.Action {
 	case "list":

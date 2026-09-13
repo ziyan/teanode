@@ -1,11 +1,14 @@
 package calendar
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A window is read in the person's own zone, because a day is a local thing:
@@ -161,5 +164,51 @@ func TestAnEventWithGuestsIsNotTouchedQuietly(t *testing.T) {
 	}
 	if err := guestsAreTold(meeting, true, "changing"); err != nil {
 		t.Fatalf("asked properly, it goes ahead: %s", err)
+	}
+}
+
+// answering is an Operations that answers one document with one thing.
+type answering struct {
+	answer string
+	asked  []string
+}
+
+func (self *answering) Permissions() *models.EffectivePermissions { return nil }
+
+func (self *answering) Execute(_ context.Context, document string, _ map[string]any, result any) error {
+	self.asked = append(self.asked, document)
+	if result == nil {
+		return nil
+	}
+	return json.Unmarshal([]byte(self.answer), result)
+}
+
+// A calendar is a source, and a source the person has not granted is not the
+// agent's to read.
+//
+// The rule the whole agent is built on is that nothing from an ungranted
+// source reaches a model. A mailbox has had that switch since the agent did;
+// the calendar did not, and was reachable on the person's own permission
+// alone -- so an agent granted one mailbox could read every appointment in
+// the diary, which is not what granting a mailbox means.
+func TestTheDiaryIsOnlyReadWhenItHasBeenGiven(t *testing.T) {
+	t.Parallel()
+
+	withheld := &answering{answer: `{"ListCalendars":[{"id":"c1","name":"Calendar","timezone":"Europe/London","agentGranted":false}]}`}
+	if _, _, err := theCalendar(context.Background(), withheld); err == nil {
+		t.Fatal("a calendar nobody granted is not readable")
+	} else if !strings.Contains(err.Error(), "not given you their calendar") {
+		// The refusal is worded for the model to pass on: "there is no
+		// calendar" would be a lie, because there is one.
+		t.Fatalf("and the refusal says why: %s", err)
+	}
+
+	granted := &answering{answer: `{"ListCalendars":[{"id":"c1","name":"Calendar","timezone":"","agentGranted":false},{"id":"c2","name":"Family","timezone":"Europe/London","agentGranted":true}]}`}
+	id, zone, err := theCalendar(context.Background(), granted)
+	if err != nil || id != "c2" || zone != "Europe/London" {
+		t.Fatalf("the one they did grant: %q %q %v", id, zone, err)
+	}
+	if len(granted.asked) != 1 || !strings.Contains(granted.asked[0], "agentGranted") {
+		t.Fatalf("and the switch is what it asked for: %v", granted.asked)
 	}
 }

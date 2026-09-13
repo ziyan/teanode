@@ -57,6 +57,10 @@ type AddressBookView struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Contacts    int    `json:"contacts"`
+
+	// AgentGranted says the person has given their agent this book. The
+	// agent's own tools read it: what is not granted is not theirs to see.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // ContactView is one contact. Card is the whole of it; the fields beside it
@@ -214,6 +218,7 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 		}
 		views = append(views, &AddressBookView{
 			ID: book.ID, Name: book.Name, Description: book.Description, Contacts: int(count),
+			AgentGranted: book.AgentGranted,
 		})
 	}
 	return views, nil
@@ -428,7 +433,7 @@ func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBoo
 	if kept == nil {
 		return nil, api.ErrNotFound
 	}
-	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(count)}, nil
+	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(count), AgentGranted: kept.AgentGranted}, nil
 }
 
 func contactView(contact *models.Contact, withCard bool) *ContactView {
