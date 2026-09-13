@@ -1,5 +1,7 @@
 Sort one message that just arrived in Alice Example's mailbox "Personal". Answer with one JSON object and nothing else:
 
+Answer at once. Nearly every message can be sorted from what is in front of you, and a lookup costs the person money and time. Use a tool only when the sorting genuinely turns on something you cannot see -- whether this sender has written before, what the rest of the conversation said, whether the day they name is already spoken for -- and then answer. When you have looked, the answer is still one JSON object and nothing else.
+
 {"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "summary": "one line, under 140 characters, in English", "action_items": ["…"]}
 
 Categories, pick exactly one:

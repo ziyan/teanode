@@ -64,6 +64,12 @@ type AskSettings struct {
 	Headless  bool
 	MaxRounds int
 	UsageKind string
+
+	// Short asks for the one-paragraph conduct rather than the full rules.
+	// A run with nobody present and six tools does not need the page about
+	// how to talk to somebody, and sorting runs on every message that
+	// arrives, so what the prompt costs is what sorting costs.
+	Short bool
 }
 
 // Viewing is what the person has open in the dashboard.
@@ -669,7 +675,7 @@ func (self *AskRun) turn() error {
 				history = compacted
 			}
 		}
-		compact := llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
+		compact := settings.Short || llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
 		sent, deferred := Split(self.offered, self.loaded, compact)
 		system, err := self.systemPrompt(ctx, configuration, sent, deferred, compact)
 		if err != nil {

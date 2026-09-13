@@ -8,6 +8,15 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
+- Sorting a message and drafting an answer to it can look things up, and take
+  more than one turn to do it. Both were a single call at a single prompt: the
+  sorting run could not tell whether a sender had ever written before, and the
+  draft that said "Thursday works" had not looked at Thursday. Each is a run of
+  the conversation loop now, read-only, with a short set of tools and a cap on
+  its turns -- three for sorting, six for drafting, both settable. A model that
+  will not end with the object the prompt asks for still gets its mail sorted:
+  the single call is still there, behind it.
+
 - The agent's tool catalog is one tool per thing rather than one per verb:
   `domain`, `alias`, `credential`, `queue`, `rule`, `user`, `calendar`,
   `mail_audit`, `account` and `settings` each take the action as their first

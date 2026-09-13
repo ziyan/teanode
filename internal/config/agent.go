@@ -345,7 +345,13 @@ type AgentLimits struct {
 	MaxRoundsPerAsk      int `yaml:"maxRoundsPerAsk"`
 	MaxRoundsPerResearch int `yaml:"maxRoundsPerResearch"`
 	MaxRoundsPerReply    int `yaml:"maxRoundsPerReply"`
-	MaxToolCallsPerRun   int `yaml:"maxToolCallsPerRun"`
+
+	// MaxRoundsPerTriage is how many turns a sorting run may take. It is
+	// the smallest of them on purpose: sorting happens to every message
+	// that arrives, and nearly every message can be sorted from what is in
+	// front of the model.
+	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
+	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
 
 	// RequestTimeout bounds one call to a provider.
 	RequestTimeout Duration `yaml:"requestTimeout"`
@@ -555,6 +561,7 @@ func defaultAgent() Agent {
 			MaxRoundsPerAsk:      40,
 			MaxRoundsPerResearch: 8,
 			MaxRoundsPerReply:    6,
+			MaxRoundsPerTriage:   3,
 			MaxToolCallsPerRun:   60,
 			RequestTimeout:       Duration(60 * time.Second),
 			Concurrency:          2,
@@ -729,6 +736,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		{"maxRoundsPerAsk", agent.Limits.MaxRoundsPerAsk},
 		{"maxRoundsPerResearch", agent.Limits.MaxRoundsPerResearch},
 		{"maxRoundsPerReply", agent.Limits.MaxRoundsPerReply},
+		{"maxRoundsPerTriage", agent.Limits.MaxRoundsPerTriage},
 		{"maxToolCallsPerRun", agent.Limits.MaxToolCallsPerRun},
 	} {
 		if field.value <= 0 {

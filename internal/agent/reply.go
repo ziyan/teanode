@@ -412,24 +412,49 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model:      model,
-		Messages:   messages,
-		MaxTokens:  1200,
-		JSONObject: true,
-	})
 	modelName := registry.Configuration().Models.ForWork(config.AgentWorkReply)
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, mailbox.ID, modelName, string(models.AgentJobReply), response.Usage)
+
+	// A draft that can look things up. "Are you free Thursday" cannot be
+	// answered from the message alone, and neither can "what did we agree
+	// last time": both are in the mailbox and in the diary, and until now
+	// the drafting run could reach neither. It answers with the same object,
+	// and when it does not, the single call below writes the draft.
+	var answer ReplyAnswer
+	var transcript func(db.Transaction, string) (string, error)
+	if self.canThink(configuration) {
+		if written, record, err := self.draftWithTools(ctx, run, mail, messages[1].Content); err != nil {
+			log.Warningf("drafting an answer to %q with tools failed, asking once instead: %s", mail.ID, err)
+		} else if record != nil {
+			answer, transcript = *written, record
+		}
 	}
-	if err != nil {
-		return fmt.Errorf("asking the model: %w", err)
-	}
-	answer, err := llm.Extract[ReplyAnswer](response.Message.Content)
-	if err != nil {
-		return err
+	if transcript == nil {
+		callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
+		defer cancel()
+		response, err := provider.Chat(callContext, &llm.ChatRequest{
+			Model:      model,
+			Messages:   messages,
+			MaxTokens:  1200,
+			JSONObject: true,
+		})
+		if response != nil {
+			RecordUsage(run.Database(), run.Agent.ID, mailbox.ID, modelName, string(models.AgentJobReply), response.Usage)
+		}
+		if err != nil {
+			return fmt.Errorf("asking the model: %w", err)
+		}
+		written, err := llm.Extract[ReplyAnswer](response.Message.Content)
+		if err != nil {
+			return err
+		}
+		answer = written
+		transcript = func(tx db.Transaction, note string) (string, error) {
+			recorded, err := self.recordRun(tx, run, note, messages[1].Content, response, modelName)
+			if err != nil {
+				return "", err
+			}
+			return recorded.ID, nil
+		}
 	}
 	text := ""
 	if answer.Reply != nil {
@@ -441,13 +466,13 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 			reason = "the agent declined: " + strings.TrimSpace(*answer.Reason)
 		}
 		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			transcript, err := self.recordRun(tx, run, fmt.Sprintf("Declined to answer %q: %s", mail.Subject, reason), messages[1].Content, response, modelName)
+			runId, err := transcript(tx, fmt.Sprintf("Declined to answer %q: %s", mail.Subject, reason))
 			if err != nil {
 				return err
 			}
 			_, err = tx.CreateAgentReply(&models.AgentReply{
 				AgentID: run.Agent.ID, MailboxID: mailbox.ID, MailID: mail.ID, ThreadID: threadIdOf(mail),
-				RunID: transcript.ID, Status: models.AgentReplyRefused, Reason: reason,
+				RunID: runId, Status: models.AgentReplyRefused, Reason: reason,
 				Subject: replySubject(mail.Subject), From: recipient, To: strings.TrimSpace(mail.Sender),
 			})
 			return err
@@ -470,7 +495,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 	}
 	var reply *models.AgentReply
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		transcript, err := self.recordRun(tx, run, fmt.Sprintf("Answered %q; the reply is held for %d minutes", mail.Subject, policy.EffectiveHoldMinutes()), messages[1].Content, response, modelName)
+		runId, err := transcript(tx, fmt.Sprintf("Answered %q; the reply is held for %d minutes", mail.Subject, policy.EffectiveHoldMinutes()))
 		if err != nil {
 			return err
 		}
@@ -489,7 +514,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		}
 		reply, err = tx.CreateAgentReply(&models.AgentReply{
 			AgentID: run.Agent.ID, MailboxID: mailbox.ID, MailID: mail.ID, ThreadID: threadIdOf(mail),
-			DraftItemID: draftItem.ID, RunID: transcript.ID, Status: models.AgentReplyHeld,
+			DraftItemID: draftItem.ID, RunID: runId, Status: models.AgentReplyHeld,
 			Subject: replySubject(mail.Subject), From: recipient, To: strings.TrimSpace(mail.Sender), Text: text,
 			SendAfter: &sendAfter,
 		})

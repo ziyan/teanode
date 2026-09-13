@@ -436,6 +436,28 @@ So `folder_list`/`folder_manage`, `group_list`/`group_manage` and
 49 the plan estimated, and the five that did not merge are the five that were
 already action-shaped.
 
+**What the loop costs sorting, measured.** The plan said this milestone was
+not finished until the cost of sorting a plain message was measured before
+and after. Counting the characters of everything sent, at four characters to
+a token:
+
+    before (one call):   5,413 characters  ~1,350 tokens
+    after  (first round of the loop, six tools):   ~3,040 tokens
+    after  (first round of the loop, four tools):  ~2,490 tokens
+
+The difference between the last two is the tool definitions: six were 5,690
+characters of schema, four are 3,905. So the set was cut to `mail_read`,
+`mail_search`, `contact_search` and `datetime` — the calendar came out
+because whether Thursday is free does not change what a message *is*, and
+`memory` came out because what the person said about sorting is already in
+the prompt, carried by the layer that holds their memories.
+
+What is left is about 1,150 tokens per message more than the single call, of
+which the system prompt's extra layers are a third and the tool definitions
+two thirds. The system layer is marked as a cache breakpoint, so a provider
+that caches prompts charges for it once; the message itself is never the
+same twice and never cached either way.
+
 ## Decision Log
 
 - **The catalog is consolidated before anything is added to it** (2026-09-13).
