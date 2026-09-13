@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which eleven are fixed here. The ones that mattered:
+Forty findings, of which twelve are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -994,6 +994,26 @@ of heap in two seconds and wrote 144,000 rows in one transaction; at the
 default message size that is about sixteen gigabytes. A message is now bounded
 at 32 reports and 20,000 records across all of its parts.
 
+### SEC-61 — The out-of-office reply was aimed at an unverified address (Medium, fixed)
+
+`authenticationVerdict` returns as soon as DMARC passes, which is right:
+DMARC aligns the `From` header, and a domain that passes it really did
+authorize the message. But the automatic reply is sent to `MAIL FROM`, which
+DMARC says nothing about. So an attacker sends from a throwaway domain of
+their own, DKIM-signed and aligned, with `MAIL FROM` naming their victim; the
+message is accepted, the away reply is written to the victim from the person's
+address, signed by the operator's domain, with `"Auto: " + <the attacker's
+subject>` when the mailbox set no subject of its own. The per-sender quiet
+period and the hourly cap are keyed on the exact sender string, so varying the
+local part walks both. It is also how any stranger reads an away message that
+names the person, their dates and their deputy.
+
+The ladder now asks what stands behind the envelope sender: SPF passing for
+the domain in `MAIL FROM`, which is exactly the question "may this host send
+as that address", or the envelope sender being the same address the `From`
+header carries when DMARC passed. Neither is something a third party's address
+gets for free.
+
 ### SEC-59 — A schedule the agent wrote arrived as the person speaking (High, fixed)
 
 A schedule runs with nobody watching, and its prompt was handed to the loop as
@@ -1083,27 +1103,23 @@ Ranked, with what each needs. Nothing below is fixed in this pass.
 2. **A DAV listing is bounded in items, not bytes** (High). 10,000 cards of
    1 MiB each, materialised whole, then serialised whole: the protocol library
    has no streaming. A per-account byte ceiling at write time is the fix.
-5. **The out-of-office reply is aimed at an unverified envelope sender**
-   (Medium), and a DMARC pass on the header domain suppresses the SPF check on
-   the envelope. A reflector for signed mail, and a way to read an away
-   message from any stranger.
-6. **`settleZones` is quadratic**, ~1 CPU-second per 1 MiB file, and the
+5. **`settleZones` is quadratic**, ~1 CPU-second per 1 MiB file, and the
    calendar part of a message is parsed *before* the DMARC check (Medium).
-7. **One refused app-password sign-in costs up to twenty bcrypts** (Medium),
+6. **One refused app-password sign-in costs up to twenty bcrypts** (Medium),
    and DAV re-runs the whole sign-in per request while only metering failures.
-8. **The IMAP listeners have no connection ceiling** (Medium) — the third
+7. **The IMAP listeners have no connection ceiling** (Medium) — the third
     bullet of SEC-19, on the listener it was not applied to.
-9. **Calendar invitations send mail without `mail:send`** (Medium): every
+8. **Calendar invitations send mail without `mail:send`** (Medium): every
     other outbound path in the program checks it.
-10. **MCP OAuth discovery runs over an unguarded client** with no `https`
+9. **MCP OAuth discovery runs over an unguarded client** with no `https`
     requirement and no issuer check (Medium), and a connected server may be
     declared at an `http://` address with the person's token on it.
-11. **`user:manage` is transitively full administration** (Medium), and the
+10. **`user:manage` is transitively full administration** (Medium), and the
     comment beside it says the opposite.
-12. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
+11. **GraphQL takes a POST of any content type** (Medium): `SameSite=Lax` is
     the only thing between a same-site page and a cookie-authenticated
     mutation, and `/drawer` now allows framing.
-13. Smaller, recorded in full in the reviewers' reports: the shell rule asks
+12. Smaller, recorded in full in the reviewers' reports: the shell rule asks
     about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
     recover; `secretish()` in the redaction test cannot see `token`,
     `authorization` or `value`; `listen.debug` will bind anywhere; the

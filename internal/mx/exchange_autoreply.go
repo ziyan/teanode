@@ -77,6 +77,27 @@ func (self *exchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbo
 	return self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now, quiet)
 }
 
+// unvouchedSender is why the envelope sender is not somewhere to write to,
+// or empty when something stands behind it.
+//
+// Two things can: SPF passing for the domain in MAIL FROM, which is exactly
+// the question "may this host send as that address"; or the envelope sender
+// being the same address the From header carries, when DMARC passed -- then
+// the domain that authorized the message is the domain being written to.
+func unvouchedSender(mail *models.Mail, sender string) string {
+	results := mail.AuthenticationResults
+	if results.SPF != nil && results.SPF.Result == "pass" {
+		return ""
+	}
+	if mail.DMARCPassed() {
+		from := strings.ToLower(strings.TrimSpace(mail.From))
+		if from != "" && strings.EqualFold(from, sender) {
+			return ""
+		}
+	}
+	return "nothing vouched for the address the reply would go to"
+}
+
 // autoReplyRefusal is why a reply is not sent, or empty when it is.
 func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
 	// Still in the Inbox: not filed elsewhere or deleted by a rule, not in
@@ -104,6 +125,23 @@ func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbo
 	sender := strings.ToLower(strings.TrimSpace(mail.Sender))
 	if sender == "" {
 		return "the envelope sender is empty", nil
+	}
+
+	// And an envelope sender nothing vouched for is not somewhere to send
+	// this server's own signed mail.
+	//
+	// The reply goes to MAIL FROM, which is not what DMARC checks: DMARC
+	// aligns the From header, and a message may pass it with an envelope
+	// sender belonging to somebody else entirely. Accepting such a message
+	// is right -- the From domain really did authorize it -- but answering
+	// it is a reflector: an attacker sends from a domain of their own with
+	// MAIL FROM naming their victim, and this server writes to the victim,
+	// from the person's address, signed by their domain, quoting a subject
+	// the attacker chose. Varying the local part walks the per-sender
+	// limits. It is also how a stranger reads an away message that names
+	// the person, their dates and their deputy.
+	if reason := unvouchedSender(mail, sender); reason != "" {
+		return reason, nil
 	}
 
 	// Mailing lists and notification senders are never answered.
