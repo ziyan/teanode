@@ -156,6 +156,18 @@ the page you are on, and a step that is only a step on a phone — a message
 that takes the screen its folder's list had — is added only when the window
 is narrow.
 
+The dashboard is not one file. What every session needs -- the shell, the
+rail, the mailbox -- is in the first download; the libraries are beside it in
+a file of their own, so a release does not make anybody fetch React again; and
+a page somebody may never open is fetched when they open it. A new page joins
+that by being declared with `lazyPage()` in `app.tsx` rather than imported at
+the top, with a `webpackChunkName` naming the part of the dashboard it belongs
+to -- pages opened in the same breath share a file, so that going from a
+domain to one of its templates is not two waits. Keep it out of anything the
+shell imports, or it comes back into the first download by the back door.
+English is in that download too; the other catalogues are fetched before the
+first paint, which is why `index.tsx` waits for `loadCatalog` before it draws.
+
 `web/.prettierrc.json` is the formatter, and `npx prettier --write` on a file
 you are already changing is welcome. Running it over files you are not is not:
 most of the tree predates the config and the diff would bury the change.

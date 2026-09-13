@@ -1,7 +1,7 @@
 const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 
-'use strict'
+;('use strict')
 
 // The dashboard is compiled into the server binary, so the output goes
 // straight into the directory that internal/frontend embeds. There is no
@@ -64,12 +64,57 @@ module.exports = {
   output: {
     path: output,
     publicPath: '/',
-    filename: (pathData) => (pathData.chunk.name === 'artifact' ? 'assets/artifact.js' : production ? 'teanode.[contenthash].js' : 'teanode.js'),
+    // Hashed names, because the server caches them for a year: a file whose
+    // name says what is in it can be. The exception is the artifact helper,
+    // which a page written by the model links by a fixed address.
+    filename: (pathData) =>
+      pathData.chunk.name === 'artifact' ? 'assets/artifact.js' : production ? '[name].[contenthash].js' : '[name].js',
+    // A chunk fetched on demand: a page somebody has not opened, a catalog in
+    // a language they do not read. The hash sits right before the extension
+    // because that is where the server looks for it (internal/frontend).
+    chunkFilename: production ? '[name].[contenthash].js' : '[name].js',
     clean: true,
   },
+  optimization: {
+    // Three reasons the dashboard is not one file. Libraries change on their
+    // own schedule, not this server's, so they are cached across releases
+    // rather than downloaded again with every one of them. A page nobody has
+    // opened -- the domain editors, the server's own settings -- is fetched
+    // when it is opened. And a catalog is one language, not three.
+    //
+    // The artifact helper stays whole: it is one small file linked by name
+    // from a page this server did not write, and it cannot ask for a second.
+    runtimeChunk: production ? 'single' : false,
+    splitChunks: {
+      chunks: (chunk) => chunk.name !== 'artifact',
+      cacheGroups: {
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendor',
+          chunks: (chunk) => chunk.name !== 'artifact',
+          enforce: true,
+        },
+      },
+    },
+  },
   plugins: [
-    new HtmlWebpackPlugin({ template: './public/index.html', favicon: './public/favicon.ico', chunks: ['teanode'] }),
-    new MiniCssExtractPlugin({ filename: (pathData) => (pathData.chunk.name === 'artifact' ? 'assets/artifact.css' : production ? 'teanode.[contenthash].css' : 'teanode.css') }),
+    // excludeChunks rather than chunks: what the dashboard's entry is split
+    // into belongs on the page, and naming the entry alone left the runtime
+    // and the libraries off it.
+    new HtmlWebpackPlugin({
+      template: './public/index.html',
+      favicon: './public/favicon.ico',
+      excludeChunks: ['artifact'],
+    }),
+    new MiniCssExtractPlugin({
+      filename: (pathData) =>
+        pathData.chunk.name === 'artifact'
+          ? 'assets/artifact.css'
+          : production
+            ? '[name].[contenthash].css'
+            : '[name].css',
+      chunkFilename: production ? '[name].[contenthash].css' : '[name].css',
+    }),
     // Webpack empties the output directory first, which would delete the
     // committed placeholder that lets go:embed work on a clean checkout.
     new CopyWebpackPlugin({

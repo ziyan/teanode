@@ -1,35 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
 import { MailPage } from './pages/mail'
-import { MailDetailPage } from './pages/mailDetail'
 import { MailboxPage } from './pages/mailbox'
-import { MailboxSettingsPage } from './pages/mailboxSettings'
-import { AgentPage } from './pages/agent'
-import { CalendarPage } from './pages/calendar'
-import { MailboxContactsPage } from './pages/mailboxContacts'
-import { MailboxSubscriptionsPage } from './pages/mailboxSubscriptions'
-import { MailboxComposePage } from './pages/mailboxCompose'
-import { QueuePage } from './pages/queue'
-import { ReportsPage } from './pages/reports'
-import { ReportDetailPage } from './pages/reportDetail'
-import { DomainsPage } from './pages/domains'
-import { DomainTabsPage } from './pages/domainTabs'
-import { TemplateEditorPage } from './pages/templateEditor'
-import { LayoutEditorPage } from './pages/layoutEditor'
-import { ComposePage } from './pages/compose'
 import { SetupAccountPage } from './pages/setupAccount'
-import { ChangePasswordPage } from './pages/changePasswordPage'
-import { CommandLinePage } from './pages/cli'
-import { TokensPage } from './pages/settings/tokens'
-import { AccessPage } from './pages/access'
-import { ServerPage } from './pages/server'
-import { SessionsPage } from './pages/settings/sessions'
-import { ProfilePage } from './pages/settings/profile'
-import { PasskeysPage } from './pages/settings/passkeys'
 import { SETTINGS_LANDING } from './pages/settings/nav'
+import { Loading } from './components/common'
+import { lazyPage } from './lazyPage'
 import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
 import { AccountMenu } from './components/accountMenu'
@@ -41,6 +20,85 @@ import { SessionProvider, hasAnywhere } from './session'
 import { AgentDrawer } from './components/agentDrawer'
 import { MailboxesProvider } from './mailboxes'
 import { Tooltip } from './components/tooltip'
+
+// The pages somebody may never open are fetched when they do. What is left in
+// the first download is the shell, the way in, and the two pages a session
+// starts on -- the mailbox, or for an account without one, the mail it is
+// allowed to audit.
+//
+// Pages that are opened in the same breath share a file, so that going from a
+// domain to one of its templates is not two waits. The names are the four
+// parts of the dashboard: the rest of the mailbox, the calendar, what belongs
+// to a domain, what runs the server, and what belongs to the person.
+const MailboxComposePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxCompose')).MailboxComposePage,
+}))
+const MailboxContactsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxContacts')).MailboxContactsPage,
+}))
+const MailboxSubscriptionsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxSubscriptions')).MailboxSubscriptionsPage,
+}))
+const MailboxSettingsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxSettings')).MailboxSettingsPage,
+}))
+const CalendarPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "calendar" */ './pages/calendar')).CalendarPage,
+}))
+const MailDetailPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,
+}))
+const ComposePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "operations" */ './pages/compose')).ComposePage,
+}))
+const QueuePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "operations" */ './pages/queue')).QueuePage,
+}))
+const ReportsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "operations" */ './pages/reports')).ReportsPage,
+}))
+const ReportDetailPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "operations" */ './pages/reportDetail')).ReportDetailPage,
+}))
+const DomainsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "domains" */ './pages/domains')).DomainsPage,
+}))
+const DomainTabsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "domains" */ './pages/domainTabs')).DomainTabsPage,
+}))
+const TemplateEditorPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "domains" */ './pages/templateEditor')).TemplateEditorPage,
+}))
+const LayoutEditorPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "domains" */ './pages/layoutEditor')).LayoutEditorPage,
+}))
+const AccessPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "server" */ './pages/access')).AccessPage,
+}))
+const ServerPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "server" */ './pages/server')).ServerPage,
+}))
+const AgentPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/agent')).AgentPage,
+}))
+const ProfilePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/profile')).ProfilePage,
+}))
+const ChangePasswordPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/changePasswordPage')).ChangePasswordPage,
+}))
+const PasskeysPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/passkeys')).PasskeysPage,
+}))
+const TokensPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/tokens')).TokensPage,
+}))
+const SessionsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/sessions')).SessionsPage,
+}))
+const CommandLinePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/cli')).CommandLinePage,
+}))
 
 export function App() {
   const { t } = useTranslation()
@@ -153,7 +211,9 @@ export function App() {
     return (
       <div className="auth-page">
         {corner}
-        <CommandLinePage username={session.username} />
+        <Suspense fallback={<Loading />}>
+          <CommandLinePage username={session.username} />
+        </Suspense>
       </div>
     )
   }
@@ -234,90 +294,100 @@ export function App() {
                     second copy of it in 30px is a third of the screen spent
                     saying the same word twice. */}
                 {desktop && <PageHeading />}
-                <Routes>
-                  {/* Home is the mailbox, for anyone who has one. The console
+                {/* A page that is not in the first download arrives in the
+                    time it takes to ask for it, which on this server is the
+                    time it takes to read a file. Loading says nothing at all
+                    until that has taken long enough to be worth a word. */}
+                <Suspense fallback={<Loading />}>
+                  <Routes>
+                    {/* Home is the mailbox, for anyone who has one. The console
                   and an account without mail:read land on the first
                   management page instead. */}
-                  <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/mail'} replace />} />
-                  <Route path="/mailbox" element={<MailboxPage />} />
-                  <Route path="/mailbox/compose" element={<MailboxComposePage />} />
-                  <Route path="/mailbox/contacts" element={<MailboxContactsPage />} />
-                  <Route path="/mailbox/calendar" element={<CalendarPage />} />
-                  <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
-                  <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
-                  <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
-                  <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
-                  {/* The agent's page moved under the account's settings,
+                    <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/mail'} replace />} />
+                    <Route path="/mailbox" element={<MailboxPage />} />
+                    <Route path="/mailbox/compose" element={<MailboxComposePage />} />
+                    <Route path="/mailbox/contacts" element={<MailboxContactsPage />} />
+                    <Route path="/mailbox/calendar" element={<CalendarPage />} />
+                    <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
+                    <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
+                    <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
+                    <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
+                    {/* The agent's page moved under the account's settings,
                       where the rest of what is the person's own lives. */}
-                  <Route path="/agent" element={<Navigate to="/settings/agent" replace />} />
-                  <Route path="/mailbox/:folderId" element={<MailboxPage />} />
-                  <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
-                  {/* The operator's view of every message needs mail:audit;
+                    <Route path="/agent" element={<Navigate to="/settings/agent" replace />} />
+                    <Route path="/mailbox/:folderId" element={<MailboxPage />} />
+                    <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
+                    {/* The operator's view of every message needs mail:audit;
                   without it this is not a page, and the mailbox is. */}
-                  <Route
-                    path="/mail"
-                    element={
-                      hasAnywhere(session.permissions, 'mail:audit') ? <MailPage /> : <Navigate to="/mailbox" replace />
-                    }
-                  />
-                  {/* Before the message route: "compose" is not a message
+                    <Route
+                      path="/mail"
+                      element={
+                        hasAnywhere(session.permissions, 'mail:audit') ? (
+                          <MailPage />
+                        ) : (
+                          <Navigate to="/mailbox" replace />
+                        )
+                      }
+                    />
+                    {/* Before the message route: "compose" is not a message
                   identifier, and the router should never treat it as one. */}
-                  <Route path="/mail/compose" element={<ComposePage />} />
-                  <Route path="/mail/:mailId" element={<MailDetailPage />} />
-                  <Route path="/queue" element={<QueuePage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/reports/:reportId" element={<ReportDetailPage />} />
+                    <Route path="/mail/compose" element={<ComposePage />} />
+                    <Route path="/mail/:mailId" element={<MailDetailPage />} />
+                    <Route path="/queue" element={<QueuePage />} />
+                    <Route path="/reports" element={<ReportsPage />} />
+                    <Route path="/reports/:reportId" element={<ReportDetailPage />} />
 
-                  <Route path="/domains" element={<DomainsPage />} />
-                  <Route path="/domains/:domainId" element={<Navigate to="overview" replace />} />
-                  {/* Everything a domain has is a tab of one page, and the two
+                    <Route path="/domains" element={<DomainsPage />} />
+                    <Route path="/domains/:domainId" element={<Navigate to="overview" replace />} />
+                    {/* Everything a domain has is a tab of one page, and the two
                   item pages below are not tabs. They are declared first so
                   that "templates/<id>" reaches the editor rather than being
                   read as the name of a tab. */}
-                  <Route path="/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
-                  <Route path="/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
-                  <Route path="/domains/:domainId/:tab" element={<DomainTabsPage />} />
+                    <Route path="/domains/:domainId/templates/:templateId" element={<TemplateEditorPage />} />
+                    <Route path="/domains/:domainId/layouts/:layoutId" element={<LayoutEditorPage />} />
+                    <Route path="/domains/:domainId/:tab" element={<DomainTabsPage />} />
 
-                  {/* /settings on its own is not a page: the rail and the account
+                    {/* /settings on its own is not a page: the rail and the account
                   menu are the menu, and a page of cards pointing at the same
                   seven places was a page whose only content was that menu. */}
-                  {/* Everything about this server, under one row in the rail and
+                    {/* Everything about this server, under one row in the rail and
                   one path: what it is, what it talks to, and which version it
                   is running. Three rows made somebody choose between them
                   before knowing which one held the thing they wanted. */}
-                  <Route path="/access" element={<AccessPage />} />
-                  <Route path="/access/:tab" element={<AccessPage />} />
-                  {/* The row a tab is showing, in the path beside the tab: it
+                    <Route path="/access" element={<AccessPage />} />
+                    <Route path="/access/:tab" element={<AccessPage />} />
+                    {/* The row a tab is showing, in the path beside the tab: it
                       is a place, so it can be linked to and gone back to. */}
-                  <Route path="/access/:tab/:selected" element={<AccessPage />} />
-                  <Route path="/server" element={<ServerPage />} />
-                  <Route path="/server/:tab" element={<ServerPage />} />
+                    <Route path="/access/:tab/:selected" element={<AccessPage />} />
+                    <Route path="/server" element={<ServerPage />} />
+                    <Route path="/server/:tab" element={<ServerPage />} />
 
-                  {/* What configures the person signed in, which is a place you
+                    {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
-                  <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
-                  <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
-                  <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
-                  <Route path="/settings/agent" element={<AgentPage />} />
-                  <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
-                  <Route path="/settings/passkeys" element={<PasskeysPage />} />
-                  <Route path="/settings/tokens" element={<TokensPage />} />
-                  <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
+                    <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
+                    <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
+                    <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
+                    <Route path="/settings/agent" element={<AgentPage />} />
+                    <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
+                    <Route path="/settings/passkeys" element={<PasskeysPage />} />
+                    <Route path="/settings/tokens" element={<TokensPage />} />
+                    <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
-                  {/* Where these used to live. Somebody's bookmark should not
+                    {/* Where these used to live. Somebody's bookmark should not
                   break because the navigation was reorganized. */}
-                  <Route path="/settings/domains" element={<Navigate to="/domains" replace />} />
-                  <Route path="/settings/domains/:domainId" element={<RedirectDomain />} />
-                  <Route path="/setup" element={<Navigate to="/server/setup" replace />} />
-                  <Route path="/settings/setup" element={<Navigate to="/server/setup" replace />} />
-                  <Route path="/settings/server" element={<Navigate to="/server/about" replace />} />
-                  <Route path="/integrations" element={<Navigate to="/server/sending" replace />} />
-                  <Route path="/settings/integrations" element={<Navigate to="/server/sending" replace />} />
-                  <Route path="/integrations/:section" element={<RedirectIntegrations />} />
-                  <Route path="/settings/integrations/:section" element={<RedirectIntegrations />} />
+                    <Route path="/settings/domains" element={<Navigate to="/domains" replace />} />
+                    <Route path="/settings/domains/:domainId" element={<RedirectDomain />} />
+                    <Route path="/setup" element={<Navigate to="/server/setup" replace />} />
+                    <Route path="/settings/setup" element={<Navigate to="/server/setup" replace />} />
+                    <Route path="/settings/server" element={<Navigate to="/server/about" replace />} />
+                    <Route path="/integrations" element={<Navigate to="/server/sending" replace />} />
+                    <Route path="/settings/integrations" element={<Navigate to="/server/sending" replace />} />
+                    <Route path="/integrations/:section" element={<RedirectIntegrations />} />
+                    <Route path="/settings/integrations/:section" element={<RedirectIntegrations />} />
 
-                  <Route path="*" element={<p className="muted">{t('common.notFound')}</p>} />
-                </Routes>
+                    <Route path="*" element={<p className="muted">{t('common.notFound')}</p>} />
+                  </Routes>
+                </Suspense>
               </main>
             </div>
             {session.username && <AgentDrawer />}
