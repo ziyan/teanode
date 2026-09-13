@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-09-13
+
 ### Changed
 
 - The out-of-office reply is no longer sent to an address nothing vouched
