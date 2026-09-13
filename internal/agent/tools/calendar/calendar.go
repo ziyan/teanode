@@ -5,6 +5,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,7 +46,23 @@ func init() {
 				// their diary. Putting an appointment in somebody's calendar
 				// without asking is the kind of thing they find out about
 				// when they miss something else.
+				//
+				// And outward the moment anybody is invited, because that
+				// is mail leaving in the person's name. Left as a plain
+				// write, an agent reading a message that told it to invite
+				// a list of strangers would have done so with nobody
+				// asked -- the mail tools are all outward for this exact
+				// reason, and inviting is sending.
 				Name: "calendar_add", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					var asked struct {
+						Invite []string `json:"invite"`
+					}
+					if err := json.Unmarshal(arguments, &asked); err == nil && len(asked.Invite) > 0 {
+						return tools.RiskOutward
+					}
+					return tools.RiskWrite
+				},
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "Put something in the calendar. Give a title and when it starts; " +
 					"listing anybody under 'invite' sends them an invitation, so leave it out unless asked to.",

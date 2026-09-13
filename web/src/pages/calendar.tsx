@@ -249,6 +249,16 @@ function dayShifted(day: string, by: number): string {
   return `${at.getUTCFullYear()}-${month}-${date}`
 }
 
+// lastDayOf is the last day a whole-day event is on, which is the day before
+// the one the file names: the format writes the end of a date range as the
+// morning after. An event written with both ends on the same date -- which a
+// client is allowed to send -- is on that date, not the day before it.
+function lastDayOf(event: { startsAt: string; endsAt: string }): string {
+  const first = dayOf({ startsAt: event.startsAt, allDay: true })
+  const last = dayShifted(dayOf({ startsAt: event.endsAt, allDay: true }), -1)
+  return last < first ? first : last
+}
+
 // noonOf is the event's day as something a date formatter can be handed.
 // Midday, so that formatting it in any zone still names the right date.
 function noonOf(event: { startsAt: string; allDay: boolean }): Date {
@@ -423,7 +433,7 @@ export function CalendarPage() {
         // it ended on the 15th, and typing the 14th and the 15th to mean
         // two days made one.
         endDate: full.allDay
-          ? dayShifted(dayOf({ startsAt: full.endsAt, allDay: true }), -1)
+          ? lastDayOf(full)
           : dayKey(ends),
         endTime: clockKey(ends),
         allDay: full.allDay,

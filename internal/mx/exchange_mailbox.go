@@ -174,14 +174,7 @@ func FindSentCopy(tx db.Transaction, folder *models.MailboxFolder, messageId str
 // isSuspicious is whether a message belongs in Junk rather than the Inbox:
 // the spam filter failed it, or it failed DMARC under a quarantine policy.
 func isSuspicious(mail *models.Mail) bool {
-	results := mail.AuthenticationResults
-	if results.SpamFilter != nil && results.SpamFilter.Result == "fail" {
-		return true
-	}
-	if results.DMARC != nil && results.DMARC.Result == "fail" && results.DMARC.Policy == "quarantine" {
-		return true
-	}
-	return false
+	return mail.LooksLikeSpam()
 }
 
 // senderOf is the From address and display name of a message.

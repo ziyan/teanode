@@ -3,6 +3,7 @@ package dav
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -87,9 +88,9 @@ type compFilter struct {
 // calendarPropFilter is a condition on one property of an event: that it is
 // there, that it is not, or that its value matches some text.
 type calendarPropFilter struct {
-	Name         string    `xml:"name,attr"`
-	Test         string    `xml:"test,attr"`
-	IsNotDefined *struct{} `xml:"urn:ietf:params:xml:ns:caldav is-not-defined"`
+	Name         string     `xml:"name,attr"`
+	IsNotDefined *struct{}  `xml:"urn:ietf:params:xml:ns:caldav is-not-defined"`
+	TimeRange    *timeRange `xml:"urn:ietf:params:xml:ns:caldav time-range"`
 	TextMatches  []struct {
 		Text      string `xml:",chardata"`
 		Negate    string `xml:"negate-condition,attr"`
@@ -200,37 +201,67 @@ func (self *compFilter) matches(data string) bool {
 	if err != nil {
 		return true
 	}
-	event := firstEventOf(decoded)
-	if event == nil {
-		return true
-	}
-	all := self.Test == "allof"
-	for _, filter := range self.PropFilters {
-		held := event.Props[strings.ToUpper(strings.TrimSpace(filter.Name))]
-		got := false
-		switch {
-		case filter.IsNotDefined != nil:
-			got = len(held) == 0
-		case len(filter.TextMatches) == 0:
-			got = len(held) > 0
-		default:
-			got = filter.matchesText(held)
+	// Any event in the file. Reading the first one was wrong in an ordinary
+	// shape: a client that moves one occurrence of a series writes that
+	// occurrence into the file, often first, so a search for the series by
+	// its own title did not find the file the series is in.
+	matched := false
+	empty := true
+	for _, child := range decoded.Children {
+		if child == nil || child.Name != ical.CompEvent {
+			continue
 		}
-		if all && !got {
+		empty = false
+		if self.matchesEvent(child) {
+			matched = true
+			break
+		}
+	}
+	return empty || matched
+}
+
+// matchesEvent is whether one event satisfies every property condition.
+//
+// Every one of them, not any: a calendar query has no test to choose with --
+// the format that does is the address book's -- and a component matches when
+// its time range and all of its property conditions do. Taken as "any", two
+// conditions returned the union of what each asked for, which is the opposite
+// of narrowing a search.
+func (self *compFilter) matchesEvent(event *ical.Component) bool {
+	for index := range self.PropFilters {
+		if !self.PropFilters[index].matchesProp(event) {
 			return false
 		}
-		if !all && got {
-			return true
-		}
 	}
-	return all
+	return true
+}
+
+// matchesProp is one property condition against the values an event holds.
+//
+// A property the event does not have matches only through is-not-defined.
+// Written as "whatever the text match says, negated if asked", a negated
+// match on an absent property came out true -- so "everything whose notes do
+// not mention lunch" answered with every event that has no notes at all,
+// which the format explicitly does not mean.
+func (self *calendarPropFilter) matchesProp(event *ical.Component) bool {
+	held := event.Props[strings.ToUpper(strings.TrimSpace(self.Name))]
+	if self.IsNotDefined != nil {
+		return len(held) == 0
+	}
+	if len(held) == 0 {
+		return false
+	}
+	if len(self.TextMatches) == 0 {
+		// The property is there, which is all that was asked.
+		return true
+	}
+	return self.matchesText(held)
 }
 
 // matchesText is one property filter's text matches against the values an
-// event holds for it. Case-insensitively, which is the protocol's default
-// collation and the only one this server offers.
+// event holds for it, all of them, case-insensitively -- which is the
+// protocol's default collation and the only one this server offers.
 func (self *calendarPropFilter) matchesText(held []ical.Prop) bool {
-	all := self.Test == "allof"
 	for _, match := range self.TextMatches {
 		wanted := strings.ToLower(strings.TrimSpace(match.Text))
 		found := false
@@ -253,25 +284,38 @@ func (self *calendarPropFilter) matchesText(held []ical.Prop) bool {
 		if match.Negate == "yes" {
 			found = !found
 		}
-		if all && !found {
+		if !found {
 			return false
 		}
-		if !all && found {
-			return true
-		}
 	}
-	return all
+	return true
 }
 
-// firstEventOf is the first VEVENT in a decoded file, which is the event a
-// filter is about.
-func firstEventOf(cal *ical.Calendar) *ical.Component {
-	if cal == nil {
+// carriedOut is whether every condition in a filter is one this server
+// actually applies, so that a query asking for something else is refused
+// rather than answered as though the condition had been met.
+//
+// Two of them were read off the wire and quietly dropped. A condition on when
+// a property falls -- a time range inside a property filter -- was taken as
+// "the property is there", so a query for events whose start is in 2020
+// answered with events in 2026. And a collation names how text is compared:
+// asked to compare exactly, this server compared case-insensitively anyway
+// and said nothing, which is a different search from the one that was asked
+// for.
+func (self *compFilter) carriedOut() error {
+	if self == nil {
 		return nil
 	}
-	for _, child := range cal.Children {
-		if child != nil && child.Name == ical.CompEvent {
-			return child
+	for _, filter := range self.PropFilters {
+		if filter.TimeRange != nil {
+			return fmt.Errorf("a condition on when %s falls is not one this server answers", filter.Name)
+		}
+		for _, match := range filter.TextMatches {
+			switch strings.ToLower(strings.TrimSpace(match.Collation)) {
+			case "", "default", "i;unicode-casemap", "i;ascii-casemap":
+			default:
+				return fmt.Errorf("a collation of %q is not one this server offers", match.Collation)
+			}
 		}
 	}
 	return nil
@@ -361,6 +405,13 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 		filter, nothing, usable := query.eventFilter()
 		if !usable {
 			http.Error(writer, "this server does not answer that filter", http.StatusBadRequest)
+			return true
+		}
+		if err := filter.carriedOut(); err != nil {
+			// Said rather than silently answered as though the condition
+			// had been met, which is how a client gets back events it
+			// carefully asked not to see.
+			http.Error(writer, err.Error(), http.StatusForbidden)
 			return true
 		}
 		if !nothing {

@@ -406,13 +406,15 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 	var kept *models.CalendarObject
 	var refused error
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		// Read inside the transaction that writes. The form sends the
-		// boxes it showed and the server merges them onto the file it
-		// holds; reading that outside the write would let a phone's
-		// change arriving in between be merged away without a word.
+		// Read inside the transaction that writes, and held. The form
+		// sends the boxes it showed and the server merges them onto the
+		// file it holds; reading that outside the write -- or inside it
+		// without the lock, which is the same thing under this database's
+		// ordinary isolation -- would let a phone's change arriving in
+		// between be merged away without a word.
 		var existing *models.CalendarObject
 		if named := strings.TrimSpace(arguments.ID); named != "" {
-			if existing, err = tx.GetCalendarObject(found.ID, named); err != nil {
+			if existing, err = tx.LockCalendarObject(found.ID, named); err != nil {
 				return err
 			}
 			if existing == nil {
@@ -537,14 +539,63 @@ func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarOb
 	if err != nil || len(parsed.Attendees) == 0 {
 		return nil
 	}
+	var held *calendar.Parsed
+	if before != nil {
+		if decoded, err := calendar.Parse([]byte(before.Data)); err == nil {
+			held = decoded
+		}
+	}
+	asked, err := guestsToInvite(parsed, held, organizer)
+	if err != nil {
+		return err
+	}
+	if len(asked) == 0 {
+		return nil
+	}
+	written, err := calendar.Invite([]byte(kept.Data), organizer)
+	if err != nil {
+		return err
+	}
+	return self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
+}
+
+// guestsToInvite is who an invitation goes to when this person saves this
+// event, and nobody at all when it is not theirs to send.
+//
+// Only for an event this person called. The cancellation has always checked
+// that and the invitation did not, which is the wrong way round: an invitation
+// that arrived by mail brings its guest list with it, and saving somebody
+// else's event -- correcting its title, moving it in one's own copy -- then
+// sent an invitation to every one of them, from this person's address and
+// signed by their domain, carrying whatever text the sender had written. An
+// event naming no organizer is this person's own, made here, and inviting
+// people to it is the whole point.
+//
+// And a guest list has an end. Nothing else bounded this one: the setting that
+// limits recipients is about relayed mail and this path does not go through
+// it, so a file carrying twenty thousand attendee lines was twenty thousand
+// messages waiting for somebody to press save.
+func guestsToInvite(parsed, before *calendar.Parsed, organizer string) ([]string, error) {
+	if parsed == nil || organizer == "" {
+		return nil, nil
+	}
+	if held := strings.TrimSpace(parsed.Organizer); held != "" && !strings.EqualFold(held, organizer) {
+		return nil, nil
+	}
+	if len(parsed.Attendees) > calendar.MaximumGuests {
+		return nil, fmt.Errorf("%w: this event asks more than %d people, which is more than this server invites at once",
+			api.ErrInvalidArguments, calendar.MaximumGuests)
+	}
+	// Only the ones who are not already coming: everybody on the list when
+	// the event has really changed, and only the newly added ones when it
+	// has not. Sending to everybody on every save would mean correcting a
+	// typo in the notes putting an invitation in five people's mailboxes.
 	changed := true
 	already := map[string]bool{}
 	if before != nil {
-		if held, err := calendar.Parse([]byte(before.Data)); err == nil {
-			changed = held.Sequence != parsed.Sequence
-			for _, attendee := range held.Attendees {
-				already[strings.ToLower(attendee.Address)] = true
-			}
+		changed = before.Sequence != parsed.Sequence
+		for _, attendee := range before.Attendees {
+			already[strings.ToLower(attendee.Address)] = true
 		}
 	}
 	asked := make([]string, 0, len(parsed.Attendees))
@@ -560,14 +611,7 @@ func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarOb
 		}
 		asked = append(asked, attendee.Address)
 	}
-	if len(asked) == 0 {
-		return nil
-	}
-	written, err := calendar.Invite([]byte(kept.Data), organizer)
-	if err != nil {
-		return err
-	}
-	return self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
+	return asked, nil
 }
 
 func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, time.Time, error) {
@@ -687,6 +731,13 @@ func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, o
 	}
 	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), organizer) {
 		return nil
+	}
+	// The same ceiling as inviting: an event whose guest list came from
+	// somewhere else is not a mail run waiting for somebody to press
+	// delete either.
+	if len(parsed.Attendees) > calendar.MaximumGuests {
+		return fmt.Errorf("%w: this event asks more than %d people, which is more than this server will write to at once",
+			api.ErrInvalidArguments, calendar.MaximumGuests)
 	}
 	asked := make([]string, 0, len(parsed.Attendees))
 	for _, attendee := range parsed.Attendees {

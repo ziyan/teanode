@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -825,5 +826,60 @@ func TestTheHorizonIsWhereTheIndexActuallyStops(t *testing.T) {
 	// calendar.
 	if !occurrences[0].StartsAt.After(time.Now().UTC().Add(-time.Hour)) {
 		t.Fatalf("a repeat that cannot be indexed in full is indexed forwards: %s", occurrences[0].StartsAt)
+	}
+}
+
+// A series that ends exactly on the cap has not been cut short, and its past
+// is not thrown away.
+//
+// Told otherwise, a finished series lost every occurrence before today from
+// the index -- so free-busy for last month and the agenda behind it went
+// blank -- and recorded a horizon it had already passed, which put it at the
+// head of the re-index queue for ever.
+func TestAFinishedSeriesIsNotCutShort(t *testing.T) {
+	start := time.Now().UTC().Add(-100 * 24 * time.Hour).Truncate(time.Hour)
+	text := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:finite\r\nDTSTAMP:20260912T120000Z\r\n" +
+		"DTSTART:" + start.Format("20060102T150405Z") + "\r\n" +
+		"DTEND:" + start.Add(30*time.Minute).Format("20060102T150405Z") + "\r\n" +
+		"SUMMARY:Hourly, and then done\r\nRRULE:FREQ=HOURLY;COUNT=" +
+		fmt.Sprint(MaximumOccurrences) + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	parsed, err := Parse([]byte(text))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	occurrences, until, err := Indexed(parsed)
+	if err != nil {
+		t.Fatalf("index: %s", err)
+	}
+	if len(occurrences) != MaximumOccurrences {
+		t.Fatalf("every one of them: %d", len(occurrences))
+	}
+	if !occurrences[0].StartsAt.Before(time.Now().UTC()) {
+		t.Fatalf("including the ones that have already happened: %s", occurrences[0].StartsAt)
+	}
+	if !until.After(time.Now().UTC().Add(HorizonAhead - time.Hour)) {
+		t.Fatalf("worked out to the horizon, not to %s", until)
+	}
+}
+
+// A repeat too fine to walk as far as today says so, rather than handing back
+// a list of last spring with a horizon already behind it -- which nothing
+// could ever extend, so it was walked again, twice, every hour for ever.
+func TestARepeatThatCannotReachTodaySaysSo(t *testing.T) {
+	start := time.Now().UTC().AddDate(-5, 0, 0).Truncate(time.Hour)
+	text := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n" +
+		"UID:ancient\r\nDTSTAMP:20260912T120000Z\r\n" +
+		"DTSTART:" + start.Format("20060102T150405Z") + "\r\n" +
+		"DTEND:" + start.Add(time.Minute).Format("20060102T150405Z") + "\r\n" +
+		"SUMMARY:Every minute since 2021\r\nRRULE:FREQ=MINUTELY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	parsed, err := Parse([]byte(text))
+	if err != nil {
+		t.Fatalf("parse: %s", err)
+	}
+	occurrences, until, err := Indexed(parsed)
+	if err == nil {
+		t.Fatalf("this cannot be indexed and should say so: %d occurrences, horizon %s, first %s",
+			len(occurrences), until, occurrences[0].StartsAt)
 	}
 }

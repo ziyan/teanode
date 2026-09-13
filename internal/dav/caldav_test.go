@@ -652,3 +652,73 @@ func TestAQueryAnswersOnlyWhatWasAskedFor(t *testing.T) {
 		t.Fatalf("only the event that was asked for:\n%s", body)
 	}
 }
+
+// Two conditions in one query mean both, the event a query is about may be
+// any in the file, and a condition this server does not carry out is refused
+// rather than quietly treated as met.
+//
+// Each of these was wrong in its own direction: conditions were ORed, so a
+// search narrowed by two things answered with the union of each; the first
+// event in the file was the only one looked at, so a series whose moved
+// occurrence is written first was invisible to a search for the series; and a
+// negated match on a property the event has not got came out true, so "notes
+// that do not mention lunch" answered with every event that has no notes.
+func TestAQueryMeansEveryConditionInIt(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+
+	here.putEvent(t, "weekly", anEvent)
+	here.putEvent(t, "other", strings.NewReplacer(
+		"9C1F2A3B-4D5E-6789-ABCD-EF0123456789", "other-one",
+		"Weekly sync", "Other thing",
+		"LOCATION:The small room", "LOCATION:The large hall",
+	).Replace(anEvent))
+
+	report := func(filter string) (int, string) {
+		t.Helper()
+		answer := here.ask(t, "REPORT", here.calendarPath(), `<?xml version="1.0"?>
+			<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+			  <d:prop><d:getetag/><c:calendar-data/></d:prop>
+			  <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">`+
+			filter+`</c:comp-filter></c:comp-filter></c:filter>
+			</c:calendar-query>`, "Depth", "1")
+		return answer.StatusCode, text(t, answer)
+	}
+
+	// Both conditions, not either.
+	status, body := report(`
+		<c:prop-filter name="SUMMARY"><c:text-match>weekly sync</c:text-match></c:prop-filter>
+		<c:prop-filter name="LOCATION"><c:text-match>the large hall</c:text-match></c:prop-filter>`)
+	if status != http.StatusMultiStatus {
+		t.Fatalf("querying: %d %s", status, body)
+	}
+	if strings.Contains(body, "Weekly sync") || strings.Contains(body, "Other thing") {
+		t.Fatalf("nothing is in the small room and the large hall at once:\n%s", body)
+	}
+
+	// A property the event has not got does not match, negated or not.
+	status, body = report(`
+		<c:prop-filter name="X-NOBODY-WRITES-THIS">
+		  <c:text-match negate-condition="yes">lunch</c:text-match>
+		</c:prop-filter>`)
+	if status != http.StatusMultiStatus {
+		t.Fatalf("querying: %d %s", status, body)
+	}
+	if strings.Contains(body, "Weekly sync") {
+		t.Fatalf("a property that is not there matches only is-not-defined:\n%s", body)
+	}
+
+	// A condition this server does not carry out is said so.
+	if status, _ := report(`
+		<c:prop-filter name="DTSTART">
+		  <c:time-range start="20200101T000000Z" end="20210101T000000Z"/>
+		</c:prop-filter>`); status != http.StatusForbidden {
+		t.Fatalf("a condition this server does not answer is refused: %d", status)
+	}
+	if status, _ := report(`
+		<c:prop-filter name="SUMMARY">
+		  <c:text-match collation="i;octet">WEEKLY SYNC</c:text-match>
+		</c:prop-filter>`); status != http.StatusForbidden {
+		t.Fatalf("a collation this server does not offer is refused: %d", status)
+	}
+}

@@ -243,6 +243,37 @@ loud**, and the asker is told to narrow it.
 
 ## Invitations arriving
 
+**A message has to be one this server trusts at all.** Proving where a message
+came from is easy for anybody with a domain, so DMARC alone let a message that
+went straight to Junk write its sender's chosen words into the calendar grid,
+onto the phone and in front of the agent. What the spam filter failed, what
+came through a mailing list, and what announces itself as bulk are not
+invitations. `Auto-Submitted` is deliberately **not** on that list, however
+much it looks like it belongs: an invitation is written by a program and says
+so, so refusing on it would refuse nearly all of them. It is in the automatic
+reply's ladder because answering a machine is how loops start, which is a
+different question.
+
+**One occurrence is one occurrence.** An organizer who moves next Tuesday's
+standup sends a file containing only that Tuesday, carrying `RECURRENCE-ID`.
+Stored as the whole event it replaced the standup with a single appointment and
+every other week vanished — from the calendar, the phone, free-busy and
+everything that reads the index — from an ordinary thing organizers do every
+day. Such a file is merged beside the series it belongs to; a cancellation of
+one occurrence becomes an `EXDATE` on the series rather than `STATUS:CANCELLED`
+across all of it; and an answer about one occurrence is written on that
+occurrence. The index knows about all of this: an override replaces the
+occurrence it names, at whatever time it was moved to, and one that was called
+off is not on at all.
+
+**An answer can arrive after a later answer.** Mail is not ordered, and a copy
+of an old message replays with its signature intact, so a "declined" was undone
+by the "accepted" that came before it. Answers carry the moment the answering
+program wrote them, kept beside the answer in a parameter of this server's own,
+and an older one is ignored. The answer itself is one of the three the format
+has — passed through as it came, a reply wrote arbitrary text into a field
+every client reads as an enumeration.
+
 Delivery notes the message and does no more. Working out whether one carries an
 invitation means fetching it from storage and decoding it, and that inside the
 SMTP transaction is a slow disk turning into mail this server refuses after
@@ -274,12 +305,18 @@ it is", it still asked nothing: the held organizer's address is printed on the
 invitation every guest received, so copying it in costs a forger nothing. Both
 halves were the sender's to write.
 
-The one thing a sender does not write is their own address, which DMARC aligned
-to a domain they demonstrably hold. So `SENT-BY` is believed only **within that
-domain**: an assistant at the organizer's own domain may move the meeting, and
-a booking service that sends from a domain of its own is refused — it may ask
-this person to a meeting under its own name, but it may not quietly move one it
-did not call.
+The fourth answer was "the organizer's own domain, which DMARC proved". That
+one lasted a round. A domain is an organization only where a domain *is* an
+organization: at a free mail provider, where most people have their address,
+"the same domain" is a billion strangers, so the largest population of
+organizers anywhere would have been protected by nothing.
+
+So **changing or calling off an event already held takes the organizer
+themselves**, and nothing else. A delegate may still *ask* somebody to a new
+meeting — `SENT-BY` within the organizer's domain is enough for that, and an
+invitation is something its reader can decline — but an assistant cannot move
+their employer's meeting by mail, and the refusal is visible: the invitation is
+kept with its reason and the person's own copy stands.
 
 The same field defeated the check beside it. An invitation naming the recipient
 as the organizer, with no guests at all, satisfied "is this addressed to them"

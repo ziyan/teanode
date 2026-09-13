@@ -130,9 +130,18 @@ func (self *stage) deliver(t *testing.T, name string, passedDMARC bool, headers 
 // who is speaking is checked against this, so it is the interesting variable.
 func (self *stage) deliverFrom(t *testing.T, name, from string, passedDMARC bool, headers []string, body []byte) {
 	t.Helper()
+	self.deliverAs(t, name, from, passedDMARC, false, headers, body)
+}
+
+// deliverAs is the same, for a message the spam filter failed.
+func (self *stage) deliverAs(t *testing.T, name, from string, passedDMARC, spam bool, headers []string, body []byte) {
+	t.Helper()
 	var mailId string
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
 		mail := &models.Mail{ReceivedAt: time.Now(), From: from}
+		if spam {
+			mail.AuthenticationResults.SpamFilter = &models.SpamFilterResult{Result: "fail"}
+		}
 		if passedDMARC {
 			mail.AuthenticationResults.DMARC = &models.DMARCResult{Result: "pass"}
 		} else {
@@ -776,8 +785,12 @@ func TestNamingYourselfAsOrganizerDoesNotMakeYouOne(t *testing.T) {
 		t.Fatalf("and she cannot call it off either: %+v", events)
 	}
 
-	// An assistant genuinely sending for the organizer still works: the file
-	// names the organizer the event already has, and says who posted it.
+	// An assistant sending for the organizer may ask somebody to a new
+	// meeting -- an invitation is something its reader can decline -- but
+	// not move one already in the calendar. The domain an assistant shares
+	// with their employer is evidence of an organization only where a
+	// domain is one, and on the domains most people have it is evidence of
+	// nothing at all.
 	headers, body = invitationMessage("REQUEST", "the-meeting", "The big room",
 		"SEQUENCE:2", `ORGANIZER;SENT-BY="mailto:assistant@example.com":mailto:grace@example.com`,
 		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
@@ -785,8 +798,46 @@ func TestNamingYourselfAsOrganizerDoesNotMakeYouOne(t *testing.T) {
 	here.work(t)
 
 	events = here.events(t)
-	if len(events) != 1 || events[0].Summary != "The big room" {
-		t.Fatalf("an assistant may send for the organizer: %+v", events)
+	if len(events) != 1 || events[0].Summary != "The small room" {
+		t.Fatalf("only the organizer moves their own meeting: %+v", events)
+	}
+
+	// The new meeting, which is what a delegate may do.
+	headers, body = invitationMessage("REQUEST", "another-meeting", "Somewhere else",
+		"SEQUENCE:0", `ORGANIZER;SENT-BY="mailto:assistant@example.com":mailto:grace@example.com`,
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "assistantAsks", "assistant@example.com", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 2 {
+		t.Fatalf("an assistant may ask somebody to a meeting: %+v", events)
+	}
+}
+
+// A domain is an organization only where a domain is an organization. At a
+// free mail provider, which is where most people have their address, "the
+// same domain" is a billion strangers -- so nothing that changes a meeting
+// already held rests on it.
+func TestSharingADomainWithSomebodyIsNotSpeakingForThem(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "The small room",
+		"SEQUENCE:1", "ORGANIZER:mailto:grace@provider.example",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "asked", "grace@provider.example", true, headers, body)
+	here.work(t)
+
+	headers, body = invitationMessage("REQUEST", "the-meeting", "PWNED",
+		"SEQUENCE:9", `ORGANIZER;SENT-BY="mailto:eve@provider.example":mailto:grace@provider.example`,
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "neighbour", "eve@provider.example", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "The small room" {
+		t.Fatalf("a stranger at the same big provider is still a stranger: %+v", events)
 	}
 }
 
@@ -855,5 +906,159 @@ func TestAnInventedOrganizerIsNotAnInvitation(t *testing.T) {
 
 	if events := here.events(t); len(events) != 0 {
 		t.Fatalf("an event nobody was asked to is not put in their calendar: %+v", events)
+	}
+}
+
+// Moving one week of a standup moves one week of it.
+//
+// The organizer's program sends only the occurrence that changed, so storing
+// that as the whole event replaced the standup with a single appointment:
+// every other week gone, from the calendar, the phone, free-busy and anything
+// that reads them, from an ordinary thing an organizer does.
+func TestChangingOneOccurrenceLeavesTheRestOfTheSeries(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "series", "Standup",
+		"SEQUENCE:0", "RRULE:FREQ=WEEKLY;COUNT=20",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "series", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	// One week of it, moved four hours later.
+	headers, body = invitationMessage("REQUEST", "series", "Standup",
+		"SEQUENCE:1", "RECURRENCE-ID:20260921T100000Z",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "moved", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 {
+		t.Fatalf("still one event: %+v", events)
+	}
+	if !events[0].Recurring || !strings.Contains(events[0].Data, "RRULE:FREQ=WEEKLY") {
+		t.Fatalf("the series is still a series:\n%s", events[0].Data)
+	}
+	if !strings.Contains(events[0].Data, "RECURRENCE-ID") {
+		t.Fatalf("and the moved week is kept beside it:\n%s", events[0].Data)
+	}
+
+	// And calling that week off calls off that week.
+	headers, body = invitationMessage("CANCEL", "series", "Standup",
+		"SEQUENCE:2", "RECURRENCE-ID:20260921T100000Z",
+		"ORGANIZER:mailto:grace@example.com")
+	here.deliverFrom(t, "offOne", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 1 || events[0].Status == "CANCELLED" {
+		t.Fatalf("one week off is not the whole standup off: %+v", events)
+	}
+	if !strings.Contains(events[0].Data, "EXDATE") {
+		t.Fatalf("the week that is off is excluded:\n%s", events[0].Data)
+	}
+}
+
+// An answer that arrives after a later one is an older answer, whether it
+// crossed in the post or was replayed by somebody who kept a copy.
+func TestAnOlderAnswerDoesNotUndoALaterOne(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "mine", "Planning",
+		"SEQUENCE:0", "ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:bob@example.com")
+	here.deliverFrom(t, "mine", "alice@example.com", true, headers, body)
+	here.work(t)
+
+	answer := func(name, participation, stamp string) {
+		t.Helper()
+		headers, body := invitationMessage("REPLY", "mine", "Planning",
+			"ORGANIZER:mailto:alice@example.com",
+			"ATTENDEE;PARTSTAT="+participation+":mailto:bob@example.com")
+		body = []byte(strings.Replace(string(body), "DTSTAMP:20260912T120000Z", "DTSTAMP:"+stamp, 1))
+		here.deliverFrom(t, name, "bob@example.com", true, headers, body)
+		here.work(t)
+	}
+	answer("accepted", "ACCEPTED", "20260912T120000Z")
+	answer("declined", "DECLINED", "20260912T130000Z")
+	answer("replayed", "ACCEPTED", "20260912T120000Z")
+
+	events := here.events(t)
+	if len(events) != 1 || !strings.Contains(events[0].Data, "PARTSTAT=DECLINED") {
+		t.Fatalf("the answer that stands is the last one they gave:\n%s", events[0].Data)
+	}
+}
+
+// An answer is one of the three the format has, whoever sends it.
+func TestAnAnswerIsOneOfTheThree(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "mine", "Planning",
+		"SEQUENCE:0", "ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:bob@example.com")
+	here.deliverFrom(t, "mine", "alice@example.com", true, headers, body)
+	here.work(t)
+
+	headers, body = invitationMessage("REPLY", "mine", "Planning",
+		"ORGANIZER:mailto:alice@example.com",
+		"ATTENDEE;PARTSTAT=COMING TO EAT YOUR LUNCH:mailto:bob@example.com")
+	here.deliverFrom(t, "nonsense", "bob@example.com", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || strings.Contains(events[0].Data, "EAT YOUR LUNCH") {
+		t.Fatalf("a sender's own words do not become an answer:\n%s", events[0].Data)
+	}
+}
+
+// A message the server's own checks distrusted does not write into anybody's
+// calendar.
+//
+// Proving where a message came from is easy for anybody with a domain, so
+// DMARC alone let a message that went straight to Junk put its sender's
+// chosen words in the calendar grid, on the phone and in front of the agent.
+// The automatic reply three lines further down the same delivery has refused
+// these since it was written.
+func TestSpamDoesNotWriteIntoTheCalendar(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "spam", "CLAIM YOUR PRIZE",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverAs(t, "spam", "grace@example.com", true, true, headers, body)
+	here.work(t)
+
+	if events := here.events(t); len(events) != 0 {
+		t.Fatalf("a message that failed the spam filter is not an invitation: %+v", events)
+	}
+
+	// Nor one that came through a mailing list.
+	headers, body = invitationMessage("REQUEST", "listed", "The list's meeting",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	headers = append(headers, "List-Id: <announce.example.com>")
+	here.deliverFrom(t, "listed", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	if events := here.events(t); len(events) != 0 {
+		t.Fatalf("list mail is not an invitation either: %+v", events)
+	}
+
+	// An ordinary invitation, which says it was written by a program --
+	// every one of them does -- is still an invitation.
+	headers, body = invitationMessage("REQUEST", "real", "A real meeting",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	headers = append(headers, "Auto-Submitted: auto-generated")
+	here.deliverFrom(t, "real", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	if events := here.events(t); len(events) != 1 {
+		t.Fatalf("an ordinary invitation still arrives: %+v", events)
 	}
 }

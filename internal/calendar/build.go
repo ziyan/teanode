@@ -429,25 +429,7 @@ func Answer(previous []byte, answers []Attendee) (*Parsed, error) {
 	if event == nil {
 		return nil, fmt.Errorf("calendar: there is no event in that file")
 	}
-	changed := false
-	for _, answer := range answers {
-		address := strings.ToLower(strings.TrimSpace(answer.Address))
-		if address == "" || answer.Participation == "" {
-			continue
-		}
-		for index := range event.Props[ical.PropAttendee] {
-			property := &event.Props[ical.PropAttendee][index]
-			if !strings.EqualFold(addressOf(property), address) {
-				continue
-			}
-			property.Params.Set(ical.ParamParticipationStatus, answer.Participation)
-			// An answer settles it: the organizer no longer needs the
-			// reminder that this person has not said.
-			property.Params.Del("RSVP")
-			changed = true
-		}
-	}
-	if !changed {
+	if !answerInto(event.Component, answers) {
 		return nil, fmt.Errorf("calendar: that answer is from somebody this event does not invite")
 	}
 	written, err := Encode(decoded)
@@ -455,4 +437,42 @@ func Answer(previous []byte, answers []Attendee) (*Parsed, error) {
 		return nil, err
 	}
 	return Parse(written)
+}
+
+// answerInto writes the answers onto one event's attendee lines, and says
+// whether any of them was that event's to take.
+//
+// An answer is one of the three the format has. Passed through as it came, a
+// reply could write any text at all into a field every client and this
+// server's own pages read as one of a fixed few -- so it is checked here,
+// where both doors into an event go past.
+func answerInto(event *ical.Component, answers []Attendee) bool {
+	if event == nil {
+		return false
+	}
+	changed := false
+	for _, answer := range answers {
+		address := strings.ToLower(strings.TrimSpace(answer.Address))
+		participation := strings.ToUpper(strings.TrimSpace(answer.Participation))
+		if address == "" || !KnownParticipation(participation) {
+			continue
+		}
+		for index := range event.Props[ical.PropAttendee] {
+			property := &event.Props[ical.PropAttendee][index]
+			if !strings.EqualFold(addressOf(property), address) {
+				continue
+			}
+			property.Params.Set(ical.ParamParticipationStatus, participation)
+			// An answer settles it: the organizer no longer needs the
+			// reminder that this person has not said.
+			property.Params.Del("RSVP")
+			// And when it was written, so that a copy of an older answer
+			// arriving afterwards can be seen for what it is.
+			if !answer.AnsweredAt.IsZero() {
+				property.Params.Set(AnsweredParam, answer.AnsweredAt.UTC().Format("20060102T150405Z"))
+			}
+			changed = true
+		}
+	}
+	return changed
 }

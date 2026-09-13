@@ -34,6 +34,16 @@ import (
 // told no rather than have it kept.
 const MaximumObject = 1 << 20
 
+// MaximumGuests is how many people one event will have invitations sent to.
+//
+// Not a limit on what may be kept: an invitation that arrives naming five
+// hundred people is stored as it came, because it is a record of something
+// somebody else did. It is a limit on what this server will send, and it
+// exists because the guest list of an event is not always its owner's work --
+// an invitation arriving by mail brings somebody else's list, and saving that
+// event must not turn into a mail run.
+const MaximumGuests = 100
+
 // ErrTooLarge is a file bigger than this server keeps. Named, because the
 // answer a client is given for it is a different one -- a status that makes
 // it stop resending rather than retry for ever -- and deciding that by
@@ -51,7 +61,20 @@ type Attendee struct {
 	// TENTATIVE. Role is CHAIR, REQ-PARTICIPANT or OPT-PARTICIPANT.
 	Participation string `json:"participation,omitempty"`
 	Role          string `json:"role,omitempty"`
+
+	// AnsweredAt is when the program that sent this person's answer wrote
+	// it, kept beside the answer so that a later one cannot be undone by an
+	// earlier one arriving afterwards -- mail is not ordered, and a copy of
+	// an old message replays with its signature intact.
+	//
+	// This server's own, written as a parameter of its own name: the format
+	// has nowhere else to put it, and anything that does not know the
+	// parameter ignores it.
+	AnsweredAt time.Time `json:"answeredAt,omitempty"`
 }
+
+// AnsweredParam is where the moment an answer was written is kept.
+const AnsweredParam = "X-TEANODE-ANSWERED"
 
 // Parsed is what is kept beside the file, pulled out of it once when it is
 // written so that nothing later has to read iCalendar to list or search.
@@ -94,6 +117,22 @@ type Parsed struct {
 	// Method is the file's METHOD: REQUEST, REPLY or CANCEL when it arrived
 	// as an invitation by mail, and empty for an ordinary event.
 	Organizer string
+
+	// Stamp is DTSTAMP: when the program that wrote this file wrote it. For
+	// an answer that is when the person pressed the button, which is how
+	// two answers to the same version of an event are told apart.
+	Stamp time.Time
+
+	// RecurrenceID names the one occurrence of a series this file is about,
+	// written the one way as an instant. Empty for a file about the series
+	// itself, which is nearly every file.
+	//
+	// A person who moves next Tuesday's standup has not touched the
+	// standup: the format says so with a second event carrying the same
+	// UID and this property. What arrives by mail is only the part that
+	// changed, so a file with this set must be put beside what is held
+	// rather than treated as the whole event.
+	RecurrenceID string
 
 	// SentBy is who put it in the post on the organizer's behalf, when the
 	// file says somebody did.
@@ -168,8 +207,14 @@ func Parse(data []byte) (*Parsed, error) {
 	if sequence := event.Props.Get(ical.PropSequence); sequence != nil {
 		parsed.Sequence, _ = sequence.Int()
 	}
+	if stamp := event.Props.Get(ical.PropDateTimeStamp); stamp != nil {
+		if at, err := stamp.DateTime(time.UTC); err == nil {
+			parsed.Stamp = at.UTC()
+		}
+	}
 	parsed.Recurring = event.Props.Get(ical.PropRecurrenceRule) != nil ||
 		event.Props.Get(ical.PropRecurrenceDates) != nil
+	parsed.RecurrenceID = occurrenceKey(event.Props.Get(ical.PropRecurrenceID))
 
 	if start := event.Props.Get(ical.PropDateTimeStart); start != nil {
 		parsed.AllDay = start.ValueType() == ical.ValueDate
@@ -226,12 +271,18 @@ func Parse(data []byte) (*Parsed, error) {
 		if address == "" {
 			continue
 		}
-		parsed.Attendees = append(parsed.Attendees, Attendee{
+		attendee := Attendee{
 			Address:       address,
 			Name:          strings.TrimSpace(property.Params.Get(ical.ParamCommonName)),
 			Participation: strings.ToUpper(strings.TrimSpace(property.Params.Get(ical.ParamParticipationStatus))),
 			Role:          strings.ToUpper(strings.TrimSpace(property.Params.Get(ical.ParamRole))),
-		})
+		}
+		if written := strings.TrimSpace(property.Params.Get(AnsweredParam)); written != "" {
+			if at, err := time.Parse("20060102T150405Z", written); err == nil {
+				attendee.AnsweredAt = at.UTC()
+			}
+		}
+		parsed.Attendees = append(parsed.Attendees, attendee)
 	}
 	return parsed, nil
 }
@@ -302,9 +353,13 @@ func occurrencesWithin(parsed *Parsed, from, until time.Time) ([]Occurrence, boo
 			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, AllDay: parsed.AllDay,
 		}}, false, nil
 	}
-	// Asked from earlier than the window, because an occurrence that began
-	// before it and has not finished is still on: a person looking at
-	// Tuesday wants to see the meeting that started on Monday night.
+	// The occurrences somebody moved, or that were called off on their own.
+	// Each replaces the one the rule would have generated at the moment it
+	// names -- so the rule's own answer for that moment is dropped, and the
+	// override's times are used instead. Without this a meeting moved to
+	// Thursday went on showing up on Tuesday, and the phone that moved it
+	// was told it had not happened.
+	changed := overrides(parsed.calendar)
 	starting := from.Add(-maximumLength)
 	occurrences := make([]Occurrence, 0, 8)
 
@@ -317,18 +372,33 @@ func occurrencesWithin(parsed *Parsed, from, until time.Time) ([]Occurrence, boo
 	// that rule was enough to take the server down. Pulling them one by one
 	// means the bound is a bound on what is done, not on what is kept.
 	next := set.Iterator()
-	capped := false
+	// Three ways to stop, and only two of them mean the answer is short.
+	// Read off the counters afterwards instead, a series that happened to
+	// end on the last allowed step looked cut off -- and a series that has
+	// finished being told it was cut off is one whose whole past is thrown
+	// away and which is then re-expanded, unchanged, for ever.
+	capped, spent := false, true
 	walked := 0
 	for ; walked < maximumSteps; walked++ {
 		when, ok := next()
 		if !ok {
+			// The series itself ended.
+			spent = false
 			break
 		}
 		if when.Before(starting) {
 			continue
 		}
 		if !when.Before(until) {
+			// Past the end of the window, which is as far as anybody
+			// asked.
+			spent = false
 			break
+		}
+		if _, moved := changed[when.UTC().Format(time.RFC3339)]; moved {
+			// This one is written out on its own below, at whatever time
+			// it was moved to -- or not at all, if it was called off.
+			continue
 		}
 		occurrence := Occurrence{
 			StartsAt: when.UTC(), EndsAt: when.Add(length).UTC(), AllDay: parsed.AllDay,
@@ -338,7 +408,14 @@ func occurrencesWithin(parsed *Parsed, from, until time.Time) ([]Occurrence, boo
 		}
 		occurrences = append(occurrences, occurrence)
 		if len(occurrences) >= MaximumOccurrences {
-			capped = true
+			// Full. Whether that cut anything off is a question with an
+			// answer: ask for one more. A series of exactly this many
+			// that has finished is not cut off, and treating it as
+			// though it were costs it its whole past.
+			if further, ok := next(); ok && further.Before(until) {
+				capped = true
+			}
+			spent = false
 			break
 		}
 	}
@@ -348,18 +425,54 @@ func occurrencesWithin(parsed *Parsed, from, until time.Time) ([]Occurrence, boo
 	// -- every hour, six years back -- spends the whole bound getting to
 	// today, and the event then vanished from every view while a fetch of
 	// it still worked.
-	if walked >= maximumSteps && len(occurrences) == 0 {
+	if spent && len(occurrences) == 0 {
 		return nil, false, fmt.Errorf("calendar: that repeat is too fine to work out over this stretch of time")
 	}
 	// Walking out of steps is stopping short just as surely as filling the
 	// list is.
-	if walked >= maximumSteps {
+	if spent {
 		capped = true
 	}
+	occurrences = append(occurrences, movedOccurrences(changed, from, until)...)
 	sort.Slice(occurrences, func(first, second int) bool {
 		return occurrences[first].StartsAt.Before(occurrences[second].StartsAt)
 	})
 	return occurrences, capped, nil
+}
+
+// movedOccurrences are the ones kept apart from the series, at the times they
+// were moved to. One that was called off is not on at all.
+func movedOccurrences(changed map[string]*ical.Component, from, until time.Time) []Occurrence {
+	if len(changed) == 0 {
+		return nil
+	}
+	moved := make([]Occurrence, 0, len(changed))
+	for _, component := range changed {
+		event := &ical.Event{Component: component}
+		if status, err := event.Status(); err == nil &&
+			strings.EqualFold(string(status), "CANCELLED") {
+			continue
+		}
+		starts, err := event.DateTimeStart(time.UTC)
+		if err != nil || starts.IsZero() {
+			continue
+		}
+		ends, err := event.DateTimeEnd(time.UTC)
+		if err != nil || ends.Before(starts) {
+			ends = starts.Add(time.Hour)
+		}
+		if !starts.Before(until) || !ends.After(from) {
+			continue
+		}
+		allDay := false
+		if start := component.Props.Get(ical.PropDateTimeStart); start != nil {
+			allDay = start.ValueType() == ical.ValueDate
+		}
+		moved = append(moved, Occurrence{
+			StartsAt: starts.UTC(), EndsAt: ends.UTC(), AllDay: allDay,
+		})
+	}
+	return moved
 }
 
 // MaximumOccurrences is how many one file may contribute to one window.
@@ -490,9 +603,20 @@ func Indexed(parsed *Parsed) ([]Occurrence, time.Time, error) {
 	// Looking back at a repeat that fine is the thing given up, and it is
 	// the right thing to give up.
 	if from.Before(now) {
-		if ahead, _, err := occurrencesWithin(parsed, now, until); err == nil && len(ahead) > 0 {
-			occurrences = ahead
+		ahead, _, err := occurrencesWithin(parsed, now, until)
+		if err != nil {
+			// A repeat that cannot even be walked to today is one this
+			// server cannot index at all, and saying so puts it out of
+			// the queue. Swallowed, the answer kept was the one full of
+			// last spring -- nothing in it for today, a horizon already
+			// in the past, and therefore the same two long walks redone
+			// on every tick for ever.
+			return nil, time.Time{}, err
 		}
+		if len(ahead) == 0 {
+			return nil, time.Time{}, fmt.Errorf("calendar: that repeat has nothing left in the stretch this server writes down")
+		}
+		occurrences = ahead
 	}
 	// And the horizon is the last moment actually written down. Recording
 	// the window's end instead left the index reaching five months out

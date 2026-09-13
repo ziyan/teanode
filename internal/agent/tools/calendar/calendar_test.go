@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
 func at(hour, minute int) time.Time {
@@ -161,5 +163,28 @@ func TestTheHoursOfTheWorkingDay(t *testing.T) {
 	}
 	if _, err := hourOf("the morning", 9); err == nil {
 		t.Fatal("an hour this server cannot read should be refused")
+	}
+}
+
+// Inviting somebody is sending mail in the person's name, so the tool that
+// does it asks first.
+//
+// Only the outward and destructive classes reach the confirmation, and this
+// was a plain write however many people it wrote to -- so an agent following
+// instructions it read in a message could have sent invitations to a list of
+// strangers with nobody asked.
+func TestInvitingAsksFirst(t *testing.T) {
+	found := tools.Build().Get("calendar_add")
+	if found == nil {
+		t.Fatal("calendar_add is registered")
+	}
+	if got := found.RiskFor([]byte(`{"summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
+		t.Fatalf("putting something in one's own diary is a write: %q", got)
+	}
+	if got := found.RiskFor([]byte(`{"summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
+		t.Fatalf("inviting anybody is outward: %q", got)
+	}
+	if !tools.NeedsConfirmation(found, []byte(`{"summary":"Meeting","invite":["ada@example.com"]}`), nil, nil) {
+		t.Fatal("and outward is asked about first")
 	}
 }

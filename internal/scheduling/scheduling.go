@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/periodic"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -347,6 +348,35 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 		return ignored("the message did not prove where it came from")
 	}
 
+	// Nor a message the server's own checks distrusted. Proving where it
+	// came from is easy for anybody sending from a domain of their own, so
+	// DMARC alone let a message that went straight to Junk put its sender's
+	// chosen words into the calendar grid, onto the phone and in front of
+	// the agent. The reply this server sends automatically has refused
+	// these since it was written; the calendar was reading the same
+	// messages and asking none of it.
+	if mail.LooksLikeSpam() {
+		return ignored("the message looks like spam")
+	}
+	// Read from the message itself, which this server has in its hands
+	// here: the row beside it keeps the headers it was asked to keep, and
+	// depending on that would make this check quietly true or false
+	// depending on a setting somewhere else.
+	if header := strings.ToLower(strings.TrimSpace(
+		mailparse.FindHeaderValue(headers, "Precedence"))); header == "bulk" || header == "junk" {
+		return ignored("the message is bulk mail")
+	}
+	for _, header := range []string{"List-Id", "List-Post", "List-Unsubscribe"} {
+		if mailparse.FindHeaderValue(headers, header) != "" {
+			return ignored("the message came through a mailing list")
+		}
+	}
+	// Auto-Submitted is deliberately not among these. An invitation is
+	// written by a program and the format says so: every one carries
+	// "auto-generated", so refusing on it would refuse nearly all of them.
+	// It is in the automatic reply's ladder because answering a machine is
+	// how loops start, which is a different question from this one.
+
 	// Who actually sent it. DMARC proves the From domain is theirs to use,
 	// so this is the one identity in the message worth anything -- and every
 	// claim the file makes about who is speaking is checked against it.
@@ -422,8 +452,13 @@ func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.Calen
 		}
 		return false, fmt.Errorf("the address this was delivered to was not recorded")
 	}
-	if strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) &&
-		theirs[strings.ToLower(strings.TrimSpace(parsed.Organizer))] {
+	// Their own event coming back to them: from themselves, or from
+	// somebody at their own domain who says in the file that they posted it
+	// for them -- which is the assistant sending their employer's own
+	// invitation to the employer, and the same evidence speaksFor accepts
+	// for a new event.
+	if organizer := strings.TrimSpace(parsed.Organizer); theirs[strings.ToLower(organizer)] &&
+		(strings.EqualFold(organizer, sender) || postedFor(organizer, parsed.SentBy, sender)) {
 		return true, nil
 	}
 	for _, attendee := range parsed.Attendees {
@@ -435,27 +470,27 @@ func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.Calen
 }
 
 // mayActFor is whether the sender may act on an event the held copy says
-// somebody else called.
+// somebody else called: only that organizer, and nobody else at all.
 //
-// The sender is that organizer, or somebody at the organizer's own domain who
-// says in the file that they posted it for them. Nothing else will do, and
-// three rounds of this were wrong in the same way:
+// Four rewrites got here, and each of the first three believed something the
+// sender had written. "The sender is the organizer of the arriving file" asks
+// whether the sender is who they say they are. Adding "and the file agrees
+// with the held copy about whose event it is" asks nothing either: the held
+// organizer's address is printed on the invitation every guest received.
+// Anchoring SENT-BY to the organizer's own domain looked like the answer,
+// because a domain is the one thing DMARC actually proved -- but a domain is
+// only an organization where a domain *is* an organization. On the free mail
+// providers, where most people have their address, "the same domain" is any
+// of a billion strangers: the largest population of organizers anywhere would
+// have been protected by nothing.
 //
-// Written as "or the sender is the organizer of the arriving file", the check
-// asks whether the sender is who the sender says they are, which is always
-// true -- the arriving file is the attacker's. Narrowed to "and the arriving
-// file agrees with the held copy about whose event it is", it still asks
-// nothing: the held organizer's address is on the original invitation, so
-// every guest knows it, and copying it in is free. Both halves were the
-// sender's to write.
-//
-// The one thing the sender did not write is their own address, which DMARC
-// aligned to a domain they demonstrably hold. So a delegate is believed only
-// within that domain: an assistant may move their employer's meeting, and
-// SENT-BY from anywhere else is a stranger's word about a stranger. A booking
-// service that sends for somebody at a domain of its own is refused, which is
-// the right answer -- it may ask this person to a meeting under its own name,
-// but it may not quietly move one it did not call.
+// So a delegate may not move somebody's meeting. An assistant who sends for
+// their employer can ask this person to a meeting -- speaksFor still allows
+// that, and an invitation is something the person can read and decline -- but
+// changing or calling off a meeting already in the calendar takes the
+// organizer themselves. The failure is visible: the invitation is kept with
+// its reason, and the person's own copy stands rather than being silently
+// rewritten by somebody who typed a name into a file.
 //
 // An event naming no organizer is nobody's to act on from outside: it is an
 // appointment its owner made for themselves.
@@ -464,23 +499,17 @@ func mayActFor(organizer string, parsed *calendar.Parsed, sender string) bool {
 	if held == "" {
 		return false
 	}
-	if strings.EqualFold(held, sender) {
-		return true
-	}
-	// The file has to be about the same person's event before anything it
-	// says about who sent it counts for anything.
-	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), held) {
-		return false
-	}
-	return postedFor(held, parsed.SentBy, sender)
+	return strings.EqualFold(held, sender)
 }
 
 // speaksFor is whether the sender may send an invitation as this file's
 // organizer: they are that organizer, or they are at the organizer's domain
 // and the file says they posted it for them.
 //
-// Only for a file this server holds nothing about yet, where there is no held
-// copy to agree with. Where there is one, mayActFor is the question.
+// Only for a file this server holds nothing about yet, where the worst a
+// stranger achieves is an invitation the person can decline. Where there is a
+// held copy -- somebody's real meeting, which could be moved or called off --
+// mayActFor is the question, and it does not take a delegate's word.
 func speaksFor(parsed *calendar.Parsed, sender string) bool {
 	organizer := strings.TrimSpace(parsed.Organizer)
 	if strings.EqualFold(organizer, sender) {
@@ -489,13 +518,15 @@ func speaksFor(parsed *calendar.Parsed, sender string) bool {
 	return postedFor(organizer, parsed.SentBy, sender)
 }
 
-// postedFor is whether the sender may be believed when a file says they put it
-// in the post for the organizer.
+// postedFor is whether the sender may be believed when a file says they put
+// it in the post for the organizer.
 //
-// Two things have to hold. The file has to say so -- SENT-BY naming the sender
-// and nobody else -- and the sender has to be at the organizer's own domain,
-// which is the only part of this a forger cannot simply type, because it is
-// the domain their message was aligned to.
+// Two things have to hold. The file has to say so -- SENT-BY naming the
+// sender and nobody else -- and the sender has to be at the organizer's own
+// domain, which is the only part a forger cannot simply type, because it is
+// the domain their message was aligned to. It is weak evidence on a domain
+// that belongs to no one organization, which is why nothing that changes a
+// meeting already held rests on it.
 func postedFor(organizer, sentBy, sender string) bool {
 	if sentBy == "" || !strings.EqualFold(strings.TrimSpace(sentBy), sender) {
 		return false
@@ -562,7 +593,11 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 			return err
 		}
 		result.calendarId = found.ID
-		existing, err := tx.GetCalendarObjectByUID(found.ID, parsed.UID)
+		// Held for the rest of the transaction: everything below decides
+		// what to write by looking at this copy, and deciding from a copy
+		// somebody else is replacing is how one of the two changes is
+		// lost without a word.
+		existing, err := tx.LockCalendarObjectByUID(found.ID, parsed.UID)
 		if err != nil {
 			return err
 		}
@@ -621,15 +656,50 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 				return nil
 			}
 		}
-		occurrences, indexedUntil, err := indexed(parsed)
+		// A change to one occurrence is only about that occurrence. The
+		// organizer who moves next Tuesday's standup sends a file with
+		// nothing in it but that Tuesday, and storing it as the whole
+		// event replaced the standup with a single appointment -- every
+		// other week gone, from the calendar, the phone, free-busy and
+		// everything that reads them. It goes beside what is held.
+		keeping := parsed
+		if parsed.RecurrenceID != "" {
+			if existing == nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "a change to one occurrence of a series this calendar does not have"
+				return nil
+			}
+			held, err := calendar.Parse([]byte(existing.Data))
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "a change to an event this server can no longer read"
+				result.objectId = existing.ID
+				return nil
+			}
+			merged, err := calendar.MergeOccurrence(held, parsed)
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = err.Error()
+				result.objectId = existing.ID
+				return nil
+			}
+			keeping, err = calendar.Parse(merged)
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = err.Error()
+				result.objectId = existing.ID
+				return nil
+			}
+		}
+		occurrences, indexedUntil, err := indexed(keeping)
 		if err != nil {
 			return err
 		}
 		object := &models.CalendarObject{
-			CalendarID: found.ID, UID: parsed.UID, ETag: calendar.ETag(parsed.Data),
-			Data: string(parsed.Data), Summary: parsed.Summary, Location: parsed.Location,
-			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
-			AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
+			CalendarID: found.ID, UID: keeping.UID, ETag: calendar.ETag(keeping.Data),
+			Data: string(keeping.Data), Summary: keeping.Summary, Location: keeping.Location,
+			StartsAt: keeping.StartsAt, EndsAt: keeping.EndsAt,
+			AllDay: keeping.AllDay, Recurring: keeping.Recurring, Status: keeping.Status,
 			IndexedUntil: &indexedUntil,
 		}
 		if existing != nil {
@@ -662,7 +732,11 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 			return err
 		}
 		result.calendarId = found.ID
-		existing, err := tx.GetCalendarObjectByUID(found.ID, parsed.UID)
+		// Held for the rest of the transaction: everything below decides
+		// what to write by looking at this copy, and deciding from a copy
+		// somebody else is replacing is how one of the two changes is
+		// lost without a word.
+		existing, err := tx.LockCalendarObjectByUID(found.ID, parsed.UID)
 		if err != nil {
 			return err
 		}
@@ -704,14 +778,42 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 			result.because = "a cancellation from somebody who is not the organizer"
 			return nil
 		}
-		// Marked cancelled rather than deleted. The person is told the
-		// meeting is off, which is the useful thing; making it vanish
-		// leaves them wondering whether they imagined it.
-		cancelled, err := calendar.Build([]byte(existing.Data), &calendar.Fields{
-			Status: statusText("CANCELLED"),
-		})
-		if err != nil {
-			return err
+		// One occurrence called off is one occurrence. Struck through the
+		// series instead, cancelling next Tuesday's standup struck out
+		// every standup there will ever be -- shown as cancelled on every
+		// device and counted as free for the rest of the year.
+		var cancelled *calendar.Parsed
+		if parsed.RecurrenceID != "" {
+			held, err := calendar.Parse([]byte(existing.Data))
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = "a cancellation of an event this server can no longer read"
+				result.objectId = existing.ID
+				return nil
+			}
+			written, err := calendar.ExcludeOccurrence(held, parsed.Occurrence())
+			if err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = err.Error()
+				result.objectId = existing.ID
+				return nil
+			}
+			if cancelled, err = calendar.Parse(written); err != nil {
+				result.status = models.CalendarInvitationIgnored
+				result.because = err.Error()
+				result.objectId = existing.ID
+				return nil
+			}
+		} else {
+			// Marked cancelled rather than deleted. The person is told
+			// the meeting is off, which is the useful thing; making it
+			// vanish leaves them wondering whether they imagined it.
+			var err error
+			if cancelled, err = calendar.Build([]byte(existing.Data), &calendar.Fields{
+				Status: statusText("CANCELLED"),
+			}); err != nil {
+				return err
+			}
 		}
 		occurrences, indexedUntil, err := indexed(cancelled)
 		if err != nil {
@@ -732,6 +834,38 @@ func (self *Scheduler) callOff(ctx context.Context, invitation *models.CalendarI
 	return result, nil
 }
 
+// answeredAlready is whether this answer has been overtaken by one already
+// recorded, and why.
+//
+// By the sequence the answer is about first -- an answer to the meeting as it
+// was two changes ago says nothing about the meeting as it is -- and then by
+// when the answering program wrote it, which is what tells two answers to the
+// same version apart. Neither is the sender's to forge usefully: a later
+// stamp is what a later answer has anyway, and the worst an attacker does
+// with a replayed message is have it ignored.
+func answeredAlready(existing *models.CalendarObject, parsed *calendar.Parsed, sender string) (bool, string) {
+	held, err := calendar.Parse([]byte(existing.Data))
+	if err != nil {
+		return false, ""
+	}
+	if parsed.Sequence < held.Sequence {
+		return true, "an answer to an older version of this event"
+	}
+	when := parsed.Stamp
+	for _, attendee := range held.Attendees {
+		if !strings.EqualFold(strings.TrimSpace(attendee.Address), sender) {
+			continue
+		}
+		if attendee.AnsweredAt.IsZero() || when.IsZero() {
+			return false, ""
+		}
+		if when.Before(attendee.AnsweredAt) {
+			return true, "an answer older than the one already recorded"
+		}
+	}
+	return false, ""
+}
+
 // reply is somebody this person invited saying whether they are coming.
 func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInvitation,
 	parsed *calendar.Parsed, sender string) (*outcome, error) {
@@ -745,7 +879,11 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 			return err
 		}
 		result.calendarId = found.ID
-		existing, err := tx.GetCalendarObjectByUID(found.ID, parsed.UID)
+		// Held for the rest of the transaction: everything below decides
+		// what to write by looking at this copy, and deciding from a copy
+		// somebody else is replacing is how one of the two changes is
+		// lost without a word.
+		existing, err := tx.LockCalendarObjectByUID(found.ID, parsed.UID)
 		if err != nil {
 			return err
 		}
@@ -779,6 +917,10 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 		var theirs []calendar.Attendee
 		for _, attendee := range parsed.Attendees {
 			if strings.EqualFold(strings.TrimSpace(attendee.Address), sender) {
+				// Stamped with when their program wrote the answer, so
+				// the next one to arrive can be told whether it is
+				// older than this.
+				attendee.AnsweredAt = parsed.Stamp
 				theirs = append(theirs, attendee)
 			}
 		}
@@ -787,7 +929,25 @@ func (self *Scheduler) reply(ctx context.Context, invitation *models.CalendarInv
 			result.because = "an answer on behalf of somebody else"
 			return nil
 		}
-		updated, err := calendar.Answer([]byte(existing.Data), theirs)
+		// An answer arriving after a later one is an older answer. Mail is
+		// not ordered, and a copy of an earlier message replays perfectly
+		// well -- its signature is still good -- so without this a
+		// "declined" was undone by the "accepted" that came before it,
+		// with nothing to show that it had been.
+		if stale, reason := answeredAlready(existing, parsed, sender); stale {
+			result.status = models.CalendarInvitationIgnored
+			result.because = reason
+			return nil
+		}
+		var updated *calendar.Parsed
+		if parsed.RecurrenceID != "" {
+			// An answer about one occurrence belongs to that occurrence.
+			// Written onto the series it said the person had answered for
+			// every week of it.
+			updated, err = calendar.AnswerOccurrence([]byte(existing.Data), parsed.RecurrenceID, theirs)
+		} else {
+			updated, err = calendar.Answer([]byte(existing.Data), theirs)
+		}
 		if err != nil {
 			result.status = models.CalendarInvitationIgnored
 			result.because = err.Error()

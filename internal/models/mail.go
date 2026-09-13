@@ -219,6 +219,25 @@ func (self *Mail) DMARCPassed() bool {
 		strings.EqualFold(self.AuthenticationResults.DMARC.Result, "pass")
 }
 
+// LooksLikeSpam is whether this message is one the server's own checks
+// distrusted: the spam filter failed it, or it failed DMARC under a policy
+// asking for it to be held.
+//
+// Here rather than beside either caller because two of them ask the same
+// question -- whether to answer a message automatically, and whether to write
+// what it carries into a calendar -- and two answers that drifted apart would
+// mean a message too suspicious to reply to was trusted to make appointments.
+func (self *Mail) LooksLikeSpam() bool {
+	results := self.AuthenticationResults
+	if results.SpamFilter != nil && results.SpamFilter.Result == "fail" {
+		return true
+	}
+	if results.DMARC != nil && results.DMARC.Result == "fail" && results.DMARC.Policy == "quarantine" {
+		return true
+	}
+	return false
+}
+
 // AuthenticationResults holds authentication results of a Mail.
 type AuthenticationResults struct {
 	// Authentication results related to sender mail servers

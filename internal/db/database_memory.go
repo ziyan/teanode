@@ -104,6 +104,7 @@ type MemoryOperation interface {
 	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
+	LockCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
 	PutCalendarObject(object *models.CalendarObject, occurrences []models.Occurrence) (*models.CalendarObject, error)
 	DeleteCalendarObject(calendarId, objectId string) error
 	CountCalendarObjects(calendarId string) (int64, error)

@@ -453,9 +453,14 @@ func unexpectedCalendar(err error) error {
 	// does not build. That is the client's to narrow, and telling it so is
 	// the difference between a request it can fix and a server that looks
 	// broken.
+	//
+	// As an answer rather than as the library's own error, because both
+	// paths that raise this one serve themselves and read the status back
+	// off it -- written the library's way it was built, thrown away, and
+	// sent as the blank 500 it was written to avoid.
 	if errors.Is(err, db.ErrTooMuchAsked) {
-		return webdav.NewHTTPError(http.StatusForbidden,
-			fmt.Errorf("that stretch of time is too long to answer at once; ask about a shorter one"))
+		return refuse(http.StatusForbidden,
+			"that stretch of time is too long to answer at once; ask about a shorter one")
 	}
 	log.Errorf("a calendar request could not be served: %s", err)
 	return webdav.NewHTTPError(http.StatusInternalServerError,

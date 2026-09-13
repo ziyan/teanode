@@ -403,6 +403,28 @@ round, the tests written beside the code shared its blind spot — which is why
 each fix in this round was made to fail first, against the old code, before it
 was believed.
 
+**Round five: sixteen more, and the shape of what is left.** Two reviews, one
+on round four's repairs and one deliberately sent where four rounds had never
+looked. The second found the two worst things in the whole feature, and neither
+is a security bug: a REQUEST or a CANCEL naming one occurrence destroyed the
+entire series. That is not an attack, it is Tuesday. Every calendar program
+sends those files; this server had no notion of an override at all, and four
+rounds of adversarial review never noticed, because all five reviews and all
+the tests were looking at what an attacker could do rather than at what an
+organizer does.
+
+The first review found three defects inside round four's own fixes, including
+one where the "refused out loud" that round four added was built and thrown
+away — both callers read the status off a different error type, so the client
+still got a blank 500. A fix that is never reached is not a fix, and nothing in
+the test suite would have said so.
+
+And the same-domain rule from round four lasted exactly one round: it is sound
+where a domain is an organization and worthless at a free mail provider, which
+is where most people are. The fifth answer is the strict one — only the
+organizer may change their own meeting — and the delegate case keeps only what
+is safe to give it.
+
 **Two small things worth keeping.** The naming check earned its place: this
 work introduced `TimeZone` where the repository says `Timezone` sixty-seven
 times, and the same thing having two names is exactly what the convention

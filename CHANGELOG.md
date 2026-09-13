@@ -108,6 +108,36 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- Moving or calling off one occurrence of a repeating event changes that
+  occurrence. An invitation naming one week of a weekly meeting used to
+  replace the whole series with a single appointment, and a cancellation of
+  one week struck out every week there would ever be.
+
+- An invitation carried by a message that failed the spam filter, came through
+  a mailing list, or announces itself as bulk is no longer written into a
+  calendar.
+
+- Only the organizer of a meeting may change it or call it off. A message
+  saying it was sent on their behalf is enough to ask somebody to a new
+  meeting and is no longer enough to move one already in the calendar.
+
+- An answer to an invitation that arrives after a later answer -- crossed in
+  the post, or a copy of an older message sent again -- no longer undoes the
+  later one, and an answer is one of the three the format has.
+
+- Saving an event somebody else called no longer sends an invitation to
+  everybody on its guest list from your address, and an event asking more
+  people than this server invites at once is refused rather than sent.
+
+- The agent asks before it invites anybody to anything.
+
+- A repeating event that has finished keeps the occurrences that have already
+  happened, so looking back at it still shows them.
+
+- A search of a calendar that names two conditions means both of them, finds
+  the event wherever it sits in its file, and says so plainly when it is asked
+  for a kind of condition this server does not answer.
+
 - A domain's page advises the SRV record that lets a calendar application find
   this server from a mail address alone, beside the one the address book
   already had. Without it a phone given only the domain looks on port 443 and

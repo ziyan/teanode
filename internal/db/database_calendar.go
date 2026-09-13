@@ -277,8 +277,24 @@ func (self *transaction) calendarObject(calendarId, objectId string, holding boo
 // answers. Two devices adding an event at the same time each choose a file
 // name of their own but agree on the UID.
 func (self *transaction) GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error) {
+	return self.calendarObjectByUID(calendarId, uid, false)
+}
+
+// LockCalendarObjectByUID is the same for a caller about to write what it
+// finds: the row is held for the rest of the transaction, so that two
+// messages about one event -- a change and an answer arriving together --
+// cannot both be applied to the same copy and one of them lost.
+func (self *transaction) LockCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error) {
+	return self.calendarObjectByUID(calendarId, uid, true)
+}
+
+func (self *transaction) calendarObjectByUID(calendarId, uid string, holding bool) (*models.CalendarObject, error) {
+	query := self.tx
+	if holding {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var found []calendarObjectModel
-	if err := self.tx.Where("\"calendar_id\" = ? AND \"uid\" = ?", calendarId, strings.TrimSpace(uid)).
+	if err := query.Where("\"calendar_id\" = ? AND \"uid\" = ?", calendarId, strings.TrimSpace(uid)).
 		Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
