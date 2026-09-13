@@ -89,46 +89,52 @@ func TestTheHoursOfTheWorkingDay(t *testing.T) {
 // person's name is outward, which is the class that stops and asks.
 func TestWhatTheAgentIsAskedAboutBeforeItActs(t *testing.T) {
 	catalog := tools.Build()
-	for _, name := range []string{"calendar_agenda", "calendar_free", "calendar_add", "calendar_edit", "calendar_remove"} {
-		if catalog.Get(name) == nil {
-			t.Fatalf("%s is registered", name)
+	// One tool with five actions, where there were five tools. Each action
+	// keeps the class it had: the merge is in the name, not in the risk.
+	calendar := catalog.Get("calendar")
+	if calendar == nil {
+		t.Fatal("calendar is registered")
+	}
+	for _, action := range []string{"agenda", "free", "add", "edit", "remove"} {
+		if !strings.Contains(calendar.Description, action+" — ") {
+			t.Fatalf("%s is one of its actions:\n%s", action, calendar.Description)
 		}
 	}
 
-	add := catalog.Get("calendar_add")
-	if got := add.RiskFor([]byte(`{"summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
+	if got := calendar.RiskFor([]byte(`{"action":"agenda"}`)); got != tools.RiskRead {
+		t.Fatalf("reading the diary is a read: %q", got)
+	}
+	if got := calendar.RiskFor([]byte(`{"action":"add","summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
 		t.Fatalf("putting something in one's own diary is a write: %q", got)
 	}
-	if got := add.RiskFor([]byte(`{"summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
+	if got := calendar.RiskFor([]byte(`{"action":"add","summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
 		t.Fatalf("inviting anybody is outward: %q", got)
 	}
 
-	edit := catalog.Get("calendar_edit")
-	if got := edit.RiskFor([]byte(`{"event":"e1","summary":"Dentist, later"}`)); got != tools.RiskWrite {
+	if got := calendar.RiskFor([]byte(`{"action":"edit","event":"e1","summary":"Dentist, later"}`)); got != tools.RiskWrite {
 		t.Fatalf("changing one's own appointment is a write: %q", got)
 	}
 	for _, arguments := range []string{
-		`{"event":"e1","starts":"2026-09-15T09:00","tell_guests":true}`,
-		`{"event":"e1","invite":["ada@example.com"]}`,
+		`{"action":"edit","event":"e1","starts":"2026-09-15T09:00","tell_guests":true}`,
+		`{"action":"edit","event":"e1","invite":["ada@example.com"]}`,
 	} {
-		if got := edit.RiskFor([]byte(arguments)); got != tools.RiskOutward {
+		if got := calendar.RiskFor([]byte(arguments)); got != tools.RiskOutward {
 			t.Fatalf("telling anybody is outward (%s): %q", arguments, got)
 		}
-		if !tools.NeedsConfirmation(edit, []byte(arguments), nil, nil) {
+		if !tools.NeedsConfirmation(calendar, []byte(arguments), nil, nil) {
 			t.Fatalf("and outward is asked about first: %s", arguments)
 		}
 	}
 
 	// Taking something out of a calendar is destructive whoever else hears
 	// about it, and destructive is asked about too.
-	remove := catalog.Get("calendar_remove")
-	if got := remove.RiskFor([]byte(`{"event":"e1"}`)); got != tools.RiskDestructive {
+	if got := calendar.RiskFor([]byte(`{"action":"remove","event":"e1"}`)); got != tools.RiskDestructive {
 		t.Fatalf("removing an event is destructive: %q", got)
 	}
-	if got := remove.RiskFor([]byte(`{"event":"e1","tell_guests":true}`)); got != tools.RiskOutward {
+	if got := calendar.RiskFor([]byte(`{"action":"remove","event":"e1","tell_guests":true}`)); got != tools.RiskOutward {
 		t.Fatalf("and outward when everybody is told: %q", got)
 	}
-	if !tools.NeedsConfirmation(remove, []byte(`{"event":"e1"}`), nil, nil) {
+	if !tools.NeedsConfirmation(calendar, []byte(`{"action":"remove","event":"e1"}`), nil, nil) {
 		t.Fatal("removing anything is asked about first")
 	}
 }

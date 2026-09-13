@@ -17,7 +17,7 @@ import (
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "calendar_agenda", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCalendarUse},
@@ -113,7 +113,24 @@ func init() {
 				}, "event"),
 				Run: runRemove,
 			},
-		}
+		},
+			// One calendar tool. Reading the diary, finding a free hour,
+			// putting something in it and taking it out again are one thing
+			// with four verbs, and the risk of each is the action's own: the
+			// agenda is a read, an event with guests on it is outward, and
+			// removing one cannot be undone.
+			tools.Group{
+				Name: "calendar", Family: tools.FamilyAccount,
+				Description: "The person's own calendar, which their phone and computer synchronize over CalDAV.",
+				Members: []tools.Member{
+					{Action: "agenda", Tool: "calendar_agenda"},
+					{Action: "free", Tool: "calendar_free"},
+					{Action: "add", Tool: "calendar_add"},
+					{Action: "edit", Tool: "calendar_edit"},
+					{Action: "remove", Tool: "calendar_remove"},
+				},
+			},
+		)
 	})
 }
 

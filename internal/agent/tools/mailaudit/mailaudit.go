@@ -17,7 +17,7 @@ import (
 func init() {
 	tools.Register(func() []*tools.Tool {
 		audit := []models.Permission{models.PermissionMailAudit, models.PermissionMailAuditAll}
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "mail_audit_search", Family: tools.FamilyAudit, Risk: tools.RiskRead, Permissions: audit,
 				Description: "Every message that passed through a domain the person audits — arriving and leaving, delivered and refused — as the operator's Mail page shows it. Not the person's own mailbox: that is mail_search.",
@@ -219,6 +219,19 @@ func init() {
 					return answer, nil
 				},
 			},
-		}
+		},
+			// One tool for the operator's view of the mail that passed
+			// through, four verbs over the same thing.
+			tools.Group{
+				Name: "mail_audit", Family: tools.FamilyAudit,
+				Description: "Every message this server handled, for an operator: what arrived, what it was judged to be, and what became of it.",
+				Members: []tools.Member{
+					{Action: "search", Tool: "mail_audit_search"},
+					{Action: "get", Tool: "mail_audit_get"},
+					{Action: "content", Tool: "mail_audit_content"},
+					{Action: "mark", Tool: "mail_audit_mark"},
+				},
+			},
+		)
 	})
 }

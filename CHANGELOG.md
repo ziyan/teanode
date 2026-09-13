@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The agent's tool catalog is one tool per thing rather than one per verb:
+  `domain`, `alias`, `credential`, `queue`, `rule`, `user`, `calendar`,
+  `mail_audit`, `account` and `settings` each take the action as their first
+  argument. Eighty-four names became fifty-four without losing anything the
+  agent could do. The catalog is what a model reads before it decides
+  anything, and seventeen names for the operator's domains was seventeen
+  paragraphs spent on grammar.
+
+  Each action keeps its own risk and its own permission: reading a diary is
+  still a read, taking an appointment out of it still asks first, and somebody
+  who may list groups but not change them is refused the half they may not
+  do. A tool policy written before this -- `agent.tools.disabled` or
+  `confirm`, or a person's own "always ask me" list -- still means something:
+  a name that was a verb now reaches the tool that verb became, which is
+  broader than it was and never narrower.
+
 ## [0.21.5] - 2026-09-13
 
 ### Changed

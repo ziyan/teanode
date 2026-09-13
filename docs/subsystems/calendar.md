@@ -378,8 +378,10 @@ cancelling it.
 The dashboard, the command line and the agent reach the same API, and the rule
 is that none of them can do something the others cannot. `teanode calendar
 list|show|add|edit|remove|free|calendars|set` is the whole of it from a
-terminal; `calendar_agenda`, `calendar_free`, `calendar_add`, `calendar_edit`
-and `calendar_remove` are the same abilities for the agent.
+terminal; for the agent it is one tool, `calendar`, whose action is `agenda`,
+`free`, `add`, `edit` or `remove` — the same abilities, under one name,
+because a catalog with a name per verb is a catalog a model reads less
+carefully.
 
 Two things make the agent's set different from the other two.
 
@@ -392,9 +394,9 @@ ask for.
 an ordinary write; the moment anybody else is going to be sent mail it is
 *outward*, which is the class that stops and asks the person. That much a risk
 can decide from the arguments alone. What it cannot see is whether the event
-already has guests, so `calendar_edit` and `calendar_remove` look the event up
-first and **refuse** to touch one with people on it until the call says, in as
-many words, that they are to be told — and that call is then the outward one
+already has guests, so `edit` and `remove` look the event up first and
+**refuse** to touch one with people on it until the call says, in as many
+words, that they are to be told — and that call is then the outward one
 the person is asked about. An agent following instructions it read in a message
 cannot move a meeting and mail twelve people about it without the person
 seeing the question.

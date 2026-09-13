@@ -35,6 +35,44 @@ moved or is off — is *outward*, so the person is asked first, and an event wit
 guests on it is refused outright until the call says they are to be told.
 `docs/subsystems/calendar.md` has the reasoning.
 
+## One tool per thing
+
+The catalog is the request: every tool in it is a paragraph the model reads
+before it decides anything. It grew to eighty-four names, of which seventeen
+were the operator's domains — a verb apiece for domains, addresses,
+credentials and the queue — and a model choosing between eighty-four
+near-identical names chooses worse than one choosing between fifty.
+
+So a tool is one thing, and its first argument is the action:
+
+    domain      list, get, add, update, remove, dns
+    alias       list, match, add, update, remove
+    credential  list, create, update, remove
+    queue       list, retry
+    rule        list, add, update, remove, test, apply
+    user        list, add, update, remove
+    calendar    agenda, free, add, edit, remove
+    mail_audit  search, get, content, mark
+    account     get, update
+    settings    get, update
+
+Two things survive the merge, and they are the two that matter. **The risk is
+the action's own**: reading a diary is a read and taking an appointment out of
+it cannot be undone, so the tool's declared class is the gentlest of its
+actions and the call is priced by the one in hand. A call nobody can parse
+takes the strictest class any of its actions carries, so that writing a call
+badly is not a way past the question. **The permission is the action's own
+too**: the catalog offers the tool to anybody one of its actions would admit,
+and each action checks its own before it runs.
+
+A tool that already takes an `action` of its own — `folder_manage`,
+`group_manage`, `mail_act` — cannot be an action of another, because the two
+fields would collide; the code says so and refuses to build such a catalog.
+
+`internal/agent/tools/merged.go` is the whole of it, and
+`tools.Renamed` maps every old name to what it became, so an operator's
+policy written before the merge still means something.
+
 ## Sorting, and the two words that earn a rule
 
 Triage answers with a category from a fixed list -- personal, work,

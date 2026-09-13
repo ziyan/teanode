@@ -27,7 +27,7 @@ func init() {
 			"comment":    tools.StringProperty("a note"),
 			"disabled":   tools.BooleanProperty("off"),
 		}
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "domain_list", Family: tools.FamilyDomains, Risk: tools.RiskRead, Permissions: manage,
 				Description: "The domains the person manages, with how many aliases and credentials each has.",
@@ -519,7 +519,54 @@ func init() {
 					return tools.JSONResult(result["RetryDelivery"])
 				},
 			},
-		}
+		},
+			// One tool per thing. What was seventeen names -- a verb each
+			// for domains, addresses, credentials and the queue -- is four,
+			// each taking the action as its first argument. Nothing under
+			// them moved: a group names the tools it is made of, and what
+			// each of them does is where it was.
+			tools.Group{
+				Name: "domain", Family: tools.FamilyDomains,
+				Description: "The domains this server carries mail for.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "domain_list"},
+					{Action: "get", Tool: "domain_get"},
+					{Action: "add", Tool: "domain_add"},
+					{Action: "update", Tool: "domain_update"},
+					{Action: "remove", Tool: "domain_remove"},
+					{Action: "dns", Tool: "domain_dns_check"},
+				},
+			},
+			tools.Group{
+				Name: "alias", Family: tools.FamilyDomains,
+				Description: "The addresses at a domain and where each one delivers.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "alias_list"},
+					{Action: "match", Tool: "alias_match"},
+					{Action: "add", Tool: "alias_add"},
+					{Action: "update", Tool: "alias_update"},
+					{Action: "remove", Tool: "alias_remove"},
+				},
+			},
+			tools.Group{
+				Name: "credential", Family: tools.FamilyDomains,
+				Description: "The sending credentials of a domain: what a program signs in with to send through this server.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "credential_list"},
+					{Action: "create", Tool: "credential_create"},
+					{Action: "update", Tool: "credential_update"},
+					{Action: "remove", Tool: "credential_remove"},
+				},
+			},
+			tools.Group{
+				Name: "queue", Family: tools.FamilyDomains,
+				Description: "Mail this server is still trying to deliver.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "queue_list"},
+					{Action: "retry", Tool: "queue_retry"},
+				},
+			},
+		)
 	})
 }
 

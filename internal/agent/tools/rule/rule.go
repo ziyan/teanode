@@ -37,7 +37,7 @@ func init() {
 			"enabled":  tools.BooleanProperty("on; true by default"),
 			"position": tools.IntegerProperty("where in the list, 1 first; the end by default"),
 		}
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "rule_list", Family: tools.FamilyMailbox, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionMailboxManage},
@@ -95,7 +95,21 @@ func init() {
 				},
 				Run: runRuleApply,
 			},
-		}
+		},
+			// One tool for the rules, not one per verb.
+			tools.Group{
+				Name: "rule", Family: tools.FamilyMailbox,
+				Description: "The mailbox's own rules: what it does with a message as it arrives.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "rule_list"},
+					{Action: "add", Tool: "rule_add"},
+					{Action: "update", Tool: "rule_update"},
+					{Action: "remove", Tool: "rule_remove"},
+					{Action: "test", Tool: "rule_test"},
+					{Action: "apply", Tool: "rule_apply"},
+				},
+			},
+		)
 	})
 }
 

@@ -234,11 +234,15 @@ func AllowedByPermissions(tool *Tool, permissions *models.EffectivePermissions) 
 	return false
 }
 
-// Listed says whether a policy list names the tool, by name or family.
+// Listed says whether a policy list names the tool, by name or family, or by
+// a name one of its actions used to have.
 func Listed(entries []string, tool *Tool) bool {
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if strings.EqualFold(entry, tool.Name) || strings.EqualFold(entry, string(tool.Family)) {
+			return true
+		}
+		if merged, renamed := Renamed[strings.ToLower(entry)]; renamed && strings.EqualFold(merged, tool.Name) {
 			return true
 		}
 	}

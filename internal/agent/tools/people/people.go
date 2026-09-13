@@ -16,7 +16,7 @@ import (
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "user_list", Family: tools.FamilyPeople, Risk: tools.RiskRead, Permissions: []models.Permission{models.PermissionUserManage},
 				Description: "The accounts on this server, with their groups and whether they may sign in.",
@@ -360,6 +360,22 @@ func init() {
 					return tools.JSONResult(result["ListAuditEvents"])
 				},
 			},
-		}
+		},
+			// One tool for the accounts. The groups and the roles keep a
+			// name each: group_manage and role_manage already take an
+			// action of their own -- adding somebody to a group, writing a
+			// permission into a role -- and a tool whose action field is
+			// already spoken for cannot be an action of another.
+			tools.Group{
+				Name: "user", Family: tools.FamilyPeople,
+				Description: "The accounts on this server.",
+				Members: []tools.Member{
+					{Action: "list", Tool: "user_list"},
+					{Action: "add", Tool: "user_add"},
+					{Action: "update", Tool: "user_update"},
+					{Action: "remove", Tool: "user_remove"},
+				},
+			},
+		)
 	})
 }

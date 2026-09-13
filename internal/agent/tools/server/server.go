@@ -17,7 +17,7 @@ import (
 func init() {
 	tools.Register(func() []*tools.Tool {
 		manage := []models.Permission{models.PermissionServerManage}
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "server_status", Family: tools.FamilyServer, Risk: tools.RiskRead, Permissions: manage,
 				Description: "This server: version, instance, uptime, whether a restart is pending, and whether a newer release exists.",
@@ -129,6 +129,18 @@ func init() {
 					return nil, fmt.Errorf("%q is not an action of server_upgrade", arguments.Action)
 				},
 			},
-		}
+		},
+			// Reading the server's settings and changing them are one tool;
+			// changing them is still destructive, because a setting written
+			// wrongly is how a mail server stops receiving mail.
+			tools.Group{
+				Name: "settings", Family: tools.FamilyServer,
+				Description: "This server's own configuration.",
+				Members: []tools.Member{
+					{Action: "get", Tool: "settings_get"},
+					{Action: "update", Tool: "settings_update"},
+				},
+			},
+		)
 	})
 }

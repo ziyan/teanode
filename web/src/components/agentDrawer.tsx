@@ -264,16 +264,15 @@ const MAKE_MAIN = `
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
   }`
 
-// The tools after which what the mailbox shows may have changed.
+// The tools after which what the mailbox shows may have changed. The rules
+// and the folders are one tool each now, whatever action they were asked
+// for: a list is a read and refreshing after one costs nothing.
 const MAIL_TOOLS = new Set([
   'mail_act',
   'mail_draft',
   'mail_send',
-  'folder_manage',
-  'rule_add',
-  'rule_update',
-  'rule_remove',
-  'rule_apply',
+  'folder',
+  'rule',
   'mailbox_settings',
   'reply_queue',
 ])

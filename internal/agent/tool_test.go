@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -32,16 +33,16 @@ func TestCatalogIsWellFormedAndFiltered(t *testing.T) {
 	for _, tool := range offered {
 		names[tool.Name] = true
 	}
-	if !names["mail_search"] || !names["datetime"] || names["mail_act"] || names["rule_add"] {
+	if !names["mail_search"] || !names["datetime"] || names["mail_act"] || names["rule"] {
 		t.Fatalf("a reader should see the reading tools and not the writing ones: %v", names)
 	}
 	writer := models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}, {Permission: models.PermissionMailWrite}, {Permission: models.PermissionMailboxManage}})
-	offered = catalog.Offered(writer, &config.AgentTools{Disabled: []string{"web_fetch", "rule_add"}})
+	offered = catalog.Offered(writer, &config.AgentTools{Disabled: []string{"web_fetch", "rule"}})
 	names = map[string]bool{}
 	for _, tool := range offered {
 		names[tool.Name] = true
 	}
-	if !names["mail_act"] || names["web_fetch"] || names["rule_add"] || !names["rule_list"] {
+	if !names["mail_act"] || names["web_fetch"] || names["rule"] || !names["folder_list"] {
 		t.Fatalf("the operator's disabled list should hold: %v", names)
 	}
 	offered = catalog.Offered(writer, &config.AgentTools{Disabled: []string{"mailbox"}})
@@ -51,9 +52,9 @@ func TestCatalogIsWellFormedAndFiltered(t *testing.T) {
 		}
 	}
 
-	policy := &config.AgentTools{Confirm: []string{"rule_apply"}}
+	policy := &config.AgentTools{Confirm: []string{"rule"}}
 	person := &models.Agent{Confirm: []string{"mail_draft"}}
-	for name, want := range map[string]bool{"mail_send": true, "mail_read": false, "mail_act": false, "folder_manage": false, "rule_apply": true, "mail_draft": true} {
+	for name, want := range map[string]bool{"mail_send": true, "mail_read": false, "mail_act": false, "folder_list": false, "rule": true, "mail_draft": true} {
 		if got := NeedsConfirmation(catalog.Get(name), nil, policy, person); got != want {
 			t.Fatalf("NeedsConfirmation(%s) = %v, want %v", name, got, want)
 		}
@@ -63,8 +64,16 @@ func TestCatalogIsWellFormedAndFiltered(t *testing.T) {
 	if !NeedsConfirmation(catalog.Get("mail_act"), []byte(`{"action":"delete_forever","item_ids":["x"]}`), nil, nil) || NeedsConfirmation(catalog.Get("mail_act"), []byte(`{"action":"archive","item_ids":["x"]}`), nil, nil) {
 		t.Fatal("mail_act should ask for delete_forever only")
 	}
-	if !NeedsConfirmation(catalog.Get("folder_manage"), []byte(`{"action":"delete","folder":"Old"}`), nil, nil) || NeedsConfirmation(catalog.Get("folder_manage"), []byte(`{"action":"rename","folder":"Old","name":"New"}`), nil, nil) {
-		t.Fatal("folder_manage should ask for delete only")
+	if !NeedsConfirmation(catalog.Get("folder_manage"), []byte(`{"action":"delete","folder":"Old"}`), nil, nil) {
+		t.Fatal("deleting a folder should ask")
+	}
+	// A merged tool is priced by the action in hand: the diary is a read,
+	// and taking something out of it cannot be undone.
+	if NeedsConfirmation(catalog.Get("calendar"), []byte(`{"action":"agenda"}`), nil, nil) {
+		t.Fatal("reading the agenda should not ask")
+	}
+	if !NeedsConfirmation(catalog.Get("calendar"), []byte(`{"action":"remove","event":"x"}`), nil, nil) {
+		t.Fatal("removing an event should ask")
 	}
 }
 
@@ -136,8 +145,8 @@ func TestHandingOutAWayInIsAskedAbout(t *testing.T) {
 	granting := map[string]string{
 		"token_manage":        `{"action":"create","name":"x"}`,
 		"app_password_manage": `{"action":"create","mailbox":"Personal","name":"Phone"}`,
-		"credential_create":   `{"domain":"example.com","name":"x"}`,
-		"user_add":            `{"username":"someone"}`,
+		"credential":          `{"action":"create","domain":"example.com","name":"x"}`,
+		"user":                `{"action":"add","username":"someone"}`,
 		"group_manage":        `{"action":"update","group_id":"g1","user_ids":["u1"]}`,
 		"role_manage":         `{"action":"update","role_id":"r1"}`,
 	}
@@ -155,11 +164,11 @@ func TestHandingOutAWayInIsAskedAbout(t *testing.T) {
 	}
 
 	// Moving somebody between groups is a grant; renaming them is not.
-	people := catalog.Get("user_update")
-	if got := people.RiskFor([]byte(`{"user_id":"u1","group_ids":["admins"]}`)); got != RiskGranting {
+	people := catalog.Get("user")
+	if got := people.RiskFor([]byte(`{"action":"update","user_id":"u1","group_ids":["admins"]}`)); got != RiskGranting {
 		t.Errorf("changing the groups is granting: %q", got)
 	}
-	if got := people.RiskFor([]byte(`{"user_id":"u1","name":"Ada"}`)); got != RiskWrite {
+	if got := people.RiskFor([]byte(`{"action":"update","user_id":"u1","name":"Ada"}`)); got != RiskWrite {
 		t.Errorf("changing a name is an ordinary write: %q", got)
 	}
 
@@ -272,5 +281,39 @@ func TestDrivingTheirOwnBrowserDirectlyAsksFirst(t *testing.T) {
 	}
 	if got := tool.RiskFor([]byte(`{"action":"cdp","method":"Runtime.evaluate"}`)); got == RiskDestructive {
 		t.Fatalf("the headless browser is nobody's session: %q", got)
+	}
+}
+
+// The catalog is the request, and a request a model reads carefully is a
+// short one.
+//
+// It reached eighty-four tools, of which seventeen were the operator's
+// domains: a verb apiece for domains, addresses, credentials and the queue.
+// Merging the verbs into one tool per thing took it to about fifty without
+// losing a capability. This is the fuse on it growing back: a new tool is
+// welcome, a fifth verb for something that already has four is what this is
+// here to argue with.
+func TestTheCatalogStaysShort(t *testing.T) {
+	t.Parallel()
+
+	catalog := FullCatalog()
+	if count := len(catalog.All()); count > 60 {
+		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
+	}
+
+	// And a policy written before the merge still means what it meant: a
+	// list naming one verb switches off the tool that verb became, which is
+	// broader than it was and never narrower.
+	for _, name := range []string{"domain_remove", "calendar_add", "rule_apply"} {
+		merged := catalog.Get(tools.Renamed[name])
+		if merged == nil {
+			t.Fatalf("%s became %q, which is not registered", name, tools.Renamed[name])
+		}
+		if !listed([]string{name}, merged) {
+			t.Errorf("a policy naming %s should still reach %s", name, merged.Name)
+		}
+	}
+	if listed([]string{"domain_remove"}, catalog.Get("mail_read")) {
+		t.Error("and should reach nothing else")
 	}
 }

@@ -16,7 +16,7 @@ import (
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "account_get", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Description: "The person's own account: name, username, notification address, language, zone, and their sessions, API tokens and passkeys.",
@@ -246,6 +246,16 @@ func init() {
 					return tools.JSONResult(map[string]any{"may": tools.PermissionWords(permissions), "offered_tools": len(run.Offered()), "switched_off_by_operator": configuration.Agent.Tools.Disabled})
 				},
 			},
-		}
+		},
+			// Reading the account and changing it are one tool.
+			tools.Group{
+				Name: "account", Family: tools.FamilyAccount,
+				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen.",
+				Members: []tools.Member{
+					{Action: "get", Tool: "account_get"},
+					{Action: "update", Tool: "account_update"},
+				},
+			},
+		)
 	})
 }
