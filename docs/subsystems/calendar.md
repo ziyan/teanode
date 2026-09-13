@@ -373,6 +373,37 @@ Deleting sends a cancellation, and only when this person is the one who called
 the meeting: deleting an event somebody else organized is leaving it, not
 cancelling it.
 
+## Three doors, and the same calendar behind them
+
+The dashboard, the command line and the agent reach the same API, and the rule
+is that none of them can do something the others cannot. `teanode calendar
+list|show|add|edit|remove|free|calendars|set` is the whole of it from a
+terminal; `calendar_agenda`, `calendar_free`, `calendar_add`, `calendar_edit`
+and `calendar_remove` are the same abilities for the agent.
+
+Two things make the agent's set different from the other two.
+
+**It has to be able to name an event.** The agenda gives every entry its
+identifier, because an agenda nobody can act on is a reading of somebody's day
+and nothing else — and "move my dentist appointment" is exactly what people
+ask for.
+
+**It is asked before anything leaves.** Putting something in one's own diary is
+an ordinary write; the moment anybody else is going to be sent mail it is
+*outward*, which is the class that stops and asks the person. That much a risk
+can decide from the arguments alone. What it cannot see is whether the event
+already has guests, so `calendar_edit` and `calendar_remove` look the event up
+first and **refuse** to touch one with people on it until the call says, in as
+many words, that they are to be told — and that call is then the outward one
+the person is asked about. An agent following instructions it read in a message
+cannot move a meeting and mail twelve people about it without the person
+seeing the question.
+
+Free-busy is one piece of code for all three (`calendar.FreeBusy` and
+`calendar.Free`, beside each other on purpose). "When is this person busy" and
+"when could they meet" are one question from two ends, and the terminal, the
+agent and a colleague's phone must not be able to disagree about the answer.
+
 ## Things that will catch you
 
 **The trailing slash.** The router uses `StrictSlash(true)`, which answers a

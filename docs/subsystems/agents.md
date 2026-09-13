@@ -26,7 +26,14 @@ address and answering on another:
     Research      a read-only run that gathers context before a reply
     AutoReply     a policy: scope, categories, hold, caps, quiet days
 
-Calendars and address books are meant to become sources the same way.
+Calendars and address books are meant to become sources the same way. Until
+then the agent reaches the person's own calendar through the same permission a
+person needs for it (`calendar:use`): it can read the agenda, say when they are
+free, and put something in, change it or take it out. Anything that would send
+mail — inviting people, or telling the ones already invited that a meeting has
+moved or is off — is *outward*, so the person is asked first, and an event with
+guests on it is refused outright until the call says they are to be told.
+`docs/subsystems/calendar.md` has the reasoning.
 
 ## Three switches, in order
 

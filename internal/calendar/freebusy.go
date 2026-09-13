@@ -111,6 +111,45 @@ func FreeBusy(occurrences []Occurrence, from, until time.Time) []Period {
 	return merged
 }
 
+// ShortestMeeting is how small a gap is still worth offering. A few minutes
+// between two meetings is not a time anybody can meet in, and offering it
+// makes a day look free that is not.
+const ShortestMeeting = 15 * time.Minute
+
+// Free is what is left of a stretch of time once the busy periods are taken
+// out of it.
+//
+// The inverse of FreeBusy and beside it on purpose: "when is this person
+// busy" and "when could they meet" are one question asked from two ends, and
+// the command line, the agent and anything else that asks must not be able to
+// disagree about the answer. The periods are expected merged, which is what
+// FreeBusy gives.
+func Free(busy []Period, opens, closes time.Time) []Period {
+	var free []Period
+	at := opens
+	for _, period := range busy {
+		if !period.EndsAt.After(opens) || !closes.After(period.StartsAt) {
+			continue
+		}
+		if period.StartsAt.After(at) {
+			free = append(free, Period{StartsAt: at, EndsAt: period.StartsAt})
+		}
+		if period.EndsAt.After(at) {
+			at = period.EndsAt
+		}
+	}
+	if closes.After(at) {
+		free = append(free, Period{StartsAt: at, EndsAt: closes})
+	}
+	kept := free[:0]
+	for _, period := range free {
+		if period.EndsAt.Sub(period.StartsAt) >= ShortestMeeting {
+			kept = append(kept, period)
+		}
+	}
+	return kept
+}
+
 // WriteFreeBusy is the answer as the format writes it: a calendar holding one
 // VFREEBUSY, with a line per stretch and nothing about what any of it is.
 func WriteFreeBusy(periods []Period, from, until time.Time) []byte {

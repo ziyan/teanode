@@ -8,6 +8,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/client"
 )
 
@@ -32,6 +33,23 @@ func NewCalendarCommand() *cli.Command {
 					&cli.StringFlag{Name: "until", Usage: "the day after the last; a week after 'from' by default"},
 				},
 				Action: runCalendarList,
+			},
+			{
+				Name:  "free",
+				Usage: "when you are free; the stretches of the working day nothing is booked in",
+				Description: "Whole-day entries do not make a day busy -- a birthday is something to\n" +
+					"know about rather than an appointment -- and neither does anything\n" +
+					"cancelled:\n\n" +
+					"  teanode calendar free --from 2026-09-14 --until 2026-09-19\n" +
+					"  teanode calendar free --earliest 08:00 --latest 18:00",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "from", Usage: "the first day, as YYYY-MM-DD; today by default"},
+					&cli.StringFlag{Name: "until", Usage: "the day after the last; a week after 'from' by default"},
+					&cli.StringFlag{Name: "earliest", Usage: "the earliest hour of the day to offer, as HH:MM; 09:00 by default"},
+					&cli.StringFlag{Name: "latest", Usage: "the latest, as HH:MM; 17:00 by default"},
+				},
+				Action: runCalendarFree,
 			},
 			{
 				Name:      "show",
@@ -117,9 +135,9 @@ func theCalendar(ctx context.Context, connection *client.Client) (*client.Calend
 
 // zoneOf is the zone to read a written time in: the calendar's own, and
 // otherwise this machine's, which is where the person typing is.
-func zoneOf(calendar *client.Calendar) *time.Location {
-	if calendar != nil && strings.TrimSpace(calendar.Timezone) != "" {
-		if loaded, err := time.LoadLocation(calendar.Timezone); err == nil {
+func zoneOf(kept *client.Calendar) *time.Location {
+	if kept != nil && strings.TrimSpace(kept.Timezone) != "" {
+		if loaded, err := time.LoadLocation(kept.Timezone); err == nil {
 			return loaded
 		}
 	}
@@ -174,16 +192,16 @@ func runCalendarList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
-	where := zoneOf(calendar)
+	where := zoneOf(kept)
 	from, until, err := windowFrom(command, where)
 	if err != nil {
 		return err
 	}
-	events, err := client.ListCalendarEvents(ctx, connection, calendar.ID,
+	events, err := client.ListCalendarEvents(ctx, connection, kept.ID,
 		from.UTC().Format(time.RFC3339), until.UTC().Format(time.RFC3339))
 	if err != nil {
 		return describeError(command, err)
@@ -234,11 +252,11 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
-	event, err := client.GetCalendarEvent(ctx, connection, calendar.ID, command.Args().First())
+	event, err := client.GetCalendarEvent(ctx, connection, kept.ID, command.Args().First())
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -248,7 +266,7 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(event)
 	}
-	where := zoneOf(calendar)
+	where := zoneOf(kept)
 	fmt.Printf("%s\n", event.Summary)
 	if starts, err := time.Parse(time.RFC3339, event.StartsAt); err == nil {
 		local := starts.In(where)
@@ -314,8 +332,8 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 
 // eventFieldsFrom reads the flags that were actually given. A flag left out
 // means "leave it alone"; a flag given empty means "clear it".
-func eventFieldsFrom(command *cli.Command, calendar *client.Calendar, wasAllDay bool) (*client.SaveCalendarEventFields, error) {
-	fields := &client.SaveCalendarEventFields{CalendarID: calendar.ID}
+func eventFieldsFrom(command *cli.Command, kept *client.Calendar, wasAllDay bool) (*client.SaveCalendarEventFields, error) {
+	fields := &client.SaveCalendarEventFields{CalendarID: kept.ID}
 	if file := strings.TrimSpace(command.String("file")); file != "" {
 		content, err := readValueOrStandardInput(file)
 		if err != nil {
@@ -324,7 +342,7 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar, wasAllDay 
 		fields.File = content
 		return fields, nil
 	}
-	where := zoneOf(calendar)
+	where := zoneOf(kept)
 	for name, field := range map[string]**string{
 		"summary": &fields.Summary, "location": &fields.Location,
 		"notes": &fields.Description, "repeat": &fields.Recurrence, "status": &fields.Status,
@@ -393,7 +411,7 @@ func eventFieldsFrom(command *cli.Command, calendar *client.Calendar, wasAllDay 
 		allDay = command.Bool("all-day")
 	}
 	if !allDay {
-		fields.Timezone = calendar.Timezone
+		fields.Timezone = kept.Timezone
 	}
 	return fields, nil
 }
@@ -403,11 +421,11 @@ func runCalendarAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
-	fields, err := eventFieldsFrom(command, calendar, command.Bool("all-day"))
+	fields, err := eventFieldsFrom(command, kept, command.Bool("all-day"))
 	if err != nil {
 		return err
 	}
@@ -439,7 +457,7 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -448,7 +466,7 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 	// Read rather than guessed: falling back to the flag when this fails
 	// answers "not a whole-day event", which is exactly the wrong answer
 	// for the case this exists to fix, and silently.
-	existing, err := client.GetCalendarEvent(ctx, connection, calendar.ID, command.Args().First())
+	existing, err := client.GetCalendarEvent(ctx, connection, kept.ID, command.Args().First())
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -456,7 +474,7 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no such event")
 	}
 	wasAllDay := existing.AllDay
-	fields, err := eventFieldsFrom(command, calendar, wasAllDay)
+	fields, err := eventFieldsFrom(command, kept, wasAllDay)
 	if err != nil {
 		return err
 	}
@@ -480,7 +498,7 @@ func runCalendarRemove(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -488,7 +506,7 @@ func runCalendarRemove(ctx context.Context, command *cli.Command) error {
 	if !command.Bool("force") {
 		// Read first so the warning can say what is about to go, and who
 		// is about to be told it is off.
-		event, err := client.GetCalendarEvent(ctx, connection, calendar.ID, id)
+		event, err := client.GetCalendarEvent(ctx, connection, kept.ID, id)
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -508,7 +526,7 @@ func runCalendarRemove(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 	}
-	if err := client.DeleteCalendarEvent(ctx, connection, calendar.ID, id); err != nil {
+	if err := client.DeleteCalendarEvent(ctx, connection, kept.ID, id); err != nil {
 		return describeError(command, err)
 	}
 	fmt.Println("removed")
@@ -542,12 +560,12 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calendar, err := theCalendar(ctx, connection)
+	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
-	name, description := calendar.Name, calendar.Description
-	colour, timezone := calendar.Colour, calendar.Timezone
+	name, description := kept.Name, kept.Description
+	colour, timezone := kept.Colour, kept.Timezone
 	if command.IsSet("name") {
 		name = command.String("name")
 	}
@@ -560,7 +578,7 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("timezone") {
 		timezone = command.String("timezone")
 	}
-	saved, err := client.SaveCalendar(ctx, connection, calendar.ID, name, description, colour, timezone)
+	saved, err := client.SaveCalendar(ctx, connection, kept.ID, name, description, colour, timezone)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -569,4 +587,102 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("%s\n", saved.Name)
 	return nil
+}
+
+// hourOfDay reads a time of day as the length from midnight.
+func hourOfDay(value string, fallback int) (time.Duration, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Duration(fallback) * time.Hour, nil
+	}
+	parsed, err := time.Parse("15:04", trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a time of day: write it as HH:MM", trimmed)
+	}
+	return time.Duration(parsed.Hour())*time.Hour + time.Duration(parsed.Minute())*time.Minute, nil
+}
+
+// runCalendarFree answers the question somebody asks before proposing a time.
+//
+// Day by day, because "when am I free" means free during a day rather than
+// free at three in the morning. Worked out with the same two functions the
+// calendar answers a phone's free-busy request with, so that what this prints
+// and what a colleague's client is told cannot disagree.
+func runCalendarFree(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	found, err := theCalendar(ctx, connection)
+	if err != nil {
+		return err
+	}
+	where := zoneOf(found)
+	from, until, err := windowFrom(command, where)
+	if err != nil {
+		return err
+	}
+	earliest, err := hourOfDay(command.String("earliest"), 9)
+	if err != nil {
+		return err
+	}
+	latest, err := hourOfDay(command.String("latest"), 17)
+	if err != nil {
+		return err
+	}
+	if latest <= earliest {
+		return fmt.Errorf("the day ends before it begins")
+	}
+	events, err := client.ListCalendarEvents(ctx, connection, found.ID,
+		from.UTC().Format(time.RFC3339), until.UTC().Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+
+	type stretch struct {
+		Day   string `json:"day"`
+		From  string `json:"from"`
+		Until string `json:"until"`
+	}
+	var free []stretch
+	for day := from; day.Before(until); day = day.AddDate(0, 0, 1) {
+		opens, closes := day.Add(earliest), day.Add(latest)
+		busy := make([]calendar.Occurrence, 0, len(events))
+		for _, event := range events {
+			// A whole day is not an appointment, and something called off
+			// is not on.
+			if event.AllDay || strings.EqualFold(event.Status, "CANCELLED") {
+				continue
+			}
+			starts, err := time.Parse(time.RFC3339, event.StartsAt)
+			if err != nil {
+				continue
+			}
+			ends, err := time.Parse(time.RFC3339, event.EndsAt)
+			if err != nil || !ends.After(starts) {
+				ends = starts.Add(time.Hour)
+			}
+			busy = append(busy, calendar.Occurrence{StartsAt: starts, EndsAt: ends})
+		}
+		for _, gap := range calendar.Free(calendar.FreeBusy(busy, opens, closes), opens, closes) {
+			free = append(free, stretch{
+				Day:   day.Format("2006-01-02"),
+				From:  gap.StartsAt.In(where).Format("15:04"),
+				Until: gap.EndsAt.In(where).Format("15:04"),
+			})
+		}
+	}
+	if command.Bool("json") {
+		return PrintJSON(free)
+	}
+	rows := make([][]string, 0, len(free))
+	for _, gap := range free {
+		rows = append(rows, []string{gap.Day, gap.From, gap.Until})
+	}
+	if len(rows) == 0 {
+		fmt.Printf("nothing free between %s and %s\n",
+			from.Format("2006-01-02"), until.AddDate(0, 0, -1).Format("2006-01-02"))
+		return nil
+	}
+	return printTable([]string{"day", "from", "until"}, rows)
 }

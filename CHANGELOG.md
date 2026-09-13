@@ -108,6 +108,16 @@ Notable changes to TeaNode. The format follows
   answers with every event in the calendar; a search for one event by its
   identifier answers with that one.
 
+- The agent can change and remove things in the calendar, not only add them,
+  and the agenda it reads now names each event so it can say which one it
+  means. Anything that sends mail -- inviting people, or telling the people
+  already invited that a meeting has moved or is off -- asks first, and an
+  event with guests on it is not touched until it is told to tell them.
+
+- `teanode calendar free` prints the stretches of the working day nothing is
+  booked in, which the agent could already work out and the command line
+  could not.
+
 - Moving or calling off one occurrence of a repeating event changes that
   occurrence. An invitation naming one week of a weekly meeting used to
   replace the whole series with a single appointment, and a cancellation of

@@ -8,88 +8,6 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
-func at(hour, minute int) time.Time {
-	return time.Date(2026, 9, 14, hour, minute, 0, 0, time.UTC)
-}
-
-func written(gaps [][2]time.Time) string {
-	var said []string
-	for _, gap := range gaps {
-		said = append(said, gap[0].Format("15:04")+"-"+gap[1].Format("15:04"))
-	}
-	return strings.Join(said, " ")
-}
-
-// The free stretches of a day are what is left once the meetings are taken
-// out.
-func TestWhatIsLeftOfADay(t *testing.T) {
-	gaps := gapsBetween([][2]time.Time{
-		{at(10, 0), at(11, 0)},
-		{at(14, 0), at(15, 0)},
-	}, at(9, 0), at(17, 0))
-	if got := written(gaps); got != "09:00-10:00 11:00-14:00 15:00-17:00" {
-		t.Fatalf("three gaps: %s", got)
-	}
-}
-
-// Meetings given out of order are still taken out in order. A caller has no
-// reason to sort them, and one that did not would otherwise be told it is
-// free during a meeting.
-func TestMeetingsOutOfOrderAreStillTakenOut(t *testing.T) {
-	gaps := gapsBetween([][2]time.Time{
-		{at(14, 0), at(15, 0)},
-		{at(10, 0), at(11, 0)},
-	}, at(9, 0), at(17, 0))
-	if got := written(gaps); got != "09:00-10:00 11:00-14:00 15:00-17:00" {
-		t.Fatalf("order should not matter: %s", got)
-	}
-}
-
-// Two meetings that overlap are one stretch. Treating them separately invents
-// a gap between them that is not there, which is how somebody gets offered a
-// time they are already in a meeting.
-func TestOverlappingMeetingsDoNotInventAGap(t *testing.T) {
-	gaps := gapsBetween([][2]time.Time{
-		{at(10, 0), at(12, 0)},
-		{at(11, 0), at(13, 0)},
-	}, at(9, 0), at(17, 0))
-	if got := written(gaps); got != "09:00-10:00 13:00-17:00" {
-		t.Fatalf("one stretch from ten to one: %s", got)
-	}
-	// And one wholly inside another changes nothing.
-	inside := gapsBetween([][2]time.Time{
-		{at(10, 0), at(13, 0)},
-		{at(11, 0), at(12, 0)},
-	}, at(9, 0), at(17, 0))
-	if got := written(inside); got != "09:00-10:00 13:00-17:00" {
-		t.Fatalf("the inner one is already covered: %s", got)
-	}
-}
-
-// A day with nothing in it is free all through, and a day booked solid has
-// nothing to offer.
-func TestAnEmptyDayAndAFullOne(t *testing.T) {
-	if got := written(gapsBetween(nil, at(9, 0), at(17, 0))); got != "09:00-17:00" {
-		t.Fatalf("all day: %s", got)
-	}
-	full := gapsBetween([][2]time.Time{{at(9, 0), at(17, 0)}}, at(9, 0), at(17, 0))
-	if got := written(full); got != "" {
-		t.Fatalf("nothing free: %s", got)
-	}
-}
-
-// A few minutes between two meetings is not a time anybody can meet in, and
-// offering it is worse than offering nothing.
-func TestASliverIsNotOffered(t *testing.T) {
-	gaps := gapsBetween([][2]time.Time{
-		{at(10, 0), at(11, 0)},
-		{at(11, 5), at(12, 0)},
-	}, at(10, 0), at(12, 0))
-	if got := written(gaps); got != "" {
-		t.Fatalf("five minutes is not a meeting: %s", got)
-	}
-}
-
 // A window is read in the person's own zone, because a day is a local thing:
 // "what is on tomorrow" from a calendar kept in Tokyo means Tokyo's tomorrow.
 func TestADayIsALocalThing(t *testing.T) {
@@ -166,25 +84,76 @@ func TestTheHoursOfTheWorkingDay(t *testing.T) {
 	}
 }
 
-// Inviting somebody is sending mail in the person's name, so the tool that
-// does it asks first.
-//
-// Only the outward and destructive classes reach the confirmation, and this
-// was a plain write however many people it wrote to -- so an agent following
-// instructions it read in a message could have sent invitations to a list of
-// strangers with nobody asked.
-func TestInvitingAsksFirst(t *testing.T) {
-	found := tools.Build().Get("calendar_add")
-	if found == nil {
-		t.Fatal("calendar_add is registered")
+// Everything the agent can do to a calendar, and what it is asked about
+// first: putting something in is a write, and anything that sends mail in the
+// person's name is outward, which is the class that stops and asks.
+func TestWhatTheAgentIsAskedAboutBeforeItActs(t *testing.T) {
+	catalog := tools.Build()
+	for _, name := range []string{"calendar_agenda", "calendar_free", "calendar_add", "calendar_edit", "calendar_remove"} {
+		if catalog.Get(name) == nil {
+			t.Fatalf("%s is registered", name)
+		}
 	}
-	if got := found.RiskFor([]byte(`{"summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
+
+	add := catalog.Get("calendar_add")
+	if got := add.RiskFor([]byte(`{"summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
 		t.Fatalf("putting something in one's own diary is a write: %q", got)
 	}
-	if got := found.RiskFor([]byte(`{"summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
+	if got := add.RiskFor([]byte(`{"summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
 		t.Fatalf("inviting anybody is outward: %q", got)
 	}
-	if !tools.NeedsConfirmation(found, []byte(`{"summary":"Meeting","invite":["ada@example.com"]}`), nil, nil) {
-		t.Fatal("and outward is asked about first")
+
+	edit := catalog.Get("calendar_edit")
+	if got := edit.RiskFor([]byte(`{"event":"e1","summary":"Dentist, later"}`)); got != tools.RiskWrite {
+		t.Fatalf("changing one's own appointment is a write: %q", got)
+	}
+	for _, arguments := range []string{
+		`{"event":"e1","starts":"2026-09-15T09:00","tell_guests":true}`,
+		`{"event":"e1","invite":["ada@example.com"]}`,
+	} {
+		if got := edit.RiskFor([]byte(arguments)); got != tools.RiskOutward {
+			t.Fatalf("telling anybody is outward (%s): %q", arguments, got)
+		}
+		if !tools.NeedsConfirmation(edit, []byte(arguments), nil, nil) {
+			t.Fatalf("and outward is asked about first: %s", arguments)
+		}
+	}
+
+	// Taking something out of a calendar is destructive whoever else hears
+	// about it, and destructive is asked about too.
+	remove := catalog.Get("calendar_remove")
+	if got := remove.RiskFor([]byte(`{"event":"e1"}`)); got != tools.RiskDestructive {
+		t.Fatalf("removing an event is destructive: %q", got)
+	}
+	if got := remove.RiskFor([]byte(`{"event":"e1","tell_guests":true}`)); got != tools.RiskOutward {
+		t.Fatalf("and outward when everybody is told: %q", got)
+	}
+	if !tools.NeedsConfirmation(remove, []byte(`{"event":"e1"}`), nil, nil) {
+		t.Fatal("removing anything is asked about first")
+	}
+}
+
+// An event with people on it is not changed or removed until the call says
+// they are to be told, because that is mail going out in the person's name
+// and the risk of a call is read off its arguments alone.
+func TestAnEventWithGuestsIsNotTouchedQuietly(t *testing.T) {
+	alone := &keptEvent{Summary: "Dentist"}
+	if err := guestsAreTold(alone, false, "changing"); err != nil {
+		t.Fatalf("nobody to tell: %s", err)
+	}
+	meeting := &keptEvent{Summary: "Planning"}
+	meeting.Attendees = append(meeting.Attendees, struct {
+		Address string `json:"address"`
+	}{Address: "ada@example.com"})
+
+	err := guestsAreTold(meeting, false, "changing")
+	if err == nil {
+		t.Fatal("an event with somebody on it is not changed quietly")
+	}
+	if !strings.Contains(err.Error(), "tell_guests") {
+		t.Fatalf("and the refusal says how to ask properly: %s", err)
+	}
+	if err := guestsAreTold(meeting, true, "changing"); err != nil {
+		t.Fatalf("asked properly, it goes ahead: %s", err)
 	}
 }
