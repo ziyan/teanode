@@ -338,7 +338,7 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 	// including the ones about to be refused for having proved nothing about
 	// where they came from. So the work an attacker could ask for was not
 	// bounded by whether this server would act on their message at all.
-	if !mail.DMARCPassed() {
+	if !mail.DMARCPassed() && !mail.SubmittedHere() {
 		return ignored("the message did not prove where it came from")
 	}
 	if mail.LooksLikeSpam() {

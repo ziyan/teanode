@@ -25,6 +25,10 @@ type Browser struct {
 	// guard alone.
 	guard func(host string) error
 
+	// The only way out of a page: Chrome is given this proxy for every
+	// context, so nothing resolves a name for it but us.
+	proxy *guardedProxy
+
 	mutex    sync.Mutex
 	contexts map[string]*Context
 }
@@ -37,6 +41,12 @@ type Settings struct {
 	// AllowPrivate lists hosts or CIDRs the operator lets the browser
 	// reach although they are private.
 	AllowPrivate []string
+
+	// ProxyListen is where the guarded proxy binds. Empty means every
+	// address on an unused port, and Chrome is told the address its own
+	// connection to this server came from -- which is reachable from
+	// wherever it is running.
+	ProxyListen string
 }
 
 // Connect reaches a browser at its endpoint.
@@ -66,7 +76,15 @@ func Connect(ctx context.Context, settings *Settings) (*Browser, error) {
 			allowedHosts[entry] = true
 		}
 	}
-	self := &Browser{connection: connection, contexts: map[string]*Context{}}
+	// The proxy first: a browser whose requests cannot be guarded is worse
+	// than no browser, so failing to start it fails the connection.
+	announce := proxyAnnounceHost(connection.socket.LocalAddr(), "127.0.0.1")
+	proxy, err := newGuardedProxy(proxyListenAddress(settings.ProxyListen, announce), announce, allowedHosts, allowed)
+	if err != nil {
+		_ = connection.close()
+		return nil, err
+	}
+	self := &Browser{connection: connection, proxy: proxy, contexts: map[string]*Context{}}
 	self.guard = func(host string) error {
 		if allowedHosts[strings.TrimSpace(strings.ToLower(host))] {
 			return nil
@@ -116,6 +134,9 @@ func (self *Browser) Close() error {
 	for _, context := range contexts {
 		_ = context.Close()
 	}
+	if self.proxy != nil {
+		self.proxy.Close()
+	}
 	return self.connection.close()
 }
 
@@ -137,7 +158,14 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 	var created struct {
 		BrowserContextID string `json:"browserContextId"`
 	}
-	if err := self.connection.call(ctx, "", "Target.createBrowserContext", map[string]any{"disposeOnDetach": true}, &created); err != nil {
+	// Every request this context makes goes through the guarded proxy, which
+	// is where the name is resolved and where the address is checked. The
+	// bypass list is empty on purpose: there is nothing this page may reach
+	// directly, not even a name that looks local.
+	if err := self.connection.call(ctx, "", "Target.createBrowserContext", map[string]any{
+		"disposeOnDetach": true,
+		"proxyServer":     self.proxy.URL(),
+	}, &created); err != nil {
 		return nil, err
 	}
 	var target struct {
@@ -159,7 +187,10 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 	_ = self.connection.call(ctx, attached.SessionID, "Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": created.BrowserContextID}, nil)
 	// Without the guard nothing is checked, so a page that cannot be
 	// guarded is a page that is not opened.
-	if err := self.connection.call(ctx, attached.SessionID, "Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
+	if err := self.connection.call(ctx, attached.SessionID, "Fetch.enable", map[string]any{
+		"patterns":           []map[string]any{{"urlPattern": "*", "requestStage": "Request"}},
+		"handleAuthRequests": true,
+	}, nil); err != nil {
 		_ = self.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": created.BrowserContextID}, nil)
 		return nil, fmt.Errorf("browser: cannot guard the page's requests: %w", err)
 	}
@@ -176,6 +207,10 @@ func (self *Context) guardRequests() {
 	events, stop := self.browser.connection.listen(self.sessionId)
 	defer stop()
 	for event := range events {
+		if event.Method == "Fetch.authRequired" {
+			self.answerProxy(event)
+			continue
+		}
 		if event.Method != "Fetch.requestPaused" {
 			continue
 		}
@@ -202,6 +237,35 @@ func (self *Context) guardRequests() {
 			return
 		}
 	}
+}
+
+// answerProxy hands Chrome the password for this server's own proxy. It is
+// the only thing that ever asks the page for one: a site asking for a
+// password is answered with "Default", which is a refusal to type anything.
+func (self *Context) answerProxy(event *message) {
+	var asked struct {
+		RequestID     string `json:"requestId"`
+		AuthChallenge struct {
+			Source string `json:"source"`
+		} `json:"authChallenge"`
+	}
+	if err := json.Unmarshal(event.Params, &asked); err != nil {
+		return
+	}
+	answer := map[string]any{"response": "Default"}
+	if asked.AuthChallenge.Source == "Proxy" && self.browser.proxy != nil {
+		answer = map[string]any{
+			"response": "ProvideCredentials",
+			"username": self.browser.proxy.username,
+			"password": self.browser.proxy.password,
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = self.browser.connection.call(ctx, self.sessionId, "Fetch.continueWithAuth", map[string]any{
+		"requestId":             asked.RequestID,
+		"authChallengeResponse": answer,
+	}, nil)
 }
 
 // allowed says whether an address may be reached.

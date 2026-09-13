@@ -149,6 +149,9 @@ func (self *Client) Initialize(ctx context.Context, clientName, clientVersion st
 
 // Server is what the server said about itself, after Initialize.
 func (self *Client) Server() ServerInformation {
+	if self == nil {
+		return ServerInformation{}
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	return self.server
@@ -203,10 +206,23 @@ func (self *Client) CallTool(ctx context.Context, name string, arguments json.Ra
 
 // Close ends the session.
 func (self *Client) Close() error {
+	if self == nil {
+		return nil
+	}
 	return self.transport.Close()
 }
 
+// ErrNoSession is what every call answers when there is no session behind it.
+var ErrNoSession = errors.New("mcp: there is no session with this server")
+
 func (self *Client) call(ctx context.Context, method string, params json.RawMessage) (*Response, error) {
+	// A session that was never made, or one discovery closed when the server
+	// stopped answering. A caller holding the client from a moment ago finds
+	// nothing here, and a nil dereference inside a goroutine is a crash of
+	// the whole program rather than a failed tool call.
+	if self == nil {
+		return nil, ErrNoSession
+	}
 	id := self.next.Add(1)
 	response, err := self.transport.Call(ctx, &Request{JSONRPC: "2.0", ID: &id, Method: method, Params: params})
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/upgrade"
+	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/version"
 )
 
@@ -85,6 +86,22 @@ func newConfigEnvCommand() *cli.Command {
 	}
 }
 
+// postgresLine is what the compose file's PostgreSQL is created with, for the
+// file to carry beside the connection string that uses it. Empty when the
+// operator brought their own database, which has a password already.
+func postgresLine(password string) string {
+	if password == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+# Read by the compose file, not by the server: the password PostgreSQL is
+# created with on its very first start, which is the one the URL above signs
+# in with. Changing it here later does not change the database's own password
+# -- see docs/reference/deployment.md for how to rotate it.
+POSTGRES_PASSWORD=%s
+`, password)
+}
+
 func runConfigEnv(ctx context.Context, command *cli.Command) error {
 	hostname := command.String("hostname")
 	domain := command.String("domain")
@@ -102,6 +119,25 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 	}
 	if domain == "" {
 		domain = "example.com"
+	}
+
+	// The password PostgreSQL is created with, and the one the server signs
+	// in with: the same string in two places, written once here so that they
+	// cannot disagree.
+	//
+	// Generated rather than fixed. What stood in the compose file was the
+	// word "teanode", which is a password every reader of this repository
+	// knows -- and the database listens on the loopback address of a machine
+	// that may have other things on it.
+	//
+	// Only when the operator did not bring their own connection string: if
+	// they did, they said what the password is, and a second one here would
+	// be a line in the file that means nothing.
+	databaseURL := command.String("database-url")
+	postgresPassword := ""
+	if !command.IsSet("database-url") {
+		postgresPassword = security.GenerateRandomString(32, security.AlphaNumeric)
+		databaseURL = strings.Replace(databaseURL, "postgres://teanode:teanode@", "postgres://teanode:"+postgresPassword+"@", 1)
 	}
 
 	content := fmt.Sprintf(`# TeaNode.
@@ -123,7 +159,7 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 # file's PostgreSQL means pointing sslrootcert at that server's authority, or
 # dropping to sslmode=require to encrypt without checking who answered.
 %sDATABASE_URL="%s"
-
+%s
 # Optional. Distinguishes this process from others sharing that database, and
 # has to differ between them. Defaults to the host name, which is what a
 # container is already given.
@@ -175,7 +211,7 @@ func runConfigEnv(ctx context.Context, command *cli.Command) error {
 # is TEANODE_DATABASE_URL, TEANODE_INSTANCE_ID if you set one, and anything
 # the compose file reads for a service other than the server.
 `,
-		bootstrap.Prefix, command.String("database-url"),
+		bootstrap.Prefix, databaseURL, postgresLine(postgresPassword),
 		bootstrap.Prefix,
 		bootstrap.Prefix, hostname,
 		bootstrap.Prefix, domain,

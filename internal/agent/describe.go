@@ -10,6 +10,8 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // A conversation is named and summarized by the fast model, in a line each,
@@ -54,6 +56,7 @@ func (self *Agent) describeInBackground(ctx context.Context, now time.Time) {
 	}
 	self.waitGroup.Add(1)
 	go func() {
+		defer deferutil.Recover()
 		defer self.waitGroup.Done()
 		defer self.describing.Store(false)
 		self.describeDue(ctx, now)

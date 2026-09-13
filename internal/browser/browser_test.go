@@ -16,9 +16,22 @@ import (
 // fakeChrome answers the DevTools commands the package sends, records
 // them, and can be told what a script evaluates to.
 type fakeChrome struct {
-	mutex    sync.Mutex
-	commands []string
-	evaluate func(expression string) any
+	mutex      sync.Mutex
+	commands   []string
+	parameters []string
+	evaluate   func(expression string) any
+}
+
+// paramsOf is what was sent with the first call of a command.
+func (self *fakeChrome) paramsOf(method string) string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for index, command := range self.commands {
+		if command == method {
+			return self.parameters[index]
+		}
+	}
+	return ""
 }
 
 func (self *fakeChrome) serve(t *testing.T) *httptest.Server {
@@ -41,6 +54,7 @@ func (self *fakeChrome) serve(t *testing.T) *httptest.Server {
 			}
 			self.mutex.Lock()
 			self.commands = append(self.commands, incoming.Method)
+			self.parameters = append(self.parameters, string(incoming.Params))
 			self.mutex.Unlock()
 			var result any = map[string]any{}
 			switch incoming.Method {
@@ -195,4 +209,41 @@ func TestGuardHostRefusesPrivateUnlessAllowed(t *testing.T) {
 		t.Fatalf("an allowed range should pass: %s", err)
 	}
 	_ = time.Now
+}
+
+// Every context goes out through this server's own proxy, and Chrome is told
+// to ask it for everything.
+//
+// The guard used to resolve the name here and then tell Chrome to go ahead,
+// and Chrome resolved it again: a record with a one-second lifetime answers
+// the first with a public address and the second with 127.0.0.1, and the
+// page is then reading something on this machine. Nothing shaped like
+// "check, then ask somebody else to connect" can close that window. So
+// nothing resolves names for the browser but the proxy.
+func TestEveryContextGoesOutThroughTheGuardedProxy(t *testing.T) {
+	chrome := &fakeChrome{}
+	server := chrome.serve(t)
+	defer server.Close()
+	browser, err := Connect(context.Background(), &Settings{Endpoint: server.URL, ProxyListen: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("Connect: %s", err)
+	}
+	defer func() { _ = browser.Close() }()
+	if browser.proxy == nil {
+		t.Fatal("the proxy is what makes the page's requests guardable")
+	}
+	if _, err := browser.NewContext(context.Background()); err != nil {
+		t.Fatalf("NewContext: %s", err)
+	}
+	created := chrome.paramsOf("Target.createBrowserContext")
+	if !strings.Contains(created, `"proxyServer":"`+browser.proxy.URL()+`"`) {
+		t.Fatalf("the context is given the proxy: %s", created)
+	}
+	if strings.Contains(created, "proxyBypassList") {
+		t.Fatalf("and nothing bypasses it: %s", created)
+	}
+	// The proxy asks for a password, so Chrome has to be able to answer.
+	if fetch := chrome.paramsOf("Fetch.enable"); !strings.Contains(fetch, `"handleAuthRequests":true`) {
+		t.Fatalf("Chrome must be able to answer the proxy: %s", fetch)
+	}
 }

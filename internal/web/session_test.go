@@ -16,7 +16,6 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/web"
 )
 
@@ -24,8 +23,13 @@ import (
 // store over it.
 // testPasswordHash is a bcrypt hash of a password nothing logs in with. It
 // exists because the configuration refuses a user whose hash is not one.
+//
+// At the cheapest cost bcrypt has. What these tests are about is the limiter
+// and the session, not the cost factor, and a test that guesses two hundred
+// times was paying two hundred times a sixth of a second on purpose -- three
+// tests in this package took a minute and a half each for it.
 var testPasswordHash = func() string {
-	hash, err := security.HashPassword("a-password")
+	hash, err := bcrypt.GenerateFromPassword([]byte("a-password"), bcrypt.MinCost)
 	if err != nil {
 		panic(err)
 	}

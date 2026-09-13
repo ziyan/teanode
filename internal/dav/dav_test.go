@@ -16,7 +16,8 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/security"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const appPassword = "correct-horse-battery-staple"
@@ -83,9 +84,14 @@ func newWorld(t *testing.T) (*world, func()) {
 		}); err != nil {
 			t.Fatalf("CreateAlias: %s", err)
 		}
-		hash, err := security.HashPassword(appPassword)
+		// At the cheapest cost bcrypt has, not the one a real app password is
+		// stored under. DAV signs in on every request, so every request in
+		// every test here was paying for a hash meant to take a sixth of a
+		// second on purpose: the package took eight minutes of the suite's
+		// twelve, and what these tests are about is not the cost factor.
+		hash, err := bcrypt.GenerateFromPassword([]byte(appPassword), bcrypt.MinCost)
 		if err != nil {
-			t.Fatalf("HashPassword: %s", err)
+			t.Fatalf("hashing the app password: %s", err)
 		}
 		if _, err := tx.CreateAppPassword(&models.MailboxAppPassword{
 			MailboxID: mailbox.ID, Name: "phone", PasswordHash: string(hash),

@@ -27,6 +27,8 @@ import (
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/periodic"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 var log = logging.MustGetLogger("agent")
@@ -352,6 +354,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		self.slots <- struct{}{}
 		self.waitGroup.Add(1)
 		go func(job *models.AgentJob) {
+			defer deferutil.Recover()
 			defer self.waitGroup.Done()
 			defer func() { <-self.slots }()
 			self.execute(job, now)

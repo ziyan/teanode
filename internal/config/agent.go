@@ -412,6 +412,14 @@ type AgentBrowser struct {
 	// inside the network, which the address guard would otherwise refuse.
 	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
 
+	// ProxyListen is where the guarded proxy binds -- the proxy every page
+	// this server opens goes out through, which is what resolves names for
+	// the browser so that nothing else does. Empty binds an unused port on
+	// the one address Chrome reaches this server at, which its own
+	// connection says; set it when that guess is wrong, or to pin the port
+	// for a firewall.
+	ProxyListen string `yaml:"proxyListen,omitempty"`
+
 	// IdleTimeout is how long a run's browser context outlives its last use.
 	IdleTimeout Duration `yaml:"idleTimeout"`
 

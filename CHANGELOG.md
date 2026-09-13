@@ -6,7 +6,45 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An invitation that arrives as mail is read whether or not it was encoded on
+  the way here, which nearly all of them are: a base64 invitation was handed
+  to the reader as base64, read as no calendar at all, and silently was not an
+  invitation. And an invitation from somebody with a mailbox on this server is
+  one: it never leaves the server, so nothing checked where it came from, and
+  asking only that question ignored every meeting called by a colleague.
+
 ### Changed
+
+- The headless browser reaches the web through this server, which is now the
+  only thing that looks a name up for it. The check used to resolve the name
+  here and then let the browser resolve it again, which is a window a name can
+  answer differently in -- publicly the first time and "this machine" the
+  second.
+
+- An attachment shown in the reader is shown with nothing behind it: no
+  origin, nothing loaded, nothing run. It matters most for a PDF, which is a
+  format with a scripting engine in it and was being opened on the dashboard's
+  own origin.
+
+- A page on another site cannot open the dashboard's websocket with your
+  session. What stood there compared a header against a cookie nothing sets,
+  so it compared nothing with nothing and passed.
+
+- An agent that cannot reach a connected server says so instead of stopping
+  the server. Every one of the agent's own background tasks now recovers from
+  a failure the way the rest of this program does, so one bad answer from
+  somewhere else costs that turn rather than every connection and delivery in
+  flight.
+
+- "teanode-server config env" generates the database password rather than
+  writing the one this repository publishes. An existing deployment keeps the
+  password it has; docs/reference/deployment.md says how to change it.
+
+- The workflows that build and publish a release name every action they run by
+  its exact commit, so a tag moving elsewhere cannot change what runs with a
+  token that can publish.
 
 - A page on another site cannot make your browser run a dashboard action by
   posting a form at it.

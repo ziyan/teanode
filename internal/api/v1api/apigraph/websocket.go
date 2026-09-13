@@ -8,6 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,13 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 	// upgrade to websocket
 	upgrader := websocket.Upgrader{
 		Subprotocols: []string{"graphql-ws"},
+		// The library's own rule, written down rather than inherited,
+		// because it is the whole of what stands between another site and
+		// this socket: a browser says which page opened it, and it has to
+		// be a page from here. Nothing asks permission across origins the
+		// way a fetch does -- the handshake goes straight through with the
+		// reader's cookie on it.
+		CheckOrigin: fromThisServer,
 	}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
@@ -35,6 +43,22 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		log.Errorf("failed to handle websocket connection from %q: %s", request.RemoteAddr, err)
 		return
 	}
+}
+
+// fromThisServer reports whether a handshake came from a page this server
+// served. A request with no Origin at all is not a browser, so nothing
+// attached a cookie to it on its own; it is let through here and has to
+// prove who it is with a token in its first message.
+func fromThisServer(request *http.Request) bool {
+	origin := request.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, request.Host)
 }
 
 type webSocketMessage struct {
@@ -163,16 +187,18 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 					return fmt.Errorf("apigraph: the token is not one this server takes")
 				}
 				self.request.Header.Set(api.AuthenticatedUsernameHeader, username)
-			} else {
-				csrfCookie := ""
-				if cookie, _ := self.request.Cookie("csrftoken"); cookie != nil {
-					csrfCookie = cookie.Value
-				}
-				csrfToken := httpHeader.Get("X-CSRFToken")
-				if csrfToken != csrfCookie {
-					log.Errorf("csrf token mismatch, %q in header is different from %q in cookie from websocket at %q", csrfToken, csrfCookie, self.conn.RemoteAddr())
-					return fmt.Errorf("apigraph: csrf token mismatch")
-				}
+			} else if self.request.Header.Get("Origin") == "" || !fromThisServer(self.request) {
+				// A session, then, and a session is a cookie: the browser
+				// attached it without being asked, so the page that opened
+				// the socket has to be one of this server's own.
+				//
+				// What stood here compared an "X-CSRFToken" header against
+				// a "csrftoken" cookie. Nothing in this program has ever
+				// set that cookie, so both were empty and every connection
+				// passed -- and the line that reported a mismatch printed
+				// both values into the log.
+				log.Warningf("a websocket at %q opened from %q, which is not this server", self.conn.RemoteAddr(), self.request.Header.Get("Origin"))
+				return fmt.Errorf("apigraph: the page that opened this socket is not from this server")
 			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err

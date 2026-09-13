@@ -409,6 +409,13 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string) 
 		entry.mutex.Lock()
 		client := entry.client
 		entry.mutex.Unlock()
+		// It can be gone between the two: discovery clears it when the
+		// server stops answering, and the connection above may hand back an
+		// entry another turn has just emptied. Calling a tool on nothing is
+		// a nil dereference in a goroutine.
+		if client == nil {
+			return nil, fmt.Errorf("%s is not answering", server.Name)
+		}
 		result, err := client.CallTool(callContext, toolName, call.Arguments)
 		if err != nil {
 			return nil, err

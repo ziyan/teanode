@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"io"
 	"mime"
+	"mime/quotedprintable"
 	"net/textproto"
 	"strings"
 
@@ -49,8 +50,14 @@ func CalendarPart(headers []string, body []byte) []byte {
 			return nil
 		}
 		// Bounded as it is read. A part claiming to be a calendar is not
-		// a reason to read a gigabyte into memory.
-		content, err := io.ReadAll(io.LimitReader(reader, maximumPart+1))
+		// a reason to read a gigabyte into memory. The bound is on the
+		// encoded form, which is larger than what it decodes to.
+		encoding := strings.ToLower(strings.TrimSpace(header.Get("Content-Transfer-Encoding")))
+		content, err := io.ReadAll(io.LimitReader(reader, encodedLimit(encoding)))
+		if err != nil {
+			return nil
+		}
+		content, err = decoded(encoding, content)
 		if err != nil {
 			return nil
 		}
@@ -65,6 +72,42 @@ func CalendarPart(headers []string, body []byte) []byte {
 		return nil
 	}
 	return found
+}
+
+// decoded is the part's bytes as they were written, rather than as they
+// travelled.
+//
+// A walk over a message hands back each part as it stands in the file, and an
+// invitation is nearly always base64 -- it is what a calendar program sends,
+// because an iCalendar file has long lines and non-ASCII names in it. Reading
+// it without decoding it meant handing the parser a wall of base64, which
+// parses as nothing, so most real invitations were silently not invitations.
+func decoded(encoding string, content []byte) ([]byte, error) {
+	switch encoding {
+	case "base64":
+		return mailparse.DecodeBase64String(string(content))
+	case "quoted-printable":
+		return io.ReadAll(quotedprintable.NewReader(bytes.NewReader(content)))
+	default:
+		// 7bit, 8bit, binary, and anything a sender made up: the bytes are
+		// the text.
+		return content, nil
+	}
+}
+
+// encodedLimit is how much of a part to read for a calendar of at most
+// maximumPart bytes, given how it was encoded. Base64 is four bytes for
+// three; quoted-printable is three for one in the worst case, where every
+// byte needs escaping.
+func encodedLimit(encoding string) int64 {
+	switch encoding {
+	case "base64":
+		return int64(maximumPart)*4/3 + 1024
+	case "quoted-printable":
+		return int64(maximumPart)*3 + 1024
+	default:
+		return int64(maximumPart) + 1
+	}
 }
 
 // isCalendarPart is whether one part of a message is calendar text.

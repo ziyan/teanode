@@ -710,7 +710,7 @@ it; it now reads the token from the terminal without echo.
   principal built from its old grants; the middleware already refused it,
   so this was latent.
 
-### SEC-31 — Releases are verified by checksum, not signature (Medium, open)
+### SEC-31 — Releases are verified by checksum, not signature (Medium, half fixed later; see SEC-31 below)
 
 The self-upgrade downloads a release from GitHub over TLS and checks it
 against the `SHA256SUMS` published beside it. The checksum is produced by
@@ -725,7 +725,7 @@ binary, and refuse a release without a valid signature. That is a change to
 the release process as much as to the code, and is left for its own change.
 Until then, the workflow's actions should be pinned to commits.
 
-### SEC-32 — The compose file ships a fixed database password (Low, open)
+### SEC-32 — The compose file ships a fixed database password (Low, fixed later; see SEC-32 below)
 
 `deploy/docker-compose.yml` sets `POSTGRES_PASSWORD: teanode` and publishes
 the database on `127.0.0.1:5432`, so any account on the host reads the
@@ -871,7 +871,7 @@ with a failing test or an exact trace before reporting it.
 
 ## Summary
 
-Forty findings, of which twenty-five are fixed here. The ones that mattered:
+Forty findings, of which thirty-nine are fixed here. The ones that mattered:
 
 - **The confirmation gate could be walked past by writing the tool call
   sloppily** (SEC-48). Every risk decision read the arguments strictly and
@@ -895,11 +895,14 @@ Forty findings, of which twenty-five are fixed here. The ones that mattered:
   that keep them** (SEC-55 to SEC-57) — a log, a database column that the
   API returns, and a model provider's transcript.
 
-What is open at the end of this pass is listed in *Still open* below. The
-two items the second review left open are both still open, and one of them
-is slightly worse: the release pipeline now publishes a `latest` tag that
-the compose file consumes, and the workflow actions the second review asked
-to be pinned are still on mutable tags.
+The last of them to be closed were the two the second review had left open
+and the one the reviewers of this pass ranked highest: the compose file's
+published database password, the workflow actions on mutable tags, and the
+headless browser's address guard, which was a race and is now a proxy
+(SEC-70). What is open at the end of this pass is one thing, listed in
+*Still open* below: releases are verified by checksum and not by signature,
+which is a decision about how this program is trusted rather than a defect
+to patch quietly.
 
 ## What was fixed in this pass
 
@@ -1243,31 +1246,115 @@ URL in it. That becomes the tool's answer, which reaches the model's provider
 and the stored run. The two reports beside it already said only the host; this
 one now reports the host and the cause.
 
+### SEC-70 — The headless browser's guard was a race, and is now a proxy (High, fixed)
+
+The guard resolved the name in Go, checked the addresses, and then told
+Chrome to continue -- and Chrome resolved the name again, over its own
+resolver, on its own schedule. A record with a one-second lifetime answers
+the first with a public address and the second with 127.0.0.1, and the page
+is then reading something inside the network. Nothing shaped like "check,
+then ask somebody else to connect" closes that window.
+
+So nothing resolves names for the browser any more. Every context is created
+with a `proxyServer` pointing at a proxy inside this server
+(`internal/browser/proxy.go`), with an empty bypass list: Chrome sends it the
+host name, unresolved, and the proxy dials through a `net.Dialer` whose
+`Control` function refuses anything that is not a public address -- the same
+primitive `safefetch` uses, and the only place the check cannot be raced,
+because it runs on the address the socket is about to be opened to.
+
+The proxy asks for a password only this server and its Chrome know, because
+Chrome is a container of its own in the compose file and the proxy therefore
+cannot live on the loopback address alone. It binds the one address Chrome
+reaches this server at -- its own connection says which that is -- and
+`agent.browser.proxyListen` pins it when that guess is wrong. It tunnels to
+ports 80 and 443 and nothing else. A browser whose requests cannot be guarded
+is worse than no browser, so a proxy that will not start fails the
+connection.
+
+### SEC-71 — A stranger's PDF opened on the dashboard's origin (Medium, fixed)
+
+An attachment is served as itself when its type is on a short list, so that a
+picture a message refers to renders in place. The list included
+`application/pdf`, which is not a picture: it is a format with a scripting
+engine behind it, opened by the browser on the origin the dashboard's session
+belongs to. Every inline attachment now carries
+`Content-Security-Policy: default-src 'none'; sandbox`, which is what the
+address book already puts on a contact's picture.
+
+### SEC-72 — The websocket's CSRF check was vacuous (Low, fixed)
+
+It compared an `X-CSRFToken` header against a `csrftoken` cookie. Nothing in
+this program has ever set that cookie, so both were empty, they matched, and
+every connection passed -- and the line reporting a mismatch printed both
+values into the log. What actually stood between another site and that socket
+was the library's default origin check, inherited rather than chosen.
+
+It is chosen now, and it is the whole rule: a handshake carrying a session
+cookie has to come from a page this server served. A websocket is not asked
+about across origins the way a fetch is -- the browser opens it with the
+reader's cookie attached and hands the page every answer -- so this is the
+only thing there is.
+
+### SEC-73 — The agent's goroutines had no guard, and one could be handed nothing (High, fixed)
+
+`remoteRunner` read the client for a connected server, and discovery clears
+that client when the server stops answering: a turn holding the old one
+called a tool on nothing. That is a nil dereference, and it happened on a
+goroutine with no `recover` -- so one unreachable MCP server could take down
+the mail server, every connection open on it, and every delivery in flight.
+
+Both halves are closed. Every call on a session that is not there answers
+`mcp.ErrNoSession`, and every goroutine in `internal/agent` now starts with
+`deferutil.Recover()`, which is the convention the rest of this codebase has
+followed all along and which this package had never adopted.
+
+### SEC-74 — Invitations by mail barely worked (functional, fixed)
+
+Two defects found by the same pass, in the path that turns a message into an
+appointment.
+
+A calendar part was read as it stood in the file, without being decoded.
+Nearly every real invitation is base64 -- an iCalendar file has long lines
+and names that are not ASCII -- so the parser was handed a wall of base64,
+read no calendar in it, and the invitation silently was not one.
+
+And a message between two mailboxes on this server never leaves: the
+submission is delivered into the recipient's mailbox in the same transaction,
+so nothing evaluates SPF, DKIM or DMARC over it. The gate asked only whether
+DMARC passed, so an invitation from the person at the next desk proved
+nothing and was ignored. What stands in its place is stronger than DMARC:
+this server took the message from a session it authenticated and checked the
+address that session was allowed to send as.
+
+### SEC-31 — Releases: the actions are pinned; signing is still open (Medium, half fixed)
+
+The second review asked for two things. The workflow actions are now pinned
+to commit SHAs with the tag beside them in a comment, so a tag moving under
+this repository no longer changes what runs with a token that can publish a
+release.
+
+Signing is not done, and is not something to decide quietly: it changes how
+everybody who installs this server establishes that a binary is the one this
+repository built. The shape that costs least is keyless signing through the
+workflow's own identity -- an attestation step in `release.yml` and
+`gh attestation verify` in the install documentation -- which needs no key to
+keep and no key to lose. It needs the owner's decision, and a release to try
+it on.
+
+### SEC-32 — The compose file's database password (Low, fixed)
+
+`teanode-server config env` now generates one, and writes it into both places
+that have to agree: the URL the server signs in with, and the
+`POSTGRES_PASSWORD` the compose file creates the database with. The compose
+file still falls back to the old word so that a deployment made before this
+keeps starting, and `docs/reference/deployment.md` says how to rotate it.
+
 ## Still open
 
-Ranked, with what each needs. Nothing below is fixed in this pass.
-
-1. **The headless browser's address guard is a rebinding race** (High, and
-   `browser.enabled` is false on the deployment this was written for). The
-   guard resolves the name in Go and checks the addresses, then tells Chrome
-   to continue the request, and Chrome resolves again. The fix that keeps the
-   property is a guarded proxy: `Target.createBrowserContext` takes a
-   `proxyServer`, so a small CONNECT proxy inside this server, dialling
-   through `safefetch`, would take every name resolution away from Chrome.
-2. **`user:manage` is transitively full administration** (Medium), and the
-    comment beside it says the opposite.
-3. Smaller, recorded in full in the reviewers' reports: the shell rule asks
-    about `ssh` and not `curl`; a nil MCP client can panic a goroutine with no
-    recover; `secretish()` in the redaction test cannot see `token`,
-    `authorization` or `value`; `listen.debug` will bind anywhere; the
-    WebSocket CSRF check compares a cookie nothing sets; HSTS is never sent
-    behind a TLS-terminating proxy; ULIDs come from `math/rand`.
-
-Two functional defects were found by the same pass and belong with them: a
-`text/calendar` part is never transfer-decoded, so a base64 invitation — which
-is most of them — is silently unreadable; and an invitation between two
-mailboxes on this server is never acted on, because local delivery populates
-no DMARC result.
+One, and it is the one that needs a decision rather than a commit: releases
+are verified by checksum and not by signature (SEC-31 above). Everything else
+this pass found is fixed.
 
 ## What this review did not do
 

@@ -219,6 +219,24 @@ func (self *Mail) DMARCPassed() bool {
 		strings.EqualFold(self.AuthenticationResults.DMARC.Result, "pass")
 }
 
+// SubmittedHere says the message came from somebody who signed in to this
+// server, rather than from a stranger on port 25.
+//
+// It answers the same question DMARC answers, and answers it better: this
+// server took the message from a session it authenticated and checked the
+// address it was allowed to send as, which is the thing DMARC exists to
+// prove about a message from somewhere else.
+//
+// It is needed because a message between two mailboxes here never leaves:
+// the submission is delivered into the recipient's mailbox in the same
+// transaction, so nothing ever evaluated SPF, DKIM or DMARC over it, and
+// anything asking only "did DMARC pass" treated a colleague's invitation as
+// proving nothing. A person asked to a meeting by the person at the next
+// desk still wants their meeting.
+func (self *Mail) SubmittedHere() bool {
+	return self != nil && self.Kind == MailKindOutgoing
+}
+
 // LooksLikeSpam is whether this message is one the server's own checks
 // distrusted: the spam filter failed it, or it failed DMARC under a policy
 // asking for it to be held.

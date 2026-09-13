@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // StdioTransport runs a server as a subprocess and speaks to it over its
@@ -63,7 +65,10 @@ func NewStdioTransport(settings *StdioSettings) (*StdioTransport, error) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
 	self := &StdioTransport{command: command, stdin: stdin, stdout: scanner, pending: map[int64]chan *Response{}, closed: make(chan struct{})}
-	go self.read()
+	go func() {
+		defer deferutil.Recover()
+		self.read()
+	}()
 	return self, nil
 }
 
