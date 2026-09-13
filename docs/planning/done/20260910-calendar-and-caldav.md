@@ -80,6 +80,12 @@ history, and every example here is written the way it should be copied.
       `calendar_agenda`, `calendar_free` and `calendar_add`, the last a write
       so the person is asked before anything goes in their diary. 9 tests;
       1272 green overall.
+- [x] (2026-09-13) Five rounds of adversarial review, 59 defects, all fixed
+      and each pinned by a test made to fail against the old code first. The
+      rounds and what they taught are in `Surprises & Discoveries`.
+- [x] (2026-09-13) The three doors made equal: the agent can change and
+      remove events as well as add them, and the command line gained
+      `calendar free`. Deployed and exercised end to end on the live server.
 
 ## Surprises & Discoveries
 
