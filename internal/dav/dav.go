@@ -1,9 +1,9 @@
-// Package dav serves a person's address book to their phone and their
-// desktop over CardDAV.
+// Package dav serves a person's address book and their calendar to their
+// phone and their desktop, over CardDAV and CalDAV.
 //
-// CardDAV is a way of keeping address books in step over HTTP, defined in
-// RFC 6352. It is WebDAV -- HTTP with a few extra methods -- with rules about
-// what an address book looks like. The methods beyond ordinary HTTP that
+// CardDAV and CalDAV are ways of keeping address books and calendars in step
+// over HTTP, defined in RFC 6352 and RFC 4791. Both are WebDAV -- HTTP with a
+// few extra methods -- with rules about what a collection looks like. The methods beyond ordinary HTTP that
 // matter here are PROPFIND, which asks for properties of a URL and, with a
 // "Depth: 1" header, of everything directly inside it; and REPORT, which runs
 // a named query. The protocol itself is handled by go-webdav; what this
@@ -13,8 +13,8 @@
 // A client signs in with HTTP Basic authentication: one of a mailbox's
 // addresses as the username, and one of that mailbox's app passwords as the
 // password, exactly as a mail program signs in over IMAP. The account's own
-// password is never accepted. The address book a client then sees is the one
-// belonging to the account that owns that mailbox.
+// password is never accepted. What a client then sees belongs to the account
+// that owns that mailbox.
 package dav
 
 import (
@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/emersion/go-webdav"
+	"github.com/emersion/go-webdav/caldav"
 	"github.com/emersion/go-webdav/carddav"
 	"github.com/gorilla/mux"
 	"github.com/op/go-logging"
@@ -32,6 +33,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -46,9 +48,10 @@ const (
 	// as something one level deeper than it is.
 	Prefix = "/dav"
 
-	// contactsSegment is the fixed name of the address-book home set,
-	// leaving room for a calendars segment beside it later.
-	contactsSegment = "contacts"
+	// The fixed names of the two home sets, which is how a person's
+	// contacts and their calendars are told apart at the same depth.
+	contactsSegment  = "contacts"
+	calendarsSegment = "calendars"
 
 	// The layout, which is not ours to choose. The library reads the kind
 	// of a resource off how deep it is:
@@ -61,6 +64,13 @@ const (
 	// so a person, their books and their cards are at one, two, three and
 	// four segments and nowhere else.
 	cardSuffix = ".vcf"
+
+	// The same layout for calendars, for the same reason:
+	//
+	//     /dav/{userId}/calendars/                      the home set
+	//     /dav/{userId}/calendars/{calendarId}/         a calendar
+	//     /dav/{userId}/calendars/{calendarId}/{id}.ics an event
+	eventSuffix = ".ics"
 
 	// maximumBody is the largest request this mount will read. A card is
 	// capped at contacts.MaximumCard; the rest is room for the XML around a
@@ -106,13 +116,8 @@ func (self *component) AddRoutes(router *mux.Router) error {
 	// How a client finds any of this when somebody types only a mail
 	// address: RFC 6764 says to look here first.
 	router.Path("/.well-known/carddav").HandlerFunc(self.wellKnown)
-	// Calendars are not served yet. Answering plainly is better than
-	// sending a calendar client to an address book, where it would find a
-	// principal advertising nothing it can use and report something
-	// stranger than "not here".
-	router.Path("/.well-known/caldav").HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		http.Error(response, "this server does not serve calendars", http.StatusNotFound)
-	})
+	// And the same for calendars, which live beside them.
+	router.Path("/.well-known/caldav").HandlerFunc(self.wellKnown)
 	return nil
 }
 
@@ -154,6 +159,25 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 		segments = strings.Split(rest, "/")
 	}
 
+	// A collection's address ends in a slash and a file's does not.
+	//
+	// Written down here because /dav is deliberately exempt from the
+	// redirect that would otherwise add one -- a redirect turns a PROPFIND
+	// into a GET, which is how a phone comes back with the wrong thing
+	// entirely. Without it the library compared a slashless home set
+	// against its own idea of that address, matched nothing, and answered
+	// 207 with an empty list: to a client synchronizing, every calendar in
+	// the account had just been deleted.
+	if len(segments) > 0 && len(segments) < 4 && !strings.HasSuffix(request.URL.Path, "/") {
+		request.URL.Path += "/"
+	}
+	// And the other way: a file's address with a slash on the end is a
+	// collection that does not exist, not the file.
+	if len(segments) >= 4 && strings.HasSuffix(request.URL.Path, "/") {
+		http.Error(response, "no such collection", http.StatusNotFound)
+		return
+	}
+
 	// The mount itself: the one question a client asks before it knows
 	// anything, which is who it is signed in as.
 	if len(segments) == 0 {
@@ -177,18 +201,25 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 		return
 	}
 
-	if segments[1] != contactsSegment {
+	switch segments[1] {
+	case contactsSegment, calendarsSegment:
+	default:
 		http.Error(response, "no such collection", http.StatusNotFound)
 		return
 	}
 
 	// A DELETE may carry If-Match, and clients send one: "remove this only
-	// if it is still the version I read". The CardDAV backend is handed a
-	// path and nothing else, so the condition would otherwise be dropped
-	// on the floor and a device would destroy an edit it never saw.
+	// if it is still the version I read". The backend is handed a path and
+	// nothing else, so the condition would otherwise be dropped on the
+	// floor and a device would destroy an edit it never saw.
 	ctx := withSignedIn(request.Context(), signedIn)
 	if request.Method == http.MethodDelete {
 		ctx = withIfMatch(ctx, request.Header.Get("If-Match"))
+	}
+
+	if segments[1] == calendarsSegment {
+		self.serveCalendars(response, request.WithContext(ctx), signedIn, segments)
+		return
 	}
 
 	backing := &backend{component: self, signedIn: signedIn}
@@ -231,17 +262,89 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 	handler.ServeHTTP(response, request.WithContext(ctx))
 }
 
+// serveCalendars is every request under a person's calendars.
+//
+// It mirrors the contacts side exactly, and for the same reasons: a fetch and
+// a report are answered from the stored bytes rather than by handing the
+// decoded form back to the library's encoder, because the promise the ETag
+// makes is that the version a listing names is the bytes a fetch returns --
+// and because the library does not fold lines, so what it would write is not
+// what the length says.
+func (self *component) serveCalendars(response http.ResponseWriter, request *http.Request, signedIn *session, segments []string) {
+	backing := &calendarBackend{component: self, signedIn: signedIn}
+
+	if (request.Method == http.MethodGet || request.Method == http.MethodHead) && len(segments) == 4 {
+		self.serveEvent(response, request, backing)
+		return
+	}
+
+	if request.Method == "REPORT" {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(response, "that request could not be read", http.StatusBadRequest)
+			return
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		if self.serveCalendarReport(response, request, backing, body) {
+			return
+		}
+	}
+
+	handler := &caldav.Handler{Backend: backing, Prefix: Prefix}
+	handler.ServeHTTP(response, request)
+}
+
+// serveEvent answers a fetch of one event with exactly what is stored.
+func (self *component) serveEvent(response http.ResponseWriter, request *http.Request, backing *calendarBackend) {
+	object, err := backing.storedEvent(request.Context(), request.URL.Path)
+	if err != nil {
+		status, message := statusOf(err)
+		http.Error(response, message, status)
+		return
+	}
+	response.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	response.Header().Set("ETag", strconv.Quote(object.ETag))
+	response.Header().Set("Content-Length", strconv.Itoa(len(object.Data)))
+	response.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.WriteString(response, object.Data); err != nil {
+		log.Debugf("an event could not be written to the client: %s", err)
+	}
+}
+
 // servePrincipal answers for the person: who they are, and where their
 // address books live. The CardDAV handler does not serve this -- it has its
 // own helper in the library -- and discovery stops at the first step without
 // it.
 func (self *component) servePrincipal(response http.ResponseWriter, request *http.Request, signedIn *session) {
+	// Only what this account may actually reach. Advertising a calendar to
+	// somebody who is then refused it sends their phone into a loop asking
+	// for a collection it has been told about and cannot have.
+	var permissions *models.EffectivePermissions
+	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) (err error) {
+		permissions, err = tx.EffectivePermissions(signedIn.userID)
+		return err
+	}); err != nil {
+		log.Errorf("cannot read what a DAV caller may do: %s", err)
+		http.Error(response, "cannot check that just now", http.StatusServiceUnavailable)
+		return
+	}
+	var homeSets []webdav.BackendSuppliedHomeSet
+	var capabilities []webdav.Capability
+	if permissions.Has(models.PermissionContactsUse) {
+		homeSets = append(homeSets, carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, carddav.CapabilityAddressBook)
+	}
+	if permissions.Has(models.PermissionCalendarUse) {
+		homeSets = append(homeSets, caldav.NewCalendarHomeSet(calendarHomeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, caldav.CapabilityCalendar)
+	}
 	webdav.ServePrincipal(response, request, &webdav.ServePrincipalOptions{
 		CurrentUserPrincipalPath: principalPath(signedIn.userID),
-		HomeSets: []webdav.BackendSuppliedHomeSet{
-			carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)),
-		},
-		Capabilities: []webdav.Capability{carddav.CapabilityAddressBook},
+		HomeSets:                 homeSets,
+		Capabilities:             capabilities,
 	})
 }
 
@@ -257,6 +360,18 @@ func bookPath(userId, addressBookId string) string {
 
 func contactPath(userId, addressBookId, contactId string) string {
 	return bookPath(userId, addressBookId) + contactId + cardSuffix
+}
+
+func calendarHomeSetPath(userId string) string {
+	return Prefix + "/" + userId + "/" + calendarsSegment + "/"
+}
+
+func calendarPath(userId, calendarId string) string {
+	return calendarHomeSetPath(userId) + calendarId + "/"
+}
+
+func eventPath(userId, calendarId, objectId string) string {
+	return calendarPath(userId, calendarId) + objectId + eventSuffix
 }
 
 // serveCard answers a fetch of one contact with exactly what is stored.

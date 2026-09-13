@@ -96,17 +96,80 @@ func (self *Configuration) MailHostFor(domain *models.Domain, domains []*models.
 // sends: a picture in a template, and whatever else a recipient's program
 // later fetches.
 //
-// The domain's own, when it has one. Otherwise the name its mail arrives at,
-// which is the right guess and is sometimes wrong for a reason that has
-// nothing to do with mail: the host it resolves to may answer HTTPS with
-// something else. That is what LinkHost is for.
+// The name alone, without any port the setting carries: this is what goes into
+// a DNS answer -- an SRV target, the name a mark is looked up under -- where a
+// port is not a thing a name may have. LinkAuthorityFor is the one to build a
+// URL from.
 func (self *Configuration) LinkHostFor(domain *models.Domain, domains []*models.Domain) string {
+	host, _ := models.SplitHostPort(self.LinkAuthorityFor(domain, domains))
+	return host
+}
+
+// LinkAuthorityFor is the same thing as a URL is written with: the name, and
+// the port when the setting names one.
+//
+// The port belongs to the name rather than to this server. A deployment may
+// be reached under one name on the usual port, through something that
+// forwards it, and under another on a port of its own -- which is exactly
+// what happens when one name goes straight to the machine and another comes
+// through a relay. Taking the port from what this server binds would write
+// the wrong one for every name but the direct one.
+func (self *Configuration) LinkAuthorityFor(domain *models.Domain, domains []*models.Domain) string {
 	if domain != nil {
-		if host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain.LinkHost), ".")); host != "" {
-			return host
+		if host := strings.ToLower(strings.TrimSpace(domain.LinkHost)); host != "" {
+			name, port := models.SplitHostPort(host)
+			name = strings.TrimSuffix(name, ".")
+			if port != "" {
+				return name + ":" + port
+			}
+			return name
 		}
 	}
 	return self.MailHostFor(domain, domains)
+}
+
+// LinkBaseFor is where a recipient's program fetches something this server put
+// in mail: the scheme and the authority, with no trailing slash.
+func (self *Configuration) LinkBaseFor(domain *models.Domain, domains []*models.Domain) string {
+	authority := self.LinkAuthorityFor(domain, domains)
+	if authority == "" {
+		return ""
+	}
+	return "https://" + authority
+}
+
+// LinkPortFor is the port a client should be told to connect to for this
+// domain's link host: the one the setting names, and otherwise the one this
+// server binds.
+//
+// The setting wins because it describes how the name is reached from outside,
+// which is the only thing a client cares about. What this server binds is the
+// right answer only when nothing sits in front of it.
+func (self *Configuration) LinkPortFor(domain *models.Domain, domains []*models.Domain) int {
+	if _, port := models.SplitHostPort(self.LinkAuthorityFor(domain, domains)); port != "" {
+		if number, err := strconv.Atoi(port); err == nil && number > 0 && number <= 65535 {
+			return number
+		}
+	}
+	return ListenPortOf(self.Listen.HTTPS)
+}
+
+// ListenPortOf is the port out of a listen address, or nought when there is
+// none to read.
+func ListenPortOf(address string) int {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return 0
+	}
+	at := strings.LastIndex(address, ":")
+	if at < 0 {
+		return 0
+	}
+	number, err := strconv.Atoi(address[at+1:])
+	if err != nil || number <= 0 || number > 65535 {
+		return 0
+	}
+	return number
 }
 
 // ownsServerName reports whether this domain is the one a name belonging to

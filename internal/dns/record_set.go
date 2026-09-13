@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -417,14 +416,23 @@ func (self *verifier) resolveDomainRecords(ctx context.Context, configuration *c
 	// the one it publishes pictures under, rather than whatever this node
 	// happens to be called.
 	recordSet.Records = append(recordSet.Records,
-		self.checkBimi(ctx, domain, dmarc, configuration.LinkHostFor(domain, domains)))
+		self.checkBimi(ctx, domain, dmarc, configuration.LinkAuthorityFor(domain, domains)))
 
-	// Where a contacts application should look, for somebody who types only
-	// their address into it. Advisory: without it a person types the server
-	// and the port themselves, and everything works.
-	if service := self.checkContactsService(ctx, configuration, domain,
-		configuration.LinkHostFor(domain, domains)); service != nil {
-		recordSet.Records = append(recordSet.Records, service)
+	// Where a contacts application and a calendar application should look,
+	// for somebody who types only their address into one. Advisory: without
+	// them a person types the server and the port themselves, and
+	// everything works.
+	for _, service := range []*Record{
+		self.checkContactsService(ctx, configuration, domain,
+			configuration.LinkHostFor(domain, domains),
+			configuration.LinkPortFor(domain, domains)),
+		self.checkCalendarService(ctx, configuration, domain,
+			configuration.LinkHostFor(domain, domains),
+			configuration.LinkPortFor(domain, domains)),
+	} {
+		if service != nil {
+			recordSet.Records = append(recordSet.Records, service)
+		}
 	}
 
 	log.Debugf("took %s to check the records for %q", time.Since(start), domain.Domain)
@@ -983,15 +991,40 @@ func authorisesSending(record string) bool {
 
 // checkContactsService is the SRV record that lets a contacts application find
 // this server from a mail address alone, as RFC 6764 describes.
+func (self *verifier) checkContactsService(ctx context.Context, configuration *config.Configuration,
+	domain *models.Domain, linkHost string, port int) *Record {
+	return self.checkDavService(ctx, configuration, domain, linkHost, port,
+		"_carddavs", "a contacts application")
+}
+
+// checkCalendarService is the same record for the calendar. A phone told only
+// a mail address looks up both, and this server serves both at one address --
+// so advising one and not the other is how somebody ends up with their address
+// book synchronizing and their calendar not.
+func (self *verifier) checkCalendarService(ctx context.Context, configuration *config.Configuration,
+	domain *models.Domain, linkHost string, port int) *Record {
+	return self.checkDavService(ctx, configuration, domain, linkHost, port,
+		"_caldavs", "a calendar application")
+}
+
+// checkDavService is the SRV record that lets a program find this server from
+// a mail address alone, as RFC 6764 describes.
 //
 // Nothing breaks without it. A person can type the server and the port into
 // their phone, and the .well-known redirect does the rest; this saves them
 // knowing either. It is offered only when this server has an HTTPS listener
 // of its own, because the record has to name a port and there is no honest
 // port to name when TLS is ended by something in front.
-func (self *verifier) checkContactsService(ctx context.Context, configuration *config.Configuration,
-	domain *models.Domain, linkHost string) *Record {
-	port := portOf(configuration.Listen.HTTPS)
+//
+// It earns its place when the port is not the usual one. Discovery without it
+// goes to port 443 of the name, and what answers there may be something else
+// entirely -- a router's own web page, on a certificate for a name nobody
+// asked about -- so the phone does not fail, it finds the wrong thing.
+func (self *verifier) checkDavService(ctx context.Context, configuration *config.Configuration,
+	domain *models.Domain, linkHost string, port int, service, asks string) *Record {
+	// The port the name is reached on from outside, which is the setting's
+	// when it names one. What this server binds is the right answer only
+	// when nothing sits in front of it.
 	if port == 0 {
 		return nil
 	}
@@ -1010,7 +1043,7 @@ func (self *verifier) checkContactsService(ctx context.Context, configuration *c
 	if target == "" || !domain.InThisDomain(target) {
 		return nil
 	}
-	name := "_carddavs._tcp." + domain.Domain
+	name := service + "._tcp." + domain.Domain
 	// Priority and weight are meaningless with one server, and zero and one
 	// are what everybody writes.
 	expected := fmt.Sprintf("0 1 %d %s", port, target)
@@ -1020,7 +1053,7 @@ func (self *verifier) checkContactsService(ctx context.Context, configuration *c
 		Name:     name,
 		Expected: expected,
 		Optional: true,
-		Purpose: "lets a contacts application find this server from a mail address alone; " +
+		Purpose: "lets " + asks + " find this server from a mail address alone; " +
 			"without it a person types the server and the port into their phone themselves",
 	}
 	found, err := self.resolveService(ctx, name)
@@ -1034,22 +1067,4 @@ func (self *verifier) checkContactsService(ctx context.Context, configuration *c
 		}
 	}
 	return record
-}
-
-// portOf is the port a listen address binds, or zero when there is none to
-// read.
-func portOf(address string) int {
-	address = strings.TrimSpace(address)
-	if address == "" {
-		return 0
-	}
-	_, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return 0
-	}
-	number, err := strconv.Atoi(port)
-	if err != nil || number <= 0 || number > 65535 {
-		return 0
-	}
-	return number
 }

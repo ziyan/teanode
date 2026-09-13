@@ -16,6 +16,7 @@ export function FormDialog({
   error,
   canSubmit = true,
   wide,
+  otherAction,
   onSubmit,
   onClose,
   children,
@@ -28,6 +29,13 @@ export function FormDialog({
   // For a form that is a handful of rows rather than a field or two — a
   // mailbox rule, where a condition is three controls on one line.
   wide?: boolean
+  // Something this form can do that is neither the way forward nor the way
+  // out: deleting what is being edited, which is the usual one. It belongs
+  // beside Cancel and Save because it is the same kind of thing — a button
+  // that ends the dialog — and put among the fields instead it sat under the
+  // last one, where it is found by scrolling past everything else and is easy
+  // to press while reaching for Save.
+  otherAction?: React.ReactNode
   onSubmit: () => void
   onClose: () => void
   children: React.ReactNode
@@ -69,6 +77,7 @@ export function FormDialog({
         {children}
         <ErrorMessage error={error} />
         <div className="dialog-actions">
+          {otherAction && <div className="dialog-actions-other">{otherAction}</div>}
           <button type="button" onClick={onClose}>
             {t('common.cancel')}
           </button>

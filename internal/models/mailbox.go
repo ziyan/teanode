@@ -97,6 +97,44 @@ var DefaultFolders = []struct {
 	{MailboxFolderKindTrash, "Trash"},
 }
 
+// UnwantedRuleName is what the rule every mailbox starts with is called, and
+// how a mailbox that already has one is recognised.
+const UnwantedRuleName = "Phishing and junk"
+
+// UnwantedCategories is the condition that rule matches on: the two
+// categories an agent gives a message nobody wants.
+const UnwantedCategories = "^(phishing|junk)$"
+
+// DefaultRules are what a new mailbox starts with, given the folder its Junk
+// is kept in.
+//
+// One rule, and it does nothing until an agent is sorting this mailbox's mail:
+// the category it asks about is only ever set by one. That is what makes it
+// safe to ship switched on -- a mailbox with no agent behaves exactly as it
+// did -- and it means the person who turns an agent on gets the filing they
+// would have asked for on their first bad morning rather than after it.
+//
+// A rule rather than something built into delivery, for the reason every
+// other kind of filing here is a rule: it is in the list, it says what it
+// does, and it can be changed or switched off by whoever owns the mailbox.
+func DefaultRules(junkFolderID string) []MailboxRule {
+	if junkFolderID == "" {
+		return []MailboxRule{}
+	}
+	return []MailboxRule{{
+		Name:    UnwantedRuleName,
+		Enabled: true,
+		Stop:    true,
+		Conditions: []MailboxRuleCondition{{
+			Field: "category", Operator: "matches", Value: UnwantedCategories,
+		}},
+		Actions: []MailboxRuleAction{
+			{Kind: "move", FolderID: junkFolderID},
+			{Kind: "markRead"},
+		},
+	}}
+}
+
 // MailboxFolder is a named place in a mailbox, nested as deep as its owner
 // likes. Each folder is an IMAP mailbox; each item in it a message with a UID
 // that never changes while it stays there.

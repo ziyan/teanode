@@ -158,19 +158,25 @@ A client that says how many results it will take gets that many.
 ## Setting it up
 
 A client given only a mail address looks at `/.well-known/carddav`, which
-redirects to the mount. `/.well-known/caldav` answers `404`: calendars are not
-served yet, and sending a calendar client to an address book would produce
-something stranger than "not here".
+redirects to the mount. `/.well-known/caldav` now does the same, since the
+calendar is served from the same place.
 
-A domain may also publish an SRV record at `_carddavs._tcp`, so that a phone
-finds the server from a mail address alone. The domain page advises one,
-naming the domain's **own** mail host and the port the HTTPS listener binds —
+A domain may also publish SRV records at `_carddavs._tcp` and `_caldavs._tcp`,
+so that a phone finds the server from a mail address alone. The domain page
+advises both — for a fortnight it advised only the first, so somebody
+following it got their address book synchronizing and their calendar not. Each
+names
+the domain's **own** mail host and the port that name is reached on —
 its own host rather than the server's name, because every row on that page has
 to be a record its reader can go and create. A domain whose mail is addressed
 to a name somebody else owns is advised nothing, and neither is a deployment
 whose TLS is ended by something in front, because then there is no honest port
-to name. Nothing breaks without it: it saves a person typing the server and
-the port themselves.
+to name. Nothing breaks without them — until the port is not the usual one. Discovery
+then goes to port 443 of the name, and whatever answers there is what the phone
+finds: on the deployment these were written for, that is a router's own
+administration page on a certificate for a name nobody asked about. The phone
+does not fail; it finds the wrong thing. So a deployment on its own port wants
+these records, or its users type the host and the port by hand.
 
 **CardDAV cannot be served through a CDN that does not forward `PROPFIND` and
 `REPORT`.** Amazon CloudFront, for one, cannot: its allowed-methods setting is

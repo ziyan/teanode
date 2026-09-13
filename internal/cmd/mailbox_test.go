@@ -120,3 +120,24 @@ func TestChangeListAddsWithoutRepeatingAndRemoves(test *testing.T) {
 		test.Errorf("removing = %q, want a,c", got)
 	}
 }
+
+// A file piped in keeps its shape but loses the line ending at the end of it.
+//
+// Both characters of that ending: a vCard and an iCalendar file end every line
+// with a carriage return and a newline, and trimming only the newline left
+// "END:VCARD\r" as the last line, which both formats reject. A correctly
+// written file was the one thing this could not read.
+func TestWhatIsPipedInLosesOnlyItsLastLineEnding(t *testing.T) {
+	for given, want := range map[string]string{
+		"BEGIN:VCARD\r\nEND:VCARD\r\n": "BEGIN:VCARD\r\nEND:VCARD",
+		"BEGIN:VCARD\nEND:VCARD\n":     "BEGIN:VCARD\nEND:VCARD",
+		"BEGIN:VCARD\r\nEND:VCARD":     "BEGIN:VCARD\r\nEND:VCARD",
+		// The endings inside it are untouched; only the tail goes.
+		"a\r\nb\r\n\r\n": "a\r\nb",
+		"":               "",
+	} {
+		if got := withoutTrailingNewline(given); got != want {
+			t.Errorf("withoutTrailingNewline(%q) = %q, want %q", given, got, want)
+		}
+	}
+}

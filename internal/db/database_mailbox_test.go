@@ -246,3 +246,58 @@ func TestFolderPinsKeepTheirOrder(test *testing.T) {
 		}
 	})
 }
+
+// A new mailbox starts with the rule that files what an agent sorts as
+// phishing or junk, pointed at that mailbox's own Junk folder.
+//
+// Switched on from the first day, and harmless on a mailbox with no agent:
+// nothing else ever sets the category it asks about, so until somebody turns
+// an agent on the rule matches nothing at all.
+func TestANewMailboxStartsWithTheUnwantedRule(t *testing.T) {
+	dbtest.RunTransaction(t, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "newcomer"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		if len(mailbox.Rules) != 1 || mailbox.Rules[0].Name != models.UnwantedRuleName {
+			t.Fatalf("one rule, the one every mailbox starts with: %+v", mailbox.Rules)
+		}
+		rule := mailbox.Rules[0]
+		if !rule.Enabled || !rule.Stop {
+			t.Fatalf("on, and nothing runs after it: %+v", rule)
+		}
+		if len(rule.Conditions) != 1 || rule.Conditions[0].Field != "category" ||
+			rule.Conditions[0].Operator != "matches" || rule.Conditions[0].Value != models.UnwantedCategories {
+			t.Fatalf("it asks what the agent made of the message: %+v", rule.Conditions)
+		}
+		junk, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindJunk)
+		if err != nil || junk == nil {
+			t.Fatalf("the Junk folder: %v %v", junk, err)
+		}
+		if len(rule.Actions) != 2 || rule.Actions[0].Kind != "move" || rule.Actions[0].FolderID != junk.ID {
+			t.Fatalf("and files into this mailbox's own Junk: %+v", rule.Actions)
+		}
+		if rule.Actions[1].Kind != "markRead" {
+			t.Fatalf("without leaving it unread: %+v", rule.Actions)
+		}
+		// A rule the caller brought is theirs, and is not added to.
+		given, err := tx.CreateMailbox(&models.Mailbox{
+			UserID: user.ID, Name: "Second",
+			Rules: []models.MailboxRule{{
+				Name: "Mine", Enabled: true,
+				Conditions: []models.MailboxRuleCondition{{Field: "any"}},
+				Actions:    []models.MailboxRuleAction{{Kind: "markRead"}},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		if len(given.Rules) != 1 || given.Rules[0].Name != "Mine" {
+			t.Fatalf("what the caller asked for, and nothing else: %+v", given.Rules)
+		}
+	})
+}

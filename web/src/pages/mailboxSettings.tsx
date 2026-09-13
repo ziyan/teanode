@@ -45,7 +45,7 @@ const TABS: TabItem[] = [
 const APP_PASSWORDS = `
   query ($mailboxId: String!) {
     ListMailboxAppPasswords(mailboxId: $mailboxId) { id name createdAt lastUsedAt }
-    GetMailProgramSettings { imapHost imapPort imapsPort submissionHost submissionPort }
+    GetMailProgramSettings { imapHost imapPort imapsPort submissionHost submissionPort davHost }
   }`
 
 const CREATE_APP_PASSWORD = `
@@ -1218,6 +1218,7 @@ type ServerAddresses = {
   imapHost: string
   imapPort: number
   imapsPort: number
+  davHost?: string
   submissionHost: string
   submissionPort: number
 }
@@ -1392,6 +1393,14 @@ function DevicesTab({ view }: { view: MailboxView }) {
                   {t('mailboxSettings.portStartTls', { port: addresses.submissionPort })}
                 </td>
               </tr>
+              {/* Where a phone finds the address book and the calendar. It
+                  is given the host and finds the rest itself. */}
+              {addresses.davHost && (
+                <tr>
+                  <td className="shrink muted">{t('mailboxSettings.davServer')}</td>
+                  <td className="mono">{addresses.davHost}</td>
+                </tr>
+              )}
               <tr>
                 <td className="shrink muted">{t('mailboxSettings.deviceUsername')}</td>
                 <td className="mono">{address ?? '—'}</td>

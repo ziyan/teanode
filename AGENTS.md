@@ -43,8 +43,14 @@ and a person turns it on. See `docs/subsystems/` for how it works.
       imap/                 the IMAP server over those mailboxes
       contacts/             the vCard format: parsing a card, writing one out,
                             and naming a version of one with an ETag
-      dav/                  a person's address book to their phone and desktop
-                            over CardDAV, signed in to with an app password
+      calendar/             the iCalendar format: reading an event, working out
+                            when a repeat happens, building a file from boxes
+                            somebody filled in, and free-busy
+      scheduling/           invitations by mail, in both directions: what
+                            arrives with a calendar part, and the replies
+      dav/                  a person's address book and calendar to their phone
+                            and desktop over CardDAV and CalDAV, signed in to
+                            with an app password
       api/                  GraphQL over the config store and the database
       client/               the other side of that API, for the client
       web/                  HTTP server and middlewares
@@ -123,8 +129,8 @@ deliberately deferred, and which decisions are settled.
 The personal agent — a language model, when an operator configures one,
 that sorts, summarizes, drafts and answers a person's mail and talks to
 them through a drawer and the command line — was built under
-`docs/planning/done/20260910-personal-agents.md`; its roadmap and the
-calendar and contacts that follow are under `docs/planning/active/`, and
+`docs/planning/done/20260910-personal-agents.md`; its roadmap, the address
+book, and the calendar are under `docs/planning/`, and
 its tools became packages of their own under
 `docs/planning/done/20260911-one-tool-one-package.md`. How the parts of it
 actually work — the loop, the prompt, compaction, streaming, memory, the

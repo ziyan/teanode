@@ -204,6 +204,24 @@ type UpdateAgentConversationArguments struct {
 	Archived       *bool  `json:"archived" graphapi:"nullable"`
 }
 
+// asJSONValues is what a map of variables looks like once it has been through
+// JSON: objects as maps, numbers as float64, and nothing that only a Go value
+// could be.
+func asJSONValues(variables map[string]any) (map[string]any, error) {
+	if len(variables) == 0 {
+		return variables, nil
+	}
+	written, err := json.Marshal(variables)
+	if err != nil {
+		return nil, fmt.Errorf("those arguments cannot be sent: %w", err)
+	}
+	var asked map[string]any
+	if err := json.Unmarshal(written, &asked); err != nil {
+		return nil, fmt.Errorf("those arguments cannot be sent: %w", err)
+	}
+	return asked, nil
+}
+
 // agentOperations is the API as the person, for the agent's tools. Every
 // call runs in its own transaction with the person's permissions resolved
 // afresh, and the audit trail names the person with the agent as the
@@ -215,6 +233,18 @@ type agentOperations struct {
 }
 
 func (self *agentOperations) Execute(ctx context.Context, document string, variables map[string]any, result any) error {
+	// As the values a request would have arrived with. A tool calls this
+	// with whatever Go values it has to hand -- a slice of structs for a
+	// list of rules, say -- and the query engine checks an input object by
+	// asserting it is a map, so a struct is "not an object" to it and the
+	// whole call is refused. Over HTTP the same variables have been through
+	// JSON and are maps already, so this is the one door where it matters:
+	// every rule the agent tried to write failed on it, with an error about
+	// element numbers that named neither the tool nor the reason.
+	variables, err := asJSONValues(variables)
+	if err != nil {
+		return err
+	}
 	ctx = api.ContextWithAuthenticatedUsername(ctx, self.user.Username)
 	ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: self.user.ID})
 	var outcome *graphql.Result

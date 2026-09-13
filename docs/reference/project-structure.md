@@ -49,12 +49,26 @@ itself rather than through the vendored encoder, which does not quote a
 parameter value that needs quoting and does not fold; what it writes is a
 fixed point, which is what lets the ETag be taken over the stored text.
 
-**`internal/dav`** — a person's address book to their phone and their desktop,
-over CardDAV. Signs in with a mailbox address and an app password exactly as
-IMAP does, serves every card from the stored bytes rather than by re-encoding
-them, and mounts at `/dav` with no route that can be answered by a redirect,
-because a redirect turns a `PROPFIND` into a `GET`.
-`docs/subsystems/contacts.md` says how it fits together.
+**`internal/calendar`** — the iCalendar format, and nothing else: parsing an
+event, writing one out, expanding a recurrence into the times it happens, and
+describing a time zone as the offsets themselves rather than as a name. Unlike
+the vCard side it uses the vendored encoder as it stands, which was measured
+against the cases that destroy a vCard and survives them; what it adds is line
+folding, which the library does not do.
+
+**`internal/dav`** — a person's address book and their calendar to their phone
+and their desktop, over CardDAV and CalDAV. Signs in with a mailbox address and
+an app password exactly as IMAP does, serves every card and every event from
+the stored bytes rather than by re-encoding them, answers a calendar-query's
+time range from the index of when things happen, and mounts at `/dav` with no
+route that can be answered by a redirect, because a redirect turns a `PROPFIND`
+into a `GET`. `docs/subsystems/contacts.md` and `docs/subsystems/calendar.md`
+say how each fits together.
+
+**`internal/scheduling`** — invitations by mail, in both directions. Delivery
+notes a message and this reads it afterwards, because working out whether one
+carries an invitation means fetching it from storage and that inside the SMTP
+transaction is a slow disk turning into refused mail.
 
 **`internal/sso`** — signing in through an OpenID Connect provider: the
 authorization-code flow with PKCE, a signed and expiring state, and a client

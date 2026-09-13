@@ -23,6 +23,8 @@ type Query interface {
 	MailProgramQuery
 	MailboxDirectoryQuery
 	AddressBookQuery
+	CalendarQuery
+	CalendarInvitationQuery
 	TokenQuery
 	SessionQuery
 	PasskeyQuery
@@ -63,6 +65,8 @@ type Mutation interface {
 	MailboxAppPasswordMutation
 	MailboxContactMutation
 	AddressBookMutation
+	CalendarMutation
+	CalendarInvitationMutation
 	TokenMutation
 	SessionMutation
 	PasskeyMutation

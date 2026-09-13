@@ -263,7 +263,11 @@ func (self *backend) PutAddressObject(ctx context.Context, address string, card 
 	}
 	var written *models.Contact
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetContact(book.ID, contactId)
+		// Held for the rest of the transaction: the conditional headers
+		// below are only as good as the row they were checked against,
+		// and read without a lock two devices holding the same version
+		// were both told it was still theirs and both wrote.
+		existing, err := tx.LockContact(book.ID, contactId)
 		if err != nil {
 			return unexpected(err)
 		}
@@ -356,7 +360,10 @@ func (self *backend) DeleteAddressObject(ctx context.Context, address string) er
 	}
 	wanted := webdav.ConditionalMatch(ifMatchFrom(ctx))
 	return self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		existing, err := tx.GetContact(book.ID, contactId)
+		// Held, so that "remove it only if it is still the version I
+		// read" cannot be answered about a version somebody else is in
+		// the middle of replacing.
+		existing, err := tx.LockContact(book.ID, contactId)
 		if err != nil {
 			return unexpected(err)
 		}

@@ -48,6 +48,7 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
+import { InvitationCard } from '../components/invitationCard'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
 import { Select } from '../components/select'
@@ -1443,6 +1444,8 @@ const CATEGORY_LABELS: Record<string, Key> = {
   promotion: 'mailbox.category.promotion',
   social: 'mailbox.category.social',
   invitation: 'mailbox.category.invitation',
+  phishing: 'mailbox.category.phishing',
+  junk: 'mailbox.category.junk',
   other: 'mailbox.category.other',
 }
 
@@ -2149,6 +2152,10 @@ export function ThreadMessage({
                   )}
                 </dl>
               )}
+              {/* Above the message, because an invitation is the thing the
+                  message is about and the words around it are a covering
+                  note. */}
+              <InvitationCard itemId={entry.item.id} />
               {content.loading && !content.data ? (
                 <Loading />
               ) : content.error ? (

@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/scheduling"
 )
 
 // openAgent builds the model registry, or returns nil when the agent is
@@ -75,4 +76,19 @@ func (self *server) agentService() api.AgentService {
 		return nil
 	}
 	return self.agentWorker
+}
+
+// openScheduler starts the worker that reads invitations arriving as mail,
+// and tells the exchange to note them.
+//
+// Always, unlike the agent: an invitation needs no language model and no
+// opting in. Somebody who was sent a meeting request wants it in their
+// calendar whether or not they have ever thought about an agent.
+func (self *server) openScheduler() {
+	self.scheduler = scheduling.New(self.database, self.storage, scheduling.Settings{
+		Instance: self.instance,
+	})
+	self.exchange.SetCalendarHook(self.scheduler)
+	self.scheduler.Start()
+	self.onClose(self.scheduler.Stop)
 }

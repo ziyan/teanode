@@ -48,6 +48,15 @@ var authorizing = map[string]bool{
 	"requireAddressBookPerson": true,
 	"requireOwnAddressBook":    true,
 	"ownContact":               true,
+	// requirePermission(calendar:use), plus the caller's account; and the
+	// calendar, refused unless it is theirs. Everything about an event goes
+	// through its calendar, so there is no third helper here: an event is
+	// named within a calendar and the calendar is checked first.
+	"requireCalendarPerson": true,
+	"requireOwnCalendar":    true,
+	// requireItems(mail:read), plus the invitation the message carried --
+	// which is nothing at all unless the caller may read that mailbox.
+	"invitationFor": true,
 }
 
 // unauthenticated are the operations that must work before the caller is

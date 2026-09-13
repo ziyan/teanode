@@ -38,6 +38,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/scheduling"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/strainer"
@@ -273,6 +274,11 @@ type server struct {
 	agentRegistry *llm.Registry
 	agentWorker   *agent.Agent
 
+	// scheduler reads the invitations that arrive as mail. Unlike the
+	// agent it is always on: a person who has never turned an agent on
+	// still wants their meetings.
+	scheduler *scheduling.Scheduler
+
 	// upgrader knows what has been released and, after an upgrade, what this
 	// process should become. Read at the end of serve, once everything is
 	// drained: that is the only safe moment to replace the process image.
@@ -432,6 +438,8 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	if err := self.openAgentWorker(configuration); err != nil {
 		return nil, err
 	}
+
+	self.openScheduler()
 
 	if err := self.openWeb(configuration); err != nil {
 		return nil, err

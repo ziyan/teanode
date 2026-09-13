@@ -117,6 +117,49 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
               emails: $emails, phones: $phones, note: $note, addresses: $addresses) { id name }
 }`,
 		"forgetting one": `mutation ($id: String!) { DeleteContact(id: $id) }`,
+
+		// And one per shape the calendar page sends.
+		"the calendars": `query { ListCalendars { id name description colour timezone events } }`,
+		"where a device connects": `query {
+  GetMailProgramSettings { imapHost imapPort imapsPort submissionHost submissionPort davHost }
+}`,
+		"what is on": `query ($calendarId: String!, $from: String!, $until: String!) {
+  ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
+    id calendarId uid summary location startsAt endsAt allDay recurring occurrence status
+  }
+}`,
+		"one event": `query ($calendarId: String!, $id: String!) {
+  GetCalendarEvent(calendarId: $calendarId, id: $id) {
+    id uid etag summary location description startsAt endsAt allDay
+    recurring recurrence status timezone organizer attendees { address name participation role }
+  }
+}`,
+		"saving an event": `mutation ($calendarId: String!, $id: String, $summary: String, $location: String,
+          $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
+          $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+  SaveCalendarEvent(calendarId: $calendarId, id: $id, summary: $summary, location: $location,
+                    description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
+                    timezone: $timezone, recurrence: $recurrence, status: $status,
+                    attendees: $attendees) { id uid summary }
+}`,
+		"taking one away": `mutation ($calendarId: String!, $id: String!) {
+  DeleteCalendarEvent(calendarId: $calendarId, id: $id)
+}`,
+		"renaming a calendar": `mutation ($id: String!, $name: String, $colour: String, $timezone: String) {
+  SaveCalendar(id: $id, name: $name, colour: $colour, timezone: $timezone) { id name colour timezone }
+}`,
+
+		// And the invitation card in the reader.
+		"the invitation on a message": `query ($itemId: String!) {
+  GetMailInvitation(itemId: $itemId) {
+    id status method uid because summary location startsAt endsAt allDay cancelled
+    organizer participation calendarId eventId
+    attendees { address name participation role }
+  }
+}`,
+		"answering one": `mutation ($itemId: String!, $answer: String!) {
+  AnswerMailInvitation(itemId: $itemId, answer: $answer) { id participation cancelled }
+}`,
 	} {
 		parsed, err := parser.Parse(parser.ParseParams{
 			Source: source.NewSource(&source.Source{Body: []byte(document), Name: name}),

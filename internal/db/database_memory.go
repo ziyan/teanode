@@ -84,10 +84,44 @@ type MemoryOperation interface {
 	DeleteAddressBook(addressBookId string) error
 	ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error)
 	GetContact(addressBookId, contactId string) (*models.Contact, error)
+	LockContact(addressBookId, contactId string) (*models.Contact, error)
 	GetContactByUID(addressBookId, uid string) (*models.Contact, error)
 	PutContact(contact *models.Contact) (*models.Contact, error)
 	DeleteContact(addressBookId, contactId string) error
 	CountContacts(addressBookId string) (int64, error)
+
+	// The calendar: a person's own events, kept as iCalendar text. The
+	// occurrences beside them are derived from that text and rewritten
+	// whenever it is, so that "what is on this week" and "when is this
+	// person busy" are answered by reading a window rather than by
+	// expanding every recurrence rule in the calendar.
+	ListCalendars(userId string) ([]*models.Calendar, error)
+	GetCalendar(calendarId string) (*models.Calendar, error)
+	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
+	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
+	DeleteCalendar(userId, calendarId string) error
+	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)
+	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
+	LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
+	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
+	LockCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)
+	PutCalendarObject(object *models.CalendarObject, occurrences []models.Occurrence) (*models.CalendarObject, error)
+	DeleteCalendarObject(calendarId, objectId string) error
+	CountCalendarObjects(calendarId string) (int64, error)
+	ListOccurrences(calendarId string, from, until time.Time) ([]*models.Occurrence, error)
+	ListCalendarObjectsRunningOut(before, since time.Time, limit int) ([]*models.CalendarObject, error)
+	TouchCalendarObjectHorizon(calendarId, objectId string, until time.Time) (bool, error)
+
+	// Invitations that arrived as mail. Delivery notes one and does no
+	// more; a worker claims it and reads the message afterwards, because
+	// fetching a message from storage inside the SMTP transaction would
+	// mean a slow read bouncing mail this server had already accepted.
+	NoteCalendarInvitation(invitation *models.CalendarInvitation) (*models.CalendarInvitation, error)
+	ClaimCalendarInvitations(instance string, limit int, now time.Time) ([]*models.CalendarInvitation, error)
+	FinishCalendarInvitation(invitation *models.CalendarInvitation) error
+	GetCalendarInvitationForItem(mailboxId, itemId string) (*models.CalendarInvitation, error)
+	GetCalendarInvitation(invitationId string) (*models.CalendarInvitation, error)
+	SweepCalendarInvitations(before time.Time) (int64, error)
 
 	ListAgentSkills() ([]*models.AgentSkill, error)
 	GetAgentSkill(name string) (*models.AgentSkill, error)

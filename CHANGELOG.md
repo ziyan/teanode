@@ -6,6 +6,205 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A calendar, and your phone kept in step with it. The calendar page shows a
+  month, a week or an agenda, and an event is the iCalendar file itself rather
+  than a set of columns -- so an alarm, a conferencing link or a colour your
+  phone put on a meeting survives you correcting the title in a browser.
+
+  Your devices synchronize it over CalDAV, signing in the way a mail program
+  does: one of your addresses, and the app password you already made for that
+  device. The account password is never accepted, and it is HTTPS only. Two
+  devices editing the same event at once cannot silently overwrite one
+  another, and a device holding a stale copy cannot delete an edit it has
+  never seen.
+
+  An event anchored to a time zone keeps its hour when the clocks change, which
+  is what "every Monday at ten" means, and a birthday written as a date does
+  not move a day for somebody reading it from further west.
+
+- Invitations, in both directions, as mail. A message carrying an invitation
+  becomes an event in your calendar with Accept, Maybe and Decline above it;
+  pressing one marks your copy and tells whoever asked. Listing people under
+  "Invite" on an event you create sends each of them an invitation they can
+  answer, tells them when it moves, and tells them if you call it off.
+
+  An invitation is an instruction to write into your calendar, so some are
+  refused: one that did not prove where it came from, an older copy of an
+  event arriving late, a cancellation from somebody who is not the organizer,
+  and an answer from somebody who was never invited.
+
+- Free-busy: a calendar program asking when you are busy gets the times and
+  nothing else -- not what any of it is. Something marked transparent, declined
+  or cancelled does not make you busy, and neither does an all-day event,
+  because a birthday is something to know about rather than an appointment.
+
+- Your agent can read the calendar: what you have on, when you are free, and --
+  asking first -- putting something in. `teanode calendar` does the same from a
+  terminal: list what is on, show one event with the file as it is stored, add,
+  edit, remove, and invite people.
+
+- The calendar page draws a month, a week, five days, a single day, or an
+  agenda. The view and the day are in the address, so a link to a week is a link
+  to that week.
+
+### Fixed
+
+- Invitations arriving as mail are now checked against the address the message
+  came from rather than against what the message says about itself. Before,
+  anybody who had been forwarded an invitation could cancel the meeting for
+  everybody, rewrite an event you were holding, or mark other guests as not
+  coming.
+
+- An invitation from Outlook or Exchange no longer disappears. Those name time
+  zones their own way, and an event in one was stored starting in the year one
+  and then showed up nowhere -- not your calendar, not free-busy, not your
+  phone -- while still being there to fetch.
+
+- A repeating event with no end no longer stops appearing two years on: the
+  times it happens are worked out further as they run out.
+
+- A repeat that fires every second no longer takes the server down when it
+  arrives by mail.
+
+- `calendar:use` is now what governs the calendar over CalDAV, so taking it
+  away from a role takes the phones with it, and an account with a calendar and
+  no address book is no longer refused.
+
+- An invitation that does not ask you is no longer put in your calendar, and
+  one arriving by mail counts against how much a calendar holds like anything
+  else -- so nobody can fill your calendar with text of their choosing.
+
+- An invitation sent on somebody's behalf, by an assistant or a room booking
+  system, is accepted again.
+
+- A repeating event too fine to work out over the stretch asked for now says
+  so, rather than looking like an event with nothing in it.
+
+- Several excluded dates written on one line are honoured. One such line used
+  to make a whole repeating event unreadable, so it appeared nowhere.
+
+- A calendar invitation naming a time zone the way Windows does is only
+  reinterpreted when this server's idea of that zone agrees with the
+  description in the invitation itself, so a zone whose rules have changed
+  cannot quietly move every occurrence.
+
+- A repeating event too fine to work out to the end of the stretch this server
+  indexes no longer stops appearing part of the way along. What it reaches is
+  what is written down, and it is worked out again as that runs out.
+
+- A calendar or an address book asked for without the slash on the end answers
+  with what is in it. It used to answer that it was empty, which a phone reads
+  as everything in it having been deleted.
+
+- Two devices writing the same event or the same contact at the same moment can
+  no longer lose one another's change.
+
+- A calendar asked "what is on" over a stretch of time too long to answer says
+  so, instead of answering about part of it and leaving the rest looking free.
+
+- A calendar asked for to-dos, which this server does not keep, no longer
+  answers with every event in the calendar; a search for one event by its
+  identifier answers with that one.
+
+- The agent can say that a message is phishing or junk, which are two new
+  categories beside the others it sorts into. Phishing is a message that
+  pretends to be somebody it is not -- a password notice about your own
+  address, sent from a domain that is not yours; junk is mail nobody asked
+  for from a sender with no reason to write. A rule does the filing, as with
+  every other category: `--when category:matches:^(phishing|junk)$ --move
+  Junk --mark-read --stop`. Every mailbox now starts with exactly that rule,
+  called "Phishing and junk", and the mailboxes already here have been given
+  it -- except any that already had a rule of their own about these
+  categories. It does nothing until an agent is sorting that mailbox: nothing
+  else sets the category it asks about.
+
+- The agent can write mailbox rules again. Every attempt failed with an error
+  about element numbers: a tool calling the API inside the server handed it
+  the rules as they were, and the query engine reads an input object only as
+  plain data, so it refused all of them.
+
+- Delete sits in the footer of the event dialog beside Cancel and Save, where
+  the other buttons that end the dialog are, rather than under the last field.
+
+- The mark on today is a circle whatever the date. A box sized around the
+  digits made it an oval for two of them, and on a phone -- where every button
+  is given a comfortable height -- it was an oval for all of them.
+
+- Weeks in the calendar start on Sunday. A calendar can be set the other way
+  with `teanode calendar set --week-start monday`; the five-day view stays
+  Monday to Friday whichever it is, because that is what a working week is.
+
+- Clicking a date in the month view opens that day. Making something on a day
+  is the empty space below the date, which is where it already was.
+
+- The line marking the current time no longer draws itself through the date at
+  the top of a week or a day.
+
+- An empty agenda says so in the middle of the space rather than in its
+  top-left corner, where it read as something that had failed to load.
+
+- The agent can change and remove things in the calendar, not only add them,
+  and the agenda it reads now names each event so it can say which one it
+  means. Anything that sends mail -- inviting people, or telling the people
+  already invited that a meeting has moved or is off -- asks first, and an
+  event with guests on it is not touched until it is told to tell them.
+
+- `teanode calendar free` prints the stretches of the working day nothing is
+  booked in, which the agent could already work out and the command line
+  could not.
+
+- Moving or calling off one occurrence of a repeating event changes that
+  occurrence. An invitation naming one week of a weekly meeting used to
+  replace the whole series with a single appointment, and a cancellation of
+  one week struck out every week there would ever be.
+
+- An invitation carried by a message that failed the spam filter, came through
+  a mailing list, or announces itself as bulk is no longer written into a
+  calendar.
+
+- Only the organizer of a meeting may change it or call it off. A message
+  saying it was sent on their behalf is enough to ask somebody to a new
+  meeting and is no longer enough to move one already in the calendar.
+
+- An answer to an invitation that arrives after a later answer -- crossed in
+  the post, or a copy of an older message sent again -- no longer undoes the
+  later one, and an answer is one of the three the format has.
+
+- Saving an event somebody else called no longer sends an invitation to
+  everybody on its guest list from your address, and an event asking more
+  people than this server invites at once is refused rather than sent.
+
+- The agent asks before it invites anybody to anything.
+
+- A repeating event that has finished keeps the occurrences that have already
+  happened, so looking back at it still shows them.
+
+- A search of a calendar that names two conditions means both of them, finds
+  the event wherever it sits in its file, and says so plainly when it is asked
+  for a kind of condition this server does not answer.
+
+- A domain's page advises the SRV record that lets a calendar application find
+  this server from a mail address alone, beside the one the address book
+  already had. Without it a phone given only the domain looks on port 443 and
+  finds whatever answers there, which on a server reached at a port of its own
+  is something else entirely.
+
+- A whole-day event in the dashboard ends on the day it ends on. It used to
+  show the day after, and asking for the fourteenth to the fifteenth made a
+  one-day event. On the command line `--ends` is the last day it is on.
+
+
+- A domain's link host may now name the port it is reached on --
+  `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other
+  than the usual port. The addresses this server writes into mail, such as the
+  pictures in a template, are built from it, and without the port they pointed
+  at a port nothing was listening on. The port belongs to the name rather than
+  to what this server binds: the same server may be reached under one name
+  directly and under another through something that forwards 443, and only the
+  name knows which.
+
 ## [0.20.1] - 2026-09-12
 
 ### Fixed

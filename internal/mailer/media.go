@@ -54,8 +54,11 @@ func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domai
 	if html == "" || domain == nil {
 		return html
 	}
-	host := self.config.Current().LinkHostFor(domain, domains)
-	if host == "" {
+	// The whole base, not just the name: a deployment answering HTTPS on a
+	// port of its own would otherwise write addresses pointing at a closed
+	// port, and every picture in every templated message would be broken.
+	base := self.config.Current().LinkBaseFor(domain, domains)
+	if base == "" {
 		return html
 	}
 
@@ -91,6 +94,6 @@ func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domai
 			return match
 		}
 
-		return prefix + "https://" + host + api.MediaLinkPath(token) + suffix
+		return prefix + base + api.MediaLinkPath(token) + suffix
 	})
 }

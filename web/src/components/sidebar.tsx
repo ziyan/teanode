@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
 import {
+  CalendarIcon,
   ChevronRightIcon,
   ComposeIcon,
   DomainsIcon,
@@ -398,6 +399,12 @@ export function Sidebar({
                   <UserIcon />
                 </span>
                 <span className="sidebar-label">{t('nav.contacts')}</span>
+              </NavLink>
+              <NavLink to="/mailbox/calendar" title={collapsed ? t('nav.calendar') : undefined}>
+                <span className="sidebar-icon">
+                  <CalendarIcon />
+                </span>
+                <span className="sidebar-label">{t('nav.calendar')}</span>
               </NavLink>
               <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
                 <span className="sidebar-icon">

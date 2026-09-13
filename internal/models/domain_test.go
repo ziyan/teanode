@@ -182,3 +182,44 @@ func unusableKey() string {
 	const marker = "-----%s PRIVATE KEY-----\n"
 	return strings.Replace(marker, "%s", "BEGIN", 1) + "not actually a key\n" + strings.Replace(marker, "%s", "END", 1)
 }
+
+// A link host may name the port it is reached on, and what is not a port is
+// said to be not a port rather than quietly accepted.
+func TestALinkHostMayNameItsPort(t *testing.T) {
+	for written, good := range map[string]bool{
+		"mail.example.com":       true,
+		"mail.example.com.":      true,
+		"mail.example.com:10443": true,
+		"mail.example.com:443":   true,
+		"mail.example.com:0":     false,
+		"mail.example.com:70000": false,
+		"mail.elsewhere.test":    false,
+		"not a host name":        false,
+	} {
+		domain := &Domain{ID: "example.com", Domain: "example.com", LinkHost: written}
+		err := domain.Validate()
+		if good && err != nil {
+			t.Errorf("%q should be accepted: %s", written, err)
+		}
+		if !good && err == nil {
+			t.Errorf("%q should be refused", written)
+		}
+	}
+}
+
+// A name is separated from its port, and a value that merely contains a colon
+// is left whole rather than cut at one.
+func TestANameIsSeparatedFromItsPort(t *testing.T) {
+	for written, want := range map[string][2]string{
+		"mail.example.com":       {"mail.example.com", ""},
+		"mail.example.com:10443": {"mail.example.com", "10443"},
+		"mail.example.com:":      {"mail.example.com", ""},
+		"mail.example.com:https": {"mail.example.com:https", ""},
+		"":                       {"", ""},
+	} {
+		host, port := SplitHostPort(written)
+		if host != want[0] || port != want[1] {
+			t.Errorf("SplitHostPort(%q) = %q, %q; want %q, %q", written, host, port, want[0], want[1])
+		}
+	}
+}

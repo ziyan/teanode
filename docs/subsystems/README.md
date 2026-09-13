@@ -1,7 +1,9 @@
 # Subsystems
 
-How the parts of the personal agent actually work: the design, the algorithm,
-the numbers, and the places where a reader would otherwise guess wrong.
+How the parts of this server actually work: the design, the algorithm, the
+numbers, and the places where a reader would otherwise guess wrong. Most of it
+is the personal agent; the last two are the things a person keeps beside their
+mail, and their phone synchronizes.
 
 These are evergreen. A plan under `docs/planning/` says what was built and
 when; a decision under `docs/decisions/` says why one road was taken over
@@ -20,6 +22,8 @@ change with it.
 | `jobs-and-schedules.md` | The queue, claiming, retries, and work at a time somebody chose |
 | `devices.md` | A person's own computer and their own browser tab |
 | `skills.md` | Tools installed from a signed registry, and how they are carried out |
+| `contacts.md` | The address book, CardDAV, and what a phone may do to a card |
+| `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
 else. The words for the agent's own text are fixed in `AGENTS.md`: the

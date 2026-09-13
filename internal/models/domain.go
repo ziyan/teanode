@@ -44,6 +44,12 @@ type Domain struct {
 
 	// LinkHost is the name in the addresses this server writes into mail it
 	// sends. Empty means the domain's first mail server name.
+	//
+	// It may carry a port -- "mail.example.com:10443" -- for a deployment
+	// reached on one of its own. The port belongs to the name rather than
+	// to what this server binds: the same server may be reached under one
+	// name directly and under another through something that forwards the
+	// usual port, and only the name knows which.
 	LinkHost string `json:"linkHost,omitempty"`
 
 	// Comment is a note for the operator; it is never used in mail handling.
@@ -144,10 +150,15 @@ func (self *Domain) Validate() error {
 			errors.add(fmt.Sprintf("mailServers[%d]", index), "%q is not a host name, for example mx.%s", host, self.Domain)
 		}
 	}
-	if host := strings.TrimSuffix(strings.TrimSpace(self.LinkHost), "."); host != "" {
-		if !IsHostname(host) {
+	if value := strings.TrimSpace(self.LinkHost); value != "" {
+		host, port := SplitHostPort(value)
+		host = strings.TrimSuffix(host, ".")
+		switch {
+		case !IsHostname(host):
 			errors.add("linkHost", "%q is not a host name, for example %s", self.LinkHost, self.Domain)
-		} else if !self.InThisDomain(host) {
+		case port != "" && !IsPort(port):
+			errors.add("linkHost", "%q does not end in a port, for example %s:10443", self.LinkHost, self.Domain)
+		case !self.InThisDomain(host):
 			errors.add("linkHost", "%q is not under %s; an address in another domain names whoever runs that one", host, self.Domain)
 		}
 	}

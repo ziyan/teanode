@@ -6,6 +6,7 @@ import (
 	"net"
 	"regexp"
 	"regexp/syntax"
+	"strconv"
 	"strings"
 )
 
@@ -73,6 +74,34 @@ func IsHostname(value string) bool {
 		}
 	}
 	return true
+}
+
+// SplitHostPort separates a name from the port it may carry.
+//
+// Not net.SplitHostPort, which fails outright on a value with no port at all,
+// and a name without one is the ordinary case. A value whose last colon is not
+// followed by digits is handed back whole: nothing this server accepts as a
+// name carries a colon, so cutting at one would quietly change what somebody
+// typed into something else.
+func SplitHostPort(value string) (string, string) {
+	value = strings.TrimSpace(value)
+	at := strings.LastIndex(value, ":")
+	if at < 0 || at == len(value)-1 {
+		return strings.TrimSuffix(value, ":"), ""
+	}
+	port := value[at+1:]
+	for _, letter := range port {
+		if letter < '0' || letter > '9' {
+			return value, ""
+		}
+	}
+	return value[:at], port
+}
+
+// IsPort reports whether a value is a port somebody can connect to.
+func IsPort(value string) bool {
+	number, err := strconv.Atoi(strings.TrimSpace(value))
+	return err == nil && number > 0 && number <= 65535
 }
 
 // IsRelayHost reports whether a value names something this server can open

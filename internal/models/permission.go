@@ -30,6 +30,7 @@ const (
 	PermissionAuditRead       Permission = "audit:read"    // the audit log
 	PermissionAgentUse        Permission = "agent:use"     // have an agent, grant it one's mailboxes, talk to it
 	PermissionContactsUse     Permission = "contacts:use"  // keep an address book, and sync it to a device
+	PermissionCalendarUse     Permission = "calendar:use"  // keep a calendar, and sync it to a device
 	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
 )
 
@@ -73,6 +74,7 @@ var permissionKinds = []struct {
 	{PermissionAuditRead, PermissionKindServer, ""},
 	{PermissionAgentUse, PermissionKindServer, ""},
 	{PermissionContactsUse, PermissionKindServer, ""},
+	{PermissionCalendarUse, PermissionKindServer, ""},
 	{PermissionAgentAudit, PermissionKindServer, ""},
 }
 

@@ -141,6 +141,12 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	if hook := self.currentAgentHook(); hook != nil {
 		hook.OnMailboxDelivery(tx, mailbox, item, mail)
 	}
+	// And the calendar, which notes the message in case it carries an
+	// invitation and reads it afterwards. Not the agent's job: somebody
+	// who has never turned an agent on still wants their meetings.
+	if hook := self.currentCalendarHook(); hook != nil {
+		hook.OnMailboxDelivery(tx, mailbox, recipient, item, mail)
+	}
 	// And the out-of-office reply, decided after the rules have had their
 	// say about where the message ended up.
 	self.maybeAutoReply(tx, mailbox, alias, recipient, item, mail)
@@ -168,14 +174,7 @@ func FindSentCopy(tx db.Transaction, folder *models.MailboxFolder, messageId str
 // isSuspicious is whether a message belongs in Junk rather than the Inbox:
 // the spam filter failed it, or it failed DMARC under a quarantine policy.
 func isSuspicious(mail *models.Mail) bool {
-	results := mail.AuthenticationResults
-	if results.SpamFilter != nil && results.SpamFilter.Result == "fail" {
-		return true
-	}
-	if results.DMARC != nil && results.DMARC.Result == "fail" && results.DMARC.Policy == "quarantine" {
-		return true
-	}
-	return false
+	return mail.LooksLikeSpam()
 }
 
 // senderOf is the From address and display name of a message.

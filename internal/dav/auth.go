@@ -154,13 +154,40 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	// Reading and writing an address book is something a member does with
 	// their own account. An operator who takes the permission away from a
 	// role takes the phones with it.
+	// Each collection has its own permission, and the one that matters is
+	// the one being reached for. Checking only the address book's meant an
+	// operator who took calendar:use away from a role took it away from the
+	// dashboard and the agent and not from the phones -- which kept reading
+	// and writing, and would even have a calendar made for them on the way
+	// in. It also refused CalDAV to anyone who had calendar:use without
+	// contacts:use.
+	// The principal and the mount are neither collection: they are what a
+	// client reads before it knows what this server has, so either
+	// permission opens them and what they advertise is filtered separately.
+	// Requiring the address book's there meant somebody with a calendar and
+	// no address book was refused at the first step of discovery and never
+	// reached the calendar they were allowed.
+	wanted, refusal := []models.Permission{models.PermissionContactsUse, models.PermissionCalendarUse},
+		"this account keeps neither an address book nor a calendar here"
+	switch collectionAt(request.URL.Path) {
+	case contactsSegment:
+		wanted, refusal = []models.Permission{models.PermissionContactsUse},
+			"this account does not keep an address book here"
+	case calendarsSegment:
+		wanted, refusal = []models.Permission{models.PermissionCalendarUse},
+			"this account does not keep a calendar here"
+	}
 	allowed := false
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
 		permissions, err := tx.EffectivePermissions(signedIn.userID)
 		if err != nil {
 			return err
 		}
-		allowed = permissions.Has(models.PermissionContactsUse)
+		for _, permission := range wanted {
+			if permissions.Has(permission) {
+				allowed = true
+			}
+		}
 		return nil
 	}); err != nil {
 		log.Errorf("cannot read what a DAV caller may do: %s", err)
@@ -168,10 +195,24 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 		return nil, false
 	}
 	if !allowed {
-		http.Error(response, "this account does not keep an address book here", http.StatusForbidden)
+		http.Error(response, refusal, http.StatusForbidden)
 		return nil, false
 	}
 	return signedIn, true
+}
+
+// collectionAt is which of the two a path reaches into, or empty for the
+// principal and the mount, which are neither.
+func collectionAt(path string) string {
+	rest := strings.Trim(strings.TrimPrefix(path, Prefix), "/")
+	if rest == "" {
+		return ""
+	}
+	segments := strings.Split(rest, "/")
+	if len(segments) < 2 {
+		return ""
+	}
+	return segments[1]
 }
 
 func (self *component) askForCredentials(response http.ResponseWriter) {

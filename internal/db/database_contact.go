@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -208,8 +209,23 @@ func (self *transaction) ListContacts(addressBookId, query string, limit int) ([
 }
 
 func (self *transaction) GetContact(addressBookId, contactId string) (*models.Contact, error) {
+	return self.contact(addressBookId, contactId, false)
+}
+
+// LockContact is GetContact for a caller about to write it: the row is held
+// for the rest of the transaction, so that two devices holding the same
+// version cannot both be told it is still theirs and both write.
+func (self *transaction) LockContact(addressBookId, contactId string) (*models.Contact, error) {
+	return self.contact(addressBookId, contactId, true)
+}
+
+func (self *transaction) contact(addressBookId, contactId string, holding bool) (*models.Contact, error) {
+	query := self.tx
+	if holding {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var found []contactModel
-	if err := self.tx.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+	if err := query.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
 		Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}

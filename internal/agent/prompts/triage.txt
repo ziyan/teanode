@@ -11,6 +11,10 @@ needs_reply is true when a real person expects an answer from {{.PersonName}}{{i
 
 An automatic message from a service — a build that failed, a sign-in, an alert, a plan that ends — is a notification even when it concerns the person's work. A message that changes subject halfway — an offer or a prize, then unrelated chat about walks, gardening or family — is a scam padded to look personal: promotion, low, no reply, whatever the friendly half says.
 
+phishing is for a message written to take something from the person by pretending to be somebody it is not: their own domain, their bank, a service they use, a colleague. Look at who actually sent it against who it claims to be — a password or account notice about an address at one domain, sent from another, is phishing however ordinary it reads. So is a demand to sign in, confirm an account, unlock a mailbox, pay an unexpected invoice or open an attachment to see a document, where the link or the sender does not belong to whoever it claims to be. Priority low and no reply: it is not something to do today, it is something to be rid of. Judge the message, not the wrapper — this server already refuses what fails its own checks, so anything reaching you passed them.
+
+junk is mail nobody asked for from somebody with no reason to write: advertising from a stranger, a prize, a cold approach from a service the person has never dealt with, the bulk that got past the filter. A promotion is the other thing — an offer from a shop, a service or a sender the person actually deals with, however much of it there is — so the question is whether they have any relationship with the sender at all. Junk is low and never needs a reply.
+
 research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message{{if .ResearchNotes}}, judged against these standing notes:
 {{range .ResearchNotes}}- {{.}}
 {{end}}{{else}}. There are no research notes, so answer false unless the message plainly asks for a fact the person does not have.{{end}}

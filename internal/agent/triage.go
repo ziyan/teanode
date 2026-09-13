@@ -89,6 +89,8 @@ var fixedCategoryDescriptions = map[string]string{
 	"promotion":    "marketing: an offer, a sale, a product announcement",
 	"social":       "a social network or a community talking",
 	"invitation":   "an invitation to an event or a meeting",
+	"phishing":     "pretending to be somebody it is not, to take a password, a payment or a click",
+	"junk":         "unasked-for mail from a sender the person has no dealings with",
 	"other":        "none of the above",
 }
 
