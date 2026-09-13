@@ -81,7 +81,7 @@ type CalendarEvent = {
   attendees?: Attendee[]
 }
 
-type View = 'month' | 'week' | 'agenda'
+type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda'
 
 // A form's worth of one event. The times are held as the two halves a browser
 // edits them in -- a date and a clock time -- because that is what the native
@@ -118,6 +118,11 @@ const REPEATS = [
 function namedRepeat(rule: string): boolean {
   return REPEATS.some((repeat) => repeat.rule === rule)
 }
+
+// The column views and how wide each is. A day is one column, the working
+// week five, the week seven -- all the same drawing, differing only in how
+// many days it starts from and how many it shows.
+const COLUMNS: Partial<Record<View, number>> = { day: 1, workweek: 5, week: 7 }
 
 // dayKey names a day the way a date input does, in local time. Not the ISO
 // string, which is in UTC and so is the wrong day for anybody east or west of
@@ -195,9 +200,10 @@ export function CalendarPage() {
   // The window asked for is whole weeks for a month, the week for a week, and
   // a month ahead for an agenda.
   const [from, until] = useMemo<[Date, Date]>(() => {
-    if (view === 'week') {
-      const start = startOfWeek(on)
-      return [start, addDays(start, 7)]
+    const columns = COLUMNS[view]
+    if (columns) {
+      const start = columns === 1 ? startOfDay(on) : startOfWeek(on)
+      return [start, addDays(start, columns)]
     }
     if (view === 'agenda') return [startOfDay(on), addDays(startOfDay(on), 31)]
     const grid = monthGrid(on)
@@ -331,14 +337,26 @@ export function CalendarPage() {
   const weekdayFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { weekday: 'short' }), [])
 
   const heading =
-    view === 'week'
-      ? t('calendar.weekOf', { day: dayFormat.format(startOfWeek(on)) })
-      : view === 'agenda'
-        ? t('calendar.agendaFrom', { day: dayFormat.format(on) })
-        : titleFormat.format(on)
+    view === 'day'
+      ? new Intl.DateTimeFormat(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }).format(on)
+      : view === 'week' || view === 'workweek'
+        ? t('calendar.weekOf', { day: dayFormat.format(startOfWeek(on)) })
+        : view === 'agenda'
+          ? t('calendar.agendaFrom', { day: dayFormat.format(on) })
+          : titleFormat.format(on)
 
   const step = (direction: number) => {
-    if (view === 'week') return move({ on: addDays(startOfWeek(on), direction * 7) })
+    const columns = COLUMNS[view]
+    // A day moves by a day; the working week and the week move by a whole
+    // week, so that Friday's "next" is the following Monday rather than the
+    // weekend the view does not draw.
+    if (columns === 1) return move({ on: addDays(on, direction) })
+    if (columns) return move({ on: addDays(startOfWeek(on), direction * 7) })
     if (view === 'agenda') return move({ on: addDays(on, direction * 31) })
     return move({ on: new Date(on.getFullYear(), on.getMonth() + direction, 1) })
   }
@@ -382,7 +400,7 @@ export function CalendarPage() {
           <span className="calendar-heading">{heading}</span>
         </div>
         <div className="calendar-views">
-          {(['month', 'week', 'agenda'] as View[]).map((which) => (
+          {(['month', 'week', 'workweek', 'day', 'agenda'] as View[]).map((which) => (
             <button
               key={which}
               type="button"
@@ -446,10 +464,12 @@ export function CalendarPage() {
         </div>
       )}
 
-      {!loading && view === 'week' && (
+      {!loading && COLUMNS[view] && (
         <div className="calendar-week-scroll">
-          <div className="calendar-week">
-            {Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(on), index)).map((day) => {
+          <div className="calendar-week" style={{ gridTemplateColumns: `repeat(${COLUMNS[view]}, minmax(0, 1fr))` }}>
+            {Array.from({ length: COLUMNS[view] as number }, (_, index) =>
+              addDays(COLUMNS[view] === 1 ? startOfDay(on) : startOfWeek(on), index),
+            ).map((day) => {
               const key = dayKey(day)
               return (
                 <div key={key} className={`calendar-day${key === today ? ' today' : ''}`}>

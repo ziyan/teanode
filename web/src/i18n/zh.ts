@@ -1771,6 +1771,8 @@ export const zh: Catalog = {
   'calendar.next': '下一页',
   'calendar.viewMonth': '月',
   'calendar.viewWeek': '周',
+  'calendar.viewWorkweek': '5 天',
+  'calendar.viewDay': '日',
   'calendar.viewAgenda': '列表',
   'calendar.weekOf': '{day} 这一周',
   'calendar.agendaFrom': '自 {day} 起',

@@ -1828,6 +1828,8 @@ export const ja: Catalog = {
   'calendar.next': '次へ',
   'calendar.viewMonth': '月',
   'calendar.viewWeek': '週',
+  'calendar.viewWorkweek': '5 日',
+  'calendar.viewDay': '日',
   'calendar.viewAgenda': '一覧',
   'calendar.weekOf': '{day} の週',
   'calendar.agendaFrom': '{day} から',

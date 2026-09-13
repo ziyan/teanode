@@ -1834,6 +1834,8 @@ export const en = {
   'calendar.next': 'Forward',
   'calendar.viewMonth': 'Month',
   'calendar.viewWeek': 'Week',
+  'calendar.viewWorkweek': '5 days',
+  'calendar.viewDay': 'Day',
   'calendar.viewAgenda': 'Agenda',
   'calendar.weekOf': 'Week of {day}',
   'calendar.agendaFrom': 'From {day}',

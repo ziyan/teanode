@@ -7009,6 +7009,12 @@ button.with-icon {
     min-width: 40rem;
   }
 
+  /* A single day needs no sideways room: it is one column, and on a phone
+     that is the view worth reaching for. */
+  .calendar-week:has(> .calendar-day:only-of-type) {
+    min-width: 0;
+  }
+
   .calendar-month-scroll,
   .calendar-week-scroll {
     overflow-x: auto;

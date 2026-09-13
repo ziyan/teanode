@@ -41,7 +41,13 @@ Notable changes to TeaNode. The format follows
   because a birthday is something to know about rather than an appointment.
 
 - Your agent can read the calendar: what you have on, when you are free, and --
-  asking first -- putting something in.
+  asking first -- putting something in. `teanode calendar` does the same from a
+  terminal: list what is on, show one event with the file as it is stored, add,
+  edit, remove, and invite people.
+
+- The calendar page draws a month, a week, five days, a single day, or an
+  agenda. The view and the day are in the address, so a link to a week is a link
+  to that week.
 
 ### Fixed
 
