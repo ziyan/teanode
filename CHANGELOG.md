@@ -49,7 +49,10 @@ Notable changes to TeaNode. The format follows
 
   The tool policy pages -- the operator's and your own "always ask me" --
   show what each line covers: `domain` with `list get add update remove dns`
-  beside it, and the tool's own sentence rather than every action's. A policy
+  beside it, and the tool's own sentence rather than every action's. Every
+  tool that takes an action says so, not only the merged ones -- `mail_act`
+  and `folder_manage` were written that way from the start and showed
+  nothing. A policy
   written before the merge still means what it meant, and is rewritten into
   the new names the next time it is saved, so what the page shows and what
   the server enforces are the same list.
