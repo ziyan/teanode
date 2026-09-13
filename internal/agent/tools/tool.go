@@ -85,12 +85,6 @@ type Tool struct {
 	// behind tool_search when the catalog is long.
 	Core bool
 
-	// Actions are the verbs a merged tool takes, in the order they are
-	// described. Empty for a tool that is one thing. Said separately from
-	// the description so that a policy page can list what one line of
-	// policy covers without printing every action's own sentence.
-	Actions []string
-
 	// Headless says a run with nobody present may use it: a remote tool
 	// the operator marked read-only on a headless server.
 	Headless bool
@@ -238,6 +232,45 @@ func AllowedByPermissions(tool *Tool, permissions *models.EffectivePermissions) 
 		}
 	}
 	return false
+}
+
+// ActionsOf is the verbs a tool takes, read out of its own schema: the
+// values of its "action" enumeration, in the order they are offered.
+//
+// From the schema rather than from a field, because a tool is action-shaped
+// whether it was merged out of several tools or written that way in the
+// first place. The policy page listed the verbs of the merged ones and
+// nothing beside group_manage, which takes add, update and remove of its
+// own -- so the page looked as though the two kinds of tool differed, and
+// they do not.
+//
+// Empty for a tool that is one thing, and for one whose action is free text
+// rather than a choice.
+func ActionsOf(tool *Tool) []string {
+	if tool == nil || tool.Parameters == nil {
+		return nil
+	}
+	properties, ok := tool.Parameters["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	action, ok := properties["action"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch values := action["enum"].(type) {
+	case []string:
+		return append([]string{}, values...)
+	case []any:
+		verbs := make([]string, 0, len(values))
+		for _, value := range values {
+			if word, ok := value.(string); ok {
+				verbs = append(verbs, word)
+			}
+		}
+		return verbs
+	}
+	return nil
 }
 
 // Listed says whether a policy list names the tool, by name or family, or by

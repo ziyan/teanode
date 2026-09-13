@@ -113,7 +113,6 @@ func Merge(merged MergedTool) *Tool {
 		Name:        merged.Name,
 		Family:      merged.Family,
 		Description: strings.Join(lines, "\n"),
-		Actions:     verbs,
 		Risk:        gentlest(merged.Actions),
 		Parameters:  Object(properties, "action"),
 		Permissions: permissions,

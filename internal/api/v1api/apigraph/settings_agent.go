@@ -777,7 +777,7 @@ func toolCatalog() []*AgentToolView {
 			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
 			Description: leadSentence(tool.Description),
 			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
-			Core:        tool.Core, Actions: append([]string{}, tool.Actions...),
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
 		})
 	}
 	return views
@@ -794,9 +794,9 @@ func (self *graph) withSkillTools(ctx context.Context, settings *AgentSettings) 
 	for _, tool := range worker.SkillTools(ctx) {
 		settings.Tools.Catalog = append(settings.Tools.Catalog, &AgentToolView{
 			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
-			Description: tool.Description,
+			Description: leadSentence(tool.Description),
 			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
-			Core:        tool.Core,
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
 		})
 	}
 }

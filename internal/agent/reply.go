@@ -30,14 +30,15 @@ type ReplyAnswer struct {
 }
 
 type replyData struct {
-	PersonName string
-	Language   string
-	Guidance   string
-	Memories   []string
-	Summary    string
-	Notes      string
-	Earlier    []string
-	Message    string
+	PersonName  string
+	Language    string
+	Guidance    string
+	Memories    []string
+	Corrections []string
+	Summary     string
+	Notes       string
+	Earlier     []string
+	Message     string
 }
 
 // ReplyPrompt builds the messages for one auto-reply call. The draft
@@ -52,14 +53,15 @@ func ReplyPrompt(input *DraftInput, guidance string) ([]llm.ChatMessage, error) 
 		earlier = append(earlier, strings.TrimSpace(message.Render()))
 	}
 	user, err := render("reply.txt", replyData{
-		PersonName: personName(input.Owner),
-		Language:   languageName(Language(input.Agent, input.Owner)),
-		Guidance:   strings.TrimSpace(guidance),
-		Memories:   input.Memories,
-		Summary:    strings.TrimSpace(input.Summary),
-		Notes:      strings.TrimSpace(input.Notes),
-		Earlier:    earlier,
-		Message:    strings.TrimSpace(input.Message.Render()),
+		PersonName:  personName(input.Owner),
+		Language:    languageName(Language(input.Agent, input.Owner)),
+		Guidance:    strings.TrimSpace(guidance),
+		Memories:    input.Memories,
+		Corrections: input.Corrections,
+		Summary:     strings.TrimSpace(input.Summary),
+		Notes:       strings.TrimSpace(input.Notes),
+		Earlier:     earlier,
+		Message:     strings.TrimSpace(input.Message.Render()),
 	})
 	if err != nil {
 		return nil, err
@@ -312,7 +314,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 	var item *models.MailboxItem
 	var insight *models.MailInsight
 	var mails []*models.Mail
-	var memories []string
+	var memories, corrections []string
 	summary, notes, recipient := "", "", ""
 	refused := ""
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -361,7 +363,14 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		if insight != nil {
 			notes = insight.Notes
 		}
-		memories, err = memoryLines(tx, run.Agent.ID, models.AudienceReply, promptRunMemories, false)
+		if memories, err = memoryLines(tx, run.Agent.ID, models.AudienceReply, promptRunMemories, false); err != nil {
+			return err
+		}
+		// The replies this agent wrote that the person stopped. Nothing
+		// read them until now: they were recorded, kept and shown to the
+		// person, and the next reply was written as if none of it had
+		// happened.
+		corrections, err = correctionLines(tx, run.Agent.ID, []models.AgentFeedbackKind{models.FeedbackReplyDeclined})
 		return err
 	}); err != nil {
 		return err
@@ -408,6 +417,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		Summary:       summary,
 		Notes:         notes,
 		Memories:      memories,
+		Corrections:   corrections,
 	}, policy.Guidance)
 	if err != nil {
 		return err

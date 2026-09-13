@@ -232,3 +232,41 @@ func TestAPolicyWrittenBeforeTheMergeStillSaysIt(t *testing.T) {
 		t.Fatalf("what was not renamed is untouched: %v", kept)
 	}
 }
+
+// The policy page lists what one line of policy covers, and it should do so
+// for every tool that takes an action -- not only for the ones that were
+// merged out of several.
+//
+// It did not: user showed list, add, update and remove, and group_manage
+// beside it showed nothing, although it takes add, update and remove of its
+// own. The two look different on the page and are the same thing.
+func TestTheActionsOfAToolComeFromItsOwnSchema(t *testing.T) {
+	t.Parallel()
+
+	merged := exampleMerged(new(string))
+	if got := ActionsOf(merged); len(got) != 3 || got[0] != "list" || got[2] != "remove" {
+		t.Fatalf("a merged tool's verbs: %v", got)
+	}
+
+	// One written that way in the first place, which is most of the tools
+	// that were never merged.
+	written := &Tool{Name: "folder_manage", Parameters: Object(map[string]any{
+		"action": EnumProperty("what to do", "create", "rename", "delete"),
+		"folder": StringProperty("which one"),
+	}, "action")}
+	if got := ActionsOf(written); len(got) != 3 || got[1] != "rename" {
+		t.Fatalf("a tool that was always action-shaped: %v", got)
+	}
+
+	// And nothing for a tool that is one thing, or whose action is free
+	// text rather than a choice.
+	if got := ActionsOf(&Tool{Name: "mail_read", Parameters: Object(map[string]any{"item": StringProperty("which")})}); len(got) != 0 {
+		t.Fatalf("one thing, no verbs: %v", got)
+	}
+	if got := ActionsOf(&Tool{Name: "odd", Parameters: Object(map[string]any{"action": StringProperty("say what to do")})}); len(got) != 0 {
+		t.Fatalf("free text is not a list of verbs: %v", got)
+	}
+	if got := ActionsOf(nil); got != nil {
+		t.Fatalf("and nothing at all is nothing: %v", got)
+	}
+}

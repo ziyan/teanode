@@ -501,7 +501,7 @@ func (self *graph) ListAgentTools(ctx context.Context) ([]*AgentToolView, error)
 			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
 			Description: leadSentence(tool.Description),
 			Confirms:    agent.NeedsConfirmation(tool, nil, &configuration.Agent.Tools, found),
-			Core:        tool.Core, Actions: append([]string{}, tool.Actions...),
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
 		})
 	}
 	return views, nil

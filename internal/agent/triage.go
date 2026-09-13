@@ -186,7 +186,13 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		if memories, err = memoryLines(tx, run.Agent.ID, models.AudienceTriage, promptRunMemories, false); err != nil {
 			return err
 		}
-		if corrections, err = correctionLines(tx, run.Agent.ID, []models.AgentFeedbackKind{models.FeedbackFiled}); err != nil {
+		// Both kinds of correction the person makes to sorting: filing a
+		// message somewhere the sorting did not put it, and sorting it by
+		// hand. The second was recorded, kept for ninety days, and shown to
+		// the person in their corrections -- and never read by anything, so
+		// "your agent is told" was true about the record and false about
+		// the learning.
+		if corrections, err = correctionLines(tx, run.Agent.ID, []models.AgentFeedbackKind{models.FeedbackFiled, models.FeedbackSorted}); err != nil {
 			return err
 		}
 		if run.Source.Research && FeatureAllowed(configuration, "research") {

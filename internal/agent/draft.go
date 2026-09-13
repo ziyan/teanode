@@ -37,6 +37,11 @@ type DraftInput struct {
 	Summary  string
 	Notes    string
 	Memories []string
+
+	// Corrections are the replies this agent wrote that the person would
+	// not let go: cancelled, or rewritten before they went. Shown as
+	// examples of what not to write again.
+	Corrections []string
 }
 
 type draftData struct {
