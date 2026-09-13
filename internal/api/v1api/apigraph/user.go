@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -264,6 +265,18 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 			return nil, err
 		}
 	}
+	// Putting somebody into a group is deciding what they may do, so it is
+	// bounded by what the person doing it may do. Otherwise the permission
+	// to manage accounts is the permission to become an administrator: move
+	// yourself into the group that already holds everything, and the next
+	// request is answered with all of it.
+	if arguments.GroupIDs != nil {
+		for _, groupId := range *arguments.GroupIDs {
+			if err := self.mayHandOut(ctx, principal, groupId); err != nil {
+				return nil, err
+			}
+		}
+	}
 	updated, err := self.transaction(ctx).UpdateUser(arguments.UserID, func(user *models.User) error {
 		if arguments.Username != nil {
 			user.Username = strings.TrimSpace(*arguments.Username)
@@ -317,8 +330,23 @@ type SetUserPasswordArguments struct {
 }
 
 func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	if err != nil {
 		return nil, err
+	}
+	// Not somebody who may do more than the person setting it. A password is
+	// the account, so resetting an administrator's password is becoming an
+	// administrator -- which made the permission to manage accounts the
+	// permission to hold every other one, by a shorter route than the groups.
+	if principal.User == nil || principal.User.ID != arguments.UserID {
+		held, err := self.transaction(ctx).EffectivePermissions(arguments.UserID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		if !principal.Permissions.Covers(held) {
+			return nil, fmt.Errorf("%w: that account holds permissions you do not, so its password is not yours to set",
+				api.ErrPermissionDenied)
+		}
 	}
 	if arguments.Password == "" {
 		return nil, api.ErrInvalidArguments

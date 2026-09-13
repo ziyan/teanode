@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // A conversation's feed: every event of every turn of the conversation,
@@ -152,6 +154,7 @@ func (self *Agent) startFeed() {
 	self.relayMutex.Unlock()
 	self.waitGroup.Add(1)
 	go func() {
+		defer deferutil.Recover()
 		defer self.waitGroup.Done()
 		self.runRelay()
 	}()

@@ -124,8 +124,12 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	}
 
 	var signedIn *session
+	spent := 1
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
-		mailbox, appPassword, err := access.AuthenticateAppPasswordWithID(tx, username, password)
+		mailbox, appPassword, tried, err := access.AuthenticateAppPasswordCounting(tx, username, password)
+		if tried > 0 {
+			spent = tried
+		}
 		if err != nil {
 			return err
 		}
@@ -139,9 +143,13 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 			// Every way of being wrong is one answer, and the function
 			// above spends a password hash even when refusing, so that a
 			// guess learns nothing from how long it took. This is the
-			// failure the budget exists to count.
+			// failure the budget exists to count -- and it is counted in
+			// hashes rather than in tries, because a refusal tries every
+			// app password the mailbox has. Counted as one, a mailbox with
+			// twenty devices sold twenty times as much of this server's
+			// time per token as an empty one.
 			if self.limiter != nil {
-				self.limiter.Allow(from)
+				self.limiter.For(from).Take(int64(spent))
 			}
 			self.askForCredentials(response)
 			return nil, false

@@ -1281,6 +1281,16 @@ the extension. Unset means yes.
 **`allowPrivateAddresses`** — Hosts the headless browser may reach inside
 the network, which the address guard would otherwise refuse.
 
+**`proxyListen`** — Where the guarded proxy binds. Every page this server
+opens goes out through that proxy, which is what resolves names for the
+browser so that nothing else does: the check then runs on the address the
+connection is actually made to, rather than on a name that may resolve
+differently a moment later. Empty binds an unused port on the one address Chrome
+reaches this server at — its own connection says which that is, so it works
+whether Chrome runs on this machine or in a container beside it, without
+putting the proxy on every other network this machine is on. Set it when that guess is wrong, or to pin the port for a firewall.
+The proxy requires a password that only this server and its Chrome know.
+
 **`idleTimeout`** — How long a run's browser context outlives its last use.
 
 **`maxContexts`** — How many contexts may be open at once.

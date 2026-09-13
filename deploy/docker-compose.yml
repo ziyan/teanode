@@ -60,7 +60,16 @@ services:
     environment:
       POSTGRES_DB: teanode
       POSTGRES_USER: teanode
-      POSTGRES_PASSWORD: teanode
+      # From the .env beside this file, which "teanode-server config env"
+      # generates along with the connection string that uses it. The word
+      # "teanode" is what it used to be, which is a password every reader of
+      # this repository knows; it is still the fallback so that a deployment
+      # created before this change keeps starting, and rotating it is in
+      # docs/reference/deployment.md.
+      #
+      # It is only read when the database is first created. Changing it
+      # afterwards changes nothing about the database itself.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teanode}
     # Serve TLS. The connection string in .env asks for it and verifies the
     # certificate, so turning this off means the server can no longer connect.
     command:

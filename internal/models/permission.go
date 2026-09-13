@@ -233,6 +233,37 @@ func (self *EffectivePermissions) HasAnywhere(permission Permission) bool {
 	return false
 }
 
+// Covers reports whether these permissions include everything another set
+// holds -- server-wide permissions and domain ones alike.
+//
+// It is the question "may this person hand that out": somebody who may change
+// who is in a group, or what a role carries, is deciding what other people may
+// do, and nobody should be able to give away more than they have. Without it,
+// the permission to manage accounts was the permission to become an
+// administrator -- add yourself to the group that already holds everything,
+// and the next request is answered with every permission on the server.
+func (self *EffectivePermissions) Covers(other *EffectivePermissions) bool {
+	if other == nil {
+		return true
+	}
+	if self == nil {
+		return len(other.Everywhere) == 0 && len(other.ByDomain) == 0
+	}
+	for _, permission := range other.Everywhere {
+		if !self.Has(permission) {
+			return false
+		}
+	}
+	for _, entry := range other.ByDomain {
+		for _, permission := range entry.Permissions {
+			if !self.HasOverDomain(permission, entry.DomainID) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // DomainsWith lists the domains a domain permission is held over, and whether
 // it is held over all of them.
 func (self *EffectivePermissions) DomainsWith(permission Permission) (domainIds []string, all bool) {

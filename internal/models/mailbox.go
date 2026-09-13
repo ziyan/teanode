@@ -456,10 +456,20 @@ type MailboxContact struct {
 // which mailbox that is. One per device, revocable alone; the hash never
 // leaves the server.
 type MailboxAppPassword struct {
-	ID           string     `json:"id"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	MailboxID    string     `json:"mailboxId"`
-	Name         string     `json:"name"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	MailboxID string    `json:"mailboxId"`
+	Name      string    `json:"name"`
+
+	// Selector is the tag the password itself carries, which says which of a
+	// mailbox's passwords is being offered. Not a secret -- it names the row
+	// rather than opening it -- and empty for one made before this was
+	// written down.
+	//
+	// It exists because the username is the mailbox's address: twenty
+	// devices are twenty passwords behind one name, and without a tag a
+	// sign-in had to try every one of them.
+	Selector     string     `json:"selector,omitempty"`
 	PasswordHash string     `json:"-"`
 	LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
 }

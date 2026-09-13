@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -235,5 +236,30 @@ func TestOAuthDiscoversBeginsAndExchanges(t *testing.T) {
 	}
 	if refreshed.AccessToken != "access-2" || refreshed.RefreshToken != "refresh-1" || !refreshed.Expired(time.Now().Add(2*time.Minute)) {
 		t.Fatalf("refreshed %+v", refreshed)
+	}
+}
+
+// A session is cleared when the server stops answering, and a turn that took
+// the client a moment earlier still holds the old one. Every call on it has
+// to say there is no session rather than dereference nothing: this runs on
+// the goroutine of one agent turn, and a panic there is the whole program.
+func TestCallingAServerWithNoSessionIsAnErrorNotAPanic(t *testing.T) {
+	t.Parallel()
+
+	var none *Client
+	if _, err := none.CallTool(context.Background(), "anything", nil); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("calling a tool: %v", err)
+	}
+	if _, err := none.ListTools(context.Background()); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("listing tools: %v", err)
+	}
+	if _, err := none.Initialize(context.Background(), "TeaNode", "test"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("initializing: %v", err)
+	}
+	if got := none.Server(); got.Name != "" {
+		t.Fatalf("what it said about itself: %+v", got)
+	}
+	if err := none.Close(); err != nil {
+		t.Fatalf("closing: %s", err)
 	}
 }

@@ -55,7 +55,11 @@ func (self *Agent) browserFor(ctx context.Context, run *AskRun) (*browser.Contex
 		}
 		self.contextsMutex.Unlock()
 	}
-	opened, err := browser.Connect(ctx, &browser.Settings{Endpoint: configuration.Agent.Browser.CDPEndpoint, AllowPrivate: configuration.Agent.Browser.AllowPrivateAddresses})
+	opened, err := browser.Connect(ctx, &browser.Settings{
+		Endpoint:     configuration.Agent.Browser.CDPEndpoint,
+		AllowPrivate: configuration.Agent.Browser.AllowPrivateAddresses,
+		ProxyListen:  configuration.Agent.Browser.ProxyListen,
+	})
 	if err != nil {
 		release()
 		return nil, err

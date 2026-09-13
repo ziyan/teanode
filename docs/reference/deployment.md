@@ -116,12 +116,31 @@ Delete them. What has to stay:
 | `TEANODE_INSTANCE_ID` | only if you set one; it has to differ between instances |
 | `TEANODE_SERVER_DATA_DIRECTORY` | read from the environment, not from the database, so that a staged upgrade can be found before the database is open |
 | `TEANODE_S3_*` | **only if you run the `cluster` profile** — compose passes these to MinIO as its root credentials, so deleting them changes the credentials on the next recreate |
+| `POSTGRES_PASSWORD` | the password the compose file created PostgreSQL with. It is only read when the database is first created, but the line records what the connection string above is signing in with |
 
 That last row is the trap: they read like settings that moved into the
 database, and they are, but the compose file also interpolates them into a
 different service.
 
 Settings change in the dashboard from here on, or with `config import`.
+
+### Rotating the database password
+
+A deployment created before this file generated one is using `teanode`, which
+is the word this repository publishes. PostgreSQL only reads
+`POSTGRES_PASSWORD` when it creates the database, so changing the line alone
+does nothing. Change it in the database itself, then in the file:
+
+    docker compose exec postgres psql -U teanode -c "ALTER USER teanode PASSWORD 'the new one'"
+
+then put the same string in both places in `.env` — `POSTGRES_PASSWORD`, and
+the password inside `TEANODE_DATABASE_URL` — and
+
+    docker compose up -d teanode
+
+The database is reachable on the loopback address only, so this is worth doing
+on a machine other things run on, and worth doing before anyone else has an
+account on it.
 
 ## Choosing a spam filter
 

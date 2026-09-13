@@ -164,6 +164,32 @@ func (self *stage) deliverAs(t *testing.T, name, from string, passedDMARC, spam 
 	}
 }
 
+// deliverSubmitted is a message this server took from somebody who signed in
+// and delivered without it ever leaving: nothing evaluated SPF, DKIM or
+// DMARC over it, because there was no wire for it to arrive on.
+func (self *stage) deliverSubmitted(t *testing.T, name, from string, headers []string, body []byte) {
+	t.Helper()
+	var mailId string
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		created, err := tx.CreateMail(&models.Mail{
+			ReceivedAt: time.Now(), From: from, Kind: models.MailKindOutgoing,
+		}, nil)
+		if err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+		mailId = created.ID
+		if _, err := tx.NoteCalendarInvitation(&models.CalendarInvitation{
+			UserID: self.userID, MailboxID: self.mailboxID, ItemID: "item-" + name, MailID: mailId,
+			Recipient: self.recipient,
+		}); err != nil {
+			t.Fatalf("NoteCalendarInvitation: %s", err)
+		}
+	})
+	if err := self.store.Put(context.Background(), mailId, headers, body); err != nil {
+		t.Fatalf("storing: %s", err)
+	}
+}
+
 // work runs one tick.
 func (self *stage) work(t *testing.T) {
 	t.Helper()
@@ -252,6 +278,37 @@ func TestAnUnprovenInvitationIsNotOne(t *testing.T) {
 	}
 	if len(here.events(t)) != 0 {
 		t.Fatal("and nothing should have been put in the calendar")
+	}
+}
+
+// An invitation from the next desk is an invitation.
+//
+// A message between two mailboxes on this server never goes out and never
+// comes back: the submission is delivered into the recipient's mailbox in the
+// same transaction, so nothing evaluates SPF, DKIM or DMARC over it and there
+// is no result to read. Asking only "did DMARC pass" ignored every invitation
+// sent by a colleague -- which on a small server is most of them.
+//
+// What stands in its place is stronger: this server took the message from a
+// session it authenticated, and checked the address that session was allowed
+// to send as.
+func TestAnInvitationFromSomebodyWhoSignedInHereIsOne(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-standup", "Standup",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverSubmitted(t, "mail1", "grace@example.com", headers, body)
+	here.work(t)
+
+	invitation := here.invitation(t, "mail1")
+	if invitation.Status != models.CalendarInvitationRead {
+		t.Fatalf("it was read: %s %s", invitation.Status, invitation.Error)
+	}
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "Standup" {
+		t.Fatalf("one event: %+v", events)
 	}
 }
 

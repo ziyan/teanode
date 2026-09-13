@@ -94,6 +94,25 @@ func (self *Configuration) validateServer(validator *validator) {
 	}
 }
 
+// listensLocally is whether an address is one only this machine can reach.
+// An empty host means every interface, which is the answer this exists to
+// refuse.
+func listensLocally(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	return parsed != nil && parsed.IsLoopback()
+}
+
 func (self *Configuration) validateListen(validator *validator) {
 	addresses := map[string]string{
 		"listen.smtpIncoming": self.Listen.SMTPIncoming,
@@ -122,6 +141,16 @@ func (self *Configuration) validateListen(validator *validator) {
 		}
 		if other, ok := seen[address]; ok {
 			validator.add(path, "%q is already used by %s; two listeners cannot share an address", address, other)
+			continue
+		}
+		// The debugging listener answers anybody who asks: the runtime's
+		// profiles, the goroutine stacks, the command line, and a profile
+		// whose length the caller chooses. It has no authentication and no
+		// deadlines, and it is a free-text field on the settings page, so
+		// "bind it to localhost only" being written in a comment was the
+		// whole of the check.
+		if path == "listen.debug" && !listensLocally(address) {
+			validator.add(path, "%q would answer anybody: the debugging listener has no password, so it takes a loopback address such as 127.0.0.1:6060", address)
 			continue
 		}
 		seen[address] = path

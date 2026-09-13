@@ -90,3 +90,51 @@ func TestSeededRoles(t *testing.T) {
 		t.Error("a member manages")
 	}
 }
+
+// Nobody hands out what they do not hold.
+//
+// Somebody who may change who is in a group, or what a role carries, is
+// deciding what other people may do -- and the comment beside that check used
+// to say the reach came from the roles and the domains rather than from the
+// membership. The membership is the reach: a group already carries its roles,
+// so adding yourself to the one that carries everything is administrator from
+// the next request onwards, without touching a role at all.
+func TestNobodyHandsOutWhatTheyDoNotHold(t *testing.T) {
+	t.Parallel()
+
+	administrator := NewEffectivePermissions([]Grant{
+		{Permission: PermissionUserManage},
+		{Permission: PermissionGroupManage},
+		{Permission: PermissionRoleManage},
+		{Permission: PermissionServerManage},
+	})
+	helpdesk := NewEffectivePermissions([]Grant{{Permission: PermissionUserManage}})
+
+	if !administrator.Covers(helpdesk) {
+		t.Fatal("an administrator covers a helpdesk")
+	}
+	if helpdesk.Covers(administrator) {
+		t.Fatal("a helpdesk does not cover an administrator, which is the whole point")
+	}
+	if !helpdesk.Covers(NewEffectivePermissions(nil)) {
+		t.Fatal("everybody covers nothing")
+	}
+	if !helpdesk.Covers(helpdesk) {
+		t.Fatal("and covers what they hold themselves")
+	}
+
+	// Over domains, the same question is asked domain by domain.
+	oneDomain := NewEffectivePermissions([]Grant{{Permission: PermissionDomainManage, DomainID: "d1"}})
+	otherDomain := NewEffectivePermissions([]Grant{{Permission: PermissionDomainManage, DomainID: "d2"}})
+	if oneDomain.Covers(otherDomain) {
+		t.Fatal("holding a permission over one domain is not holding it over another")
+	}
+	if !oneDomain.Covers(oneDomain) {
+		t.Fatal("over its own domain it does")
+	}
+	// And the all-domains permission covers any one of them.
+	everywhere := NewEffectivePermissions([]Grant{{Permission: PermissionDomainManageAll}})
+	if !everywhere.Covers(otherDomain) {
+		t.Fatalf("holding it everywhere covers holding it over one: %+v", everywhere)
+	}
+}

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // A word to a turn from wherever the person is: stop it, answer what it
@@ -108,6 +110,7 @@ func (self *Agent) listenCommands() {
 	}
 	self.waitGroup.Add(1)
 	go func() {
+		defer deferutil.Recover()
 		defer self.waitGroup.Done()
 		for payload := range payloads {
 			var command RunCommand

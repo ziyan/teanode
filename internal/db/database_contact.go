@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -176,6 +177,39 @@ func (self *transaction) DeleteAddressBook(addressBookId string) error {
 // enforced on one of two doors is not a limit.
 const ContactsPerBook = 10000
 
+// BytesPerBook is how much one address book may hold, counted in the cards
+// themselves.
+//
+// The count above bounds the wrong thing on its own. A card may be a megabyte
+// -- a photograph makes one -- so ten thousand of them is ten gigabytes, and
+// the listing a client reads is the whole book built in memory and then
+// serialised whole, because the protocol library has no streaming. Two
+// thousand legal cards were therefore a way for one account to take the
+// server down for everybody on it.
+//
+// Sixty-four megabytes is far past any address book a person keeps: sixty
+// thousand ordinary cards, or thirteen hundred carrying a photograph. It is
+// checked where a card is written, so a client is told plainly.
+const BytesPerBook = 64 << 20
+
+// ErrBookFull is a book that cannot take another card. Named, because the
+// answer a client is given for it is a status that makes it stop rather than
+// retry for ever.
+var ErrBookFull = errors.New("db: that address book is full")
+
+// bookBytes is what a book holds now, not counting the card being replaced.
+func (self *transaction) bookBytes(addressBookId, exceptId string) (int64, error) {
+	var total int64
+	query := self.tx.Model(&contactModel{}).Where("\"addressbook_id\" = ?", addressBookId)
+	if strings.TrimSpace(exceptId) != "" {
+		query = query.Where("\"id\" <> ?", strings.TrimSpace(exceptId))
+	}
+	if err := query.Select("COALESCE(SUM(LENGTH(\"card\")), 0)").Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // ListContacts are one book's, by name. A query narrows by name, organization
 // or address, which is what a person typing into a search box means.
 func (self *transaction) ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error) {
@@ -288,6 +322,17 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 	}
 	if row.CreatedAt.IsZero() {
 		row.CreatedAt = now
+	}
+	// And the book has a size, not only a count. Ten thousand cards of a
+	// megabyte each is ten gigabytes, and a listing is the whole book in
+	// one answer, built in memory before a byte of it is written.
+	held, err := self.bookBytes(row.AddressBookID, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	if held+int64(len(row.Card)) > BytesPerBook {
+		return nil, fmt.Errorf("%w: it holds %d bytes and this card is %d, against a limit of %d",
+			ErrBookFull, held, len(row.Card), BytesPerBook)
 	}
 	if err := self.tx.Save(row).Error; err != nil {
 		return nil, err

@@ -6,6 +6,95 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An invitation that arrives as mail is read whether or not it was encoded on
+  the way here, which nearly all of them are: a base64 invitation was handed
+  to the reader as base64, read as no calendar at all, and silently was not an
+  invitation. And an invitation from somebody with a mailbox on this server is
+  one: it never leaves the server, so nothing checked where it came from, and
+  asking only that question ignored every meeting called by a colleague.
+
+### Changed
+
+- The headless browser reaches the web through this server, which is now the
+  only thing that looks a name up for it. The check used to resolve the name
+  here and then let the browser resolve it again, which is a window a name can
+  answer differently in -- publicly the first time and "this machine" the
+  second.
+
+- An attachment shown in the reader is shown with nothing behind it: no
+  origin, nothing loaded, nothing run. It matters most for a PDF, which is a
+  format with a scripting engine in it and was being opened on the dashboard's
+  own origin.
+
+- A page on another site cannot open the dashboard's websocket with your
+  session. What stood there compared a header against a cookie nothing sets,
+  so it compared nothing with nothing and passed.
+
+- An agent that cannot reach a connected server says so instead of stopping
+  the server. Every one of the agent's own background tasks now recovers from
+  a failure the way the rest of this program does, so one bad answer from
+  somewhere else costs that turn rather than every connection and delivery in
+  flight.
+
+- "teanode-server config env" generates the database password rather than
+  writing the one this repository publishes. An existing deployment keeps the
+  password it has; docs/reference/deployment.md says how to change it.
+
+- The workflows that build and publish a release name every action they run by
+  its exact commit, so a tag moving elsewhere cannot change what runs with a
+  token that can publish.
+
+- A page on another site cannot make your browser run a dashboard action by
+  posting a form at it.
+
+- The agent asks before a command on your computer fetches from the network,
+  which it already did for commands that reach another machine by other means.
+
+- The debugging listener, which answers anybody, refuses to start on an
+  address other than this machine's own.
+
+- A browser that reaches this server through a proxy is told to keep using
+  HTTPS, which it was not being told when the proxy ended the encryption.
+
+- Identifiers are drawn from the system's cryptographic randomness.
+
+- Nobody can hand out a permission they do not hold themselves. Changing who
+  is in a group, moving an account between groups, setting somebody else's
+  password and writing a permission into a role are all bounded by what the
+  person doing it may do -- so the permission to manage accounts is no longer
+  a way to become an administrator by joining the group that already is one.
+
+- A new app password carries a short tag saying which password it is, so
+  signing in is one check instead of one per device on the mailbox. The
+  username is unchanged -- still your address -- and passwords made before
+  this keep working.
+
+- A wrong app password costs this server what it costs, and no more. A refused
+  sign-in tries every app password on the mailbox, so a mailbox with twenty
+  devices was twenty times as expensive to guess at as an empty one; and the
+  password a device used last time is tried first, so signing in normally
+  costs one check rather than twenty.
+
+- The IMAP listeners serve only so many connections at once, as the mail
+  listeners already did.
+
+- Sending an invitation, calling a meeting off, and answering one all need
+  permission to send mail, which every other way of sending already needed.
+
+- A connected server can no longer point this server at an address of its
+  choosing while it is being set up, and a person's credentials are only sent
+  to an endpoint reached over HTTPS.
+
+- An address book and a calendar are bounded by what they hold as well as by
+  how many things are in them. A listing is read whole, so ten thousand
+  one-megabyte cards was a way to exhaust the server's memory.
+
+- A calendar part in a message is read only once the message has proved where
+  it came from, and a file naming hundreds of unknown time zones is read in a
+  fraction of the time it used to take.
+
 ## [0.21.2] - 2026-09-13
 
 ### Changed

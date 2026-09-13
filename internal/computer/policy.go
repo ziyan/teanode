@@ -67,6 +67,13 @@ var asked = []pattern{
 	{regexp.MustCompile(boundary + `git\s+(?:[^;&|]*\s)?(?:push|reset\s+--hard|clean\s+-[a-zA-Z]*[fdx]|checkout\s+--\s|restore\s|branch\s+-[dD]|rebase)(?:\s|$)`), "changes a git history or a remote"},
 	{regexp.MustCompile(`(?:curl|wget)\s[^;&|]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh(?:\s|$)`), "runs what it downloads"},
 	{regexp.MustCompile(boundary + `(?:ssh|scp|sftp|rsync|ftp|nc|ncat|telnet)\s`), "reaches another machine"},
+	// Fetching is reaching out too, and it is the ordinary way to do it:
+	// this list asked about ssh and not about curl, while the tool's own
+	// description promised that "reaching out of it" asks first. One line
+	// sends any file on the machine to anywhere -- and the rule above it
+	// only catches a download piped straight into a shell, which wants a
+	// literal pipe.
+	{regexp.MustCompile(boundary + `(?:curl|wget|httpie|http)\s`), "reaches another machine"},
 	{regexp.MustCompile(boundary + `(?:crontab|systemctl|launchctl|service|sc)\s`), "changes what runs on its own"},
 	{regexp.MustCompile(boundary + `(?:docker|podman)\s+(?:[^;&|]*\s)?(?:rm|rmi|prune|kill|stop|down)(?:\s|$)`), "removes or stops containers"},
 	{regexp.MustCompile(boundary + `(?:dd|truncate|shred|wipefs|fdisk|parted|diskutil)\s`), "writes over storage"},

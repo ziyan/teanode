@@ -299,8 +299,14 @@ func settleZones(cal *ical.Calendar) {
 		}
 	}
 	// What is left is a zone nobody can name. Its times become instants.
-	for tzid, zone := range unnameable {
-		asInstants(cal, tzid, zone)
+	//
+	// All of them in one walk. A walk per zone meant a file describing six
+	// hundred unnameable zones walked every property six hundred times: a
+	// megabyte of iCalendar, which anybody may send to a served address,
+	// cost about a second of a core. It is the shape an earlier audit found
+	// in a header parser, in a file written after it.
+	if len(unnameable) > 0 {
+		asInstants(cal, unnameable)
 	}
 }
 
@@ -373,7 +379,13 @@ func whenItStarts(cal *ical.Calendar) time.Time {
 // in an unnameable zone does not follow that zone through a change. Nobody can
 // say which zone it is, so there is nothing better to follow -- and it is far
 // better than the event not existing.
-func asInstants(cal *ical.Calendar, tzid string, zone *ical.Component) {
+func asInstants(cal *ical.Calendar, unnameable map[string]*ical.Component) {
+	// Named the way a property names them, so a property is matched by one
+	// lookup rather than by a pass over every zone.
+	byName := make(map[string]*ical.Component, len(unnameable))
+	for tzid, zone := range unnameable {
+		byName[strings.ToLower(strings.TrimSpace(tzid))] = zone
+	}
 	for _, component := range cal.Children {
 		if component.Name == ical.CompTimezone {
 			continue
@@ -381,7 +393,9 @@ func asInstants(cal *ical.Calendar, tzid string, zone *ical.Component) {
 		for name := range component.Props {
 			for index := range component.Props[name] {
 				property := &component.Props[name][index]
-				if !strings.EqualFold(strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID)), tzid) {
+				named := strings.ToLower(strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID)))
+				zone, unnamed := byName[named]
+				if !unnamed {
 					continue
 				}
 				// One value per property by now, since the lists were

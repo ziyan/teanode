@@ -95,6 +95,13 @@ func (self *mail) attachmentView(response http.ResponseWriter, request *http.Req
 		fmt.Sprintf("%s; filename=%q", disposition, attachmentFilename(part.Filename, index)))
 	// A stranger's file must not be sniffed into something executable.
 	response.Header().Set("X-Content-Type-Options", "nosniff")
+	// And whatever it turns out to be, it is on its own: no origin, nothing
+	// loaded, nothing run. The short list above is the first answer and this
+	// is the second, which matters most for the one displayable type that is
+	// a program -- a PDF can carry script, and it is shown by the browser on
+	// the origin the dashboard's session belongs to. The same header the
+	// address book puts on a contact's picture.
+	response.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	response.WriteHeader(http.StatusOK)
 	if _, err := response.Write(part.Content); err != nil {
 		log.Debugf("failed to write attachment %d of %q: %s", index, variables["mailId"], err)

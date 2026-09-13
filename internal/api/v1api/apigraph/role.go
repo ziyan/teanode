@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -55,6 +56,34 @@ func (self *graph) ListPermissions(ctx context.Context) ([]*PermissionDescriptio
 
 // requireRoleReader is whoever may see the roles: those who edit them, and
 // those who attach them to groups.
+// mayWrite refuses to let somebody put a permission into a role that they do
+// not hold themselves.
+//
+// A role is the permissions, and whoever may write one decides what everybody
+// carrying it may do. Without this, the permission to manage roles was the
+// permission to hold every other one: write them into a role, put the role on
+// a group you are in, and the next request is answered with all of them.
+func mayWrite(principal *api.Principal, permissions []models.Permission) error {
+	for _, permission := range permissions {
+		switch permission.Kind() {
+		case models.PermissionKindServer, models.PermissionKindAllDomains:
+			if !principal.Permissions.Has(permission) {
+				return fmt.Errorf("%w: you do not hold %s, so it is not yours to give",
+					api.ErrPermissionDenied, permission)
+			}
+		case models.PermissionKindDomain:
+			// A role says what its holders may do over whichever domains
+			// the group carrying it names, so the question is whether this
+			// person holds it anywhere at all.
+			if !principal.Permissions.HasAnywhere(permission) {
+				return fmt.Errorf("%w: you do not hold %s over any domain, so it is not yours to give",
+					api.ErrPermissionDenied, permission)
+			}
+		}
+	}
+	return nil
+}
+
 func (self *graph) requireRoleReader(ctx context.Context) (*api.Principal, error) {
 	principal, err := self.requireSignedIn(ctx)
 	if err != nil {
@@ -80,7 +109,11 @@ type CreateRoleArguments struct {
 }
 
 func (self *graph) CreateRole(ctx context.Context, arguments CreateRoleArguments) (*models.Role, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionRoleManage); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionRoleManage)
+	if err != nil {
+		return nil, err
+	}
+	if err := mayWrite(principal, arguments.Permissions); err != nil {
 		return nil, err
 	}
 	role := &models.Role{Name: strings.TrimSpace(arguments.Name), Permissions: arguments.Permissions}
@@ -103,8 +136,14 @@ type UpdateRoleArguments struct {
 }
 
 func (self *graph) UpdateRole(ctx context.Context, arguments UpdateRoleArguments) (*models.Role, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionRoleManage); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionRoleManage)
+	if err != nil {
 		return nil, err
+	}
+	if arguments.Permissions != nil {
+		if err := mayWrite(principal, *arguments.Permissions); err != nil {
+			return nil, err
+		}
 	}
 	updated, err := self.transaction(ctx).UpdateRole(arguments.RoleID, func(role *models.Role) error {
 		if arguments.Name != nil {

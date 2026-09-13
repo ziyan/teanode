@@ -897,7 +897,8 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// authority arrives with no session.
 	self.handler = web.ApplyMiddlewares(webServer,
 		web.MakeServerNameMiddleware(fmt.Sprintf("teanode/%s", version.Version())),
-		web.MakeSecurityHeadersMiddleware(frontend.InlineScriptHashes()),
+		web.MakeSecurityHeadersMiddleware(frontend.InlineScriptHashes(),
+			func() []string { return self.store.Current().Server.TrustedProxies }),
 		web.MakeAuthenticationMiddleware(authenticator, autoacme.ChallengePath),
 		web.NoStoreMiddleware,
 		web.LoggingMiddleware,
@@ -960,6 +961,12 @@ func withChallengeHandler(handler http.Handler, manager autoacme.Manager, redire
 // serves at once. Each holds a goroutine and, once it sends DATA, a buffer
 // the size of the largest message allowed, for up to an hour; a thousand of
 // them is what a busy server sees and what this process can hold.
+// mailProgramConnectionsAtOnce bounds the IMAP listeners, for the reason the
+// mail listeners are bounded: every accepted connection is a goroutine with
+// its buffers, a bare NOOP resets the read deadline, and both ports are open
+// to anybody.
+const mailProgramConnectionsAtOnce = 1000
+
 const smtpConnectionsAtOnce = 1000
 
 // authLimiterAddresses caps how many addresses the submission limiter keeps
@@ -1189,6 +1196,12 @@ func (self *server) serve(ctx context.Context) error {
 		TLSConfig:   tlsConfig,
 		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
 		AuthLimiter: authLimiter,
+		// The same ceiling the mail listeners have had since an earlier
+		// audit, on the listeners it was not applied to. A mail program
+		// holds one connection per mailbox and idles on it, so a person
+		// with several devices is a handful; a thousand is everybody's
+		// devices at once and then some.
+		MaxConnections: mailProgramConnectionsAtOnce,
 	}
 	if self.listeners.imap != nil {
 		waitGroup.Add(1)

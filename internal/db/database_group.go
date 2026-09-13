@@ -26,6 +26,9 @@ type GroupOperation interface {
 	// EffectivePermissions is what a user may do, from every group they are
 	// in: the groups' roles crossed with the groups' domains.
 	EffectivePermissions(userId string) (*models.EffectivePermissions, error)
+
+	// GroupPermissions is what belonging to one group carries.
+	GroupPermissions(groupId string) (*models.EffectivePermissions, error)
 }
 
 type groupModel struct {
@@ -318,6 +321,50 @@ func (self *transaction) EffectivePermissions(userId string) (*models.EffectiveP
 		switch permission.Kind() {
 		case models.PermissionKindDomain:
 			for _, domainId := range domainsByGroup[row.GroupID] {
+				grants = append(grants, models.Grant{Permission: permission, DomainID: domainId})
+			}
+		case models.PermissionKindServer, models.PermissionKindAllDomains:
+			grants = append(grants, models.Grant{Permission: permission})
+		}
+	}
+	return models.NewEffectivePermissions(grants), nil
+}
+
+// GroupPermissions is what belonging to one group carries, in the same shape
+// a person's own permissions come in.
+//
+// Asked before a group's membership changes: nobody may put somebody into a
+// group -- themselves included -- that holds more than they hold themselves.
+func (self *transaction) GroupPermissions(groupId string) (*models.EffectivePermissions, error) {
+	if strings.TrimSpace(groupId) == "" {
+		return models.NewEffectivePermissions(nil), nil
+	}
+	var permissionKeys []string
+	if err := self.tx.
+		Table("\"group_role\" AS gr").
+		Select("DISTINCT rp.\"permission_key\"").
+		Joins("INNER JOIN \"role_permission\" AS rp ON rp.\"role_id\" = gr.\"role_id\"").
+		Where("gr.\"group_id\" = ?", groupId).
+		Scan(&permissionKeys).Error; err != nil {
+		return nil, err
+	}
+	if len(permissionKeys) == 0 {
+		return models.NewEffectivePermissions(nil), nil
+	}
+	var domainIds []string
+	if err := self.tx.
+		Table("\"group_domain\"").
+		Select("\"domain_id\"").
+		Where("\"group_id\" = ?", groupId).
+		Scan(&domainIds).Error; err != nil {
+		return nil, err
+	}
+	var grants []models.Grant
+	for _, key := range permissionKeys {
+		permission := models.Permission(key)
+		switch permission.Kind() {
+		case models.PermissionKindDomain:
+			for _, domainId := range domainIds {
 				grants = append(grants, models.Grant{Permission: permission, DomainID: domainId})
 			}
 		case models.PermissionKindServer, models.PermissionKindAllDomains:

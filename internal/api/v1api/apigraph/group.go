@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -94,6 +95,25 @@ type UpdateGroupArguments struct {
 	DomainIDs   *[]string `json:"domainIds"`
 }
 
+// mayHandOut refuses to let somebody put a person into a group that holds
+// more than they hold themselves.
+//
+// Changing who is in a group is deciding what those people may do, and
+// somebody may not give away what they have not got -- least of all to
+// themselves. The console is exempt: it is the account that bootstraps the
+// server and holds everything by construction.
+func (self *graph) mayHandOut(ctx context.Context, principal *api.Principal, groupId string) error {
+	carried, err := self.transaction(ctx).GroupPermissions(groupId)
+	if err != nil {
+		return translateError(err)
+	}
+	if principal.Permissions.Covers(carried) {
+		return nil
+	}
+	return fmt.Errorf("%w: that group holds permissions you do not, so its membership is not yours to change",
+		api.ErrPermissionDenied)
+}
+
 func (self *graph) UpdateGroup(ctx context.Context, arguments UpdateGroupArguments) (*models.Group, error) {
 	principal, err := self.requireSignedIn(ctx)
 	if err != nil {
@@ -110,6 +130,18 @@ func (self *graph) UpdateGroup(ctx context.Context, arguments UpdateGroupArgumen
 		}
 	} else if !principal.Permissions.Has(models.PermissionGroupManage) {
 		return nil, api.ErrNotFound
+	}
+	// And nobody hands out more than they hold.
+	//
+	// The comment above used to say that somebody with only user:manage
+	// cannot touch the roles or the domains, "which is where the reach comes
+	// from". The reach is the membership: a group already carries its roles,
+	// so adding yourself to the one that carries everything is administrator
+	// from the next request onwards, without touching a role at all.
+	if arguments.UserIDs != nil {
+		if err := self.mayHandOut(ctx, principal, arguments.GroupID); err != nil {
+			return nil, err
+		}
 	}
 	updated, err := self.transaction(ctx).UpdateGroup(arguments.GroupID, func(group *models.Group) error {
 		if arguments.Name != nil {

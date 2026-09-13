@@ -77,7 +77,7 @@ check-config-docs: ## Fail if a configuration field is not documented
 
 lint-ci: check check-secrets check-catalogs check-config-docs ## Run the linters CI runs
 	@set -e; \
-	if ! hash $(GOLANGCI_LINT) >/dev/null 2>&1; then \
+	if ! $(GOLANGCI_LINT) --version 2>/dev/null | grep -qF "$(GOLANGCI_LINT_VERSION:v%=%)"; then \
 		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
 	fi; \
 	$(GOLANGCI_LINT) run $(GOPACKAGES)

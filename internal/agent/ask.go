@@ -19,6 +19,8 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/version"
+
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // Ask is the person talking to their agent: a conversation kept in the
@@ -222,7 +224,12 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	self.latest[settings.Conversation.ID] = run
 	self.runsMutex.Unlock()
 	self.waitGroup.Add(1)
+	// A turn is the model's own instructions carried out against a stranger's
+	// mail, over tools that reach servers this program did not write. It is
+	// exactly the place this codebase puts a guard: a panic in one turn costs
+	// that turn, not every delivery in flight and every connection open.
 	go func() {
+		defer deferutil.Recover()
 		defer self.waitGroup.Done()
 		run.loop()
 	}()
@@ -744,6 +751,7 @@ func (self *AskRun) turn() error {
 			if settings.Conversation.Kind == models.AgentConversationNamed && strings.TrimSpace(settings.Conversation.Title) == "" {
 				self.agent.waitGroup.Add(1)
 				go func() {
+					defer deferutil.Recover()
 					defer self.agent.waitGroup.Done()
 					titled, err := self.agent.describeConversation(self.agent.ctx, settings.Conversation)
 					if err != nil {
