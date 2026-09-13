@@ -7230,6 +7230,21 @@ button.with-icon {
   min-height: 0;
 }
 
+/* A line of text where a list would be: an empty agenda, or the wait before
+   one arrives. Centred in the space the list would have filled, because the
+   agenda fills the page and a sentence pinned to the top-left corner of a
+   tall empty box reads as something that failed to load. */
+.calendar-notice {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  margin: 0;
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+}
+
 .calendar-agenda-row {
   display: flex;
   align-items: center;

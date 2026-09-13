@@ -621,7 +621,7 @@ export function CalendarPage() {
         </button>
       </div>
 
-      {loading && <p className="muted">{t('common.loading')}</p>}
+      {loading && <p className="calendar-notice muted">{t('common.loading')}</p>}
 
       {!loading && view === 'month' && (
         <div className="calendar-month-scroll">
@@ -784,7 +784,7 @@ export function CalendarPage() {
 
       {!loading && view === 'agenda' && (
         <div className="calendar-agenda">
-          {found.length === 0 && <p className="muted">{t('calendar.empty')}</p>}
+          {found.length === 0 && <p className="calendar-notice muted">{t('calendar.empty')}</p>}
           {found.map((event) => (
             <div key={event.id + event.startsAt} className="calendar-agenda-row">
               <div className="calendar-agenda-when">
