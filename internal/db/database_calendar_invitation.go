@@ -25,6 +25,7 @@ type calendarInvitationModel struct {
 	MailboxID  string    `gorm:"column:mailbox_id"`
 	ItemID     string    `gorm:"column:item_id"`
 	MailID     string    `gorm:"column:mail_id"`
+	Recipient  string    `gorm:"column:recipient"`
 	CreatedAt  time.Time `gorm:"column:created_at"`
 	ModifiedAt time.Time `gorm:"column:modified_at"`
 
@@ -48,7 +49,7 @@ func (calendarInvitationModel) TableName() string { return "calendar_invitation"
 func (self *calendarInvitationModel) toModel() *models.CalendarInvitation {
 	invitation := &models.CalendarInvitation{
 		ID: self.ID, UserID: self.UserID, MailboxID: self.MailboxID,
-		ItemID: self.ItemID, MailID: self.MailID,
+		ItemID: self.ItemID, MailID: self.MailID, Recipient: self.Recipient,
 		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Status: models.CalendarInvitationStatus(self.Status), Attempts: self.Attempts,
 		NotBefore: self.NotBefore, ClaimedAt: self.ClaimedAt, ClaimedBy: self.ClaimedBy,
@@ -83,6 +84,7 @@ func (self *transaction) NoteCalendarInvitation(invitation *models.CalendarInvit
 	row := &calendarInvitationModel{
 		ID: newID(), UserID: invitation.UserID, MailboxID: invitation.MailboxID,
 		ItemID: invitation.ItemID, MailID: invitation.MailID,
+		Recipient: truncateRunes(strings.ToLower(strings.TrimSpace(invitation.Recipient)), 320),
 		CreatedAt: now, ModifiedAt: now,
 		Status: string(models.CalendarInvitationWaiting),
 	}

@@ -663,3 +663,98 @@ func TestARepeatTooFineToReachTheWindowSaysSo(t *testing.T) {
 		t.Fatal("a repeat that cannot be reached is not the same as one with nothing in it")
 	}
 }
+
+// Several excluded dates on one line are honoured.
+//
+// The format allows a list, comma separated, and plenty of programs write one.
+// The library reads a property's value as a single moment, so one such line
+// made the whole recurrence unreadable -- in any zone -- and the event
+// appeared nowhere while a fetch of it still worked.
+func TestSeveralExcludedDatesOnOneLineAreHonoured(t *testing.T) {
+	for _, tzid := range []string{"", "W. Europe Standard Time"} {
+		what := "no zone"
+		listed := wrap(
+			"UID:listed", "DTSTAMP:20260912T120000Z",
+			"DTSTART:20260601T080000Z", "DTEND:20260601T090000Z",
+			"RRULE:FREQ=WEEKLY;COUNT=4",
+			"EXDATE:20260608T080000Z,20260615T080000Z", "SUMMARY:Weekly")
+		if tzid != "" {
+			what = tzid
+			listed = exchangeEvent(tzid, "20260601T100000", []string{
+				"RRULE:FREQ=WEEKLY;COUNT=4",
+				"EXDATE;TZID=" + tzid + ":20260608T100000,20260615T100000",
+			})
+		}
+		parsed := mustParse(t, listed)
+		occurrences, err := Occurrences(parsed,
+			time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		// Four weekly, less the two excluded.
+		if len(occurrences) != 2 {
+			var when []string
+			for _, occurrence := range occurrences {
+				when = append(when, occurrence.StartsAt.Format("01-02"))
+			}
+			t.Errorf("%s: two left, got %d (%s)", what, len(occurrences), strings.Join(when, " "))
+		}
+	}
+}
+
+// A zone whose name this machine maps to the wrong place is not renamed.
+//
+// The table maps names to zones, and a government moving its clocks makes an
+// entry wrong years after it was written. Once renamed the file's own
+// description is never consulted again, so a stale entry would silently move
+// every occurrence with nothing to show for it.
+func TestAZoneIsNotRenamedWhenTheFileDisagrees(t *testing.T) {
+	// A file claiming six hours ahead under a name this table maps to a
+	// zone that keeps a different offset.
+	written := crlf(
+		"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Microsoft Exchange//EN",
+		"BEGIN:VTIMEZONE", "TZID:Not A Real Zone Name",
+		"BEGIN:STANDARD", "DTSTART:16010101T000000", "TZOFFSETFROM:+0600", "TZOFFSETTO:+0600",
+		"END:STANDARD", "END:VTIMEZONE",
+		"BEGIN:VEVENT", "UID:disagrees", "DTSTAMP:20260912T120000Z",
+		"DTSTART;TZID=Not A Real Zone Name:20260701T090000",
+		"DTEND;TZID=Not A Real Zone Name:20260701T100000", "SUMMARY:Somewhere",
+		"END:VEVENT", "END:VCALENDAR")
+	parsed := mustParse(t, written)
+	// Nine in the morning, six hours ahead, is three o'clock UTC -- taken
+	// from what the file says rather than from a guess at the name.
+	if got := parsed.StartsAt.Format("15:04Z"); got != "03:00Z" {
+		t.Fatalf("the file's own offset: %s", got)
+	}
+}
+
+// Renaming never produces two zones under one name.
+//
+// A file may carry the same zone twice under both spellings. Renaming one onto
+// the other leaves two components claiming one identifier, which the format
+// forbids and strict clients refuse -- and this file is stored and served back
+// to phones.
+func TestRenamingDoesNotCollideWithAZoneAlreadyThere(t *testing.T) {
+	if _, err := time.LoadLocation("America/New_York"); err != nil {
+		t.Skipf("this machine has no zone database: %v", err)
+	}
+	eastern := []string{
+		"BEGIN:STANDARD", "DTSTART:16011101T020000", "TZOFFSETFROM:-0400", "TZOFFSETTO:-0500", "END:STANDARD",
+		"BEGIN:DAYLIGHT", "DTSTART:16010308T020000", "TZOFFSETFROM:-0500", "TZOFFSETTO:-0400", "END:DAYLIGHT",
+	}
+	lines := []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//x//EN",
+		"BEGIN:VTIMEZONE", "TZID:Eastern Standard Time"}
+	lines = append(lines, eastern...)
+	lines = append(lines, "END:VTIMEZONE", "BEGIN:VTIMEZONE", "TZID:America/New_York")
+	lines = append(lines, eastern...)
+	lines = append(lines, "END:VTIMEZONE",
+		"BEGIN:VEVENT", "UID:twice", "DTSTAMP:20260912T120000Z",
+		"DTSTART;TZID=America/New_York:20260701T090000",
+		"DTEND;TZID=America/New_York:20260701T100000", "SUMMARY:Twice",
+		"END:VEVENT", "END:VCALENDAR")
+	parsed := mustParse(t, crlf(lines...))
+	if got := strings.Count(string(Unfold(parsed.Data)), "TZID:America/New_York"); got != 1 {
+		t.Fatalf("one zone under that name, not %d:\n%s", got, parsed.Data)
+	}
+}

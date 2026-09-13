@@ -118,5 +118,9 @@ type AgentHook interface {
 // Separate from AgentHook because an invitation is not the agent's business:
 // a person who has never turned an agent on still wants their meetings.
 type CalendarHook interface {
-	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
+	// recipient is the address this was delivered to. An invitation has to
+	// name the person whose calendar it enters, and the address the sender
+	// wrote to is the only place that is reliably known: a mailbox reached
+	// by a catch-all advertises no address of its own.
+	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail)
 }

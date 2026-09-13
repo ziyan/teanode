@@ -422,10 +422,17 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 	}
 	// What the event is now, so that editing the date of a whole-day one
 	// without saying --all-day again does not turn it into a moment.
-	wasAllDay := command.Bool("all-day")
-	if existing, err := client.GetCalendarEvent(ctx, connection, calendar.ID, command.Args().First()); err == nil && existing != nil {
-		wasAllDay = existing.AllDay
+	// Read rather than guessed: falling back to the flag when this fails
+	// answers "not a whole-day event", which is exactly the wrong answer
+	// for the case this exists to fix, and silently.
+	existing, err := client.GetCalendarEvent(ctx, connection, calendar.ID, command.Args().First())
+	if err != nil {
+		return describeError(command, err)
 	}
+	if existing == nil {
+		return fmt.Errorf("no such event")
+	}
+	wasAllDay := existing.AllDay
 	fields, err := eventFieldsFrom(command, calendar, wasAllDay)
 	if err != nil {
 		return err

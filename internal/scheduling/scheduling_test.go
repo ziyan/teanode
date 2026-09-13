@@ -76,12 +76,15 @@ type stage struct {
 	scheduler *scheduling.Scheduler
 	userID    string
 	mailboxID string
+	// The address delivery recorded, which is what an invitation is
+	// checked against.
+	recipient string
 }
 
 func newStage(t *testing.T) (*stage, func()) {
 	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
-	here := &stage{database: database, store: newHeld()}
+	here := &stage{database: database, store: newHeld(), recipient: "alice@example.com"}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		owner, err := tx.CreateUser(&models.User{Username: "alice"})
 		if err != nil {
@@ -142,6 +145,7 @@ func (self *stage) deliverFrom(t *testing.T, name, from string, passedDMARC bool
 		mailId = created.ID
 		if _, err := tx.NoteCalendarInvitation(&models.CalendarInvitation{
 			UserID: self.userID, MailboxID: self.mailboxID, ItemID: "item-" + name, MailID: mailId,
+			Recipient: self.recipient,
 		}); err != nil {
 			t.Fatalf("NoteCalendarInvitation: %s", err)
 		}
@@ -680,4 +684,108 @@ func stringOf(value string) *string { return &value }
 func momentOf(year, month, day, hour int) *time.Time {
 	at := time.Date(year, time.Month(month), day, hour, 0, 0, 0, time.UTC)
 	return &at
+}
+
+// An invitation reaches a mailbox that advertises no address of its own.
+//
+// A mailbox reached by a catch-all has none: that alias has no one address to
+// send as, so it is deliberately left out of the list a mailbox advertises.
+// Checking an invitation against that list therefore refused every invitation
+// such a mailbox ever received -- a fail-closed check that lost mail. What the
+// question actually wants is the address the sender wrote to.
+func TestAnInvitationToACatchAllStillArrives(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	// A mailbox whose only way in is a catch-all, so it advertises nothing.
+	var mailboxId string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: here.userID, Name: "Everything"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		mailboxId = mailbox.ID
+		if _, err := tx.CreateAlias(&models.Alias{
+			DomainID: "example.com", Pattern: ".*", Kind: models.AliasKindMailbox, MailboxID: mailbox.ID,
+		}); err != nil {
+			t.Fatalf("CreateAlias: %s", err)
+		}
+		found, err := tx.GetMailbox(mailbox.ID)
+		if err != nil {
+			t.Fatalf("GetMailbox: %s", err)
+		}
+		if len(found.Addresses) != 0 {
+			t.Fatalf("a catch-all advertises no address, so this test is about nothing: %+v", found.Addresses)
+		}
+	})
+	here.mailboxID = mailboxId
+	here.recipient = "anything@example.com"
+
+	headers, body := invitationMessage("REQUEST", "caught", "Planning",
+		"ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:anything@example.com")
+	here.deliverFrom(t, "caught", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	if got := here.invitation(t, "caught"); got.Status != models.CalendarInvitationRead {
+		t.Fatalf("it asks the address it was sent to: %s %s", got.Status, got.Error)
+	}
+	if len(here.events(t)) != 1 {
+		t.Fatal("and it goes in the calendar")
+	}
+}
+
+// Naming yourself as the organizer does not make you one.
+//
+// This is the hole the second round opened while adding SENT-BY: the check
+// fell through to "is the sender the organizer of the arriving file", and the
+// arriving file is the attacker's. So it read "is the sender the person the
+// sender says they are", which is always true. Anyone who knows an event's
+// identifier -- every other guest on the original invitation -- could rewrite
+// it or call it off.
+func TestNamingYourselfAsOrganizerDoesNotMakeYouOne(t *testing.T) {
+	here, done := newStage(t)
+	defer done()
+
+	headers, body := invitationMessage("REQUEST", "the-meeting", "The small room",
+		"SEQUENCE:1", "ORGANIZER:mailto:grace@example.com",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "asked", "grace@example.com", true, headers, body)
+	here.work(t)
+
+	// Mallory names herself as the organizer of somebody else's event.
+	headers, body = invitationMessage("REQUEST", "the-meeting", "PWNED",
+		"SEQUENCE:99", "ORGANIZER:mailto:mallory@evil.example",
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "forged", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events := here.events(t)
+	if len(events) != 1 || events[0].Summary != "The small room" {
+		t.Fatalf("the organizer's own words stand: %+v", events)
+	}
+
+	// And the same trick to call it off.
+	headers, body = invitationMessage("CANCEL", "the-meeting", "The small room",
+		"ORGANIZER:mailto:mallory@evil.example")
+	here.deliverFrom(t, "forgedOff", "mallory@evil.example", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 1 || events[0].Status == "CANCELLED" {
+		t.Fatalf("and she cannot call it off either: %+v", events)
+	}
+
+	// An assistant genuinely sending for the organizer still works: the file
+	// names the organizer the event already has, and says who posted it.
+	headers, body = invitationMessage("REQUEST", "the-meeting", "The big room",
+		"SEQUENCE:2", `ORGANIZER;SENT-BY="mailto:assistant@example.com":mailto:grace@example.com`,
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:alice@example.com")
+	here.deliverFrom(t, "assistant", "assistant@example.com", true, headers, body)
+	here.work(t)
+
+	events = here.events(t)
+	if len(events) != 1 || events[0].Summary != "The big room" {
+		t.Fatalf("an assistant may send for the organizer: %+v", events)
+	}
 }

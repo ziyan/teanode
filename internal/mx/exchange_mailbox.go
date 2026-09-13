@@ -145,7 +145,7 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 	// invitation and reads it afterwards. Not the agent's job: somebody
 	// who has never turned an agent on still wants their meetings.
 	if hook := self.currentCalendarHook(); hook != nil {
-		hook.OnMailboxDelivery(tx, mailbox, item, mail)
+		hook.OnMailboxDelivery(tx, mailbox, recipient, item, mail)
 	}
 	// And the out-of-office reply, decided after the rules have had their
 	// say about where the message ended up.

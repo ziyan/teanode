@@ -412,3 +412,17 @@ func (self *transaction) ListCalendarObjectsRunningOut(before time.Time, limit i
 	}
 	return objects, nil
 }
+
+// TouchCalendarObjectHorizon records how far ahead an event has been worked
+// out, without touching anything else about it.
+//
+// For the event that cannot be worked out at all: its occurrences are left as
+// they are, and only its place in the queue moves. Writing it through
+// PutCalendarObject would rewrite the file and its occurrences, which is a
+// great deal of work to say "not now".
+func (self *transaction) TouchCalendarObjectHorizon(calendarId, objectId string, until time.Time) (bool, error) {
+	result := self.tx.Model(&calendarObjectModel{}).
+		Where("\"calendar_id\" = ? AND \"id\" = ?", calendarId, objectId).
+		Update("indexed_until", until)
+	return result.RowsAffected > 0, result.Error
+}

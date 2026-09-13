@@ -82,6 +82,14 @@ Notable changes to TeaNode. The format follows
 - A repeating event too fine to work out over the stretch asked for now says
   so, rather than looking like an event with nothing in it.
 
+- Several excluded dates written on one line are honoured. One such line used
+  to make a whole repeating event unreadable, so it appeared nowhere.
+
+- A calendar invitation naming a time zone the way Windows does is only
+  reinterpreted when this server's idea of that zone agrees with the
+  description in the invitation itself, so a zone whose rules have changed
+  cannot quietly move every occurrence.
+
 
 - A domain's link host may now name the port it is reached on --
   `mail.example.com:10443` -- for a deployment answering HTTPS somewhere other

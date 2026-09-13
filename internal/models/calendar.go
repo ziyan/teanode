@@ -109,11 +109,17 @@ const (
 // or a failure there would bounce mail. Delivery writes the row; a worker
 // reads the message afterwards.
 type CalendarInvitation struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"userId"`
-	MailboxID  string    `json:"mailboxId"`
-	ItemID     string    `json:"itemId"`
-	MailID     string    `json:"mailId"`
+	ID        string `json:"id"`
+	UserID    string `json:"userId"`
+	MailboxID string `json:"mailboxId"`
+	ItemID    string `json:"itemId"`
+	MailID    string `json:"mailId"`
+
+	// Recipient is the address this was delivered to, which is the one the
+	// sender wrote to and so the one an invitation has to name. A mailbox's
+	// advertised addresses are not the same thing: one reached by a
+	// catch-all advertises none.
+	Recipient  string    `json:"recipient,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 

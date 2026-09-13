@@ -360,6 +360,22 @@ controls.* Reviews by somebody who did not write the code found every one of
 them; the tests written alongside the code encoded the same misunderstandings
 and passed throughout.
 
+**Round three, and the number that matters.** Nine more, and the worst of them
+was again made by the round before: the organizer check, rewritten in round two
+to allow SENT-BY, fell through to "is the sender the organizer of the arriving
+file" — and the arriving file is the attacker's. It asked whether the sender is
+who the sender says they are. Round one's version, clumsier, would have blocked
+it. Three rounds, thirty-three defects, and the same sentence keeps being true:
+*the check was written against something the attacker controls.*
+
+The other lesson is about fixing. Round two's zone rewrite was the right idea
+and it introduced four problems of its own — a stale mapping that silently
+moved every occurrence, two zones colliding under one name, half-converted
+date lists, and a fail-closed address check that lost every invitation to a
+catch-all mailbox. None of those existed before the fix. A fix is a change, and
+a change wants the same suspicion as the thing it replaces; the rounds are not
+a formality.
+
 **Two small things worth keeping.** The naming check earned its place: this
 work introduced `TimeZone` where the repository says `Timezone` sixty-seven
 times, and the same thing having two names is exactly what the convention

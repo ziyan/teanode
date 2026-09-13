@@ -1,0 +1,12 @@
+-- The address the message was delivered to.
+--
+-- An invitation has to name the person whose calendar it is about to enter,
+-- or any sender could write events in front of anybody. Checking that against
+-- the addresses a mailbox advertises is wrong: a mailbox reached by a
+-- catch-all has none -- the alias has no one address to send as, so it is
+-- deliberately left out of that list -- and every invitation to such a mailbox
+-- would be refused.
+--
+-- What the check actually wants is the address the sender wrote to, which
+-- delivery knows and nothing else does.
+ALTER TABLE "calendar_invitation" ADD COLUMN "recipient" varchar(320) NOT NULL DEFAULT '';

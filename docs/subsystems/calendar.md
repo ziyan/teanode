@@ -79,6 +79,12 @@ starting past the horizon was never indexed at all. The scheduler extends the
 repeats that are running out, nearest horizon first, a few at a time; there is
 no hurry, since what is being fixed is a year away.
 
+An event that cannot be extended is moved on anyway, as though it had been.
+Skipping it left it exactly where the query looks first, so it came back every
+thirty seconds for ever — and because the question is asked of the whole table
+with no account in it, twenty such rows stopped re-indexing for every account
+on the server.
+
 Which ones need it is asked of `calendar_object.indexed_until` — the horizon
 each was last worked out to — and not of its furthest occurrence. Those are
 different questions, and the second one has no answer for a series that has
@@ -121,6 +127,18 @@ it, so the offset was an hour out for the few days a year those disagree. And
 `EXDATE` and `UNTIL` are written as real instants, so neither lined up with a
 wall-clock expansion — a cancelled occurrence came back, and the last of a
 series went missing. Renaming the zone once makes all four disappear.
+
+A rename happens only when the target name is free and the zone it names keeps
+the same offsets the file says its zone keeps — compared at midwinter and
+midsummer rather than at the event's own moment, because a file's observances
+carry literal dates where the rule beside them says "the last Sunday", so the
+two disagree by an hour for a few days a year and the real zone is the one that
+is right. Without that check a stale table entry would silently move every
+occurrence of every event in that zone, with nothing to show for it.
+
+Several excluded or added dates on one line are split onto lines of their own
+first. The format allows the list; the library reads a value as a single
+moment, so one such line made a recurrence unreadable in any zone at all.
 
 A zone nobody can name at all — no mapping and no match — has its times
 rewritten as the instants they stand for, using the offsets the file itself
@@ -218,6 +236,15 @@ message. Anyone ever forwarded an invitation could copy the organizer's name
 out of it and cancel the meeting for everybody.
 
 So, in order:
+
+**Speaking for somebody is not the same as being them.** An assistant or a
+booking system may send for an organizer — that is what `SENT-BY` is for — but
+the file saying so is the sender's own claim, so it only counts once the file
+has agreed with the held copy about *whose* event it is. Written without that,
+the check fell through to "is the sender the organizer of the arriving file",
+and the arriving file is the attacker's: it asked whether the sender is who the
+sender says they are, which is always true. That was worse than no check, and
+it is the single worst defect this feature has had.
 
 Every one of these fails **closed**. Written the other way round — "if it
 parses, and it names an organizer, and that is not the sender" — the check let

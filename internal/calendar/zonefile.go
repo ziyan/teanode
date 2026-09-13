@@ -54,7 +54,7 @@ var windowsZones = map[string]string{
 	"caucasus standard time":          "Asia/Yerevan",
 	"cen. australia standard time":    "Australia/Adelaide",
 	"central america standard time":   "America/Guatemala",
-	"central asia standard time":      "Asia/Almaty",
+	"central asia standard time":      "Asia/Bishkek",
 	"central brazilian standard time": "America/Cuiaba",
 	"central europe standard time":    "Europe/Budapest",
 	"central european standard time":  "Europe/Warsaw",
@@ -140,17 +140,69 @@ func knownAs(tzid string) string {
 			return mapped
 		}
 	}
-	if at := strings.LastIndex(name, "/"); at > 0 {
-		// The last two segments of a prefixed name are the zone itself.
-		parts := strings.Split(name, "/")
-		if len(parts) >= 2 {
-			tail := parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	// The zone is the tail of a prefixed name, and how many segments that
+	// is depends on the zone: two for Europe/Berlin, three for
+	// America/Indiana/Indianapolis, one for UTC. Longest first, so the
+	// three-segment zones are not cut down to something that does not load.
+	if parts := strings.Split(name, "/"); len(parts) > 1 {
+		for take := min(len(parts), 3); take >= 1; take-- {
+			tail := strings.Join(parts[len(parts)-take:], "/")
+			if tail == "" {
+				continue
+			}
 			if _, err := time.LoadLocation(tail); err == nil {
 				return tail
 			}
 		}
 	}
 	return ""
+}
+
+// agreesWith is whether a zone this machine knows keeps the same offsets the
+// file says its zone keeps.
+//
+// A name is only renamed when the two agree. The table maps names to zones,
+// and a government moving its clocks makes an entry wrong years after it was
+// written; once renamed the file's own description is never consulted again,
+// so a stale entry silently moves every occurrence with nothing to show for
+// it. Checking turns a wrong entry into a fallback rather than a wrong time.
+//
+// Compared as sets of offsets at midwinter and midsummer, not at the event's
+// own moment. The file's observances carry literal dates -- Outlook writes the
+// 25th of March where the rule beside it says the last Sunday -- so around a
+// change of clocks the file and the real zone disagree by an hour for a few
+// days, and the real zone is the one that is right. Asking which offsets a
+// zone keeps rather than which one it is in on a particular day ignores that
+// disagreement while still catching a zone that is simply the wrong one.
+func agreesWith(known string, zone *ical.Component, at time.Time) bool {
+	where, err := time.LoadLocation(known)
+	if err != nil {
+		return false
+	}
+	said := map[int]bool{}
+	for _, observance := range zone.Children {
+		if observance.Name != ical.CompTimezoneStandard && observance.Name != ical.CompTimezoneDaylight {
+			continue
+		}
+		if offset, ok := offsetOf(observance.Props.Get(ical.PropTimezoneOffsetTo)); ok {
+			said[offset] = true
+		}
+	}
+	if len(said) == 0 {
+		// The file describes nothing to disagree with.
+		return true
+	}
+	year := at.Year()
+	if year < 1970 {
+		year = time.Now().Year()
+	}
+	for _, month := range []time.Month{time.January, time.July} {
+		_, offset := time.Date(year, month, 15, 12, 0, 0, 0, where).Zone()
+		if !said[offset] {
+			return false
+		}
+	}
+	return true
 }
 
 // settleZones makes a file say something the library can read.
@@ -165,8 +217,23 @@ func settleZones(cal *ical.Calendar) {
 	if cal == nil {
 		return
 	}
+	splitDateLists(cal)
 	renames := map[string]string{}
 	unnameable := map[string]*ical.Component{}
+	// What the file already calls its zones, so a rename cannot land on a
+	// name that is taken: two components claiming one identifier is not a
+	// calendar any strict client will read, and this file is stored and
+	// served back to phones.
+	taken := map[string]bool{}
+	for _, child := range cal.Children {
+		if child.Name != ical.CompTimezone {
+			continue
+		}
+		if property := child.Props.Get(ical.PropTimezoneID); property != nil {
+			taken[strings.TrimSpace(property.Value)] = true
+		}
+	}
+	when := whenItStarts(cal)
 	for _, child := range cal.Children {
 		if child.Name != ical.CompTimezone {
 			continue
@@ -179,10 +246,17 @@ func settleZones(cal *ical.Calendar) {
 		if tzid == "" {
 			continue
 		}
-		if known := knownAs(tzid); known != "" {
+		known := knownAs(tzid)
+		// Renamed only when the name is free and the zone it names agrees
+		// with what this file says the offset is.
+		if known != "" && known != tzid && (taken[known] || !agreesWith(known, child, when)) {
+			known = ""
+		}
+		if known != "" {
 			if known != tzid {
 				renames[tzid] = known
 				property.Value = known
+				taken[known] = true
 			}
 			continue
 		}
@@ -216,6 +290,66 @@ func settleZones(cal *ical.Calendar) {
 	}
 }
 
+// splitDateLists gives every excluded and added date a line of its own.
+//
+// The format allows several on one line, comma separated, and plenty of
+// programs write them that way -- but the library reads a property's value as
+// a single moment, so one such line made the whole recurrence unreadable and
+// the event appeared nowhere. Splitting them changes nothing about what the
+// file means and leaves every reader able to read it.
+func splitDateLists(cal *ical.Calendar) {
+	for _, component := range cal.Children {
+		if component.Name == ical.CompTimezone {
+			continue
+		}
+		for _, name := range []string{ical.PropExceptionDates, ical.PropRecurrenceDates} {
+			properties := component.Props[name]
+			if len(properties) == 0 {
+				continue
+			}
+			split := make([]ical.Prop, 0, len(properties))
+			for _, property := range properties {
+				parts := strings.Split(property.Value, ",")
+				if len(parts) == 1 {
+					split = append(split, property)
+					continue
+				}
+				for _, part := range parts {
+					part = strings.TrimSpace(part)
+					if part == "" {
+						continue
+					}
+					one := property
+					one.Params = ical.Params{}
+					for key, values := range property.Params {
+						one.Params[key] = append([]string(nil), values...)
+					}
+					one.Value = part
+					split = append(split, one)
+				}
+			}
+			component.Props[name] = split
+		}
+	}
+}
+
+// whenItStarts is the wall clock the file's first event begins at, which is
+// the moment a zone is checked at. Any moment inside the event would do; this
+// one is always there.
+func whenItStarts(cal *ical.Calendar) time.Time {
+	for _, component := range cal.Children {
+		if component.Name != ical.CompEvent {
+			continue
+		}
+		if start := component.Props.Get(ical.PropDateTimeStart); start != nil {
+			if at, err := time.ParseInLocation("20060102T150405", strings.TrimSpace(start.Value), time.UTC); err == nil {
+				return at
+			}
+		}
+	}
+	return time.Now()
+}
+
 // asInstants rewrites every time anchored to a zone that cannot be named into
 // the moment it stands for, taken from the offsets the file gives.
 //
@@ -236,6 +370,11 @@ func asInstants(cal *ical.Calendar, tzid string, zone *ical.Component) {
 				if !strings.EqualFold(strings.TrimSpace(property.Params.Get(ical.ParamTimezoneID)), tzid) {
 					continue
 				}
+				// One value per property by now, since the lists were
+				// split before any of this. A value that still does not
+				// parse keeps its zone name rather than being half
+				// converted -- which produced a file that parsed and then
+				// could not be expanded.
 				value := strings.TrimSpace(property.Value)
 				local, err := time.ParseInLocation("20060102T150405", value, time.UTC)
 				if err != nil {

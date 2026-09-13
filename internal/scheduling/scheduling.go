@@ -94,12 +94,13 @@ func (self *Scheduler) Stop() {
 // be safe, and a guard that always says yes is not a guard.
 //
 // The rows that turn out to be nothing are swept up afterwards; see sweep.
-func (self *Scheduler) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail) {
+func (self *Scheduler) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail) {
 	if mailbox == nil || item == nil || mail == nil {
 		return
 	}
 	if _, err := tx.NoteCalendarInvitation(&models.CalendarInvitation{
 		UserID: mailbox.UserID, MailboxID: mailbox.ID, ItemID: item.ID, MailID: mail.ID,
+		Recipient: recipient,
 	}); err != nil {
 		// Logged and dropped. An invitation that is not noticed is a
 		// person having to add an appointment by hand; a delivery that
@@ -136,6 +137,21 @@ func (self *Scheduler) Tick(ctx context.Context) error {
 // meeting is extended long before anybody could scroll to the end of it.
 const indexedAhead = 300 * 24 * time.Hour
 
+// putOff moves an event that cannot be extended to the back of the queue.
+//
+// The horizon is written as though it had been done, so it is asked about
+// again when that horizon next advances rather than on the next tick. What
+// cannot be worked out now will not become workable in thirty seconds, and a
+// row that keeps its place at the head of the queue holds up every other
+// account's.
+func (self *Scheduler) putOff(tx db.Transaction, object *models.CalendarObject) {
+	until := time.Now().Add(calendar.HorizonAhead)
+	object.IndexedUntil = &until
+	if _, err := tx.TouchCalendarObjectHorizon(object.CalendarID, object.ID, until); err != nil {
+		log.Debugf("an event that cannot be extended could not be put off: %s", err)
+	}
+}
+
 // reindexPerTick bounds the work: extending a repeat costs an expansion and a
 // write, and there is no hurry -- what is being fixed is a year away.
 const reindexPerTick = 20
@@ -157,16 +173,23 @@ func (self *Scheduler) reindex(ctx context.Context) {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			// A row that cannot be extended is still moved on. Skipping
+			// it left it exactly where the query looks first, so it came
+			// back every tick for ever -- and twenty of them stopped
+			// re-indexing for every account on the server, since the
+			// question is asked of the whole table. Moving it on means it
+			// is tried again at the next advance of the horizon rather
+			// than thirty seconds later.
 			parsed, err := calendar.Parse([]byte(object.Data))
 			if err != nil {
-				// Kept text that cannot be read is this server's problem,
-				// and re-reading it every tick would say so every tick.
 				log.Debugf("a kept event could not be read to extend it: %s", err)
+				self.putOff(tx, object)
 				continue
 			}
 			occurrences, indexedUntil, err := indexed(parsed)
 			if err != nil {
 				log.Debugf("a repeat could not be worked out further: %s", err)
+				self.putOff(tx, object)
 				continue
 			}
 			// Recorded, so this one is done once per advance of the
@@ -328,16 +351,31 @@ func (self *Scheduler) consider(ctx context.Context, invitation *models.Calendar
 	return ignored("this server does not act on %s", parsed.Method)
 }
 
-// addressedTo is whether an invitation actually asks the person whose mailbox
-// it arrived in -- as an attendee, or as the organizer of their own event
-// coming back to them.
+// recipientsRecordedFrom is when this server began recording the address a
+// message was delivered to. A row noted before it has none through no fault of
+// its own; one noted after it has none only if something went wrong, and is
+// refused rather than waved through.
+var recipientsRecordedFrom = time.Date(2026, time.September, 13, 0, 0, 0, 0, time.UTC)
+
+// addressedTo is whether an invitation actually asks the person it was sent
+// to -- as an attendee, or as the organizer of their own event coming back.
 //
-// Checked against every address of the mailbox it was delivered to, since
-// that is the one the sender wrote to.
-func (self *Scheduler) addressedTo(ctx context.Context, mailboxId string, parsed *calendar.Parsed) (bool, error) {
+// Against the address the message was delivered to, which is the one the
+// sender wrote. Checking a mailbox's advertised addresses instead was wrong in
+// a way that lost mail: a mailbox reached by a catch-all advertises none --
+// that alias has no one address to send as, so it is deliberately left out --
+// and every invitation to such a mailbox was refused.
+//
+// The mailbox's own addresses are still accepted beside it, because a message
+// may reach a mailbox at one address while the invitation names another of
+// theirs.
+func (self *Scheduler) addressedTo(ctx context.Context, invitation *models.CalendarInvitation, parsed *calendar.Parsed) (bool, error) {
 	theirs := map[string]bool{}
+	if delivered := strings.ToLower(strings.TrimSpace(invitation.Recipient)); delivered != "" {
+		theirs[delivered] = true
+	}
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		mailbox, err := tx.GetMailbox(mailboxId)
+		mailbox, err := tx.GetMailbox(invitation.MailboxID)
 		if err != nil || mailbox == nil {
 			return err
 		}
@@ -349,12 +387,16 @@ func (self *Scheduler) addressedTo(ctx context.Context, mailboxId string, parsed
 		return false, err
 	}
 	if len(theirs) == 0 {
-		// Nothing to check against, which should not happen: the message
-		// was delivered to this mailbox, so an address routed it there.
-		// Treated as a failure rather than as permission -- the invitation
-		// waits and is read again -- because the alternative is a check
-		// that turns itself off exactly when it cannot see.
-		return false, fmt.Errorf("the mailbox this arrived at has no address to check against")
+		// Nothing to check against: no delivered address recorded, and no
+		// address on the mailbox. Only a row noted before this server
+		// began recording the recipient looks like this, and those are
+		// finite and old -- so they are let through, while anything noted
+		// since is refused, because a check that turns itself off is not
+		// one. The sweep clears the old rows within two days.
+		if invitation.CreatedAt.IsZero() || invitation.CreatedAt.Before(recipientsRecordedFrom) {
+			return true, nil
+		}
+		return false, fmt.Errorf("the address this was delivered to was not recorded")
 	}
 	if theirs[strings.ToLower(strings.TrimSpace(parsed.Organizer))] {
 		return true, nil
@@ -367,32 +409,44 @@ func (self *Scheduler) addressedTo(ctx context.Context, mailboxId string, parsed
 	return false, nil
 }
 
-// mayActFor is whether the sender may act on an event this organizer called:
-// they are that organizer, or the arriving file says they sent it on that
-// organizer's behalf.
+// mayActFor is whether the sender may act on an event the held copy says
+// somebody else called.
 //
-// An event naming no organizer is nobody's to act on from outside -- it is an
-// appointment its owner made for themselves, and treating an absent organizer
-// as nobody-to-check-against made every one of them replaceable by a stranger.
+// The sender is that organizer, or the arriving file names that same organizer
+// and says the sender posted it on their behalf. Both halves of the second
+// case matter, and leaving one out is how this was wrong twice:
+//
+// Written as "or the sender is the organizer of the arriving file", the check
+// asks whether the sender is who the sender says they are, which is always
+// true -- the arriving file is the attacker's. That is worse than no check.
+// So SENT-BY is only consulted once the arriving file has agreed with the held
+// copy about whose event it is; it says who put a message in the post, not
+// whose meeting it is.
+//
+// An event naming no organizer is nobody's to act on from outside: it is an
+// appointment its owner made for themselves.
 func mayActFor(organizer string, parsed *calendar.Parsed, sender string) bool {
-	if strings.TrimSpace(organizer) == "" {
+	held := strings.TrimSpace(organizer)
+	if held == "" {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(organizer), sender) {
+	if strings.EqualFold(held, sender) {
 		return true
 	}
-	return speaksFor(parsed, sender)
+	// The file has to be about the same person's event before anything it
+	// says about who sent it counts for anything.
+	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), held) {
+		return false
+	}
+	return parsed.SentBy != "" && strings.EqualFold(parsed.SentBy, sender)
 }
 
-// speaksFor is whether the sender is entitled to speak as the organizer of
-// this file: they are the organizer, or the file says they sent it on the
-// organizer's behalf.
+// speaksFor is whether the sender may send an invitation as this file's
+// organizer: they are that organizer, or the file says they posted it for
+// them.
 //
-// SENT-BY is how an assistant, a room booking system or a sending service
-// says so, and it is the sender's own claim -- but it is a claim about an
-// address the message has proven, which is the part that matters. It lets
-// somebody send as an organizer they name; it does not let them touch an
-// event they were not already able to.
+// Only for a file this server holds nothing about yet, where there is no held
+// copy to agree with. Where there is one, mayActFor is the question.
 func speaksFor(parsed *calendar.Parsed, sender string) bool {
 	if strings.EqualFold(strings.TrimSpace(parsed.Organizer), sender) {
 		return true
@@ -426,7 +480,7 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 	// write an event with a title of their choosing into anybody's
 	// calendar -- an invitation naming only strangers still landed, which
 	// makes a calendar somewhere to put text in front of a person.
-	asked, err := self.addressedTo(ctx, invitation.MailboxID, parsed)
+	asked, err := self.addressedTo(ctx, invitation, parsed)
 	if err != nil {
 		return nil, err
 	}
