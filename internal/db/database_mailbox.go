@@ -495,6 +495,16 @@ func (self *transaction) CreateMailbox(mailbox *models.Mailbox) (*models.Mailbox
 	created.CreatedAt = now
 	created.ModifiedAt = now
 	created.Addresses = nil
+	// The folders' identifiers are made here rather than in the loop below,
+	// because the rule a mailbox starts with has to name the one it files
+	// into.
+	folderIds := make(map[models.MailboxFolderKind]string, len(models.DefaultFolders))
+	for _, folder := range models.DefaultFolders {
+		folderIds[folder.Kind] = newID()
+	}
+	if len(created.Rules) == 0 {
+		created.Rules = models.DefaultRules(folderIds[models.MailboxFolderKindJunk])
+	}
 	model, err := mailboxToModel(&created)
 	if err != nil {
 		return nil, err
@@ -507,7 +517,7 @@ func (self *transaction) CreateMailbox(mailbox *models.Mailbox) (*models.Mailbox
 		// find, each announcing itself with a validity of its own.
 		for _, folder := range models.DefaultFolders {
 			if err := tx.Create(&mailboxFolderModel{
-				ID: newID(), CreatedAt: now, ModifiedAt: now, MailboxID: created.ID,
+				ID: folderIds[folder.Kind], CreatedAt: now, ModifiedAt: now, MailboxID: created.ID,
 				Name: folder.Name, Kind: string(folder.Kind), UIDValidity: uidValidity(now), UIDNext: 1, ModSeq: 1,
 			}).Error; err != nil {
 				return err

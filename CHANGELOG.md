@@ -114,7 +114,11 @@ Notable changes to TeaNode. The format follows
   address, sent from a domain that is not yours; junk is mail nobody asked
   for from a sender with no reason to write. A rule does the filing, as with
   every other category: `--when category:matches:^(phishing|junk)$ --move
-  Junk --mark-read --stop`.
+  Junk --mark-read --stop`. Every mailbox now starts with exactly that rule,
+  called "Phishing and junk", and the mailboxes already here have been given
+  it -- except any that already had a rule of their own about these
+  categories. It does nothing until an agent is sorting that mailbox: nothing
+  else sets the category it asks about.
 
 - The agent can write mailbox rules again. Every attempt failed with an error
   about element numbers: a tool calling the API inside the server handed it
