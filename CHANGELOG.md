@@ -95,6 +95,10 @@ Notable changes to TeaNode. The format follows
   it came from, and a file naming hundreds of unknown time zones is read in a
   fraction of the time it used to take.
 
+## [0.21.2] - 2026-09-13
+
+### Changed
+
 - The out-of-office reply is no longer sent to an address nothing vouched
   for. It goes to the envelope sender, which is not what DMARC checks -- so a
   stranger could send from a domain of their own while naming somebody else
