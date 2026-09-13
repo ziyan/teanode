@@ -210,7 +210,7 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 	}
 	tx := self.transaction(ctx)
 	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
+		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: models.WrittenByPerson, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
