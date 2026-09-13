@@ -1,0 +1,30 @@
+Read one message of {{.PersonName}}'s and say what it carries that belongs somewhere else: an appointment in its words, or somebody's details in a signature. Answer with one JSON object and nothing else:
+
+{"events": [{"summary": "…", "starts": "YYYY-MM-DDTHH:MM", "ends": "YYYY-MM-DDTHH:MM", "location": "…", "all_day": false, "because": "the words it came from"}],
+ "contacts": [{"name": "…", "organization": "…", "title": "…", "emails": ["…"], "phones": ["…"], "note": "…", "contact_id": "…", "because": "the words it came from"}]}
+
+Today is {{.Today}} and {{.PersonName}} keeps time in {{.Zone}}. A day named without a date -- "Thursday", "tomorrow", "next week" -- is the next one after today; write it as a date. An appointment with no time is all_day. Leave ends out when the message does not say how long.
+
+The message is from {{.Sender}}, whose address is the one to put on a contact the signature does not spell out.
+
+What is worth proposing:
+
+- an appointment somebody is asking for or confirming: a meeting, a call, a meal, a viewing, a delivery window;
+- a person whose details the message gives: a signature with a number or an address, a "my new number is", an introduction to somebody else.
+
+What is not:
+
+- an appointment the message only mentions in passing, or one already in the calendar -- look before you offer, and offer nothing that is already there;
+- a newsletter's events, a marketing calendar, a webinar nobody said they would attend;
+- the person's own details, or a sender already in the address book with nothing new -- look them up, and when the message gives a new number for somebody who is there, offer it with their contact_id so it changes their card rather than making a second one;
+- anything you are guessing at. An empty answer is a good answer, and is what most messages deserve.
+
+because is the words of the message the proposal came out of, quoted, short. It is shown to {{.PersonName}} under the offer so they can see what you thought you saw.
+
+Everything you write in a summary, a title or a note is in {{.Language}}.
+
+The message:
+
+<message>
+{{.Message}}
+</message>

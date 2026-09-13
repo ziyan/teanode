@@ -28,10 +28,67 @@ type MailInsight struct {
 	Notes      string `json:"notes,omitempty"`
 	NotesRunID string `json:"notesRunId,omitempty"`
 
+	// ExtractAsked says triage thought the message carries an appointment or
+	// somebody's details in its words; the extract run, when it exists,
+	// writes Proposals.
+	ExtractAsked bool `json:"extractAsked"`
+
+	// Proposals are what was found in the words and is offered in the
+	// reader. Nothing here has been written anywhere.
+	Proposals []MailProposal `json:"proposals"`
+
 	Model     string    `json:"model"`
 	RunID     string    `json:"runId"`
 	CreatedAt time.Time `json:"createdAt"`
 }
+
+// MailProposal is something a message carries that belongs somewhere else: an
+// appointment in its words, or a person's details in a signature.
+//
+// It is an offer and never a write. Putting an appointment in somebody's
+// diary because a stranger's message mentioned a day is how a calendar stops
+// being trusted, so this is what the reader draws a card from and nothing
+// happens until the person presses something.
+type MailProposal struct {
+	// Kind is "event" or "contact".
+	Kind string `json:"kind"`
+
+	// Because is the line of the message it was read out of, quoted, so the
+	// person can see what the agent thought it saw.
+	Because string `json:"because,omitempty"`
+
+	// Status is "" while it is still an offer, then "accepted" or
+	// "dismissed". A dismissed proposal is not offered again.
+	Status string `json:"status,omitempty"`
+
+	// An event: what it is, when, and where.
+	Summary  string `json:"summary,omitempty"`
+	Starts   string `json:"starts,omitempty"`
+	Ends     string `json:"ends,omitempty"`
+	Location string `json:"location,omitempty"`
+	AllDay   bool   `json:"allDay,omitempty"`
+
+	// A person: what the signature said. ContactID names the contact this
+	// would change rather than add, when the address book already holds
+	// somebody with one of these addresses.
+	Name         string   `json:"name,omitempty"`
+	Organization string   `json:"organization,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Emails       []string `json:"emails,omitempty"`
+	Phones       []string `json:"phones,omitempty"`
+	Note         string   `json:"note,omitempty"`
+	ContactID    string   `json:"contactId,omitempty"`
+}
+
+// The kinds of proposal, and the states one can be in.
+const (
+	MailProposalEvent   = "event"
+	MailProposalContact = "contact"
+
+	MailProposalOffered   = ""
+	MailProposalAccepted  = "accepted"
+	MailProposalDismissed = "dismissed"
+)
 
 // ThreadSummary is what the agent wrote about a conversation for one
 // mailbox, and how far into the conversation it read. It is rewritten from

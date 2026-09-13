@@ -385,6 +385,11 @@ const (
 	AgentJobSend      AgentJobKind = "send"
 	AgentJobSchedule  AgentJobKind = "schedule"
 
+	// AgentJobExtract reads a message triage thought carries an appointment
+	// or somebody's details in its words, and offers what it found. It
+	// writes nothing but the offer.
+	AgentJobExtract AgentJobKind = "extract"
+
 	// AgentJobBackfill queues triage for what was already in a mailbox when
 	// it was granted.
 	AgentJobBackfill AgentJobKind = "backfill"

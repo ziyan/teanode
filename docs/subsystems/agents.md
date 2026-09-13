@@ -132,6 +132,28 @@ A feature has to pass all three:
 An operator can also switch one person's agent off (`OperatorDisabledAt`),
 which they cannot undo themselves, and give them a budget of their own.
 
+## What a message carries that belongs somewhere else
+
+An invitation with a `text/calendar` part in it is read at delivery and
+becomes an event (`docs/subsystems/calendar.md`). Most appointments never
+arrive that way. They arrive as "shall we say Thursday at four", and most new
+telephone numbers arrive at the bottom of a signature.
+
+Sorting answers `extract: true` when it thinks the words carry one of those,
+and a run of its own then reads the message with the diary and the address
+book to hand — so that an appointment already in the calendar is not offered
+again, and a number for somebody already in the address book is offered as a
+change to their card rather than a second card. What it finds goes onto the
+insight as a **proposal**, and the reader draws a card from it: the fields
+filled in and editable, the line they came from quoted underneath, "Add to
+calendar" or "Save contact" beside "No thanks".
+
+Nothing is written until that press. A message is a stranger's words, and an
+appointment put into somebody's diary because those words mentioned a day is
+how a calendar stops being trusted — the same reasoning as the hold window on
+an automatic reply. `SetMailProposalStatus` records what the person did, so a
+card they have dealt with does not come back.
+
 ## Runs
 
 Everything a model does happens inside a *run*. There are two shapes.

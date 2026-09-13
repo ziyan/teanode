@@ -21,6 +21,7 @@ type TriageAnswer struct {
 	Priority    string   `json:"priority"`
 	NeedsReply  bool     `json:"needs_reply"`
 	Research    bool     `json:"research"`
+	Extract     bool     `json:"extract"`
 	Summary     string   `json:"summary"`
 	ActionItems []string `json:"action_items"`
 }
@@ -144,6 +145,7 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 		Priority:      priority,
 		NeedsReply:    needsReply,
 		ResearchAsked: answer.Research,
+		ExtractAsked:  answer.Extract,
 		Summary:       summary,
 		ActionItems:   items,
 	}, nil
@@ -326,6 +328,14 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 		}
 		if insight.ResearchAsked && run.Source.Research && FeatureAllowed(configuration, "research") {
 			if _, err := self.Enqueue(tx, models.AgentJobResearch, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
+				return err
+			}
+		}
+		// What the message carries that belongs somewhere else, read after
+		// the sorting rather than during it: the offer is worth a run of
+		// its own, and most messages carry nothing.
+		if insight.ExtractAsked && self.canThink(configuration) {
+			if _, err := self.Enqueue(tx, models.AgentJobExtract, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
 				return err
 			}
 		}

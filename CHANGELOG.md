@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An appointment in the words of a message, or somebody's details in a
+  signature, is offered above the message: the fields filled in, the line they
+  came from quoted underneath, and a button. Until now only an invitation that
+  arrived as a calendar attachment was ever read, and most appointments are
+  not those -- they are "shall we say Thursday at four". Nothing is written
+  into your calendar or your address book until you press it.
+
 ### Changed
 
 - A calendar and an address book are things you give your agent, the way a

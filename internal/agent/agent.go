@@ -185,6 +185,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobEmbed, self.runEmbed)
 	self.Register(models.AgentJobSchedule, self.runSchedule)
 	self.Register(models.AgentJobResearch, self.runResearch)
+	self.Register(models.AgentJobExtract, self.runExtract)
 	self.catalog = FullCatalog()
 	return self
 }

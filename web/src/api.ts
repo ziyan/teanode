@@ -58,7 +58,8 @@ export function signInWithToken(token: string) {
 // framedDrawer says whether this document is the drawer framed by the
 // browser extension into another site, decided once when it loaded: a
 // route change never turns the frame into the whole dashboard.
-export const framedDrawer = typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
+export const framedDrawer =
+  typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
 
 export function authorization(): Record<string, string> {
   return bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}
@@ -686,6 +687,27 @@ export interface MailInsight {
   summary: string
   actionItems?: string[]
   notes?: string
+  proposals?: MailProposal[]
+}
+
+// Something a message carries that belongs somewhere else: an appointment in
+// its words, or a person's details in a signature. An offer, never a write.
+export interface MailProposal {
+  kind: 'event' | 'contact'
+  because?: string
+  status?: string
+  summary?: string
+  starts?: string
+  ends?: string
+  location?: string
+  allDay?: boolean
+  name?: string
+  organization?: string
+  title?: string
+  emails?: string[]
+  phones?: string[]
+  note?: string
+  contactId?: string
 }
 
 export interface MailboxFolder {
@@ -873,11 +895,20 @@ export function subscribe<T>(
     }
     current.onopen = () => {
       heard()
-      current.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() } }))
+      current.send(
+        JSON.stringify({
+          type: 'connection_init',
+          payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() },
+        }),
+      )
     }
     current.onmessage = async (event) => {
       heard()
-      let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[]; message?: string } }
+      let message: {
+        id?: string
+        type?: string
+        payload?: { data?: T; errors?: { message: string }[]; message?: string }
+      }
       try {
         message = JSON.parse(String(event.data))
       } catch {

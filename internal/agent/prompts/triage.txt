@@ -2,7 +2,7 @@ Sort one message that just arrived in {{.PersonName}}'s mailbox "{{.MailboxName}
 {{if .Tools}}
 Answer at once. Nearly every message can be sorted from what is in front of you, and a lookup costs the person money and time. Use a tool only when the sorting genuinely turns on something you cannot see -- whether this sender has written before, what the rest of the conversation said, whether the day they name is already spoken for -- and then answer. When you have looked, the answer is still one JSON object and nothing else.
 {{end}}
-{"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "summary": "one line, under 140 characters, in {{.Language}}", "action_items": ["…"]}
+{"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "extract": true|false, "summary": "one line, under 140 characters, in {{.Language}}", "action_items": ["…"]}
 
 Categories, pick exactly one:
 {{range .Categories}}- {{.Name}}{{if .Description}}: {{.Description}}{{end}}
@@ -20,6 +20,8 @@ junk is mail nobody asked for from somebody with no reason to write: advertising
 research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message{{if .ResearchNotes}}, judged against these standing notes:
 {{range .ResearchNotes}}- {{.}}
 {{end}}{{else}}. There are no research notes, so answer false unless the message plainly asks for a fact the person does not have.{{end}}
+
+extract is true when the message's words carry an appointment or somebody's details: "shall we say Thursday at four", "my new number is", a signature with a number on it. Not an invitation that arrives as a calendar attachment, which is read without you; not a marketing calendar or a webinar nobody agreed to attend. When it is true a second run reads the message and offers what it finds, so say true only when there is something to offer.
 
 action_items are the things the message asks the person to do, each a short imperative line, in {{.Language}}; empty when there are none.
 {{if .Memories}}

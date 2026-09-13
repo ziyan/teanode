@@ -72,6 +72,7 @@ type MailboxMutation interface {
 	// they are. What the agent had decided is recorded as a correction it
 	// learns from. Needs mail:write.
 	SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error)
+	SetMailProposalStatus(ctx context.Context, arguments SetMailProposalStatusArguments) (*models.MailInsight, error)
 
 	// Move items to another folder of the same mailbox
 	MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error)

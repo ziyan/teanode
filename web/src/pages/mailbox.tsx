@@ -49,6 +49,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
 import { InvitationCard } from '../components/invitationCard'
+import { ProposalCards } from '../components/proposalCard'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
 import { Select } from '../components/select'
@@ -122,7 +123,8 @@ const THREAD = `
         folderId folderName folderKind
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
-          insight { category priority needsReply summary actionItems notes }
+          insight { category priority needsReply summary actionItems notes
+            proposals { kind because status summary starts ends location allDay name organization title emails phones note contactId } }
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
             listKey listName listOneClick logoDomain
@@ -2083,6 +2085,7 @@ function Reader({
               folderId={folder.id}
               seen={seenOf(entry)}
               open={opened.has(entry.item.id)}
+              onChanged={() => void thread.reload()}
               onToggle={() => {
                 // A draft is not a message to read, it is an answer to go back
                 // to. Clicking it opens what was written where it was written.
@@ -2115,6 +2118,7 @@ export function ThreadMessage({
   seen,
   open,
   onToggle,
+  onChanged,
   allowImages,
 }: {
   entry: MailboxThreadItem
@@ -2127,6 +2131,9 @@ export function ThreadMessage({
   seen: boolean
   open: boolean
   onToggle: () => void
+  // Read the conversation again: something on this message changed that the
+  // page did not do itself -- an offer accepted, an offer waved away.
+  onChanged?: () => void
 }) {
   const { t } = useTranslation()
   const item = entry.item
@@ -2205,6 +2212,14 @@ export function ThreadMessage({
                   message is about and the words around it are a covering
                   note. */}
               <InvitationCard itemId={entry.item.id} />
+              {/* And what the message carries in its words rather than in a
+                  calendar part: an appointment, somebody's details. An
+                  offer, with the line it came from under it. */}
+              <ProposalCards
+                itemId={entry.item.id}
+                proposals={entry.item.insight?.proposals}
+                onChanged={() => onChanged?.()}
+              />
               {content.loading && !content.data ? (
                 <Loading />
               ) : content.error ? (

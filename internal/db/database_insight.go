@@ -77,6 +77,8 @@ type mailInsightModel struct {
 	ResearchAsked bool      `gorm:"column:research_asked"`
 	Summary       string    `gorm:"column:summary"`
 	ActionItems   []byte    `gorm:"column:action_items;type:jsonb"`
+	ExtractAsked  bool      `gorm:"column:extract_asked"`
+	Proposals     []byte    `gorm:"column:proposals;type:jsonb"`
 	Notes         string    `gorm:"column:notes"`
 	NotesRunID    string    `gorm:"column:notes_run_id"`
 	Model         string    `gorm:"column:model"`
@@ -133,13 +135,21 @@ func insightFromModel(model *mailInsightModel) (*models.MailInsight, error) {
 		Priority:      model.Priority,
 		NeedsReply:    model.NeedsReply,
 		ResearchAsked: model.ResearchAsked,
+		ExtractAsked:  model.ExtractAsked,
 		Summary:       model.Summary,
 		ActionItems:   []string{},
+		Proposals:     []models.MailProposal{},
 		Notes:         model.Notes,
 		NotesRunID:    model.NotesRunID,
 		Model:         model.Model,
 		RunID:         model.RunID,
 		CreatedAt:     model.CreatedAt.In(time.Local),
+	}
+	if err := decodeJSON(model.Proposals, &insight.Proposals); err != nil {
+		return nil, err
+	}
+	if insight.Proposals == nil {
+		insight.Proposals = []models.MailProposal{}
 	}
 	if err := decodeJSON(model.ActionItems, &insight.ActionItems); err != nil {
 		return nil, fmt.Errorf("db: cannot read the action items of insight %q: %w", model.MailID, err)
@@ -162,6 +172,14 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	if err != nil {
 		return err
 	}
+	proposals := insight.Proposals
+	if proposals == nil {
+		proposals = []models.MailProposal{}
+	}
+	encodedProposals, err := json.Marshal(proposals)
+	if err != nil {
+		return err
+	}
 	model := &mailInsightModel{
 		MailID:        insight.MailID,
 		MailboxID:     insight.MailboxID,
@@ -172,6 +190,8 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 		ResearchAsked: insight.ResearchAsked,
 		Summary:       insight.Summary,
 		ActionItems:   encoded,
+		ExtractAsked:  insight.ExtractAsked,
+		Proposals:     encodedProposals,
 		Notes:         insight.Notes,
 		NotesRunID:    insight.NotesRunID,
 		Model:         insight.Model,
@@ -180,7 +200,7 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	}
 	return self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mail_id"}, {Name: "mailbox_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "summary", "action_items", "model", "run_id", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "proposals", "model", "run_id", "created_at"}),
 	}).Create(model).Error
 }
 
