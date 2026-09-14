@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-09-14
+
 ### Fixed
 
 - A listener that fails at startup says why. The server stops when one of its
