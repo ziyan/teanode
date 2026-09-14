@@ -19,6 +19,7 @@ func init() {
 				Name: "mail_draft", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailSend},
 				Description: "Write a draft: a new message, a reply, a reply to all, or a forward. It is saved in Drafts, in its conversation, for the person to send; nothing goes out. Gives back draft_id for mail_send.",
+				Guidance:    "mail_draft: plain text is the ordinary answer to a message and needs no html. Reach for html when the person asked for something made rather than said -- a summary with headings, a table of figures, an announcement. Mail is not the web: no script runs, nothing loads from another server, and a picture has to travel with the message, so it must already be a file of this conversation -- one the person handed you, or one share_file fetched off their computer or out of a message -- and named in images. Most clients refuse SVG, so a drawing has to arrive as a PNG or a JPEG. Lay a wide thing out with a table rather than with flex or grid, which older clients ignore; keep to system fonts and to colours that read on white, since many clients paint their own background.",
 				Parameters: tools.Object(map[string]any{
 					"mode":        tools.EnumProperty("what kind of message", "new", "reply", "reply_all", "forward"),
 					"in_reply_to": tools.StringProperty("for reply, reply_all and forward: the item_id of the message"),
@@ -29,7 +30,8 @@ func init() {
 					"bcc":         tools.ArrayProperty("blind copies", tools.StringProperty("an address")),
 					"subject":     tools.StringProperty("the subject; filled in for a reply or a forward"),
 					"text":        tools.StringProperty("the body, plain text, in the person's voice; no placeholders"),
-					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for needs a link, a list or a table"),
+					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for wants a heading, a table or a card. Write an ordinary document with a <style> block: the server moves the stylesheet into the elements, which is what makes it survive a mail client"),
+					"images":      tools.ArrayProperty("optional: files of this conversation to put in the body -- a picture you were given, or one you made. Refer to each by name in the html: <img src=\"cid:chart.png\">", tools.StringProperty("an attachment id of this conversation")),
 					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one"),
 				}, "mode", "text"),
 				Run: runMailDraft,
@@ -49,6 +51,7 @@ type mailDraftArguments struct {
 	Subject   string   `json:"subject"`
 	Text      string   `json:"text"`
 	HTML      string   `json:"html"`
+	Images    []string `json:"images"`
 	DraftID   string   `json:"draft_id"`
 }
 
@@ -130,6 +133,12 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	message := map[string]any{"from": from, "textContent": arguments.Text}
 	if strings.TrimSpace(arguments.HTML) != "" {
 		message["htmlContent"] = arguments.HTML
+	}
+	if len(arguments.Images) > 0 {
+		if strings.TrimSpace(arguments.HTML) == "" {
+			return nil, fmt.Errorf("a picture in the body needs html to refer to it")
+		}
+		message["inlineImages"] = arguments.Images
 	}
 	switch mode {
 	case "reply", "reply_all":

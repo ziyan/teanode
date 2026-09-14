@@ -99,6 +99,21 @@ type Attachment struct {
 	ContentType string
 
 	Content []byte
+
+	// ContentID is the name the HTML refers to the part by, without the
+	// angle brackets: <img src="cid:logo.png"> finds the part whose
+	// Content-ID is logo.png. Setting it makes the part inline.
+	ContentID string
+
+	// Inline says the part belongs to the body rather than being something
+	// the reader is offered to open. A part with a ContentID is inline
+	// whether or not this is set.
+	Inline bool
+}
+
+// inline says whether a part belongs with the body rather than after it.
+func (self *Attachment) inline() bool {
+	return self != nil && (self.Inline || strings.TrimSpace(self.ContentID) != "")
 }
 
 // ErrEmptyMessage is returned by Compose when there is nothing to send.
@@ -111,8 +126,10 @@ var ErrEmptyMessage = errors.New("mailparse: a message needs a body or an attach
 // and HTML alone a single text/html part, because a multipart/alternative
 // with one empty alternative is a message some clients show as blank. Both
 // together are a multipart/alternative, text first, which is the order a
-// client that cannot show HTML expects. Attachments wrap whichever of those
-// in a multipart/mixed, the content first and the files after it.
+// client that cannot show HTML expects. A picture the HTML refers to by
+// cid: is part of the body rather than something to open, so those wrap the
+// content in a multipart/related. Attachments wrap whichever of those in a
+// multipart/mixed, the content first and the files after it.
 func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]string, error) {
 	if len(text) == 0 && len(html) == 0 && len(attachments) == 0 {
 		return nil, ErrEmptyMessage
@@ -120,8 +137,18 @@ func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]
 
 	headers := []string{UnsplitHeader("MIME-Version", "1.0")}
 
-	if len(attachments) == 0 {
-		header, err := writeContent(writer, text, html)
+	// The body and the pictures it refers to, as one thing.
+	var inline, separate []*Attachment
+	for _, attachment := range attachments {
+		if attachment.inline() {
+			inline = append(inline, attachment)
+		} else {
+			separate = append(separate, attachment)
+		}
+	}
+
+	if len(separate) == 0 {
+		header, err := writeRelated(writer, text, html, inline)
 		if err != nil {
 			return nil, err
 		}
@@ -129,9 +156,9 @@ func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]
 	}
 
 	mixed := multipart.NewWriter(writer)
-	if len(text) > 0 || len(html) > 0 {
+	if len(text) > 0 || len(html) > 0 || len(inline) > 0 {
 		var content bytes.Buffer
-		header, err := writeContent(&content, text, html)
+		header, err := writeRelated(&content, text, html, inline)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +170,7 @@ func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]
 			return nil, err
 		}
 	}
-	for _, attachment := range attachments {
+	for _, attachment := range separate {
 		if err := writeAttachment(mixed, attachment); err != nil {
 			return nil, err
 		}
@@ -155,6 +182,56 @@ func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]
 	return append(headers, UnsplitHeader("Content-Type", mime.FormatMediaType("multipart/mixed", map[string]string{
 		"boundary": mixed.Boundary(),
 	}))), nil
+}
+
+// writeRelated writes the body together with the pictures it refers to. With
+// no such pictures it is the body alone: a multipart/related holding one
+// thing is a wrapper that says nothing, and some clients show it as an
+// attachment rather than as a message.
+func writeRelated(writer io.Writer, text, html []byte, inline []*Attachment) (textproto.MIMEHeader, error) {
+	if len(inline) == 0 {
+		return writeContent(writer, text, html)
+	}
+	related := multipart.NewWriter(writer)
+	var content bytes.Buffer
+	header, err := writeContent(&content, text, html)
+	if err != nil {
+		return nil, err
+	}
+	partWriter, err := related.CreatePart(header)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := partWriter.Write(content.Bytes()); err != nil {
+		return nil, err
+	}
+	for _, attachment := range inline {
+		if err := writeAttachment(related, attachment); err != nil {
+			return nil, err
+		}
+	}
+	if err := related.Close(); err != nil {
+		return nil, err
+	}
+	result := make(textproto.MIMEHeader)
+	// "type" names the part a reader should start from, which for a message
+	// built here is always the body.
+	result.Set("Content-Type", mime.FormatMediaType("multipart/related", map[string]string{
+		"boundary": related.Boundary(), "type": startType(text, html),
+	}))
+	return result, nil
+}
+
+// startType is the media type of the part a multipart/related starts from.
+func startType(text, html []byte) string {
+	switch {
+	case len(text) > 0 && len(html) > 0:
+		return "multipart/alternative"
+	case len(html) > 0:
+		return "text/html"
+	default:
+		return "text/plain"
+	}
 }
 
 // writeContent writes the readable part of a message and returns the header
@@ -204,7 +281,7 @@ func textHeader(contentType string) textproto.MIMEHeader {
 	return header
 }
 
-func writeAttachment(mixed *multipart.Writer, attachment *Attachment) error {
+func writeAttachment(into *multipart.Writer, attachment *Attachment) error {
 	contentType := strings.TrimSpace(attachment.ContentType)
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -215,11 +292,23 @@ func writeAttachment(mixed *multipart.Writer, attachment *Attachment) error {
 	if attachment.Filename != "" {
 		parameters["filename"] = attachment.Filename
 	}
+	disposition := "attachment"
+	if attachment.inline() {
+		disposition = "inline"
+	}
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Type", mime.FormatMediaType(contentType, map[string]string{"name": attachment.Filename}))
-	header.Set("Content-Disposition", mime.FormatMediaType("attachment", parameters))
+	header.Set("Content-Disposition", mime.FormatMediaType(disposition, parameters))
 	header.Set("Content-Transfer-Encoding", "base64")
-	partWriter, err := mixed.CreatePart(header)
+	if id := strings.TrimSpace(attachment.ContentID); id != "" {
+		// Written into the map rather than through Set, which canonicalizes
+		// the name to "Content-Id". Both are the same field to a reader --
+		// header names are case-insensitive -- but every other mail agent
+		// writes "Content-ID", and a message that looks like the others is
+		// one fewer thing for somebody debugging to wonder about.
+		header["Content-ID"] = []string{"<" + id + ">"}
+	}
+	partWriter, err := into.CreatePart(header)
 	if err != nil {
 		return err
 	}

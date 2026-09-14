@@ -1,6 +1,7 @@
 package computer
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -189,5 +190,38 @@ func TestFilesystemFetchesAFileWhole(t *testing.T) {
 	}
 	if _, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{Action: "fetch", Path: "~"}); err == nil {
 		t.Fatal("a directory is refused")
+	}
+}
+
+// put is the other direction: a file the server holds, written onto the
+// machine whole, bytes and all. It is what makes a document the agent
+// cannot read useful — the person's own programs can open it.
+func TestFilesystemPutsAFileWhole(t *testing.T) {
+	home := t.TempDir()
+	content := []byte{'%', 'P', 'D', 'F', '-', 1, 2, 0}
+	answer, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{
+		Action: "put", Path: "~/papers/plan.pdf", Base64: base64.StdEncoding.EncodeToString(content),
+	})
+	if err != nil {
+		t.Fatalf("put: %s", err)
+	}
+	fields := answer.(map[string]any)
+	if fields["name"] != "plan.pdf" || fields["bytes"] != len(content) {
+		t.Fatalf("what was written: %v", fields)
+	}
+	// The directories on the way are made, as write makes them, and the
+	// bytes are the bytes: a PDF that lost a byte is not a PDF.
+	written, err := os.ReadFile(filepath.Join(home, "papers", "plan.pdf"))
+	if err != nil {
+		t.Fatalf("ReadFile: %s", err)
+	}
+	if !bytes.Equal(written, content) {
+		t.Fatalf("the file is %v, want %v", written, content)
+	}
+	if _, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{Action: "put", Path: "~", Base64: "AAAA"}); err == nil {
+		t.Fatal("a directory is refused")
+	}
+	if _, err := RunFilesystem(&Options{Home: home}, &FilesystemArguments{Action: "put", Path: "~/x", Base64: "not base64!"}); err == nil {
+		t.Fatal("content that is not base64 is refused")
 	}
 }

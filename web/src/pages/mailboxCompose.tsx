@@ -227,6 +227,11 @@ export function MailboxComposer({
   const [queued, setQueued] = useState(0)
   const queue = useRef<File[][]>([])
   const inFlight = useRef<UploadHandle | null>(null)
+  // Every part the draft holds, the pictures the body refers to by cid:
+  // included. Those are carried but not listed below: they belong to the
+  // message rather than to the paperclip, and leaving them out of this list
+  // is what turned an illustrated draft into a broken one the moment it
+  // saved itself again.
   const [kept, setKept] = useState<Attachment[]>([])
   const [carried, setCarried] = useState<Attachment[]>([])
   const [draftItemId, setDraftItemId] = useState<string | null>(draftOf ?? null)
@@ -459,6 +464,9 @@ export function MailboxComposer({
     }
   }, [loading, draftOf, view])
 
+  // What the paperclip shows: the files, not the pictures the body holds.
+  const shownKept = kept.filter((attachment) => !attachment.inline)
+
   const touch = () => {
     dirty.current = true
   }
@@ -516,7 +524,7 @@ export function MailboxComposer({
         onDraft(draftId)
       }
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
-      setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
+      setKept(stored.attachments ?? [])
       setCarried([])
       dirty.current = false
       setSavedAt(new Date())
@@ -599,7 +607,7 @@ export function MailboxComposer({
         const reply = result as { itemId: string; attachments: Attachment[] }
         setDraftItemId(reply.itemId)
         latestDraftId.current = reply.itemId
-        setKept((reply.attachments ?? []).filter((attachment) => !attachment.inline))
+        setKept(reply.attachments ?? [])
         setCarried([])
         setSavedAt(new Date())
         setUploading([])
@@ -912,7 +920,7 @@ export function MailboxComposer({
       )}
 
       <div className="attachments">
-        {[...carried, ...kept].length > 0 && (
+        {[...carried, ...shownKept].length > 0 && (
           <div className="attachments-kept">
             <span className="muted">{t('compose.mailbox.keptAttachments')}</span>
             <ul>
@@ -931,7 +939,7 @@ export function MailboxComposer({
                   </button>
                 </li>
               ))}
-              {kept.map((attachment) => (
+              {shownKept.map((attachment) => (
                 <li key={`kept-${attachment.index}`}>
                   {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
                   <button

@@ -21,12 +21,31 @@ Notable changes to TeaNode. The format follows
   not those -- they are "shall we say Thursday at four". Nothing is written
   into your calendar or your address book until you press it.
 
-- Your agent can write a styled draft. `mail_draft` took plain text and
-  nothing else, so asked for a message with a heading or a table it said it
-  could not do that -- while the composer beside it could. It now takes an
-  HTML body as well, sent alongside the plain one so a reader without HTML
-  still gets the words. Plain text stays the default: styling is for when you
-  ask for it.
+- Your agent can write a styled message. `mail_draft` took plain text and
+  nothing else, so asked for something with a heading or a table it said it
+  could not -- while the composer beside it could. It takes an HTML body now,
+  sent alongside the plain one so a reader without HTML still gets the words,
+  and it can put pictures in that body: a file of the conversation, named in
+  `images` and referred to as `<img src="cid:chart.png">`, travels with the
+  message rather than arriving as an attachment with a broken image where it
+  should be. Plain text stays the default; styling is for when you ask.
+
+  Every message this server sends now has its stylesheet moved into the
+  elements on the way out -- what you wrote in the composer, what your agent
+  drafted, what a template rendered. A `<style>` block is ignored or stripped
+  by enough mail clients that a message styled only by one arrives unstyled,
+  so writing an ordinary document is now enough.
+
+- Your agent can put a file on your computer. It could hand you one *off* your
+  computer, and could look at a picture you uploaded, but a PDF or a
+  spreadsheet you gave it was a dead end: nothing here reads those. Now
+  `filesystem put` sends it across -- the bytes go from the server to your
+  machine without passing through the model -- so the agent can drop it under
+  your home directory and use `shell` and your own programs on it, then hand
+  the result back. It asks first, as every write to your computer does.
+
+  Restart `teanode computer` on any machine that is attached: a program
+  started before this release does not know `put` and says so.
 
 ### Removed
 

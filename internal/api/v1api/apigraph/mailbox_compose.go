@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
@@ -74,6 +75,14 @@ type MailboxMessageParameters struct {
 	// be kept by index, and it is removed when this is saved or sent
 	DraftItemID     string `json:"draftItemId" graphapi:"nullable"`
 	KeepAttachments []int  `json:"keepAttachments" graphapi:"nullable"`
+
+	// Files of the caller's own agent conversation to carry as pictures
+	// the HTML refers to: each becomes an inline part whose Content-ID is
+	// the file's name, so <img src="cid:chart.png"> finds it. This is how
+	// an agent illustrates a message -- a chart it drew, a picture it was
+	// given -- without the bytes passing through the model or through a
+	// second upload.
+	InlineImages []string `json:"inlineImages" graphapi:"nullable"`
 }
 
 type SendMailboxMessageArguments struct {
@@ -505,6 +514,19 @@ func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, m
 			}
 		}
 	}
+	// Pictures the body refers to by cid:, from the caller's own agent
+	// conversation. Before the uploads, because they belong to the body.
+	if len(parameters.InlineImages) > 0 {
+		pictures, err := self.inlinePicturesOf(ctx, tx, parameters.InlineImages)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, picture := range pictures {
+			if err := add(picture); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
 	// Files just uploaded, through the upload route, come last.
 	for _, upload := range uploads {
 		if upload == nil {
@@ -531,6 +553,42 @@ func (self *graph) buildMailboxMessage(ctx context.Context, tx db.Transaction, m
 	}, domain, nil
 }
 
+// inlinePicturesOf is the caller's own agent files, as parts the body can
+// refer to by cid: under their own names.
+//
+// The caller's own: an attachment belongs to an agent, an agent belongs to a
+// person, and the person asking to send the message must be that person.
+// Anything else would make a file id -- which is quoted in transcripts the
+// agent can read -- a way to put somebody else's picture into a message.
+func (self *graph) inlinePicturesOf(ctx context.Context, tx db.Transaction, attachmentIds []string) ([]*mailparse.Attachment, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pictures := make([]*mailparse.Attachment, 0, len(attachmentIds))
+	for _, attachmentId := range attachmentIds {
+		attachment, err := tx.GetAgentAttachment(strings.TrimSpace(attachmentId))
+		if err != nil {
+			return nil, err
+		}
+		if attachment == nil || attachment.AgentID != found.ID {
+			return nil, fmt.Errorf("%w: there is no file %q", api.ErrNotFound, attachmentId)
+		}
+		if !tools.IsImage(attachment.ContentType) {
+			return nil, fmt.Errorf("%w: %q is %s; only a picture goes in the body", api.ErrInvalidArguments, attachment.Name, attachment.ContentType)
+		}
+		content, err := self.storage.GetFile(ctx, attachment.ID)
+		if err != nil {
+			return nil, err
+		}
+		pictures = append(pictures, &mailparse.Attachment{
+			Filename: attachment.Name, ContentType: attachment.ContentType,
+			Content: content, ContentID: attachment.Name, Inline: true,
+		})
+	}
+	return pictures, nil
+}
+
 // partsOf is the attachments named by index from a message in one of the
 // caller's folders.
 func (self *graph) partsOf(ctx context.Context, mailbox *models.Mailbox, itemId string, indexes []int) ([]*mailparse.Attachment, error) {
@@ -551,10 +609,16 @@ func (self *graph) partsOf(ctx context.Context, mailbox *models.Mailbox, itemId 
 		if err != nil {
 			return nil, fmt.Errorf("%w: no attachment %d", api.ErrInvalidArguments, index)
 		}
+		// The Content-ID and the inline flag come too: a picture the body
+		// refers to by cid: is still that picture after the draft is saved
+		// and opened again, and dropping them turned an illustration into
+		// an attachment and a broken image.
 		parts = append(parts, &mailparse.Attachment{
 			Filename:    part.Filename,
 			ContentType: part.ContentType,
 			Content:     part.Content,
+			ContentID:   part.ContentID,
+			Inline:      part.Inline,
 		})
 	}
 	return parts, nil

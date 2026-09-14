@@ -222,3 +222,92 @@ func TestAMessageOfNothingButBoundariesIsRefused(t *testing.T) {
 		t.Fatalf("two parts, no complaint: %d %v", walked, err)
 	}
 }
+
+// A picture the body refers to travels with the body.
+//
+// A message styled well enough to be worth sending usually has something in
+// it — a mark, a chart, a photograph — and a picture written as an ordinary
+// attachment arrives at the bottom with a broken image where it should be.
+// It belongs in a multipart/related beside the body, with a Content-ID for
+// the cid: in the HTML to find.
+func TestAPictureTheBodyRefersToIsPartOfIt(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	headers, err := mailparse.Compose(&body, []byte("Figures attached."), []byte(`<p><img src="cid:chart.png"></p>`), []*mailparse.Attachment{
+		{Filename: "chart.png", ContentType: "image/png", Content: []byte("PNG"), ContentID: "chart.png"},
+		{Filename: "figures.csv", ContentType: "text/csv", Content: []byte("a,b\n")},
+	})
+	if err != nil {
+		t.Fatalf("Compose: %s", err)
+	}
+	written := strings.Join(headers, "\r\n") + "\r\n" + body.String()
+	// The outside is the mixed wrapper, because there is a file to open.
+	if !strings.Contains(written, "multipart/mixed") {
+		t.Fatalf("a file to open makes a mixed message:\n%s", written)
+	}
+	if !strings.Contains(written, "multipart/related") || !strings.Contains(written, "multipart/alternative") {
+		t.Fatalf("the body and its picture are related, and the body has both forms:\n%s", written)
+	}
+	if !strings.Contains(written, "Content-ID: <chart.png>") {
+		t.Fatalf("the picture is named for cid: to find:\n%s", written)
+	}
+	if !strings.Contains(written, `Content-Disposition: inline; filename=chart.png`) {
+		t.Fatalf("the picture belongs to the body:\n%s", written)
+	}
+	if !strings.Contains(written, `Content-Disposition: attachment; filename=figures.csv`) {
+		t.Fatalf("and the file is still a file:\n%s", written)
+	}
+
+	// Read back: the picture is an inline part with its identifier, the file
+	// is an attachment. This is what makes a draft survive being saved.
+	parts := []*mailparse.Part{}
+	if err := mailparse.TraverseParts(headers, body.Bytes(), func(header textproto.MIMEHeader, reader io.Reader) error {
+		part, err := mailparse.DecodePart(header, reader, 0)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, part)
+		return nil
+	}); err != nil {
+		t.Fatalf("TraverseParts: %s", err)
+	}
+	var picture, file *mailparse.Part
+	for _, part := range parts {
+		switch part.Filename {
+		case "chart.png":
+			picture = part
+		case "figures.csv":
+			file = part
+		}
+	}
+	if picture == nil || !picture.Inline || picture.ContentID != "chart.png" {
+		t.Fatalf("the picture reads back inline and named: %+v", picture)
+	}
+	if file == nil || file.Inline {
+		t.Fatalf("the file reads back as a file: %+v", file)
+	}
+}
+
+// With nothing to open, there is no mixed wrapper: a message that is a body
+// and the pictures in it is a multipart/related and no more. A wrapper
+// holding one thing is what makes some clients show a message as an
+// attachment.
+func TestAPictureAloneNeedsNoMixedWrapper(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	headers, err := mailparse.Compose(&body, nil, []byte(`<img src="cid:logo.png">`), []*mailparse.Attachment{
+		{Filename: "logo.png", ContentType: "image/png", Content: []byte("PNG"), ContentID: "logo.png"},
+	})
+	if err != nil {
+		t.Fatalf("Compose: %s", err)
+	}
+	written := strings.Join(headers, "\r\n")
+	if strings.Contains(written, "multipart/mixed") {
+		t.Fatalf("nothing to open, so nothing to wrap: %s", written)
+	}
+	if !strings.Contains(written, "multipart/related") || !strings.Contains(written, `type="text/html"`) {
+		t.Fatalf("the body and its picture, and where a reader starts: %s", written)
+	}
+}

@@ -221,8 +221,10 @@ func chooseLayoutContent(layout *models.Layout, locale string) (html, text strin
 }
 
 // inlineStyles moves a stylesheet into style attributes, because most mail
-// clients ignore a <style> block. Failing to is not a reason to fail the
-// message: it goes out with the stylesheet where it was.
+// clients ignore a <style> block. What cannot be inlined -- a media query, a
+// pseudo-class -- is left in the block, which is why the block stays. Failing
+// to is not a reason to fail the message: it goes out with the stylesheet
+// where it was.
 func inlineStyles(html string) string {
 	if strings.TrimSpace(html) == "" {
 		return html
@@ -374,7 +376,12 @@ func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, e
 	// unique, so a fetch of it says this message was opened. Here rather than
 	// where the template was rendered, because this is where the message
 	// first has an identifier to belong to.
-	html := self.rewriteMedia(id, domain, domains, message.HTML)
+	// The stylesheet goes into the elements: a <style> block is ignored or
+	// stripped by enough mail clients that a message styled only by one
+	// arrives unstyled. Done here rather than by the caller so that it holds
+	// for everything this server sends -- what a person wrote in the
+	// composer, what their agent drafted, what a template rendered.
+	html := self.rewriteMedia(id, domain, domains, inlineStyles(message.HTML))
 
 	var body bytes.Buffer
 	bodyHeaders, err := mailparse.Compose(&body, []byte(message.Text), []byte(html), message.Attachments)
