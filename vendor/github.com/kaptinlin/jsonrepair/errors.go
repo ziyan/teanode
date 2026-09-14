@@ -5,22 +5,31 @@ import (
 	"fmt"
 )
 
-// Predefined error variables for use with errors.Is().
 var (
-	ErrUnexpectedEnd       = errors.New("unexpected end of json string")
-	ErrObjectKeyExpected   = errors.New("object key expected")
-	ErrColonExpected       = errors.New("colon expected")
-	ErrInvalidCharacter    = errors.New("invalid character")
+	// ErrUnexpectedEnd reports that the input ended before the JSON value was complete.
+	ErrUnexpectedEnd = errors.New("unexpected end of json string")
+	// ErrObjectKeyExpected reports that an object key could not be parsed.
+	ErrObjectKeyExpected = errors.New("object key expected")
+	// ErrColonExpected reports that an object key is not followed by a colon.
+	ErrColonExpected = errors.New("colon expected")
+	// ErrInvalidCharacter reports an invalid character inside a JSON string.
+	ErrInvalidCharacter = errors.New("invalid character")
+	// ErrUnexpectedCharacter reports a character that cannot be repaired in context.
 	ErrUnexpectedCharacter = errors.New("unexpected character")
-	ErrInvalidUnicode      = errors.New("invalid unicode character")
+	// ErrInvalidUnicode reports an invalid Unicode escape sequence.
+	ErrInvalidUnicode = errors.New("invalid unicode character")
+	// ErrMaxDepthExceeded reports that the input nests values more deeply than the parser allows.
+	ErrMaxDepthExceeded = errors.New("maximum nesting depth exceeded")
 )
 
-// Error represents a structured JSON repair error.
-// It provides the error message, position, and optional underlying error.
+// Error reports a non-repairable parse error and its position.
 type Error struct {
-	Message  string
+	// Message describes the repair failure.
+	Message string
+	// Position is the rune offset where parsing failed.
 	Position int
-	Err      error // optional underlying error
+	// Err is the underlying sentinel for errors.Is and errors.As.
+	Err error
 }
 
 // Error implements the error interface.
@@ -31,42 +40,39 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s at position %d", e.Message, e.Position)
 }
 
-// Unwrap allows Error to support errors.Is / errors.As.
+// Unwrap returns the underlying error for errors.Is/As support.
 func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// newError creates a new Error wrapping the given sentinel error.
 func newError(message string, position int, err error) *Error {
 	return &Error{Message: message, Position: position, Err: err}
 }
 
-// newUnexpectedEndError creates an error for unexpected end of JSON input.
 func newUnexpectedEndError(position int) *Error {
-	return newError("unexpected end of json string", position, ErrUnexpectedEnd)
+	return newError(ErrUnexpectedEnd.Error(), position, ErrUnexpectedEnd)
 }
 
-// newObjectKeyExpectedError creates an error for a missing object key.
 func newObjectKeyExpectedError(position int) *Error {
-	return newError("object key expected", position, ErrObjectKeyExpected)
+	return newError(ErrObjectKeyExpected.Error(), position, ErrObjectKeyExpected)
 }
 
-// newColonExpectedError creates an error for a missing colon separator.
 func newColonExpectedError(position int) *Error {
-	return newError("colon expected", position, ErrColonExpected)
+	return newError(ErrColonExpected.Error(), position, ErrColonExpected)
 }
 
-// newUnexpectedCharacterError creates an error for an unexpected character.
 func newUnexpectedCharacterError(message string, position int) *Error {
 	return newError(message, position, ErrUnexpectedCharacter)
 }
 
-// newInvalidUnicodeError creates an error for an invalid unicode escape sequence.
 func newInvalidUnicodeError(message string, position int) *Error {
 	return newError(message, position, ErrInvalidUnicode)
 }
 
-// newInvalidCharacterError creates an error for an invalid character in a string.
 func newInvalidCharacterError(message string, position int) *Error {
 	return newError(message, position, ErrInvalidCharacter)
+}
+
+func newMaxDepthExceededError(position int) *Error {
+	return newError(ErrMaxDepthExceeded.Error(), position, ErrMaxDepthExceeded)
 }
