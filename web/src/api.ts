@@ -654,6 +654,7 @@ export interface MailboxAutoReply {
   subject: string
   text: string
   html?: string
+  sameDomainOnly?: boolean
 }
 
 export interface Mailbox {

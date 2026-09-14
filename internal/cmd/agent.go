@@ -248,7 +248,7 @@ func newAgentSourceCommand() *cli.Command {
 					"auto-reply, auto-reply.guidance, auto-reply.scope (known|everyone|list), auto-reply.allow,\n" +
 					"auto-reply.never, auto-reply.categories, auto-reply.when (always|outsideHours|whenAway),\n" +
 					"auto-reply.hours (09:00-17:30), auto-reply.days (1,2,3,4,5), auto-reply.hold (10m),\n" +
-					"auto-reply.limit, auto-reply.quiet (7d). Lists are comma-separated; \"-\" reads standard input.\n\n" +
+					"auto-reply.limit. Lists are comma-separated; \"-\" reads standard input.\n\n" +
 					"  teanode agent source set --mailbox work triage=true auto-reply=true auto-reply.scope=known",
 				Flags:  []cli.Flag{JSONFlag(), mailboxFlag()},
 				Action: runAgentSourceSet,
@@ -942,12 +942,6 @@ func runAgentSourceSet(ctx context.Context, command *cli.Command) error {
 				return fmt.Errorf("%s: %q is not a number", key, value)
 			}
 			nested(policy, "autoReply")["dailyLimit"] = limit
-		case "auto-reply.quiet":
-			quiet, err := parseDays(value)
-			if err != nil {
-				return fmt.Errorf("%s: %s", key, err)
-			}
-			nested(policy, "autoReply")["quietDays"] = quiet
 		default:
 			return fmt.Errorf("%q is not a key this command knows", key)
 		}
@@ -958,19 +952,6 @@ func runAgentSourceSet(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	return printSources(command, updated)
-}
-
-// parseDays reads "7d", "7" or "168h" as a number of days.
-func parseDays(value string) (int, error) {
-	value = strings.TrimSpace(value)
-	if days, err := strconv.Atoi(strings.TrimSuffix(value, "d")); err == nil {
-		return days, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not a number of days", value)
-	}
-	return int(duration.Hours() / 24), nil
 }
 
 func parseSince(value string) (*time.Time, error) {

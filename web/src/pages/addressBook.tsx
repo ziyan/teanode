@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
@@ -10,9 +10,11 @@ import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 
-// The address book: the people somebody chose to keep, as against the
-// addresses the mailbox learned from traffic, which are listed below this on
-// the same page and are a different thing.
+// The address book: the people somebody chose to keep.
+//
+// It is the only list of people the server has. Nothing is learned from
+// traffic any more: this is what the composer completes from, what the
+// "sender is known" rule condition asks, and what the agent reads.
 //
 // A contact is a vCard. The form here fills in the handful of boxes most
 // contacts need, and the server applies them to the card it already holds, so
@@ -106,15 +108,7 @@ function lines(value: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-// KeptAddresses is what the address book holds, for the learned list below to
-// mark the addresses that are already contacts.
-export interface KeptAddresses {
-  has: (address: string) => boolean
-  keep: (address: string, name?: string) => Promise<void>
-  ready: boolean
-}
-
-export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses) => void } = {}) {
+export function AddressBookPage() {
   const { t, plural } = useTranslation()
   const toast = useToast()
   const books = useQuery(() => graphql<{ ListAddressBooks: AddressBook[] }>(BOOKS), [], { refresh: false })
@@ -281,54 +275,8 @@ export function AddressBookSection({ onReady }: { onReady?: (kept: KeptAddresses
   const rows = contacts.data?.ListContacts ?? []
   const editing = Boolean(draft?.id)
 
-  // The addresses this book holds, as one string.
-  //
-  // A string rather than the array, because the effect below depends on it
-  // and `rows` is a fresh array on every render while the query is loading
-  // -- `data?.ListContacts ?? []` builds a new empty one each time. Depending
-  // on that identity ran the effect on every render, which handed the parent
-  // a new object, which set state, which rendered again: a loop that spun
-  // until the contacts arrived. A value that is equal when nothing has
-  // changed is what a dependency list wants.
-  const heldKey = useMemo(
-    () =>
-      rows
-        .flatMap((contact) => (contact.emails ?? []).map((address) => address.trim().toLowerCase()))
-        .sort()
-        .join('\n'),
-    [rows],
-  )
-  const ready = Boolean(bookId) && !contacts.loading
-
-  // Handed to the learned list below, so it can say which addresses are
-  // already kept and offer to keep the rest. Promoting one is an ordinary
-  // save: the address book has one way in, not two.
-  useEffect(() => {
-    if (!onReady) return
-    const held = new Set(heldKey ? heldKey.split('\n') : [])
-    onReady({
-      ready,
-      has: (address) => held.has(address.trim().toLowerCase()),
-      keep: async (address, name) => {
-        await graphql(SAVE, {
-          addressBookId: bookId,
-          id: null,
-          name: (name ?? '').trim() || address,
-          organization: null,
-          emails: [address],
-          phones: [],
-          note: null,
-        })
-        await Promise.all([contacts.reload(), books.reload()])
-      },
-    })
-    // reload comes from useQuery and does not change; the rest are values.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heldKey, bookId, ready, onReady])
-
   return (
     <>
-      <h3>{t('addressBook.title')}</h3>
       <div className="page-actions">
         <button
           className="primary"

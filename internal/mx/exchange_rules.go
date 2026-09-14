@@ -90,12 +90,15 @@ func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox,
 	senderKnown := false
 	if condition.Field == "sender-known" {
 		address, _ := senderOf(mail)
-		contact, err := tx.GetLearnedContact(mailbox.ID, address)
+		// Somebody the person keeps, in their own address book. It used to
+		// mean somebody who had written before, counted off a ledger this
+		// server built of every address that had ever written to the
+		// mailbox; "known" is now what the word means everywhere else.
+		contact, err := tx.FindContactByAddress(mailbox.UserID, address)
 		if err != nil {
 			return false, err
 		}
-		// Seen before this message: the one arriving now counts once.
-		senderKnown = contact != nil && contact.Count > 1
+		senderKnown = contact != nil
 	}
 	return conditionHoldsWithout(condition, mail, senderKnown, insight), nil
 }

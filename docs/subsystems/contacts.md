@@ -3,11 +3,13 @@
 A person's address book: the people they keep, edited in the dashboard and
 kept in step with their phone and their desktop over CardDAV.
 
-This is not the same thing as the addresses a mailbox learns from traffic.
-Those live in `mailbox_contact`, are per mailbox, fill themselves in, and are
-what the compose page completes from and the "sender is known" rule asks
-about. They are a list of people who have corresponded. This is a list of
-people somebody chose to keep, and nothing arrives in it by itself.
+It is the only list of people the server keeps. A mailbox used to learn every
+address it saw go past into a `mailbox_contact` row of its own; that is gone,
+along with the four things that read it. The compose page completes from the
+address book, the "sender is known" rule condition asks the address book, the
+agent's `contact_book` tool is the address book, and the out-of-office reply's
+loop guard is now a count of replies per hour that needs no addresses at all.
+Nothing arrives in the address book by itself.
 
 ## What a contact is
 
@@ -206,17 +208,19 @@ A picture is why the megabyte limit on a card matters in practice. One
 photograph from a phone is around three hundred kilobytes; two would be close
 to the limit, and a card over it is refused with `507`.
 
-## Promoting a learned address
+## Keeping a sender
 
-The learned list marks the addresses that are already contacts and offers to
-keep the rest. Promoting one is an ordinary save — name and address into the
-address book — rather than an action of its own: a contact kept from a learned
-address is just a contact, and a second way in would be a second thing to keep
-right. The agent does it the same way, by searching the learned addresses with
-`contact_search` and saving with `contact_book`.
+Somebody writes, and the person decides to keep them. That is an ordinary save
+— name and address into the address book — rather than an action of its own:
+a contact kept from a message is just a contact, and a second way in would be
+a second thing to keep right. The agent does it the same way, with
+`contact_book`, and the reader's proposal card is the same save with the
+fields already filled in from what the message carried.
 
-Nothing is promoted automatically. The whole point of the distinction is that
-one list is what happened and the other is what somebody chose.
+Nothing is kept automatically. A server that files away every address that
+has ever written to it, so that a rule can call the second message from a
+stranger "known", is building a record nobody asked for out of a definition
+that was never quite true. If a sender matters, somebody says so.
 
 ## Caveats
 

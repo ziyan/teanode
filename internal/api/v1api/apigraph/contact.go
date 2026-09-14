@@ -14,9 +14,8 @@ import (
 // The address book: a person's own contacts, which they edit here and their
 // phone keeps in step with over CardDAV.
 //
-// Not the learned addresses. Those are in mailbox_rules.go as
-// ListMailboxContacts, are per mailbox, and are what a mailbox has seen go
-// past rather than what somebody chose to keep.
+// It is the server's only list of people: the composer completes from it, and
+// the "sender is known" rule condition asks it.
 
 // AddressBookQuery reads a person's own address book.
 type AddressBookQuery interface {

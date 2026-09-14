@@ -2,7 +2,6 @@ package apigraph
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -11,127 +10,13 @@ import (
 	"github.com/ziyan/teanode/internal/mx"
 )
 
-// The two things the settings and compose pages ask about a mailbox that are
-// not the mailbox itself: who has written to it, and what its rules would do.
-
-type MailboxContactMutation interface {
-	// Add a contact, or rename one
-	SaveMailboxContact(ctx context.Context, arguments SaveMailboxContactArguments) (*models.MailboxContact, error)
-
-	// Remove a contact; it comes back when that address writes again
-	DeleteMailboxContact(ctx context.Context, arguments DeleteMailboxContactArguments) error
-
-	// Forget several contacts at once, saying how many were removed
-	DeleteMailboxContacts(ctx context.Context, arguments DeleteMailboxContactsArguments) (int, error)
-}
-
-type SaveMailboxContactArguments struct {
-	MailboxID string `json:"mailboxId"`
-	Address   string `json:"address"`
-	Name      string `json:"name" graphapi:"nullable"`
-}
-
-func (self *graph) SaveMailboxContact(ctx context.Context, arguments SaveMailboxContactArguments) (*models.MailboxContact, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
-	if err != nil {
-		return nil, err
-	}
-	if address := strings.TrimSpace(arguments.Address); len(address) > 320 || !models.IsEmailAddress(address) {
-		return nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, arguments.Address)
-	}
-	contact, err := self.transaction(ctx).SaveLearnedContact(mailbox.ID, arguments.Address, arguments.Name)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return contact, nil
-}
-
-type DeleteMailboxContactArguments struct {
-	MailboxID string `json:"mailboxId"`
-	Address   string `json:"address"`
-}
-
-func (self *graph) DeleteMailboxContact(ctx context.Context, arguments DeleteMailboxContactArguments) error {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
-	if err != nil {
-		return err
-	}
-	return translateError(self.transaction(ctx).DeleteLearnedContact(mailbox.ID, arguments.Address))
-}
-
-type DeleteMailboxContactsArguments struct {
-	MailboxID string `json:"mailboxId"`
-
-	// The addresses to forget, as the list gives them
-	Addresses []string `json:"addresses"`
-}
-
-// DeleteMailboxContacts forgets several at once, which is how a list of them
-// is tidied: one at a time is a dialog per row.
-//
-// It reports how many were removed rather than failing on the first address
-// that is already gone — two people tidying the same list should not turn one
-// of them into an error.
-func (self *graph) DeleteMailboxContacts(ctx context.Context, arguments DeleteMailboxContactsArguments) (int, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailWrite, arguments.MailboxID)
-	if err != nil {
-		return 0, err
-	}
-	tx := self.transaction(ctx)
-	removed := 0
-	for _, address := range arguments.Addresses {
-		if strings.TrimSpace(address) == "" {
-			continue
-		}
-		if err := tx.DeleteLearnedContact(mailbox.ID, address); err != nil {
-			return removed, translateError(err)
-		}
-		removed++
-	}
-	log.Noticef("%s forgot %d contacts of mailbox %q", operatorName(ctx), removed, mailbox.ID)
-	return removed, nil
-}
+// What the settings page asks about a mailbox that is not the mailbox
+// itself: what its rules would do to the mail already in it.
 
 type MailboxRulesQuery interface {
-	// People who have written to this mailbox, for completing an address
-	ListMailboxContacts(ctx context.Context, arguments ListMailboxContactsArguments) ([]*models.MailboxContact, error)
-
 	// Which of the newest messages in a folder each rule would match: a dry
 	// run of rules as written, before they are saved
 	TestMailboxRules(ctx context.Context, arguments TestMailboxRulesArguments) ([]*MailboxRuleTest, error)
-}
-
-type ListMailboxContactsArguments struct {
-	MailboxID string `json:"mailboxId"`
-
-	// Beginning of an address or a name; empty lists the most recent
-	Prefix *string `json:"prefix"`
-
-	// How many, at most 500
-	First *int `json:"first"`
-}
-
-func (self *graph) ListMailboxContacts(ctx context.Context, arguments ListMailboxContactsArguments) ([]*models.MailboxContact, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailRead, arguments.MailboxID)
-	if err != nil {
-		return nil, err
-	}
-	prefix := ""
-	if arguments.Prefix != nil {
-		prefix = strings.TrimSpace(*arguments.Prefix)
-	}
-	limit := 10
-	if arguments.First != nil && *arguments.First > 0 {
-		limit = min(*arguments.First, 500)
-	}
-	contacts, err := self.transaction(ctx).ListLearnedContacts(mailbox.ID, prefix, limit)
-	if err != nil {
-		return nil, err
-	}
-	if contacts == nil {
-		contacts = []*models.MailboxContact{}
-	}
-	return contacts, nil
 }
 
 type TestMailboxRulesArguments struct {
@@ -207,14 +92,14 @@ func (self *graph) TestMailboxRules(ctx context.Context, arguments TestMailboxRu
 			}
 			senderKnown := false
 			if address, _ := senderAddressOf(item.Mail); address != "" {
-				contact, err := tx.GetLearnedContact(mailbox.ID, address)
+				// Known means somebody the person keeps, in their own
+				// address book, which is what the condition means when a
+				// message arrives too.
+				contact, err := tx.FindContactByAddress(mailbox.UserID, address)
 				if err != nil {
 					return nil, err
 				}
-				// Known means written to before this message: the contact
-				// is touched before the rules run on arrival, so the
-				// message being judged counts once already.
-				senderKnown = contact != nil && contact.Count > 1
+				senderKnown = contact != nil
 			}
 			for index, rule := range arguments.Rules {
 				if !rule.Enabled {

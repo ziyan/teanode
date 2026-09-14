@@ -61,9 +61,11 @@ const SAVE = `
     SaveMailboxDraft(mailboxId: $mailboxId, message: $message) { id }
   }`
 
+const BOOKS = `query { ListAddressBooks { id } }`
+
 const CONTACTS = `
-  query ($mailboxId: String!, $prefix: String, $first: Int) {
-    ListMailboxContacts(mailboxId: $mailboxId, prefix: $prefix, first: $first) { address name }
+  query ($addressBookId: String!, $query: String, $first: Int) {
+    ListContacts(addressBookId: $addressBookId, query: $query, first: $first) { name emails }
   }`
 
 const AUTOSAVE_INTERVAL = 30_000
@@ -268,28 +270,41 @@ export function MailboxComposer({
     }
   }
 
-  // Whoever has written to this mailbox, offered as the address is typed.
-  // The last entry of the field is what is being typed; the ones before
-  // the comma are done.
+  // The people the person keeps, offered as the address is typed. The
+  // address book is the only list of people there is: nothing is completed
+  // from traffic, so an address appears here because somebody decided to
+  // keep it. The last entry of the field is what is being typed; the ones
+  // before the comma are done.
   const [contacts, setContacts] = useState<{ address: string; name?: string }[]>([])
+  const [bookId, setBookId] = useState('')
   const [typing, setTyping] = useState('')
   useEffect(() => {
-    if (!view) {
+    graphql<{ ListAddressBooks: { id: string }[] }>(BOOKS)
+      .then((response) => setBookId(response.ListAddressBooks[0]?.id ?? ''))
+      .catch(() => setBookId(''))
+  }, [])
+  useEffect(() => {
+    if (!bookId) {
       return
     }
     const prefix = typing.split(/[,;]/).pop()?.trim() ?? ''
     const timer = window.setTimeout(() => {
-      graphql<{ ListMailboxContacts: { address: string; name?: string }[] }>(CONTACTS, {
-        mailboxId: view.mailbox.id,
-        prefix,
+      graphql<{ ListContacts: { name?: string; emails?: string[] }[] }>(CONTACTS, {
+        addressBookId: bookId,
+        query: prefix || null,
         first: 10,
       })
-        .then((response) => setContacts(response.ListMailboxContacts))
+        .then((response) =>
+          setContacts(
+            response.ListContacts.flatMap((contact) =>
+              (contact.emails ?? []).map((address) => ({ address, name: contact.name })),
+            ).slice(0, 10),
+          ),
+        )
         .catch(() => setContacts([]))
     }, 150)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view?.mailbox.id, typing])
+  }, [bookId, typing])
   const completions = (value: string) => {
     const done = value
       .split(/[,;]/)

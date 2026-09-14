@@ -81,9 +81,9 @@ deferred five times dead-letters on its first real failure.
 
 The most guarded path in the system. Before a model is asked anything, a reply
 must pass a ladder, in this order: the mail server's own auto-reply refusals
-(lists, no-reply senders, bounces, spam, a per-sender quiet period), the
-insight saying a reply is wanted, the never list, the scope (a contact seen
-more than once, or an allow list, or anyone), the categories the policy
+(lists, bounces, spam, an envelope sender nothing vouched for, an hourly cap),
+the insight saying a reply is wanted, the never list, the scope (somebody in
+the address book, or an allow list, or anyone), the categories the policy
 answers, the hours or the away window, whether the person has already replied
 themselves, whether a reply is already held for the thread, and the day's cap.
 

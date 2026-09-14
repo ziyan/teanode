@@ -91,7 +91,7 @@ type Exchange interface {
 	// automatically, or empty when it may be: the out-of-office reply's
 	// ladder, with the given quiet period per sender (zero for the
 	// out-of-office default).
-	AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error)
+	AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error)
 }
 
 // The headers a draft carries for the composer: what it answers or

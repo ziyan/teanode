@@ -24,7 +24,7 @@ address and answering on another:
     DraftReplies  a draft the person sends themselves
     Search        vectors for search by meaning
     Research      a read-only run that gathers context before a reply
-    AutoReply     a policy: scope, categories, hold, caps, quiet days
+    AutoReply     a policy: scope, categories, hold, caps
 
 A calendar and an address book are sources in the same sense, with a switch
 each: `calendar.agent_granted` and `addressbook.agent_granted`, one per

@@ -84,8 +84,7 @@ func (self *Agent) replyRefusal(tx db.Transaction, run *Run, policy *models.Agen
 	if self.settings.Exchange == nil {
 		return "", fmt.Errorf("no mail exchange to ask")
 	}
-	quiet := time.Duration(policy.EffectiveQuietDays()) * 24 * time.Hour
-	reason, err := self.settings.Exchange.AutoReplyRefusal(tx, mailbox, recipient, item, mail, now, quiet)
+	reason, err := self.settings.Exchange.AutoReplyRefusal(tx, mailbox, recipient, item, mail, now)
 	if err != nil || reason != "" {
 		return reason, err
 	}
@@ -100,13 +99,15 @@ func (self *Agent) replyRefusal(tx db.Transaction, run *Run, policy *models.Agen
 	}
 	switch policy.Scope {
 	case "", "known":
-		contact, err := tx.GetLearnedContact(mailbox.ID, sender)
+		// Somebody the person keeps, in their own address book. It used to
+		// mean anybody who had written before, off a ledger of every
+		// address that had ever written to the mailbox.
+		contact, err := tx.FindContactByAddress(mailbox.UserID, sender)
 		if err != nil {
 			return "", err
 		}
-		// Seen before this message: the one being answered counts once.
-		if contact == nil || contact.Count <= 1 {
-			return "the sender is not a contact", nil
+		if contact == nil {
+			return "the sender is not in the address book", nil
 		}
 	case "list":
 		allowed := false

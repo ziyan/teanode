@@ -63,7 +63,6 @@ type Mutation interface {
 	MailboxMutation
 	MailboxComposeMutation
 	MailboxAppPasswordMutation
-	MailboxContactMutation
 	AddressBookMutation
 	CalendarMutation
 	CalendarInvitationMutation

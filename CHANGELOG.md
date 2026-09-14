@@ -21,7 +21,33 @@ Notable changes to TeaNode. The format follows
   not those -- they are "shall we say Thursday at four". Nothing is written
   into your calendar or your address book until you press it.
 
+### Removed
+
+- A mailbox no longer keeps a list of every address that has ever written to
+  it. Your address book is the only list of people, and the four things that
+  read the old one read it instead: the compose page completes from it, the
+  "sender is known" rule condition means somebody you keep rather than
+  somebody who has written twice, the agent has one contact tool rather than
+  two, and the Contacts page is the address book alone.
+
+  **Rules with a "sender is known" condition change meaning.** A sender who
+  had written before was known; now a sender in your address book is. If you
+  have such a rule, keep the people it is about — the same page — or change
+  the rule.
+
+  Gone with it: the out-of-office reply's rule of answering each sender at
+  most once a week, which was the only thing that needed a row per address.
+  What stops an away message talking to another away message for ever is the
+  fifty-an-hour cap, and always was. `teanode mailbox contact` and the
+  agent's `auto-reply.quiet` setting are gone too.
+
 ### Changed
+
+- The out-of-office reply can be kept to people at your own domains: one
+  switch on the Auto-reply tab, `teanode mailbox autoreply set
+  --same-domain-only`. An away message is written for the people you work
+  with; sent to everybody, it tells whoever writes in that you are gone and
+  when you are back.
 
 - A calendar and an address book are things you give your agent, the way a
   mailbox is: a switch each on the agent's page, and `teanode agent source

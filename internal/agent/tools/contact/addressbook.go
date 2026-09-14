@@ -1,3 +1,4 @@
+// Package contact is the person's address book: the people they keep.
 package contact
 
 import (
@@ -13,9 +14,9 @@ import (
 // The address book: the people the person chose to keep, which their phone
 // synchronizes over CardDAV.
 //
-// Distinct from contact_search above, which is the addresses a mailbox has
-// seen go past. Both are offered because they answer different questions:
-// "who do I know" and "who has written to me".
+// This is the only answer to "who do I know". Nothing else keeps a list of
+// people: a mailbox no longer learns the addresses it has seen go past, and
+// "have they written before" is a search of the mail itself.
 
 func init() {
 	tools.Register(func() []*tools.Tool {
@@ -23,7 +24,7 @@ func init() {
 			{
 				Name: "contact_book", Family: tools.FamilyMailbox, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionContactsUse},
-				Description: "The person's own address book: the contacts they keep, which their phone and computer synchronize over CardDAV. Use list to see them or to search by name, organization, address or number; get for one contact with everything on it; save to keep a new one or change one that is kept; remove to forget one. This is not the same as contact_search, which is the addresses a mailbox has corresponded with and which nobody chose.",
+				Description: "The person's own address book: the contacts they keep, which their phone and computer synchronize over CardDAV. Use list to see them or to search by name, organization, address or number; get for one contact with everything on it; save to keep a new one or change one that is kept; remove to forget one.",
 				Parameters: tools.Object(map[string]any{
 					"action":       tools.EnumProperty("what to do", "list", "get", "save", "remove"),
 					"query":        tools.StringProperty("for list: narrow to contacts whose name, organization, address or number matches"),
@@ -35,7 +36,7 @@ func init() {
 					"phones":       tools.ArrayProperty("for save: their telephone numbers, replacing what is there", tools.StringProperty("a number")),
 					"note":         tools.StringProperty("for save: anything else worth keeping about them"),
 				}, "action"),
-				Guidance: "contact_book: contact_search finds the addresses a mailbox has corresponded with; this keeps people. To promote one -- \"save that sender to my contacts\" -- search for them there and save them here with their name and address; there is no separate action for it, because a contact kept from a learned address is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead.",
+				Guidance: "contact_book: this is the person's own list of people, and the only one there is -- to answer whether somebody has written before, search the mail instead. To keep a sender -- \"save that sender to my contacts\" -- save them here with their name and address; there is no separate action for it, because a contact kept from a message is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead.",
 				Preview: func(arguments json.RawMessage) string {
 					var call contactBookArguments
 					if err := json.Unmarshal(arguments, &call); err != nil {

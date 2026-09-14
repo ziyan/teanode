@@ -106,7 +106,7 @@ const agentViewSelection = `{
 	sources { mailboxId name addresses policy { granted draftReplies search research
 		triage { enabled backfill replyExpectation }
 		summaries { enabled minimumMessages style }
-		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
+		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit } } }
 	collections { id name kind granted items }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 	budget { used limit resetsAt cost costLimit currency }

@@ -555,8 +555,15 @@ func TestBusyStretchesAreCutToTheWindow(t *testing.T) {
 	if !strings.Contains(body, "20260916T000000Z/20260917T000000Z") {
 		t.Fatalf("cut to the day asked about:\n%s", body)
 	}
-	if strings.Contains(body, "20260914") || strings.Contains(body, "20260918") {
-		t.Fatalf("and says nothing about the days either side:\n%s", body)
+	// The periods only: DTSTAMP is today's date, whatever today is, and a
+	// test that reads the whole document fails on two days of the year.
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "FREEBUSY") {
+			continue
+		}
+		if strings.Contains(line, "20260914") || strings.Contains(line, "20260918") {
+			t.Fatalf("and says nothing about the days either side:\n%s", body)
+		}
 	}
 }
 

@@ -34,7 +34,7 @@ import (
 // and the date so that "Thursday" is a date.
 var extractTools = map[string]bool{
 	"mail_read": true, "calendar": true, "contact_book": true,
-	"contact_search": true, "datetime": true,
+	"datetime": true,
 }
 
 // ExtractAnswer is the object the run answers with.

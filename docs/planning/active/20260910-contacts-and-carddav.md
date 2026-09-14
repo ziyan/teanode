@@ -41,6 +41,12 @@ corresponded with, not a list of people you chose to keep — and this plan adds
 the second without disturbing the first. A learned address becomes a contact
 only when somebody presses "save to contacts".
 
+> **Superseded, 2026-09-13.** Two lists of people needed a paragraph on the
+> Contacts page to say which was which, which is one list too many. The
+> learned ledger is dropped: the address book is the only list, and
+> completion, `sender-known` and the agent's contact tool all read it. See
+> `docs/decisions/20260913-the-address-book-is-the-only-list-of-people.md`.
+
 ## Progress
 
 - [x] (2026-09-12 12:50Z) Researched the library question with a working spike;

@@ -194,8 +194,8 @@ small local model.
 
 Tool sets, deliberately small, because these runs happen on every message:
 
-    triage: mail_read, mail_search, contact_search, calendar, memory, datetime
-    reply:  mail_read, mail_search, contact_search, contact_book, calendar,
+    triage: mail_read, mail_search, contact_book, calendar, memory, datetime
+    reply:  mail_read, mail_search, contact_book, calendar,
             memory, datetime, web_fetch, web_search
 
 `calendar` and `contact_book` appear only when the agent has been granted
@@ -282,7 +282,7 @@ already works: the model says when a message looks like it carries an
 appointment or somebody's details. The worker then enqueues an `extract` job
 whose subject is the message. The extract run is a conversation-loop run
 (read-only, headless, `maxRoundsPerExtract` default 4) with `mail_read`,
-`calendar`, `contact_book`, `contact_search` and `datetime`, whose prompt
+`calendar`, `contact_book` and `datetime`, whose prompt
 asks for a JSON object:
 
     {"events": [{"summary": "...", "starts": "2026-09-17T16:00", "ends": "...",
@@ -447,7 +447,7 @@ a token:
 
 The difference between the last two is the tool definitions: six were 5,690
 characters of schema, four are 3,905. So the set was cut to `mail_read`,
-`mail_search`, `contact_search` and `datetime` — the calendar came out
+`mail_search`, `contact_book` and `datetime` — the calendar came out
 because whether Thursday is free does not change what a message *is*, and
 `memory` came out because what the person said about sorting is already in
 the prompt, carried by the layer that holds their memories.

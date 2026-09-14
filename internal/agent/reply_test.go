@@ -34,7 +34,7 @@ func (self *fakeExchange) RunInsightRules(tx db.Transaction, mailbox *models.Mai
 	return nil
 }
 
-func (self *fakeExchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
+func (self *fakeExchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error) {
 	return self.refusal, nil
 }
 
@@ -136,9 +136,6 @@ func TestAutoReplyIsHeldThenSent(t *testing.T) {
 		if _, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
 			t.Fatalf("AddItem: %s", err)
 		}
-		if err := tx.TouchLearnedContact(mailbox.ID, from, "", mail.ReceivedAt); err != nil {
-			t.Fatalf("TouchContact: %s", err)
-		}
 		worker.OnMailboxDelivery(tx, mailbox, nil, mail)
 		return mail
 	}
@@ -189,18 +186,31 @@ func TestAutoReplyIsHeldThenSent(t *testing.T) {
 		if inbox, err = tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox); err != nil || inbox == nil {
 			t.Fatalf("GetFolderByKind: %v %s", inbox, err)
 		}
-		// A stranger first: sorted, needs a reply, but not a contact.
+		// A stranger first: sorted, needs a reply, but nobody the person
+		// keeps in their address book.
 		first = deliver(tx, "maria@example.net", "Thursday?", "Can you do Thursday at 3?")
 	})
 	run() // triage
 	run() // reply
-	if reply := repliesTo(first.ID); reply == nil || reply.Status != models.AgentReplyRefused || reply.Reason != "the sender is not a contact" {
+	if reply := repliesTo(first.ID); reply == nil || reply.Status != models.AgentReplyRefused || reply.Reason != "the sender is not in the address book" {
 		t.Fatalf("a stranger is not answered under scope known: %+v", reply)
 	}
 
-	// Now a contact: the second message from the same address.
+	// Now somebody the person keeps: the same address, written into the
+	// address book, which is the only thing "known" means.
 	var second *models.Mail
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		book, err := tx.CreateAddressBook(&models.AddressBook{UserID: owner.ID, Name: "Contacts"})
+		if err != nil {
+			t.Fatalf("CreateAddressBook: %s", err)
+		}
+		if _, err := tx.PutContact(&models.Contact{
+			AddressBookID: book.ID, UID: "urn:uuid:maria", ETag: "e1",
+			Card: "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:maria\r\nFN:Maria\r\nEMAIL:maria@example.net\r\nEND:VCARD\r\n",
+			Name: "Maria", Emails: []string{"maria@example.net"},
+		}); err != nil {
+			t.Fatalf("PutContact: %s", err)
+		}
 		second = deliver(tx, "maria@example.net", "Re: Thursday?", "So, Thursday at 3?")
 	})
 	run()

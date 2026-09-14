@@ -50,7 +50,6 @@ export type AgentAutoReply = {
   hours?: AgentHours | null
   holdMinutes?: number
   dailyLimit?: number
-  quietDays?: number
 }
 export type AgentMailboxPolicy = {
   granted: boolean
@@ -104,7 +103,7 @@ const VIEW = `{
   sources { mailboxId name addresses policy { granted draftReplies search research
     triage { enabled backfill replyExpectation }
     summaries { enabled minimumMessages style }
-    autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
+    autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit } } }
   collections { id name kind granted items }
   allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
   budget { used limit resetsAt cost costLimit currency }
@@ -2411,16 +2410,6 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
               inputMode="numeric"
               placeholder="20"
               onChange={(event) => setReply({ dailyLimit: Number(event.target.value) || 0 })}
-            />
-          </label>
-          <label className="shrink">
-            <span>{t('agent.quietDays')}</span>
-            <input
-              className="narrow"
-              value={reply.quietDays || ''}
-              inputMode="numeric"
-              placeholder="7"
-              onChange={(event) => setReply({ quietDays: Number(event.target.value) || 0 })}
             />
           </label>
         </div>

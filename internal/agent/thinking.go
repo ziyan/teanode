@@ -46,15 +46,15 @@ type thought struct {
 // is. Not memory: what the person told the agent about sorting is already in
 // the prompt, from the layer that carries their memories.
 var triageTools = map[string]bool{
-	"mail_read": true, "mail_search": true, "contact_search": true, "datetime": true,
+	"mail_read": true, "mail_search": true, "contact_book": true, "datetime": true,
 }
 
 // replyTools is what a drafting run may reach: everything sorting has, the
-// address book, and the web where the operator allows it. Answering somebody
+// diary, memory, and the web where the operator allows it. Answering somebody
 // is where looking things up earns its keep -- "are you free Thursday" cannot
 // be answered without the diary.
 var replyTools = map[string]bool{
-	"mail_read": true, "mail_search": true, "contact_search": true, "contact_book": true,
+	"mail_read": true, "mail_search": true, "contact_book": true,
 	"calendar": true, "memory": true, "datetime": true,
 	"web_fetch": true, "web_search": true,
 }

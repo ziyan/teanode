@@ -95,16 +95,15 @@ type MailboxOperation interface {
 	// the "sender is known" rule asks about. They are not the address book,
 	// which is the person's own and lives in database_contact.go; an address
 	// learned here becomes a contact there only when somebody saves it.
-	TouchLearnedContact(mailboxId, address, name string, at time.Time) error
-	ListLearnedContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error)
-	GetLearnedContact(mailboxId, address string) (*models.MailboxContact, error)
-	// SaveLearnedContact adds one, or renames one; DeleteLearnedContact
-	// forgets it.
-	SaveLearnedContact(mailboxId, address, name string) (*models.MailboxContact, error)
-	DeleteLearnedContact(mailboxId, address string) error
-	MarkContactAutoReplied(mailboxId, address string, at time.Time) error
-	ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error)
-	CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error)
+	// ClaimAutoReply counts one automatic reply from a mailbox in the hour it
+	// falls in, and says whether it was under the limit: one statement, so two
+	// instances deciding at the same moment cannot both send past it.
+	//
+	// A count per hour and no addresses. What stood here kept a row for every
+	// address that had ever written, so that a sender could be left alone for
+	// a week after one reply -- a ledger of everybody who has written, built to
+	// avoid writing back twice.
+	ClaimAutoReply(mailboxId string, at time.Time, limit int) (bool, error)
 
 	// App passwords, one per device.
 	ListAppPasswords(mailboxId string) ([]*models.MailboxAppPassword, error)
@@ -259,16 +258,13 @@ type mailboxFolderExpungeModel struct {
 
 func (mailboxFolderExpungeModel) TableName() string { return "mailbox_folder_expunge" }
 
-type mailboxContactModel struct {
-	MailboxID     string     `gorm:"column:mailbox_id;primaryKey"`
-	Address       string     `gorm:"column:address;primaryKey"`
-	Name          string     `gorm:"column:name"`
-	LastSeenAt    time.Time  `gorm:"column:last_seen_at"`
-	Count         int        `gorm:"column:count"`
-	AutoRepliedAt *time.Time `gorm:"column:auto_replied_at"`
+type mailboxAutoReplyModel struct {
+	MailboxID string    `gorm:"column:mailbox_id;primaryKey"`
+	Hour      time.Time `gorm:"column:hour;primaryKey"`
+	Count     int       `gorm:"column:count"`
 }
 
-func (mailboxContactModel) TableName() string { return "mailbox_contact" }
+func (mailboxAutoReplyModel) TableName() string { return "mailbox_auto_reply" }
 
 type mailboxAppPasswordModel struct {
 	ID           string     `gorm:"column:id;primaryKey"`
@@ -1758,183 +1754,30 @@ func (self *transaction) ScavengeExpunged(before time.Time) (int64, error) {
 // Addresses learned from traffic. The address book proper is in
 // database_contact.go.
 
-func (self *transaction) TouchLearnedContact(mailboxId, address, name string, at time.Time) error {
-	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
-	name = truncateRunes(strings.TrimSpace(name), 255)
-	if mailboxId == "" || address == "" {
-		return nil
+// ClaimAutoReply counts one reply in its hour and says whether the mailbox
+// was still under the limit. One statement: two instances receiving from the
+// same sender at the same moment cannot both decide they are the fiftieth.
+func (self *transaction) ClaimAutoReply(mailboxId string, at time.Time, limit int) (bool, error) {
+	if mailboxId == "" || limit <= 0 {
+		return false, ErrInvalidArguments
 	}
-	return self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count") VALUES (?, ?, ?, ?, 1)
-		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "last_seen_at" = EXCLUDED."last_seen_at", "count" = "mailbox_contact"."count" + 1,
-		"name" = CASE WHEN EXCLUDED."name" <> '' THEN EXCLUDED."name" ELSE "mailbox_contact"."name" END`,
-		mailboxId, address, name, at).Error
-}
-
-func contactFromModel(model *mailboxContactModel) *models.MailboxContact {
-	contact := &models.MailboxContact{
-		MailboxID: model.MailboxID, Address: model.Address, Name: model.Name,
-		LastSeenAt: model.LastSeenAt.In(time.Local), Count: model.Count,
-	}
-	if model.AutoRepliedAt != nil {
-		at := model.AutoRepliedAt.In(time.Local)
-		contact.AutoRepliedAt = &at
-	}
-	return contact
-}
-
-func (self *transaction) ListLearnedContacts(mailboxId string, prefix string, limit int) ([]*models.MailboxContact, error) {
-	query := self.tx.Where("\"mailbox_id\" = ?", mailboxId)
-	if prefix = strings.ToLower(strings.TrimSpace(prefix)); prefix != "" {
-		like := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix) + "%"
-		query = query.Where("(\"address\" LIKE ? OR lower(\"name\") LIKE ?)", like, like)
-	}
-	if limit <= 0 {
-		limit = 20
-	}
-	var rows []mailboxContactModel
-	if err := query.Order("\"count\" DESC, \"last_seen_at\" DESC").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	contacts := make([]*models.MailboxContact, 0, len(rows))
-	for index := range rows {
-		contacts = append(contacts, contactFromModel(&rows[index]))
-	}
-	if err := self.attachContactLogos(mailboxId, contacts); err != nil {
-		// A missing mark is a missing picture, not a missing contact.
-		log.Warningf("failed to read the marks for the contacts of %q: %s", mailboxId, err)
-	}
-	return contacts, nil
-}
-
-// attachContactLogos gives each contact the mark its domain publishes, when
-// this server holds one and the mail proves the address is that domain's.
-//
-// The proof matters: the cache is filled from whatever writes to this server,
-// and a mark drawn beside an address whose mail failed its checks would be
-// this program vouching for whoever is pretending to be them. So the newest
-// message from each address is read, and the mark is shown only where that
-// message passed DMARC — the same rule the subscriptions list uses.
-func (self *transaction) attachContactLogos(mailboxId string, contacts []*models.MailboxContact) error {
-	if len(contacts) == 0 {
-		return nil
-	}
-
-	addresses := make([]string, 0, len(contacts))
-	domains := make([]string, 0, len(contacts))
-	for _, contact := range contacts {
-		addresses = append(addresses, contact.Address)
-		if _, domain, found := strings.Cut(contact.Address, "@"); found && domain != "" {
-			domains = append(domains, strings.ToLower(domain))
-		}
-	}
-	if len(domains) == 0 {
-		return nil
-	}
-
-	logos, err := self.ListBimiLogos(domains, "default")
-	if err != nil {
-		return err
-	}
-	if len(logos) == 0 {
-		return nil
-	}
-
-	// The newest message from each of these addresses that this mailbox
-	// holds: one row per address, which is what decides whether the mark is
-	// shown.
-	var newest []mailModel
-	if err := self.tx.Raw(`
-		SELECT DISTINCT ON (lower("mail"."from")) "mail".*
-		FROM "mail"
-		JOIN "mailbox_item" ON "mailbox_item"."mail_id" = "mail"."id"
-		JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
-		WHERE "mailbox_folder"."mailbox_id" = ? AND lower("mail"."from") IN ?
-		ORDER BY lower("mail"."from"), "mail"."received_at" DESC`,
-		mailboxId, addresses).Scan(&newest).Error; err != nil {
-		return err
-	}
-
-	authenticated := make(map[string]bool, len(newest))
-	for index := range newest {
-		mail := getMailFromMailModel(newest[index])
-		if mail.DMARCPassed() {
-			authenticated[strings.ToLower(mail.From)] = true
-		}
-	}
-
-	for _, contact := range contacts {
-		if !authenticated[strings.ToLower(contact.Address)] {
-			continue
-		}
-		_, domain, found := strings.Cut(strings.ToLower(contact.Address), "@")
-		if !found {
-			continue
-		}
-		if logo := logos[domain]; logo != nil && logo.ContentType != "" {
-			contact.LogoDomain = domain
-		}
-	}
-	return nil
-}
-
-func (self *transaction) GetLearnedContact(mailboxId, address string) (*models.MailboxContact, error) {
-	var rows []mailboxContactModel
-	if err := self.tx.Where("\"mailbox_id\" = ? AND \"address\" = ?", mailboxId, strings.ToLower(strings.TrimSpace(address))).Limit(1).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	return contactFromModel(&rows[0]), nil
-}
-
-func (self *transaction) SaveLearnedContact(mailboxId, address, name string) (*models.MailboxContact, error) {
-	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
-	name = truncateRunes(strings.TrimSpace(name), 255)
-	if mailboxId == "" || address == "" {
-		return nil, ErrInvalidArguments
-	}
-	if err := self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count") VALUES (?, ?, ?, ?, 0)
-		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "name" = EXCLUDED."name"`, mailboxId, address, name, time.Now()).Error; err != nil {
-		return nil, err
-	}
-	return self.GetLearnedContact(mailboxId, address)
-}
-
-func (self *transaction) DeleteLearnedContact(mailboxId, address string) error {
-	address = strings.ToLower(strings.TrimSpace(address))
-	return self.tx.Where("\"mailbox_id\" = ? AND \"address\" = ?", mailboxId, address).Delete(&mailboxContactModel{}).Error
-}
-
-func (self *transaction) MarkContactAutoReplied(mailboxId, address string, at time.Time) error {
-	address = strings.ToLower(strings.TrimSpace(address))
-	// Locked, so that two instances receiving from one sender at the same
-	// moment take turns and only one of them sends.
-	return self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count", "auto_replied_at") VALUES (?, ?, '', ?, 0, ?)
-		ON CONFLICT ("mailbox_id", "address") DO UPDATE SET "auto_replied_at" = EXCLUDED."auto_replied_at"`, mailboxId, address, at, at).Error
-}
-
-// ClaimAutoReply marks the sender replied to, unless it was within the quiet
-// period already, and says whether the caller won: one statement, so two
-// instances receiving from one sender at the same moment cannot both send.
-func (self *transaction) ClaimAutoReply(mailboxId, address string, at time.Time, quiet time.Duration) (bool, error) {
-	address = truncateRunes(strings.ToLower(strings.TrimSpace(address)), 255)
-	if err := self.tx.Exec(`INSERT INTO "mailbox_contact" ("mailbox_id", "address", "name", "last_seen_at", "count") VALUES (?, ?, '', ?, 0)
-		ON CONFLICT ("mailbox_id", "address") DO NOTHING`, mailboxId, address, at).Error; err != nil {
-		return false, err
-	}
-	result := self.tx.Exec(`UPDATE "mailbox_contact" SET "auto_replied_at" = ? WHERE "mailbox_id" = ? AND "address" = ?
-		AND ("auto_replied_at" IS NULL OR "auto_replied_at" < ?)`, at, mailboxId, address, at.Add(-quiet))
+	hour := at.UTC().Truncate(time.Hour)
+	result := self.tx.Exec(`INSERT INTO "mailbox_auto_reply" ("mailbox_id", "hour", "count") VALUES (?, ?, 1)
+		ON CONFLICT ("mailbox_id", "hour") DO UPDATE SET "count" = "mailbox_auto_reply"."count" + 1
+		WHERE "mailbox_auto_reply"."count" < ?`, mailboxId, hour, limit)
 	if result.Error != nil {
 		return false, result.Error
 	}
-	return result.RowsAffected > 0, nil
-}
-
-func (self *transaction) CountAutoRepliesSince(mailboxId string, since time.Time) (int64, error) {
-	var count int64
-	err := self.tx.Model(&mailboxContactModel{}).Where("\"mailbox_id\" = ? AND \"auto_replied_at\" >= ?", mailboxId, since).Count(&count).Error
-	return count, err
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	// The hours before this one are of no further interest: the limit is
+	// about the hour in hand, and nothing reads yesterday.
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"hour\" < ?", mailboxId, hour.Add(-2*time.Hour)).
+		Delete(&mailboxAutoReplyModel{}).Error; err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // App passwords.

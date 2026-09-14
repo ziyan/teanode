@@ -90,6 +90,11 @@ type MemoryOperation interface {
 	DeleteContact(addressBookId, contactId string) error
 	CountContacts(addressBookId string) (int64, error)
 
+	// FindContactByAddress is the person's own contact carrying an address,
+	// across their address books, or nil. What "the sender is known" means:
+	// somebody they keep, rather than anybody who has ever written.
+	FindContactByAddress(userId, address string) (*models.Contact, error)
+
 	// The calendar: a person's own events, kept as iCalendar text. The
 	// occurrences beside them are derived from that text and rewritten
 	// whenever it is, so that "what is on this week" and "when is this

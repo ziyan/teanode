@@ -364,3 +364,33 @@ func (self *transaction) CountContacts(addressBookId string) (int64, error) {
 func escapeLike(value string) string {
 	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(value)
 }
+
+// FindContactByAddress is the contact in any of the person's address books
+// that carries this address, or nil.
+//
+// What "the sender is known" means now. It used to mean a row in a ledger of
+// every address that had ever written to the mailbox; it means the person
+// keeps them.
+//
+// The addresses of a card are stored one per line, so the match is on a whole
+// line rather than on a substring: without that, keeping "ada@example.com"
+// would make "not-ada@example.com" a known sender too.
+func (self *transaction) FindContactByAddress(userId, address string) (*models.Contact, error) {
+	address = strings.ToLower(strings.TrimSpace(address))
+	if userId == "" || address == "" {
+		return nil, nil
+	}
+	var rows []contactModel
+	if err := self.tx.
+		Joins("JOIN \"addressbook\" ON \"addressbook\".\"id\" = \"contact\".\"addressbook_id\"").
+		Where("\"addressbook\".\"user_id\" = ?", userId).
+		Where("LOWER(\"contact\".\"emails\") = ? OR LOWER(\"contact\".\"emails\") LIKE ? OR LOWER(\"contact\".\"emails\") LIKE ? OR LOWER(\"contact\".\"emails\") LIKE ?",
+			address, address+"\n%", "%\n"+address, "%\n"+address+"\n%").
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0].toModel(), nil
+}
