@@ -1982,8 +1982,6 @@ export const ja: Catalog = {
   'saveSender.updated': '連絡先を更新しました。',
   'saveSender.failed': '連絡先を保存できませんでした。',
   'saveSender.needsAddress': '連絡先にはメールアドレスが必要です。',
-  'mailbox.showSorting': '仕分けの理由',
-  'mailbox.hideSorting': '仕分けの理由を隠す',
   'mailbox.sortingCategory': 'カテゴリ',
   'mailbox.sortingPriority': '優先度',
   'mailbox.sortingNeedsReply': '返信が必要',

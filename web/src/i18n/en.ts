@@ -1994,8 +1994,6 @@ export const en = {
   'saveSender.updated': 'Contact updated.',
   'saveSender.failed': 'The contact could not be saved.',
   'saveSender.needsAddress': 'A contact needs an email address.',
-  'mailbox.showSorting': 'Why this was sorted',
-  'mailbox.hideSorting': 'Hide why this was sorted',
   'mailbox.sortingCategory': 'Category',
   'mailbox.sortingPriority': 'Priority',
   'mailbox.sortingNeedsReply': 'Wants a reply',

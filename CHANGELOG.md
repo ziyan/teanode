@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- What the agent worked out about a message is part of its details rather
+  than a second panel under them. Both answer the same question — what this
+  server knows about this message — and two lists of the same shape, one
+  above the other, read as one list that has gone wrong. One menu item now,
+  and one list: who it is from, when it arrived, what the checks said, then
+  the category, the priority and the rest.
+
+### Fixed
+
+- The "Decided by" line sits beside its label again. A link-shaped button
+  keeps the height a browser gives a button, which is taller than a line of
+  the small text around it, so that one row grew and its words dropped a line
+  below the label they belong to while every row above lined up.
+
 ## [0.23.1] - 2026-09-14
 
 ### Fixed

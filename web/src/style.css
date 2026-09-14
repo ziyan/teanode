@@ -4308,16 +4308,30 @@ label.check-list-item {
   color: var(--text);
   overflow-wrap: anywhere;
 }
-/* What the agent worked out about a message, opened from its menu beside the
-   headers. A definition list like the details above it, with the notes and
-   the summary allowed to wrap rather than being held to one line. */
-.mailbox-sorting dd {
-   white-space: normal;
+/* What the agent worked out, at the end of the message's details: the same
+   question as the headers above it, so the same list. A little air where the
+   one becomes the other, which is the only thing marking them apart. */
+.mailbox-pane-meta .mailbox-meta-break {
+  margin-top: 8px;
+}
+
+.mailbox-pane-meta .mailbox-meta-break + dd {
+  margin-top: 8px;
 }
 
 .mailbox-sorting-list {
   margin: 0;
   padding-left: 1.1rem;
+}
+
+/* A link-shaped button sits on the text's baseline and does not make the
+   line it is on any taller. Without this it keeps the height a button gets
+   from the browser, which is more than a line of 13px text -- so the row
+   holding it grew, and its words sat a line below the label they belong to
+   while every row above them lined up. */
+.mailbox-pane-meta button.link {
+  line-height: inherit;
+  vertical-align: baseline;
 }
 
 .mailbox-pane-actions {
