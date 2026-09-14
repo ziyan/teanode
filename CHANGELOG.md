@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-09-14
+
 ### Fixed
 
 - A Windows path in a message your agent read comes back with its backslashes.
