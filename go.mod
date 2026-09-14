@@ -32,11 +32,11 @@ require (
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/urfave/cli/v3 v3.11.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.58.0
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/net v0.59.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0
-	golang.org/x/tools v0.49.0
+	golang.org/x/tools v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
