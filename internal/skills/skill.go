@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"sort"
@@ -162,6 +163,26 @@ const (
 	KindShell    = "shell"
 	KindHTTP     = "http"
 	KindWorkflow = "workflow"
+)
+
+// What a step asks to be made of what it fetched.
+const (
+	// ResultJSON parses the answer, so that steps after it can select
+	// fields out of it; ResultText hands it over as it came.
+	ResultJSON = "json"
+	ResultText = "text"
+
+	// ResultImage is a picture: it is kept beside the answer rather than
+	// in it, and shown to the model and to the person as a picture. A
+	// step that asked for text and was sent a JPEG would put several
+	// hundred kilobytes of bytes-as-letters where the model reads.
+	ResultImage = "image"
+
+	// ResultFile is anything else made of bytes -- a clip, a document, an
+	// archive. It is handed to the person as a file of the conversation
+	// and never read here: what a model does with a video is give it to
+	// the person's own programs, not watch it.
+	ResultFile = "file"
 
 	// maximumSecretKey is the width of the key column a person's own
 	// values are kept in, and maximumSkillName the width of the name
@@ -184,12 +205,54 @@ var (
 	reference = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 )
 
+// Doubled braces are a literal pair, the way they are in a format string.
+//
+// A skill talks to services whose own payloads are written in braces --
+// Home Assistant's templates, a dashboard's queries, a webhook's body --
+// and without this there is no way to send one: {{ states.light }} would be
+// read as a value this skill was supposed to provide, and refused as one it
+// has never heard of. So {{{{ and }}}} pass through as {{ and }}.
+//
+// They are hidden behind a byte that cannot appear in a skill before the
+// references are read, and put back afterwards. Parse refuses a file
+// carrying that byte, so nothing can arrive already wearing the disguise.
+const (
+	openMark  = "\x00{"
+	closeMark = "\x00}"
+)
+
+// hideDoubled takes the escaped braces out of the way, so that what is left
+// is only the references this skill is meant to fill in.
+func hideDoubled(text string) string {
+	if !strings.Contains(text, "{{{{") && !strings.Contains(text, "}}}}") {
+		return text
+	}
+	text = strings.ReplaceAll(text, "{{{{", openMark)
+	return strings.ReplaceAll(text, "}}}}", closeMark)
+}
+
+// showDoubled puts them back, as the single pair the service is to receive.
+func showDoubled(text string) string {
+	if !strings.Contains(text, "\x00") {
+		return text
+	}
+	text = strings.ReplaceAll(text, openMark, "{{")
+	return strings.ReplaceAll(text, closeMark, "}}")
+}
+
 // Parse reads one skill file and refuses anything it cannot carry out.
 // Everything after this trusts what comes back, so the checking is done
 // here and done strictly: a reference to a step that does not exist would
 // otherwise become an empty string in an address, and a skill that quietly
 // fetches the wrong thing is worse than one that will not install.
 func Parse(content []byte) (*Skill, error) {
+	// Nothing legible carries a zero byte, and the escape for doubled
+	// braces hides them behind one -- so a file carrying one already could
+	// otherwise smuggle a pair of braces past the check that every
+	// reference in it is one this server can fill in.
+	if bytes.IndexByte(content, 0) >= 0 {
+		return nil, fmt.Errorf("skills: the file carries a zero byte, which nothing written for a person does")
+	}
 	header, prose, err := split(content)
 	if err != nil {
 		return nil, err
@@ -411,11 +474,11 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 			return err
 		}
 		switch step.Result {
-		case "", "json", "text":
+		case "", ResultJSON, ResultText, ResultImage, ResultFile:
 		default:
-			return fmt.Errorf("skills: the step %s asks for a %q result, which is not json or text", where, step.Result)
+			return fmt.Errorf("skills: the step %s asks for a %q result, which is not json, text, image or file", where, step.Result)
 		}
-		if len(step.Select) > 0 && step.Result != "json" {
+		if len(step.Select) > 0 && step.Result != ResultJSON {
 			return fmt.Errorf("skills: the step %s selects from its answer without asking for json", where)
 		}
 		return nil
@@ -439,7 +502,7 @@ func (self *Skill) checkCondition(where, condition string, available map[string]
 		sides = append(sides, right)
 	}
 	for _, side := range sides {
-		for _, match := range reference.FindAllStringSubmatch(side, -1) {
+		for _, match := range reference.FindAllStringSubmatch(hideDoubled(side), -1) {
 			if err := self.checkReference(where, strings.TrimSpace(match[1]), available, earlier, secrets); err != nil {
 				return err
 			}
@@ -450,7 +513,7 @@ func (self *Skill) checkCondition(where, condition string, available map[string]
 
 func (self *Skill) checkList(where string, values []string, available map[string]bool, earlier map[string]bool, secrets map[string]bool) error {
 	for _, value := range values {
-		for _, match := range reference.FindAllStringSubmatch(value, -1) {
+		for _, match := range reference.FindAllStringSubmatch(hideDoubled(value), -1) {
 			if err := self.checkReference(where, strings.TrimSpace(match[1]), available, earlier, secrets); err != nil {
 				return err
 			}
@@ -504,7 +567,7 @@ func (self *Skill) checkReference(where, reference string, available map[string]
 }
 
 func (self *Skill) checkSecrets(value string, secrets map[string]bool) error {
-	for _, match := range reference.FindAllStringSubmatch(value, -1) {
+	for _, match := range reference.FindAllStringSubmatch(hideDoubled(value), -1) {
 		name := strings.TrimSpace(match[1])
 		if !strings.HasPrefix(name, "secret:") {
 			continue
@@ -564,7 +627,7 @@ func (self *Skill) secretsSent(step *Step) []string {
 func secretsIn(values ...string) []string {
 	var keys []string
 	for _, value := range values {
-		for _, match := range reference.FindAllStringSubmatch(value, -1) {
+		for _, match := range reference.FindAllStringSubmatch(hideDoubled(value), -1) {
 			name, _ := SplitReference(strings.TrimSpace(match[1]))
 			if key, found := strings.CutPrefix(name, "secret:"); found {
 				keys = append(keys, strings.TrimSpace(key))
@@ -602,7 +665,7 @@ func settledHost(address string) error {
 // unsettled says whether a piece of an address carries a reference that is
 // not a secret.
 func unsettled(piece string) bool {
-	for _, match := range reference.FindAllStringSubmatch(piece, -1) {
+	for _, match := range reference.FindAllStringSubmatch(hideDoubled(piece), -1) {
 		name, _ := SplitReference(strings.TrimSpace(match[1]))
 		if !strings.HasPrefix(name, "secret:") {
 			return true

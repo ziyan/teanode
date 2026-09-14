@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/util/safefetch"
@@ -23,8 +25,14 @@ const (
 	longestSeconds = 120
 	answerBytes    = 256 << 10
 
-	// mostBytes is the hard cap, however much a step asks for.
-	mostBytes = 4 << 20
+	// mostBytes is the hard cap on an answer read as text, however much a
+	// step asks for; pictureBytes and fileBytes are what a step asking for
+	// a picture or a file reads, and the most either may ask for. A file
+	// is held whole in memory on its way to the person, which is what
+	// bounds it: the same bound the agent puts on handing a file over.
+	mostBytes    = 4 << 20
+	pictureBytes = 2 << 20
+	fileBytes    = 32 << 20
 )
 
 // Shell runs a command somewhere. A skill's commands never run on this
@@ -61,21 +69,90 @@ type Running struct {
 	// their own network, for a skill pointed at equipment of theirs. Nil
 	// keeps the guard as it is everywhere else.
 	Allowance *safefetch.Allowance
+
+	// Unverified is the equipment whose certificate is not checked, for the
+	// controllers that cannot present a valid one for the address they are
+	// reached at. Nil checks every certificate, which is the default.
+	Unverified *safefetch.Allowance
+
+	// Files are what the steps asking for a picture or a file fetched, in
+	// the order they fetched them. They are collected here rather than put
+	// in the answer because bytes are not text: the caller hands them to
+	// the person as files of the conversation, and shows the model the
+	// ones it can look at.
+	Files []Fetched
+
+	// The cookies the steps of this one run have been given, made when the
+	// first step asks for them.
+	once sync.Once
+	jar  http.CookieJar
+}
+
+// Fetched is a file one step fetched rather than read as text.
+type Fetched struct {
+	// Step is the step that fetched it, which is what it is named after
+	// when it is handed to somebody.
+	Step string
+
+	// MediaType is what the service said it is, with any parameters cut
+	// off: image/jpeg, video/mp4, application/pdf.
+	MediaType string
+
+	// Data is the file itself.
+	Data []byte
+
+	// Look says a model can be shown it, which only a picture can be. A
+	// clip is handed to the person and worked on by their own programs;
+	// no model here watches one.
+	Look bool
+}
+
+// cookies are the cookies this run's steps have been given, so that a step
+// which signs in is followed by steps that are signed in. Plenty of
+// equipment has no other way: a console takes a name and a password at one
+// address and answers everything else only to the session it handed back.
+//
+// The jar belongs to the one run, so a session never outlives the call that
+// opened it or reaches another person's. A jar is also where the cookie
+// belongs rather than a header a skill copies about by hand: it sends each
+// cookie back only to the host that set it, so a step pointed somewhere
+// else cannot carry somebody's session out with it.
+func (self *Running) cookies() http.CookieJar {
+	if self == nil {
+		return nil
+	}
+	self.once.Do(func() {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			// cookiejar.New(nil) does not fail; a run without a jar is
+			// still a run, and a step that needed one says so itself.
+			return
+		}
+		self.jar = jar
+	})
+	return self.jar
 }
 
 // client fetches for one step. safefetch's own client carries a ten
 // second timeout, which would silently override a step that asked for
 // longer, so the step's time is put on the client the guard built.
-func (self *Running) client(timeout time.Duration) *http.Client {
+func (self *Running) client(timeout time.Duration, host string) *http.Client {
 	if self != nil && self.Client != nil {
 		return self.Client
 	}
-	var allowance *safefetch.Allowance
+	var allowance, unverified *safefetch.Allowance
 	if self != nil {
-		allowance = self.Allowance
+		allowance, unverified = self.Allowance, self.Unverified
 	}
-	guarded := safefetch.ClientAllowing(allowance)
+	// Per request, with the host in hand: skipping the certificate check is
+	// for the one piece of equipment the operator named, and a client shared
+	// between steps could not tell them apart.
+	guarded := safefetch.ClientAllowingUnverified(allowance, unverified, host)
 	guarded.Timeout = timeout
+	// One jar across the steps, though the clients are made one per step:
+	// a workflow that signs in and then fetches is signed in when it
+	// fetches.
+	guarded.Jar = self.cookies()
 	return guarded
 }
 
@@ -324,7 +401,7 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 	if err := self.authenticate(request, step.Auth); err != nil {
 		return nil, err
 	}
-	response, err := self.running.client(allowed).Do(request)
+	response, err := self.running.client(allowed, target.Hostname()).Do(request)
 	if err != nil {
 		// The reason, without the address it was reaching. A step may
 		// carry a secret in its query string -- the skill's author chooses
@@ -343,12 +420,22 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 	// What the step asks for, up or down, within the hard cap: asking for
 	// more than the default and silently getting less cut a JSON answer
 	// in half and reported it as a service that does not answer with JSON.
-	most := int64(answerBytes)
+	// What this step reads, and the most it may ask for. A picture or a
+	// file is bytes rather than letters, and both are commonly larger than
+	// anything worth reading as text -- a camera's snapshot is past the
+	// reading default, and a minute of video is past all of them.
+	most, ceiling := int64(answerBytes), int64(mostBytes)
+	switch step.Result {
+	case ResultImage:
+		most, ceiling = pictureBytes, pictureBytes
+	case ResultFile:
+		most, ceiling = fileBytes, fileBytes
+	}
 	if step.MaxBytes > 0 {
 		most = int64(step.MaxBytes)
-		if most > mostBytes {
-			most = mostBytes
-		}
+	}
+	if most > ceiling {
+		most = ceiling
 	}
 	answer, err := io.ReadAll(io.LimitReader(response.Body, most+1))
 	if err != nil {
@@ -361,7 +448,10 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 	if response.StatusCode >= 400 {
 		return nil, fmt.Errorf("%s answered %d: %s", target.Host, response.StatusCode, cutTo(strings.TrimSpace(string(answer)), 300))
 	}
-	if step.Result != "json" {
+	if step.Result == ResultImage || step.Result == ResultFile {
+		return self.fetched(step, response, answer, most, cutShort)
+	}
+	if step.Result != ResultJSON {
 		text := string(answer)
 		if cutShort {
 			text += "\n[cut here: the answer goes on]"
@@ -385,6 +475,68 @@ func (self *run) httpStep(ctx context.Context, step *Step) (map[string]any, erro
 		}
 	}
 	return picked, nil
+}
+
+// pictureTypes are the pictures a model can be shown and a browser can
+// display. Anything else a service calls an image -- an SVG, which is a
+// document that can fetch, a TIFF nothing renders -- is refused here
+// rather than handed on.
+var pictureTypes = map[string]bool{
+	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true,
+}
+
+// fetched keeps what a step fetched beside the answer instead of in it.
+//
+// The answer a step returns is read by a model as text. A JPEG or an MP4
+// read as text is a few hundred thousand characters of noise that say
+// nothing about what is in them, cost what they cost, and crowd out
+// everything else in the round -- so the bytes go to the caller, which
+// hands them to the person as a file of the conversation and shows the
+// model the ones it can look at. What goes in the answer is a line saying
+// what was fetched and where the person's copy is.
+func (self *run) fetched(step *Step, response *http.Response, answer []byte, most int64, cutShort bool) (map[string]any, error) {
+	where := "the service"
+	if response.Request != nil && response.Request.URL != nil {
+		where = response.Request.URL.Host
+	}
+	wanted := "file"
+	if step.Result == ResultImage {
+		wanted = "picture"
+	}
+	mediaType := response.Header.Get("Content-Type")
+	if cut := strings.IndexByte(mediaType, ';'); cut >= 0 {
+		mediaType = mediaType[:cut]
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	// A picture has to be one a model can actually be shown; a file may be
+	// anything, since nothing here reads it.
+	if step.Result == ResultImage && !pictureTypes[mediaType] {
+		return nil, fmt.Errorf("the step asked for a picture and %s answered with %s", where, mediaType)
+	}
+	// Half a file is not a file, and half a picture shown to a model is a
+	// refused request rather than an answer.
+	if cutShort {
+		return nil, fmt.Errorf("the %s from %s is longer than the %d bytes this step reads; ask for less of it, or raise maxBytes on the step", wanted, where, most)
+	}
+	if len(answer) == 0 {
+		return nil, fmt.Errorf("%s answered with an empty %s", where, wanted)
+	}
+	self.running.Files = append(self.running.Files, Fetched{
+		Step: step.Name, MediaType: mediaType, Data: answer, Look: step.Result == ResultImage,
+	})
+	kept := map[string]any{
+		"content_type": mediaType,
+		"bytes":        len(answer),
+	}
+	if step.Result == ResultImage {
+		kept["picture"] = "fetched; it is shown to you below and handed to the person"
+	} else {
+		kept["file"] = "fetched and handed to the person; you have not read it"
+	}
+	return kept, nil
 }
 
 // authenticate puts the skill's named way of authenticating on a request.
@@ -433,7 +585,7 @@ func (self *run) authenticate(request *http.Request, name string) error {
 // address with a hole in it fetches the wrong thing quietly.
 func (self *run) fill(text string) (string, error) {
 	var failure error
-	filled := reference.ReplaceAllStringFunc(text, func(whole string) string {
+	filled := reference.ReplaceAllStringFunc(hideDoubled(text), func(whole string) string {
 		name, filter := SplitReference(strings.Trim(whole, "{}"))
 		value, ok := self.lookup(name)
 		if !ok {
@@ -450,7 +602,7 @@ func (self *run) fill(text string) (string, error) {
 		}
 		return asText(value)
 	})
-	return filled, failure
+	return showDoubled(filled), failure
 }
 
 // fillURL writes the values into an address, escaping each one as it goes:
@@ -460,8 +612,9 @@ func (self *run) fill(text string) (string, error) {
 // is the address itself -- a step passing on a link an earlier step found
 // -- and is left exactly as it came.
 func (self *run) fillURL(text string) (string, error) {
+	text = hideDoubled(text)
 	if whole := strings.TrimSpace(text); reference.FindString(whole) == whole {
-		return self.fill(whole)
+		return self.fill(showDoubled(whole))
 	}
 	var failure error
 	filled := reference.ReplaceAllStringFunc(text, func(match string) string {
@@ -481,7 +634,7 @@ func (self *run) fillURL(text string) (string, error) {
 		}
 		return escapeInURL(asText(value))
 	})
-	return filled, failure
+	return showDoubled(filled), failure
 }
 
 // escapeInURL percent-encodes what cannot sit in an address literally, and

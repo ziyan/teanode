@@ -13,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools/computer"
 	deviceComputer "github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/skills"
 	"github.com/ziyan/teanode/internal/util/safefetch"
@@ -204,9 +205,13 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 		// network. A skill's endpoint is an address they chose -- often a
 		// box on their network with an API and no public name -- which is
 		// the case the guard was never meant to refuse.
+		configuration := run.Configuration()
 		running := &skills.Running{
 			Secrets:   secrets,
-			Allowance: safefetch.ParseAllowance(run.Configuration().Agent.PrivateAddressesAllowed()),
+			Allowance: safefetch.ParseAllowance(configuration.Agent.PrivateAddressesAllowed()),
+			// Equipment that cannot present a certificate for the address
+			// it is reached at, named by the operator one host at a time.
+			Unverified: safefetch.ParseAllowance(configuration.Agent.SkipCertificateCheck),
 		}
 		if runsCommandsNamed(skill, toolName) {
 			named, _ := arguments["computer"].(string)
@@ -225,6 +230,10 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 		if err != nil {
 			return nil, err
 		}
+		// What a step fetched as bytes is not part of the answer's text: it
+		// is handed to the person as a file of the conversation, and shown
+		// to the model when it is something a model can look at.
+		images := self.keepSkillFiles(ctx, run, skill, running.Files, answer)
 		result, err := tools.JSONResult(answer)
 		if err != nil {
 			return nil, err
@@ -233,8 +242,138 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 		// outside, never words addressed to the agent.
 		result.Untrusted = true
 		result.Note = skill.Name + ": " + toolName
+		result.Images = images
 		return result, nil
 	}
+}
+
+// skillFileMessage marks a file a skill fetched as one the agent handed
+// over, the same as one it was asked to share: the drawer shows it under
+// the tool line, and the sweep for files that never found their turn
+// leaves it alone.
+const skillFileMessage = "shared"
+
+// keepSkillFiles hands over what the skill's steps fetched as bytes.
+//
+// Every one of them goes to the person as a file of the conversation --
+// shown there as a picture, played there as a clip, downloaded otherwise
+// -- and the ones a model can look at are shown to it as well, so it can
+// say what is in the picture. The answer gains a line per file saying what
+// it is and where the person's copy is; the bytes never go into it.
+//
+// The attachment id in that line is what makes the rest possible: it is
+// what `filesystem put` takes to write the file onto the person's own
+// computer, where their own programs can work on it.
+//
+// A file that cannot be kept is still shown to the model when it is a
+// picture. Failing the whole call because a snapshot could not be written
+// down would leave the person with neither the picture nor the answer.
+func (self *Agent) keepSkillFiles(ctx context.Context, run tools.Run, skill *skills.Skill, fetched []skills.Fetched, answer map[string]any) []llm.ContentPart {
+	if len(fetched) == 0 {
+		return nil
+	}
+	var images []llm.ContentPart
+	var handed []any
+	for _, file := range fetched {
+		entry := map[string]any{
+			"step": file.Step, "content_type": file.MediaType, "bytes": len(file.Data),
+		}
+		if file.Look {
+			images = append(images, llm.ContentPart{Type: "image", MediaType: file.MediaType, Data: file.Data})
+		}
+		if attachment := self.fileSkillFile(ctx, run, skill, file); attachment != nil {
+			entry["name"] = attachment.Name
+			entry["attachment_id"] = attachment.ID
+			entry["url"] = "/api/v1/agent/attachments/" + attachment.ID
+			entry["given_to_the_person"] = true
+		}
+		handed = append(handed, entry)
+	}
+	answer["files"] = handed
+	return images
+}
+
+// fileSkillFile keeps one of them as a file of the conversation, or
+// nothing when there is no conversation to keep it in -- a run that sorts
+// mail has nobody watching and nowhere to put a file.
+func (self *Agent) fileSkillFile(ctx context.Context, run tools.Run, skill *skills.Skill, file skills.Fetched) *models.AgentAttachment {
+	store := run.Storage()
+	agent := run.Agent()
+	conversation := run.Conversation()
+	if store == nil || agent == nil || conversation == nil {
+		return nil
+	}
+	var attachment *models.AgentAttachment
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
+			AgentID:        agent.ID,
+			ConversationID: conversation.ID,
+			MessageID:      skillFileMessage,
+			Name:           skillFileName(skill.Name, file),
+			ContentType:    file.MediaType,
+			Size:           int64(len(file.Data)),
+		})
+		return err
+	}); err != nil {
+		log.Warningf("the file %s fetched cannot be kept: %s", skill.Name, err)
+		return nil
+	}
+	if err := store.PutFile(ctx, attachment.ID, file.Data); err != nil {
+		log.Warningf("the file %s fetched cannot be written down: %s", skill.Name, err)
+		return nil
+	}
+	return attachment
+}
+
+// skillFileName is what the person sees it called: the skill, the step
+// that fetched it, and the moment, so several snapshots of the same camera
+// do not arrive under one name.
+func skillFileName(skillName string, file skills.Fetched) string {
+	extension := ".bin"
+	switch file.MediaType {
+	case "image/png":
+		extension = ".png"
+	case "image/jpeg":
+		extension = ".jpg"
+	case "image/gif":
+		extension = ".gif"
+	case "image/webp":
+		extension = ".webp"
+	case "video/mp4":
+		extension = ".mp4"
+	case "video/quicktime":
+		extension = ".mov"
+	case "video/webm":
+		extension = ".webm"
+	case "audio/mpeg":
+		extension = ".mp3"
+	case "application/pdf":
+		extension = ".pdf"
+	case "application/zip":
+		extension = ".zip"
+	}
+	name := skillName
+	if strings.TrimSpace(file.Step) != "" {
+		name += "-" + file.Step
+	}
+	return safeSkillName(name) + "-" + time.Now().UTC().Format("20060102-150405") + extension
+}
+
+// safeSkillName is a name as a file name: letters, digits and dashes.
+func safeSkillName(name string) string {
+	var written strings.Builder
+	for _, letter := range strings.ToLower(name) {
+		switch {
+		case letter >= 'a' && letter <= 'z', letter >= '0' && letter <= '9':
+			written.WriteRune(letter)
+		case letter == '-' || letter == '_':
+			written.WriteRune('-')
+		}
+	}
+	if written.Len() == 0 {
+		return "picture"
+	}
+	return written.String()
 }
 
 // declaresComputer says whether the skill's own schema takes a parameter

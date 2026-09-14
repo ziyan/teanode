@@ -78,6 +78,52 @@ separated by dots, with a number or `[number]` for a place in a list, so
 keeps the answer as text under the name `text`. A step with no `select` hands
 back the whole parsed answer under `json`.
 
+`result: image` is a picture, and it does not go into the answer at all. The
+bytes are handed to the agent, which shows them to the model as a picture and
+files the same picture in the conversation, where the person sees it under the
+tool line; what the step returns is a line saying what was fetched, how large
+it was, and where the person's copy is. That is the whole point of the kind: a
+JPEG read as text is a few hundred thousand characters that tell a model
+nothing about what is in the picture. Only the sorts a model can be shown and
+a browser can draw are accepted — PNG, JPEG, GIF and WebP — and a step that is
+sent something else, an empty answer, or more bytes than it reads is refused
+rather than handed on in half. Such a step reads 2 MB before `maxBytes`, since
+a camera's snapshot is routinely larger than the reading default.
+
+`result: file` is the same for bytes nothing here reads — a clip, a document,
+an archive. The person is handed it in the conversation and the model is told
+what it is, not shown it; the answer carries the attachment's id, which is
+what `filesystem put` takes to write the file onto the person's own computer.
+That is the whole path for anything a model cannot read: fetch it, put it on
+their machine, and let their own programs work on it. Such a step reads 32 MB,
+the same bound the agent puts on handing a file over.
+
+## Braces of the skill's own
+
+`{{{{` and `}}}}` pass through as a single `{{` and `}}`, the way a doubled
+brace does in a format string. That is how a skill talks to a service whose
+own payload is written in braces — a Home Assistant template, a dashboard's
+query, a webhook's body. Without it such a payload would be read as values
+the skill was meant to provide, and the file refused for naming values
+nothing knows. The two can be mixed freely: a fixed template with one value
+filled in from the call reads
+
+    {% for s in states[{{domain|json}}] %}{{{{ s.entity_id }}}}{% endfor %}
+
+where `{{domain|json}}` is this server's and the doubled braces are the
+service's. A skill file carrying a zero byte is refused, since that is what
+the escape hides behind while the references are read.
+
+## Signing in
+
+The steps of one run share their cookies. A step that posts a name and a
+password is therefore followed by steps that are signed in, which is the only
+way into a good deal of equipment: a session handed out at one address, and
+everything else answered only to that session. Nothing needs to be declared
+for it. The cookies belong to that one run — a later call starts with none —
+and the jar sends each one back only to the host that set it, so a step
+pointed at another address cannot carry a session out with it.
+
 ## Secrets
 
 A skill carries none of the credentials it needs. It declares the keys, and

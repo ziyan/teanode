@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // fakeShell stands in for the person's attached computer.
@@ -417,5 +420,243 @@ func TestEachToolAsksOnlyForWhatItUses(t *testing.T) {
 		if len(got) != len(want) || (len(want) == 1 && got[0] != want[0]) {
 			t.Fatalf("%s asks for %v, want %v", name, got, want)
 		}
+	}
+}
+
+// A picture is kept beside the answer, not written into it.
+//
+// A model reads a tool's answer as text. A JPEG turned into text is a few
+// hundred thousand characters that say nothing about what is in the
+// picture, so a step that asks for an image hands the bytes to the caller
+// and leaves a line in the answer saying so.
+func TestAPictureIsKeptBesideTheAnswer(t *testing.T) {
+	// The first two bytes of a JPEG, and enough after them to be a file.
+	picture := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, make([]byte, 4096)...)
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "image/jpeg; charset=binary")
+		_, _ = writer.Write(picture)
+	}))
+	defer service.Close()
+
+	body := "---\nname: cameras\ndescription: cameras\ntools:\n" +
+		"  - name: look\n    description: look at a camera\n    type: http\n" +
+		"    url: \"" + service.URL + "/snapshot\"\n    result: image\n" +
+		"    parameters: {type: object, properties: {}}\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	running := &Running{Client: service.Client()}
+	answer, err := skill.Run(context.Background(), "look", nil, running)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(running.Files) != 1 {
+		t.Fatalf("the picture is handed to the caller: %v", running.Files)
+	}
+	kept := running.Files[0]
+	if !kept.Look {
+		t.Fatalf("a picture is one a model can be shown")
+	}
+	// The media type without the parameters the service wrote after it,
+	// because that is what a provider is given.
+	if kept.MediaType != "image/jpeg" || len(kept.Data) != len(picture) {
+		t.Fatalf("whole, and named by what it is: %s, %d bytes", kept.MediaType, len(kept.Data))
+	}
+	if kept.Step != "look" {
+		t.Fatalf("named after the step that fetched it: %q", kept.Step)
+	}
+	// And nothing in the answer carries the bytes.
+	written, err := json.Marshal(answer)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if len(written) > 300 {
+		t.Fatalf("the answer is a line about a picture, not a picture: %d bytes", len(written))
+	}
+	if answer["content_type"] != "image/jpeg" || answer["bytes"] != len(picture) {
+		t.Fatalf("it says what was fetched: %v", answer)
+	}
+	if strings.Contains(string(written), "\xff\xd8") {
+		t.Fatalf("the bytes stayed out of the answer: %s", written)
+	}
+}
+
+// Half a picture is not a picture, and something that is not one at all is
+// not passed off as one.
+func TestAPictureThatIsNotOneIsRefused(t *testing.T) {
+	for _, each := range []struct {
+		what        string
+		contentType string
+		size        int
+		maxBytes    int
+		says        string
+	}{
+		{"a page where a picture was asked for", "text/html", 32, 0, "answered with text/html"},
+		{"a service that says nothing", "", 32, 0, "answered with application/octet-stream"},
+		{"a picture longer than the step reads", "image/png", 4096, 512, "longer than the"},
+		{"an empty picture", "image/png", 0, 0, "empty picture"},
+	} {
+		t.Run(each.what, func(t *testing.T) {
+			service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if each.contentType != "" {
+					writer.Header().Set("Content-Type", each.contentType)
+				} else {
+					// Go writes one from the bytes unless it is told not to.
+					writer.Header()["Content-Type"] = nil
+				}
+				_, _ = writer.Write(make([]byte, each.size))
+			}))
+			defer service.Close()
+
+			body := "---\nname: cameras\ndescription: cameras\ntools:\n" +
+				"  - name: look\n    description: look\n    type: http\n" +
+				"    url: \"" + service.URL + "/snapshot\"\n    result: image\n"
+			if each.maxBytes > 0 {
+				body += "    maxBytes: " + fmt.Sprint(each.maxBytes) + "\n"
+			}
+			body += "    parameters: {type: object, properties: {}}\n---\n"
+			skill, err := Parse([]byte(body))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			running := &Running{Client: service.Client()}
+			_, err = skill.Run(context.Background(), "look", nil, running)
+			if err == nil || !strings.Contains(err.Error(), each.says) {
+				t.Fatalf("refused, saying why: %v", err)
+			}
+			if len(running.Files) != 0 {
+				t.Fatalf("and nothing was kept: %v", running.Files)
+			}
+		})
+	}
+}
+
+// A result nobody can make anything of is refused when the skill is read,
+// not when somebody calls it.
+func TestAnUnknownResultIsRefusedWhenRead(t *testing.T) {
+	body := "---\nname: cameras\ndescription: cameras\ntools:\n" +
+		"  - name: look\n    description: look\n    type: http\n    url: https://example.com/x\n" +
+		"    result: video\n    parameters: {type: object, properties: {}}\n---\n"
+	if _, err := Parse([]byte(body)); err == nil || !strings.Contains(err.Error(), "json, text, image or file") {
+		t.Fatalf("read and refused: %v", err)
+	}
+}
+
+// A step that signs in is followed by steps that are signed in.
+//
+// Plenty of equipment has no other way in: a name and a password at one
+// address, and everything else answered only to the session it hands back.
+// The cookies live for the one run, so a session never outlives the call
+// that opened it.
+func TestSigningInCarriesIntoTheStepsAfterIt(t *testing.T) {
+	var seen []string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/login" {
+			http.SetCookie(writer, &http.Cookie{Name: "TOKEN", Value: "a-session", Path: "/"})
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"username":"someone"}`))
+			return
+		}
+		cookie, err := request.Cookie("TOKEN")
+		if err != nil {
+			writer.WriteHeader(http.StatusUnauthorized)
+			_, _ = writer.Write([]byte(`{"error":"no session"}`))
+			return
+		}
+		seen = append(seen, cookie.Value)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"cameras":2}`))
+	}))
+	defer service.Close()
+
+	body := "---\nname: console\ndescription: a console\ntools:\n" +
+		"  - name: cameras\n    description: the cameras\n    type: workflow\n" +
+		"    parameters: {type: object, properties: {}}\n" +
+		"    steps:\n" +
+		"      - name: sign_in\n        type: http\n        method: POST\n        url: \"" + service.URL + "/login\"\n        result: json\n        select: {who: username}\n" +
+		"      - name: cameras\n        type: http\n        url: \"" + service.URL + "/cameras\"\n        result: json\n        select: {count: cameras}\n" +
+		"---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// The guarded client is the one that carries the jar, so this is the
+	// path a skill actually takes rather than a client handed in.
+	running := &Running{Allowance: safefetch.ParseAllowance([]string{"127.0.0.1"})}
+	answer, err := skill.Run(context.Background(), "cameras", nil, running)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	cameras, _ := answer["cameras"].(map[string]any)
+	if cameras["count"] != float64(2) {
+		t.Fatalf("the second step was signed in: %v", answer)
+	}
+	if len(seen) != 1 || seen[0] != "a-session" {
+		t.Fatalf("it sent the session the first step was given: %v", seen)
+	}
+
+	// A run of its own starts with an empty jar: one call's session is
+	// never another's.
+	fresh := &Running{Allowance: safefetch.ParseAllowance([]string{"127.0.0.1"})}
+	if fresh.cookies() == running.cookies() {
+		t.Fatalf("each run has a jar of its own")
+	}
+}
+
+// Doubled braces are a literal pair, so a skill can send a payload that is
+// itself written in braces.
+//
+// Home Assistant's templates, a dashboard's queries, a webhook's body: all
+// of them are {{ ... }}, and without an escape none of them could be sent
+// -- the skill would read them as values it was supposed to provide and
+// refuse the file for naming values it had never heard of.
+func TestDoubledBracesAreALiteralPair(t *testing.T) {
+	var sent string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		sent = string(body)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"rendered":"light.kitchen=on"}`))
+	}))
+	defer service.Close()
+
+	body := "---\nname: house\ndescription: a house\ntools:\n" +
+		"  - name: render\n    description: render\n    type: http\n    method: POST\n" +
+		"    url: \"" + service.URL + "/template\"\n" +
+		"    body:\n      template: \"{% for s in states.{{domain}} %}{{{{ s.entity_id }}}}={{{{ s.state }}}}{% endfor %}\"\n" +
+		"    result: json\n    select: {text: rendered}\n" +
+		"    parameters: {type: object, properties: {domain: {type: string}}, required: [domain]}\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	answer, err := skill.Run(context.Background(), "render", map[string]any{"domain": "light"}, &Running{Client: service.Client()})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if answer["text"] != "light.kitchen=on" {
+		t.Fatalf("what the service rendered: %v", answer)
+	}
+	// The skill's own reference was filled in; the doubled ones arrived as
+	// the single pair the service expects.
+	var carried struct {
+		Template string `json:"template"`
+	}
+	if err := json.Unmarshal([]byte(sent), &carried); err != nil {
+		t.Fatalf("what was sent is not json: %s", sent)
+	}
+	if carried.Template != "{% for s in states.light %}{{ s.entity_id }}={{ s.state }}{% endfor %}" {
+		t.Fatalf("the braces arrived as one pair: %q", carried.Template)
+	}
+}
+
+// And nothing can arrive already wearing the disguise the escape uses.
+func TestAFileCarryingAZeroByteIsRefused(t *testing.T) {
+	body := "---\nname: house\ndescription: a\x00house\ntools:\n" +
+		"  - name: x\n    description: x\n    type: http\n    url: https://example.com/\n" +
+		"    parameters: {type: object, properties: {}}\n---\n"
+	if _, err := Parse([]byte(body)); err == nil || !strings.Contains(err.Error(), "zero byte") {
+		t.Fatalf("refused: %v", err)
 	}
 }

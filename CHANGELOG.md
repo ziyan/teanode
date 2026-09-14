@@ -18,6 +18,38 @@ Notable changes to TeaNode. The format follows
   that it is the machine it claims to be. It is per-host and off by default,
   and the setting says so where it is set.
 
+- A skill may fetch a picture. A step that says `result: image` hands what it
+  fetched to the agent as a picture rather than as the answer's text: the
+  model is shown it, and the person is handed the same picture in the
+  conversation, under the tool line. So a camera skill can answer "is the car
+  on the drive" by looking. Until now such a step read a JPEG as if it were
+  text, which put a few hundred thousand characters of nothing where the
+  model reads; a step that asks for a picture and is sent something else, or
+  more of one than it reads, is refused rather than passed on in half.
+
+- A skill may fetch a file. `result: file` is the same for bytes nothing here
+  can read — a clip, a document, an archive: the person is handed it in the
+  conversation, where a video plays and anything else downloads, and the
+  answer carries the attachment's id. That id is the point of it. It is what
+  `filesystem put` takes, so a clip a skill downloaded can be written onto
+  the person's own computer and worked on by whatever is installed there —
+  fetch the footage, cut a frame out of it with ffmpeg, look at the frame.
+
+- A skill may send braces of its own. `{{{{` and `}}}}` pass through as a
+  single pair, the way a doubled brace does in a format string. Without it a
+  skill could not talk to anything whose payload is itself written in braces
+  — a Home Assistant template, a dashboard's query, a webhook's body — since
+  the file would be refused for naming values the server had never heard of.
+  A skill file carrying a zero byte is now refused, because that is what the
+  escape hides behind on its way through.
+
+- A skill may sign in. The steps of one run now share their cookies, so a
+  step that posts a name and a password is followed by steps that are signed
+  in. Plenty of equipment offers nothing else: a session at one address, and
+  everything else answered only to it. The cookies belong to the one run, and
+  each goes back only to the host that set it, so a session never outlives
+  the call that opened it nor travels to another address.
+
 ### Fixed
 
 - A long conversation title no longer squeezes the marks either side of it in
