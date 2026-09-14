@@ -1372,6 +1372,8 @@ export const ja: Catalog = {
   'agentSettings.browserEndpoint': 'DevTools エンドポイント',
   'agentSettings.browserIdleTimeout': 'アイドルタイムアウト',
   'agentSettings.browserMaxContexts': '同時コンテキスト数',
+  'agentSettings.allowPrivate': 'エージェントが到達してよい内部ネットワークの機器',
+  'agentSettings.allowPrivateHint': 'アドレス・範囲・ホスト名をカンマ区切りで。メール内のリンクは差出人が書いたものなので、内部ネットワークへの接続は既定で拒否されます。ここに挙げたものは、スキル自身の接続先とヘッドレスブラウザーにのみ許可され、メール内のリンクの取得には使われません。',
   'agentSettings.browserAllowPrivate': '到達を許すプライベートホスト(カンマ区切り)',
   'agentSettings.browserAttachTabs': '利用者が拡張機能で自分のタブを接続できる',
   'agentSettings.skillInstalledToast': '{name} {version} をインストールしました',

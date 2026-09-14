@@ -57,6 +57,18 @@ Notable changes to TeaNode. The format follows
   the form says so and updates that one, rather than giving you two of the
   same person.
 
+- Equipment on your own network can be reached by a skill. The address guard
+  refuses anything private, which is right for a link out of a message and
+  wrong for a skill pointed at a controller on your own LAN — and it is why a
+  UniFi skill answered that it could not reach `192.168.255.254`.
+  `agent.allowPrivateAddresses` is the list of what may be reached: an
+  address, a range or a name, edited under Settings → Agent. It widens the
+  guard for a skill reaching the endpoint it declares and for the headless
+  browser, and for nothing else: the remote image proxy, the one-click
+  unsubscribe and `web_fetch` still refuse, because an agent that has just
+  read a stranger's message is what the guard is for. The browser's own
+  `browser.allowPrivateAddresses` is folded into it and still honoured.
+
 ### Fixed
 
 - A message you send to yourself is one message again. It is filed twice — a

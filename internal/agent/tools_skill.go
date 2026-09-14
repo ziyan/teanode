@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/skills"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
 // Skills are installed by an operator and belong to the server, so what
@@ -199,7 +200,14 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 		if err != nil {
 			return nil, err
 		}
-		running := &skills.Running{Secrets: secrets}
+		// What the operator has said this server may reach inside their own
+		// network. A skill's endpoint is an address they chose -- often a
+		// box on their network with an API and no public name -- which is
+		// the case the guard was never meant to refuse.
+		running := &skills.Running{
+			Secrets:   secrets,
+			Allowance: safefetch.ParseAllowance(run.Configuration().Agent.PrivateAddressesAllowed()),
+		}
 		if runsCommandsNamed(skill, toolName) {
 			named, _ := arguments["computer"].(string)
 			attached, err := computer.Of(run, named)

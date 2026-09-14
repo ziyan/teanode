@@ -1379,6 +1379,9 @@ export const en = {
   'agentSettings.browserEndpoint': 'DevTools endpoint',
   'agentSettings.browserIdleTimeout': 'Idle timeout',
   'agentSettings.browserMaxContexts': 'Contexts at once',
+  'agentSettings.allowPrivate': 'Equipment on this network the agent may reach',
+  'agentSettings.allowPrivateHint':
+    'Addresses, ranges or names, separated by commas. The address guard refuses anything on this network by default, because a link in a message is written by whoever sent it. What is listed here is let through when a skill reaches the endpoint it declares, and for the headless browser — never for fetching a link out of mail.',
   'agentSettings.browserAllowPrivate': 'Private hosts it may reach (comma-separated)',
   'agentSettings.browserAttachTabs': 'People may attach their own browser tab through the extension',
   'agentSettings.skillInstalledToast': 'Installed {name} {version}',

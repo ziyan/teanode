@@ -57,6 +57,19 @@ type Agent struct {
 	// Tools is the operator's policy over the tool catalog.
 	Tools AgentTools `yaml:"tools"`
 
+	// AllowPrivateAddresses lists equipment on the operator's own network
+	// that the agent may reach although the address guard would refuse it:
+	// an address, a CIDR, or a name. A controller, a printer, something
+	// with an API and no public name.
+	//
+	// It widens the guard for the two things whose addresses the operator
+	// chose -- a skill's declared endpoint, and the headless browser -- and
+	// for nothing else. The remote image proxy, the one-click unsubscribe
+	// and web_fetch go to addresses out of somebody else's mail, and they
+	// stay shut: an agent that has read a message is exactly the thing this
+	// guard exists to keep off the network it is sitting in.
+	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
+
 	// Browser is a headless browser the operator runs beside the server.
 	Browser AgentBrowser `yaml:"browser"`
 
@@ -416,6 +429,10 @@ type AgentBrowser struct {
 
 	// AllowPrivateAddresses lists hosts the headless browser may reach
 	// inside the network, which the address guard would otherwise refuse.
+	//
+	// Superseded by agent.allowPrivateAddresses, which covers the browser
+	// and skills together. Still read, and added to that one, so that a
+	// deployment configured before it existed keeps working.
 	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
 
 	// ProxyListen is where the guarded proxy binds -- the proxy every page
@@ -850,4 +867,24 @@ func isToolPolicyName(value string) bool {
 		}
 	}
 	return true
+}
+
+// PrivateAddressesAllowed is everything the operator has permitted inside
+// the network: the agent's list and, for a deployment configured before that
+// existed, the browser's own.
+func (self *Agent) PrivateAddressesAllowed() []string {
+	if self == nil {
+		return nil
+	}
+	allowed := make([]string, 0, len(self.AllowPrivateAddresses)+len(self.Browser.AllowPrivateAddresses))
+	seen := map[string]bool{}
+	for _, entry := range append(append([]string{}, self.AllowPrivateAddresses...), self.Browser.AllowPrivateAddresses...) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" || seen[strings.ToLower(entry)] {
+			continue
+		}
+		seen[strings.ToLower(entry)] = true
+		allowed = append(allowed, entry)
+	}
+	return allowed
 }

@@ -59,23 +59,12 @@ func Connect(ctx context.Context, settings *Settings) (*Browser, error) {
 	if err != nil {
 		return nil, err
 	}
-	allowed := make([]*net.IPNet, 0, len(settings.AllowPrivate))
-	allowedHosts := map[string]bool{}
-	for _, entry := range settings.AllowPrivate {
-		entry = strings.TrimSpace(strings.ToLower(entry))
-		if _, network, err := net.ParseCIDR(entry); err == nil {
-			allowed = append(allowed, network)
-		} else if ip := net.ParseIP(entry); ip != nil {
-			bits := 32
-			if ip.To4() == nil {
-				bits = 128
-			}
-			allowed = append(allowed, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
-		} else if entry != "" {
-			// A host by name: allowed as it is, without resolving it.
-			allowedHosts[entry] = true
-		}
-	}
+	// Read through safefetch, which is where an entry's meaning is defined:
+	// the same list is handed to skills, and two readings of one
+	// operator-facing list is how they come to mean different things.
+	allowance := safefetch.ParseAllowance(settings.AllowPrivate)
+	allowed := allowance.Networks()
+	allowedHosts := allowance.Hosts()
 	// The proxy first: a browser whose requests cannot be guarded is worse
 	// than no browser, so failing to start it fails the connection.
 	announce := proxyAnnounceHost(connection.socket.LocalAddr(), "127.0.0.1")

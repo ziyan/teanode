@@ -46,21 +46,27 @@ type AgentModel struct {
 // AgentSettings is the agent as the settings page shows it: every secret
 // replaced by whether it is set.
 type AgentSettings struct {
-	Enabled      bool                      `json:"enabled"`
-	Instructions string                    `json:"instructions"`
-	Currency     string                    `json:"currency"`
-	Providers    []*AgentProviderSettings  `json:"providers"`
-	Models       *AgentModelsSettings      `json:"models"`
-	Features     *AgentFeaturesSettings    `json:"features"`
-	Limits       *AgentLimitsSettings      `json:"limits"`
-	Retention    *AgentRetentionSettings   `json:"retention"`
-	Search       *AgentSearchSettings      `json:"search"`
-	Tools        *AgentToolsSettings       `json:"tools"`
-	Browser      *AgentBrowserSettings     `json:"browser"`
-	MCPServers   []*AgentMCPServerSettings `json:"mcpServers"`
-	Works        []string                  `json:"works"`
-	Families     []string                  `json:"families"`
-	Kinds        []string                  `json:"kinds"`
+	Enabled      bool   `json:"enabled"`
+	Instructions string `json:"instructions"`
+	Currency     string `json:"currency"`
+
+	// AllowPrivateAddresses is equipment on the operator's own network the
+	// agent may reach: what a skill's endpoint and the headless browser
+	// are let through to, and nothing else.
+	AllowPrivateAddresses []string `json:"allowPrivateAddresses"`
+
+	Providers  []*AgentProviderSettings  `json:"providers"`
+	Models     *AgentModelsSettings      `json:"models"`
+	Features   *AgentFeaturesSettings    `json:"features"`
+	Limits     *AgentLimitsSettings      `json:"limits"`
+	Retention  *AgentRetentionSettings   `json:"retention"`
+	Search     *AgentSearchSettings      `json:"search"`
+	Tools      *AgentToolsSettings       `json:"tools"`
+	Browser    *AgentBrowserSettings     `json:"browser"`
+	MCPServers []*AgentMCPServerSettings `json:"mcpServers"`
+	Works      []string                  `json:"works"`
+	Families   []string                  `json:"families"`
+	Kinds      []string                  `json:"kinds"`
 }
 
 // AgentProviderSettings is one provider, without its key.
@@ -210,7 +216,11 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		Enabled:      agent.Enabled,
 		Instructions: agent.Instructions,
 		Currency:     agent.CurrencyOf(),
-		Providers:    []*AgentProviderSettings{},
+		// What the operator has allowed, without the browser's own older
+		// list folded in: this is the box they edit, and showing it holding
+		// entries they did not put there is how a list edits itself.
+		AllowPrivateAddresses: nonNil(agent.AllowPrivateAddresses),
+		Providers:             []*AgentProviderSettings{},
 		Models: &AgentModelsSettings{
 			Default:   agent.Models.Default,
 			Fast:      agent.Models.Fast,
@@ -335,18 +345,20 @@ func nonNil(values []string) []string {
 // given replaces the list stored; a secret left blank or redacted keeps the
 // one stored under the same name.
 type AgentParameters struct {
-	Enabled      *bool                        `json:"enabled"`
-	Instructions *string                      `json:"instructions"`
-	Currency     *string                      `json:"currency"`
-	Providers    *[]*AgentProviderParameters  `json:"providers"`
-	Models       *AgentModelsParameters       `json:"models"`
-	Features     *AgentFeaturesParameters     `json:"features"`
-	Limits       *AgentLimitsParameters       `json:"limits"`
-	Retention    *AgentRetentionParameters    `json:"retention"`
-	Search       *AgentSearchParameters       `json:"search"`
-	Tools        *AgentToolsParameters        `json:"tools"`
-	Browser      *AgentBrowserParameters      `json:"browser"`
-	MCPServers   *[]*AgentMCPServerParameters `json:"mcpServers"`
+	Enabled               *bool     `json:"enabled"`
+	Instructions          *string   `json:"instructions"`
+	Currency              *string   `json:"currency"`
+	AllowPrivateAddresses *[]string `json:"allowPrivateAddresses"`
+
+	Providers  *[]*AgentProviderParameters  `json:"providers"`
+	Models     *AgentModelsParameters       `json:"models"`
+	Features   *AgentFeaturesParameters     `json:"features"`
+	Limits     *AgentLimitsParameters       `json:"limits"`
+	Retention  *AgentRetentionParameters    `json:"retention"`
+	Search     *AgentSearchParameters       `json:"search"`
+	Tools      *AgentToolsParameters        `json:"tools"`
+	Browser    *AgentBrowserParameters      `json:"browser"`
+	MCPServers *[]*AgentMCPServerParameters `json:"mcpServers"`
 }
 
 // AgentProviderParameters is one provider as given.
@@ -485,6 +497,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	applyBool(&agent.Enabled, parameters.Enabled)
 	if parameters.Currency != nil {
 		agent.Currency = strings.ToUpper(strings.TrimSpace(*parameters.Currency))
+	}
+	if parameters.AllowPrivateAddresses != nil {
+		applyStrings(&agent.AllowPrivateAddresses, parameters.AllowPrivateAddresses)
 	}
 	if parameters.Instructions != nil {
 		agent.Instructions = strings.TrimSpace(*parameters.Instructions)

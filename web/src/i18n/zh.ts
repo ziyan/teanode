@@ -1329,6 +1329,8 @@ export const zh: Catalog = {
   'agentSettings.browserEndpoint': 'DevTools 端点',
   'agentSettings.browserIdleTimeout': '空闲超时',
   'agentSettings.browserMaxContexts': '同时上下文数',
+  'agentSettings.allowPrivate': '代理可以访问的本网络设备',
+  'agentSettings.allowPrivateHint': '地址、网段或主机名，用逗号分隔。邮件里的链接由发件人书写，因此默认拒绝访问本网络。此处列出的地址仅对技能自身的接口和无头浏览器放行，不用于抓取邮件里的链接。',
   'agentSettings.browserAllowPrivate': '允许访问的内网主机（逗号分隔）',
   'agentSettings.browserAttachTabs': '用户可通过扩展附加自己的浏览器标签页',
   'agentSettings.skillInstalledToast': '已安装 {name} {version}',

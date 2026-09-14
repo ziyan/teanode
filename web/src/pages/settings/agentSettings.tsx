@@ -77,6 +77,7 @@ export type AgentTool = {
 export type Agent = {
   enabled: boolean
   instructions: string
+  allowPrivateAddresses: string[]
   providers: AgentProvider[]
   models: {
     default: string
@@ -124,7 +125,7 @@ export type Agent = {
 }
 
 export const AGENT_SELECTION = `agent {
-  enabled instructions
+  enabled instructions allowPrivateAddresses
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
@@ -246,18 +247,20 @@ function GeneralForm({ settings, onSaved }: Props) {
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [enabled, setEnabled] = useState(settings.enabled)
   const [instructions, setInstructions] = useState(settings.instructions)
+  const [allowPrivate, setAllowPrivate] = useState(list(settings.allowPrivateAddresses))
   useEffect(() => {
     setEnabled(settings.enabled)
     setInstructions(settings.instructions)
+    setAllowPrivate(list(settings.allowPrivateAddresses))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.enabled, settings.instructions])
+  }, [settings.enabled, settings.instructions, settings.allowPrivateAddresses])
 
   return (
     <form
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ agent: { enabled, instructions } })
+        void save({ agent: { enabled, instructions, allowPrivateAddresses: split(allowPrivate) } })
       }}
     >
       <h3>{t('agentSettings.title')}</h3>
@@ -274,6 +277,15 @@ function GeneralForm({ settings, onSaved }: Props) {
           placeholder={t('agentSettings.instructionsPlaceholder')}
           onChange={(event) => setInstructions(event.target.value)}
         />
+      </label>
+      <label>
+        <span>{t('agentSettings.allowPrivate')}</span>
+        <input
+          value={allowPrivate}
+          placeholder="192.168.1.10, 10.0.0.0/24, printer.lan"
+          onChange={(event) => setAllowPrivate(event.target.value)}
+        />
+        <p className="muted field-hint">{t('agentSettings.allowPrivateHint')}</p>
       </label>
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
@@ -1217,13 +1229,6 @@ function BrowserForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <label>
-        <span>{t('agentSettings.browserAllowPrivate')}</span>
-        <input
-          value={browser.allowPrivateAddresses}
-          onChange={(event) => setBrowser({ ...browser, allowPrivateAddresses: event.target.value })}
-        />
-      </label>
       <label className="checkbox">
         <input
           type="checkbox"
