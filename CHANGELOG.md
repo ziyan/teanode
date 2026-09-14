@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-09-14
+
 ### Changed
 
 - What the agent worked out about a message is part of its details rather
