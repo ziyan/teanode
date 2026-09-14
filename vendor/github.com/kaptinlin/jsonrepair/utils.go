@@ -3,21 +3,19 @@ package jsonrepair
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
-// prevNonWhitespaceIndex returns the index of the last non-whitespace rune at or before startIndex.
-func prevNonWhitespaceIndex(text []rune, startIndex int) int {
-	prev := startIndex
-	for prev >= 0 && isWhitespace(text[prev]) {
-		prev--
+// prevNonWhitespaceIndex returns the index of the last non-whitespace rune
+// at or before start. Returns -1 if not found.
+func prevNonWhitespaceIndex(text []rune, start int) int {
+	for i := start; i >= 0; i-- {
+		if !isWhitespace(text[i]) {
+			return i
+		}
 	}
-	return prev
-}
-
-// atEndOfBlockComment checks if the current position is at the end of a block comment.
-func atEndOfBlockComment(text *[]rune, i *int) bool {
-	return *i+1 < len(*text) && (*text)[*i] == codeAsterisk && (*text)[*i+1] == codeSlash
+	return -1
 }
 
 // atEndOfNumber checks if the end of a number has been reached in the input text.
@@ -31,150 +29,138 @@ func repairNumberEndingWithNumericSymbol(text *[]rune, start int, i *int, output
 	output.WriteByte('0')
 }
 
-// stripLastOccurrence removes the last occurrence of a specific substring from the input text.
-func stripLastOccurrence(text, textToStrip string, stripRemainingText bool) string {
-	index := strings.LastIndex(text, textToStrip)
-	if index != -1 {
-		if stripRemainingText {
-			return text[:index]
-		}
-		return text[:index] + text[index+len(textToStrip):]
+// stripLastOccurrence removes the last occurrence of substr from text.
+// If stripRemaining is true, removes everything from the match onwards.
+func stripLastOccurrence(text, substr string, stripRemaining bool) string {
+	index := strings.LastIndex(text, substr)
+	if index == -1 {
+		return text
 	}
-	return text
+	if stripRemaining {
+		return text[:index]
+	}
+	return text[:index] + text[index+len(substr):]
 }
 
-// insertBeforeLastWhitespace inserts a substring before the last whitespace in the input text.
-// For comma insertion, we want to insert after the value but before any trailing whitespace.
-func insertBeforeLastWhitespace(s, textToInsert string) string {
-	// If the last character is not whitespace, simply append the text to insert.
+// insertBeforeLastWhitespace inserts text before trailing whitespace.
+// If no trailing whitespace exists, appends to the end.
+func insertBeforeLastWhitespace(s, text string) string {
 	if len(s) == 0 || !isWhitespace(rune(s[len(s)-1])) {
-		return s + textToInsert
+		return s + text
 	}
 
-	// Walk backwards over all trailing whitespace characters (space, tab, cr, lf).
 	index := len(s) - 1
-	for index >= 0 {
-		if !isWhitespace(rune(s[index])) {
-			break
-		}
+	for index >= 0 && isWhitespace(rune(s[index])) {
 		index--
 	}
 
-	// index now points at the last non-whitespace character.
-	return s[:index+1] + textToInsert + s[index+1:]
+	return s[:index+1] + text + s[index+1:]
 }
 
-// removeAtIndex removes a substring from the input text at a specific index.
-func removeAtIndex(text string, start, count int) string {
-	return text[:start] + text[start+count:]
+func isHex(c rune) bool {
+	return (c >= codeZero && c <= codeNine) ||
+		(c >= codeUppercaseA && c <= codeUppercaseF) ||
+		(c >= codeLowercaseA && c <= codeLowercaseF)
 }
 
-// isHex checks if a rune is a hexadecimal digit.
-func isHex(code rune) bool {
-	return (code >= codeZero && code <= codeNine) ||
-		(code >= codeUppercaseA && code <= codeUppercaseF) ||
-		(code >= codeLowercaseA && code <= codeLowercaseF)
+func isDigit(c rune) bool {
+	return c >= codeZero && c <= codeNine
 }
 
-// isDigit checks if a rune is a digit.
-func isDigit(code rune) bool {
-	return code >= codeZero && code <= codeNine
+// isValidStringCharacter checks if a character is valid inside a JSON string.
+// Valid characters are >= U+0020 (space).
+func isValidStringCharacter(c rune) bool {
+	return c >= 0x0020
 }
 
-// isValidStringCharacter checks if a character is valid inside a JSON string
-// Matches TypeScript version: char >= '\u0020'
-func isValidStringCharacter(char rune) bool {
-	return char >= 0x0020
+func isDelimiter(c rune) bool {
+	return c == ',' || c == ':' || c == '[' || c == ']' || c == '/' ||
+		c == '{' || c == '}' || c == '(' || c == ')' || c == '\n' || c == '+'
 }
 
-// isDelimiter checks if a character is a delimiter.
-func isDelimiter(char rune) bool {
-	switch char {
-	case ',', ':', '[', ']', '/', '{', '}', '(', ')', '\n', '+':
-		return true
-	}
-	return false
+func isStartOfValue(c rune) bool {
+	return c == '{' || c == '[' || c == '_' || c == '-' || isQuote(c) ||
+		(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
-// isStartOfValue checks if a rune is the start of a JSON value.
-func isStartOfValue(char rune) bool {
-	return char == '{' || char == '[' ||
-		char == '_' || char == '-' ||
-		(char >= 'a' && char <= 'z') ||
-		(char >= 'A' && char <= 'Z') ||
-		(char >= '0' && char <= '9') ||
-		isQuote(char)
+func isControlCharacter(c rune) bool {
+	return c == codeNewline ||
+		c == codeReturn ||
+		c == codeTab ||
+		c == codeBackspace ||
+		c == codeFormFeed
 }
 
-// isControlCharacter checks if a rune is a control character.
-func isControlCharacter(code rune) bool {
-	return code == codeNewline ||
-		code == codeReturn ||
-		code == codeTab ||
-		code == codeBackspace ||
-		code == codeFormFeed
-}
-
-// isWhitespace checks if a rune is a whitespace character.
-func isWhitespace(code rune) bool {
-	return code == codeSpace ||
-		code == codeNewline ||
-		code == codeTab ||
-		code == codeReturn
+func isWhitespace(c rune) bool {
+	return c == codeSpace ||
+		c == codeNewline ||
+		c == codeTab ||
+		c == codeReturn
 }
 
 // isSpecialWhitespace checks if a rune is a special whitespace character.
-func isSpecialWhitespace(code rune) bool {
-	return code == codeNonBreakingSpace ||
-		(code >= codeEnQuad && code <= codeHairSpace) ||
-		code == codeNarrowNoBreakSpace ||
-		code == codeMediumMathematicalSpace ||
-		code == codeIdeographicSpace
+func isSpecialWhitespace(c rune) bool {
+	return c == codeNonBreakingSpace ||
+		c == codeMongolianVowelSeparator ||
+		(c >= codeEnQuad && c <= codeZeroWidthSpace) ||
+		c == codeNarrowNoBreakSpace ||
+		c == codeMediumMathematicalSpace ||
+		c == codeIdeographicSpace ||
+		c == codeZeroWidthNoBreakSpace
 }
 
-// isQuote checks if a rune is a quote character.
-func isQuote(code rune) bool {
-	return isDoubleQuoteLike(code) || isSingleQuoteLike(code)
+func isQuote(c rune) bool {
+	return isDoubleQuoteLike(c) || isSingleQuoteLike(c)
 }
 
-// isDoubleQuoteLike checks if a rune is a double quote or a variant of double quote.
-func isDoubleQuoteLike(code rune) bool {
-	return code == codeDoubleQuote ||
-		code == codeDoubleQuoteLeft ||
-		code == codeDoubleQuoteRight
+// isDoubleQuoteLike checks if a rune is a double quote or variant.
+func isDoubleQuoteLike(c rune) bool {
+	return c == codeDoubleQuote ||
+		c == codeDoubleQuoteLeft ||
+		c == codeDoubleQuoteRight
 }
 
-// isDoubleQuote checks if a rune is a double quote.
-func isDoubleQuote(code rune) bool {
-	return code == codeDoubleQuote
+func isDoubleQuote(c rune) bool {
+	return c == codeDoubleQuote
 }
 
-// isSingleQuoteLike checks if a rune is a single quote or a variant of single quote.
-func isSingleQuoteLike(code rune) bool {
-	return code == codeQuote ||
-		code == codeQuoteLeft ||
-		code == codeQuoteRight ||
-		code == codeGraveAccent ||
-		code == codeAcuteAccent
+// isSingleQuoteLike checks if a rune is a single quote or variant.
+func isSingleQuoteLike(c rune) bool {
+	return c == codeQuote ||
+		c == codeQuoteLeft ||
+		c == codeQuoteRight ||
+		c == codeGraveAccent ||
+		c == codeAcuteAccent
 }
 
-// isSingleQuote checks if a rune is a single quote.
-func isSingleQuote(code rune) bool {
-	return code == codeQuote
+func isSingleQuote(c rune) bool {
+	return c == codeQuote
 }
 
-// endsWithCommaOrNewline checks if the string ends with a comma or newline character and optional whitespace.
-// This function should only match commas that are outside of quoted strings.
+func endQuoteMatcher(startQuote rune) func(rune) bool {
+	switch {
+	case isDoubleQuote(startQuote):
+		return isDoubleQuote
+	case isSingleQuote(startQuote):
+		return isSingleQuote
+	case isSingleQuoteLike(startQuote):
+		return isSingleQuoteLike
+	default:
+		return isDoubleQuoteLike
+	}
+}
+
+// endsWithCommaOrNewline checks if the string ends with a comma or newline.
+// Only matches commas outside of quoted strings.
 func endsWithCommaOrNewline(text string) bool {
 	if len(text) == 0 {
 		return false
 	}
 
-	// Find the last non-whitespace character
 	runes := []rune(text)
 	i := len(runes) - 1
 
-	// Skip trailing whitespace
+	// Skip trailing whitespace (excluding newlines)
 	for i >= 0 && (runes[i] == ' ' || runes[i] == '\t' || runes[i] == '\r') {
 		i--
 	}
@@ -183,87 +169,63 @@ func endsWithCommaOrNewline(text string) bool {
 		return false
 	}
 
-	// Check if the last non-whitespace character is a comma or newline
-	// But only if it's not inside a quoted string
-	if runes[i] == ',' || runes[i] == '\n' {
-		// Simple check: if the text ends with a quoted string, the comma is likely inside the string
-		// A more robust approach would be to parse the JSON structure, but for now we use a heuristic
-		trimmed := strings.TrimSpace(text)
-		if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '"' {
-			// The text ends with a quote, so any comma before it is likely a JSON separator
-			// Look for the pattern: "..." , or "...",
-			return endsWithCommaOrNewlineRe.MatchString(text)
-		}
-		return true
+	if runes[i] != ',' && runes[i] != '\n' {
+		return false
 	}
 
-	return false
+	// If text ends with a quote, use regex to verify comma is outside string
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '"' {
+		return endsWithCommaOrNewlineRe.MatchString(text)
+	}
+
+	return true
 }
 
-// isFunctionNameCharStart checks if a rune is a valid function name start character.
-func isFunctionNameCharStart(code rune) bool {
-	return (code >= 'a' && code <= 'z') || (code >= 'A' && code <= 'Z') || code == '_' || code == '$'
+func isFunctionNameCharStart(c rune) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$'
 }
 
-// isFunctionNameChar checks if a rune is a valid function name character.
-func isFunctionNameChar(code rune) bool {
-	return isFunctionNameCharStart(code) || isDigit(code)
+func isFunctionNameChar(c rune) bool {
+	return isFunctionNameCharStart(c) || isDigit(c)
 }
 
 // isUnquotedStringDelimiter checks if a character is a delimiter for unquoted strings.
-// Similar to isDelimiter but without ':' since a colon is allowed inside an
-// unquoted value until we detect a key/value separator.
-func isUnquotedStringDelimiter(char rune) bool {
-	switch char {
-	case ',', '[', ']', '/', '{', '}', '\n', '+':
+// Similar to isDelimiter but excludes ':' since colons are allowed inside
+// unquoted values until a key/value separator is detected.
+func isUnquotedStringDelimiter(c rune) bool {
+	return c == ',' || c == '[' || c == ']' || c == '/' ||
+		c == '{' || c == '}' || c == '\n' || c == '+'
+}
+
+func isWhitespaceExceptNewline(c rune) bool {
+	return c == codeSpace || c == codeTab || c == codeReturn
+}
+
+// regexURLStart matches URL protocol prefixes.
+var regexURLStart = regexp.MustCompile(`^(https?|ftp|mailto|file|data|irc)://`)
+
+func isURLChar(c rune) bool {
+	if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
 		return true
 	}
-	return false
+	return c == '-' || c == '.' || c == '_' || c == '~' || c == ':' || c == '/' ||
+		c == '?' || c == '#' || c == '@' || c == '!' || c == '$' || c == '&' ||
+		c == '\'' || c == '(' || c == ')' || c == '*' || c == '+' || c == ';' ||
+		c == '=' || c == '%'
 }
 
-// isWhitespaceExceptNewline checks if a rune is a whitespace character except newline.
-func isWhitespaceExceptNewline(code rune) bool {
-	return code == codeSpace || code == codeTab || code == codeReturn
-}
-
-// URL-related regular expressions.
+// Pre-compiled regular expressions for improved performance.
+// These are compiled once at package initialization time.
 var (
-	regexURLStart = regexp.MustCompile(`^(https?|ftp|mailto|file|data|irc)://`)
-)
-
-// isURLChar checks if a rune is a valid URL character.
-func isURLChar(code rune) bool {
-	switch {
-	case code >= 'A' && code <= 'Z':
-		return true
-	case code >= 'a' && code <= 'z':
-		return true
-	case code >= '0' && code <= '9':
-		return true
-	default:
-		switch code {
-		case '-', '.', '_', '~', ':', '/', '?', '#', '@', '!', '$', '&', '\'', '(', ')', '*', '+', ';', '=':
-			return true
-		}
-		return false
-	}
-}
-
-// Regular expression cache for improved performance.
-var (
-	leadingZeroRe            = regexp.MustCompile(`^0\d`)
+	leadingZeroRe            = regexp.MustCompile(`^-?0\d`)
 	endsWithCommaOrNewlineRe = regexp.MustCompile(`"[ \t\r]*[,\n][ \t\r]*$`)
 	driveLetterRe            = regexp.MustCompile(`^[A-Za-z]:\\`)
 	containsDriveRe          = regexp.MustCompile(`[A-Za-z]:\\`)
 	base64Re                 = regexp.MustCompile(`^[A-Za-z0-9+/=]{20,}$`)
 	fileExtensionRe          = regexp.MustCompile(`(?i)\.[a-z0-9]{2,5}(\?|$|\\|"|/)`)
-	unicodeEscapeRe          = regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
 	urlEncodingRe            = regexp.MustCompile(`%[0-9a-fA-F]{2}`)
 )
-
-// ================================
-// PATH PATTERN CONSTANTS
-// ================================
 
 // windowsPathPatterns contains common Windows directory patterns for path detection.
 var windowsPathPatterns = []string{
@@ -273,6 +235,8 @@ var windowsPathPatterns = []string{
 	"users\\", "documents", "desktop", "downloads", "music", "pictures", "videos", "appdata", "roaming", "public",
 	// System functional directories
 	"temp\\", "fonts", "startup", "sendto", "recent", "nethood", "cookies", "cache", "history", "favorites", "templates",
+	// Web and development directories
+	"inetpub", "wwwroot", "node_modules", "npm",
 }
 
 // unixPathPatterns contains common Unix/macOS directory patterns for path detection.
@@ -311,28 +275,31 @@ var commonFileExtensions = []string{
 	".dat", ".bin", ".raw", ".dump",
 }
 
-// ================================
-// EARLY EXCLUSION FILTERS
-// ================================
-
-// hasExcessiveEscapeSequences checks if content has too many escape sequences to be a valid file path
 func hasExcessiveEscapeSequences(content string) bool {
 	if len(content) < 3 {
 		return false
 	}
 
-	// Count Unicode escape sequences
-	unicodeMatches := unicodeEscapeRe.FindAllString(content, -1)
-	if len(unicodeMatches) >= 2 {
-		totalUnicodeLength := len(unicodeMatches) * 6 // Each \uXXXX is 6 chars
-		if float64(totalUnicodeLength)/float64(len(content)) > 0.6 {
-			return true
+	unicodeCount := 0
+	const unicodeEscapeLen = 6
+	for i := 0; i+unicodeEscapeLen <= len(content); {
+		if content[i] == '\\' && content[i+1] == 'u' &&
+			isHex(rune(content[i+2])) &&
+			isHex(rune(content[i+3])) &&
+			isHex(rune(content[i+4])) &&
+			isHex(rune(content[i+5])) {
+			unicodeCount++
+			i += unicodeEscapeLen
+			continue
 		}
+		i++
+	}
+	if unicodeCount >= 2 && float64(unicodeCount*unicodeEscapeLen)/float64(len(content)) > 0.6 {
+		return true
 	}
 
-	// Count general escape sequences
 	escapeCount := 0
-	for i := 0; i < len(content)-1; i++ {
+	for i := range len(content) - 1 {
 		if content[i] == '\\' {
 			next := content[i+1]
 			if next == 'n' || next == 't' || next == 'r' || next == 'b' || next == 'f' || next == '"' || next == '\\' {
@@ -341,15 +308,9 @@ func hasExcessiveEscapeSequences(content string) bool {
 		}
 	}
 
-	// If more than 30% of content is escape sequences, likely not a path
-	if escapeCount > 0 && float64(escapeCount*2)/float64(len(content)) > 0.3 {
-		return true
-	}
-
-	return false
+	return escapeCount > 0 && float64(escapeCount*2)/float64(len(content)) > 0.3
 }
 
-// isLikelyTextBlob identifies content that has text-like characteristics
 func isLikelyTextBlob(content string) bool {
 	if len(content) < 3 {
 		return false
@@ -361,7 +322,7 @@ func isLikelyTextBlob(content string) bool {
 	}
 
 	// Contains line breaks or tabs
-	if strings.Contains(content, "\n") || strings.Contains(content, "\t") || strings.Contains(content, "\r") {
+	if strings.ContainsAny(content, "\n\t\r") {
 		return true
 	}
 
@@ -395,7 +356,6 @@ func isLikelyTextBlob(content string) bool {
 	return false
 }
 
-// isBase64String checks if content appears to be base64 encoded
 func isBase64String(content string) bool {
 	if len(content) < 20 {
 		return false
@@ -403,185 +363,130 @@ func isBase64String(content string) bool {
 	return base64Re.MatchString(content)
 }
 
-// hasURLEncoding checks if content contains URL encoding patterns
 func hasURLEncoding(content string) bool {
 	return urlEncodingRe.MatchString(content)
 }
 
-// ================================
-// PATH FORMAT DETECTION
-// ================================
-
-// isWindowsAbsolutePath checks for Windows absolute paths (drive letter format)
 func isWindowsAbsolutePath(content string) bool {
 	return driveLetterRe.MatchString(content) || containsDriveRe.MatchString(content)
 }
 
-// isUNCPath checks for UNC (Universal Naming Convention) paths
 func isUNCPath(content string) bool {
 	if !strings.HasPrefix(content, `\\`) || strings.HasPrefix(content, `\\\\`) {
 		return false
 	}
 
-	parts := strings.Split(content, `\`)
-	// UNC: \\server\share\path... (parts[0]="", parts[1]="", parts[2]=server, parts[3]=share)
-	return len(parts) >= 4 && len(parts[2]) > 0 && len(parts[3]) > 0
+	partIndex := 0
+	for part := range strings.SplitSeq(content, `\`) {
+		switch partIndex {
+		case 2:
+			if len(part) == 0 {
+				return false
+			}
+		case 3:
+			return len(part) > 0
+		}
+		partIndex++
+	}
+	return false
 }
 
-// isUnixAbsolutePath checks for Unix absolute paths
 func isUnixAbsolutePath(content string) bool {
 	return strings.HasPrefix(content, "/") || strings.HasPrefix(content, "~/")
 }
 
-// isURLPath checks for URL-style file paths
+func cutProtocolPath(content, lowerContent, prefix string) (string, bool) {
+	if _, ok := strings.CutPrefix(lowerContent, prefix); !ok {
+		return "", false
+	}
+	return content[len(prefix):], true
+}
+
 func isURLPath(content string) bool {
 	lowerContent := strings.ToLower(content)
 
-	// Exclude HTTP/HTTPS URLs
 	if strings.HasPrefix(lowerContent, "http://") || strings.HasPrefix(lowerContent, "https://") {
 		return false
 	}
 
-	// File protocol
-	if strings.HasPrefix(lowerContent, "file://") {
-		pathPart := content[7:]
+	for _, prefix := range []string{"file://", "smb://"} {
+		pathPart, ok := cutProtocolPath(content, lowerContent, prefix)
+		if !ok {
+			continue
+		}
+
 		return len(pathPart) > 1 && hasValidPathStructure(pathPart)
 	}
 
-	// SMB/CIFS protocol
-	if strings.HasPrefix(lowerContent, "smb://") {
-		pathPart := content[6:]
-		return len(pathPart) > 1 && hasValidPathStructure(pathPart)
-	}
-
-	// FTP with file path
-	if strings.HasPrefix(lowerContent, "ftp://") {
-		pathPart := content[6:]
-		if slashIndex := strings.Index(pathPart, "/"); slashIndex > 0 {
-			actualPath := pathPart[slashIndex:]
-			return hasValidPathStructure(actualPath)
+	if ftpPath, ok := cutProtocolPath(content, lowerContent, "ftp://"); ok {
+		if slashIndex := strings.Index(ftpPath, "/"); slashIndex > 0 {
+			return hasValidPathStructure(ftpPath[slashIndex:])
 		}
 	}
 
 	return false
 }
 
-// ================================
-// STRUCTURAL VALIDATION
-// ================================
+func countValidPathSegments(content, separator string) int {
+	count := 0
 
-// containsPathSeparator checks if content contains valid path separators
-func containsPathSeparator(content string) bool {
-	return strings.Contains(content, "/") || strings.Contains(content, "\\")
-}
-
-// countValidPathSegments counts meaningful path segments
-func countValidPathSegments(content string, separator string) int {
-	parts := strings.Split(content, separator)
-	meaningfulParts := 0
-
-	for _, part := range parts {
+	for part := range strings.SplitSeq(content, separator) {
 		part = strings.TrimSpace(part)
 		if len(part) > 0 && part != "." && part != ".." {
-			meaningfulParts++
+			count++
 		}
 	}
 
-	return meaningfulParts
+	return count
 }
 
-// hasFileExtension checks if content has a valid file extension
 func hasFileExtension(content string) bool {
-	// Use Go's filepath.Ext for standard detection
 	ext := filepath.Ext(content)
 	if len(ext) > 1 && len(ext) <= 6 {
 		return true
 	}
 
-	// Use regex for additional patterns
 	return fileExtensionRe.MatchString(content)
 }
 
-// hasValidPathStructure validates the overall path structure
 func hasValidPathStructure(pathStr string) bool {
 	if len(pathStr) < 2 {
 		return false
 	}
 
-	// Check for path separators
-	if !containsPathSeparator(pathStr) {
-		return false
-	}
-
-	// Determine separator type
 	separator := "/"
 	if strings.Contains(pathStr, "\\") {
 		separator = "\\"
+	} else if !strings.Contains(pathStr, separator) {
+		return false
 	}
 
-	// Count meaningful segments
 	meaningfulParts := countValidPathSegments(pathStr, separator)
 	if meaningfulParts < 2 {
 		return false
 	}
 
-	// Check for file extension (optional but helpful)
-	hasExt := hasFileExtension(pathStr)
-
-	// More lenient requirements:
-	// - If has extension, accept with 2+ parts
-	// - If no extension, require 3+ parts OR known path patterns
-	if hasExt {
+	if hasFileExtension(pathStr) {
 		return true
 	}
 
-	// For paths without extensions, be more lenient
 	if meaningfulParts >= 3 {
 		return true
 	}
 
-	// Special cases for known path patterns
 	lowerPath := strings.ToLower(pathStr)
-
-	// Windows common directories
-	windowsDirs := []string{
-		"program files", "windows", "users", "temp", "system32", "documents", "programdata",
-		"desktop", "downloads", "music", "pictures", "videos", "appdata", "roaming", "public",
-		"inetpub", "wwwroot", "node_modules", "npm",
-	}
-	for _, dir := range windowsDirs {
-		if strings.Contains(lowerPath, dir) {
-			return true
-		}
-	}
-
-	// Unix system directories
-	if strings.HasPrefix(pathStr, "/") {
-		unixDirs := []string{
-			"/bin/", "/etc/", "/var/", "/usr/", "/opt/", "/home/", "/tmp/", "/lib/",
-			"/proc/", "/dev/", "/sys/", "/run/", "/srv/", "/mnt/", "/media/", "/boot/",
-			"/Applications/", "/Library/", "/System/", "/Users/",
-		}
-		for _, dir := range unixDirs {
-			if strings.Contains(lowerPath, dir) {
-				return true
-			}
-		}
-	}
-
-	return false
+	return matchesWindowsPathPattern(lowerPath) ||
+		strings.HasPrefix(pathStr, "/") && matchesUnixPathPattern(lowerPath)
 }
 
-// isValidPathCharacter checks if a character is valid in file paths
 func isValidPathCharacter(r rune) bool {
-	return (r >= 'a' && r <= 'z') ||
-		(r >= 'A' && r <= 'Z') ||
-		(r >= '0' && r <= '9') ||
-		r == '/' || r == '\\' || r == ':' || r == '.' ||
+	if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+		return true
+	}
+	return r == '/' || r == '\\' || r == ':' || r == '.' ||
 		r == '-' || r == '_' || r == ' ' || r == '~'
 }
 
-// hasReasonableCharacterDistribution checks character distribution for path-like content
 func hasReasonableCharacterDistribution(content string) bool {
 	if len(content) == 0 {
 		return false
@@ -598,71 +503,41 @@ func hasReasonableCharacterDistribution(content string) bool {
 	return float64(validChars)/float64(len(content)) >= 0.7
 }
 
-// ================================
-// MAIN PATH DETECTION
-// ================================
-
-// matchesWindowsPathPattern checks if content matches common Windows directory patterns.
-func matchesWindowsPathPattern(lowerContent, content string) bool {
-	for _, pattern := range windowsPathPatterns {
-		if strings.Contains(lowerContent, pattern) && containsPathSeparator(content) {
-			return true
-		}
-	}
-	return false
+func matchesWindowsPathPattern(lowerContent string) bool {
+	return slices.ContainsFunc(windowsPathPatterns, func(pattern string) bool {
+		return strings.Contains(lowerContent, pattern)
+	})
 }
 
-// matchesUnixPathPattern checks if content matches common Unix/macOS directory patterns.
 func matchesUnixPathPattern(lowerContent string) bool {
-	for _, pattern := range unixPathPatterns {
-		if strings.Contains(lowerContent, pattern) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(unixPathPatterns, func(pattern string) bool {
+		return strings.Contains(lowerContent, pattern)
+	})
 }
 
-// hasCommonFileExtension checks if content ends with a common file extension.
 func hasCommonFileExtension(lowerContent string) bool {
-	for _, ext := range commonFileExtensions {
-		if strings.HasSuffix(lowerContent, ext) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(commonFileExtensions, func(ext string) bool {
+		return strings.HasSuffix(lowerContent, ext)
+	})
 }
 
-// isExcludedURL checks if content is a URL that should be excluded from path detection.
 func isExcludedURL(lowerContent, content string) bool {
-	// HTTP/HTTPS URLs
 	if strings.HasPrefix(lowerContent, "http://") || strings.HasPrefix(lowerContent, "https://") {
 		return true
 	}
-	// FTP URLs without file paths
-	if strings.HasPrefix(lowerContent, "ftp://") && !strings.Contains(content[6:], "/") {
-		return true
+	if ftpPath, ok := cutProtocolPath(content, lowerContent, "ftp://"); ok {
+		return !strings.Contains(ftpPath, "/")
 	}
 	return false
 }
 
-// passesEarlyExclusionFilters checks if content passes all early exclusion filters.
 func passesEarlyExclusionFilters(content string) bool {
-	if hasExcessiveEscapeSequences(content) {
-		return false
-	}
-	if isLikelyTextBlob(content) {
-		return false
-	}
-	if isBase64String(content) {
-		return false
-	}
-	if hasURLEncoding(content) {
-		return false
-	}
-	return true
+	return !hasExcessiveEscapeSequences(content) &&
+		!isLikelyTextBlob(content) &&
+		!isBase64String(content) &&
+		!hasURLEncoding(content)
 }
 
-// matchesAbsolutePathFormat checks if content matches any absolute path format.
 func matchesAbsolutePathFormat(content string) bool {
 	return isURLPath(content) ||
 		isWindowsAbsolutePath(content) ||
@@ -670,8 +545,6 @@ func matchesAbsolutePathFormat(content string) bool {
 		isUnixAbsolutePath(content)
 }
 
-// isLikelyFilePath determines if a string content looks like a file path
-// using a structured, layer-based approach.
 func isLikelyFilePath(content string) bool {
 	if len(content) < 2 {
 		return false
@@ -679,37 +552,32 @@ func isLikelyFilePath(content string) bool {
 
 	lowerContent := strings.ToLower(content)
 
-	// Early URL exclusions
 	if isExcludedURL(lowerContent, content) {
 		return false
 	}
 
-	// Early exclusion filters
 	if !passesEarlyExclusionFilters(content) {
 		return false
 	}
 
-	// Format-specific detection (high confidence)
 	if matchesAbsolutePathFormat(content) {
 		return true
 	}
 
-	// Check for common Windows directory patterns
-	if matchesWindowsPathPattern(lowerContent, content) {
-		return true
-	}
-
-	// Check for Unix system directory patterns
-	if strings.Contains(content, "/") && matchesUnixPathPattern(lowerContent) {
-		return true
-	}
-
-	// Structural validation for relative paths
-	if !containsPathSeparator(content) {
+	hasForwardSlash := strings.Contains(content, "/")
+	hasBackslash := strings.Contains(content, "\\")
+	if !hasForwardSlash && !hasBackslash {
 		return false
 	}
 
-	// Check for common file extensions
+	if matchesWindowsPathPattern(lowerContent) {
+		return true
+	}
+
+	if hasForwardSlash && matchesUnixPathPattern(lowerContent) {
+		return true
+	}
+
 	if hasFileExtension(content) && hasCommonFileExtension(lowerContent) {
 		return true
 	}
@@ -721,48 +589,42 @@ func isLikelyFilePath(content string) bool {
 	return hasValidPathStructure(content)
 }
 
-// analyzePotentialFilePath analyzes a portion of text to determine if it contains file paths
-// This function has been optimized for structural detection
 func analyzePotentialFilePath(text *[]rune, startPos int) bool {
-	if startPos >= len(*text) || (*text)[startPos] != '"' {
+	if startPos >= len(*text) || !isQuote((*text)[startPos]) {
 		return false
 	}
 
-	// Extract string content
+	isEndQuote := endQuoteMatcher((*text)[startPos])
 	i := startPos + 1
 	var contentBuilder strings.Builder
 	hasPathSeparator := false
 
-	// Collect content until closing quote (with reasonable limit)
-	for i < len(*text) && i < startPos+150 {
+	const maxScanLength = 150
+	for i < len(*text) && i < startPos+maxScanLength {
 		char := (*text)[i]
 
-		if char == '"' {
+		if isEndQuote(char) {
 			break
 		}
 
-		// Track path separators
 		if char == '\\' || char == '/' {
 			hasPathSeparator = true
 		}
 
-		// Handle escape sequences for path detection
 		if char == '\\' && i+1 < len(*text) {
 			nextChar := (*text)[i+1]
 			switch nextChar {
 			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
-				// Preserve escape sequences as-is for path analysis
 				contentBuilder.WriteRune(char)
 				contentBuilder.WriteRune(nextChar)
 				i += 2
 				continue
 			case 'u':
-				// Unicode escape
 				if i+5 < len(*text) {
-					for j := range 6 {
-						contentBuilder.WriteRune((*text)[i+j])
+					for range 6 {
+						contentBuilder.WriteRune((*text)[i])
+						i++
 					}
-					i += 6
 					continue
 				}
 			}
@@ -774,14 +636,5 @@ func analyzePotentialFilePath(text *[]rune, startPos int) bool {
 
 	content := contentBuilder.String()
 
-	// Pre-validation checks
-	if len(content) < 3 {
-		return false
-	}
-
-	if !hasPathSeparator {
-		return false
-	}
-
-	return isLikelyFilePath(content)
+	return hasPathSeparator && len(content) >= 3 && isLikelyFilePath(content)
 }
