@@ -71,6 +71,22 @@ type Agent struct {
 	// guard exists to keep off the network it is sitting in.
 	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
 
+	// SkipCertificateCheck lists equipment whose TLS certificate is not
+	// checked: a host, or an address, as in AllowPrivateAddresses.
+	//
+	// A real loss, and narrower than it looks by design. For a host named
+	// here, anything that can answer at that address can pretend to be it,
+	// and TLS becomes encryption without identity -- so it is only for
+	// equipment that cannot be verified at all. A UniFi controller is the
+	// case it was written for: it ships a certificate issued for 127.0.0.1,
+	// which can never be valid for the address on the network it is
+	// actually reached at.
+	//
+	// Only a skill going to the endpoint it declares is given this. The
+	// remote image proxy, the one-click unsubscribe and web_fetch follow
+	// addresses out of somebody else's mail and always check.
+	SkipCertificateCheck []string `yaml:"skipCertificateCheck,omitempty"`
+
 	// Browser is a headless browser the operator runs beside the server.
 	Browser AgentBrowser `yaml:"browser"`
 
@@ -700,6 +716,19 @@ func (self *Configuration) validateAgent(validator *validator) {
 			// Digits and dots and not an address: a typed one, missing a
 			// part. As a name it would never resolve.
 			validator.add(field, "%q is not an address; an address has four parts, as 192.168.1.10", entry)
+		case !isHostname(entry) && !isHostLabel(entry):
+			validator.add(field, "%q is not a name this server could look up", entry)
+		}
+	}
+	for index, entry := range agent.SkipCertificateCheck {
+		field := fmt.Sprintf("agent.skipCertificateCheck[%d]", index)
+		entry = strings.TrimSpace(entry)
+		switch {
+		case entry == "":
+			validator.add(field, "is empty")
+		case net.ParseIP(entry) != nil:
+		case strings.ContainsAny(entry, " :/\\"):
+			validator.add(field, "%q is a host or an address, not a URL or a host and port", entry)
 		case !isHostname(entry) && !isHostLabel(entry):
 			validator.add(field, "%q is not a name this server could look up", entry)
 		}

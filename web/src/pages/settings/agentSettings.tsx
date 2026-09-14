@@ -78,6 +78,7 @@ export type Agent = {
   enabled: boolean
   instructions: string
   allowPrivateAddresses: string[]
+  skipCertificateCheck: string[]
   providers: AgentProvider[]
   models: {
     default: string
@@ -125,7 +126,7 @@ export type Agent = {
 }
 
 export const AGENT_SELECTION = `agent {
-  enabled instructions allowPrivateAddresses
+  enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
@@ -253,19 +254,29 @@ function GeneralForm({ settings, onSaved }: Props) {
   // an effect that depends on its identity runs again and puts the stored
   // value back over what is being typed.
   const storedAllowPrivate = list(settings.allowPrivateAddresses)
+  const [skipCertificates, setSkipCertificates] = useState(list(settings.skipCertificateCheck))
+  const storedSkipCertificates = list(settings.skipCertificateCheck)
   useEffect(() => {
     setEnabled(settings.enabled)
     setInstructions(settings.instructions)
     setAllowPrivate(storedAllowPrivate)
+    setSkipCertificates(storedSkipCertificates)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.enabled, settings.instructions, storedAllowPrivate])
+  }, [settings.enabled, settings.instructions, storedAllowPrivate, storedSkipCertificates])
 
   return (
     <form
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ agent: { enabled, instructions, allowPrivateAddresses: split(allowPrivate) } })
+        void save({
+          agent: {
+            enabled,
+            instructions,
+            allowPrivateAddresses: split(allowPrivate),
+            skipCertificateCheck: split(skipCertificates),
+          },
+        })
       }}
     >
       <h3>{t('agentSettings.title')}</h3>
@@ -295,6 +306,15 @@ function GeneralForm({ settings, onSaved }: Props) {
           margin that pulls it against the field above, which only works
           when it is the field's sibling. */}
       <p className="muted field-hint">{t('agentSettings.allowPrivateHint')}</p>
+      <label>
+        <span>{t('agentSettings.skipCertificates')}</span>
+        <input
+          value={skipCertificates}
+          placeholder="unifi.lan, 192.168.1.10"
+          onChange={(event) => setSkipCertificates(event.target.value)}
+        />
+      </label>
+      <p className="muted field-hint">{t('agentSettings.skipCertificatesHint')}</p>
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )

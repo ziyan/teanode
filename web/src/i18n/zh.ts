@@ -1330,6 +1330,9 @@ export const zh: Catalog = {
   'agentSettings.browserIdleTimeout': '空闲超时',
   'agentSettings.browserMaxContexts': '同时上下文数',
   'agentSettings.allowPrivate': '代理可以访问的本网络设备',
+  'agentSettings.skipCertificates':'无法验证证书的设备',
+  'agentSettings.skipCertificatesHint':
+    '主机名或地址，用逗号分隔。有些设备只带有签发给 127.0.0.1 的证书（UniFi 控制器就是典型例子），在实际访问的地址上永远无法通过验证。对此处列出的主机不做证书验证，因此任何能在该地址应答的东西都可以冒充它：连接仍然加密，但不再能证明应答者是谁。仅在技能访问自身接口时放行；抓取邮件里的链接始终验证。',
   'agentSettings.allowPrivateHint': '地址、网段或主机名，用逗号分隔。邮件里的链接由发件人书写，因此默认拒绝访问本网络。此处列出的地址仅对技能自身的接口和无头浏览器放行，不用于抓取邮件里的链接。',
   'agentSettings.browserAllowPrivate': '允许访问的内网主机（逗号分隔）',
   'agentSettings.browserAttachTabs': '用户可通过扩展附加自己的浏览器标签页',

@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An operator may name equipment whose certificate is not checked, one host
+  at a time, under `agent.skipCertificateCheck`. A camera controller or a
+  hub on somebody's own network commonly presents a certificate issued for
+  `127.0.0.1` or for a name it is never reached by, and there is no way for
+  its owner to fix that — so a skill pointed at their own equipment failed
+  at the handshake and could not be made to work at all. What is given up is
+  real: for a host on that list this server checks that it is reachable, not
+  that it is the machine it claims to be. It is per-host and off by default,
+  and the setting says so where it is set.
+
 ## [0.23.2] - 2026-09-14
 
 ### Changed
