@@ -1219,9 +1219,12 @@ func (self *server) serve(ctx context.Context) error {
 		go func() {
 			defer deferutil.Recover()
 			defer waitGroup.Done()
+			// The raw listener: Serve puts the TLS on, so that the
+			// connection ceiling is applied underneath it and what the
+			// server sees is a *tls.Conn rather than a wrapper around one.
 			implicit := *imapSettings
 			implicit.ImplicitTLS = true
-			if err := imap.Serve(ctx, tls.NewListener(self.listeners.imaps, tlsConfig), &implicit); err != nil {
+			if err := imap.Serve(ctx, self.listeners.imaps, &implicit); err != nil {
 				log.Debugf("imaps server exited: %s", err)
 			}
 			stopped <- "imaps"

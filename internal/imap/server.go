@@ -119,8 +119,26 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 		<-ctx.Done()
 		_ = server.Close()
 	}()
+	// The ceiling goes on underneath the encryption, and the encryption is
+	// put on here rather than by the caller.
+	//
+	// go-imap decides whether a connection may sign in by asserting that it
+	// is a *tls.Conn, and asks the same question to decide whether to offer
+	// STARTTLS. A wrapper around an accepted connection defeats both: with
+	// the ceiling wrapped around a listener that was already wrapped for
+	// TLS, every connection to port 993 looked like plaintext, so the
+	// server advertised STARTTLS and LOGINDISABLED inside a finished TLS
+	// session and no mail program could sign in at all. Bounding the raw
+	// listener and wrapping that for TLS puts a real *tls.Conn back on top,
+	// where the assertion finds it.
 	if settings.MaxConnections > 0 {
 		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections)}
+	}
+	if settings.ImplicitTLS {
+		if settings.TLSConfig == nil {
+			return fmt.Errorf("imap: an implicit-TLS listener needs a certificate")
+		}
+		listener = tls.NewListener(listener, settings.TLSConfig)
 	}
 	err = server.Serve(listener)
 	if ctx.Err() != nil {
