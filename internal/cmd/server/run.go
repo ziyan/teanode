@@ -1208,8 +1208,15 @@ func (self *server) serve(ctx context.Context) error {
 		go func() {
 			defer deferutil.Recover()
 			defer waitGroup.Done()
+			// Said out loud, not at debug. Serve answers nil when the
+			// context is done, so an error here is a real failure -- and a
+			// listener that fails takes the whole server down with it, so
+			// this line is the only thing that says why. It used to be
+			// invisible at the level an operator runs at: what they saw was
+			// "shutting down: imap listener stopped", three milliseconds
+			// after "teanode is running", and nothing else.
 			if err := imap.Serve(ctx, self.listeners.imap, imapSettings); err != nil {
-				log.Debugf("imap server exited: %s", err)
+				log.Errorf("the imap listener stopped: %s", err)
 			}
 			stopped <- "imap"
 		}()
@@ -1225,7 +1232,7 @@ func (self *server) serve(ctx context.Context) error {
 			implicit := *imapSettings
 			implicit.ImplicitTLS = true
 			if err := imap.Serve(ctx, self.listeners.imaps, &implicit); err != nil {
-				log.Debugf("imaps server exited: %s", err)
+				log.Errorf("the imaps listener stopped: %s", err)
 			}
 			stopped <- "imaps"
 		}()

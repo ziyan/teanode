@@ -78,6 +78,17 @@ const pollInterval = 30 * time.Second
 
 // Serve answers IMAP on the listener until the context ends.
 func Serve(ctx context.Context, listener net.Listener, settings *Settings) error {
+	// Before anything is opened or subscribed to: a listener that cannot be
+	// what it is meant to be is a configuration mistake, and finding it
+	// after a change feed has been set up says the same thing later and
+	// less clearly. Refusing is right -- a port 993 that cannot
+	// authenticate is worse than one that is not there -- so this says what
+	// to do about it rather than only what is wrong.
+	if settings.ImplicitTLS && settings.TLSConfig == nil {
+		return fmt.Errorf("imap: the imaps listener needs a certificate: " +
+			"set tls.certificateFile and tls.privateKeyFile, or turn on tls.acme, " +
+			"or take listen.imaps out of the configuration")
+	}
 	hub := newHub()
 	changes, err := settings.Database.ListenFolderChanges(ctx)
 	if err != nil {
@@ -135,9 +146,6 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections)}
 	}
 	if settings.ImplicitTLS {
-		if settings.TLSConfig == nil {
-			return fmt.Errorf("imap: an implicit-TLS listener needs a certificate")
-		}
 		listener = tls.NewListener(listener, settings.TLSConfig)
 	}
 	err = server.Serve(listener)
