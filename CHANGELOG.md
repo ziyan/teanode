@@ -8,6 +8,17 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- **Mail programs can sign in on port 993 again.** Since 0.21.3 the
+  implicit-TLS listener answered a finished TLS session by advertising
+  STARTTLS and LOGINDISABLED, and refused every sign-in with "TLS is required
+  to authenticate" — so a mail program set up for 993 stopped working on
+  upgrade, while the same account on 143 with STARTTLS was fine. The
+  connection ceiling added in 0.21.3 wrapped each accepted connection, and the
+  IMAP library decides whether a connection is encrypted by looking at what
+  type it is; a wrapper around a TLS connection is not one. The ceiling now
+  goes on underneath the encryption, so what the library sees is the TLS
+  connection it is looking for.
+
 - A Windows path in a message your agent read comes back with its backslashes.
   When a model answers with JSON that has to be repaired before it can be read
   — quotes of the wrong kind, a trailing comma, an answer cut off — the repair
