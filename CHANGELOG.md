@@ -49,6 +49,14 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A tool line no longer turns up in the wrong conversation. Switching
+  conversations in the drawer stops listening to the one you left, but a
+  websocket that has been closed still delivers whatever the browser had
+  already taken off it, so the last line of the conversation you left could
+  land at the top of the one you opened — and, worse, a reconnection could
+  read the old transcript over the new one. Events now stop at the door of a
+  subscription that has been torn down.
+
 - A draft keeps its name when it is saved again. Saving a draft writes a new
   message and removes the old one — that is what editing a stored message
   means — so the identifier your agent was holding stopped naming anything

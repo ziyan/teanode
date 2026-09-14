@@ -929,6 +929,16 @@ export function subscribe<T>(
           current.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
           break
         case 'data':
+          // Nothing reaches a subscriber that has been stopped. Closing a
+          // socket does not unqueue the frames the browser has already
+          // taken off it, so an event could still be handed to a caller
+          // that had torn its subscription down -- which in the agent
+          // drawer meant the last tool line of the conversation somebody
+          // had just left appearing at the top of the one they had just
+          // opened, as though it had happened there.
+          if (ended || socket !== current) {
+            return
+          }
           if (message.payload?.errors && message.payload.errors.length > 0) {
             end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
             current.close()
