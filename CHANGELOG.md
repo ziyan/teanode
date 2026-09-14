@@ -17,10 +17,11 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
-- The "Decided by" line sits beside its label again. A link-shaped button
-  keeps the height a browser gives a button, which is taller than a line of
-  the small text around it, so that one row grew and its words dropped a line
-  below the label they belong to while every row above lined up.
+- A link inside the message details takes the line-height of the text around
+  it rather than a button's own, which differs between a phone and a desktop.
+  The "Decided by" row was reported sitting a line below its label on a
+  phone; this removes the one thing in that row whose height was not the
+  text's.
 
 ## [0.23.1] - 2026-09-14
 

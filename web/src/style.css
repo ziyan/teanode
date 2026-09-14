@@ -4324,11 +4324,16 @@ label.check-list-item {
   padding-left: 1.1rem;
 }
 
-/* A link-shaped button sits on the text's baseline and does not make the
-   line it is on any taller. Without this it keeps the height a button gets
-   from the browser, which is more than a line of 13px text -- so the row
-   holding it grew, and its words sat a line below the label they belong to
-   while every row above them lined up. */
+/* A link-shaped button sits on the text's baseline and takes the line-height
+   of the text around it, rather than whatever height the browser gives a
+   button.
+   
+   Said because a browser's own button metrics are not the same everywhere --
+   a phone's are not a desktop's -- and a row of this list whose value holds
+   a button was reported sitting a line below its label on a phone, where it
+   measures correctly on a desktop at every column width I could put it
+   through. This makes the button stop being a variable. It is not a
+   demonstrated cause. */
 .mailbox-pane-meta button.link {
   line-height: inherit;
   vertical-align: baseline;
