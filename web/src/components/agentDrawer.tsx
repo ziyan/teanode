@@ -264,16 +264,15 @@ const MAKE_MAIN = `
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
   }`
 
-// The tools after which what the mailbox shows may have changed.
+// The tools after which what the mailbox shows may have changed. The rules
+// and the folders are one tool each now, whatever action they were asked
+// for: a list is a read and refreshing after one costs nothing.
 const MAIL_TOOLS = new Set([
   'mail_act',
   'mail_draft',
   'mail_send',
-  'folder_manage',
-  'rule_add',
-  'rule_update',
-  'rule_remove',
-  'rule_apply',
+  'folder',
+  'rule',
   'mailbox_settings',
   'reply_queue',
 ])
@@ -718,6 +717,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // there; a person who scrolled up to read is left where they are.
   const [atBottom, setAtBottom] = useState(true)
   const [conversationId, setConversationId] = useState(() => remembered(CONVERSATION_KEY))
+  // The conversation on screen, readable from a closure that was made for
+  // an earlier one: a subscription's handler has to be able to tell that
+  // it is no longer the one being read.
+  const conversationRef = useRef(conversationId)
+  useEffect(() => {
+    conversationRef.current = conversationId
+  }, [conversationId])
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
   const [loaded, setLoaded] = useState<Conversation | null>(null)
@@ -868,6 +874,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       FEED,
       { conversationId: followed },
       (data) => {
+        // Only while this is still the conversation on screen. The socket
+        // guards this too; this guards the gap React leaves between the
+        // effect being torn down and the next one settling, and it keeps
+        // the `done` branch below from reading a transcript nobody is
+        // looking at over the one they are.
+        if (stopped || followed !== conversationRef.current) {
+          return
+        }
         const event = data.AgentConversationEvents
         if (event.kind === 'asked') {
           asked(event)
@@ -890,6 +904,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       },
       {
         beforeStart: async (reconnecting) => {
+          // A socket that opens after the conversation moved on reads
+          // nothing: this runs before the subscription's own check, so
+          // without it a reconnection could put the transcript of the
+          // conversation somebody left back on the screen.
+          if (stopped || followed !== conversationRef.current) {
+            return
+          }
           if (!reconnecting && loading.current) {
             await loading.current
             return

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -13,14 +14,25 @@ import (
 
 // AgentView is what ReadAgent returns.
 type AgentView struct {
-	Agent      json.RawMessage `json:"agent"`
-	Sources    []*AgentSource  `json:"sources"`
-	Allowed    map[string]bool `json:"allowed"`
-	Budget     *AgentBudget    `json:"budget"`
-	Choices    []string        `json:"choices"`
-	Timezone   string          `json:"timezone"`
-	Language   string          `json:"language"`
-	Categories []string        `json:"categories"`
+	Agent       json.RawMessage    `json:"agent"`
+	Sources     []*AgentSource     `json:"sources"`
+	Collections []*AgentCollection `json:"collections"`
+	Allowed     map[string]bool    `json:"allowed"`
+	Budget      *AgentBudget       `json:"budget"`
+	Choices     []string           `json:"choices"`
+	Timezone    string             `json:"timezone"`
+	Language    string             `json:"language"`
+	Categories  []string           `json:"categories"`
+}
+
+// AgentCollection is one calendar or address book as a source: a switch, and
+// how much is in it.
+type AgentCollection struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Granted bool   `json:"granted"`
+	Items   int    `json:"items"`
 }
 
 // AgentSource is one mailbox as a source.
@@ -94,7 +106,8 @@ const agentViewSelection = `{
 	sources { mailboxId name addresses policy { granted draftReplies search research
 		triage { enabled backfill replyExpectation }
 		summaries { enabled minimumMessages style }
-		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit quietDays } } }
+		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit } } }
+	collections { id name kind granted items }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 	budget { used limit resetsAt cost costLimit currency }
 	choices timezone language categories
@@ -127,6 +140,16 @@ const (
 	DocumentRevokeAgentMailbox = `mutation ($mailboxId: String!) {
 		RevokeAgentMailbox(mailboxId: $mailboxId) ` + agentViewSelection + `
 	}`
+
+	DocumentGrantAgentSource = `mutation ($kind: String!, $id: String!, $granted: Boolean!) {
+		GrantAgentSource(kind: $kind, id: $id, granted: $granted) ` + agentViewSelection + `
+	}`
+
+	DocumentSetAgentBrief = `mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
+		SetAgentBrief(enabled: $enabled, at: $at, days: $days) ` + scheduleFields + `
+	}`
+
+	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow ` + scheduleFields + ` }`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
 		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
@@ -287,6 +310,48 @@ func RevokeAgentMailbox(ctx context.Context, connection *Client, mailboxId strin
 		return nil, err
 	}
 	return result.RevokeAgentMailbox, nil
+}
+
+// GrantAgentSource gives the agent a calendar or an address book, or takes it
+// back.
+func GrantAgentSource(ctx context.Context, connection *Client, kind, id string, granted bool) (*AgentView, error) {
+	var result struct {
+		GrantAgentSource *AgentView `json:"GrantAgentSource"`
+	}
+	if err := connection.Execute(ctx, DocumentGrantAgentSource,
+		map[string]any{"kind": kind, "id": id, "granted": granted}, &result); err != nil {
+		return nil, err
+	}
+	return result.GrantAgentSource, nil
+}
+
+// SetAgentBrief turns the daily brief on or off and says when it comes.
+func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at string, days []int) (*AgentSchedule, error) {
+	var result struct {
+		SetAgentBrief *AgentSchedule `json:"SetAgentBrief"`
+	}
+	variables := map[string]any{"enabled": enabled}
+	if strings.TrimSpace(at) != "" {
+		variables["at"] = at
+	}
+	if len(days) > 0 {
+		variables["days"] = days
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentBrief, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentBrief, nil
+}
+
+// RunAgentBriefNow sends one immediately.
+func RunAgentBriefNow(ctx context.Context, connection *Client) (*AgentSchedule, error) {
+	var result struct {
+		RunAgentBriefNow *AgentSchedule `json:"RunAgentBriefNow"`
+	}
+	if err := connection.Execute(ctx, DocumentRunAgentBriefNow, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.RunAgentBriefNow, nil
 }
 
 // AgentUsage is the caller's own token use.

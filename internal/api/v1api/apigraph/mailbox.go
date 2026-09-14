@@ -72,6 +72,7 @@ type MailboxMutation interface {
 	// they are. What the agent had decided is recorded as a correction it
 	// learns from. Needs mail:write.
 	SortMailboxItems(ctx context.Context, arguments SortMailboxItemsArguments) (int, error)
+	SetMailProposalStatus(ctx context.Context, arguments SetMailProposalStatusArguments) (*models.MailInsight, error)
 
 	// Move items to another folder of the same mailbox
 	MoveMailboxItems(ctx context.Context, arguments MoveMailboxItemsArguments) ([]*models.MailboxItem, error)
@@ -761,6 +762,17 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 	if !agent.FeatureAllowed(configuration, "summaries") {
 		return nil
 	}
+	// A conversation of one is not worth a summary: the message is on the
+	// screen under it. Counted by message and not by item -- a message
+	// somebody sends to themselves is filed in Sent and in the Inbox, which
+	// is two items and one message, and it was the one kind of single
+	// message that got itself summarized and then went on showing the
+	// summary. First of all, because most threads are one message and this
+	// is read every time one is opened: the lookup below is a query that
+	// would be thrown away.
+	if agent.CountMessages(items) < 2 {
+		return nil
+	}
 	tx := self.transaction(ctx)
 	summary, err := tx.GetThreadSummary(mailbox.ID, threadId)
 	if err != nil {
@@ -788,15 +800,6 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 		view.Stale = true
 	}
 	if !view.Stale {
-		return view
-	}
-	// A conversation of one is not worth a summary until it is opened by
-	// somebody who wants one anyway; the reader still shows nothing for
-	// it, so the run is not queued either.
-	if len(items) < 2 {
-		if summary == nil {
-			return nil
-		}
 		return view
 	}
 	owner, err := tx.GetAgentByUser(mailbox.UserID)

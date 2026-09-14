@@ -58,7 +58,8 @@ export function signInWithToken(token: string) {
 // framedDrawer says whether this document is the drawer framed by the
 // browser extension into another site, decided once when it loaded: a
 // route change never turns the frame into the whole dashboard.
-export const framedDrawer = typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
+export const framedDrawer =
+  typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'
 
 export function authorization(): Record<string, string> {
   return bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}
@@ -653,6 +654,7 @@ export interface MailboxAutoReply {
   subject: string
   text: string
   html?: string
+  sameDomainOnly?: boolean
 }
 
 export interface Mailbox {
@@ -686,6 +688,27 @@ export interface MailInsight {
   summary: string
   actionItems?: string[]
   notes?: string
+  proposals?: MailProposal[]
+}
+
+// Something a message carries that belongs somewhere else: an appointment in
+// its words, or a person's details in a signature. An offer, never a write.
+export interface MailProposal {
+  kind: 'event' | 'contact'
+  because?: string
+  status?: string
+  summary?: string
+  starts?: string
+  ends?: string
+  location?: string
+  allDay?: boolean
+  name?: string
+  organization?: string
+  title?: string
+  emails?: string[]
+  phones?: string[]
+  note?: string
+  contactId?: string
 }
 
 export interface MailboxFolder {
@@ -873,11 +896,20 @@ export function subscribe<T>(
     }
     current.onopen = () => {
       heard()
-      current.send(JSON.stringify({ type: 'connection_init', payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() } }))
+      current.send(
+        JSON.stringify({
+          type: 'connection_init',
+          payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() },
+        }),
+      )
     }
     current.onmessage = async (event) => {
       heard()
-      let message: { id?: string; type?: string; payload?: { data?: T; errors?: { message: string }[]; message?: string } }
+      let message: {
+        id?: string
+        type?: string
+        payload?: { data?: T; errors?: { message: string }[]; message?: string }
+      }
       try {
         message = JSON.parse(String(event.data))
       } catch {
@@ -897,6 +929,16 @@ export function subscribe<T>(
           current.send(JSON.stringify({ id, type: 'start', payload: { query, variables } }))
           break
         case 'data':
+          // Nothing reaches a subscriber that has been stopped. Closing a
+          // socket does not unqueue the frames the browser has already
+          // taken off it, so an event could still be handed to a caller
+          // that had torn its subscription down -- which in the agent
+          // drawer meant the last tool line of the conversation somebody
+          // had just left appearing at the top of the one they had just
+          // opened, as though it had happened there.
+          if (ended || socket !== current) {
+            return
+          }
           if (message.payload?.errors && message.payload.errors.length > 0) {
             end(new APIError(message.payload.errors.map((error) => error.message).join('; ')))
             current.close()

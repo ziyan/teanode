@@ -28,6 +28,35 @@ func init() {
 					"deliver": tools.EnumProperty("where the answer goes", "drawer", "mail"),
 					"enabled": tools.BooleanProperty("on"),
 				}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action  string `json:"action"`
+					Name    string `json:"name"`
+					Cron    string `json:"cron"`
+					Deliver string `json:"deliver"`
+				}) string {
+					named := tools.Named(call.Name, "a schedule")
+					when := ""
+					if call.Cron != "" {
+						when = ", " + call.Cron
+					}
+					switch call.Action {
+					case "add":
+						// Where it is delivered matters: a schedule that
+						// sends mail is one that goes out on its own.
+						sent := ""
+						if call.Deliver == "mail" {
+							sent = ", sent to you as mail"
+						}
+						return "Run " + named + " on a schedule" + when + sent
+					case "update":
+						return "Change the schedule " + named + when
+					case "remove":
+						return "Remove the schedule " + named
+					case "run":
+						return "Run " + named + " now"
+					}
+					return "Change your schedules"
+				}),
 				Run: runScheduleTool,
 			},
 		}

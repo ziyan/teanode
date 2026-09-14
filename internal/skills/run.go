@@ -56,6 +56,11 @@ type Running struct {
 	// server fetches through, which refuses private addresses; a test
 	// puts its own here to reach its own server.
 	Client *http.Client
+
+	// Allowance is what the operator has said this server may reach inside
+	// their own network, for a skill pointed at equipment of theirs. Nil
+	// keeps the guard as it is everywhere else.
+	Allowance *safefetch.Allowance
 }
 
 // client fetches for one step. safefetch's own client carries a ten
@@ -65,7 +70,11 @@ func (self *Running) client(timeout time.Duration) *http.Client {
 	if self != nil && self.Client != nil {
 		return self.Client
 	}
-	guarded := safefetch.Client()
+	var allowance *safefetch.Allowance
+	if self != nil {
+		allowance = self.Allowance
+	}
+	guarded := safefetch.ClientAllowing(allowance)
 	guarded.Timeout = timeout
 	return guarded
 }

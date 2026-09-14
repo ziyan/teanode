@@ -19,7 +19,7 @@ import (
 
 // researchTools is the fixed set a research run may use, beside the
 // read-only headless tools of connected servers.
-var researchTools = map[string]bool{"web_fetch": true, "web_search": true, "datetime": true, "mail_search": true, "mail_read": true, "contact_search": true, "tool_search": true, "memory": true}
+var researchTools = map[string]bool{"web_fetch": true, "web_search": true, "datetime": true, "mail_search": true, "mail_read": true, "contact_book": true, "tool_search": true, "memory": true}
 
 // runResearch is the handler for a research job; its subject is the
 // message.

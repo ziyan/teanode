@@ -34,6 +34,15 @@ code, and whether either was cut. `filesystem` reads, writes, appends, edits by
 exact text, lists, says what one file is, copies, moves, deletes, makes
 directories, globs for files, and greps.
 
+Two of its actions carry whole files rather than text, in either direction, and
+neither passes the bytes through the model. `fetch` sends a file to the server,
+which is how `share_file` hands the person something off their own machine.
+`put` writes a file of the conversation onto the machine: the model names an
+attachment and a path, the server reads the bytes out of storage and sends them
+across. That is what makes a document nobody here can parse useful — a PDF or a
+spreadsheet lands under the person's home, `shell` runs whatever they have that
+reads it, and `share_file` brings the answer back.
+
 Bounds it applies itself:
 
 | | |
@@ -66,7 +75,8 @@ write over storage, change the disks, change accounts, redirect into a whole
 path, or change the system's settings. Anything else runs.
 
 For the filesystem, reading and searching are silent, deleting and moving always
-ask, and writing asks when the path is one of the shapes that change what runs
+ask, and writing — `write`, `append`, `edit`, `put` — asks when the path is one
+of the shapes that change what runs
 or who may get in: shell startup files, `.ssh`, `.gnupg`, autostart and service
 directories, `/etc`, git hooks, the password files.
 

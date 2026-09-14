@@ -20,11 +20,14 @@ import (
 // the lessons of every autoresponder loop since.
 
 const (
-	// autoReplyQuiet is how long a sender is left alone after one reply.
-	autoReplyQuiet = 7 * 24 * time.Hour
-
 	// autoReplyHourlyLimit is the most replies a mailbox sends in an hour, a
 	// last defense against whatever the other rules did not catch.
+	//
+	// What stood beside it -- one reply per sender per week -- is gone, and
+	// with it the ledger of every address that had ever written, which was
+	// the only thing that made it possible. This is what actually stops a
+	// loop: two away messages talking to each other are stopped by the
+	// fiftieth, not by the calendar.
 	autoReplyHourlyLimit = 50
 )
 
@@ -44,7 +47,7 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 	if setting.Until != nil && now.After(*setting.Until) {
 		return
 	}
-	reason, err := self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now, autoReplyQuiet)
+	reason, err := self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now)
 	if err != nil {
 		log.Warningf("cannot decide the out-of-office reply for mailbox %q: %s", mailbox.ID, err)
 		return
@@ -53,13 +56,13 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 		log.Debugf("no out-of-office reply from mailbox %q to %q: %s", mailbox.ID, mail.Sender, reason)
 		return
 	}
-	claimed, err := tx.ClaimAutoReply(mailbox.ID, mail.Sender, now, autoReplyQuiet)
+	claimed, err := tx.ClaimAutoReply(mailbox.ID, now, autoReplyHourlyLimit)
 	if err != nil {
 		log.Warningf("cannot claim the out-of-office reply for mailbox %q: %s", mailbox.ID, err)
 		return
 	}
 	if !claimed {
-		log.Debugf("no out-of-office reply from mailbox %q to %q: another instance is sending it", mailbox.ID, mail.Sender)
+		log.Debugf("no out-of-office reply from mailbox %q to %q: the mailbox has sent enough this hour", mailbox.ID, mail.Sender)
 		return
 	}
 	if err := self.sendAutoReply(tx, mailbox, alias, recipient, mail, setting, now); err != nil {
@@ -70,11 +73,8 @@ func (self *exchange) maybeAutoReply(tx db.Transaction, mailbox *models.Mailbox,
 // AutoReplyRefusal is the ladder as the agent climbs it before answering
 // on the person's behalf: the same refusals as the out-of-office reply,
 // with the agent's own quiet period per sender.
-func (self *exchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
-	if quiet <= 0 {
-		quiet = autoReplyQuiet
-	}
-	return self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now, quiet)
+func (self *exchange) AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error) {
+	return self.autoReplyRefusal(tx, mailbox, recipient, item, mail, now)
 }
 
 // unvouchedSender is why the envelope sender is not somewhere to write to,
@@ -99,7 +99,7 @@ func unvouchedSender(mail *models.Mail, sender string) string {
 }
 
 // autoReplyRefusal is why a reply is not sent, or empty when it is.
-func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error) {
+func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error) {
 	// Still in the Inbox: not filed elsewhere or deleted by a rule, not in
 	// Junk, not classified as spam.
 	current, err := tx.GetItem(item.ID)
@@ -191,21 +191,24 @@ func (self *exchange) autoReplyRefusal(tx db.Transaction, mailbox *models.Mailbo
 		return "the sender is another mailbox here with an out-of-office reply on", nil
 	}
 
-	// Once a week per sender, fifty an hour per mailbox.
-	contact, err := tx.GetLearnedContact(mailbox.ID, sender)
-	if err != nil {
-		return "", err
+	// Colleagues only, where the mailbox asked for that: the sender is at
+	// one of the domains this mailbox's own addresses are at.
+	if mailbox.AutoReply != nil && mailbox.AutoReply.SameDomainOnly {
+		_, senderDomain := mailparse.SplitAddress(sender)
+		found := false
+		for _, address := range mailbox.Addresses {
+			if _, domain := mailparse.SplitAddress(strings.ToLower(address.Address)); domain != "" && domain == senderDomain {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "the sender is not at one of this mailbox's own domains", nil
+		}
 	}
-	if contact != nil && contact.AutoRepliedAt != nil && now.Sub(*contact.AutoRepliedAt) < quiet {
-		return "the sender was replied to recently", nil
-	}
-	count, err := tx.CountAutoRepliesSince(mailbox.ID, now.Add(-time.Hour))
-	if err != nil {
-		return "", err
-	}
-	if count >= autoReplyHourlyLimit {
-		return "the mailbox has sent enough automatic replies this hour", nil
-	}
+
+	// The hourly limit is counted where the reply is claimed, in one
+	// statement, so that two instances cannot both be the fiftieth.
 	return "", nil
 }
 

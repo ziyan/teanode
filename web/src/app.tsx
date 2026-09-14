@@ -33,8 +33,8 @@ import { Tooltip } from './components/tooltip'
 const MailboxComposePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxCompose')).MailboxComposePage,
 }))
-const MailboxContactsPage = lazyPage(async () => ({
-  default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxContacts')).MailboxContactsPage,
+const AddressBookPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "mailbox" */ './pages/addressBook')).AddressBookPage,
 }))
 const MailboxSubscriptionsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "mailbox" */ './pages/mailboxSubscriptions')).MailboxSubscriptionsPage,
@@ -306,7 +306,7 @@ export function App() {
                     <Route path="/" element={<Navigate to={session.userId ? '/mailbox' : '/mail'} replace />} />
                     <Route path="/mailbox" element={<MailboxPage />} />
                     <Route path="/mailbox/compose" element={<MailboxComposePage />} />
-                    <Route path="/mailbox/contacts" element={<MailboxContactsPage />} />
+                    <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                     <Route path="/mailbox/calendar" element={<CalendarPage />} />
                     <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
                     <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />

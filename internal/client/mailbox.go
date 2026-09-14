@@ -81,6 +81,9 @@ type MailboxAutoReply struct {
 	Subject string     `json:"subject"`
 	Text    string     `json:"text"`
 	HTML    string     `json:"html,omitempty"`
+
+	// SameDomainOnly answers only senders at the mailbox's own domains.
+	SameDomainOnly bool `json:"sameDomainOnly,omitempty"`
 }
 
 // MailboxSummary is a mailbox with its owner, for pointing an alias at one.
@@ -90,15 +93,6 @@ type MailboxSummary struct {
 	UserID   string `json:"userId"`
 	Username string `json:"username"`
 	UserName string `json:"userName"`
-}
-
-// MailboxContact is an address the mailbox has corresponded with.
-type MailboxContact struct {
-	MailboxID  string    `json:"mailboxId"`
-	Address    string    `json:"address"`
-	Name       string    `json:"name"`
-	LastSeenAt time.Time `json:"lastSeenAt"`
-	Count      int       `json:"count"`
 }
 
 // MailboxAppPassword is what one mail program signs in with.
@@ -169,7 +163,7 @@ const mailboxFields = `{
 		id userId name signatureText signatureHtml
 		addresses { aliasId domainId domain localPart address }
 		rules { name enabled stop conditions { field header operator value } actions { kind folderId address } }
-		autoReply { enabled from until subject text html }
+		autoReply { enabled from until subject text html sameDomainOnly }
 	}
 	folders { id mailboxId parentId name kind pinnedAt unread total }
 	unread
@@ -213,18 +207,6 @@ const (
 		ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first) {
 			considered matched moved marked flagged deleted skipped failed
 		}
-	}`
-
-	DocumentListMailboxContacts = `query ($mailboxId: String!, $prefix: String, $first: Int) {
-		ListMailboxContacts(mailboxId: $mailboxId, prefix: $prefix, first: $first) {
-			mailboxId address name lastSeenAt count
-		}
-	}`
-	DocumentSaveMailboxContact = `mutation ($mailboxId: String!, $address: String!, $name: String) {
-		SaveMailboxContact(mailboxId: $mailboxId, address: $address, name: $name) { mailboxId address name lastSeenAt count }
-	}`
-	DocumentDeleteMailboxContact = `mutation ($mailboxId: String!, $address: String!) {
-		DeleteMailboxContact(mailboxId: $mailboxId, address: $address)
 	}`
 
 	DocumentListMailboxAppPasswords = `query ($mailboxId: String!) {
@@ -395,48 +377,6 @@ func ApplyMailboxRules(ctx context.Context, connection *Client, mailboxId, folde
 		return nil, err
 	}
 	return result.ApplyMailboxRules, nil
-}
-
-// ListMailboxContacts returns the addresses the mailbox has corresponded
-// with, most recent first, optionally those beginning with a prefix.
-func ListMailboxContacts(ctx context.Context, connection *Client, mailboxId, prefix string, first int) ([]*MailboxContact, error) {
-	var result struct {
-		ListMailboxContacts []*MailboxContact `json:"ListMailboxContacts"`
-	}
-	variables := map[string]any{"mailboxId": mailboxId}
-	if prefix != "" {
-		variables["prefix"] = prefix
-	}
-	if first > 0 {
-		variables["first"] = first
-	}
-	if err := connection.Execute(ctx, DocumentListMailboxContacts, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.ListMailboxContacts, nil
-}
-
-// SaveMailboxContact adds a contact or renames one. An empty name clears the
-// name the mailbox learned.
-func SaveMailboxContact(ctx context.Context, connection *Client, mailboxId, address, name string) (*MailboxContact, error) {
-	var result struct {
-		SaveMailboxContact *MailboxContact `json:"SaveMailboxContact"`
-	}
-	variables := map[string]any{"mailboxId": mailboxId, "address": address}
-	if name != "" {
-		variables["name"] = name
-	}
-	if err := connection.Execute(ctx, DocumentSaveMailboxContact, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.SaveMailboxContact, nil
-}
-
-// DeleteMailboxContact removes a contact. It comes back if that address
-// writes again.
-func DeleteMailboxContact(ctx context.Context, connection *Client, mailboxId, address string) error {
-	variables := map[string]any{"mailboxId": mailboxId, "address": address}
-	return connection.Execute(ctx, DocumentDeleteMailboxContact, variables, nil)
 }
 
 // ListMailboxAppPasswords returns the app passwords of a mailbox, one per

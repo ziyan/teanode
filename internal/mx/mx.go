@@ -91,7 +91,7 @@ type Exchange interface {
 	// automatically, or empty when it may be: the out-of-office reply's
 	// ladder, with the given quiet period per sender (zero for the
 	// out-of-office default).
-	AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time, quiet time.Duration) (string, error)
+	AutoReplyRefusal(tx db.Transaction, mailbox *models.Mailbox, recipient string, item *models.MailboxItem, mail *models.Mail, now time.Time) (string, error)
 }
 
 // The headers a draft carries for the composer: what it answers or
@@ -100,6 +100,19 @@ const (
 	DraftHeaderBcc     = "X-TeaNode-Draft-Bcc"
 	DraftHeaderReplyTo = "X-TeaNode-Draft-Reply-To-Item"
 	DraftHeaderForward = "X-TeaNode-Draft-Forward-Item"
+
+	// DraftHeaderKey names the draft itself, across saves.
+	//
+	// Saving a draft writes a new message and removes the old one, which is
+	// what IMAP means by editing one: a stored message never changes, so a
+	// changed draft is a different message with a different item. That makes
+	// an item id a name for one save rather than for the draft, and anything
+	// holding an item id -- an agent that wrote a draft and is waiting to be
+	// told to send it, a held reply -- is left pointing at a message that is
+	// gone the moment the person opens the draft and the composer saves it.
+	// This key is written on the first save and carried by every save after
+	// it, so there is a name for the draft that outlives them.
+	DraftHeaderKey = "X-TeaNode-Draft-Key"
 )
 
 // AgentHook is told, inside the delivery transaction, that a message has

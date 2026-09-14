@@ -26,6 +26,8 @@ type addressBookModel struct {
 	ModifiedAt  time.Time `gorm:"column:modified_at"`
 	Name        string    `gorm:"column:name"`
 	Description string    `gorm:"column:description"`
+	// AgentGranted is the person's switch for this book as a source.
+	AgentGranted bool `gorm:"column:agent_granted"`
 }
 
 func (addressBookModel) TableName() string { return "addressbook" }
@@ -34,6 +36,7 @@ func (self *addressBookModel) toModel() *models.AddressBook {
 	return &models.AddressBook{
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
+		AgentGranted: self.AgentGranted,
 	}
 }
 
@@ -139,6 +142,7 @@ func (self *transaction) UpdateAddressBook(book *models.AddressBook) (*models.Ad
 	row := &addressBookModel{
 		ID: book.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(book.Name), 200), Description: book.Description,
+		AgentGranted: book.AgentGranted,
 	}
 	if row.Name == "" {
 		row.Name = before.Name
@@ -146,7 +150,8 @@ func (self *transaction) UpdateAddressBook(book *models.AddressBook) (*models.Ad
 	if err := self.applyMutation(models.AuditResourceAddressBook, row.ID, models.AuditActionUpdate,
 		before, row.toModel(), func(tx *gorm.DB) error {
 			return tx.Model(&addressBookModel{}).Where("\"id\" = ?", row.ID).
-				Updates(map[string]any{"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description}).Error
+				Updates(map[string]any{"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description,
+					"agent_granted": row.AgentGranted}).Error
 		}); err != nil {
 		return nil, err
 	}
@@ -358,4 +363,43 @@ func (self *transaction) CountContacts(addressBookId string) (int64, error) {
 // person typing it asked for.
 func escapeLike(value string) string {
 	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(value)
+}
+
+// FindContactByAddress is the contact in any of the person's address books
+// that carries this address, or nil.
+//
+// What "the sender is known" means now. It used to mean a row in a ledger of
+// every address that had ever written to the mailbox; it means the person
+// keeps them.
+//
+// The addresses of a card are stored one per line, so the match is on a whole
+// line rather than on a substring: without that, keeping "ada@example.com"
+// would make "not-ada@example.com" a known sender too.
+func (self *transaction) FindContactByAddress(userId, address string) (*models.Contact, error) {
+	address = strings.ToLower(strings.TrimSpace(address))
+	if userId == "" || address == "" {
+		return nil, nil
+	}
+	// The addresses are one column with a line each, so the column is read
+	// back as the list it is and the address is compared to a whole entry.
+	//
+	// This was four LIKE patterns, which was wrong twice over: an address
+	// holding an underscore -- alice_smith@example.com, an ordinary address
+	// -- matched a contact with any character in that place, and an address
+	// holding a per cent sign matched a great deal more than that. "Known"
+	// is what the rule condition and the reply scope turn on, so a sender
+	// who could widen it by choosing their own address could decide they
+	// were somebody this person keeps.
+	var rows []contactModel
+	if err := self.tx.
+		Joins("JOIN \"addressbook\" ON \"addressbook\".\"id\" = \"contact\".\"addressbook_id\"").
+		Where("\"addressbook\".\"user_id\" = ?", userId).
+		Where("? = ANY(string_to_array(LOWER(\"contact\".\"emails\"), E'\\n'))", address).
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0].toModel(), nil
 }

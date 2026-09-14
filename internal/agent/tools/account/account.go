@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -16,7 +17,7 @@ import (
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "account_get", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Description: "The person's own account: name, username, notification address, language, zone, and their sessions, API tokens and passkeys.",
@@ -37,6 +38,24 @@ func init() {
 					"locale":        tools.StringProperty("the language of the dashboard: en, ja, zh"),
 					"timezone":      tools.StringProperty("an IANA zone"),
 					"timezone_mode": tools.EnumProperty("follow the browser, or keep the zone", "auto", "fixed"),
+				}),
+				Preview: tools.PreviewOf(func(call struct {
+					Name     *string `json:"name"`
+					Email    *string `json:"email"`
+					Locale   *string `json:"locale"`
+					Timezone *string `json:"timezone"`
+				}) string {
+					changing := []string{}
+					for label, value := range map[string]*string{"name": call.Name, "notification address": call.Email, "language": call.Locale, "time zone": call.Timezone} {
+						if value != nil {
+							changing = append(changing, label)
+						}
+					}
+					sort.Strings(changing)
+					if len(changing) == 0 {
+						return "Change your account"
+					}
+					return "Change your " + tools.Some(changing, 4)
 				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -68,6 +87,22 @@ func init() {
 				Name: "token_manage", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
 				Description: "The person's API tokens: make one (shown once, to them, exactly) or revoke one.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("create or revoke", "create", "revoke"), "name": tools.StringProperty("for create: what the token is for"), "token_id": tools.StringProperty("for revoke: the token"), "lifetime": tools.StringProperty("for create: how long it lives, such as 30d")}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action   string `json:"action"`
+					Name     string `json:"name"`
+					Lifetime string `json:"lifetime"`
+				}) string {
+					if call.Action == "revoke" {
+						return "Revoke one of your API tokens"
+					}
+					lasting := ""
+					if call.Lifetime != "" {
+						lasting = ", lasting " + call.Lifetime
+					}
+					// A token is a way into the whole account for as long
+					// as it lives, so the card says both.
+					return "Make an API token called " + tools.Named(call.Name, "a token") + lasting
+				}),
 				// Making one hands out a way into the whole account, for
 				// as long as it lives, to whoever ends up holding it --
 				// so the person is asked. It was an ordinary write, and
@@ -119,6 +154,16 @@ func init() {
 				Name: "session_revoke", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
 				Description: "Sign the person out elsewhere: one session, or every session but this one.",
 				Parameters:  tools.Object(map[string]any{"session_id": tools.StringProperty("one session, from account_get; all of them when absent")}),
+				Preview: tools.PreviewOf(func(call struct {
+					SessionID string `json:"session_id"`
+				}) string {
+					// Which matters: one is a device, none is every device
+					// the person is signed in on but this one.
+					if strings.TrimSpace(call.SessionID) == "" {
+						return "Sign you out everywhere but here"
+					}
+					return "Sign you out of one other browser"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						SessionID string `json:"session_id"`
@@ -142,6 +187,16 @@ func init() {
 				Name: "app_password_manage", Family: tools.FamilyAccount, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "App passwords for a mailbox, which mail programs sign in with: list, make (shown once, exactly) or remove.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("what to do", "list", "create", "remove"), "mailbox": tools.StringProperty("the mailbox, by name or id"), "name": tools.StringProperty("for create: which program"), "app_password_id": tools.StringProperty("for remove: the app password")}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action  string `json:"action"`
+					Mailbox string `json:"mailbox"`
+					Name    string `json:"name"`
+				}) string {
+					if call.Action == "remove" {
+						return "Remove an app password" + tools.In(call.Mailbox) + ", so whatever signs in with it stops"
+					}
+					return "Make an app password for " + tools.Named(call.Name, "a mail program") + tools.In(call.Mailbox)
+				}),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					if tools.ActionOf(arguments) == "remove" {
 						return tools.RiskDestructive
@@ -246,6 +301,16 @@ func init() {
 					return tools.JSONResult(map[string]any{"may": tools.PermissionWords(permissions), "offered_tools": len(run.Offered()), "switched_off_by_operator": configuration.Agent.Tools.Disabled})
 				},
 			},
-		}
+		},
+			// Reading the account and changing it are one tool.
+			tools.Group{
+				Name: "account", Family: tools.FamilyAccount,
+				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen.",
+				Members: []tools.Member{
+					{Action: "get", Tool: "account_get"},
+					{Action: "update", Tool: "account_update"},
+				},
+			},
+		)
 	})
 }

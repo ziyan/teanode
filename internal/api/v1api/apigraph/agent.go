@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -48,6 +49,9 @@ type AgentMutation interface {
 	// Let the agent reach one of the caller's mailboxes, with the policy for
 	// it; called again, it changes the policy. Needs agent:use.
 	GrantAgentMailbox(ctx context.Context, arguments GrantAgentMailboxArguments) (*AgentView, error)
+	GrantAgentSource(ctx context.Context, arguments GrantAgentSourceArguments) (*AgentView, error)
+	SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*models.AgentSchedule, error)
+	RunAgentBriefNow(ctx context.Context) (*models.AgentSchedule, error)
 
 	// Have the agent write a reply to a message, for the caller to read,
 	// change and send; the text comes back, nothing is saved or sent. The
@@ -102,6 +106,11 @@ type AgentView struct {
 	// Sources are every mailbox the caller owns, with its policy where the
 	// agent has been granted it.
 	Sources []*AgentSource `json:"sources"`
+
+	// Collections are the caller's calendars and address books, each with
+	// its own switch. A mailbox carries a policy and these do not, which is
+	// why they are a list of their own rather than more sources.
+	Collections []*AgentCollection `json:"collections"`
 
 	// Allowed is what the deployment offers, resolved against what is
 	// configured: a feature that needs an embedding model or a browser is
@@ -273,20 +282,33 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 	if err != nil {
 		return nil, err
 	}
+	// The person's own "always ask me" list, under the names the catalog
+	// has now: what the page shows and what the server enforces have to be
+	// the same list, and a list written before the tools were merged names
+	// verbs that are actions today.
+	if found != nil {
+		found.Confirm = agenttools.Rename(found.Confirm)
+	}
 	view := &AgentView{
-		Agent:      found,
-		Sources:    []*AgentSource{},
-		Allowed:    self.allowed(),
-		Choices:    append([]string{}, self.config.Current().Agent.Models.Choices...),
-		Timezone:   agent.Location(user).String(),
-		Language:   agent.Language(found, user),
-		Categories: found.CategoryNames(),
+		Agent:       found,
+		Sources:     []*AgentSource{},
+		Collections: []*AgentCollection{},
+		Allowed:     self.allowed(),
+		Choices:     append([]string{}, self.config.Current().Agent.Models.Choices...),
+		Timezone:    agent.Location(user).String(),
+		Language:    agent.Language(found, user),
+		Categories:  found.CategoryNames(),
 	}
 	sources, err := self.sourcesOf(tx, user.ID)
 	if err != nil {
 		return nil, err
 	}
 	view.Sources = sources
+	collections, err := self.collectionsOf(tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	view.Collections = collections
 	if found != nil {
 		budget, err := agent.CheckBudget(tx, self.config.Current(), found, user, time.Now())
 		if err != nil {
@@ -458,7 +480,12 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 			agent.Notifications = &notifications
 		}
 		if arguments.Confirm != nil {
-			agent.Confirm = *arguments.Confirm
+			// Written under the names the catalog has now. A list saved
+			// before the tools were merged names verbs that are actions
+			// today; the server still honours those, but a page that shows
+			// the catalog cannot show them, so what is saved from that page
+			// says the same thing in the names it can show.
+			agent.Confirm = agenttools.Rename(*arguments.Confirm)
 		}
 		if arguments.AskModel != nil {
 			choice := strings.TrimSpace(*arguments.AskModel)

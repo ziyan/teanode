@@ -17,7 +17,7 @@ import (
 
 func init() {
 	tools.Register(func() []*tools.Tool {
-		return []*tools.Tool{
+		return tools.Grouped([]*tools.Tool{
 			{
 				Name: "calendar_agenda", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCalendarUse},
@@ -70,6 +70,22 @@ func init() {
 					"repeat":   tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO"),
 					"invite":   tools.ArrayProperty("addresses to invite; each is sent an invitation they can answer", tools.StringProperty("an address")),
 				}),
+				Preview: tools.PreviewOf(func(call struct {
+					Summary string   `json:"summary"`
+					Starts  string   `json:"starts"`
+					Invite  []string `json:"invite"`
+				}) string {
+					said := "Put " + tools.Named(call.Summary, "something") + " in your calendar"
+					if call.Starts != "" {
+						said += " on " + call.Starts
+					}
+					// Inviting somebody sends mail in the person's name,
+					// which is the part of this they are really approving.
+					if guests := tools.Some(call.Invite, 3); guests != "" {
+						said += ", and invite " + guests
+					}
+					return said
+				}),
 				Run: runAdd,
 			},
 			{
@@ -96,7 +112,8 @@ func init() {
 					"invite":      tools.ArrayProperty("the whole guest list as it should now be; everybody on it is sent the change", tools.StringProperty("an address")),
 					"tell_guests": tools.BooleanProperty("true when the people already invited are to be told about this change"),
 				}, "event"),
-				Run: runEdit,
+				PreviewIn: eventPreview("Change %s"),
+				Run:       runEdit,
 			},
 			{
 				// Destructive, so it is asked about whatever else is true
@@ -111,9 +128,30 @@ func init() {
 					"event":       tools.StringProperty("which event, as the identifier the agenda gives"),
 					"tell_guests": tools.BooleanProperty("true when the people invited are to be told it is off"),
 				}, "event"),
-				Run: runRemove,
+				// Naming the event, not its identifier: taking a thing out
+				// of somebody's diary is not a decision they can make about
+				// "01m2ep...".
+				PreviewIn: eventPreview("Take %s out of your calendar"),
+				Run:       runRemove,
 			},
-		}
+		},
+			// One calendar tool. Reading the diary, finding a free hour,
+			// putting something in it and taking it out again are one thing
+			// with four verbs, and the risk of each is the action's own: the
+			// agenda is a read, an event with guests on it is outward, and
+			// removing one cannot be undone.
+			tools.Group{
+				Name: "calendar", Family: tools.FamilyAccount,
+				Description: "The person's own calendar, which their phone and computer synchronize over CalDAV.",
+				Members: []tools.Member{
+					{Action: "agenda", Tool: "calendar_agenda"},
+					{Action: "free", Tool: "calendar_free"},
+					{Action: "add", Tool: "calendar_add"},
+					{Action: "edit", Tool: "calendar_edit"},
+					{Action: "remove", Tool: "calendar_remove"},
+				},
+			},
+		)
 	})
 }
 
@@ -134,23 +172,36 @@ func outwardWhenAnybodyIsTold(arguments json.RawMessage) tools.Risk {
 	return ""
 }
 
-// theCalendar is the person's own, and the identifier everything else needs.
-func theCalendar(ctx context.Context, run tools.Run) (string, string, error) {
+// theCalendar is the first calendar the person has given the agent, and the
+// identifier everything else here needs.
+//
+// Granted, not merely owned. A calendar is a source like a mailbox: nothing
+// from one the person has not handed over is ever sent to a model, and an
+// agent granted a mailbox has not thereby been shown the diary. The refusal
+// is worded for the model to relay, because "there is no calendar" would be
+// a lie -- there is one, and it is not the agent's to read.
+func theCalendar(ctx context.Context, operations tools.Operations) (string, string, error) {
 	var result struct {
 		ListCalendars []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Timezone string `json:"timezone"`
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Timezone     string `json:"timezone"`
+			AgentGranted bool   `json:"agentGranted"`
 		} `json:"ListCalendars"`
 	}
-	if err := run.Operations().Execute(ctx,
-		`query { ListCalendars { id name timezone } }`, nil, &result); err != nil {
+	if err := operations.Execute(ctx,
+		`query { ListCalendars { id name timezone agentGranted } }`, nil, &result); err != nil {
 		return "", "", err
 	}
 	if len(result.ListCalendars) == 0 {
 		return "", "", fmt.Errorf("there is no calendar")
 	}
-	return result.ListCalendars[0].ID, result.ListCalendars[0].Timezone, nil
+	for _, calendar := range result.ListCalendars {
+		if calendar.AgentGranted {
+			return calendar.ID, calendar.Timezone, nil
+		}
+	}
+	return "", "", fmt.Errorf("they have not given you their calendar; it is a switch on their agent's page, beside the mailboxes")
 }
 
 type windowArguments struct {
@@ -239,7 +290,7 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +372,7 @@ func runFree(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +490,7 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if strings.TrimSpace(arguments.Summary) == "" {
 		return nil, fmt.Errorf("an event needs a title")
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +599,7 @@ func runEdit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, zone, err := theCalendar(ctx, run)
+	calendarId, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -670,7 +721,7 @@ func runRemove(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, _, err := theCalendar(ctx, run)
+	calendarId, _, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
@@ -754,4 +805,33 @@ func zoneOf(zone string) *time.Location {
 		}
 	}
 	return time.UTC
+}
+
+// eventPreview is the card for a call that names an event by identifier:
+// the event's own title, looked up, because "01m2ep..." is not something a
+// person can decide about. Whether the guests are told is said too — that
+// part is mail going out in their name.
+func eventPreview(shape string) func(context.Context, json.RawMessage) string {
+	return func(ctx context.Context, arguments json.RawMessage) string {
+		var call struct {
+			Event      string `json:"event"`
+			TellGuests bool   `json:"tell_guests"`
+		}
+		if err := json.Unmarshal(arguments, &call); err != nil || strings.TrimSpace(call.Event) == "" {
+			return ""
+		}
+		named := "an event"
+		if run, err := tools.RunFrom(ctx); err == nil {
+			if calendarId, _, err := theCalendar(ctx, run.Operations()); err == nil {
+				if held, err := readEvent(ctx, run, calendarId, strings.TrimSpace(call.Event)); err == nil {
+					named = tools.Named(held.Summary, "an event")
+				}
+			}
+		}
+		said := fmt.Sprintf(shape, named)
+		if call.TellGuests {
+			said += ", and tell the guests"
+		}
+		return said
+	}
 }

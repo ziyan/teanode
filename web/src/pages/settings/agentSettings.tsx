@@ -65,11 +65,19 @@ export type AgentMCPServer = {
   enabled: boolean
 }
 
-export type AgentTool = { name: string; family: string; risk: string; description: string; confirms: boolean; core: boolean }
+export type AgentTool = {
+  name: string
+  family: string
+  risk: string
+  description: string
+  confirms: boolean
+  core: boolean
+}
 
 export type Agent = {
   enabled: boolean
   instructions: string
+  allowPrivateAddresses: string[]
   providers: AgentProvider[]
   models: {
     default: string
@@ -117,7 +125,7 @@ export type Agent = {
 }
 
 export const AGENT_SELECTION = `agent {
-  enabled instructions
+  enabled instructions allowPrivateAddresses
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps }
@@ -125,7 +133,7 @@ export const AGENT_SELECTION = `agent {
   retention { runs corrections }
   currency
   search { kind hasApiKey }
-  tools { disabled confirm catalog { name family risk description confirms core } }
+  tools { disabled confirm catalog { name family risk description confirms core actions } }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
   works families kinds
@@ -239,18 +247,25 @@ function GeneralForm({ settings, onSaved }: Props) {
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [enabled, setEnabled] = useState(settings.enabled)
   const [instructions, setInstructions] = useState(settings.instructions)
+  const [allowPrivate, setAllowPrivate] = useState(list(settings.allowPrivateAddresses))
+  // The list as one string, which is what the effect below depends on. The
+  // array is a fresh one on every fetch even when nothing in it changed, and
+  // an effect that depends on its identity runs again and puts the stored
+  // value back over what is being typed.
+  const storedAllowPrivate = list(settings.allowPrivateAddresses)
   useEffect(() => {
     setEnabled(settings.enabled)
     setInstructions(settings.instructions)
+    setAllowPrivate(storedAllowPrivate)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.enabled, settings.instructions])
+  }, [settings.enabled, settings.instructions, storedAllowPrivate])
 
   return (
     <form
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ agent: { enabled, instructions } })
+        void save({ agent: { enabled, instructions, allowPrivateAddresses: split(allowPrivate) } })
       }}
     >
       <h3>{t('agentSettings.title')}</h3>
@@ -268,6 +283,18 @@ function GeneralForm({ settings, onSaved }: Props) {
           onChange={(event) => setInstructions(event.target.value)}
         />
       </label>
+      <label>
+        <span>{t('agentSettings.allowPrivate')}</span>
+        <input
+          value={allowPrivate}
+          placeholder="192.168.1.10, 10.0.0.0/24, printer.lan"
+          onChange={(event) => setAllowPrivate(event.target.value)}
+        />
+      </label>
+      {/* After the label, not inside it: field-hint carries a negative top
+          margin that pulls it against the field above, which only works
+          when it is the field's sibling. */}
+      <p className="muted field-hint">{t('agentSettings.allowPrivateHint')}</p>
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
@@ -487,12 +514,16 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
           onChange={(draft) => setEditing({ ...editing, draft })}
           onClose={() => setEditing(null)}
           onSubmit={() => {
-            const values: (ReturnType<typeof providerValues> & { previousName?: string })[] = settings.providers.map(providerValues)
+            const values: (ReturnType<typeof providerValues> & { previousName?: string })[] =
+              settings.providers.map(providerValues)
             const section: Record<string, unknown> = {}
             if (editing.index < 0) {
               values.push(draftValues(editing.draft))
             } else {
-              values[editing.index] = { ...draftValues(editing.draft), previousName: settings.providers[editing.index].name }
+              values[editing.index] = {
+                ...draftValues(editing.draft),
+                previousName: settings.providers[editing.index].name,
+              }
               // A renamed provider takes its models with it: every
               // assignment written provider:model is rewritten, or the
               // server would refuse the settings for naming a provider
@@ -500,13 +531,25 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
               const before = settings.providers[editing.index].name
               const after = editing.draft.name.trim()
               if (before !== after) {
-                const rename = (model: string) => (model.startsWith(before + ':') ? after + model.slice(before.length) : model)
+                const rename = (model: string) =>
+                  model.startsWith(before + ':') ? after + model.slice(before.length) : model
                 const models = settings.models
                 section.models = {
                   ...Object.fromEntries(
-                    (['default', 'fast', 'embedding', 'triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact'] as const).map(
-                      (field) => [field, rename(models[field])],
-                    ),
+                    (
+                      [
+                        'default',
+                        'fast',
+                        'embedding',
+                        'triage',
+                        'research',
+                        'summarize',
+                        'reply',
+                        'ask',
+                        'schedule',
+                        'compact',
+                      ] as const
+                    ).map((field) => [field, rename(models[field])]),
                   ),
                   choices: models.choices.map(rename),
                 }
@@ -705,7 +748,14 @@ function ProviderDialog({
       <div className="priced-models-add">
         <button
           type="button"
-          onClick={() => set({ modelPricing: [...draft.modelPricing, { model: '', input: '', output: '', cacheRead: '', cacheWrite: '' }] })}
+          onClick={() =>
+            set({
+              modelPricing: [
+                ...draft.modelPricing,
+                { model: '', input: '', output: '', cacheRead: '', cacheWrite: '' },
+              ],
+            })
+          }
         >
           {t('agentSettings.addModelPricing')}
         </button>
@@ -962,7 +1012,9 @@ function LimitsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.limits')}</h3>
       <p className="muted">{t('agentSettings.limitsDescription')}</p>
-      <div className="row">{(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}</div>
+      <div className="row">
+        {(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}
+      </div>
       <div className="row">
         {(['dailyCostPerAgent', 'monthlyCostPerServer'] as const).map(numeric)}
         <label className="shrink">
@@ -982,7 +1034,10 @@ function LimitsForm({ settings, onSaved }: Props) {
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">
           <span>{t('agentSettings.retentionRuns')}</span>
-          <input value={retention.runs} onChange={(event) => setRetention({ ...retention, runs: event.target.value })} />
+          <input
+            value={retention.runs}
+            onChange={(event) => setRetention({ ...retention, runs: event.target.value })}
+          />
         </label>
         <label className="shrink">
           <span>{t('agentSettings.retentionCorrections')}</span>
@@ -1182,13 +1237,6 @@ function BrowserForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <label>
-        <span>{t('agentSettings.browserAllowPrivate')}</span>
-        <input
-          value={browser.allowPrivateAddresses}
-          onChange={(event) => setBrowser({ ...browser, allowPrivateAddresses: event.target.value })}
-        />
-      </label>
       <label className="checkbox">
         <input
           type="checkbox"
@@ -1409,11 +1457,15 @@ function ServersSection({ settings, onSaved }: Props) {
           onChange={(draft) => setEditing({ ...editing, draft })}
           onClose={() => setEditing(null)}
           onSubmit={() => {
-            const values: (ReturnType<typeof serverValues> & { previousName?: string })[] = settings.mcpServers.map(serverValues)
+            const values: (ReturnType<typeof serverValues> & { previousName?: string })[] =
+              settings.mcpServers.map(serverValues)
             if (editing.index < 0) {
               values.push(serverDraftValues(editing.draft))
             } else {
-              values[editing.index] = { ...serverDraftValues(editing.draft), previousName: settings.mcpServers[editing.index].name }
+              values[editing.index] = {
+                ...serverDraftValues(editing.draft),
+                previousName: settings.mcpServers[editing.index].name,
+              }
             }
             void saveList(values).then((ok) => ok && setEditing(null))
           }}
@@ -1454,7 +1506,8 @@ function ServerDialog({
 }) {
   const { t } = useTranslation()
   const set = (change: Partial<ServerDraft>) => onChange({ ...draft, ...change })
-  const stdio = draft.transport === 'stdio' || (draft.transport === '' && draft.command.trim() !== '' && draft.url.trim() === '')
+  const stdio =
+    draft.transport === 'stdio' || (draft.transport === '' && draft.command.trim() !== '' && draft.url.trim() === '')
   const oauth = draft.auth === 'oauth'
   return (
     <FormDialog

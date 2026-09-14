@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -22,8 +23,40 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"draft_id": tools.StringProperty("the draft, from mail_draft"),
 				}, "draft_id"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Send the draft " + strings.TrimSpace(string(arguments))
+				// The card is read by somebody deciding whether a message
+				// leaves the building, so it says the message: who it goes
+				// to and what it is called. It used to print the call --
+				// "Send the draft {\"draft_id\":\"01m2ep00bed1yyxq763yn865wq\"}"
+				// -- which asks a person to approve an identifier.
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call mailSendArguments
+					if err := json.Unmarshal(arguments, &call); err != nil || call.DraftID == "" {
+						return "Send a draft"
+					}
+					run, err := tools.RunFrom(ctx)
+					if err != nil {
+						return "Send a draft"
+					}
+					operations := run.Operations()
+					views, err := mailbox.GrantedMailboxes(ctx, operations)
+					if err != nil || len(views) == 0 {
+						return "Send a draft"
+					}
+					_, found, err := findDraft(ctx, operations, views, call.DraftID)
+					if err != nil || found == nil {
+						return "Send a draft"
+					}
+					subject := strings.TrimSpace(found.Subject)
+					if subject == "" {
+						subject = "a message with no subject"
+					} else {
+						subject = strconv.Quote(subject)
+					}
+					recipients := append(append(append([]string{}, found.To...), found.Cc...), found.Bcc...)
+					if len(recipients) == 0 {
+						return "Send " + subject
+					}
+					return fmt.Sprintf("Send %s to %s", subject, strings.Join(recipients, ", "))
 				},
 				Run: runMailSend,
 			},
@@ -33,6 +66,32 @@ func init() {
 
 type mailSendArguments struct {
 	DraftID string `json:"draft_id"`
+}
+
+// findDraft is the draft a name refers to and the mailbox it is in.
+//
+// A key names a draft within one mailbox, so with several granted they are
+// asked in turn -- and the draft is carried back with the answer, because
+// finding it walks the Drafts folder reading messages, and doing that once
+// per caller is how one send became three walks.
+func findDraft(ctx context.Context, operations tools.Operations, views []*mailbox.MailboxView, name string) (*mailbox.MailboxView, *mailbox.DraftView, error) {
+	if len(views) == 0 {
+		return nil, nil, fmt.Errorf("no mailbox is granted")
+	}
+	var first error
+	for _, view := range views {
+		found, err := mailbox.FindDraft(ctx, operations, view, name)
+		if err == nil && found != nil {
+			return view, found, nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	if first == nil {
+		first = fmt.Errorf("there is no draft %q; it may have been sent or thrown away", name)
+	}
+	return nil, nil, first
 }
 
 func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -55,10 +114,15 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	view, _, err := mailbox.MailboxOfItem(ctx, operations, views, arguments.DraftID)
+	// The draft wherever it is now. What was confirmed is "send this
+	// draft", and between the card being shown and the person pressing it
+	// the draft may have been saved again -- opening it in the composer is
+	// enough -- which leaves the item id it was called with naming nothing.
+	view, found, err := findDraft(ctx, operations, views, arguments.DraftID)
 	if err != nil {
 		return nil, err
 	}
+	itemId := found.ItemID
 	var draft struct {
 		GetMailboxDraft *struct {
 			From          string   `json:"from"`
@@ -76,7 +140,7 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			} `json:"attachments"`
 		} `json:"GetMailboxDraft"`
 	}
-	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { from fromName to cc bcc subject text html replyToItemId forwardItemId attachments { index } } }`, map[string]any{"itemId": arguments.DraftID}, &draft); err != nil {
+	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { from fromName to cc bcc subject text html replyToItemId forwardItemId attachments { index } } }`, map[string]any{"itemId": itemId}, &draft); err != nil {
 		return nil, err
 	}
 	if draft.GetMailboxDraft == nil {
@@ -87,7 +151,7 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for _, attachment := range stored.Attachments {
 		keep = append(keep, attachment.Index)
 	}
-	message := map[string]any{"from": stored.From, "fromName": stored.FromName, "to": stored.To, "cc": stored.Cc, "bcc": stored.Bcc, "subject": stored.Subject, "textContent": stored.Text, "htmlContent": stored.HTML, "draftItemId": arguments.DraftID, "keepAttachments": keep}
+	message := map[string]any{"from": stored.From, "fromName": stored.FromName, "to": stored.To, "cc": stored.Cc, "bcc": stored.Bcc, "subject": stored.Subject, "textContent": stored.Text, "htmlContent": stored.HTML, "draftItemId": itemId, "keepAttachments": keep}
 	if stored.ReplyToItemID != "" {
 		message["replyToItemId"] = stored.ReplyToItemID
 	}

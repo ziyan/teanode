@@ -51,6 +51,9 @@ func goldenInput() *TriageInput {
 		Memories:      []string{"Mail from the landlord's agency is urgent even when it looks routine."},
 		Corrections:   []string{"A message from newsletter@example.org was sorted as work; Alice filed it as newsletter."},
 		ResearchNotes: []string{"Look up parcel numbers with the tracker."},
+		// The sorting run has tools; the golden file carries the paragraph
+		// that tells it to answer at once anyway.
+		Tools: true,
 	}
 }
 

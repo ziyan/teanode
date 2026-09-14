@@ -6,6 +6,213 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A brief each morning, from one switch: what the day holds, what arrived
+  overnight that wants an answer, what is being held. It is sent to you as
+  mail, and it writes an ordinary schedule called "Daily brief" -- so it is in
+  the Schedules card afterwards, where you can change what it asks for or when
+  it comes. `teanode agent brief on --at 07:30` is the same switch.
+
+- An appointment in the words of a message, or somebody's details in a
+  signature, is offered above the message: the fields filled in, the line they
+  came from quoted underneath, and a button. Until now only an invitation that
+  arrived as a calendar attachment was ever read, and most appointments are
+  not those -- they are "shall we say Thursday at four". Nothing is written
+  into your calendar or your address book until you press it.
+
+- Your agent can write a styled message. `mail_draft` took plain text and
+  nothing else, so asked for something with a heading or a table it said it
+  could not -- while the composer beside it could. It takes an HTML body now,
+  sent alongside the plain one so a reader without HTML still gets the words,
+  and it can put pictures in that body: a file of the conversation, named in
+  `images` and referred to as `<img src="cid:chart.png">`, travels with the
+  message rather than arriving as an attachment with a broken image where it
+  should be. Plain text stays the default; styling is for when you ask.
+
+  Every message this server sends now has its stylesheet moved into the
+  elements on the way out -- what you wrote in the composer, what your agent
+  drafted, what a template rendered. A `<style>` block is ignored or stripped
+  by enough mail clients that a message styled only by one arrives unstyled,
+  so writing an ordinary document is now enough.
+
+- Your agent can put a file on your computer. It could hand you one *off* your
+  computer, and could look at a picture you uploaded, but a PDF or a
+  spreadsheet you gave it was a dead end: nothing here reads those. Now
+  `filesystem put` sends it across -- the bytes go from the server to your
+  machine without passing through the model -- so the agent can drop it under
+  your home directory and use `shell` and your own programs on it, then hand
+  the result back. It asks first, as every write to your computer does.
+
+  Restart `teanode computer` on any machine that is attached: a program
+  started before this release does not know `put` and says so.
+
+### Added
+
+- Keep a sender from the message you are reading: **Save sender to contacts**
+  in a message's menu, which opens a form with the name and address filled in
+  from the message for you to correct before anything is written. The address
+  book is the only list of people now, and nothing arrives in it by itself, so
+  this is the way somebody gets into it. If that address is already a contact
+  the form says so and updates that one, rather than giving you two of the
+  same person.
+
+- Your agent can read what a setting means, not only what it is set to.
+  `settings describe` answers with the fields of a section, the type each
+  takes and the documentation the configuration itself carries — the same
+  words `docs/configuration.md` is checked against, rather than a second copy
+  written into a prompt. It had the values and no names, so changing a
+  setting meant guessing a field, and a guessed field is refused at best.
+
+- Equipment on your own network can be reached by a skill. The address guard
+  refuses anything private, which is right for a link out of a message and
+  wrong for a skill pointed at a controller on your own LAN — and it is why a
+  UniFi skill answered that it could not reach `192.168.255.254`.
+  `agent.allowPrivateAddresses` is the list of what may be reached: an
+  address, a range or a name, edited under Settings → Agent. It widens the
+  guard for a skill reaching the endpoint it declares and for the headless
+  browser, and for nothing else: the remote image proxy, the one-click
+  unsubscribe and `web_fetch` still refuse, because an agent that has just
+  read a stranger's message is what the guard is for. The browser's own
+  `browser.allowPrivateAddresses` is folded into it and still honoured.
+
+### Fixed
+
+- A message you send to yourself is one message again. It is filed twice — a
+  copy in Sent, a copy in the Inbox — and the test for "is this a conversation
+  worth summarizing" counted the copies, so the one kind of single message that
+  got a summary of itself was a note to yourself. The count is by message now,
+  and it is applied before the summary is shown rather than only before one is
+  asked for, so a summary already written for such a thread stops appearing.
+
+- The conversation summary's arrow is the chevron every other disclosure on
+  the dashboard uses, and it turns over rather than being swapped for a
+  different glyph — a glyph replaced at the moment of the press reads as a
+  flicker rather than as a movement.
+
+- Saving a sender who is already a contact no longer takes away what that
+  contact had. Their other addresses were replaced by the one the message came
+  from, and an organization and a note the form had not been told about were
+  cleared, because an empty box means "clear this". The form now opens on what
+  is kept, and the address joins the list rather than replacing it.
+
+- The mailbox measures itself rather than the window. Two panes side by side
+  need room, and how much room there is depends on the rail beside them — so
+  with the rail open on an 862px window the rule that drops to one pane was
+  asking the window, finding 862, and leaving the message 220 pixels to be
+  read in: enough for the header table to break one character to a line,
+  "Aval on Tren ding". It now asks the only width that decides anything.
+
+- A tool line no longer turns up in the wrong conversation. Switching
+  conversations in the drawer stops listening to the one you left, but a
+  websocket that has been closed still delivers whatever the browser had
+  already taken off it, so the last line of the conversation you left could
+  land at the top of the one you opened — and, worse, a reconnection could
+  read the old transcript over the new one. Events now stop at the door of a
+  subscription that has been torn down.
+
+- A draft keeps its name when it is saved again. Saving a draft writes a new
+  message and removes the old one — that is what editing a stored message
+  means — so the identifier your agent was holding stopped naming anything
+  the moment you opened the draft in the composer and it saved itself. You
+  would approve "send this draft" and the send would fail on a draft that was
+  no longer there. A draft now carries a key that survives every save, and
+  that is what the agent holds.
+
+- The message you are writing is shown on white, in both themes. It is what
+  the person reading it will see — the reader shows a message that way, and
+  so does nearly every mail client — and showing it on the dashboard's dark
+  ground was not a theme but a wrong picture of what you were sending: an
+  HTML message paints only the backgrounds it sets, so it came out in bands,
+  and any text without a colour of its own inherited the dashboard's near-
+  white and vanished against the message's own pale panels. Hovering made it
+  worse: the dashboard's table rule painted the rows of a table-built message
+  as though they were rows of a data table, so bands of the message went dark
+  under the pointer. The plain text tab stays in your theme, which is what
+  its recipient gets too.
+
+- Every confirmation card says what it is about to do, in words. Sending asked
+  you to approve `Send the draft {"draft_id":"01m2ep00bed1yyxq763yn865wq"}`,
+  and thirty of the forty-seven things that can stop and ask had no sentence
+  at all, so they showed you the call. They read as decisions now — "Delete a
+  message for good, which cannot be undone", "Set what the role Member may
+  do: mail:read, mail:send", "Ask to be taken off weekly.news.example.com" —
+  and where the call names something by identifier the card looks up what it
+  is, so removing an event names the event. Server settings show which fields
+  are being set and never their values, which is where a secret would have
+  been. A card drawn for a call with nothing in it used to be able to take the
+  run down with it.
+
+### Removed
+
+- A mailbox no longer keeps a list of every address that has ever written to
+  it. Your address book is the only list of people, and the four things that
+  read the old one read it instead: the compose page completes from it, the
+  "sender is known" rule condition means somebody you keep rather than
+  somebody who has written twice, the agent has one contact tool rather than
+  two, and the Contacts page is the address book alone.
+
+  **Rules with a "sender is known" condition change meaning.** A sender who
+  had written before was known; now a sender in your address book is. If you
+  have such a rule, keep the people it is about — the same page — or change
+  the rule.
+
+  Gone with it: the out-of-office reply's rule of answering each sender at
+  most once a week, which was the only thing that needed a row per address.
+  What stops an away message talking to another away message for ever is the
+  fifty-an-hour cap, and always was. `teanode mailbox contact` and the
+  agent's `auto-reply.quiet` setting are gone too.
+
+### Changed
+
+- The out-of-office reply can be kept to people at your own domains: one
+  switch on the Auto-reply tab, `teanode mailbox autoreply set
+  --same-domain-only`. An away message is written for the people you work
+  with; sent to everybody, it tells whoever writes in that you are gone and
+  when you are back.
+
+- A calendar and an address book are things you give your agent, the way a
+  mailbox is: a switch each on the agent's page, and `teanode agent source
+  allow calendar` from a terminal. Until you do, it cannot read them and says
+  so. **They start switched off, including the ones you already have** — an
+  agent that could read your diary yesterday cannot today until you say so,
+  which is the direction a default like this should be wrong in.
+
+- Sorting a message and drafting an answer to it can look things up, and take
+  more than one turn to do it. Both were a single call at a single prompt: the
+  sorting run could not tell whether a sender had ever written before, and the
+  draft that said "Thursday works" had not looked at Thursday. Each is a run of
+  the conversation loop now, read-only, with a short set of tools and a cap on
+  its turns -- three for sorting, six for drafting, both settable. A model that
+  will not end with the object the prompt asks for still gets its mail sorted:
+  the single call is still there, behind it.
+
+- The agent's tool catalog is one tool per thing rather than one per verb:
+  `domain`, `alias`, `credential`, `queue`, `rule`, `user`, `calendar`,
+  `mail_audit`, `account` and `settings` each take the action as their first
+  argument. Eighty-four names became fifty-four without losing anything the
+  agent could do. The catalog is what a model reads before it decides
+  anything, and seventeen names for the operator's domains was seventeen
+  paragraphs spent on grammar.
+
+  The tool policy pages -- the operator's and your own "always ask me" --
+  show what each line covers: `domain` with `list get add update remove dns`
+  beside it, and the tool's own sentence rather than every action's. Every
+  tool that takes an action says so, not only the merged ones -- `mail_act`
+  and `folder_manage` were written that way from the start and showed
+  nothing. A policy
+  written before the merge still means what it meant, and is rewritten into
+  the new names the next time it is saved, so what the page shows and what
+  the server enforces are the same list.
+
+  Each action keeps its own risk and its own permission: reading a diary is
+  still a read, taking an appointment out of it still asks first, and somebody
+  who may list groups but not change them is refused the half they may not
+  do. A tool policy written before this -- `agent.tools.disabled` or
+  `confirm`, or a person's own "always ask me" list -- still means something:
+  a name that was a verb now reaches the tool that verb became, which is
+  broader than it was and never narrower.
+
 ## [0.21.5] - 2026-09-13
 
 ### Changed

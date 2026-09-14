@@ -39,6 +39,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentChannelCommand(),
 			newAgentSettingsCommand(),
 			newAgentSourceCommand(),
+			newAgentBriefCommand(),
 			{
 				Name:  "usage",
 				Usage: "your tokens, by day, kind, mailbox or model",
@@ -200,13 +201,31 @@ func newAgentSettingsCommand() *cli.Command {
 func newAgentSourceCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "source",
-		Usage: "the mailboxes your agent may reach, and what it does in each",
+		Usage: "what your agent may reach -- mailboxes, calendars, address books -- and what it does in each",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
-				Usage:  "every mailbox you own, and whether the agent may reach it",
+				Usage:  "everything you own that the agent could read, and whether it may",
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runAgentSourceList,
+			},
+			{
+				Name:      "allow",
+				Usage:     "let the agent read a calendar or an address book",
+				ArgsUsage: "calendar|addressbook [name]",
+				Description: "The switch a mailbox has, for the other two collections. With no name, the\n" +
+					"only one of that kind; with a name, the one called that.\n\n" +
+					"  teanode agent source allow calendar\n" +
+					"  teanode agent source allow addressbook Work",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentSourceAllow,
+			},
+			{
+				Name:      "deny",
+				Usage:     "stop the agent reading a calendar or an address book",
+				ArgsUsage: "calendar|addressbook [name]",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentSourceDeny,
 			},
 			{
 				Name:   "grant",
@@ -229,13 +248,134 @@ func newAgentSourceCommand() *cli.Command {
 					"auto-reply, auto-reply.guidance, auto-reply.scope (known|everyone|list), auto-reply.allow,\n" +
 					"auto-reply.never, auto-reply.categories, auto-reply.when (always|outsideHours|whenAway),\n" +
 					"auto-reply.hours (09:00-17:30), auto-reply.days (1,2,3,4,5), auto-reply.hold (10m),\n" +
-					"auto-reply.limit, auto-reply.quiet (7d). Lists are comma-separated; \"-\" reads standard input.\n\n" +
+					"auto-reply.limit. Lists are comma-separated; \"-\" reads standard input.\n\n" +
 					"  teanode agent source set --mailbox work triage=true auto-reply=true auto-reply.scope=known",
 				Flags:  []cli.Flag{JSONFlag(), mailboxFlag()},
 				Action: runAgentSourceSet,
 			},
 		},
 	}
+}
+
+// newAgentBriefCommand is the daily brief: the same switch the dashboard has.
+func newAgentBriefCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "brief",
+		Usage: "a brief each morning, by mail: what the day holds and what is waiting",
+		Description: "It writes an ordinary schedule called \"Daily brief\", which \"teanode agent\n" +
+			"schedule list\" shows and anybody may rewrite.\n\n" +
+			"  teanode agent brief on --at 07:30 --days 1-5\n" +
+			"  teanode agent brief now\n" +
+			"  teanode agent brief off",
+		Commands: []*cli.Command{
+			{
+				Name:  "on",
+				Usage: "turn the brief on, or change when it comes",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "at", Usage: "the time of day in your own zone, as HH:MM"},
+					&cli.StringFlag{Name: "days", Usage: "which days, 1 (Monday) to 7 (Sunday): 1-5, or 1,3,5"},
+				},
+				Action: runAgentBriefOn,
+			},
+			{
+				Name:   "off",
+				Usage:  "stop the brief; the schedule stays, switched off",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentBriefOff,
+			},
+			{
+				Name:   "now",
+				Usage:  "send one immediately",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentBriefNow,
+			},
+		},
+	}
+}
+
+func runAgentBriefOn(ctx context.Context, command *cli.Command) error {
+	return setBrief(ctx, command, true)
+}
+
+func runAgentBriefOff(ctx context.Context, command *cli.Command) error {
+	return setBrief(ctx, command, false)
+}
+
+func setBrief(ctx context.Context, command *cli.Command, enabled bool) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	days, err := readDays(command.String("days"))
+	if err != nil {
+		return err
+	}
+	schedule, err := client.SetAgentBrief(ctx, connection, enabled, command.String("at"), days)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(schedule)
+	}
+	if schedule == nil {
+		fmt.Println("there was no brief to stop")
+		return nil
+	}
+	when := "off"
+	if schedule.Enabled {
+		when = schedule.Cron
+		if schedule.NextRunAt != nil {
+			when += ", next " + schedule.NextRunAt.Local().Format("Mon 2 Jan 15:04")
+		}
+	}
+	fmt.Printf("%s: %s\n", schedule.Name, when)
+	return nil
+}
+
+// readDays turns "1-5" or "1,3,5" into the days themselves.
+func readDays(value string) ([]int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	days := []int{}
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if from, until, found := strings.Cut(part, "-"); found {
+			first, err := strconv.Atoi(strings.TrimSpace(from))
+			last, secondErr := strconv.Atoi(strings.TrimSpace(until))
+			if err != nil || secondErr != nil || first < 1 || last > 7 || first > last {
+				return nil, fmt.Errorf("%q is not a range of days", part)
+			}
+			for day := first; day <= last; day++ {
+				days = append(days, day)
+			}
+			continue
+		}
+		day, err := strconv.Atoi(part)
+		if err != nil || day < 1 || day > 7 {
+			return nil, fmt.Errorf("%q is not a day; they are 1 (Monday) to 7 (Sunday)", part)
+		}
+		days = append(days, day)
+	}
+	return days, nil
+}
+
+func runAgentBriefNow(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	schedule, err := client.RunAgentBriefNow(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(schedule)
+	}
+	fmt.Println("sending; it will arrive in a moment")
+	return nil
 }
 
 func newAgentAdminCommand() *cli.Command {
@@ -560,7 +700,7 @@ func sourceByFlag(command *cli.Command, view *client.AgentView) (*client.AgentSo
 
 func printSources(command *cli.Command, view *client.AgentView) error {
 	if command.Bool("json") {
-		return PrintJSON(view.Sources)
+		return PrintJSON(map[string]any{"sources": view.Sources, "collections": view.Collections})
 	}
 	rows := [][]string{}
 	for _, source := range view.Sources {
@@ -578,7 +718,73 @@ func printSources(command *cli.Command, view *client.AgentView) error {
 		}
 		rows = append(rows, []string{source.Name, source.MailboxID, yesNo(policy.Granted), on(policy.Triage), on(policy.Summaries), on(policy.AutoReply), strings.Join(source.Addresses, ", ")})
 	}
-	return printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows)
+	if err := printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows); err != nil {
+		return err
+	}
+	if len(view.Collections) == 0 {
+		return nil
+	}
+	// The other two kinds of source, which carry a switch and no policy.
+	collections := [][]string{}
+	for _, collection := range view.Collections {
+		collections = append(collections, []string{collection.Name, collection.ID, collection.Kind, yesNo(collection.Granted), fmt.Sprintf("%d", collection.Items)})
+	}
+	fmt.Println()
+	return printTable([]string{"COLLECTION", "ID", "KIND", "GRANTED", "ITEMS"}, collections)
+}
+
+// runAgentSourceAllow and runAgentSourceDeny are the calendar's and the
+// address book's switch, which a mailbox has had since the agent did.
+func runAgentSourceAllow(ctx context.Context, command *cli.Command) error {
+	return setCollection(ctx, command, true)
+}
+
+func runAgentSourceDeny(ctx context.Context, command *cli.Command) error {
+	return setCollection(ctx, command, false)
+}
+
+func setCollection(ctx context.Context, command *cli.Command, granted bool) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	kind := strings.ToLower(strings.TrimSpace(command.Args().First()))
+	switch kind {
+	case "calendar":
+		kind = "calendar"
+	case "addressbook", "address-book", "contacts":
+		kind = "addressBook"
+	default:
+		return fmt.Errorf("say which: calendar or addressbook")
+	}
+	name := strings.TrimSpace(strings.Join(command.Args().Tail(), " "))
+	view, err := client.ReadAgent(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var found *client.AgentCollection
+	matches := 0
+	for _, collection := range view.Collections {
+		if collection.Kind != kind {
+			continue
+		}
+		if name != "" && !strings.EqualFold(collection.Name, name) {
+			continue
+		}
+		found = collection
+		matches++
+	}
+	if found == nil {
+		return fmt.Errorf("no %s called %q", kind, name)
+	}
+	if matches > 1 {
+		return fmt.Errorf("there is more than one; say which by name")
+	}
+	updated, err := client.GrantAgentSource(ctx, connection, found.Kind, found.ID, granted)
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printSources(command, updated)
 }
 
 func runAgentSourceList(ctx context.Context, command *cli.Command) error {
@@ -736,12 +942,6 @@ func runAgentSourceSet(ctx context.Context, command *cli.Command) error {
 				return fmt.Errorf("%s: %q is not a number", key, value)
 			}
 			nested(policy, "autoReply")["dailyLimit"] = limit
-		case "auto-reply.quiet":
-			quiet, err := parseDays(value)
-			if err != nil {
-				return fmt.Errorf("%s: %s", key, err)
-			}
-			nested(policy, "autoReply")["quietDays"] = quiet
 		default:
 			return fmt.Errorf("%q is not a key this command knows", key)
 		}
@@ -752,19 +952,6 @@ func runAgentSourceSet(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	return printSources(command, updated)
-}
-
-// parseDays reads "7d", "7" or "168h" as a number of days.
-func parseDays(value string) (int, error) {
-	value = strings.TrimSpace(value)
-	if days, err := strconv.Atoi(strings.TrimSuffix(value, "d")); err == nil {
-		return days, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not a number of days", value)
-	}
-	return int(duration.Hours() / 24), nil
 }
 
 func parseSince(value string) (*time.Time, error) {

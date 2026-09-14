@@ -264,10 +264,6 @@ type AgentAutoReply struct {
 	// DailyLimit is the most replies sent from this source in a day. Zero
 	// means twenty.
 	DailyLimit int `json:"dailyLimit,omitempty" graphapi:"nullable"`
-
-	// QuietDays is how long a sender is left alone after one reply. Zero
-	// means seven; never under one.
-	QuietDays int `json:"quietDays,omitempty" graphapi:"nullable"`
 }
 
 // AgentHours are the person's working hours in their own zone, for a policy
@@ -282,7 +278,6 @@ type AgentHours struct {
 const (
 	AgentDefaultHoldMinutes     = 10
 	AgentDefaultDailyReplyLimit = 20
-	AgentDefaultQuietDays       = 7
 	AgentDefaultMinimumMessages = 3
 )
 
@@ -300,17 +295,6 @@ func (self *AgentAutoReply) EffectiveDailyLimit() int {
 		return AgentDefaultDailyReplyLimit
 	}
 	return self.DailyLimit
-}
-
-// EffectiveQuietDays resolves the zero value and the floor.
-func (self *AgentAutoReply) EffectiveQuietDays() int {
-	if self == nil || self.QuietDays < 1 {
-		if self != nil && self.QuietDays == 0 {
-			return AgentDefaultQuietDays
-		}
-		return 1
-	}
-	return self.QuietDays
 }
 
 // Validate reports everything wrong with the source's policy.
@@ -360,9 +344,6 @@ func (self *AgentMailbox) Validate() error {
 		if reply.DailyLimit < 0 || reply.DailyLimit > 1000 {
 			errors.add("autoReply.dailyLimit", "must be between 0 and 1000")
 		}
-		if reply.QuietDays < 0 || reply.QuietDays > 365 {
-			errors.add("autoReply.quietDays", "must be between 0 and 365")
-		}
 		for index, address := range append(append([]string(nil), reply.Allow...), reply.Never...) {
 			if strings.TrimSpace(address) == "" {
 				errors.add("autoReply.allow", "entry %d is empty", index)
@@ -384,6 +365,11 @@ const (
 	AgentJobReply     AgentJobKind = "reply"
 	AgentJobSend      AgentJobKind = "send"
 	AgentJobSchedule  AgentJobKind = "schedule"
+
+	// AgentJobExtract reads a message triage thought carries an appointment
+	// or somebody's details in its words, and offers what it found. It
+	// writes nothing but the offer.
+	AgentJobExtract AgentJobKind = "extract"
 
 	// AgentJobBackfill queues triage for what was already in a mailbox when
 	// it was granted.

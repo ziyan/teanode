@@ -119,19 +119,13 @@ func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbo
 		Method:        "mailbox",
 		Destination:   mailbox.Name,
 	}
-	// The sender becomes a contact of the mailbox, for completion and for
-	// the "sender is known" rule.
-	//
-	// Two senders do not: a mailing list, and an address that says in so many
-	// words that it does not take replies. Nobody corresponds with either.
-	// Putting them in the address book fills completion with addresses that
-	// can never be written to and — worse — makes "sender is known" true for
-	// exactly the mail that rule exists to tell apart from a stranger's.
-	if address, name := senderOf(mail); address != "" && mail.ListKey == "" && !noReplyAddress(address) {
-		if err := tx.TouchLearnedContact(mailbox.ID, address, name, mail.ReceivedAt); err != nil {
-			return nil, err
-		}
-	}
+	// Nothing is learned from the sender. Every address that ever wrote used
+	// to become a row of its own, with a count and a last-seen time, so that
+	// completion had something to offer and "sender is known" had something
+	// to read. Both read the person's own address book now, which is the
+	// list they actually keep -- and a mail server that quietly builds a
+	// ledger of everybody who has written to it is keeping something nobody
+	// asked it to keep.
 	// Then the mailbox's rules, against the new item.
 	if err := self.runRules(tx, mailbox, target, item, mail); err != nil {
 		log.Warningf("the rules of mailbox %q failed on message %q: %s", mailbox.ID, mail.ID, err)
@@ -385,25 +379,3 @@ const (
 	// UID list once.
 	expungeLogRetention = 90 * 24 * time.Hour
 )
-
-// noReplyAddress says whether an address announces that it does not read
-// answers: no-reply@, noreply@, do-not-reply@ and the rest of the family.
-//
-// Matched on the local part with the separators taken out, so that no-reply,
-// no_reply, no.reply and noreply are one thing, and a tag or a suffix after it
-// still matches — noreply-alerts@ is the same promise. A domain is never
-// looked at: mail from a person at a company whose name begins "no" is a
-// person.
-func noReplyAddress(address string) bool {
-	local, _, found := strings.Cut(strings.ToLower(strings.TrimSpace(address)), "@")
-	if !found || local == "" {
-		return false
-	}
-	local = strings.NewReplacer(".", "", "-", "", "_", "", " ", "").Replace(local)
-	for _, prefix := range []string{"noreply", "donotreply", "dontreply", "neverreply", "noanswer"} {
-		if strings.HasPrefix(local, prefix) {
-			return true
-		}
-	}
-	return false
-}

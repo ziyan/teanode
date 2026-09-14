@@ -156,6 +156,17 @@ An **http** step is made by the server through the same address guard the
 `web_fetch` tool uses, so a skill cannot use the mail server as a way into the
 network it sits in. A private or loopback address is refused.
 
+With one exception the operator writes: `agent.allowPrivateAddresses` lists
+equipment on their own network — an address, a range, or a name — that a
+skill's step may reach. It exists because a skill is pointed at something the
+operator chose, which is not the case the guard is defending against: a
+camera controller or a printer with an API and no public name is a reasonable
+thing to give a skill, and the address of it is theirs rather than a
+stranger's. The same list widens the headless browser, and nothing else. What
+goes to an address out of somebody else's mail — the remote image proxy, the
+one-click unsubscribe, `web_fetch` — is not widened by it, because an agent
+that has just read a message is precisely what the guard is for.
+
 A **shell** step is carried to the person's own attached computer and run
 there, through the same relay the `shell` and `filesystem` tools use. It never
 runs on this server. Each word is quoted before it travels — for `/bin/sh`,

@@ -155,6 +155,11 @@ type AgentToolView struct {
 	Description string `json:"description"`
 	Confirms    bool   `json:"confirms"`
 	Core        bool   `json:"core"`
+
+	// Actions are the verbs a tool takes, for the tools that are one thing
+	// with several: one line of policy covers all of them, and a page that
+	// does not say which is a page that cannot be reasoned about.
+	Actions []string `json:"actions"`
 }
 
 // AskAgentArguments are one turn.
@@ -488,9 +493,27 @@ func (self *graph) ListAgentTools(ctx context.Context) ([]*AgentToolView, error)
 	tools = append(tools, worker.SkillTools(ctx)...)
 	views := make([]*AgentToolView, 0, len(tools))
 	for _, tool := range tools {
-		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: agent.NeedsConfirmation(tool, nil, &configuration.Agent.Tools, found), Core: tool.Core})
+		// The lead sentence, not the whole description: a merged tool
+		// describes every one of its actions, which is right in a model's
+		// request and is a wall of text in a list of policies. The actions
+		// are said beside it instead.
+		views = append(views, &AgentToolView{
+			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
+			Description: leadSentence(tool.Description),
+			Confirms:    agent.NeedsConfirmation(tool, nil, &configuration.Agent.Tools, found),
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
+		})
 	}
 	return views, nil
+}
+
+// leadSentence is the first line of a description, which for a merged tool is
+// what it is rather than what each of its actions does.
+func leadSentence(description string) string {
+	if index := strings.Index(description, "\n"); index > 0 {
+		return strings.TrimSpace(description[:index])
+	}
+	return strings.TrimSpace(description)
 }
 
 func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*AgentTurnView, error) {

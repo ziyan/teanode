@@ -21,6 +21,7 @@ type TriageAnswer struct {
 	Priority    string   `json:"priority"`
 	NeedsReply  bool     `json:"needs_reply"`
 	Research    bool     `json:"research"`
+	Extract     bool     `json:"extract"`
 	Summary     string   `json:"summary"`
 	ActionItems []string `json:"action_items"`
 }
@@ -37,6 +38,11 @@ type TriageInput struct {
 	Memories      []string
 	Corrections   []string
 	ResearchNotes []string
+
+	// Tools says the run may look things up before it answers, which
+	// changes what the prompt asks for: the same object, after as many
+	// lookups as it needs.
+	Tools bool
 }
 
 type triageCategory struct {
@@ -59,6 +65,7 @@ func TriagePrompt(input *TriageInput) ([]llm.ChatMessage, error) {
 	}
 	directOnly := input.Source == nil || input.Source.Triage == nil || input.Source.Triage.ReplyExpectation != "any"
 	user, err := render("triage.txt", map[string]any{
+		"Tools":         input.Tools,
 		"PersonName":    personName(input.Owner),
 		"MailboxName":   input.Mailbox.Name,
 		"Language":      languageName(Language(input.Agent, input.Owner)),
@@ -138,6 +145,7 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 		Priority:      priority,
 		NeedsReply:    needsReply,
 		ResearchAsked: answer.Research,
+		ExtractAsked:  answer.Extract,
 		Summary:       summary,
 		ActionItems:   items,
 	}, nil
@@ -178,7 +186,13 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		if memories, err = memoryLines(tx, run.Agent.ID, models.AudienceTriage, promptRunMemories, false); err != nil {
 			return err
 		}
-		if corrections, err = correctionLines(tx, run.Agent.ID, []models.AgentFeedbackKind{models.FeedbackFiled}); err != nil {
+		// Both kinds of correction the person makes to sorting: filing a
+		// message somewhere the sorting did not put it, and sorting it by
+		// hand. The second was recorded, kept for ninety days, and shown to
+		// the person in their corrections -- and never read by anything, so
+		// "your agent is told" was true about the record and false about
+		// the learning.
+		if corrections, err = correctionLines(tx, run.Agent.ID, []models.AgentFeedbackKind{models.FeedbackFiled, models.FeedbackSorted}); err != nil {
 			return err
 		}
 		if run.Source.Research && FeatureAllowed(configuration, "research") {
@@ -198,7 +212,7 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	messages, err := TriagePrompt(&TriageInput{
+	input := &TriageInput{
 		Configuration: configuration,
 		Agent:         run.Agent,
 		Owner:         run.Owner,
@@ -208,9 +222,24 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		Memories:      memories,
 		Corrections:   corrections,
 		ResearchNotes: researchNotes,
-	})
+		Tools:         self.canThink(configuration),
+	}
+	messages, err := TriagePrompt(input)
 	if err != nil {
 		return err
+	}
+
+	// With tools, when the loop is there to be used: the sorting run may
+	// ask whether this sender has written before, read the rest of the
+	// conversation, or glance at the day the message names. It answers with
+	// the same object, and when it does not -- a small model talked into
+	// prose -- the single call below is what sorts the mail.
+	if input.Tools {
+		if insight, transcript, err := self.sortWithTools(ctx, run, mail, messages[1].Content); err != nil {
+			log.Warningf("sorting %q with tools failed, asking once instead: %s", mail.ID, err)
+		} else if insight != nil {
+			return self.fileInsight(ctx, run, mail, insight, transcript)
+		}
 	}
 
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
@@ -236,21 +265,46 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
+	insight.Model = modelName
+	return self.fileInsight(ctx, run, mail, insight, func(tx db.Transaction) (string, error) {
+		transcript, err := self.recordRun(tx, run, sortingNote(mail, insight), messages[1].Content, response, modelName)
+		if err != nil {
+			return "", err
+		}
+		return transcript.ID, nil
+	})
+}
+
+// sortingNote is what the run is called in the activity view.
+func sortingNote(mail *models.Mail, insight *models.MailInsight) string {
+	return fmt.Sprintf("Sorted %q: %s, %s priority%s. %s", mail.Subject, insight.Category, insight.Priority,
+		map[bool]string{true: ", needs a reply", false: ""}[insight.NeedsReply], insight.Summary)
+}
+
+// fileInsight writes what the sorting decided and does everything that
+// follows from it: the rules that were waiting for a category, the reply the
+// policy may want, the lookup triage asked for.
+//
+// Shared by the two ways of sorting -- the run with tools and the single call
+// behind it -- because what follows a decision does not depend on how it was
+// reached. transcript hands back the run to point the insight at: the
+// conversation the loop wrote, or the record of the one call.
+func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail, insight *models.MailInsight, transcript func(db.Transaction) (string, error)) error {
+	configuration := run.Configuration()
 	insight.MailID = mail.ID
 	insight.MailboxID = run.Mailbox.ID
 	insight.AgentID = run.Agent.ID
-	insight.Model = modelName
 	insight.RunID = run.Job.ID
 
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := tx.PutMailInsight(insight); err != nil {
 			return err
 		}
-		transcript, err := self.recordRun(tx, run, fmt.Sprintf("Sorted %q: %s, %s priority%s. %s", mail.Subject, insight.Category, insight.Priority, map[bool]string{true: ", needs a reply", false: ""}[insight.NeedsReply], insight.Summary), messages[1].Content, response, modelName)
+		runId, err := transcript(tx)
 		if err != nil {
 			return err
 		}
-		insight.RunID = transcript.ID
+		insight.RunID = runId
 		if err := tx.PutMailInsight(insight); err != nil {
 			return err
 		}
@@ -280,6 +334,14 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		}
 		if insight.ResearchAsked && run.Source.Research && FeatureAllowed(configuration, "research") {
 			if _, err := self.Enqueue(tx, models.AgentJobResearch, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
+				return err
+			}
+		}
+		// What the message carries that belongs somewhere else, read after
+		// the sorting rather than during it: the offer is worth a run of
+		// its own, and most messages carry nothing.
+		if insight.ExtractAsked && self.canThink(configuration) {
+			if _, err := self.Enqueue(tx, models.AgentJobExtract, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
 				return err
 			}
 		}

@@ -57,7 +57,7 @@ func (self *Agent) browserFor(ctx context.Context, run *AskRun) (*browser.Contex
 	}
 	opened, err := browser.Connect(ctx, &browser.Settings{
 		Endpoint:     configuration.Agent.Browser.CDPEndpoint,
-		AllowPrivate: configuration.Agent.Browser.AllowPrivateAddresses,
+		AllowPrivate: configuration.Agent.PrivateAddressesAllowed(),
 		ProxyListen:  configuration.Agent.Browser.ProxyListen,
 	})
 	if err != nil {

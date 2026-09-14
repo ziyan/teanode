@@ -61,9 +61,11 @@ const SAVE = `
     SaveMailboxDraft(mailboxId: $mailboxId, message: $message) { id }
   }`
 
+const BOOKS = `query { ListAddressBooks { id } }`
+
 const CONTACTS = `
-  query ($mailboxId: String!, $prefix: String, $first: Int) {
-    ListMailboxContacts(mailboxId: $mailboxId, prefix: $prefix, first: $first) { address name }
+  query ($addressBookId: String!, $query: String, $first: Int) {
+    ListContacts(addressBookId: $addressBookId, query: $query, first: $first) { name emails }
   }`
 
 const AUTOSAVE_INTERVAL = 30_000
@@ -225,6 +227,11 @@ export function MailboxComposer({
   const [queued, setQueued] = useState(0)
   const queue = useRef<File[][]>([])
   const inFlight = useRef<UploadHandle | null>(null)
+  // Every part the draft holds, the pictures the body refers to by cid:
+  // included. Those are carried but not listed below: they belong to the
+  // message rather than to the paperclip, and leaving them out of this list
+  // is what turned an illustrated draft into a broken one the moment it
+  // saved itself again.
   const [kept, setKept] = useState<Attachment[]>([])
   const [carried, setCarried] = useState<Attachment[]>([])
   const [draftItemId, setDraftItemId] = useState<string | null>(draftOf ?? null)
@@ -268,28 +275,41 @@ export function MailboxComposer({
     }
   }
 
-  // Whoever has written to this mailbox, offered as the address is typed.
-  // The last entry of the field is what is being typed; the ones before
-  // the comma are done.
+  // The people the person keeps, offered as the address is typed. The
+  // address book is the only list of people there is: nothing is completed
+  // from traffic, so an address appears here because somebody decided to
+  // keep it. The last entry of the field is what is being typed; the ones
+  // before the comma are done.
   const [contacts, setContacts] = useState<{ address: string; name?: string }[]>([])
+  const [bookId, setBookId] = useState('')
   const [typing, setTyping] = useState('')
   useEffect(() => {
-    if (!view) {
+    graphql<{ ListAddressBooks: { id: string }[] }>(BOOKS)
+      .then((response) => setBookId(response.ListAddressBooks[0]?.id ?? ''))
+      .catch(() => setBookId(''))
+  }, [])
+  useEffect(() => {
+    if (!bookId) {
       return
     }
     const prefix = typing.split(/[,;]/).pop()?.trim() ?? ''
     const timer = window.setTimeout(() => {
-      graphql<{ ListMailboxContacts: { address: string; name?: string }[] }>(CONTACTS, {
-        mailboxId: view.mailbox.id,
-        prefix,
+      graphql<{ ListContacts: { name?: string; emails?: string[] }[] }>(CONTACTS, {
+        addressBookId: bookId,
+        query: prefix || null,
         first: 10,
       })
-        .then((response) => setContacts(response.ListMailboxContacts))
+        .then((response) =>
+          setContacts(
+            response.ListContacts.flatMap((contact) =>
+              (contact.emails ?? []).map((address) => ({ address, name: contact.name })),
+            ).slice(0, 10),
+          ),
+        )
         .catch(() => setContacts([]))
     }, 150)
     return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view?.mailbox.id, typing])
+  }, [bookId, typing])
   const completions = (value: string) => {
     const done = value
       .split(/[,;]/)
@@ -444,6 +464,9 @@ export function MailboxComposer({
     }
   }, [loading, draftOf, view])
 
+  // What the paperclip shows: the files, not the pictures the body holds.
+  const shownKept = kept.filter((attachment) => !attachment.inline)
+
   const touch = () => {
     dirty.current = true
   }
@@ -501,7 +524,7 @@ export function MailboxComposer({
         onDraft(draftId)
       }
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
-      setKept((stored.attachments ?? []).filter((attachment) => !attachment.inline))
+      setKept(stored.attachments ?? [])
       setCarried([])
       dirty.current = false
       setSavedAt(new Date())
@@ -584,7 +607,7 @@ export function MailboxComposer({
         const reply = result as { itemId: string; attachments: Attachment[] }
         setDraftItemId(reply.itemId)
         latestDraftId.current = reply.itemId
-        setKept((reply.attachments ?? []).filter((attachment) => !attachment.inline))
+        setKept(reply.attachments ?? [])
         setCarried([])
         setSavedAt(new Date())
         setUploading([])
@@ -897,7 +920,7 @@ export function MailboxComposer({
       )}
 
       <div className="attachments">
-        {[...carried, ...kept].length > 0 && (
+        {[...carried, ...shownKept].length > 0 && (
           <div className="attachments-kept">
             <span className="muted">{t('compose.mailbox.keptAttachments')}</span>
             <ul>
@@ -916,7 +939,7 @@ export function MailboxComposer({
                   </button>
                 </li>
               ))}
-              {kept.map((attachment) => (
+              {shownKept.map((attachment) => (
                 <li key={`kept-${attachment.index}`}>
                   {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
                   <button

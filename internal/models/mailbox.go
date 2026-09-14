@@ -431,23 +431,12 @@ type MailboxAutoReply struct {
 	Subject string     `json:"subject" graphapi:"nullable"` // "" means "Auto: " + the original subject
 	Text    string     `json:"text" graphapi:"nullable"`
 	HTML    string     `json:"html,omitempty" graphapi:"nullable"`
-}
 
-// MailboxContact is an address learned from traffic, for completion and for
-// the "sender is known" rule condition.
-type MailboxContact struct {
-	MailboxID     string     `json:"mailboxId"`
-	Address       string     `json:"address"`
-	Name          string     `json:"name,omitempty"`
-	LastSeenAt    time.Time  `json:"lastSeenAt"`
-	Count         int        `json:"count"`
-	AutoRepliedAt *time.Time `json:"autoRepliedAt,omitempty"`
-
-	// LogoDomain is the sending domain whose published mark this server
-	// holds, empty unless there is one to show. Set only when mail from this
-	// address proved it came from that domain: a mark beside an address whose
-	// mail failed its checks is an aid to whoever is pretending to be them.
-	LogoDomain string `json:"logoDomain,omitempty"`
+	// SameDomainOnly answers only senders at one of the mailbox's own
+	// domains. An away message is written for the people who work with you;
+	// sent to everybody, it tells whoever writes in that the person is gone
+	// until the 30th, which is more than most strangers need to know.
+	SameDomainOnly bool `json:"sameDomainOnly,omitempty"`
 }
 
 // MailboxAppPassword is what a mail program signs in with. It belongs to a

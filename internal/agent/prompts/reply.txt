@@ -16,6 +16,9 @@ The policy, in {{.PersonName}}'s words:
 {{if .Memories}}
 What {{.PersonName}} has told you about replying:
 {{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Corrections}}
+Replies you wrote that {{.PersonName}} would not let go -- do not write another like these:
+{{range .Corrections}}- {{.}}
 {{end}}{{end}}{{if .Summary}}
 The conversation so far, summarized:
 

@@ -1097,6 +1097,7 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
   const [subject, setSubject] = useState(existing?.subject ?? '')
   const [text, setText] = useState(existing?.text ?? '')
   const [html, setHtml] = useState(existing?.html ?? '')
+  const [sameDomainOnly, setSameDomainOnly] = useState(existing?.sameDomainOnly ?? false)
   // The reply is a message, so it is written the way a message is written.
   const [editor, setEditor] = useState<'rich' | 'plain'>(existing?.html ? 'rich' : 'plain')
   const [dirty, setDirty] = useState(false)
@@ -1124,6 +1125,7 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
             from: fromLocalInput(from),
             until: fromLocalInput(until),
             subject,
+            sameDomainOnly,
             // Rich text keeps a plain rendering for whoever cannot read the
             // other; plain text has no HTML form, and the server sends the
             // plain one.
@@ -1148,6 +1150,15 @@ function AutoReplyTab({ view }: { view: MailboxView }) {
           <input type="datetime-local" value={until} onChange={(event) => change(setUntil)(event.target.value)} />
         </label>
         <p className="muted field-hint">{t('mailboxSettings.autoReplyWhenHint')}</p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={sameDomainOnly}
+            onChange={(event) => change(setSameDomainOnly)(event.target.checked)}
+          />
+          {t('mailboxSettings.autoReplySameDomain')}
+        </label>
+        <p className="muted field-hint">{t('mailboxSettings.autoReplySameDomainHint')}</p>
         <label>
           {t('mailboxSettings.autoReplySubject')}
           <input

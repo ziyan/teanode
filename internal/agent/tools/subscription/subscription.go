@@ -36,6 +36,24 @@ func init() {
 					}
 					return tools.RiskWrite
 				},
+				Preview: tools.PreviewOf(func(call struct {
+					Action  string `json:"action"`
+					Mailbox string `json:"mailbox"`
+					Key     string `json:"key"`
+				}) string {
+					named := tools.Named(call.Key, "a mailing list")
+					switch call.Action {
+					case "unsubscribe":
+						// This writes to whoever sends the list, in the
+						// person's name, so the card says so.
+						return "Ask to be taken off " + named + tools.In(call.Mailbox)
+					case "mute":
+						return "Keep " + named + " out of the Inbox" + tools.In(call.Mailbox)
+					case "unmute":
+						return "Let " + named + " back into the Inbox" + tools.In(call.Mailbox)
+					}
+					return "Change " + named
+				}),
 				Run: runSubscription,
 			},
 		}

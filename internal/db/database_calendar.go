@@ -28,6 +28,8 @@ type calendarModel struct {
 	Colour      string    `gorm:"column:colour"`
 	Timezone    string    `gorm:"column:time_zone"`
 	WeekStart   string    `gorm:"column:week_start"`
+	// AgentGranted is the person's switch for this calendar as a source.
+	AgentGranted bool `gorm:"column:agent_granted"`
 }
 
 func (calendarModel) TableName() string { return "calendar" }
@@ -37,6 +39,7 @@ func (self *calendarModel) toModel() *models.Calendar {
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
 		Colour: self.Colour, Timezone: self.Timezone, WeekStart: self.WeekStart,
+		AgentGranted: self.AgentGranted,
 	}
 }
 
@@ -176,9 +179,10 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 	row := &calendarModel{
 		ID: calendar.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(calendar.Name), 200), Description: calendar.Description,
-		Colour:    truncateRunes(strings.TrimSpace(calendar.Colour), 16),
-		Timezone:  truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
-		WeekStart: models.KnownWeekStart(calendar.WeekStart),
+		Colour:       truncateRunes(strings.TrimSpace(calendar.Colour), 16),
+		Timezone:     truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
+		WeekStart:    models.KnownWeekStart(calendar.WeekStart),
+		AgentGranted: calendar.AgentGranted,
 	}
 	if row.Name == "" {
 		row.Name = before.Name
@@ -195,7 +199,7 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 				Updates(map[string]any{
 					"modified_at": row.ModifiedAt, "name": row.Name, "description": row.Description,
 					"colour": row.Colour, "time_zone": row.Timezone,
-					"week_start": row.WeekStart,
+					"week_start": row.WeekStart, "agent_granted": row.AgentGranted,
 				}).Error
 		}); err != nil {
 		return nil, err

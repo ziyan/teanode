@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -19,6 +20,7 @@ func init() {
 				Name: "mail_draft", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailSend},
 				Description: "Write a draft: a new message, a reply, a reply to all, or a forward. It is saved in Drafts, in its conversation, for the person to send; nothing goes out. Gives back draft_id for mail_send.",
+				Guidance:    "mail_draft: plain text is the ordinary answer to a message and needs no html. Reach for html when the person asked for something made rather than said -- a summary with headings, a table of figures, an announcement. Mail is not the web: no script runs, nothing loads from another server, and no CSS variable survives, so write the colours out; and a picture has to travel with the message, so it must already be a file of this conversation -- one the person handed you, or one share_file fetched off their computer or out of a message -- and named in images. Most clients refuse SVG, so a drawing has to arrive as a PNG or a JPEG. Lay a wide thing out with a table rather than with flex or grid, which older clients ignore; keep to system fonts and to colours that read on white, since many clients paint their own background.",
 				Parameters: tools.Object(map[string]any{
 					"mode":        tools.EnumProperty("what kind of message", "new", "reply", "reply_all", "forward"),
 					"in_reply_to": tools.StringProperty("for reply, reply_all and forward: the item_id of the message"),
@@ -29,8 +31,29 @@ func init() {
 					"bcc":         tools.ArrayProperty("blind copies", tools.StringProperty("an address")),
 					"subject":     tools.StringProperty("the subject; filled in for a reply or a forward"),
 					"text":        tools.StringProperty("the body, plain text, in the person's voice; no placeholders"),
+					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for wants a heading, a table or a card. Write an ordinary document with a <style> block: the server moves the stylesheet into the elements, which is what makes it survive a mail client"),
+					"images":      tools.ArrayProperty("optional: files of this conversation to put in the body -- a picture you were given, or one you made. Refer to each by name in the html: <img src=\"cid:chart.png\">", tools.StringProperty("an attachment id of this conversation")),
 					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one"),
 				}, "mode", "text"),
+				Preview: tools.PreviewOf(func(call struct {
+					Mode    string   `json:"mode"`
+					Subject string   `json:"subject"`
+					To      []string `json:"to"`
+				}) string {
+					// Nothing goes out, so the card is about what appears
+					// in Drafts rather than about a message being sent.
+					named := tools.Named(call.Subject, "a message")
+					if to := tools.Some(call.To, 3); to != "" {
+						named += " to " + to
+					}
+					switch call.Mode {
+					case "reply", "reply_all":
+						return "Write a reply in Drafts: " + named
+					case "forward":
+						return "Write a forward in Drafts: " + named
+					}
+					return "Write " + named + " in Drafts"
+				}),
 				Run: runMailDraft,
 			},
 		}
@@ -47,7 +70,29 @@ type mailDraftArguments struct {
 	Bcc       []string `json:"bcc"`
 	Subject   string   `json:"subject"`
 	Text      string   `json:"text"`
+	HTML      string   `json:"html"`
+	Images    []string `json:"images"`
 	DraftID   string   `json:"draft_id"`
+}
+
+// ownFiles refuses anything that is not a file of this conversation.
+func ownFiles(ctx context.Context, run tools.Run, ids []string) error {
+	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		for _, id := range ids {
+			attachment, err := tx.GetAgentAttachment(strings.TrimSpace(id))
+			if err != nil {
+				return err
+			}
+			if attachment == nil || attachment.AgentID != run.Agent().ID ||
+				(attachment.ConversationID != "" && attachment.ConversationID != run.Conversation().ID) {
+				return fmt.Errorf("there is no file %q in this conversation", id)
+			}
+			if !tools.IsImage(attachment.ContentType) {
+				return fmt.Errorf("%s is %s; only a picture goes in the body", attachment.Name, attachment.ContentType)
+			}
+		}
+		return nil
+	})
 }
 
 func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -123,7 +168,25 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	to, cc, bcc := arguments.To, arguments.Cc, arguments.Bcc
 	subject := strings.TrimSpace(arguments.Subject)
+	// Both forms when the model wrote both: the message goes out as
+	// multipart/alternative, and a reader with no HTML still gets the words.
 	message := map[string]any{"from": from, "textContent": arguments.Text}
+	if strings.TrimSpace(arguments.HTML) != "" {
+		message["htmlContent"] = arguments.HTML
+	}
+	if len(arguments.Images) > 0 {
+		if strings.TrimSpace(arguments.HTML) == "" {
+			return nil, fmt.Errorf("a picture in the body needs html to refer to it")
+		}
+		// This conversation's files, for the reason share_file asks the
+		// same: the ids of files in other conversations are readable, and
+		// a turn somebody else started in a group chat must not be able to
+		// put a picture from a private conversation into a message.
+		if err := ownFiles(ctx, run, arguments.Images); err != nil {
+			return nil, err
+		}
+		message["inlineImages"] = arguments.Images
+	}
 	switch mode {
 	case "reply", "reply_all":
 		if originalMail == nil {
@@ -163,7 +226,13 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	message["to"], message["cc"], message["bcc"], message["subject"] = to, cc, bcc, subject
 	if arguments.DraftID != "" {
-		message["draftItemId"] = arguments.DraftID
+		// The draft being revised is named by its key; what the mutation
+		// wants is the item holding it now.
+		existing, err := mailbox.FindDraft(ctx, operations, view, arguments.DraftID)
+		if err != nil {
+			return nil, err
+		}
+		message["draftItemId"] = existing.ItemID
 	}
 	var result struct {
 		SaveMailboxDraft struct {
@@ -173,11 +242,24 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) { SaveMailboxDraft(mailboxId: $mailboxId, message: $message) { id } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message}, &result); err != nil {
 		return nil, err
 	}
+	// The draft's own name, which is what to hold on to: saving it again --
+	// which the composer does the moment the person opens it -- writes a new
+	// message with a new item id, and an answer carrying that id would be
+	// stale before anybody read it.
+	var saved struct {
+		GetMailboxDraft struct {
+			Key string `json:"key"`
+		} `json:"GetMailboxDraft"`
+	}
+	draftId := result.SaveMailboxDraft.ID
+	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { key } }`, map[string]any{"itemId": draftId}, &saved); err == nil && saved.GetMailboxDraft.Key != "" {
+		draftId = saved.GetMailboxDraft.Key
+	}
 	preview := arguments.Text
 	if len(preview) > 300 {
 		preview = preview[:300] + "…"
 	}
-	answer, err := tools.JSONResult(map[string]any{"draft_id": result.SaveMailboxDraft.ID, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"})
+	answer, err := tools.JSONResult(map[string]any{"draft_id": draftId, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"})
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,12 @@ import (
 // runSend is the handler for a send job; its subject is the held reply. It
 // climbs the ladder again — the person may have answered meanwhile, or
 // taken the draft over, or switched answering off — and only then sends.
+// agentReplyHourlyLimit is the most answers one mailbox sends by itself in an
+// hour, counted with the out-of-office replies because they are the same
+// thing to whoever receives them: mail this server sent without a person.
+// The same fifty the away reply has always had.
+const agentReplyHourlyLimit = 50
+
 func (self *Agent) runSend(ctx context.Context, run *Run) error {
 	now := run.Now
 	if now.IsZero() {
@@ -167,7 +173,10 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 		if _, err := tx.SetItemFlags([]string{originalItem.ID}, models.MailboxItemFlags{Answered: &yes}); err != nil {
 			return err
 		}
-		if err := tx.MarkContactAutoReplied(mailbox.ID, reply.To, now); err != nil {
+		// One more automatic reply out of this mailbox this hour. Counted
+		// rather than remembered per sender: what this bounds is a loop,
+		// and a loop is a rate.
+		if _, err := tx.ClaimAutoReply(mailbox.ID, now, agentReplyHourlyLimit); err != nil {
 			return err
 		}
 		sentMailId := ""

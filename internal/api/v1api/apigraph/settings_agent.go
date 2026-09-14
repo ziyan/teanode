@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"strings"
 	"time"
 
@@ -45,21 +46,27 @@ type AgentModel struct {
 // AgentSettings is the agent as the settings page shows it: every secret
 // replaced by whether it is set.
 type AgentSettings struct {
-	Enabled      bool                      `json:"enabled"`
-	Instructions string                    `json:"instructions"`
-	Currency     string                    `json:"currency"`
-	Providers    []*AgentProviderSettings  `json:"providers"`
-	Models       *AgentModelsSettings      `json:"models"`
-	Features     *AgentFeaturesSettings    `json:"features"`
-	Limits       *AgentLimitsSettings      `json:"limits"`
-	Retention    *AgentRetentionSettings   `json:"retention"`
-	Search       *AgentSearchSettings      `json:"search"`
-	Tools        *AgentToolsSettings       `json:"tools"`
-	Browser      *AgentBrowserSettings     `json:"browser"`
-	MCPServers   []*AgentMCPServerSettings `json:"mcpServers"`
-	Works        []string                  `json:"works"`
-	Families     []string                  `json:"families"`
-	Kinds        []string                  `json:"kinds"`
+	Enabled      bool   `json:"enabled"`
+	Instructions string `json:"instructions"`
+	Currency     string `json:"currency"`
+
+	// AllowPrivateAddresses is equipment on the operator's own network the
+	// agent may reach: what a skill's endpoint and the headless browser
+	// are let through to, and nothing else.
+	AllowPrivateAddresses []string `json:"allowPrivateAddresses"`
+
+	Providers  []*AgentProviderSettings  `json:"providers"`
+	Models     *AgentModelsSettings      `json:"models"`
+	Features   *AgentFeaturesSettings    `json:"features"`
+	Limits     *AgentLimitsSettings      `json:"limits"`
+	Retention  *AgentRetentionSettings   `json:"retention"`
+	Search     *AgentSearchSettings      `json:"search"`
+	Tools      *AgentToolsSettings       `json:"tools"`
+	Browser    *AgentBrowserSettings     `json:"browser"`
+	MCPServers []*AgentMCPServerSettings `json:"mcpServers"`
+	Works      []string                  `json:"works"`
+	Families   []string                  `json:"families"`
+	Kinds      []string                  `json:"kinds"`
 }
 
 // AgentProviderSettings is one provider, without its key.
@@ -209,7 +216,11 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		Enabled:      agent.Enabled,
 		Instructions: agent.Instructions,
 		Currency:     agent.CurrencyOf(),
-		Providers:    []*AgentProviderSettings{},
+		// What the operator has allowed, without the browser's own older
+		// list folded in: this is the box they edit, and showing it holding
+		// entries they did not put there is how a list edits itself.
+		AllowPrivateAddresses: nonNil(agent.AllowPrivateAddresses),
+		Providers:             []*AgentProviderSettings{},
 		Models: &AgentModelsSettings{
 			Default:   agent.Models.Default,
 			Fast:      agent.Models.Fast,
@@ -255,7 +266,11 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Corrections: agent.Retention.Corrections.String(),
 		},
 		Search: &AgentSearchSettings{Kind: agent.Search.Kind, HasAPIKey: agent.Search.APIKey != ""},
-		Tools:  &AgentToolsSettings{Disabled: nonNil(agent.Tools.Disabled), Confirm: nonNil(agent.Tools.Confirm), Catalog: toolCatalog()},
+		Tools: &AgentToolsSettings{
+			Disabled: nonNil(agenttools.Rename(agent.Tools.Disabled)),
+			Confirm:  nonNil(agenttools.Rename(agent.Tools.Confirm)),
+			Catalog:  toolCatalog(),
+		},
 		Browser: &AgentBrowserSettings{
 			Enabled:               agent.Browser.Enabled,
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
@@ -330,18 +345,20 @@ func nonNil(values []string) []string {
 // given replaces the list stored; a secret left blank or redacted keeps the
 // one stored under the same name.
 type AgentParameters struct {
-	Enabled      *bool                        `json:"enabled"`
-	Instructions *string                      `json:"instructions"`
-	Currency     *string                      `json:"currency"`
-	Providers    *[]*AgentProviderParameters  `json:"providers"`
-	Models       *AgentModelsParameters       `json:"models"`
-	Features     *AgentFeaturesParameters     `json:"features"`
-	Limits       *AgentLimitsParameters       `json:"limits"`
-	Retention    *AgentRetentionParameters    `json:"retention"`
-	Search       *AgentSearchParameters       `json:"search"`
-	Tools        *AgentToolsParameters        `json:"tools"`
-	Browser      *AgentBrowserParameters      `json:"browser"`
-	MCPServers   *[]*AgentMCPServerParameters `json:"mcpServers"`
+	Enabled               *bool     `json:"enabled"`
+	Instructions          *string   `json:"instructions"`
+	Currency              *string   `json:"currency"`
+	AllowPrivateAddresses *[]string `json:"allowPrivateAddresses"`
+
+	Providers  *[]*AgentProviderParameters  `json:"providers"`
+	Models     *AgentModelsParameters       `json:"models"`
+	Features   *AgentFeaturesParameters     `json:"features"`
+	Limits     *AgentLimitsParameters       `json:"limits"`
+	Retention  *AgentRetentionParameters    `json:"retention"`
+	Search     *AgentSearchParameters       `json:"search"`
+	Tools      *AgentToolsParameters        `json:"tools"`
+	Browser    *AgentBrowserParameters      `json:"browser"`
+	MCPServers *[]*AgentMCPServerParameters `json:"mcpServers"`
 }
 
 // AgentProviderParameters is one provider as given.
@@ -481,6 +498,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	if parameters.Currency != nil {
 		agent.Currency = strings.ToUpper(strings.TrimSpace(*parameters.Currency))
 	}
+	if parameters.AllowPrivateAddresses != nil {
+		applyStrings(&agent.AllowPrivateAddresses, parameters.AllowPrivateAddresses)
+	}
 	if parameters.Instructions != nil {
 		agent.Instructions = strings.TrimSpace(*parameters.Instructions)
 	}
@@ -595,6 +615,13 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	if parameters.Tools != nil {
 		applyStrings(&agent.Tools.Disabled, parameters.Tools.Disabled)
 		applyStrings(&agent.Tools.Confirm, parameters.Tools.Confirm)
+		// Under the names the catalog has now, so that what the page shows
+		// and what the server enforces are the same list. A policy written
+		// before the tools were merged names verbs that are actions today;
+		// those still reach the tool they became, but they cannot be shown
+		// on a page that lists the catalog.
+		agent.Tools.Disabled = agenttools.Rename(agent.Tools.Disabled)
+		agent.Tools.Confirm = agenttools.Rename(agent.Tools.Confirm)
 	}
 	if parameters.Browser != nil {
 		browser := &agent.Browser
@@ -761,7 +788,12 @@ func toolCatalog() []*AgentToolView {
 	tools := agent.FullCatalog().All()
 	views := make([]*AgentToolView, 0, len(tools))
 	for _, tool := range tools {
-		views = append(views, &AgentToolView{Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk), Description: tool.Description, Confirms: tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward, Core: tool.Core})
+		views = append(views, &AgentToolView{
+			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
+			Description: leadSentence(tool.Description),
+			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
+		})
 	}
 	return views
 }
@@ -777,9 +809,9 @@ func (self *graph) withSkillTools(ctx context.Context, settings *AgentSettings) 
 	for _, tool := range worker.SkillTools(ctx) {
 		settings.Tools.Catalog = append(settings.Tools.Catalog, &AgentToolView{
 			Name: tool.Name, Family: string(tool.Family), Risk: string(tool.Risk),
-			Description: tool.Description,
+			Description: leadSentence(tool.Description),
 			Confirms:    tool.Risk == agent.RiskDestructive || tool.Risk == agent.RiskOutward,
-			Core:        tool.Core,
+			Core:        tool.Core, Actions: agent.ActionsOf(tool),
 		})
 	}
 }

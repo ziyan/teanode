@@ -187,3 +187,39 @@ func TestALooselyWrittenCallIsJudgedByWhatItDoes(t *testing.T) {
 		t.Fatalf("nonsense is passed through: %s", got)
 	}
 }
+
+// The confirmation card is read by somebody deciding, so a tool that says
+// nothing about itself still gets a sentence rather than its own call.
+//
+// The card used to print "Run mail_act with {"action":"delete_forever",...}",
+// which asks a person to approve JSON. A tool that can ask for a word should
+// write its own line; this is what the ones that have not yet get.
+func TestACardSaysSomethingWithoutAPreview(t *testing.T) {
+	t.Parallel()
+
+	tool := &Tool{Name: "queue_retry"}
+	line := tool.PreviewLine(context.Background(), json.RawMessage(`{"delivery_id":"01m2","all":false,"note":""}`))
+	if line != "Queue retry — delivery id: 01m2" {
+		t.Fatalf("the call as a sentence, empty and false left out: %q", line)
+	}
+
+	// No arguments at all is the tool's name, not an empty dash.
+	if line := tool.PreviewLine(context.Background(), json.RawMessage(`{}`)); line != "Queue retry" {
+		t.Fatalf("nothing to say about: %q", line)
+	}
+	// Arguments that are not an object do not make it print Go's idea of them.
+	if line := tool.PreviewLine(context.Background(), json.RawMessage(`not json`)); line != "Queue retry" {
+		t.Fatalf("unreadable arguments: %q", line)
+	}
+
+	// A tool with a line of its own keeps it, and one that can look
+	// something up wins over one that cannot.
+	spoken := &Tool{Name: "mail_send", Preview: func(json.RawMessage) string { return "Send it" }}
+	if line := spoken.PreviewLine(context.Background(), json.RawMessage(`{}`)); line != "Send it" {
+		t.Fatalf("its own line: %q", line)
+	}
+	spoken.PreviewIn = func(context.Context, json.RawMessage) string { return `Send "Thursday?" to maria@example.net` }
+	if line := spoken.PreviewLine(context.Background(), json.RawMessage(`{}`)); line != `Send "Thursday?" to maria@example.net` {
+		t.Fatalf("the one that looked it up: %q", line)
+	}
+}

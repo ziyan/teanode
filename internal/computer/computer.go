@@ -326,9 +326,14 @@ func (self *boundedBuffer) Write(data []byte) (int, error) {
 
 // FilesystemArguments are one thing to do with the files.
 type FilesystemArguments struct {
-	Action      string `json:"action"`
-	Path        string `json:"path"`
-	Content     string `json:"content,omitempty"`
+	Action  string `json:"action"`
+	Path    string `json:"path"`
+	Content string `json:"content,omitempty"`
+
+	// Base64 is the content of a file being put here, encoded, for the
+	// bytes that are not text. The server sends it; nothing types it.
+	Base64 string `json:"base64,omitempty"`
+
 	Destination string `json:"destination,omitempty"`
 	Pattern     string `json:"pattern,omitempty"`
 	Find        string `json:"find,omitempty"`
@@ -374,6 +379,8 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 		return readFile(path, arguments.Offset, arguments.Limit)
 	case "fetch":
 		return fetchFile(path)
+	case "put":
+		return putFile(path, arguments.Base64)
 	case "write":
 		// The directories on the way are made: a file is written where
 		// it is wanted, not where a directory happens to be.
@@ -479,6 +486,32 @@ func fetchFile(path string) (any, error) {
 		contentType = http.DetectContentType(content)
 	}
 	return map[string]any{"path": path, "name": filepath.Base(path), "bytes": len(content), "content_type": contentType, "base64": base64.StdEncoding.EncodeToString(content)}, nil
+}
+
+// putFile writes a file the server sent across, bytes and all.
+//
+// The other half of fetch. A file the person handed their agent -- a PDF, a
+// spreadsheet, a photograph -- is on the server and useless there: what can
+// open it is on their own machine. This puts it where the shell can reach
+// it, and nothing about the bytes passes through the model.
+func putFile(path, encoded string) (any, error) {
+	content, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("the content is not base64: %w", err)
+	}
+	if len(content) > fetchBytes {
+		return nil, fmt.Errorf("%d bytes is more than %d; it is too large to put here", len(content), fetchBytes)
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return nil, err
+	}
+	return map[string]any{"path": path, "name": filepath.Base(path), "bytes": len(content)}, nil
 }
 
 func readFile(path string, offset, limit int) (any, error) {

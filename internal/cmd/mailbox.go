@@ -50,7 +50,6 @@ func NewMailboxCommand() *cli.Command {
 			},
 			newFolderCommand(),
 			newRuleCommand(),
-			newContactCommand(),
 			newDeviceCommand(),
 			newAutoReplyCommand(),
 			newSubscriptionCommand(),
@@ -1142,120 +1141,6 @@ func runRuleApply(ctx context.Context, command *cli.Command) error {
 	return printFields(fields)
 }
 
-// --- contacts ---------------------------------------------------------------
-
-func newContactCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "contact",
-		Usage: "the addresses a mailbox has corresponded with",
-		Commands: []*cli.Command{
-			{
-				Name:  "list",
-				Usage: "list a mailbox's contacts, most recent first",
-				Flags: []cli.Flag{
-					JSONFlag(), mailboxFlag(),
-					&cli.StringFlag{Name: "prefix", Usage: "only those whose address or name begins with this"},
-					&cli.IntFlag{Name: "first", Value: 50, Usage: "how many, at most 500"},
-				},
-				Action: runContactList,
-			},
-			{
-				Name:      "add",
-				Aliases:   []string{"create", "update"},
-				Usage:     "add a contact, or rename one",
-				ArgsUsage: "<address>",
-				Flags: []cli.Flag{
-					JSONFlag(), mailboxFlag(),
-					&cli.StringFlag{Name: "name", Usage: "what to call them; leave it out to clear the name"},
-				},
-				Action: runContactAdd,
-			},
-			{
-				Name:      "remove",
-				Aliases:   []string{"delete"},
-				Usage:     "remove a contact; it comes back if that address writes again",
-				ArgsUsage: "<address>",
-				Flags:     []cli.Flag{ForceFlag(), mailboxFlag()},
-				Action:    runContactRemove,
-			},
-		},
-	}
-}
-
-func runContactList(ctx context.Context, command *cli.Command) error {
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	view, err := requireMailbox(ctx, command, connection)
-	if err != nil {
-		return err
-	}
-	contacts, err := client.ListMailboxContacts(ctx, connection, view.Mailbox.ID, command.String("prefix"), int(command.Int("first")))
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(contacts)
-	}
-	if len(contacts) == 0 {
-		fmt.Println("no contacts yet; they are learned from the mail this mailbox exchanges")
-		return nil
-	}
-	rows := make([][]string, 0, len(contacts))
-	for _, contact := range contacts {
-		rows = append(rows, []string{contact.Name, contact.Address, itoa(contact.Count), formatTime(&contact.LastSeenAt)})
-	}
-	return printTable([]string{"NAME", "ADDRESS", "MESSAGES", "LAST SEEN"}, rows)
-}
-
-func runContactAdd(ctx context.Context, command *cli.Command) error {
-	address := command.Args().First()
-	if address == "" {
-		return usage("which address? usage: teanode mailbox contact add <address> [--name ...]")
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	view, err := requireMailbox(ctx, command, connection)
-	if err != nil {
-		return err
-	}
-	contact, err := client.SaveMailboxContact(ctx, connection, view.Mailbox.ID, address, command.String("name"))
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(contact)
-	}
-	fmt.Printf("saved %s\n", contact.Address)
-	return nil
-}
-
-func runContactRemove(ctx context.Context, command *cli.Command) error {
-	address := command.Args().First()
-	if address == "" {
-		return usage("which address? usage: teanode mailbox contact remove <address>")
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	view, err := requireMailbox(ctx, command, connection)
-	if err != nil {
-		return err
-	}
-	if err := confirm(command, fmt.Sprintf("This removes the contact %s. It comes back if that address writes again.", address)); err != nil {
-		return err
-	}
-	if err := client.DeleteMailboxContact(ctx, connection, view.Mailbox.ID, address); err != nil {
-		return describeError(command, err)
-	}
-	fmt.Printf("removed %s\n", address)
-	return nil
-}
-
 // --- devices ----------------------------------------------------------------
 
 func newDeviceCommand() *cli.Command {
@@ -1401,8 +1286,8 @@ func newAutoReplyCommand() *cli.Command {
 			{
 				Name:  "set",
 				Usage: "turn the out-of-office reply on, and say what it says",
-				Description: "It answers once per sender, and never a mailing list, an automatic\n" +
-					"message, or another mailbox that is also away.\n\n" +
+				Description: "It never answers a mailing list, an automatic message, or another\n" +
+					"mailbox that is also away.\n\n" +
 					"  teanode mailbox autoreply set --text 'Away until Monday.'\n" +
 					"  teanode mailbox autoreply set --text - --subject 'Out of office'",
 				Flags: []cli.Flag{
@@ -1410,6 +1295,7 @@ func newAutoReplyCommand() *cli.Command {
 					&cli.StringFlag{Name: "text", Usage: "what it says; \"-\" reads it from standard input"},
 					&cli.StringFlag{Name: "html", Usage: "an HTML version; \"-\" reads it from standard input"},
 					&cli.StringFlag{Name: "subject", Usage: "the subject; the original subject with \"Auto: \" before it by default"},
+					&cli.BoolFlag{Name: "same-domain-only", Usage: "answer only people at this mailbox's own domains"},
 				},
 				Action: runAutoReplySet,
 			},
@@ -1440,7 +1326,7 @@ func runAutoReplyShow(ctx context.Context, command *cli.Command) error {
 		fmt.Println("no out-of-office reply set")
 		return nil
 	}
-	fields := [][2]string{{"state", yesNo(reply.Enabled)}}
+	fields := [][2]string{{"state", yesNo(reply.Enabled)}, {"same domain only", yesNo(reply.SameDomainOnly)}}
 	if reply.Subject != "" {
 		fields = append(fields, [2]string{"subject", reply.Subject})
 	}
@@ -1485,6 +1371,9 @@ func runAutoReplySet(ctx context.Context, command *cli.Command) error {
 	}
 	if command.IsSet("subject") {
 		reply.Subject = command.String("subject")
+	}
+	if command.IsSet("same-domain-only") {
+		reply.SameDomainOnly = command.Bool("same-domain-only")
 	}
 	if strings.TrimSpace(reply.Text) == "" && strings.TrimSpace(reply.HTML) == "" {
 		return usage("what should it say? pass --text, or --text - to read it from standard input")

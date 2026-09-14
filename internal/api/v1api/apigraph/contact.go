@@ -14,9 +14,8 @@ import (
 // The address book: a person's own contacts, which they edit here and their
 // phone keeps in step with over CardDAV.
 //
-// Not the learned addresses. Those are in mailbox_rules.go as
-// ListMailboxContacts, are per mailbox, and are what a mailbox has seen go
-// past rather than what somebody chose to keep.
+// It is the server's only list of people: the composer completes from it, and
+// the "sender is known" rule condition asks it.
 
 // AddressBookQuery reads a person's own address book.
 type AddressBookQuery interface {
@@ -57,6 +56,10 @@ type AddressBookView struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Contacts    int    `json:"contacts"`
+
+	// AgentGranted says the person has given their agent this book. The
+	// agent's own tools read it: what is not granted is not theirs to see.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // ContactView is one contact. Card is the whole of it; the fields beside it
@@ -214,6 +217,7 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 		}
 		views = append(views, &AddressBookView{
 			ID: book.ID, Name: book.Name, Description: book.Description, Contacts: int(count),
+			AgentGranted: book.AgentGranted,
 		})
 	}
 	return views, nil
@@ -428,7 +432,7 @@ func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBoo
 	if kept == nil {
 		return nil, api.ErrNotFound
 	}
-	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(count)}, nil
+	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(count), AgentGranted: kept.AgentGranted}, nil
 }
 
 func contactView(contact *models.Contact, withCard bool) *ContactView {

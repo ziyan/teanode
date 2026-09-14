@@ -24,16 +24,65 @@ address and answering on another:
     DraftReplies  a draft the person sends themselves
     Search        vectors for search by meaning
     Research      a read-only run that gathers context before a reply
-    AutoReply     a policy: scope, categories, hold, caps, quiet days
+    AutoReply     a policy: scope, categories, hold, caps
 
-Calendars and address books are meant to become sources the same way. Until
-then the agent reaches the person's own calendar through the same permission a
-person needs for it (`calendar:use`): it can read the agenda, say when they are
-free, and put something in, change it or take it out. Anything that would send
-mail — inviting people, or telling the ones already invited that a meeting has
-moved or is off — is *outward*, so the person is asked first, and an event with
+A calendar and an address book are sources in the same sense, with a switch
+each: `calendar.agent_granted` and `addressbook.agent_granted`, one per
+collection, because a person may keep a work calendar and a family one and
+mean different things by them. They carry no policy — a mailbox's policy says
+what to do with what arrives in it, and nothing arrives in a diary — so the
+agent's page lists them beside the mailboxes with a switch and nothing else,
+and `teanode agent source allow calendar` is the same switch from a terminal.
+
+Until a collection is granted the tools refuse it, in words the model can pass
+on: "they have not given you their calendar". The prompt says which ones it
+has, so it neither ignores a diary it was given nor spends a turn being
+refused one it was not.
+
+What it may then do: read the agenda, say when they are free, and put
+something in, change it or take it out. Anything that would send mail —
+inviting people, or telling the ones already invited that a meeting has moved
+or is off — is *outward*, so the person is asked first, and an event with
 guests on it is refused outright until the call says they are to be told.
 `docs/subsystems/calendar.md` has the reasoning.
+
+## One tool per thing
+
+The catalog is the request: every tool in it is a paragraph the model reads
+before it decides anything. It grew to eighty-four names, of which seventeen
+were the operator's domains — a verb apiece for domains, addresses,
+credentials and the queue — and a model choosing between eighty-four
+near-identical names chooses worse than one choosing between fifty.
+
+So a tool is one thing, and its first argument is the action:
+
+    domain      list, get, add, update, remove, dns
+    alias       list, match, add, update, remove
+    credential  list, create, update, remove
+    queue       list, retry
+    rule        list, add, update, remove, test, apply
+    user        list, add, update, remove
+    calendar    agenda, free, add, edit, remove
+    mail_audit  search, get, content, mark
+    account     get, update
+    settings    get, update
+
+Two things survive the merge, and they are the two that matter. **The risk is
+the action's own**: reading a diary is a read and taking an appointment out of
+it cannot be undone, so the tool's declared class is the gentlest of its
+actions and the call is priced by the one in hand. A call nobody can parse
+takes the strictest class any of its actions carries, so that writing a call
+badly is not a way past the question. **The permission is the action's own
+too**: the catalog offers the tool to anybody one of its actions would admit,
+and each action checks its own before it runs.
+
+A tool that already takes an `action` of its own — `folder_manage`,
+`group_manage`, `mail_act` — cannot be an action of another, because the two
+fields would collide; the code says so and refuses to build such a catalog.
+
+`internal/agent/tools/merged.go` is the whole of it, and
+`tools.Renamed` maps every old name to what it became, so an operator's
+policy written before the merge still means something.
 
 ## Sorting, and the two words that earn a rule
 
@@ -82,6 +131,28 @@ A feature has to pass all three:
 
 An operator can also switch one person's agent off (`OperatorDisabledAt`),
 which they cannot undo themselves, and give them a budget of their own.
+
+## What a message carries that belongs somewhere else
+
+An invitation with a `text/calendar` part in it is read at delivery and
+becomes an event (`docs/subsystems/calendar.md`). Most appointments never
+arrive that way. They arrive as "shall we say Thursday at four", and most new
+telephone numbers arrive at the bottom of a signature.
+
+Sorting answers `extract: true` when it thinks the words carry one of those,
+and a run of its own then reads the message with the diary and the address
+book to hand — so that an appointment already in the calendar is not offered
+again, and a number for somebody already in the address book is offered as a
+change to their card rather than a second card. What it finds goes onto the
+insight as a **proposal**, and the reader draws a card from it: the fields
+filled in and editable, the line they came from quoted underneath, "Add to
+calendar" or "Save contact" beside "No thanks".
+
+Nothing is written until that press. A message is a stranger's words, and an
+appointment put into somebody's diary because those words mentioned a day is
+how a calendar stops being trusted — the same reasoning as the hold window on
+an automatic reply. `SetMailProposalStatus` records what the person did, so a
+card they have dealt with does not come back.
 
 ## Runs
 

@@ -133,14 +133,14 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		senderKnown := false
 		if needsContacts {
 			if address, _ := senderAddressOf(item.Mail); address != "" {
-				contact, err := tx.GetLearnedContact(mailbox.ID, address)
+				// Known means somebody the person keeps, in their own
+				// address book, which is what the condition means when a
+				// message arrives too.
+				contact, err := tx.FindContactByAddress(mailbox.UserID, address)
 				if err != nil {
 					return nil, err
 				}
-				// Known means written to before this message, which is what
-				// arrival means by it: the contact is touched before the
-				// rules run, so its first message counts once already.
-				senderKnown = contact != nil && contact.Count > 1
+				senderKnown = contact != nil
 			}
 		}
 		fired := matchingRules(mailbox.Rules, item.Mail, senderKnown, insights[item.Mail.ID])

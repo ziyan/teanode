@@ -34,6 +34,22 @@ func init() {
 					"text":   tools.StringProperty("for add: the item"),
 					"id":     tools.StringProperty("for done, reopen and remove: the item"),
 				}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action string `json:"action"`
+					Text   string `json:"text"`
+				}) string {
+					switch call.Action {
+					case "add":
+						return "Add " + tools.Named(call.Text, "something") + " to what you are keeping track of"
+					case "done":
+						return "Mark one of your to-dos done"
+					case "remove":
+						return "Take one off your to-do list"
+					case "clear":
+						return "Clear your to-do list"
+					}
+					return "Change your to-do list"
+				}),
 				Run:     runTodo,
 				Overlay: todoOverlay,
 			},

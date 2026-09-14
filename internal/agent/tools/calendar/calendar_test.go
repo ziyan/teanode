@@ -1,11 +1,14 @@
 package calendar
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A window is read in the person's own zone, because a day is a local thing:
@@ -89,46 +92,52 @@ func TestTheHoursOfTheWorkingDay(t *testing.T) {
 // person's name is outward, which is the class that stops and asks.
 func TestWhatTheAgentIsAskedAboutBeforeItActs(t *testing.T) {
 	catalog := tools.Build()
-	for _, name := range []string{"calendar_agenda", "calendar_free", "calendar_add", "calendar_edit", "calendar_remove"} {
-		if catalog.Get(name) == nil {
-			t.Fatalf("%s is registered", name)
+	// One tool with five actions, where there were five tools. Each action
+	// keeps the class it had: the merge is in the name, not in the risk.
+	calendar := catalog.Get("calendar")
+	if calendar == nil {
+		t.Fatal("calendar is registered")
+	}
+	for _, action := range []string{"agenda", "free", "add", "edit", "remove"} {
+		if !strings.Contains(calendar.Description, action+" — ") {
+			t.Fatalf("%s is one of its actions:\n%s", action, calendar.Description)
 		}
 	}
 
-	add := catalog.Get("calendar_add")
-	if got := add.RiskFor([]byte(`{"summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
+	if got := calendar.RiskFor([]byte(`{"action":"agenda"}`)); got != tools.RiskRead {
+		t.Fatalf("reading the diary is a read: %q", got)
+	}
+	if got := calendar.RiskFor([]byte(`{"action":"add","summary":"Dentist","starts":"2026-09-14T09:00"}`)); got != tools.RiskWrite {
 		t.Fatalf("putting something in one's own diary is a write: %q", got)
 	}
-	if got := add.RiskFor([]byte(`{"summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
+	if got := calendar.RiskFor([]byte(`{"action":"add","summary":"Meeting","invite":["ada@example.com"]}`)); got != tools.RiskOutward {
 		t.Fatalf("inviting anybody is outward: %q", got)
 	}
 
-	edit := catalog.Get("calendar_edit")
-	if got := edit.RiskFor([]byte(`{"event":"e1","summary":"Dentist, later"}`)); got != tools.RiskWrite {
+	if got := calendar.RiskFor([]byte(`{"action":"edit","event":"e1","summary":"Dentist, later"}`)); got != tools.RiskWrite {
 		t.Fatalf("changing one's own appointment is a write: %q", got)
 	}
 	for _, arguments := range []string{
-		`{"event":"e1","starts":"2026-09-15T09:00","tell_guests":true}`,
-		`{"event":"e1","invite":["ada@example.com"]}`,
+		`{"action":"edit","event":"e1","starts":"2026-09-15T09:00","tell_guests":true}`,
+		`{"action":"edit","event":"e1","invite":["ada@example.com"]}`,
 	} {
-		if got := edit.RiskFor([]byte(arguments)); got != tools.RiskOutward {
+		if got := calendar.RiskFor([]byte(arguments)); got != tools.RiskOutward {
 			t.Fatalf("telling anybody is outward (%s): %q", arguments, got)
 		}
-		if !tools.NeedsConfirmation(edit, []byte(arguments), nil, nil) {
+		if !tools.NeedsConfirmation(calendar, []byte(arguments), nil, nil) {
 			t.Fatalf("and outward is asked about first: %s", arguments)
 		}
 	}
 
 	// Taking something out of a calendar is destructive whoever else hears
 	// about it, and destructive is asked about too.
-	remove := catalog.Get("calendar_remove")
-	if got := remove.RiskFor([]byte(`{"event":"e1"}`)); got != tools.RiskDestructive {
+	if got := calendar.RiskFor([]byte(`{"action":"remove","event":"e1"}`)); got != tools.RiskDestructive {
 		t.Fatalf("removing an event is destructive: %q", got)
 	}
-	if got := remove.RiskFor([]byte(`{"event":"e1","tell_guests":true}`)); got != tools.RiskOutward {
+	if got := calendar.RiskFor([]byte(`{"action":"remove","event":"e1","tell_guests":true}`)); got != tools.RiskOutward {
 		t.Fatalf("and outward when everybody is told: %q", got)
 	}
-	if !tools.NeedsConfirmation(remove, []byte(`{"event":"e1"}`), nil, nil) {
+	if !tools.NeedsConfirmation(calendar, []byte(`{"action":"remove","event":"e1"}`), nil, nil) {
 		t.Fatal("removing anything is asked about first")
 	}
 }
@@ -155,5 +164,51 @@ func TestAnEventWithGuestsIsNotTouchedQuietly(t *testing.T) {
 	}
 	if err := guestsAreTold(meeting, true, "changing"); err != nil {
 		t.Fatalf("asked properly, it goes ahead: %s", err)
+	}
+}
+
+// answering is an Operations that answers one document with one thing.
+type answering struct {
+	answer string
+	asked  []string
+}
+
+func (self *answering) Permissions() *models.EffectivePermissions { return nil }
+
+func (self *answering) Execute(_ context.Context, document string, _ map[string]any, result any) error {
+	self.asked = append(self.asked, document)
+	if result == nil {
+		return nil
+	}
+	return json.Unmarshal([]byte(self.answer), result)
+}
+
+// A calendar is a source, and a source the person has not granted is not the
+// agent's to read.
+//
+// The rule the whole agent is built on is that nothing from an ungranted
+// source reaches a model. A mailbox has had that switch since the agent did;
+// the calendar did not, and was reachable on the person's own permission
+// alone -- so an agent granted one mailbox could read every appointment in
+// the diary, which is not what granting a mailbox means.
+func TestTheDiaryIsOnlyReadWhenItHasBeenGiven(t *testing.T) {
+	t.Parallel()
+
+	withheld := &answering{answer: `{"ListCalendars":[{"id":"c1","name":"Calendar","timezone":"Europe/London","agentGranted":false}]}`}
+	if _, _, err := theCalendar(context.Background(), withheld); err == nil {
+		t.Fatal("a calendar nobody granted is not readable")
+	} else if !strings.Contains(err.Error(), "not given you their calendar") {
+		// The refusal is worded for the model to pass on: "there is no
+		// calendar" would be a lie, because there is one.
+		t.Fatalf("and the refusal says why: %s", err)
+	}
+
+	granted := &answering{answer: `{"ListCalendars":[{"id":"c1","name":"Calendar","timezone":"","agentGranted":false},{"id":"c2","name":"Family","timezone":"Europe/London","agentGranted":true}]}`}
+	id, zone, err := theCalendar(context.Background(), granted)
+	if err != nil || id != "c2" || zone != "Europe/London" {
+		t.Fatalf("the one they did grant: %q %q %v", id, zone, err)
+	}
+	if len(granted.asked) != 1 || !strings.Contains(granted.asked[0], "agentGranted") {
+		t.Fatalf("and the switch is what it asked for: %v", granted.asked)
 	}
 }

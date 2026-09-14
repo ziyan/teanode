@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -95,7 +96,19 @@ type Tool struct {
 
 	// Preview says what a call would do, in a line, for the confirmation
 	// card. Nil uses the tool's name and arguments.
+	//
+	// The card is the one moment a person decides, and it has to say what
+	// will happen in the words they would use -- "Send \"Thursday?\" to
+	// maria@example.net", not the call. A card that prints the arguments
+	// makes the person parse JSON to decide, and the identifiers in it
+	// mean nothing to them.
 	Preview func(arguments json.RawMessage) string
+
+	// PreviewIn is the same line for a tool that has to look something up
+	// to say it: mail_send is handed a draft id, and what the person needs
+	// to see is the subject and who it goes to. The run is in the context.
+	// Set one or the other; this wins where both are set.
+	PreviewIn func(ctx context.Context, arguments json.RawMessage) string
 
 	// RiskOf, when set, says what one call would cost, for a tool whose
 	// actions differ: mail_act is a write until it is delete_forever.
@@ -151,13 +164,60 @@ func (self *Tool) Definition() llm.ToolDefinition {
 }
 
 // PreviewLine is what the confirmation card says.
-func (self *Tool) PreviewLine(arguments json.RawMessage) string {
+func (self *Tool) PreviewLine(ctx context.Context, arguments json.RawMessage) string {
+	if self.PreviewIn != nil {
+		if line := strings.TrimSpace(self.PreviewIn(ctx, arguments)); line != "" {
+			return line
+		}
+	}
 	if self.Preview != nil {
 		if line := strings.TrimSpace(self.Preview(arguments)); line != "" {
 			return line
 		}
 	}
-	return fmt.Sprintf("Run %s with %s", self.Name, strings.TrimSpace(string(arguments)))
+	return describeCall(self.Name, arguments)
+}
+
+// describeCall is the last-resort line for a tool that says nothing about
+// itself: the tool's name as words, and its arguments as "name: value"
+// rather than as the JSON object they arrived in.
+//
+// Not a good card -- a tool that can ask for a person's word should say
+// what it is asking in its own words -- but a readable one, so that adding
+// a tool and forgetting the sentence gives somebody a line they can act on
+// instead of a blob they have to read as a programmer.
+func describeCall(name string, arguments json.RawMessage) string {
+	said := strings.ReplaceAll(strings.TrimSpace(name), "_", " ")
+	if said == "" {
+		return "Do something"
+	}
+	said = strings.ToUpper(said[:1]) + said[1:]
+	var fields map[string]any
+	if err := json.Unmarshal(arguments, &fields); err != nil || len(fields) == 0 {
+		return said
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(fmt.Sprintf("%v", fields[key]))
+		if value == "" || value == "<nil>" || value == "false" || value == "[]" || value == "map[]" {
+			continue
+		}
+		// Cut by character, not by byte: a card is text somebody reads,
+		// and half a rune is a replacement mark in the middle of a word.
+		if runes := []rune(value); len(runes) > 80 {
+			value = string(runes[:80]) + "…"
+		}
+		parts = append(parts, strings.ReplaceAll(key, "_", " ")+": "+value)
+	}
+	if len(parts) == 0 {
+		return said
+	}
+	return said + " — " + strings.Join(parts, ", ")
 }
 
 // Catalog is every tool the server knows.
@@ -234,11 +294,54 @@ func AllowedByPermissions(tool *Tool, permissions *models.EffectivePermissions) 
 	return false
 }
 
-// Listed says whether a policy list names the tool, by name or family.
+// ActionsOf is the verbs a tool takes, read out of its own schema: the
+// values of its "action" enumeration, in the order they are offered.
+//
+// From the schema rather than from a field, because a tool is action-shaped
+// whether it was merged out of several tools or written that way in the
+// first place. The policy page listed the verbs of the merged ones and
+// nothing beside group_manage, which takes add, update and remove of its
+// own -- so the page looked as though the two kinds of tool differed, and
+// they do not.
+//
+// Empty for a tool that is one thing, and for one whose action is free text
+// rather than a choice.
+func ActionsOf(tool *Tool) []string {
+	if tool == nil || tool.Parameters == nil {
+		return nil
+	}
+	properties, ok := tool.Parameters["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	action, ok := properties["action"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch values := action["enum"].(type) {
+	case []string:
+		return append([]string{}, values...)
+	case []any:
+		verbs := make([]string, 0, len(values))
+		for _, value := range values {
+			if word, ok := value.(string); ok {
+				verbs = append(verbs, word)
+			}
+		}
+		return verbs
+	}
+	return nil
+}
+
+// Listed says whether a policy list names the tool, by name or family, or by
+// a name one of its actions used to have.
 func Listed(entries []string, tool *Tool) bool {
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if strings.EqualFold(entry, tool.Name) || strings.EqualFold(entry, string(tool.Family)) {
+			return true
+		}
+		if merged, renamed := Renamed[strings.ToLower(entry)]; renamed && strings.EqualFold(merged, tool.Name) {
 			return true
 		}
 	}
@@ -461,4 +564,57 @@ var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/g
 // IsImage says whether a file is a picture a model can look at.
 func IsImage(contentType string) bool {
 	return imageTypes[strings.ToLower(strings.TrimSpace(contentType))]
+}
+
+// --- confirmation cards --------------------------------------------------
+
+// PreviewOf builds a tool's Preview from a function of its arguments, so
+// that a card is written as the sentence it is rather than as JSON
+// handling. Arguments that will not decode give the tool's own words back
+// through the fallback, because a card is shown before anything runs and
+// must say something either way.
+func PreviewOf[T any](say func(T) string) func(json.RawMessage) string {
+	return func(arguments json.RawMessage) string {
+		var call T
+		if err := json.Unmarshal(arguments, &call); err != nil {
+			return ""
+		}
+		return say(call)
+	}
+}
+
+// Named is how a card points at a thing: what the person calls it, in
+// quotes, or a stand-in when the call gives no name.
+func Named(value, stand string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return stand
+	}
+	return strconv.Quote(value)
+}
+
+// In is " in <where>", or nothing: where a call names a mailbox or a domain
+// the card says which, and where it does not there is only one to mean.
+func In(where string) string {
+	if where = strings.TrimSpace(where); where == "" {
+		return ""
+	}
+	return " in " + where
+}
+
+// Some is a few things named in a line, with the rest counted.
+func Some(values []string, limit int) string {
+	kept := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			kept = append(kept, value)
+		}
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	if len(kept) <= limit {
+		return strings.Join(kept, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(kept[:limit], ", "), len(kept)-limit)
 }

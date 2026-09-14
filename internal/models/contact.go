@@ -16,6 +16,11 @@ type AddressBook struct {
 
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+
+	// AgentGranted says the person has given their agent this address book.
+	// False until they do: nothing from a source the person has not granted
+	// is ever sent to a model.
+	AgentGranted bool `json:"agentGranted"`
 }
 
 // Contact is one person in an address book.
@@ -25,9 +30,9 @@ type AddressBook struct {
 // it is written, so that listing and searching never parse a vCard; where the
 // two disagree the card is right.
 //
-// Not to be confused with MailboxContact, which is an address learned from
-// traffic. That is a list of people who have written to this mailbox; this is
-// a list of people somebody chose to keep.
+// This is the only list of people the server keeps. A mailbox does not learn
+// the addresses it sees go past: "is this sender known" means "is this sender
+// in the address book", here, and address completion comes from here too.
 type Contact struct {
 	ID            string    `json:"id"`
 	AddressBookID string    `json:"addressBookId"`

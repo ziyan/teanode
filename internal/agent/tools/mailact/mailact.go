@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
@@ -24,13 +25,38 @@ func init() {
 					"thread_item_id": tools.StringProperty("any message of the conversation, to act on all of it"),
 					"folder":         tools.StringProperty("for move: the folder, by name"),
 				}, "action"),
+				// What is about to happen to the mail, in the words the
+				// reader uses for it. "delete_forever 3 message(s)" is the
+				// call, and the one that cannot be undone is exactly the
+				// one somebody has to be able to read at a glance.
 				Preview: func(arguments json.RawMessage) string {
 					var call mailActArguments
 					_ = json.Unmarshal(arguments, &call)
-					if call.ThreadItemID != "" {
-						return fmt.Sprintf("%s a whole conversation (via %s)", call.Action, call.ThreadItemID)
+					said := map[string]string{
+						"mark_read": "Mark %s read", "mark_unread": "Mark %s unread",
+						"star": "Star %s", "unstar": "Take the star off %s",
+						"archive": "Archive %s", "move": "Move %s",
+						"junk": "Move %s to Junk", "not_junk": "Take %s out of Junk",
+						"trash": "Move %s to Trash", "delete_forever": "Delete %s for good, which cannot be undone",
+					}[call.Action]
+					if said == "" {
+						said = "Change %s"
 					}
-					return fmt.Sprintf("%s %d message(s)", call.Action, len(call.ItemIDs))
+					what := "a whole conversation"
+					if call.ThreadItemID == "" {
+						switch len(call.ItemIDs) {
+						case 0:
+							what = "some mail"
+						case 1:
+							what = "a message"
+						default:
+							what = fmt.Sprintf("%d messages", len(call.ItemIDs))
+						}
+					}
+					if call.Action == "move" && strings.TrimSpace(call.Folder) != "" {
+						return fmt.Sprintf(said, what) + " to " + call.Folder
+					}
+					return fmt.Sprintf(said, what)
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call mailActArguments

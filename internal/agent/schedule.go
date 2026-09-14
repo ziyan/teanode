@@ -125,7 +125,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		return err
 	}
 	surface := "schedule"
-	if schedule.Deliver == "mail" {
+	if schedule.Deliver == models.AgentDeliverMail {
 		surface = "mail"
 	}
 	// A schedule the person wrote is the person asking. One the agent wrote
@@ -189,7 +189,7 @@ func scheduledMessage(schedule *models.AgentSchedule) string {
 // granted mailbox to the account's notification address, or into the main
 // conversation as the agent's word with a note saying where it came from.
 func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *models.AgentSchedule, answer string) error {
-	if schedule.Deliver == "mail" {
+	if schedule.Deliver == models.AgentDeliverMail {
 		if run.Owner.Email == "" || self.settings.Mailer == nil {
 			return fmt.Errorf("the account has no notification address to mail the answer to")
 		}
@@ -246,4 +246,21 @@ func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *mode
 		})
 		return err
 	})
+}
+
+// BriefPrompt is the daily brief's standing instruction, as the person's own
+// words, because the person is who turned it on.
+//
+// Written here rather than in a template file because it is a starting point
+// rather than a fixed thing: it goes into an ordinary schedule row, where the
+// Schedules card shows it and anybody can rewrite it to say what they
+// actually want to hear each morning.
+func BriefPrompt(found *models.Agent, owner *models.User) string {
+	return strings.Join([]string{
+		"Tell me what today holds and what is waiting for me, in " + languageName(Language(found, owner)) + ", in a few short paragraphs.",
+		"",
+		"What is on in my calendar today, in order, with times. What arrived since yesterday that needs an answer from me, with who it is from and what they want. Anything you are holding a reply for. What I asked you to keep an eye on.",
+		"",
+		"Leave out anything that needs nothing from me. If the day is empty and nothing is waiting, say so in one line -- that is a good morning, not a failure to find something.",
+	}, "\n")
 }

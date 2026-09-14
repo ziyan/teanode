@@ -36,7 +36,20 @@ func init() {
 				Preview: func(arguments json.RawMessage) string {
 					var call folderManageArguments
 					_ = json.Unmarshal(arguments, &call)
-					return fmt.Sprintf("%s the folder %q", call.Action, call.Folder)
+					named := tools.Named(call.Folder, "a folder")
+					switch call.Action {
+					case "create":
+						return "Make the folder " + named
+					case "rename":
+						return "Rename the folder " + named
+					case "move":
+						return "Move the folder " + named
+					case "delete":
+						return "Delete the folder " + named + ", with whatever is in it"
+					case "pin", "unpin":
+						return strings.ToUpper(call.Action[:1]) + call.Action[1:] + " the folder " + named
+					}
+					return "Change the folder " + named
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call folderManageArguments

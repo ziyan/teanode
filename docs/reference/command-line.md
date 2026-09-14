@@ -129,7 +129,7 @@ so one command serves a person and a script.
 | `group` | who may do what, and over which domains: members, roles, domains |
 | `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
 | `audit` | the log of administrative changes, with filters |
-| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `contact`, `subscription`, `device`, `autoreply`, `programs` |
+| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `subscription`, `device`, `autoreply`, `programs` |
 | `token` | API tokens; `token create --user` on the console issues somebody's first |
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
@@ -159,7 +159,9 @@ The fields are `from`, `to`, `subject`, `header`, `score`, `sender-known`,
 `contains`, `equals`, `matches` (a regular expression), `above` and `below`.
 A header condition names the header: `--when header:List-Id:contains:golang`.
 Three of the fields ask nothing of a value and are written alone: `--when
-sender-known`, `--when needs-reply` and `--when any`. `category`, `priority`
+sender-known`, `--when needs-reply` and `--when any`. `sender-known` is true
+when the sender is in your address book — somebody you keep, not merely
+somebody who has written before. `category`, `priority`
 and `needs-reply` read what the agent decided about a message, so a rule
 with one of them runs once the agent has sorted the message rather than at
 delivery: `--when category:equals:newsletter --move Reading`. The categories
@@ -181,10 +183,10 @@ mailboxes you can open, and `--all` every mailbox on the server with its
 owner; `show` and `update` read and change a mailbox's name and signature.
 `folder list|create|rename|move|pin|unpin|delete` is the tree in the rail.
 `rule list|add|remove|enable|disable|test|apply` is the filing.
-`contact list|add|remove` is the addresses it has learned,
 `subscription list|show|mail|unsubscribe` the mailing lists it receives,
 `device list|add|remove` the app passwords a mail program signs in with,
-`autoreply show|set|off` the out-of-office reply, and `programs` the hosts
+`autoreply show|set|off` the out-of-office reply — `set --same-domain-only`
+keeps it to people at the mailbox's own domains — and `programs` the hosts
 and ports to type into a mail program.
 
 A subscription is not a stored thing but a grouping of stored things: every
@@ -354,9 +356,10 @@ have made.
 | `teanode agent tools` | the tools your agent has, as you may use them, with the risk class and whether it asks first |
 | `teanode agent memory list\|add\|remove` | what your agent remembers about you; `add "The accountant" "Maria does the books" --applies-to triage,reply` addresses a memory to the runs that read it |
 | `teanode agent schedule list\|add\|remove\|run` | what it does on its own at set times: `add Morning "0 8 * * 1-5" "what needs me today?" --deliver mail`, a cron line in your zone; or a single moment, `"@at 2026-09-12 09:00"`, or a distance from now, `"@in 20m"`, which is stored as the moment it means and runs once |
+| `teanode agent brief on\|off\|now` | a brief each morning, by mail: what the day holds, what is waiting for an answer, what is being held. `on --at 07:30 --days 1-5` says when; `now` sends one immediately. It writes an ordinary schedule called "Daily brief", so `agent schedule list` shows it and anybody may rewrite what it asks for |
 | `teanode agent feedback` | the corrections recorded from what you did, which the agent is shown as examples |
 | `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
-| `teanode contact list\|show\|add\|edit\|remove` | your address book: the people you keep, which your phone and your computer synchronize over CardDAV. `add --name "Ada Lovelace" --email ada@example.com` keeps one; `edit <id> --name "Ada King"` changes only what you give and leaves the rest of the card alone, so correcting a name does not throw away the photograph a phone put there; `--card -` reads a whole vCard from standard input. Not the same as `mailbox contact`, which is the addresses a mailbox has corresponded with |
+| `teanode contact list\|show\|add\|edit\|remove` | your address book: the people you keep, which your phone and your computer synchronize over CardDAV. `add --name "Ada Lovelace" --email ada@example.com` keeps one; `edit <id> --name "Ada King"` changes only what you give and leaves the rest of the card alone, so correcting a name does not throw away the photograph a phone put there; `--card -` reads a whole vCard from standard input |
 | `teanode calendar list\|show\|add\|edit\|remove` | your calendar, which your phone and your computer synchronize over CalDAV. `list --from 2026-09-14 --until 2026-09-21` prints one line for every time something happens, a repeating event once per occurrence; `add --title Standup --starts 2026-09-14T09:30 --repeat FREQ=WEEKLY;BYDAY=MO` puts something in it; `--invite ada@example.com` sends the invitation by mail, and moving or removing the event tells everybody invited; `--all-day` belongs to the day rather than to a time, and its `--ends` is the last day it is on, so the same date at both ends is one day; `--file -` reads a whole iCalendar file from standard input. Times are read and written in the calendar's own zone unless they carry an offset |
 | `teanode calendar free` | when you are free: the stretches of the working day nothing is booked in, day by day. `--earliest 08:00 --latest 18:00` moves the ends of the day; a whole-day entry does not make a day busy, and neither does anything cancelled. Worked out with the same two functions that answer a phone's free-busy request, so what this prints and what a colleague's client is told cannot disagree |
 | `teanode calendar calendars\|set` | the calendars themselves: what they are called, what a client paints them, the zone a new event is written in, and the day a week is drawn from — `set --timezone Europe/Berlin`, `set --week-start monday`. Weeks start on Sunday unless a calendar says otherwise; the five-day view is Monday to Friday either way, because that is what a working week is |
@@ -365,7 +368,7 @@ have made.
 | `teanode agent settings show\|set` | your agent: `set enabled=true name=Bertie instructions=-` reads the long value from standard input; keys are listed by `set --help` |
 | `teanode agent settings categories add\|remove` | your own categories beside the fixed ones |
 | `teanode agent settings forget` | delete the agent and everything it learned; asks first |
-| `teanode agent source list\|grant\|revoke\|set` | the mailboxes the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` |
+| `teanode agent source list\|grant\|revoke\|set\|allow\|deny` | what the agent may reach and what it does in each: `set --mailbox work triage=true auto-reply=true auto-reply.scope=known` for a mailbox; `allow calendar` and `deny addressbook` for the other two kinds of source, which carry a switch and no policy. Nothing from a source you have not granted is ever sent to a model |
 | `teanode agent usage [--since] [--by day\|kind\|mailbox\|model]` | your tokens |
 | `teanode agent draft <item-id> [--say "…"]` | have the agent write a reply to a message, printed for you to use; nothing is saved or sent |
 | `teanode agent replies [--status held\|sent\|cancelled\|refused\|failed] [--mailbox]` | the replies the agent wrote for you and what became of each, with the reason when it left a message alone |

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"path"
 	"regexp"
 	"strings"
@@ -56,6 +57,19 @@ type Agent struct {
 
 	// Tools is the operator's policy over the tool catalog.
 	Tools AgentTools `yaml:"tools"`
+
+	// AllowPrivateAddresses lists equipment on the operator's own network
+	// that the agent may reach although the address guard would refuse it:
+	// an address, a CIDR, or a name. A controller, a printer, something
+	// with an API and no public name.
+	//
+	// It widens the guard for the two things whose addresses the operator
+	// chose -- a skill's declared endpoint, and the headless browser -- and
+	// for nothing else. The remote image proxy, the one-click unsubscribe
+	// and web_fetch go to addresses out of somebody else's mail, and they
+	// stay shut: an agent that has read a message is exactly the thing this
+	// guard exists to keep off the network it is sitting in.
+	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
 
 	// Browser is a headless browser the operator runs beside the server.
 	Browser AgentBrowser `yaml:"browser"`
@@ -345,7 +359,13 @@ type AgentLimits struct {
 	MaxRoundsPerAsk      int `yaml:"maxRoundsPerAsk"`
 	MaxRoundsPerResearch int `yaml:"maxRoundsPerResearch"`
 	MaxRoundsPerReply    int `yaml:"maxRoundsPerReply"`
-	MaxToolCallsPerRun   int `yaml:"maxToolCallsPerRun"`
+
+	// MaxRoundsPerTriage is how many turns a sorting run may take. It is
+	// the smallest of them on purpose: sorting happens to every message
+	// that arrives, and nearly every message can be sorted from what is in
+	// front of the model.
+	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
+	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
 
 	// RequestTimeout bounds one call to a provider.
 	RequestTimeout Duration `yaml:"requestTimeout"`
@@ -410,6 +430,10 @@ type AgentBrowser struct {
 
 	// AllowPrivateAddresses lists hosts the headless browser may reach
 	// inside the network, which the address guard would otherwise refuse.
+	//
+	// Superseded by agent.allowPrivateAddresses, which covers the browser
+	// and skills together. Still read, and added to that one, so that a
+	// deployment configured before it existed keeps working.
 	AllowPrivateAddresses []string `yaml:"allowPrivateAddresses,omitempty"`
 
 	// ProxyListen is where the guarded proxy binds -- the proxy every page
@@ -555,6 +579,7 @@ func defaultAgent() Agent {
 			MaxRoundsPerAsk:      40,
 			MaxRoundsPerResearch: 8,
 			MaxRoundsPerReply:    6,
+			MaxRoundsPerTriage:   3,
 			MaxToolCallsPerRun:   60,
 			RequestTimeout:       Duration(60 * time.Second),
 			Concurrency:          2,
@@ -653,6 +678,32 @@ func (self *Agent) FeatureOn(feature string) bool {
 // is wrong whether or not it is used yet, so the names are always checked.
 func (self *Configuration) validateAgent(validator *validator) {
 	agent := &self.Agent
+	// What an operator writes here widens the guard that keeps this server
+	// off the network it sits in, and an entry that cannot be read is taken
+	// as a host name -- so "192.168.1" becomes a name that never resolves
+	// and never matches, and the operator has allowed nothing while
+	// believing they allowed something. Said rather than shrugged at.
+	for index, entry := range agent.AllowPrivateAddresses {
+		field := fmt.Sprintf("agent.allowPrivateAddresses[%d]", index)
+		entry = strings.TrimSpace(entry)
+		switch {
+		case entry == "":
+			validator.add(field, "is empty")
+		case strings.Contains(entry, "/"):
+			if _, _, err := net.ParseCIDR(entry); err != nil {
+				validator.add(field, "%q is not a network, which is written like 10.0.0.0/24", entry)
+			}
+		case net.ParseIP(entry) != nil:
+		case strings.ContainsAny(entry, " :\\"):
+			validator.add(field, "%q is an address, a network or a name -- not a URL or a host and port", entry)
+		case strings.Trim(entry, "0123456789.") == "":
+			// Digits and dots and not an address: a typed one, missing a
+			// part. As a name it would never resolve.
+			validator.add(field, "%q is not an address; an address has four parts, as 192.168.1.10", entry)
+		case !isHostname(entry) && !isHostLabel(entry):
+			validator.add(field, "%q is not a name this server could look up", entry)
+		}
+	}
 	names := map[string]bool{}
 	enabledProviders := 0
 	for index, provider := range agent.Providers {
@@ -729,6 +780,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		{"maxRoundsPerAsk", agent.Limits.MaxRoundsPerAsk},
 		{"maxRoundsPerResearch", agent.Limits.MaxRoundsPerResearch},
 		{"maxRoundsPerReply", agent.Limits.MaxRoundsPerReply},
+		{"maxRoundsPerTriage", agent.Limits.MaxRoundsPerTriage},
 		{"maxToolCallsPerRun", agent.Limits.MaxToolCallsPerRun},
 	} {
 		if field.value <= 0 {
@@ -842,4 +894,24 @@ func isToolPolicyName(value string) bool {
 		}
 	}
 	return true
+}
+
+// PrivateAddressesAllowed is everything the operator has permitted inside
+// the network: the agent's list and, for a deployment configured before that
+// existed, the browser's own.
+func (self *Agent) PrivateAddressesAllowed() []string {
+	if self == nil {
+		return nil
+	}
+	allowed := make([]string, 0, len(self.AllowPrivateAddresses)+len(self.Browser.AllowPrivateAddresses))
+	seen := map[string]bool{}
+	for _, entry := range append(append([]string{}, self.AllowPrivateAddresses...), self.Browser.AllowPrivateAddresses...) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" || seen[strings.ToLower(entry)] {
+			continue
+		}
+		seen[strings.ToLower(entry)] = true
+		allowed = append(allowed, entry)
+	}
+	return allowed
 }
