@@ -22,6 +22,7 @@ import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../co
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  ChevronDownIcon,
   StarIcon,
   ForwardIcon,
   JunkIcon,
@@ -1603,8 +1604,12 @@ function ThreadSummaryStrip({ summary }: { summary: ThreadSummary }) {
           <span className="muted">{summary.summary ? t('mailbox.summaryUpdating') : t('mailbox.summaryWriting')}</span>
         )}
         {!summary.pending && summary.stale && <span className="muted">{t('mailbox.summaryStale')}</span>}
-        <span className="mailbox-thread-summary-chevron" aria-hidden="true">
-          {open ? '▾' : '▸'}
+        {/* The same chevron every other disclosure here uses, turned over
+            rather than swapped for a different arrow: a glyph replaced at
+            the moment of the press reads as a flicker, and a turn reads as
+            the two states being one thing. */}
+        <span className="mailbox-thread-summary-chevron">
+          <ChevronDownIcon size={14} className="chevron" />
         </span>
       </button>
       {open && summary.summary && <p className="mailbox-thread-summary-text">{summary.summary}</p>}

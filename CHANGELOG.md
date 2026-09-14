@@ -59,6 +59,17 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- The conversation summary's arrow is the chevron every other disclosure on
+  the dashboard uses, and it turns over rather than being swapped for a
+  different glyph — a glyph replaced at the moment of the press reads as a
+  flicker rather than as a movement.
+
+- Saving a sender who is already a contact no longer takes away what that
+  contact had. Their other addresses were replaced by the one the message came
+  from, and an organization and a note the form had not been told about were
+  cleared, because an empty box means "clear this". The form now opens on what
+  is kept, and the address joins the list rather than replacing it.
+
 - The mailbox measures itself rather than the window. Two panes side by side
   need room, and how much room there is depends on the rail beside them — so
   with the rail open on an 862px window the rule that drops to one pane was

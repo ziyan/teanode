@@ -27,13 +27,12 @@ func init() {
 					Mailbox       string `json:"mailbox"`
 					Name          string `json:"name"`
 					SignatureText string `json:"signature_text"`
-					SignatureHTML string `json:"signature_html"`
 				}) string {
 					changing := []string{}
 					if call.Name != "" {
 						changing = append(changing, "its name")
 					}
-					if call.SignatureText != "" || call.SignatureHTML != "" {
+					if call.SignatureText != "" {
 						changing = append(changing, "your signature")
 					}
 					if len(changing) == 0 {

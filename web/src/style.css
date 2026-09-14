@@ -5456,6 +5456,10 @@ label.check-list-item {
 .mailbox-thread-summary-chevron {
   margin-left: auto;
   color: var(--muted);
+  /* The icon on the text's baseline rather than below it: an inline svg sits
+     on the baseline as a letter does, which leaves it low in a row of text. */
+  display: inline-flex;
+  align-items: center;
 }
 
 .mailbox-thread-summary-text {

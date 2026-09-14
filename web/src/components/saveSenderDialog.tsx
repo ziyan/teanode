@@ -24,6 +24,8 @@ const FIND = `
     ListContacts(addressBookId: $addressBookId, query: $query, first: 20) { id name emails }
   }`
 
+const GET = `query ($id: String!) { GetContact(id: $id) { id name organization emails note } }`
+
 const SAVE = `
   mutation ($addressBookId: String!, $id: String, $name: String, $organization: String,
             $emails: [String!], $note: String) {
@@ -77,7 +79,7 @@ export function SaveSenderDialog({
   // The contact this address already belongs to, when it does. Saving then
   // changes that contact rather than making a second one with the same
   // address in it, which is how an address book becomes two of everybody.
-  const [existing, setExisting] = useState<{ id: string; name?: string } | null>(null)
+  const [existing, setExisting] = useState<{ id: string; emails: string[] } | null>(null)
 
   useEffect(() => {
     let stopped = false
@@ -101,14 +103,27 @@ export function SaveSenderDialog({
           (contact.emails ?? []).some((each) => each.trim().toLowerCase() === wanted),
         )
         if (already) {
-          setExisting(already)
+          // The whole contact, not the listing: every box has to show what
+          // is kept before it is saved back. SaveContact reads an empty box
+          // as "clear this", so a form that opened blank over somebody's
+          // organization and note would delete them on the way past.
+          const full = await graphql<{
+            GetContact: { id: string; name?: string; organization?: string; emails?: string[]; note?: string }
+          }>(GET, { id: already.id })
+          if (stopped) {
+            return
+          }
+          const kept = full.GetContact
+          setExisting({ id: kept.id, emails: kept.emails ?? [] })
           // Their name as it is kept wins over the one this message put on
           // it: the kept one is what somebody chose.
-          const kept = splitName(already.name ?? '')
-          if (kept.first || kept.last) {
-            setFirst(kept.first)
-            setLast(kept.last)
+          const parts = splitName(kept.name ?? '')
+          if (parts.first || parts.last) {
+            setFirst(parts.first)
+            setLast(parts.last)
           }
+          setOrganization(kept.organization ?? '')
+          setNote(kept.note ?? '')
         }
       } catch (failure) {
         setProblem(failure instanceof Error ? failure.message : String(failure))
@@ -127,14 +142,23 @@ export function SaveSenderDialog({
     }
     setBusy(true)
     try {
+      // Adding an address rather than replacing the list: somebody with a
+      // work address and a personal one keeps both, and this one joins them.
+      // Emails is a whole list to SaveContact, so sending the one this
+      // message came from would have been the only one they had left.
+      const wanted = email.trim()
+      const merged = [...(existing?.emails ?? [])]
+      if (!merged.some((each) => each.trim().toLowerCase() === wanted.toLowerCase())) {
+        merged.push(wanted)
+      }
       await graphql(SAVE, {
         addressBookId: bookId,
         id: existing?.id ?? null,
         // A contact with no name is found by nobody, so the address stands
         // in for one — the same rule the agent's proposals follow.
-        name: name || email.trim(),
+        name: name || wanted,
         organization: organization.trim(),
-        emails: [email.trim()],
+        emails: merged,
         note: note.trim(),
       })
       toast.done(existing ? t('saveSender.updated') : t('saveSender.saved'))
