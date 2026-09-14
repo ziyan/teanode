@@ -21,6 +21,13 @@ Notable changes to TeaNode. The format follows
   not those -- they are "shall we say Thursday at four". Nothing is written
   into your calendar or your address book until you press it.
 
+- Your agent can write a styled draft. `mail_draft` took plain text and
+  nothing else, so asked for a message with a heading or a table it said it
+  could not do that -- while the composer beside it could. It now takes an
+  HTML body as well, sent alongside the plain one so a reader without HTML
+  still gets the words. Plain text stays the default: styling is for when you
+  ask for it.
+
 ### Removed
 
 - A mailbox no longer keeps a list of every address that has ever written to

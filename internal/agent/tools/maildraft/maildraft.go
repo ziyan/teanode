@@ -29,6 +29,7 @@ func init() {
 					"bcc":         tools.ArrayProperty("blind copies", tools.StringProperty("an address")),
 					"subject":     tools.StringProperty("the subject; filled in for a reply or a forward"),
 					"text":        tools.StringProperty("the body, plain text, in the person's voice; no placeholders"),
+					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for needs a link, a list or a table"),
 					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one"),
 				}, "mode", "text"),
 				Run: runMailDraft,
@@ -47,6 +48,7 @@ type mailDraftArguments struct {
 	Bcc       []string `json:"bcc"`
 	Subject   string   `json:"subject"`
 	Text      string   `json:"text"`
+	HTML      string   `json:"html"`
 	DraftID   string   `json:"draft_id"`
 }
 
@@ -123,7 +125,12 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	to, cc, bcc := arguments.To, arguments.Cc, arguments.Bcc
 	subject := strings.TrimSpace(arguments.Subject)
+	// Both forms when the model wrote both: the message goes out as
+	// multipart/alternative, and a reader with no HTML still gets the words.
 	message := map[string]any{"from": from, "textContent": arguments.Text}
+	if strings.TrimSpace(arguments.HTML) != "" {
+		message["htmlContent"] = arguments.HTML
+	}
 	switch mode {
 	case "reply", "reply_all":
 		if originalMail == nil {
