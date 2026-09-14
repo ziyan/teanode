@@ -18,6 +18,22 @@ Notable changes to TeaNode. The format follows
   that it is the machine it claims to be. It is per-host and off by default,
   and the setting says so where it is set.
 
+### Fixed
+
+- A long conversation title no longer squeezes the marks either side of it in
+  the agent's drawer. The title is the one thing in that row that may give
+  way, and it was the one thing that would not: a line that cannot wrap has
+  the width of the whole title as its smallest size, so the row overflowed
+  and the only items left to shrink were the two 14px icons. That is why the
+  spark beside a conversation's name came back to its right size when the
+  conversation was reopened — it reopened with a shorter title.
+
+- The message's details are one list again, with no gap in the middle. The
+  agent's reading was given a little air above it to mark where the headers
+  stop, and that air read as the list having come apart, which is the thing
+  merging the two panels was meant to stop. Both halves answer the same
+  question about the same message, so they are spaced as what they are.
+
 ## [0.23.2] - 2026-09-14
 
 ### Changed

@@ -4319,16 +4319,12 @@ label.check-list-item {
   color: var(--text);
   overflow-wrap: anywhere;
 }
-/* What the agent worked out, at the end of the message's details: the same
-   question as the headers above it, so the same list. A little air where the
-   one becomes the other, which is the only thing marking them apart. */
-.mailbox-pane-meta .mailbox-meta-break {
-  margin-top: 8px;
-}
-
-.mailbox-pane-meta .mailbox-meta-break + dd {
-  margin-top: 8px;
-}
+/* What the agent worked out is the end of the message's details and not a
+   section of its own: the same rows, the same spacing. There was a gap here
+   to mark where the headers stop and the agent's reading starts, and it read
+   as the list having come apart -- which is the thing merging the two lists
+   was meant to stop. Both halves answer what this server knows about this
+   message, so they look like one list, because they are one. */
 
 .mailbox-sorting-list {
   margin: 0;
@@ -4995,6 +4991,24 @@ label.check-list-item {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The title is the one thing on this row that gives way.
+     
+     Without it the span's min-width is auto, which for a line that may not
+     wrap is the width of the whole title -- so a long one does not shrink,
+     the row overflows, and the only items left that can give are the two
+     icons. The spark beside the title was squeezed to a sliver, which is
+     what the marks either side of a conversation's name were. It came back
+     on reopening because the title it reopened with was shorter. */
+  min-width: 0;
+}
+
+/* And the icons in that row never give way: they are 14px squares, and a
+   square with a size and nothing said about shrinking is still a flex item
+   that may be shrunk. Belt and braces with the line above -- with the title
+   shrinking the row no longer overflows, and if anything ever makes it
+   overflow again, the text is what goes. */
+.agent-drawer-conversation > svg {
+  flex: 0 0 auto;
 }
 
 /* The conversations, hanging from the title like a menu: a row each, the
