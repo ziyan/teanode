@@ -2147,8 +2147,19 @@ export function ThreadMessage({
   onChanged?: () => void
 }) {
   const { t } = useTranslation()
+  const mailboxes = useMailboxes()
   const item = entry.item
   const mail = item.mail
+  // Whether this message is somewhere nothing should be offered from. The
+  // folder it is in now, not the one the reader came from: a message moved
+  // to Junk after its offers were written must stop showing them.
+  const unwantedFolder = ((view) => {
+    if (!view) {
+      return false
+    }
+    const folder = view.folders.find((candidate) => candidate.id === item.folderId)
+    return folder?.kind === 'junk' || folder?.kind === 'trash'
+  })(mailboxes.current)
   // Where the message's own menu — download, headers, theme — goes: the end
   // of the line that names the message, not a row of its own above it. A
   // conversation of six would otherwise carry six rows holding one button.
@@ -2228,11 +2239,20 @@ export function ThreadMessage({
               {/* And what the message carries in its words rather than in a
                   calendar part: an appointment, somebody's details. An
                   offer, with the line it came from under it. */}
-              <ProposalCards
-                itemId={entry.item.id}
-                proposals={entry.item.insight?.proposals}
-                onChanged={() => onChanged?.()}
-              />
+              {/* Not from junk. A scam's signature is the most carefully
+                  written part of it, so it is exactly what an extract run
+                  finds -- and being asked whether to keep the sender of a
+                  message that is sitting in Junk is the agent undoing what
+                  the filter just did. Nothing is offered from there or from
+                  Trash, whatever was worked out before the message landed
+                  in either. */}
+              {!unwantedFolder && (
+                <ProposalCards
+                  itemId={entry.item.id}
+                  proposals={entry.item.insight?.proposals}
+                  onChanged={() => onChanged?.()}
+                />
+              )}
               {content.loading && !content.data ? (
                 <Loading />
               ) : content.error ? (

@@ -198,3 +198,27 @@ func TestOnlyUsableFindingsBecomeOffers(t *testing.T) {
 		t.Fatalf("named by their address: %+v", proposals[2])
 	}
 }
+
+// Nothing is offered from junk.
+//
+// A scam's signature is the most carefully written part of it — a name, a
+// title, a telephone number in Dubai — so it is exactly what an extract run
+// finds, and the person is then asked whether to keep the sender of a
+// message their own agent has just called a fraud. Two things say a message
+// is unwanted, and they are not the same thing: the sorting's own category,
+// and where the filter put it. The invoice scam that prompted this was
+// sorted as ordinary work and was sitting in Junk the whole time.
+func TestNothingIsOfferedFromJunk(t *testing.T) {
+	t.Parallel()
+
+	for _, category := range []string{"phishing", "junk", "PHISHING", " junk "} {
+		if !agent.UnwantedCategory(category) {
+			t.Errorf("%q is a category nobody wants", category)
+		}
+	}
+	for _, category := range []string{"work", "personal", "receipt", "invitation", ""} {
+		if agent.UnwantedCategory(category) {
+			t.Errorf("%q is ordinary mail", category)
+		}
+	}
+}

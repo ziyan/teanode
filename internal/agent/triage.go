@@ -340,9 +340,28 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 		// What the message carries that belongs somewhere else, read after
 		// the sorting rather than during it: the offer is worth a run of
 		// its own, and most messages carry nothing.
-		if insight.ExtractAsked && self.canThink(configuration) {
-			if _, err := self.Enqueue(tx, models.AgentJobExtract, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
+		//
+		// Never from junk or phishing. A scam's signature is the most
+		// carefully written part of it -- a name, a title, a telephone
+		// number in Dubai -- so it is exactly what an extract run finds,
+		// and the person is then asked whether to keep the sender of a
+		// message their agent has just called a fraud. The answer to
+		// "shall I keep this person" must never be asked about somebody
+		// the same run decided was pretending to be somebody else.
+		if insight.ExtractAsked && !UnwantedCategory(insight.Category) && self.canThink(configuration) {
+			// Nor from a message the filter has already put in Junk. The
+			// sorting gives its own opinion a category, and the filter's
+			// verdict is a different one -- the invoice scam that prompted
+			// this was sorted as ordinary work and was sitting in Junk the
+			// whole time.
+			filed, err := self.filedAway(tx, run.Mailbox.ID, mail.ID)
+			if err != nil {
 				return err
+			}
+			if !filed {
+				if _, err := self.Enqueue(tx, models.AgentJobExtract, run.Agent.ID, run.Mailbox.ID, mail.ID); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -460,4 +479,38 @@ func (self *Agent) runBackfill(ctx context.Context, run *Run) error {
 		}
 		return nil
 	})
+}
+
+// UnwantedCategory says whether the sorting put a message in the two
+// categories nobody wants, which is what the rule every mailbox starts with
+// matches.
+func UnwantedCategory(category string) bool {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "phishing", "junk":
+		return true
+	}
+	return false
+}
+
+// filedAway says whether this mailbox has the message in Junk or in Trash,
+// which is somewhere nothing is worth offering from.
+func (self *Agent) filedAway(tx db.Transaction, mailboxId, mailId string) (bool, error) {
+	items, err := tx.ListItemsByMail(mailId)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range items {
+		folder, err := tx.GetFolder(item.FolderID)
+		if err != nil {
+			return false, err
+		}
+		if folder == nil || folder.MailboxID != mailboxId {
+			continue
+		}
+		switch folder.Kind {
+		case models.MailboxFolderKindJunk, models.MailboxFolderKindTrash:
+			return true, nil
+		}
+	}
+	return false, nil
 }
