@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A Windows path in a message your agent read comes back with its backslashes.
+  When a model answers with JSON that has to be repaired before it can be read
+  — quotes of the wrong kind, a trailing comma, an answer cut off — the repair
+  was eating the backslashes in `C:\Users\you\plan.pdf`, so a path the agent
+  had found turned into `C:Usersyouplan.pdf` and pointed at nothing. An answer
+  carrying a number written `-012` was unreadable altogether and the whole run
+  was thrown away.
+
+- Security and maintenance updates to what this server is built from: the
+  cryptography and networking libraries, the passkey library, the AWS SDK used
+  for off-box copies, and the dashboard's own framework.
+
 ## [0.22.0] - 2026-09-14
 
 ### Added
