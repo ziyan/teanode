@@ -15,6 +15,7 @@ import {
   ThreadSummary,
   AgentReply,
   askAgentAbout,
+  openAgentConversation,
   MAIL_CHANGED_EVENT,
   announceMailChanged,
 } from '../api'
@@ -125,7 +126,7 @@ const THREAD = `
         folderId folderName folderKind
         item {
           id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
-          insight { category priority needsReply summary actionItems notes
+          insight { category priority needsReply summary actionItems notes model runId
             proposals { kind because status summary starts ends location allDay name organization title emails phones note contactId } }
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
@@ -2174,6 +2175,9 @@ export function ThreadMessage({
   const verdict = verdictOf(mail, t)
   // From, To, Received and what the checks said, when somebody asks for them.
   const [details, setDetails] = useState(false)
+  // Whether the sorting is shown: what the agent decided about this message
+  // and, where it kept one, the run that decided it.
+  const [sorting, setSorting] = useState(false)
   // Whether the dialog for keeping this message's sender is up.
   const [keeping, setKeeping] = useState(false)
 
@@ -2232,6 +2236,7 @@ export function ThreadMessage({
                   )}
                 </dl>
               )}
+              {sorting && entry.item.insight && <SortingPanel insight={entry.item.insight} />}
               {/* Above the message, because an invitation is the thing the
                   message is about and the words around it are a covering
                   note. */}
@@ -2283,6 +2288,22 @@ export function ThreadMessage({
                           {t('mailbox.saveSender')}
                         </button>
                       )}
+                      {/* Why it was sorted the way it was. Behind the menu
+                          beside the headers, because it is the same kind of
+                          thing: what the server worked out about a message,
+                          for somebody who wants to know. */}
+                      {entry.item.insight && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            close()
+                            setSorting((previous) => !previous)
+                          }}
+                        >
+                          {t(sorting ? 'mailbox.hideSorting' : 'mailbox.showSorting')}
+                        </button>
+                      )}
                       <button
                         type="button"
                         role="menuitem"
@@ -2311,5 +2332,79 @@ export function ThreadMessage({
         </div>
       )}
     </li>
+  )
+}
+
+// SortingPanel is what the agent worked out about a message, for somebody
+// who wants to know why it was filed where it was.
+//
+// The category and the priority are what rules act on, so a message in the
+// wrong folder is usually a category somebody disagrees with -- and until
+// now there was nowhere to see that it had one. The summary and the action
+// items are what the agent read the message as; the notes are what a
+// research run found. The run itself is a conversation kept whole, so the
+// last line opens the working rather than only the verdict.
+function SortingPanel({ insight }: { insight: MailInsight }) {
+  const { t } = useTranslation()
+  const items = insight.actionItems ?? []
+  return (
+    <dl className="mailbox-pane-meta mailbox-sorting">
+      <dt>{t('mailbox.sortingCategory')}</dt>
+      <dd>{insight.category || t('mailbox.sortingUnsorted')}</dd>
+      <dt>{t('mailbox.sortingPriority')}</dt>
+      <dd>{insight.priority || t('mailbox.sortingUnsorted')}</dd>
+      <dt>{t('mailbox.sortingNeedsReply')}</dt>
+      <dd>{insight.needsReply ? t('common.yes') : t('common.no')}</dd>
+      {insight.summary && (
+        <>
+          <dt>{t('mailbox.sortingSummary')}</dt>
+          <dd>{insight.summary}</dd>
+        </>
+      )}
+      {items.length > 0 && (
+        <>
+          <dt>{t('mailbox.sortingActions')}</dt>
+          <dd>
+            <ul className="mailbox-sorting-list">
+              {items.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </dd>
+        </>
+      )}
+      {insight.notes && (
+        <>
+          <dt>{t('mailbox.sortingNotes')}</dt>
+          <dd>{insight.notes}</dd>
+        </>
+      )}
+      {(insight.model || insight.runId) && (
+        <>
+          <dt>{t('mailbox.sortingDecidedBy')}</dt>
+          <dd>
+            {insight.model}
+            {insight.runId && (
+              <>
+                {insight.model ? ' · ' : ''}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => {
+                    // The drawer takes it when it is there; the agent page
+                    // is where the runs are otherwise.
+                    if (!openAgentConversation(insight.runId ?? '')) {
+                      window.location.assign('/agent')
+                    }
+                  }}
+                >
+                  {t('mailbox.sortingShowRun')}
+                </button>
+              </>
+            )}
+          </dd>
+        </>
+      )}
+    </dl>
   )
 }

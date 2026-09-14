@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Why a message was sorted the way it was, in its menu beside the headers.
+  The category and the priority are what your rules act on, so a message in
+  the wrong folder is usually a category you disagree with — and there was
+  nowhere to see that it had one. It shows what the agent decided, how it read
+  the message, what it thinks you are being asked to do, anything a research
+  run looked up, and which model decided; where the run was kept, one press
+  opens the whole of it.
+
 ## [0.22.2] - 2026-09-14
 
 ### Fixed

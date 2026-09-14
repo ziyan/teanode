@@ -4297,6 +4297,18 @@ label.check-list-item {
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* What the agent worked out about a message, opened from its menu beside the
+   headers. A definition list like the details above it, with the notes and
+   the summary allowed to wrap rather than being held to one line. */
+.mailbox-sorting dd {
+   white-space: normal;
+}
+
+.mailbox-sorting-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .mailbox-pane-actions {
   display: flex;
   flex-wrap: wrap;
