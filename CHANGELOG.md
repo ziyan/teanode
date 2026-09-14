@@ -59,6 +59,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
+- A message you send to yourself is one message again. It is filed twice — a
+  copy in Sent, a copy in the Inbox — and the test for "is this a conversation
+  worth summarizing" counted the copies, so the one kind of single message that
+  got a summary of itself was a note to yourself. The count is by message now,
+  and it is applied before the summary is shown rather than only before one is
+  asked for, so a summary already written for such a thread stops appearing.
+
 - The conversation summary's arrow is the chevron every other disclosure on
   the dashboard uses, and it turns over rather than being swapped for a
   different glyph — a glyph replaced at the moment of the press reads as a

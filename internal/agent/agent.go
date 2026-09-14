@@ -279,7 +279,7 @@ func (self *Agent) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox,
 		items, err := tx.ListItems("", &db.ItemOptions{MailboxID: mailbox.ID, ThreadID: threadId, Limit: summaryThreadLimit})
 		if err != nil {
 			log.Warningf("cannot count the conversation of message %q: %s", mail.ID, err)
-		} else if countMails(items) >= minimum {
+		} else if CountMessages(items) >= minimum {
 			if _, err := self.Enqueue(tx, models.AgentJobSummarize, agent.ID, mailbox.ID, threadId); err != nil {
 				log.Warningf("cannot queue a summary for conversation %q: %s", threadId, err)
 			}
@@ -450,9 +450,14 @@ func (self *Agent) resolve(ctx context.Context, job *models.AgentJob) (*Run, err
 	return run, err
 }
 
-// countMails is how many distinct messages a list of items holds; a message
-// filed in two folders is one message.
-func countMails(items []*models.MailboxItem) int {
+// CountMessages is how many messages a set of items is, which is not how
+// many items it is: one message can be filed twice.
+//
+// A message somebody sends to themselves is the plain case -- a copy in
+// Sent and a copy in the Inbox, one message, two items -- and so is a
+// message filed in two folders by two rules. Anything asking "is this a
+// conversation yet" has to count messages, or a note to oneself is two.
+func CountMessages(items []*models.MailboxItem) int {
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.MailID] = true

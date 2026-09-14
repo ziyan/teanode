@@ -788,16 +788,17 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 	} else {
 		view.Stale = true
 	}
-	if !view.Stale {
-		return view
+	// A conversation of one is not worth a summary: the message is on the
+	// screen under it. Counted by message and not by item, and before the
+	// summary is shown rather than only before one is asked for -- a
+	// message somebody sends to themselves is filed in Sent and in the
+	// Inbox, which is two items and one message, and it was the one kind
+	// of single message that got itself summarized and then went on
+	// showing the summary.
+	if agent.CountMessages(items) < 2 {
+		return nil
 	}
-	// A conversation of one is not worth a summary until it is opened by
-	// somebody who wants one anyway; the reader still shows nothing for
-	// it, so the run is not queued either.
-	if len(items) < 2 {
-		if summary == nil {
-			return nil
-		}
+	if !view.Stale {
 		return view
 	}
 	owner, err := tx.GetAgentByUser(mailbox.UserID)

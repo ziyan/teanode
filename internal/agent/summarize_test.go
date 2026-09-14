@@ -162,3 +162,26 @@ func TestSummarizeThroughTheWorker(t *testing.T) {
 		t.Fatalf("a fresh summary should not be rewritten, got %d calls", calls)
 	}
 }
+
+// A message somebody sends to themselves is one message, not a conversation.
+//
+// It is filed twice — a copy in Sent and a copy in the Inbox — so anything
+// counting items sees two and decides this is a thread worth summarizing.
+// The test mail the owner sent himself came back with a summary of itself
+// under it, which is the one case where a single message got one.
+func TestAMessageFiledTwiceIsStillOneMessage(t *testing.T) {
+	t.Parallel()
+
+	sent := &models.MailboxItem{ID: "one", MailID: "m1"}
+	inbox := &models.MailboxItem{ID: "two", MailID: "m1"}
+	if count := agent.CountMessages([]*models.MailboxItem{sent, inbox}); count != 1 {
+		t.Fatalf("two copies of one message = %d, want 1", count)
+	}
+	answered := &models.MailboxItem{ID: "three", MailID: "m2"}
+	if count := agent.CountMessages([]*models.MailboxItem{sent, inbox, answered}); count != 2 {
+		t.Fatalf("a reply makes it two: %d", count)
+	}
+	if count := agent.CountMessages(nil); count != 0 {
+		t.Fatalf("nothing is nothing: %d", count)
+	}
+}
