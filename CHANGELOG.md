@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-09-14
+
 ### Fixed
 
 - **Mail programs can sign in on port 993 again.** Since 0.21.3 the
