@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 )
 
@@ -75,5 +77,38 @@ func TestTheNamesAreTheDocumentsNames(t *testing.T) {
 	// so there is one copy of it rather than one here and one in the docs.
 	if said, ok := agent["allowPrivateAddresses"].(map[string]any); !ok || said["means"] == nil {
 		t.Errorf("no documentation carried through: %+v", agent["allowPrivateAddresses"])
+	}
+}
+
+// What comes back fits in a result.
+//
+// Every section at once was thirty-three thousand characters against a cap
+// of twenty-four, and a result over the cap is cut where it reaches it --
+// in the middle of the JSON, which is not something a model can read at
+// all. So the listing without a section is names and one line each, and
+// each section on its own stays well inside.
+func TestWhatComesBackFitsInAResult(t *testing.T) {
+	t.Parallel()
+
+	whole := reflect.TypeOf(config.Configuration{})
+	listing := map[string]any{}
+	for index := 0; index < whole.NumField(); index++ {
+		field := whole.Field(index)
+		name := yamlName(field)
+		if name == "" || name == "database" {
+			continue
+		}
+		listing[name] = ""
+		encoded, err := json.Marshal(map[string]any{name: describeType(field.Type, describeDepth)})
+		if err != nil {
+			t.Fatalf("%s: %s", name, err)
+		}
+		if len(encoded) > tools.ResultCharacters {
+			t.Errorf("the %s section is %d characters, past the %d a result may be", name, len(encoded), tools.ResultCharacters)
+		}
+	}
+	encoded, err := json.Marshal(listing)
+	if err != nil || len(encoded) > tools.ResultCharacters {
+		t.Errorf("the listing is %d characters: %v", len(encoded), err)
 	}
 }

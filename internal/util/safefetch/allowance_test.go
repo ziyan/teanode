@@ -37,6 +37,27 @@ func TestAnAllowanceIsWhatWasWritten(t *testing.T) {
 	if !allowance.PermitsHost("PRINTER.LAN") || allowance.PermitsHost("other.lan") {
 		t.Error("a name is allowed as written, and nothing else is")
 	}
+	// And a name allows the address it points at, which is the only form
+	// the guard ever sees: by the time a dial is checked the name is gone.
+	// localhost is the one name a test can count on resolving.
+	named := safefetch.ParseAllowance([]string{"localhost"})
+	if !named.PermitsAddress("127.0.0.1:80") {
+		t.Error("a listed name has to permit what it resolves to, or listing one does nothing")
+	}
+	if err := safefetch.AllowAddressWith(named, "127.0.0.1:80"); err != nil {
+		t.Errorf("a listed name, dialled: %s", err)
+	}
+	// Somewhere else private is still refused: naming one host does not
+	// open the network it is on.
+	if named.PermitsAddress("10.1.2.3:80") {
+		t.Error("one name is one host")
+	}
+	// A caller cannot widen the allowance by writing into what it is given.
+	hosts := allowance.Hosts()
+	hosts["anything.lan"] = true
+	if allowance.PermitsHost("anything.lan") {
+		t.Error("the map handed out is a copy")
+	}
 	// Nothing listed is nothing allowed, and a nil allowance refuses the
 	// way the guard on its own does.
 	if safefetch.ParseAllowance(nil) != nil || safefetch.ParseAllowance([]string{" "}) != nil {

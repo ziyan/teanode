@@ -74,12 +74,18 @@ func (self *Allowance) Networks() []*net.IPNet {
 	return self.networks
 }
 
-// Hosts is what was allowed by name, for the same reason.
+// Hosts is what was allowed by name, for the same reason. A copy, because
+// a caller keeping it for the life of a browser must not be able to widen
+// what this allows by writing into it.
 func (self *Allowance) Hosts() map[string]bool {
+	copied := map[string]bool{}
 	if self == nil {
-		return map[string]bool{}
+		return copied
 	}
-	return self.hosts
+	for host := range self.hosts {
+		copied[host] = true
+	}
+	return copied
 }
 
 // PermitsAddress says whether one dialled address is allowed by this list.
@@ -98,6 +104,39 @@ func (self *Allowance) PermitsAddress(address string) bool {
 	for _, network := range self.networks {
 		if network.Contains(ip) {
 			return true
+		}
+	}
+	return self.permitsResolved(ip)
+}
+
+// permitsResolved says whether one of the allowed names points here now.
+//
+// The guard runs on the address being dialled, which is the whole reason it
+// cannot be fooled by a name that resolves differently a moment later -- and
+// it is also why a name in the operator's list did nothing on its own: by
+// the time the check runs there is no name left, only the address it
+// resolved to. The browser has a name to check before it dials; a skill's
+// http step does not.
+//
+// So the names are resolved here instead, and only here: this is reached
+// only for an address the guard is about to refuse, which means a private
+// one. A public host cannot arrive at this code at all, so a name that
+// resolves outward gains nothing by being listed, and the rebinding this
+// package exists to stop still cannot happen -- what is permitted is the
+// address an operator's own name points at, at the moment of the dial.
+func (self *Allowance) permitsResolved(ip net.IP) bool {
+	if len(self.hosts) == 0 {
+		return false
+	}
+	for host := range self.hosts {
+		resolved, err := net.LookupIP(host)
+		if err != nil {
+			continue
+		}
+		for _, candidate := range resolved {
+			if candidate.Equal(ip) {
+				return true
+			}
 		}
 	}
 	return false

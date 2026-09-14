@@ -54,8 +54,8 @@ func runSettingsDescribe(ctx context.Context, call *tools.Call) (*tools.Result, 
 		return nil, err
 	}
 	whole := reflect.TypeOf(config.Configuration{})
-	sections := map[string]any{}
 	wanted := strings.TrimSpace(strings.ToLower(arguments.Section))
+	sections := map[string]any{}
 	for index := 0; index < whole.NumField(); index++ {
 		field := whole.Field(index)
 		name := yamlName(field)
@@ -64,15 +64,25 @@ func runSettingsDescribe(ctx context.Context, call *tools.Call) (*tools.Result, 
 		if name == "" || name == "database" {
 			continue
 		}
-		if wanted != "" && name != wanted {
+		if wanted == "" {
+			// Every section at once is thirty-odd thousand characters,
+			// which is past what a result may be -- and what came back was
+			// cut in the middle of the JSON, so it was not readable at all.
+			// Without a section this is the list to choose from.
+			sections[name] = collapse(commentparse.GetStructFieldComment(whole.PkgPath(), whole.Name(), field.Name))
 			continue
 		}
-		sections[name] = describeType(field.Type, describeDepth)
+		if name == wanted {
+			return tools.JSONResult(map[string]any{name: describeType(field.Type, describeDepth)})
+		}
 	}
-	if len(sections) == 0 {
+	if wanted != "" {
 		return nil, fmt.Errorf("there is no settings section %q", arguments.Section)
 	}
-	return tools.JSONResult(sections)
+	return tools.JSONResult(map[string]any{
+		"sections": sections,
+		"note":     "give one section to see its fields, their types and what each means",
+	})
 }
 
 // describeType is a struct as a map of field name to what it is, or the name
