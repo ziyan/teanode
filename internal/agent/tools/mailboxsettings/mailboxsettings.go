@@ -23,6 +23,27 @@ func init() {
 					"name":           tools.StringProperty("the new name"),
 					"signature_text": tools.StringProperty("the plain-text signature"),
 				}),
+				Preview: tools.PreviewOf(func(call struct {
+					Mailbox       string `json:"mailbox"`
+					Name          string `json:"name"`
+					SignatureText string `json:"signature_text"`
+					SignatureHTML string `json:"signature_html"`
+				}) string {
+					changing := []string{}
+					if call.Name != "" {
+						changing = append(changing, "its name")
+					}
+					if call.SignatureText != "" || call.SignatureHTML != "" {
+						changing = append(changing, "your signature")
+					}
+					if len(changing) == 0 {
+						if call.Mailbox != "" {
+							return "Change the settings of the " + call.Mailbox + " mailbox"
+						}
+						return "Change your mailbox's settings"
+					}
+					return "Change " + tools.Some(changing, 2) + tools.In(call.Mailbox)
+				}),
 				Run: runMailboxSettings,
 			},
 		}

@@ -169,6 +169,16 @@ func init() {
 				Name: "mail_audit_mark", Family: tools.FamilyAudit, Risk: tools.RiskWrite, Permissions: audit,
 				Description: "Tell the spam filter about a message of the audit: spam, or ham (not spam), so it learns.",
 				Parameters:  tools.Object(map[string]any{"mail_id": tools.StringProperty("the message"), "label": tools.EnumProperty("what it is", "spam", "ham")}, "mail_id", "label"),
+				Preview: tools.PreviewOf(func(call struct {
+					Label string `json:"label"`
+				}) string {
+					// It teaches the filter for the whole server, so the
+					// card says that rather than "mark a message".
+					if call.Label == "ham" {
+						return "Teach the spam filter that a message is not spam"
+					}
+					return "Teach the spam filter that a message is spam"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						MailID string `json:"mail_id"`

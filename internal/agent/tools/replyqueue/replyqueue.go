@@ -23,6 +23,17 @@ func init() {
 					"action":   tools.EnumProperty("list or cancel", "list", "cancel"),
 					"reply_id": tools.StringProperty("for cancel: the reply"),
 				}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action string `json:"action"`
+				}) string {
+					switch call.Action {
+					case "cancel":
+						return "Cancel a reply that is waiting to go out"
+					case "send":
+						return "Send a waiting reply now, rather than when its hold ends"
+					}
+					return "Change the replies waiting to go out"
+				}),
 				Run:     runReplyQueue,
 				Overlay: pendingOverlay,
 			},

@@ -4,8 +4,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -70,9 +70,24 @@ func init() {
 				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskDestructive, Permissions: manage,
 				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them; a secret left out or shown redacted is kept. The agent section holds the providers, the models, the tool policy and the limits. A connected server is easier to add with connected_server, which declares and connects it in one place.",
 				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Change the server settings: " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(call struct {
+					Section string         `json:"section"`
+					Values  map[string]any `json:"values"`
+				}) string {
+					// The section and the field names, never the values: a
+					// settings call carries secrets, and a card is shown on
+					// a screen and kept in the transcript.
+					named := []string{}
+					for key := range call.Values {
+						named = append(named, key)
+					}
+					sort.Strings(named)
+					said := "Change the " + tools.Named(call.Section, "server") + " settings"
+					if len(named) > 0 {
+						said += ": " + tools.Some(named, 5)
+					}
+					return said
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Section string         `json:"section"`
@@ -98,9 +113,21 @@ func init() {
 				Name: "server_upgrade", Family: tools.FamilyServer, Risk: tools.RiskOutward, Permissions: manage,
 				Description: "Apply a newer release of the server, or restart it. The server goes away for a moment; it always asks first.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("upgrade to the latest, or restart", "upgrade", "restart"), "version": tools.StringProperty("for upgrade: a version, the latest by default")}, "action"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Upgrade or restart the server: " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(call struct {
+					Action  string `json:"action"`
+					Version string `json:"version"`
+				}) string {
+					// Either way the server goes away for a moment, which
+					// is the part the person is agreeing to.
+					if call.Action == "restart" {
+						return "Restart the server, which goes away for a moment"
+					}
+					to := "the latest release"
+					if call.Version != "" {
+						to = call.Version
+					}
+					return "Upgrade the server to " + to + ", which goes away for a moment"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Action  string `json:"action"`

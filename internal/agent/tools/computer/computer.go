@@ -94,6 +94,13 @@ func init() {
 					case "put":
 						return fmt.Sprintf("Put a file of this conversation on your computer at %s", call.Path)
 					}
+					// A call with no action at all still gets a card: the
+					// preview is drawn before anything checks the call, so
+					// taking the first letter of an empty string here took
+					// the run down with it.
+					if call.Action == "" {
+						return "Read or change the files on your computer"
+					}
 					return fmt.Sprintf("%s %s on your computer", strings.ToUpper(call.Action[:1])+call.Action[1:], call.Path)
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
@@ -264,6 +271,24 @@ func runFilesystem(ctx context.Context, call *tools.Call) (*tools.Result, error)
 // one fetched from it.
 const putBytes = 32 << 20
 
+// baseName is a file's own name with nothing of a path left in it.
+func baseName(name string) string {
+	name = strings.TrimSpace(name)
+	if at := strings.LastIndexAny(name, `/\`); at >= 0 {
+		name = name[at+1:]
+	}
+	name = strings.Map(func(character rune) rune {
+		if character < 0x20 || character == 0x7f {
+			return -1
+		}
+		return character
+	}, name)
+	if name == "" || name == "." || name == ".." {
+		return "file"
+	}
+	return name
+}
+
 // putOnComputer sends a file of the conversation to the machine.
 //
 // The mirror of what share_file does with the computer as its source, and
@@ -297,11 +322,14 @@ func putOnComputer(ctx context.Context, run tools.Run, attached tools.Computer, 
 	if err != nil {
 		return nil, err
 	}
-	// A path ending in a separator, or naming the home directory, means the
-	// file keeps its own name rather than becoming a file called "~".
+	// A path naming a directory means the file keeps its own name rather
+	// than becoming a file called "~". Its own name, and nothing more: the
+	// name came from whoever uploaded the file, and a name holding a
+	// separator would put the file somewhere other than where the card the
+	// person approved said it was going.
 	path := strings.TrimSpace(arguments.Path)
-	if path == "" || path == "~" || strings.HasSuffix(path, "/") {
-		path = strings.TrimSuffix(path, "/") + "/" + attachment.Name
+	if path == "~" || strings.HasSuffix(path, "/") {
+		path = strings.TrimSuffix(path, "/") + "/" + baseName(attachment.Name)
 	}
 	return carry(ctx, attached, "filesystem", map[string]any{
 		"action": "put", "path": path, "base64": base64.StdEncoding.EncodeToString(content),

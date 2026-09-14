@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -558,4 +559,57 @@ var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/g
 // IsImage says whether a file is a picture a model can look at.
 func IsImage(contentType string) bool {
 	return imageTypes[strings.ToLower(strings.TrimSpace(contentType))]
+}
+
+// --- confirmation cards --------------------------------------------------
+
+// PreviewOf builds a tool's Preview from a function of its arguments, so
+// that a card is written as the sentence it is rather than as JSON
+// handling. Arguments that will not decode give the tool's own words back
+// through the fallback, because a card is shown before anything runs and
+// must say something either way.
+func PreviewOf[T any](say func(T) string) func(json.RawMessage) string {
+	return func(arguments json.RawMessage) string {
+		var call T
+		if err := json.Unmarshal(arguments, &call); err != nil {
+			return ""
+		}
+		return say(call)
+	}
+}
+
+// Named is how a card points at a thing: what the person calls it, in
+// quotes, or a stand-in when the call gives no name.
+func Named(value, stand string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return stand
+	}
+	return strconv.Quote(value)
+}
+
+// In is " in <where>", or nothing: where a call names a mailbox or a domain
+// the card says which, and where it does not there is only one to mean.
+func In(where string) string {
+	if where = strings.TrimSpace(where); where == "" {
+		return ""
+	}
+	return " in " + where
+}
+
+// Some is a few things named in a line, with the rest counted.
+func Some(values []string, limit int) string {
+	kept := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			kept = append(kept, value)
+		}
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	if len(kept) <= limit {
+		return strings.Join(kept, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(kept[:limit], ", "), len(kept)-limit)
 }

@@ -42,11 +42,7 @@ func init() {
 					if err != nil || len(views) == 0 {
 						return "Send a draft"
 					}
-					view, err := draftMailbox(ctx, operations, views, call.DraftID)
-					if err != nil {
-						return "Send a draft"
-					}
-					found, err := mailbox.FindDraft(ctx, operations, view, call.DraftID)
+					_, found, err := findDraft(ctx, operations, views, call.DraftID)
 					if err != nil || found == nil {
 						return "Send a draft"
 					}
@@ -72,22 +68,30 @@ type mailSendArguments struct {
 	DraftID string `json:"draft_id"`
 }
 
-// draftMailbox is the granted mailbox a draft is in. A key names a draft in
-// one mailbox, so with several granted the mailboxes are asked in turn; with
-// one there is nothing to ask.
-func draftMailbox(ctx context.Context, operations tools.Operations, views []*mailbox.MailboxView, name string) (*mailbox.MailboxView, error) {
-	if len(views) == 1 {
-		return views[0], nil
+// findDraft is the draft a name refers to and the mailbox it is in.
+//
+// A key names a draft within one mailbox, so with several granted they are
+// asked in turn -- and the draft is carried back with the answer, because
+// finding it walks the Drafts folder reading messages, and doing that once
+// per caller is how one send became three walks.
+func findDraft(ctx context.Context, operations tools.Operations, views []*mailbox.MailboxView, name string) (*mailbox.MailboxView, *mailbox.DraftView, error) {
+	if len(views) == 0 {
+		return nil, nil, fmt.Errorf("no mailbox is granted")
 	}
+	var first error
 	for _, view := range views {
-		if _, err := mailbox.FindDraft(ctx, operations, view, name); err == nil {
-			return view, nil
+		found, err := mailbox.FindDraft(ctx, operations, view, name)
+		if err == nil && found != nil {
+			return view, found, nil
+		}
+		if first == nil {
+			first = err
 		}
 	}
-	if len(views) == 0 {
-		return nil, fmt.Errorf("no mailbox is granted")
+	if first == nil {
+		first = fmt.Errorf("there is no draft %q; it may have been sent or thrown away", name)
 	}
-	return views[0], nil
+	return nil, nil, first
 }
 
 func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -114,11 +118,7 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// draft", and between the card being shown and the person pressing it
 	// the draft may have been saved again -- opening it in the composer is
 	// enough -- which leaves the item id it was called with naming nothing.
-	view, err := draftMailbox(ctx, operations, views, arguments.DraftID)
-	if err != nil {
-		return nil, err
-	}
-	found, err := mailbox.FindDraft(ctx, operations, view, arguments.DraftID)
+	view, found, err := findDraft(ctx, operations, views, arguments.DraftID)
 	if err != nil {
 		return nil, err
 	}

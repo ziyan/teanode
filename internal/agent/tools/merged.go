@@ -123,12 +123,25 @@ func Merge(merged MergedTool) *Tool {
 			name, err := actionOf(arguments)
 			tool := byAction[name]
 			if err != nil || tool == nil {
-				return merged.Name
+				return describeCall(merged.Name, arguments)
 			}
 			if tool.Preview != nil {
 				return tool.Preview(arguments)
 			}
-			return merged.Name + " " + name
+			return describeCall(merged.Name+" "+name, arguments)
+		},
+		// A member that has to look something up to say what it is about
+		// to do says it through the merged tool too, and wins over the
+		// plain one the same way it does on its own.
+		PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+			name, err := actionOf(arguments)
+			if err != nil {
+				return ""
+			}
+			if tool := byAction[name]; tool != nil && tool.PreviewIn != nil {
+				return tool.PreviewIn(ctx, arguments)
+			}
+			return ""
 		},
 		RiskOf: func(arguments json.RawMessage) Risk {
 			name, err := actionOf(arguments)

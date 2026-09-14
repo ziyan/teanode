@@ -30,7 +30,7 @@ func init() {
 				Preview: func(arguments json.RawMessage) string {
 					var call skillRequest
 					if err := json.Unmarshal(arguments, &call); err != nil {
-						return "Skills: " + strings.TrimSpace(string(arguments))
+						return "Change the skills installed on this server"
 					}
 					switch call.Action {
 					case "install", "update":
@@ -48,7 +48,10 @@ func init() {
 						}
 						return fmt.Sprintf("Leave who fills the %s skill's values in to what the skill declares", call.Name)
 					}
-					return "Skills: " + strings.TrimSpace(string(arguments))
+					if call.Action == "enable" {
+						return fmt.Sprintf("Offer the %s skill's tools again", tools.Named(call.Name, "a"))
+					}
+					return "Change the skills installed on this server"
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call skillRequest

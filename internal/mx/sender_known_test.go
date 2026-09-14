@@ -74,5 +74,15 @@ func TestSenderKnownReadsTheAddressBook(t *testing.T) {
 		if known("aria@example.net") {
 			t.Fatal("a shorter address is a different address")
 		}
+		// A sender does not get to widen the question by choosing their own
+		// address. These are the wildcards of a SQL LIKE, which is what the
+		// lookup used to be built from: "%" matched everybody this person
+		// keeps, and an underscore -- an ordinary character in an address --
+		// matched any character at all.
+		for _, crafted := range []string{"%@example.net", "%", "maria@example.ne_", "m%@example.net", "_aria@example.net"} {
+			if known(crafted) {
+				t.Fatalf("%q is not somebody in the address book", crafted)
+			}
+		}
 	})
 }

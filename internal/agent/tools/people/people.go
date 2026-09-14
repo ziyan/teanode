@@ -39,6 +39,19 @@ func init() {
 					"email":     tools.StringProperty("where notifications go"),
 					"group_ids": tools.ArrayProperty("the groups to put them in", tools.StringProperty("a group id, from group_list")),
 				}, "username"),
+				Preview: tools.PreviewOf(func(call struct {
+					Username string   `json:"username"`
+					GroupIDs []string `json:"group_ids"`
+				}) string {
+					// An account on this server, and the groups are what
+					// it can do -- so the count is said rather than left
+					// to the ids nobody can read.
+					said := "Make an account for " + tools.Named(call.Username, "somebody")
+					if len(call.GroupIDs) > 0 {
+						said += ", in " + counted(len(call.GroupIDs), "group", "groups")
+					}
+					return said
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Username string   `json:"username"`
@@ -101,6 +114,38 @@ func init() {
 					"group_ids": tools.ArrayProperty("the groups, replacing the current ones", tools.StringProperty("a group id")),
 					"disabled":  tools.BooleanProperty("whether they may not sign in"),
 				}, "user_id"),
+				Preview: tools.PreviewOf(func(call struct {
+					GroupIDs []string `json:"group_ids"`
+					Disabled *bool    `json:"disabled"`
+					Name     *string  `json:"name"`
+					Email    *string  `json:"email"`
+				}) string {
+					// The two that matter are said first: locking somebody
+					// out, and setting what they may do.
+					if call.Disabled != nil {
+						if *call.Disabled {
+							return "Stop somebody signing in to this server"
+						}
+						return "Let somebody sign in again"
+					}
+					if call.GroupIDs != nil {
+						if len(call.GroupIDs) == 0 {
+							return "Take somebody out of every group, leaving them nothing they may do here"
+						}
+						return "Set what somebody may do here: " + counted(len(call.GroupIDs), "group", "groups")
+					}
+					changing := []string{}
+					if call.Name != nil {
+						changing = append(changing, "their name")
+					}
+					if call.Email != nil {
+						changing = append(changing, "their notification address")
+					}
+					if len(changing) == 0 {
+						return "Change an account"
+					}
+					return "Change " + tools.Some(changing, 2)
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						UserID   string   `json:"user_id"`
@@ -135,9 +180,9 @@ func init() {
 				Name: "user_remove", Family: tools.FamilyPeople, Risk: tools.RiskDestructive, Permissions: []models.Permission{models.PermissionUserManage},
 				Description: "Delete an account and what only it held. Cannot be undone; disabling is the reversible choice.",
 				Parameters:  tools.Object(map[string]any{"user_id": tools.StringProperty("the account, from user_list")}, "user_id"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Delete the account " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(struct{}) string {
+					return "Delete an account and what only it held; this cannot be undone"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						UserID string `json:"user_id"`
@@ -179,6 +224,34 @@ func init() {
 					"role_ids":    tools.ArrayProperty("the roles, replacing the current ones", tools.StringProperty("a role id")),
 					"domain_ids":  tools.ArrayProperty("the domains, replacing the current ones", tools.StringProperty("a domain id")),
 				}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action  string   `json:"action"`
+					Name    string   `json:"name"`
+					UserIDs []string `json:"user_ids"`
+					RoleIDs []string `json:"role_ids"`
+				}) string {
+					named := tools.Named(call.Name, "a group")
+					switch call.Action {
+					case "create":
+						return "Make the group " + named
+					case "delete":
+						return "Delete the group " + named + ", taking away what it gave its members"
+					}
+					// Replacing rather than adding: the lists are the
+					// whole membership, so this can take access away as
+					// easily as it gives it.
+					changing := []string{}
+					if call.UserIDs != nil {
+						changing = append(changing, counted(len(call.UserIDs), "member", "members"))
+					}
+					if call.RoleIDs != nil {
+						changing = append(changing, counted(len(call.RoleIDs), "role", "roles"))
+					}
+					if len(changing) == 0 {
+						return "Change the group " + named
+					}
+					return "Set the group " + named + " to " + tools.Some(changing, 2)
+				}),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
@@ -261,6 +334,31 @@ func init() {
 					"description": tools.StringProperty("what it is for"),
 					"permissions": tools.ArrayProperty("the permissions, replacing the current ones", tools.StringProperty("a permission such as mail:read")),
 				}, "action"),
+				Preview: tools.PreviewOf(func(call struct {
+					Action      string   `json:"action"`
+					Name        string   `json:"name"`
+					Permissions []string `json:"permissions"`
+				}) string {
+					named := tools.Named(call.Name, "a role")
+					switch call.Action {
+					case "create":
+						if said := tools.Some(call.Permissions, 4); said != "" {
+							return "Make the role " + named + ", which may " + said
+						}
+						return "Make the role " + named
+					case "delete":
+						return "Delete the role " + named + ", taking it away from every group that holds it"
+					}
+					// The permissions replace what is there, so the card
+					// names them: this is where access is decided.
+					if call.Permissions != nil {
+						if said := tools.Some(call.Permissions, 4); said != "" {
+							return "Set what the role " + named + " may do: " + said
+						}
+						return "Take every permission away from the role " + named
+					}
+					return "Change the role " + named
+				}),
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					if tools.ActionOf(arguments) == "delete" {
 						return tools.RiskDestructive
@@ -378,4 +476,13 @@ func init() {
 			},
 		)
 	})
+}
+
+// counted is "one group" or "three groups": a card is read, and "3 group(s)"
+// is a form somebody filled in.
+func counted(many int, one, more string) string {
+	if many == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", many, more)
 }

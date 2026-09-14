@@ -113,7 +113,36 @@ type Attachment struct {
 
 // inline says whether a part belongs with the body rather than after it.
 func (self *Attachment) inline() bool {
-	return self != nil && (self.Inline || strings.TrimSpace(self.ContentID) != "")
+	return self != nil && (self.Inline || safeContentID(self.ContentID) != "")
+}
+
+// safeContentID is a Content-ID that can be written into a header, or the
+// empty string for one that cannot be made into one.
+//
+// The value ends up between angle brackets in a header this package writes
+// by hand, so anything outside the characters an addr-spec may hold is left
+// out rather than escaped: a Content-ID is a name the HTML refers to, and a
+// name that needs escaping is a name that will not be found anyway. A file
+// called "a\r\nContent-Disposition: attachment" would otherwise be a header
+// of its own, and a filename is somebody's to choose.
+func safeContentID(id string) string {
+	kept := strings.Map(func(character rune) rune {
+		switch {
+		case character >= 'a' && character <= 'z',
+			character >= 'A' && character <= 'Z',
+			character >= '0' && character <= '9':
+			return character
+		}
+		switch character {
+		case '.', '-', '_', '+', '@', '%', '=', '~':
+			return character
+		}
+		return -1
+	}, strings.TrimSpace(id))
+	if len(kept) > 200 {
+		kept = kept[:200]
+	}
+	return kept
 }
 
 // ErrEmptyMessage is returned by Compose when there is nothing to send.
@@ -137,10 +166,13 @@ func Compose(writer io.Writer, text, html []byte, attachments []*Attachment) ([]
 
 	headers := []string{UnsplitHeader("MIME-Version", "1.0")}
 
-	// The body and the pictures it refers to, as one thing.
+	// The body and the pictures it refers to, as one thing. With no body
+	// there is nothing for them to be related to, so they are files like
+	// any other -- a multipart/related whose root is an empty text part is
+	// a message clients show as blank with an orphan picture in it.
 	var inline, separate []*Attachment
 	for _, attachment := range attachments {
-		if attachment.inline() {
+		if attachment.inline() && (len(text) > 0 || len(html) > 0) {
 			inline = append(inline, attachment)
 		} else {
 			separate = append(separate, attachment)
@@ -300,12 +332,16 @@ func writeAttachment(into *multipart.Writer, attachment *Attachment) error {
 	header.Set("Content-Type", mime.FormatMediaType(contentType, map[string]string{"name": attachment.Filename}))
 	header.Set("Content-Disposition", mime.FormatMediaType(disposition, parameters))
 	header.Set("Content-Transfer-Encoding", "base64")
-	if id := strings.TrimSpace(attachment.ContentID); id != "" {
+	if id := safeContentID(attachment.ContentID); id != "" {
 		// Written into the map rather than through Set, which canonicalizes
 		// the name to "Content-Id". Both are the same field to a reader --
 		// header names are case-insensitive -- but every other mail agent
 		// writes "Content-ID", and a message that looks like the others is
 		// one fewer thing for somebody debugging to wonder about.
+		//
+		// Written raw, so the value has to be safe before it gets here:
+		// nothing else escapes it, and a Content-ID is a file's name, which
+		// somebody chose when they uploaded it.
 		header["Content-ID"] = []string{"<" + id + ">"}
 	}
 	partWriter, err := into.CreatePart(header)

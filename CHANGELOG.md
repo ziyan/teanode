@@ -77,11 +77,17 @@ Notable changes to TeaNode. The format follows
   under the pointer. The plain text tab stays in your theme, which is what
   its recipient gets too.
 
-- A confirmation card says what it is about to do. Sending asked you to
-  approve `Send the draft {"draft_id":"01m2ep00bed1yyxq763yn865wq"}`; it now
-  says who the message goes to and what it is called. A tool that has no
-  sentence of its own gets a readable one built from the call rather than the
-  call itself.
+- Every confirmation card says what it is about to do, in words. Sending asked
+  you to approve `Send the draft {"draft_id":"01m2ep00bed1yyxq763yn865wq"}`,
+  and thirty of the forty-seven things that can stop and ask had no sentence
+  at all, so they showed you the call. They read as decisions now — "Delete a
+  message for good, which cannot be undone", "Set what the role Member may
+  do: mail:read, mail:send", "Ask to be taken off weekly.news.example.com" —
+  and where the call names something by identifier the card looks up what it
+  is, so removing an event names the event. Server settings show which fields
+  are being set and never their values, which is where a secret would have
+  been. A card drawn for a call with nothing in it used to be able to take the
+  run down with it.
 
 ### Removed
 

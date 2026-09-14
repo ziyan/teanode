@@ -27,6 +27,16 @@ func init() {
 					"kind":    tools.EnumProperty("what it is", "html", "svg", "markdown"),
 					"content": tools.StringProperty("the whole thing: the HTML document, the SVG element, or the Markdown"),
 				}, "title", "kind", "content"),
+				Preview: tools.PreviewOf(func(call struct {
+					Title string `json:"title"`
+					Kind  string `json:"kind"`
+				}) string {
+					what := map[string]string{"html": "a page", "svg": "a drawing", "markdown": "a document"}[call.Kind]
+					if what == "" {
+						what = "something"
+					}
+					return "Make " + what + " called " + tools.Named(call.Title, "this") + " to open beside the conversation"
+				}),
 				Guidance: "artifact: a chart is a page with <div class=\"chart\"></div> and a <script> that calls teanode.chart(element, option); link nothing — the library and the look come with the page — and let the theme choose colours and type; name every unit. Nothing loads from another server; keep a page under 200 kB.",
 				Run:      runArtifact,
 			},

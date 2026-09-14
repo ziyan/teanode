@@ -380,12 +380,21 @@ func (self *transaction) FindContactByAddress(userId, address string) (*models.C
 	if userId == "" || address == "" {
 		return nil, nil
 	}
+	// The addresses are one column with a line each, so the column is read
+	// back as the list it is and the address is compared to a whole entry.
+	//
+	// This was four LIKE patterns, which was wrong twice over: an address
+	// holding an underscore -- alice_smith@example.com, an ordinary address
+	// -- matched a contact with any character in that place, and an address
+	// holding a per cent sign matched a great deal more than that. "Known"
+	// is what the rule condition and the reply scope turn on, so a sender
+	// who could widen it by choosing their own address could decide they
+	// were somebody this person keeps.
 	var rows []contactModel
 	if err := self.tx.
 		Joins("JOIN \"addressbook\" ON \"addressbook\".\"id\" = \"contact\".\"addressbook_id\"").
 		Where("\"addressbook\".\"user_id\" = ?", userId).
-		Where("LOWER(\"contact\".\"emails\") = ? OR LOWER(\"contact\".\"emails\") LIKE ? OR LOWER(\"contact\".\"emails\") LIKE ? OR LOWER(\"contact\".\"emails\") LIKE ?",
-			address, address+"\n%", "%\n"+address, "%\n"+address+"\n%").
+		Where("? = ANY(string_to_array(LOWER(\"contact\".\"emails\"), E'\\n'))", address).
 		Limit(1).Find(&rows).Error; err != nil {
 		return nil, err
 	}

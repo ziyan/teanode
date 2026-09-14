@@ -451,19 +451,29 @@ func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemI
 }
 
 // draftKeyOf is the name the draft already has, or a new one.
+//
+// A draft that is gone gets a new name -- that is an ordinary race, and the
+// save is making a draft rather than continuing one. Anything else is
+// returned: minting a new name because a read failed would look like it
+// worked and quietly break whatever was holding the old one, which is the
+// failure this key exists to prevent.
 func (self *graph) draftKeyOf(ctx context.Context, mailbox *models.Mailbox, draftItemId string) (string, error) {
 	if strings.TrimSpace(draftItemId) == "" {
 		return security.NewULID(), nil
 	}
 	_, stored, err := self.requireOwnItem(ctx, mailbox, draftItemId)
-	if err != nil || stored == nil {
-		// A draft being continued that cannot be read is a draft this save
-		// is replacing anyway; it gets a new name rather than an error.
+	if errors.Is(err, api.ErrNotFound) || (err == nil && stored == nil) {
 		return security.NewULID(), nil
 	}
-	headers, _, err := self.storage.Get(ctx, stored.ID)
 	if err != nil {
+		return "", err
+	}
+	headers, _, err := self.storage.Get(ctx, stored.ID)
+	if errors.Is(err, storage.ErrNotFound) {
 		return security.NewULID(), nil
+	}
+	if err != nil {
+		return "", err
 	}
 	if key := strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderKey)); key != "" {
 		return key, nil

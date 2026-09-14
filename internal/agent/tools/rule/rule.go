@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -51,6 +52,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "Add a rule. Rules run on every message that arrives; the ones reading category, priority or needs-reply run once the agent has sorted it. The answer says what the rule would have matched among the newest fifty in the Inbox.",
 				Parameters:  tools.Object(ruleFields, "name", "conditions", "actions"),
+				Preview:     rulePreview("Add the rule %s%s"),
 				Guidance:    "A rule is the right shape for \"always file X in Y\": it is the person's, shown in their settings, and runs without you. Prefer it over remembering to do it yourself.",
 				Run:         runRuleAdd,
 			},
@@ -60,6 +62,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "Change a rule: give its current name as rule, and the fields to change.",
 				Parameters:  tools.Object(mailbox.MergeProperties(ruleFields, map[string]any{"rule": tools.StringProperty("the rule to change, by name or position")}), "rule"),
+				Preview:     rulePreview("Change the rule %s%s"),
 				Run:         runRuleUpdate,
 			},
 			{
@@ -67,6 +70,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionMailboxManage},
 				Description: "Remove a rule.",
 				Parameters:  tools.Object(map[string]any{"mailbox": mailbox.MailboxProperty, "rule": tools.StringProperty("the rule, by name or position")}, "rule"),
+				Preview:     rulePreview("Remove the rule %s%s"),
 				Run:         runRuleRemove,
 			},
 			{
@@ -90,9 +94,16 @@ func init() {
 					"folder":  tools.StringProperty("the folder; Inbox by default"),
 					"limit":   tools.IntegerProperty("how many newest messages, 200 by default"),
 				}),
-				Preview: func(arguments json.RawMessage) string {
-					return "Apply the rules to existing mail: " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(call struct {
+					Mailbox string `json:"mailbox"`
+					Folder  string `json:"folder"`
+				}) string {
+					where := strings.TrimSpace(call.Folder)
+					if where == "" {
+						where = "the Inbox"
+					}
+					return "Run the rules over the mail already in " + where + tools.In(call.Mailbox) + ", moving and marking it"
+				}),
 				Run: runRuleApply,
 			},
 		},
@@ -111,6 +122,31 @@ func init() {
 			},
 		)
 	})
+}
+
+// rulePreview is the line on the confirmation card: which rule, and in
+// which mailbox when the person has more than one.
+func rulePreview(shape string) func(json.RawMessage) string {
+	return func(arguments json.RawMessage) string {
+		var call ruleArguments
+		if err := json.Unmarshal(arguments, &call); err != nil {
+			return "Change a mailbox rule"
+		}
+		named := strings.TrimSpace(call.Rule)
+		if named == "" {
+			named = strings.TrimSpace(call.Name)
+		}
+		if named == "" {
+			named = "a rule"
+		} else {
+			named = strconv.Quote(named)
+		}
+		where := ""
+		if box := strings.TrimSpace(call.Mailbox); box != "" {
+			where = " in " + box
+		}
+		return fmt.Sprintf(shape, named, where)
+	}
 }
 
 type ruleArguments struct {

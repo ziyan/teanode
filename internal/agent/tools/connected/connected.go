@@ -35,7 +35,7 @@ func init() {
 				Preview: func(arguments json.RawMessage) string {
 					var call request
 					if err := json.Unmarshal(arguments, &call); err != nil {
-						return "Connected servers: " + strings.TrimSpace(string(arguments))
+						return "Change the servers this agent is connected to"
 					}
 					switch call.Action {
 					case "declare":
@@ -43,7 +43,10 @@ func init() {
 					case "disconnect":
 						return fmt.Sprintf("Forget this person's connection to %q", call.Name)
 					}
-					return "Connected servers: " + strings.TrimSpace(string(arguments))
+					if call.Action == "connect" {
+						return fmt.Sprintf("Connect this person to %s", tools.Named(call.Name, "a server"))
+					}
+					return "Change the servers this agent is connected to"
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call request

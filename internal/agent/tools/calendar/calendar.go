@@ -70,6 +70,22 @@ func init() {
 					"repeat":   tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO"),
 					"invite":   tools.ArrayProperty("addresses to invite; each is sent an invitation they can answer", tools.StringProperty("an address")),
 				}),
+				Preview: tools.PreviewOf(func(call struct {
+					Summary string   `json:"summary"`
+					Starts  string   `json:"starts"`
+					Invite  []string `json:"invite"`
+				}) string {
+					said := "Put " + tools.Named(call.Summary, "something") + " in your calendar"
+					if call.Starts != "" {
+						said += " on " + call.Starts
+					}
+					// Inviting somebody sends mail in the person's name,
+					// which is the part of this they are really approving.
+					if guests := tools.Some(call.Invite, 3); guests != "" {
+						said += ", and invite " + guests
+					}
+					return said
+				}),
 				Run: runAdd,
 			},
 			{
@@ -96,7 +112,8 @@ func init() {
 					"invite":      tools.ArrayProperty("the whole guest list as it should now be; everybody on it is sent the change", tools.StringProperty("an address")),
 					"tell_guests": tools.BooleanProperty("true when the people already invited are to be told about this change"),
 				}, "event"),
-				Run: runEdit,
+				PreviewIn: eventPreview("Change %s"),
+				Run:       runEdit,
 			},
 			{
 				// Destructive, so it is asked about whatever else is true
@@ -111,7 +128,11 @@ func init() {
 					"event":       tools.StringProperty("which event, as the identifier the agenda gives"),
 					"tell_guests": tools.BooleanProperty("true when the people invited are to be told it is off"),
 				}, "event"),
-				Run: runRemove,
+				// Naming the event, not its identifier: taking a thing out
+				// of somebody's diary is not a decision they can make about
+				// "01m2ep...".
+				PreviewIn: eventPreview("Take %s out of your calendar"),
+				Run:       runRemove,
 			},
 		},
 			// One calendar tool. Reading the diary, finding a free hour,
@@ -784,4 +805,33 @@ func zoneOf(zone string) *time.Location {
 		}
 	}
 	return time.UTC
+}
+
+// eventPreview is the card for a call that names an event by identifier:
+// the event's own title, looked up, because "01m2ep..." is not something a
+// person can decide about. Whether the guests are told is said too — that
+// part is mail going out in their name.
+func eventPreview(shape string) func(context.Context, json.RawMessage) string {
+	return func(ctx context.Context, arguments json.RawMessage) string {
+		var call struct {
+			Event      string `json:"event"`
+			TellGuests bool   `json:"tell_guests"`
+		}
+		if err := json.Unmarshal(arguments, &call); err != nil || strings.TrimSpace(call.Event) == "" {
+			return ""
+		}
+		named := "an event"
+		if run, err := tools.RunFrom(ctx); err == nil {
+			if calendarId, _, err := theCalendar(ctx, run.Operations()); err == nil {
+				if held, err := readEvent(ctx, run, calendarId, strings.TrimSpace(call.Event)); err == nil {
+					named = tools.Named(held.Summary, "an event")
+				}
+			}
+		}
+		said := fmt.Sprintf(shape, named)
+		if call.TellGuests {
+			said += ", and tell the guests"
+		}
+		return said
+	}
 }

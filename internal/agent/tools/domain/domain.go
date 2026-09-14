@@ -68,6 +68,11 @@ func init() {
 					"domain":  tools.StringProperty("the domain name"),
 					"comment": tools.StringProperty("a note about it"),
 				}, "domain"),
+				Preview: tools.PreviewOf(func(call struct {
+					Domain string `json:"domain"`
+				}) string {
+					return "Add the domain " + tools.Named(call.Domain, "a domain") + " to this server"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain  string `json:"domain"`
@@ -104,6 +109,18 @@ func init() {
 					"mail_servers":         tools.ArrayProperty("mail servers to forward to, host:port each", tools.StringProperty("host:port")),
 					"link_host":            tools.StringProperty("the host links are written with"),
 				}, "domain"),
+				Preview: tools.PreviewOf(func(call struct {
+					Domain      string   `json:"domain"`
+					MailServers []string `json:"mail_servers"`
+				}) string {
+					named := tools.Named(call.Domain, "a domain")
+					// Where a domain's mail goes is the setting worth
+					// naming: it moves everybody's mail at once.
+					if servers := tools.Some(call.MailServers, 2); servers != "" {
+						return "Send " + named + "'s mail to " + servers
+					}
+					return "Change the settings of " + named
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain             string   `json:"domain"`
@@ -145,9 +162,11 @@ func init() {
 				Name: "domain_remove", Family: tools.FamilyDomains, Risk: tools.RiskDestructive, Permissions: []models.Permission{models.PermissionDomainManageAll},
 				Description: "Remove a domain and everything under it: aliases, credentials, templates. Cannot be undone.",
 				Parameters:  tools.Object(map[string]any{"domain": tools.StringProperty("the domain, by name or id")}, "domain"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Remove the domain " + strings.TrimSpace(string(arguments)) + " and everything under it"
-				},
+				Preview: tools.PreviewOf(func(call struct {
+					Domain string `json:"domain"`
+				}) string {
+					return "Remove the domain " + tools.Named(call.Domain, "a domain") + " and everything under it: its addresses, its credentials, its templates"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain string `json:"domain"`
@@ -219,6 +238,7 @@ func init() {
 				RiskOf:      aliasRisk,
 				Description: "Add an address to a domain: what arrives at the pattern goes to a mailbox, is forwarded, is posted to a webhook, or is dropped.",
 				Parameters:  tools.Object(aliasFields, "domain", "pattern", "kind"),
+				Preview:     aliasPreview("Make %s@%s %s"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain    string  `json:"domain"`
@@ -267,6 +287,7 @@ func init() {
 				RiskOf:      aliasRisk,
 				Description: "Change an address: its pattern, what it does, its note, or switch it off and on.",
 				Parameters:  tools.Object(mailbox.MergeProperties(aliasFields, map[string]any{"alias_id": tools.StringProperty("the alias, from alias_list")}), "alias_id"),
+				Preview:     aliasPreview("Change %s@%s: %s"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						AliasID   string  `json:"alias_id"`
@@ -333,9 +354,9 @@ func init() {
 				Name: "alias_remove", Family: tools.FamilyDomains, Risk: tools.RiskDestructive, Permissions: manage,
 				Description: "Remove an address. Mail to it bounces from then on.",
 				Parameters:  tools.Object(map[string]any{"alias_id": tools.StringProperty("the alias, from alias_list")}, "alias_id"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Remove the alias " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(struct{}) string {
+					return "Remove an address, so mail to it bounces from then on"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						AliasID string `json:"alias_id"`
@@ -396,6 +417,22 @@ func init() {
 				Name: "credential_create", Family: tools.FamilyDomains, Risk: tools.RiskGranting, Permissions: manage,
 				Description: "Make a sending credential for a domain. The secret is shown once, to the person, exactly; never keep it.",
 				Parameters:  tools.Object(map[string]any{"domain": tools.StringProperty("the domain, by name or id"), "comment": tools.StringProperty("what it is for"), "alias": tools.StringProperty("the address it sends as, when limited to one")}, "domain"),
+				Preview: tools.PreviewOf(func(call struct {
+					Domain  string `json:"domain"`
+					Comment string `json:"comment"`
+					Alias   string `json:"alias"`
+				}) string {
+					// A credential is a way to send mail as this domain,
+					// handed to whoever ends up holding it.
+					said := "Make an SMTP credential for " + tools.Named(call.Domain, "a domain")
+					if call.Alias != "" {
+						said += ", sending as " + call.Alias
+					}
+					if call.Comment != "" {
+						said += " (" + call.Comment + ")"
+					}
+					return said
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain  string  `json:"domain"`
@@ -433,6 +470,21 @@ func init() {
 				Name: "credential_update", Family: tools.FamilyDomains, Risk: tools.RiskWrite, Permissions: manage,
 				Description: "Change a credential's note or the address it is limited to, or switch it off and on.",
 				Parameters:  tools.Object(map[string]any{"credential_id": tools.StringProperty("the credential, from credential_list"), "comment": tools.StringProperty("a note"), "alias": tools.StringProperty("the address it sends as"), "disabled": tools.BooleanProperty("off")}, "credential_id"),
+				Preview: tools.PreviewOf(func(call struct {
+					Disabled *bool  `json:"disabled"`
+					Alias    string `json:"alias"`
+				}) string {
+					if call.Disabled != nil && *call.Disabled {
+						return "Turn off an SMTP credential, so whatever sends with it stops"
+					}
+					if call.Disabled != nil {
+						return "Turn an SMTP credential back on"
+					}
+					if call.Alias != "" {
+						return "Change an SMTP credential to send as " + call.Alias
+					}
+					return "Change an SMTP credential"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						CredentialID string  `json:"credential_id"`
@@ -463,9 +515,9 @@ func init() {
 				Name: "credential_remove", Family: tools.FamilyDomains, Risk: tools.RiskDestructive, Permissions: manage,
 				Description: "Remove a sending credential. Whatever used it stops sending.",
 				Parameters:  tools.Object(map[string]any{"credential_id": tools.StringProperty("the credential, from credential_list")}, "credential_id"),
-				Preview: func(arguments json.RawMessage) string {
-					return "Remove the credential " + strings.TrimSpace(string(arguments))
-				},
+				Preview: tools.PreviewOf(func(struct{}) string {
+					return "Remove an SMTP credential, so whatever sends with it stops"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						CredentialID string `json:"credential_id"`
@@ -505,6 +557,9 @@ func init() {
 				Name: "queue_retry", Family: tools.FamilyDomains, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionQueueManage},
 				Description: "Try a waiting delivery again now.",
 				Parameters:  tools.Object(map[string]any{"delivery_id": tools.StringProperty("the delivery, from queue_list")}, "delivery_id"),
+				Preview: tools.PreviewOf(func(struct{}) string {
+					return "Try a queued delivery again now"
+				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						DeliveryID string `json:"delivery_id"`
@@ -590,4 +645,39 @@ func aliasRisk(arguments json.RawMessage) tools.Risk {
 		return tools.RiskOutward
 	}
 	return tools.RiskWrite
+}
+
+// aliasPreview is the card for making or changing an address: the address
+// itself and where its mail would go, which is the whole of the decision.
+func aliasPreview(shape string) func(json.RawMessage) string {
+	return tools.PreviewOf(func(call struct {
+		Domain    string  `json:"domain"`
+		Pattern   string  `json:"pattern"`
+		Kind      string  `json:"kind"`
+		Email     *string `json:"email"`
+		Webhook   *string `json:"webhook"`
+		MailboxID *string `json:"mailbox_id"`
+	}) string {
+		where := map[string]string{
+			"mailbox": "go to a mailbox", "forward": "be forwarded",
+			"webhook": "be posted to a webhook", "drop": "be dropped",
+		}[call.Kind]
+		if call.Email != nil && *call.Email != "" {
+			where = "be forwarded to " + *call.Email
+		} else if call.Webhook != nil && *call.Webhook != "" {
+			where = "be posted to " + *call.Webhook
+		}
+		if where == "" {
+			where = "change"
+		}
+		pattern := strings.TrimSpace(call.Pattern)
+		if pattern == "" {
+			pattern = "an address"
+		}
+		domain := strings.TrimSpace(call.Domain)
+		if domain == "" {
+			domain = "a domain"
+		}
+		return fmt.Sprintf(shape, pattern, domain, where)
+	})
 }
