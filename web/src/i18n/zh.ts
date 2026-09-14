@@ -1918,8 +1918,6 @@ export const zh: Catalog = {
   'saveSender.updated': '联系人已更新。',
   'saveSender.failed': '无法保存联系人。',
   'saveSender.needsAddress': '联系人需要一个邮箱地址。',
-  'mailbox.showSorting': '为什么这样分类',
-  'mailbox.hideSorting': '隐藏分类原因',
   'mailbox.sortingCategory': '类别',
   'mailbox.sortingPriority': '优先级',
   'mailbox.sortingNeedsReply': '需要回复',

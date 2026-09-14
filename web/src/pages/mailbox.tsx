@@ -2175,9 +2175,6 @@ export function ThreadMessage({
   const verdict = verdictOf(mail, t)
   // From, To, Received and what the checks said, when somebody asks for them.
   const [details, setDetails] = useState(false)
-  // Whether the sorting is shown: what the agent decided about this message
-  // and, where it kept one, the run that decided it.
-  const [sorting, setSorting] = useState(false)
   // Whether the dialog for keeping this message's sender is up.
   const [keeping, setKeeping] = useState(false)
 
@@ -2234,9 +2231,14 @@ export function ThreadMessage({
                       </dd>
                     </>
                   )}
+                  {/* What the agent worked out, in the same list rather than
+                      a second one under it. Both answer "what does this
+                      server know about this message", and two lists of the
+                      same shape one above the other read as one list that
+                      has gone wrong. */}
+                  {entry.item.insight && <SortingRows insight={entry.item.insight} />}
                 </dl>
               )}
-              {sorting && entry.item.insight && <SortingPanel insight={entry.item.insight} />}
               {/* Above the message, because an invitation is the thing the
                   message is about and the words around it are a covering
                   note. */}
@@ -2288,22 +2290,6 @@ export function ThreadMessage({
                           {t('mailbox.saveSender')}
                         </button>
                       )}
-                      {/* Why it was sorted the way it was. Behind the menu
-                          beside the headers, because it is the same kind of
-                          thing: what the server worked out about a message,
-                          for somebody who wants to know. */}
-                      {entry.item.insight && (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            close()
-                            setSorting((previous) => !previous)
-                          }}
-                        >
-                          {t(sorting ? 'mailbox.hideSorting' : 'mailbox.showSorting')}
-                        </button>
-                      )}
                       <button
                         type="button"
                         role="menuitem"
@@ -2335,8 +2321,9 @@ export function ThreadMessage({
   )
 }
 
-// SortingPanel is what the agent worked out about a message, for somebody
-// who wants to know why it was filed where it was.
+// SortingRows is what the agent worked out about a message, for somebody who
+// wants to know why it was filed where it was. Rows of the details list
+// rather than a list of their own: it is the same question.
 //
 // The category and the priority are what rules act on, so a message in the
 // wrong folder is usually a category somebody disagrees with -- and until
@@ -2344,12 +2331,12 @@ export function ThreadMessage({
 // items are what the agent read the message as; the notes are what a
 // research run found. The run itself is a conversation kept whole, so the
 // last line opens the working rather than only the verdict.
-function SortingPanel({ insight }: { insight: MailInsight }) {
+function SortingRows({ insight }: { insight: MailInsight }) {
   const { t } = useTranslation()
   const items = insight.actionItems ?? []
   return (
-    <dl className="mailbox-pane-meta mailbox-sorting">
-      <dt>{t('mailbox.sortingCategory')}</dt>
+    <>
+      <dt className="mailbox-meta-break">{t('mailbox.sortingCategory')}</dt>
       <dd>{insight.category || t('mailbox.sortingUnsorted')}</dd>
       <dt>{t('mailbox.sortingPriority')}</dt>
       <dd>{insight.priority || t('mailbox.sortingUnsorted')}</dd>
@@ -2405,6 +2392,6 @@ function SortingPanel({ insight }: { insight: MailInsight }) {
           </dd>
         </>
       )}
-    </dl>
+    </>
   )
 }

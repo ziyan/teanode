@@ -6,6 +6,25 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- What the agent worked out about a message is part of its details rather
+  than a second panel under them. Both answer the same question — what this
+  server knows about this message — and two lists of the same shape, one
+  above the other, read as one list that has gone wrong. One menu item now,
+  and one list: who it is from, when it arrived, what the checks said, then
+  the category, the priority and the rest.
+
+### Fixed
+
+- A message's details line up on the text rather than on the box. A label and
+  its value were each put at the top of their own cell, which is the same
+  thing only while both hold the same height of line — so a value containing
+  anything taller, such as a link that a phone draws with a button's metrics,
+  had its words sitting below the label beside it while the cells themselves
+  measured identical. That is why it looked right on a desktop and wrong on a
+  phone. They align on the first baseline now, whatever the value holds.
+
 ## [0.23.1] - 2026-09-14
 
 ### Fixed
