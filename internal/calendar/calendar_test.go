@@ -913,8 +913,13 @@ func TestManyUnnameableZonesAreSettledInOneWalk(t *testing.T) {
 		lines = append(lines, "END:VEVENT", "END:VCALENDAR")
 		file := []byte(crlf(lines...))
 
+		// A first parse pays for whatever the process has not warmed up
+		// yet, so it is made and thrown away rather than timed.
+		if _, err := Parse(file); err != nil {
+			t.Fatalf("parse: %s", err)
+		}
 		best := time.Duration(0)
-		for attempt := 0; attempt < 2; attempt++ {
+		for attempt := 0; attempt < 3; attempt++ {
 			started := time.Now()
 			parsed, err := Parse(file)
 			took := time.Since(started)
@@ -939,11 +944,16 @@ func TestManyUnnameableZonesAreSettledInOneWalk(t *testing.T) {
 	// times the work when the walk happens once, and sixteen times the work
 	// when it happens once per zone. Measured, on this file: just under four
 	// when the walk happens once, and between nine and ten when it does not.
-	// Six is the line between them, with half again either side of it.
+	//
+	// Seven is the line. Six was, and a shared runner measured 6.26 with the
+	// walk happening once -- the best of two runs is not enough to shake off
+	// a pause on a machine shared with whatever else is building. Seven sits
+	// clear of both: three times the good shape's headroom, and still well
+	// under the nine the bug produces.
 	small := measure(750)
 	large := measure(3000)
 	t.Logf("750 zones in %s, 3000 in %s", small, large)
-	if large > 6*small {
+	if large > 7*small {
 		t.Fatalf("four times the file took %s against %s, which is the shape of the bug", large, small)
 	}
 }
