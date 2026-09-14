@@ -106,6 +106,10 @@ td a:hover {
    behind it. */
 .topbar .breadcrumb {
   margin: 0;
+  /* The one thing on the bar that gives way, and it shrinks rather than
+     pushing: without the basis, a long subject makes the row overflow and
+     everything in it is squeezed to make room. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-body);
@@ -140,11 +144,18 @@ td a:hover {
 }
 
 /* A square, quiet until it is under the pointer. Used by the hamburger and by
-   each of the menus on the right, so they line up and behave alike. */
+   each of the menus on the right, so they line up and behave alike.
+   
+   It never gives way. A square with a width and nothing said about shrinking
+   is still a flex item that may be shrunk, so a breadcrumb too long for the
+   bar -- a subject, on a phone -- squeezed the hamburger beside it out of
+   square and moved what was in it. The row has one thing in it that is meant
+   to give way, and this is not it. */
 .icon-button {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
   padding: 0;
@@ -4297,6 +4308,18 @@ label.check-list-item {
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* What the agent worked out about a message, opened from its menu beside the
+   headers. A definition list like the details above it, with the notes and
+   the summary allowed to wrap rather than being held to one line. */
+.mailbox-sorting dd {
+   white-space: normal;
+}
+
+.mailbox-sorting-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .mailbox-pane-actions {
   display: flex;
   flex-wrap: wrap;

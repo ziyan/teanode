@@ -689,6 +689,11 @@ export interface MailInsight {
   actionItems?: string[]
   notes?: string
   proposals?: MailProposal[]
+
+  // What decided it, and the run that did. The run is a conversation of its
+  // own, so the reader can open the working rather than only the verdict.
+  model?: string
+  runId?: string
 }
 
 // Something a message carries that belongs somewhere else: an appointment in
