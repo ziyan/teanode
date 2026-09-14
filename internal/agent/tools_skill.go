@@ -275,8 +275,11 @@ func (self *Agent) keepSkillFiles(ctx context.Context, run tools.Run, skill *ski
 	var images []llm.ContentPart
 	var handed []any
 	for _, file := range fetched {
+		// The field names share_file answers with, so that whatever reads
+		// one reads the other: a file handed over is a file handed over,
+		// whether a tool was asked for it or a skill's step fetched it.
 		entry := map[string]any{
-			"step": file.Step, "content_type": file.MediaType, "bytes": len(file.Data),
+			"step": file.Step, "content_type": file.MediaType, "size": len(file.Data),
 		}
 		if file.Look {
 			images = append(images, llm.ContentPart{Type: "image", MediaType: file.MediaType, Data: file.Data})
