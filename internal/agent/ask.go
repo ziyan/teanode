@@ -974,7 +974,7 @@ func (self *AskRun) confirm(ctx context.Context, tool *Tool, call *Call) (bool, 
 	self.mutex.Lock()
 	self.confirmations[call.ID] = channel
 	self.mutex.Unlock()
-	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: string(tool.RiskFor(call.Arguments)), Note: tool.PreviewLine(call.Arguments)})
+	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: string(tool.RiskFor(call.Arguments)), Note: tool.PreviewLine(tools.WithRun(ctx, self), call.Arguments)})
 	timer := time.NewTimer(confirmationWait)
 	defer timer.Stop()
 	select {

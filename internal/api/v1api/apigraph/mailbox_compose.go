@@ -19,6 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // Writing from a mailbox: a new message, a reply, a forward, and the draft
@@ -33,6 +34,10 @@ import (
 type MailboxComposeQuery interface {
 	// Read a draft back into the compose page
 	GetMailboxDraft(ctx context.Context, arguments GetMailboxDraftArguments) (*MailboxDraft, error)
+
+	// Find a draft by the key it keeps across saves, for anything holding
+	// on to one between one save and the next. Needs mail:read.
+	FindMailboxDraft(ctx context.Context, arguments FindMailboxDraftArguments) (*MailboxDraft, error)
 }
 
 type MailboxComposeMutation interface {
@@ -132,6 +137,9 @@ type MailboxDraft struct {
 	// compose page keeps the thread when the draft is sent.
 	ReplyToItemID string `json:"replyToItemId,omitempty"`
 	ForwardItemID string `json:"forwardItemId,omitempty"`
+
+	// Key names the draft across saves; ItemID names this save of it.
+	Key string `json:"key,omitempty"`
 }
 
 // Private headers a draft carries for the compose page's sake and no
@@ -141,6 +149,7 @@ const (
 	draftHeaderBcc     = mx.DraftHeaderBcc
 	draftHeaderReplyTo = mx.DraftHeaderReplyTo
 	draftHeaderForward = mx.DraftHeaderForward
+	draftHeaderKey     = mx.DraftHeaderKey
 )
 
 // SendMailboxMessage sends from a mailbox as one of its addresses. The
@@ -317,6 +326,13 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 		}
 		message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderForward, parameters.ForwardItemID))
 	}
+	// The draft's own name, carried from the save being replaced so that it
+	// is the same draft afterwards, and made here when there is none.
+	key, err := self.draftKeyOf(ctx, mailbox, parameters.DraftItemID)
+	if err != nil {
+		return nil, err
+	}
+	message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderKey, key))
 
 	composed, err := self.mailer.Compose(ctx, message)
 	if err != nil {
@@ -420,6 +436,7 @@ func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemI
 		Bcc:           addressesOf(headers, draftHeaderBcc),
 		ReplyToItemID: strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderReplyTo)),
 		ForwardItemID: strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderForward)),
+		Key:           strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderKey)),
 	}
 	if from, err := mail.ParseAddress(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, "From"))); err == nil {
 		draft.From = from.Address
@@ -432,6 +449,76 @@ func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemI
 	}
 	return draft, nil
 }
+
+// draftKeyOf is the name the draft already has, or a new one.
+func (self *graph) draftKeyOf(ctx context.Context, mailbox *models.Mailbox, draftItemId string) (string, error) {
+	if strings.TrimSpace(draftItemId) == "" {
+		return security.NewULID(), nil
+	}
+	_, stored, err := self.requireOwnItem(ctx, mailbox, draftItemId)
+	if err != nil || stored == nil {
+		// A draft being continued that cannot be read is a draft this save
+		// is replacing anyway; it gets a new name rather than an error.
+		return security.NewULID(), nil
+	}
+	headers, _, err := self.storage.Get(ctx, stored.ID)
+	if err != nil {
+		return security.NewULID(), nil
+	}
+	if key := strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderKey)); key != "" {
+		return key, nil
+	}
+	return security.NewULID(), nil
+}
+
+// FindMailboxDraftArguments name a draft by the key it keeps across saves.
+type FindMailboxDraftArguments struct {
+	MailboxID string `json:"mailboxId"`
+	Key       string `json:"key"`
+}
+
+// FindMailboxDraft is the draft with this key as it stands now.
+//
+// Saving a draft replaces the message that holds it, so an item id names one
+// save. This answers "where is that draft now", which is what anything
+// holding on to a draft between one save and the next has to ask.
+func (self *graph) FindMailboxDraft(ctx context.Context, arguments FindMailboxDraftArguments) (*MailboxDraft, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailRead, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(arguments.Key)
+	if key == "" {
+		return nil, fmt.Errorf("%w: which draft? give key", api.ErrInvalidArguments)
+	}
+	tx := self.transaction(ctx)
+	drafts, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindDrafts)
+	if err != nil {
+		return nil, err
+	}
+	if drafts == nil {
+		return nil, api.ErrNotFound
+	}
+	items, err := tx.ListItems(drafts.ID, &db.ItemOptions{Limit: draftsSearched})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		headers, _, err := self.storage.Get(ctx, item.MailID)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(mailparse.FindHeaderValue(headers, draftHeaderKey)) == key {
+			return self.readDraft(ctx, mailbox, item.ID)
+		}
+	}
+	return nil, api.ErrNotFound
+}
+
+// draftsSearched bounds the walk above. A person has a handful of drafts;
+// somebody with more than this many has a Drafts folder they are not using
+// as one, and the newest are the ones anything is waiting on.
+const draftsSearched = 200
 
 // buildMailboxMessage turns the compose page's fields into a message: the
 // sender checked against the mailbox's addresses, the attachments gathered

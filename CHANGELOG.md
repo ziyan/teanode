@@ -47,6 +47,34 @@ Notable changes to TeaNode. The format follows
   Restart `teanode computer` on any machine that is attached: a program
   started before this release does not know `put` and says so.
 
+### Fixed
+
+- A draft keeps its name when it is saved again. Saving a draft writes a new
+  message and removes the old one — that is what editing a stored message
+  means — so the identifier your agent was holding stopped naming anything
+  the moment you opened the draft in the composer and it saved itself. You
+  would approve "send this draft" and the send would fail on a draft that was
+  no longer there. A draft now carries a key that survives every save, and
+  that is what the agent holds.
+
+- The message you are writing is shown on white, in both themes. It is what
+  the person reading it will see — the reader shows a message that way, and
+  so does nearly every mail client — and showing it on the dashboard's dark
+  ground was not a theme but a wrong picture of what you were sending: an
+  HTML message paints only the backgrounds it sets, so it came out in bands,
+  and any text without a colour of its own inherited the dashboard's near-
+  white and vanished against the message's own pale panels. Hovering made it
+  worse: the dashboard's table rule painted the rows of a table-built message
+  as though they were rows of a data table, so bands of the message went dark
+  under the pointer. The plain text tab stays in your theme, which is what
+  its recipient gets too.
+
+- A confirmation card says what it is about to do. Sending asked you to
+  approve `Send the draft {"draft_id":"01m2ep00bed1yyxq763yn865wq"}`; it now
+  says who the message goes to and what it is called. A tool that has no
+  sentence of its own gets a readable one built from the call rather than the
+  call itself.
+
 ### Removed
 
 - A mailbox no longer keeps a list of every address that has ever written to

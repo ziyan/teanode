@@ -179,7 +179,13 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	message["to"], message["cc"], message["bcc"], message["subject"] = to, cc, bcc, subject
 	if arguments.DraftID != "" {
-		message["draftItemId"] = arguments.DraftID
+		// The draft being revised is named by its key; what the mutation
+		// wants is the item holding it now.
+		existing, err := mailbox.FindDraft(ctx, operations, view, arguments.DraftID)
+		if err != nil {
+			return nil, err
+		}
+		message["draftItemId"] = existing.ItemID
 	}
 	var result struct {
 		SaveMailboxDraft struct {
@@ -189,11 +195,24 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) { SaveMailboxDraft(mailboxId: $mailboxId, message: $message) { id } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message}, &result); err != nil {
 		return nil, err
 	}
+	// The draft's own name, which is what to hold on to: saving it again --
+	// which the composer does the moment the person opens it -- writes a new
+	// message with a new item id, and an answer carrying that id would be
+	// stale before anybody read it.
+	var saved struct {
+		GetMailboxDraft struct {
+			Key string `json:"key"`
+		} `json:"GetMailboxDraft"`
+	}
+	draftId := result.SaveMailboxDraft.ID
+	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { key } }`, map[string]any{"itemId": draftId}, &saved); err == nil && saved.GetMailboxDraft.Key != "" {
+		draftId = saved.GetMailboxDraft.Key
+	}
 	preview := arguments.Text
 	if len(preview) > 300 {
 		preview = preview[:300] + "…"
 	}
-	answer, err := tools.JSONResult(map[string]any{"draft_id": result.SaveMailboxDraft.ID, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"})
+	answer, err := tools.JSONResult(map[string]any{"draft_id": draftId, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"})
 	if err != nil {
 		return nil, err
 	}

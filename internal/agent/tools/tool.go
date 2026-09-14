@@ -95,7 +95,19 @@ type Tool struct {
 
 	// Preview says what a call would do, in a line, for the confirmation
 	// card. Nil uses the tool's name and arguments.
+	//
+	// The card is the one moment a person decides, and it has to say what
+	// will happen in the words they would use -- "Send \"Thursday?\" to
+	// maria@example.net", not the call. A card that prints the arguments
+	// makes the person parse JSON to decide, and the identifiers in it
+	// mean nothing to them.
 	Preview func(arguments json.RawMessage) string
+
+	// PreviewIn is the same line for a tool that has to look something up
+	// to say it: mail_send is handed a draft id, and what the person needs
+	// to see is the subject and who it goes to. The run is in the context.
+	// Set one or the other; this wins where both are set.
+	PreviewIn func(ctx context.Context, arguments json.RawMessage) string
 
 	// RiskOf, when set, says what one call would cost, for a tool whose
 	// actions differ: mail_act is a write until it is delete_forever.
@@ -151,13 +163,55 @@ func (self *Tool) Definition() llm.ToolDefinition {
 }
 
 // PreviewLine is what the confirmation card says.
-func (self *Tool) PreviewLine(arguments json.RawMessage) string {
+func (self *Tool) PreviewLine(ctx context.Context, arguments json.RawMessage) string {
+	if self.PreviewIn != nil {
+		if line := strings.TrimSpace(self.PreviewIn(ctx, arguments)); line != "" {
+			return line
+		}
+	}
 	if self.Preview != nil {
 		if line := strings.TrimSpace(self.Preview(arguments)); line != "" {
 			return line
 		}
 	}
-	return fmt.Sprintf("Run %s with %s", self.Name, strings.TrimSpace(string(arguments)))
+	return describeCall(self.Name, arguments)
+}
+
+// describeCall is the last-resort line for a tool that says nothing about
+// itself: the tool's name as words, and its arguments as "name: value"
+// rather than as the JSON object they arrived in.
+//
+// Not a good card -- a tool that can ask for a person's word should say
+// what it is asking in its own words -- but a readable one, so that adding
+// a tool and forgetting the sentence gives somebody a line they can act on
+// instead of a blob they have to read as a programmer.
+func describeCall(name string, arguments json.RawMessage) string {
+	said := strings.ReplaceAll(name, "_", " ")
+	said = strings.ToUpper(said[:1]) + said[1:]
+	var fields map[string]any
+	if err := json.Unmarshal(arguments, &fields); err != nil || len(fields) == 0 {
+		return said
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(fmt.Sprintf("%v", fields[key]))
+		if value == "" || value == "<nil>" || value == "false" || value == "[]" || value == "map[]" {
+			continue
+		}
+		if len(value) > 80 {
+			value = value[:80] + "…"
+		}
+		parts = append(parts, strings.ReplaceAll(key, "_", " ")+": "+value)
+	}
+	if len(parts) == 0 {
+		return said
+	}
+	return said + " — " + strings.Join(parts, ", ")
 }
 
 // Catalog is every tool the server knows.

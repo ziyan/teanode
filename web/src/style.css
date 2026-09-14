@@ -3074,7 +3074,48 @@ a.button.primary:hover {
   min-height: 120px;
 }
 
+/* The editing surface is a sheet of paper, in both themes.
+   
+   What is in this box is a message, and a message is read on white: the
+   reader shows one that way (an iframe with a white ground), and so does
+   almost every mail client it will land in. Showing it on the dashboard's
+   dark ground was not a theme, it was a lie about what the recipient gets
+   -- and a broken one, because a message only paints the backgrounds it
+   sets. An HTML message that fills its card with #ffffff and leaves the
+   paragraphs alone came out in bands, light where it painted and dark
+   where it did not, with any text that set no colour of its own inheriting
+   the dashboard's near-white and vanishing on the message's own pale blue.
+   
+   The light tokens are redeclared here rather than the colours written
+   out, so that every rule below reading --muted, --border-strong or
+   --accent lands on a value meant for white. It also puts out a fire
+   nobody lit on purpose: this box holds the message's markup in the
+   dashboard's own document, where the dashboard's element rules reach it,
+   and `tbody tr:hover` -- written for the data tables -- painted the rows
+   of a table-built message with --sidebar-hover as the pointer crossed
+   them. In dark mode that is #17171a, so hovering over a message turned
+   bands of it black. Redefining the token here is what stops it, and stops
+   the next such rule too. */
 .richtext-editor {
+  --background: #ffffff;
+  --surface: #ffffff;
+  --rail: #f7f7f6;
+  --field: #eeeeea;
+  --border: #e7e7e4;
+  --border-strong: #d8d8d4;
+  --text: #18181b;
+  --muted: #6f6f76;
+  --accent: #1f1f22;
+  --accent-text: #ffffff;
+  /* Nothing in a message is a row of a table of the dashboard's. */
+  --sidebar-hover: transparent;
+
+  background: var(--surface);
+  color: var(--text);
+  /* So a form control or a scrollbar the message carries is drawn light
+     with everything else, rather than dark on the white. */
+  color-scheme: light;
+
   padding: 12px 14px;
   outline: none;
   line-height: 1.5;
@@ -3084,6 +3125,20 @@ a.button.primary:hover {
      the page. */
   contain: paint;
   isolation: isolate;
+}
+
+/* The plain text tab is deliberately not paper: it stays in the dashboard's
+   theme, because plain text has no colours of its own and is shown by the
+   client at the other end in whatever theme that reader is using. Rich text
+   on white and plain text in the theme are both honest about what the
+   recipient gets; the ground changing as the tabs are switched is that
+   difference, not a bug to iron out. */
+
+/* The sheet reaches the box's corners: the toolbar keeps the dashboard's
+   colours, and the paper begins under it. */
+.richtext-editor {
+  border-bottom-left-radius: var(--radius-2);
+  border-bottom-right-radius: var(--radius-2);
 }
 
 /* The quoted message a reply carries, folded away while the answer is being
