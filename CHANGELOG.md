@@ -57,6 +57,13 @@ Notable changes to TeaNode. The format follows
   the form says so and updates that one, rather than giving you two of the
   same person.
 
+- Your agent can read what a setting means, not only what it is set to.
+  `settings describe` answers with the fields of a section, the type each
+  takes and the documentation the configuration itself carries — the same
+  words `docs/configuration.md` is checked against, rather than a second copy
+  written into a prompt. It had the values and no names, so changing a
+  setting meant guessing a field, and a guessed field is refused at best.
+
 - Equipment on your own network can be reached by a skill. The address guard
   refuses anything private, which is right for a link out of a message and
   wrong for a skill pointed at a controller on your own LAN — and it is why a

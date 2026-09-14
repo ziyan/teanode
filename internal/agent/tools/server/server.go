@@ -68,7 +68,7 @@ func init() {
 			},
 			{
 				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskDestructive, Permissions: manage,
-				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them; a secret left out or shown redacted is kept. The agent section holds the providers, the models, the tool policy and the limits. A connected server is easier to add with connected_server, which declares and connects it in one place.",
+				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them -- settings describe says what each one is and means; a secret left out or shown redacted is kept. The agent section holds the providers, the models, the tool policy and the limits. A connected server is easier to add with connected_server, which declares and connects it in one place.",
 				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
 				Preview: tools.PreviewOf(func(call struct {
 					Section string         `json:"section"`
@@ -109,6 +109,7 @@ func init() {
 					return tools.TextResult("changed the %s settings", section), nil
 				},
 			},
+			settingsDescribeTool(),
 			{
 				Name: "server_upgrade", Family: tools.FamilyServer, Risk: tools.RiskOutward, Permissions: manage,
 				Description: "Apply a newer release of the server, or restart it. The server goes away for a moment; it always asks first.",
@@ -165,6 +166,7 @@ func init() {
 				Description: "This server's own configuration.",
 				Members: []tools.Member{
 					{Action: "get", Tool: "settings_get"},
+					{Action: "describe", Tool: "settings_describe"},
 					{Action: "update", Tool: "settings_update"},
 				},
 			},

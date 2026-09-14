@@ -285,8 +285,11 @@ function GeneralForm({ settings, onSaved }: Props) {
           placeholder="192.168.1.10, 10.0.0.0/24, printer.lan"
           onChange={(event) => setAllowPrivate(event.target.value)}
         />
-        <p className="muted field-hint">{t('agentSettings.allowPrivateHint')}</p>
       </label>
+      {/* After the label, not inside it: field-hint carries a negative top
+          margin that pulls it against the field above, which only works
+          when it is the field's sibling. */}
+      <p className="muted field-hint">{t('agentSettings.allowPrivateHint')}</p>
       <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
     </form>
   )
