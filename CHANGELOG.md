@@ -16,14 +16,16 @@ Notable changes to TeaNode. The format follows
   run looked up, and which model decided; where the run was kept, one press
   opens the whole of it.
 
-## [0.22.2] - 2026-09-14
-
 ### Fixed
 
 - A long subject on the bar no longer squeezes the menu button beside it. A
   square with a width and nothing said about shrinking is still something
   flexbox may shrink, so a breadcrumb too long for a phone's bar pushed the
   hamburger out of square and moved the lines inside it.
+
+## [0.22.2] - 2026-09-14
+
+### Fixed
 
 - **Mail programs can sign in on port 993 again.** Since 0.21.3 the
   implicit-TLS listener answered a finished TLS session by advertising
