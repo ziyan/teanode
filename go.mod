@@ -23,7 +23,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/graphql-go/graphql v0.8.1
-	github.com/kaptinlin/jsonrepair v0.2.8
+	github.com/kaptinlin/jsonrepair v0.4.9
 	github.com/lib/pq v1.12.3
 	github.com/miekg/dns v1.1.73
 	github.com/oklog/ulid/v2 v2.1.2
@@ -63,6 +63,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect

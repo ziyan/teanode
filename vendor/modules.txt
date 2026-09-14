@@ -199,6 +199,14 @@ github.com/fxamacker/cbor/v2
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
 github.com/go-jose/go-jose/v4/json
+# github.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6
+## explicit; go 1.26
+github.com/go-json-experiment/json
+github.com/go-json-experiment/json/internal
+github.com/go-json-experiment/json/internal/jsonflags
+github.com/go-json-experiment/json/internal/jsonopts
+github.com/go-json-experiment/json/internal/jsonwire
+github.com/go-json-experiment/json/jsontext
 # github.com/go-viper/mapstructure/v2 v2.5.0
 ## explicit; go 1.18
 github.com/go-viper/mapstructure/v2
@@ -284,8 +292,8 @@ github.com/jinzhu/inflection
 # github.com/jinzhu/now v1.1.5
 ## explicit; go 1.12
 github.com/jinzhu/now
-# github.com/kaptinlin/jsonrepair v0.2.8
-## explicit; go 1.25
+# github.com/kaptinlin/jsonrepair v0.4.9
+## explicit; go 1.26.4
 github.com/kaptinlin/jsonrepair
 # github.com/lib/pq v1.12.3
 ## explicit; go 1.21
