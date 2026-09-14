@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -110,5 +111,51 @@ func TestWhatComesBackFitsInAResult(t *testing.T) {
 	encoded, err := json.Marshal(listing)
 	if err != nil || len(encoded) > tools.ResultCharacters {
 		t.Errorf("the listing is %d characters: %v", len(encoded), err)
+	}
+}
+
+// A secret is named and explained, and its value is nowhere in the answer.
+func TestASecretIsDescribedAndNotShown(t *testing.T) {
+	t.Parallel()
+
+	described := describeType(reflect.TypeOf(config.AgentProvider{}), describeDepth).(map[string]any)
+	key, ok := described["apiKey"].(map[string]any)
+	if !ok {
+		t.Fatalf("the key is not described: %+v", described["apiKey"])
+	}
+	if key["secret"] != true {
+		t.Errorf("a secret says so: %+v", key)
+	}
+	// Only what it is and what it is for. There is nothing here that could
+	// carry a value -- this walks types, not a configuration -- and the
+	// test says so, because that is the property worth keeping.
+	for field := range key {
+		switch field {
+		case "type", "means", "secret", "fields":
+		default:
+			t.Errorf("unexpected %q in a described field", field)
+		}
+	}
+}
+
+// A struct written into its parent rather than under a name of its own does
+// not become a settings name. None of them are exported today; one added
+// later would otherwise be described as a field nobody can set.
+func TestAnInlinedStructIsNotASettingsName(t *testing.T) {
+	t.Parallel()
+
+	for _, section := range []string{"tls", "dkim", "session"} {
+		whole := reflect.TypeOf(config.Configuration{})
+		for index := 0; index < whole.NumField(); index++ {
+			field := whole.Field(index)
+			if yamlName(field) != section {
+				continue
+			}
+			for name := range describeType(field.Type, describeDepth).(map[string]any) {
+				if strings.HasPrefix(name, "deprecated") {
+					t.Errorf("%s.%s is not a setting", section, name)
+				}
+			}
+		}
 	}
 }

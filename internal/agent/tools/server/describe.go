@@ -129,9 +129,18 @@ func yamlName(field reflect.StructField) string {
 	if tag == "-" {
 		return ""
 	}
-	name, _, _ := strings.Cut(tag, ",")
+	name, options, _ := strings.Cut(tag, ",")
 	if name = strings.TrimSpace(name); name != "" {
 		return name
+	}
+	// An inlined struct has no name of its own: its fields belong to the
+	// struct holding it. The ones here are all unexported, so this has
+	// nothing to do today -- and an exported one added later would
+	// otherwise appear as a settings name that does not exist.
+	for _, option := range strings.Split(options, ",") {
+		if strings.TrimSpace(option) == "inline" {
+			return ""
+		}
 	}
 	if !field.IsExported() {
 		return ""
