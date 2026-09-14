@@ -4297,6 +4297,17 @@ label.check-list-item {
   color: var(--muted);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  /* A label and its value line up on the text, not on the box.
+     
+     Stretch is the default, and it gives the two cells the same height and
+     puts the content at the top of each -- so a value whose first line box
+     is taller than the label's has its words sitting lower inside a cell
+     that measures identical. Anything in the value can do that: an inline
+     button, a different font resolving on a phone, a browser's own metrics.
+     It is why this looked right on a desktop and wrong on a phone, and why
+     measuring the cells said the rows were aligned when the reader could
+     see they were not. Baseline is the alignment the row actually wants. */
+  align-items: baseline;
   gap: 2px 10px;
   margin-bottom: 12px;
 }
@@ -4324,16 +4335,12 @@ label.check-list-item {
   padding-left: 1.1rem;
 }
 
-/* A link-shaped button sits on the text's baseline and takes the line-height
-   of the text around it, rather than whatever height the browser gives a
-   button.
-   
-   Said because a browser's own button metrics are not the same everywhere --
-   a phone's are not a desktop's -- and a row of this list whose value holds
-   a button was reported sitting a line below its label on a phone, where it
-   measures correctly on a desktop at every column width I could put it
-   through. This makes the button stop being a variable. It is not a
-   demonstrated cause. */
+/* And the button does not grow the line it is on in the first place: it
+   takes the line-height of the text around it rather than whatever height
+   the browser gives a button, which is not the same on a phone as on a
+   desktop. The baseline alignment above makes the row right either way;
+   this keeps the row from growing to accommodate a button nobody asked to
+   be tall. */
 .mailbox-pane-meta button.link {
   line-height: inherit;
   vertical-align: baseline;

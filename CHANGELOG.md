@@ -17,11 +17,13 @@ Notable changes to TeaNode. The format follows
 
 ### Fixed
 
-- A link inside the message details takes the line-height of the text around
-  it rather than a button's own, which differs between a phone and a desktop.
-  The "Decided by" row was reported sitting a line below its label on a
-  phone; this removes the one thing in that row whose height was not the
-  text's.
+- A message's details line up on the text rather than on the box. A label and
+  its value were each put at the top of their own cell, which is the same
+  thing only while both hold the same height of line — so a value containing
+  anything taller, such as a link that a phone draws with a button's metrics,
+  had its words sitting below the label beside it while the cells themselves
+  measured identical. That is why it looked right on a desktop and wrong on a
+  phone. They align on the first baseline now, whatever the value holds.
 
 ## [0.23.1] - 2026-09-14
 
