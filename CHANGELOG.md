@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-14
+
 ### Added
 
 - Why a message was sorted the way it was, in its menu beside the headers.
