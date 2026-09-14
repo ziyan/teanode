@@ -76,7 +76,10 @@ function ProposalCard({
   const { t } = useTranslation()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const [summary, setSummary] = useState(proposal.summary ?? proposal.name ?? '')
+  // An empty summary is "" rather than null, and `??` only falls through on
+  // null -- so a contact whose name the run found was offered with an empty
+  // name box, with the name it had found nowhere on the card.
+  const [summary, setSummary] = useState(proposal.summary || proposal.name || '')
   const [starts, setStarts] = useState(proposal.starts ?? '')
   const [ends, setEnds] = useState(proposal.ends ?? '')
   const [location, setLocation] = useState(proposal.location ?? '')

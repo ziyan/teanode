@@ -6,8 +6,6 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
-## [0.22.1] - 2026-09-14
-
 ### Fixed
 
 - **Mail programs can sign in on port 993 again.** Since 0.21.3 the
@@ -20,6 +18,30 @@ Notable changes to TeaNode. The format follows
   type it is; a wrapper around a TLS connection is not one. The ceiling now
   goes on underneath the encryption, so what the library sees is the TLS
   connection it is looking for.
+
+- Nothing is offered from junk. A scam's signature is the most carefully
+  written part of it — a name, a title, a telephone number — so it is exactly
+  what the agent finds when it reads a message for what it carries, and you
+  were being asked whether to keep the sender of a message sitting in your
+  Junk folder. Two different things say a message is unwanted and both are
+  checked now: what the sorting called it, and where the filter put it. The
+  invoice scam that prompted this was sorted as ordinary work and was in Junk
+  the whole time. Offers already written are not shown from Junk or Trash
+  either, so one that was made before a message was moved there goes quiet.
+
+- The name the agent found is in the box it offers to save. A contact whose
+  name it had read came up with an empty name field — the card fell back to
+  the name only when the summary was missing, and an empty summary is not a
+  missing one.
+
+- Room around the pieces of that card. The heading, the fields, the addresses
+  found, the line they were read from and the two buttons had nothing between
+  them but a label's own margin, which on a phone read as one block of text
+  with boxes in it.
+
+## [0.22.1] - 2026-09-14
+
+### Fixed
 
 - A Windows path in a message your agent read comes back with its backslashes.
   When a model answers with JSON that has to be repaired before it can be read

@@ -7508,6 +7508,30 @@ button.with-icon {
   gap: 0.6rem;
 }
 
+/* The card the agent offers: what a message carries that belongs somewhere
+   else, with the line it was read from underneath.
+   
+   The pieces below are a heading, a small form, the addresses and numbers
+   that were found, the quoted line, and the two buttons — five things with
+   nothing between them but a label's own ten pixels, which on a phone read
+   as one block of text with boxes in it. Each of the three that follow the
+   form is given the room that says it is a separate thing. */
+.invitation-card .form-narrow > p {
+  margin: -4px 0 0;
+}
+
+.invitation-card blockquote {
+  margin: 0.8rem 0 0;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--border-strong);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.invitation-card .page-actions-end {
+  margin-top: 0.9rem;
+}
+
 .invitation-card.cancelled .invitation-summary {
   text-decoration: line-through;
   text-decoration-color: var(--border-strong);
