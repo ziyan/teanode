@@ -762,6 +762,17 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 	if !agent.FeatureAllowed(configuration, "summaries") {
 		return nil
 	}
+	// A conversation of one is not worth a summary: the message is on the
+	// screen under it. Counted by message and not by item -- a message
+	// somebody sends to themselves is filed in Sent and in the Inbox, which
+	// is two items and one message, and it was the one kind of single
+	// message that got itself summarized and then went on showing the
+	// summary. First of all, because most threads are one message and this
+	// is read every time one is opened: the lookup below is a query that
+	// would be thrown away.
+	if agent.CountMessages(items) < 2 {
+		return nil
+	}
 	tx := self.transaction(ctx)
 	summary, err := tx.GetThreadSummary(mailbox.ID, threadId)
 	if err != nil {
@@ -787,16 +798,6 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 		view.Stale = summary.ThroughMailID != newest
 	} else {
 		view.Stale = true
-	}
-	// A conversation of one is not worth a summary: the message is on the
-	// screen under it. Counted by message and not by item, and before the
-	// summary is shown rather than only before one is asked for -- a
-	// message somebody sends to themselves is filed in Sent and in the
-	// Inbox, which is two items and one message, and it was the one kind
-	// of single message that got itself summarized and then went on
-	// showing the summary.
-	if agent.CountMessages(items) < 2 {
-		return nil
 	}
 	if !view.Stale {
 		return view

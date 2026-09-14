@@ -248,12 +248,17 @@ function GeneralForm({ settings, onSaved }: Props) {
   const [enabled, setEnabled] = useState(settings.enabled)
   const [instructions, setInstructions] = useState(settings.instructions)
   const [allowPrivate, setAllowPrivate] = useState(list(settings.allowPrivateAddresses))
+  // The list as one string, which is what the effect below depends on. The
+  // array is a fresh one on every fetch even when nothing in it changed, and
+  // an effect that depends on its identity runs again and puts the stored
+  // value back over what is being typed.
+  const storedAllowPrivate = list(settings.allowPrivateAddresses)
   useEffect(() => {
     setEnabled(settings.enabled)
     setInstructions(settings.instructions)
-    setAllowPrivate(list(settings.allowPrivateAddresses))
+    setAllowPrivate(storedAllowPrivate)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.enabled, settings.instructions, settings.allowPrivateAddresses])
+  }, [settings.enabled, settings.instructions, storedAllowPrivate])
 
   return (
     <form
