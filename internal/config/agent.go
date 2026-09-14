@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"path"
 	"regexp"
 	"strings"
@@ -677,6 +678,32 @@ func (self *Agent) FeatureOn(feature string) bool {
 // is wrong whether or not it is used yet, so the names are always checked.
 func (self *Configuration) validateAgent(validator *validator) {
 	agent := &self.Agent
+	// What an operator writes here widens the guard that keeps this server
+	// off the network it sits in, and an entry that cannot be read is taken
+	// as a host name -- so "192.168.1" becomes a name that never resolves
+	// and never matches, and the operator has allowed nothing while
+	// believing they allowed something. Said rather than shrugged at.
+	for index, entry := range agent.AllowPrivateAddresses {
+		field := fmt.Sprintf("agent.allowPrivateAddresses[%d]", index)
+		entry = strings.TrimSpace(entry)
+		switch {
+		case entry == "":
+			validator.add(field, "is empty")
+		case strings.Contains(entry, "/"):
+			if _, _, err := net.ParseCIDR(entry); err != nil {
+				validator.add(field, "%q is not a network, which is written like 10.0.0.0/24", entry)
+			}
+		case net.ParseIP(entry) != nil:
+		case strings.ContainsAny(entry, " :\\"):
+			validator.add(field, "%q is an address, a network or a name -- not a URL or a host and port", entry)
+		case strings.Trim(entry, "0123456789.") == "":
+			// Digits and dots and not an address: a typed one, missing a
+			// part. As a name it would never resolve.
+			validator.add(field, "%q is not an address; an address has four parts, as 192.168.1.10", entry)
+		case !isHostname(entry) && !isHostLabel(entry):
+			validator.add(field, "%q is not a name this server could look up", entry)
+		}
+	}
 	names := map[string]bool{}
 	enabledProviders := 0
 	for index, provider := range agent.Providers {

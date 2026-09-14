@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A model is priced by its own entry where it has one, by a pattern that
 // covers it next, and by its provider's prices otherwise.
@@ -72,5 +75,39 @@ func TestCostIncludesCacheWrites(t *testing.T) {
 	}
 	if cost := agent.CostOf("one:thinker", 1_000_000, 1_000_000, 1_000_000, 1_000_000); cost != 4.35 {
 		t.Fatalf("all four priced apart: %v", cost)
+	}
+}
+
+// What an operator writes in the allow list is read back to them when it
+// cannot be used.
+//
+// The list widens the guard that keeps this server off the network it sits
+// in, and anything unparseable is taken as a host name — so a typed address
+// missing a part becomes a name that never resolves, and the operator has
+// allowed nothing while believing otherwise. That is the one failure this
+// setting must not have.
+func TestTheAllowListSaysWhatCannotBeUsed(t *testing.T) {
+	t.Parallel()
+
+	refused := []string{"192.168.1", "10.0.0.0/", "10.0.0.0/64", "http://box.lan", "box lan", "box.lan:8443", ""}
+	for _, entry := range refused {
+		validator := &validator{}
+		configuration := &Configuration{Agent: Agent{AllowPrivateAddresses: []string{entry}}}
+		configuration.validateAgent(validator)
+		if len(validator.errors) == 0 {
+			t.Errorf("%q was accepted; it cannot be used", entry)
+		}
+	}
+
+	accepted := []string{"192.168.255.254", "10.0.0.0/24", "fd00::/8", "::1", "printer.lan", "controller", "unifi.example.com"}
+	for _, entry := range accepted {
+		validator := &validator{}
+		configuration := &Configuration{Agent: Agent{AllowPrivateAddresses: []string{entry}}}
+		configuration.validateAgent(validator)
+		for _, problem := range validator.errors {
+			if strings.HasPrefix(problem.Path, "agent.allowPrivateAddresses") {
+				t.Errorf("%q was refused: %s", entry, problem.Message)
+			}
+		}
 	}
 }
