@@ -3721,6 +3721,19 @@ label.check-list-item {
 
 /* The mailbox page: the list of a folder beside the message being read.
    The rail already spent one column on the folders, so the page has two. */
+/* The mailbox measures itself, not the window.
+   
+   Two panes side by side need room, and how much room there is depends on
+   the rail beside them: with it open, a 1290px window leaves the mailbox
+   about 600px, the list takes its 380 and the message is read in 220 --
+   narrow enough that the header table broke one character to a line, "Aval
+   on Tren ding". The rule that drops to one pane was a media query, so it
+   was asking the window, which was 1290 and fine. The container query below
+   asks the only width that decides anything. */
+.mailbox-frame {
+  container-type: inline-size;
+  container-name: mailbox;
+}
 .mailbox {
   display: grid;
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
@@ -4348,7 +4361,11 @@ label.check-list-item {
   padding: 40px 16px;
   text-align: center;
 }
-@media (max-width: 860px) {
+/* One pane at a time once there is not room for two: the list, or the
+   message, with the back link between them. 860 is the width at which the
+   list at its narrowest and a message at a readable measure stop fitting
+   together. */
+@container mailbox (max-width: 860px) {
   .mailbox {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4360,6 +4377,26 @@ label.check-list-item {
   }
   .mailbox:not(.reading) .mailbox-pane {
     display: none;
+  }
+}
+
+/* A browser without container queries keeps the window-sized rule, which is
+   what this was before: right on a phone, and no worse than it was on a
+   desktop with the rail open. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 860px) {
+    .mailbox {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .mailbox-list {
+      border-right: 0;
+    }
+    .mailbox.reading .mailbox-list {
+      display: none;
+    }
+    .mailbox:not(.reading) .mailbox-pane {
+      display: none;
+    }
   }
 }
 

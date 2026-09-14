@@ -47,7 +47,24 @@ Notable changes to TeaNode. The format follows
   Restart `teanode computer` on any machine that is attached: a program
   started before this release does not know `put` and says so.
 
+### Added
+
+- Keep a sender from the message you are reading: **Save sender to contacts**
+  in a message's menu, which opens a form with the name and address filled in
+  from the message for you to correct before anything is written. The address
+  book is the only list of people now, and nothing arrives in it by itself, so
+  this is the way somebody gets into it. If that address is already a contact
+  the form says so and updates that one, rather than giving you two of the
+  same person.
+
 ### Fixed
+
+- The mailbox measures itself rather than the window. Two panes side by side
+  need room, and how much room there is depends on the rail beside them — so
+  with the rail open on an 862px window the rule that drops to one pane was
+  asking the window, finding 862, and leaving the message 220 pixels to be
+  read in: enough for the header table to break one character to a line,
+  "Aval on Tren ding". It now asks the only width that decides anything.
 
 - A tool line no longer turns up in the wrong conversation. Switching
   conversations in the drawer stops listening to the one you left, but a

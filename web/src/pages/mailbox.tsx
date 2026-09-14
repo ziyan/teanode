@@ -43,6 +43,7 @@ import { EnvelopeTrail } from '../components/envelopeTrail'
 import { Shortcut, useShortcuts } from '../shortcuts'
 import { RelativeTime } from '../components/relativeTime'
 import { SenderLogo } from '../components/senderLogo'
+import { SaveSenderDialog } from '../components/saveSenderDialog'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -934,353 +935,358 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
       previous.size === threads.length ? new Set() : new Set(threads.map((thread) => thread.threadId)),
     )
 
+  // The panes measure themselves against mailbox-frame rather than against
+  // the window: how much room two panes have depends on the rail beside
+  // them, and a media query cannot see the rail.
   return (
-    <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
-      <div className="mailbox-list">
-        <div className="mailbox-new">
-          <button type="button" className="primary" onClick={() => navigate('/mailbox/compose')}>
-            {t('mailbox.newMessage')}
-          </button>
-        </div>
-        <form
-          className="mailbox-toolbar"
-          onSubmit={(event) => {
-            event.preventDefault()
-            applyFilters({ q: search.trim(), narrowing })
-          }}
-        >
-          <input
-            type="search"
-            placeholder={narrowing.everywhere ? t('mailbox.searchEverywhere') : t('mailbox.search')}
-            aria-label={t('mailbox.search')}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onBlur={() => applyFilters({ q: search.trim() })}
-          />
-          <div className="segmented" role="group">
-            <button
-              type="button"
-              className={filter === 'unread' ? 'active' : ''}
-              onClick={() => applyFilters({ filter: filter === 'unread' ? 'all' : 'unread' })}
-            >
-              {t('mailbox.unreadOnly')}
+    <div className="mailbox-frame">
+      <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
+        <div className="mailbox-list">
+          <div className="mailbox-new">
+            <button type="button" className="primary" onClick={() => navigate('/mailbox/compose')}>
+              {t('mailbox.newMessage')}
             </button>
-            {!starred && (
+          </div>
+          <form
+            className="mailbox-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault()
+              applyFilters({ q: search.trim(), narrowing })
+            }}
+          >
+            <input
+              type="search"
+              placeholder={narrowing.everywhere ? t('mailbox.searchEverywhere') : t('mailbox.search')}
+              aria-label={t('mailbox.search')}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onBlur={() => applyFilters({ q: search.trim() })}
+            />
+            <div className="segmented" role="group">
               <button
                 type="button"
-                className={filter === 'flagged' ? 'active' : ''}
-                onClick={() => applyFilters({ filter: filter === 'flagged' ? 'all' : 'flagged' })}
+                className={filter === 'unread' ? 'active' : ''}
+                onClick={() => applyFilters({ filter: filter === 'unread' ? 'all' : 'unread' })}
               >
-                {t('mailbox.flaggedOnly')}
+                {t('mailbox.unreadOnly')}
               </button>
-            )}
-            <button
-              type="button"
-              className={showNarrowing || narrowed(appliedNarrowing) || appliedNarrowing.everywhere ? 'active' : ''}
-              aria-expanded={showNarrowing}
-              onClick={() => setShowNarrowing((previous) => !previous)}
-            >
-              {t('mailbox.narrow')}
-            </button>
-          </div>
-          {showNarrowing && (
-            <div className="mailbox-narrowing">
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={narrowing.everywhere}
-                  onChange={(event) => setNarrowing({ ...narrowing, everywhere: event.target.checked })}
-                />
-                {t('mailbox.narrowEverywhere')}
-              </label>
-              <label>
-                <span>{t('mailbox.narrowFrom')}</span>
-                <input
-                  value={narrowing.from}
-                  onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })}
-                />
-              </label>
-              <label>
-                <span>{t('mailbox.narrowTo')}</span>
-                <input
-                  value={narrowing.to}
-                  onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })}
-                />
-              </label>
-              <label>
-                <span>{t('mailbox.narrowSubject')}</span>
-                <input
-                  value={narrowing.subject}
-                  onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })}
-                />
-              </label>
-              <div className="mailbox-narrowing-row">
-                <label>
-                  <span>{t('mailbox.narrowSince')}</span>
-                  <input
-                    type="date"
-                    value={narrowing.since}
-                    onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>{t('mailbox.narrowBefore')}</span>
-                  <input
-                    type="date"
-                    value={narrowing.before}
-                    onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })}
-                  />
-                </label>
-              </div>
-              <label>
-                <span>{t('mailbox.narrowAttachment')}</span>
-                <Select
-                  block
-                  value={narrowing.attachment}
-                  label={t('mailbox.narrowAttachment')}
-                  options={[
-                    { value: 'any', label: t('mailbox.narrowAttachmentAny') },
-                    { value: 'with', label: t('mailbox.narrowAttachmentWith') },
-                    { value: 'without', label: t('mailbox.narrowAttachmentWithout') },
-                  ]}
-                  onChange={(value) => setNarrowing({ ...narrowing, attachment: value as Narrowing['attachment'] })}
-                />
-              </label>
-              <div className="mailbox-narrowing-actions">
-                <button type="submit" className="primary">
-                  {t('mailbox.narrowApply')}
-                </button>
+              {!starred && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setNarrowing(NOTHING_NARROWED)
-                    applyFilters({ narrowing: NOTHING_NARROWED })
-                    setShowNarrowing(false)
-                  }}
+                  className={filter === 'flagged' ? 'active' : ''}
+                  onClick={() => applyFilters({ filter: filter === 'flagged' ? 'all' : 'flagged' })}
                 >
-                  {t('mailbox.narrowClear')}
+                  {t('mailbox.flaggedOnly')}
                 </button>
+              )}
+              <button
+                type="button"
+                className={showNarrowing || narrowed(appliedNarrowing) || appliedNarrowing.everywhere ? 'active' : ''}
+                aria-expanded={showNarrowing}
+                onClick={() => setShowNarrowing((previous) => !previous)}
+              >
+                {t('mailbox.narrow')}
+              </button>
+            </div>
+            {showNarrowing && (
+              <div className="mailbox-narrowing">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={narrowing.everywhere}
+                    onChange={(event) => setNarrowing({ ...narrowing, everywhere: event.target.checked })}
+                  />
+                  {t('mailbox.narrowEverywhere')}
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowFrom')}</span>
+                  <input
+                    value={narrowing.from}
+                    onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowTo')}</span>
+                  <input
+                    value={narrowing.to}
+                    onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowSubject')}</span>
+                  <input
+                    value={narrowing.subject}
+                    onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })}
+                  />
+                </label>
+                <div className="mailbox-narrowing-row">
+                  <label>
+                    <span>{t('mailbox.narrowSince')}</span>
+                    <input
+                      type="date"
+                      value={narrowing.since}
+                      onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{t('mailbox.narrowBefore')}</span>
+                    <input
+                      type="date"
+                      value={narrowing.before}
+                      onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })}
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>{t('mailbox.narrowAttachment')}</span>
+                  <Select
+                    block
+                    value={narrowing.attachment}
+                    label={t('mailbox.narrowAttachment')}
+                    options={[
+                      { value: 'any', label: t('mailbox.narrowAttachmentAny') },
+                      { value: 'with', label: t('mailbox.narrowAttachmentWith') },
+                      { value: 'without', label: t('mailbox.narrowAttachmentWithout') },
+                    ]}
+                    onChange={(value) => setNarrowing({ ...narrowing, attachment: value as Narrowing['attachment'] })}
+                  />
+                </label>
+                <div className="mailbox-narrowing-actions">
+                  <button type="submit" className="primary">
+                    {t('mailbox.narrowApply')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNarrowing(NOTHING_NARROWED)
+                      applyFilters({ narrowing: NOTHING_NARROWED })
+                      setShowNarrowing(false)
+                    }}
+                  >
+                    {t('mailbox.narrowClear')}
+                  </button>
+                </div>
               </div>
+            )}
+          </form>
+
+          {/* Acting on a selection. Shown always rather than only once
+              something is selected, so the row does not appear and push the
+              list down at the moment somebody clicks a checkbox. */}
+          <div className="mailbox-actions">
+            <input
+              type="checkbox"
+              aria-label={t('mailbox.selectAll')}
+              checked={threads.length > 0 && selected.size === threads.length}
+              onChange={toggleAll}
+              disabled={threads.length === 0}
+            />
+            {chosen.length > 0 ? (
+              <>
+                <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
+                {/* Icons, with their names in the tooltip. Eight words across
+                    the top of a list wrapped onto two lines on anything
+                    narrower than a laptop, and every one of them is a verb a
+                    mail program already has a picture for. */}
+                {chosen.some((thread) => thread.unread > 0) ? (
+                  <IconAction
+                    label={t('mailbox.markRead')}
+                    icon={<MailOpenIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { seen: true })}
+                  />
+                ) : (
+                  <IconAction
+                    label={t('mailbox.markUnread')}
+                    icon={<MailIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { seen: false })}
+                  />
+                )}
+                {chosen.some((item) => !item.flagged) ? (
+                  <IconAction
+                    label={t('mailbox.flag')}
+                    icon={<StarIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { flagged: true })}
+                  />
+                ) : (
+                  <IconAction
+                    label={t('mailbox.unflag')}
+                    icon={<StarIcon size={16} />}
+                    active
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { flagged: false })}
+                  />
+                )}
+                {sortable && (
+                  <IconAction
+                    label={t('mailbox.sortAs')}
+                    icon={<PriorityIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setSorting(chosenIds)}
+                  />
+                )}
+                {archive && folder.id !== archive.id && (
+                  <IconAction
+                    label={t('mailbox.archive')}
+                    icon={<ArchiveIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => moveTo(chosenIds, archive.id)}
+                  />
+                )}
+                <IconAction
+                  label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+                  icon={<JunkIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => reportJunk(chosenIds, inJunk)}
+                />
+                <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => moveTo(chosenIds, folderId)} />
+                <IconAction
+                  label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+                  icon={<TrashIcon size={16} />}
+                  className="danger"
+                  disabled={busy}
+                  onClick={() => deleteItems(chosenIds)}
+                />
+              </>
+            ) : (
+              <>
+                {inTrash && total > 0 && (
+                  <button type="button" className="danger" disabled={busy} onClick={() => setEmptying(true)}>
+                    {t('mailbox.emptyTrash')}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {error ? <ErrorMessage error={error} /> : null}
+
+          <ul className="mailbox-rows">
+            {threads.map((thread) => (
+              <Row
+                key={thread.threadId}
+                thread={thread}
+                folderName={
+                  everywhere && thread.item.folderId !== folder.id
+                    ? folderLabelOf(folders, thread.item.folderId, t)
+                    : undefined
+                }
+                active={thread.itemIds.includes(itemId ?? '')}
+                selected={selected.has(thread.threadId)}
+                onSelect={(on) =>
+                  setSelected((previous) => {
+                    const next = new Set(previous)
+                    if (on) {
+                      next.add(thread.threadId)
+                    } else {
+                      next.delete(thread.threadId)
+                    }
+                    return next
+                  })
+                }
+                // A draft goes to its conversation like anything else. It used
+                // to open a page of its own, which is the one place in the
+                // program where a half-written reply is shown without the thing
+                // it is replying to — the composer opens inside the
+                // conversation instead, which is where it opens when the reply
+                // is started.
+                href={within(`/mailbox/${folder.id}/${thread.item.id}`)}
+                onOpen={() => navigate(within(`/mailbox/${folder.id}/${thread.item.id}`))}
+                onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
+              />
+            ))}
+            {!loading && threads.length === 0 && (
+              <li className="mailbox-placeholder">
+                {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
+                  t('mailbox.nothingFound')
+                ) : starred ? (
+                  t('mailbox.nothingStarred')
+                ) : priority ? (
+                  t('mailbox.nothingPriority')
+                ) : folder.kind === 'inbox' && addresses.length === 0 ? (
+                  // An Inbox with no address is the first thing a new account
+                  // sees, and "nothing here" would leave it wondering why.
+                  <>
+                    {t('mailbox.noAddress')}
+                    {managesDomains && (
+                      <>
+                        {' '}
+                        <Link to="/domains">{t('mailbox.noAddressLink')}</Link>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  t('mailbox.nothing')
+                )}
+              </li>
+            )}
+          </ul>
+
+          <div className="mailbox-foot">
+            <span>{loading ? t('common.loading') : t('mailbox.count', { shown: threads.length, total })}</span>
+            {threads.length < total && !loading && (
+              <button type="button" className="link" onClick={() => load(threads.length)}>
+                {t('mailbox.loadMore')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mailbox-pane">
+          {itemId ? (
+            <Reader
+              key={itemId}
+              itemId={itemId}
+              folder={folder}
+              archive={archive}
+              targets={targets}
+              busy={busy}
+              onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
+              onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
+              onMove={(itemIds, target) => moveTo(itemIds, target)}
+              onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
+              onDelete={(itemIds) => deleteItems(itemIds)}
+              onSort={sortable ? (itemIds) => setSorting(itemIds) : undefined}
+              onSubject={(value) => setRead({ itemId, subject: value })}
+              onDiscarded={(discarded) => {
+                remove([discarded])
+                openNext([discarded])
+                void mailboxes.refresh()
+              }}
+              onBack={() => navigate(within(`/mailbox/${folder.id}`))}
+            />
+          ) : (
+            <div className="mailbox-pane-placeholder">
+              <EnvelopeTrail />
+              <span>{t('mailbox.chooseMessage')}</span>
             </div>
           )}
-        </form>
-
-        {/* Acting on a selection. Shown always rather than only once
-            something is selected, so the row does not appear and push the
-            list down at the moment somebody clicks a checkbox. */}
-        <div className="mailbox-actions">
-          <input
-            type="checkbox"
-            aria-label={t('mailbox.selectAll')}
-            checked={threads.length > 0 && selected.size === threads.length}
-            onChange={toggleAll}
-            disabled={threads.length === 0}
-          />
-          {chosen.length > 0 ? (
-            <>
-              <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
-              {/* Icons, with their names in the tooltip. Eight words across
-                  the top of a list wrapped onto two lines on anything
-                  narrower than a laptop, and every one of them is a verb a
-                  mail program already has a picture for. */}
-              {chosen.some((thread) => thread.unread > 0) ? (
-                <IconAction
-                  label={t('mailbox.markRead')}
-                  icon={<MailOpenIcon size={16} />}
-                  disabled={busy}
-                  onClick={() => setFlags(chosenIds, { seen: true })}
-                />
-              ) : (
-                <IconAction
-                  label={t('mailbox.markUnread')}
-                  icon={<MailIcon size={16} />}
-                  disabled={busy}
-                  onClick={() => setFlags(chosenIds, { seen: false })}
-                />
-              )}
-              {chosen.some((item) => !item.flagged) ? (
-                <IconAction
-                  label={t('mailbox.flag')}
-                  icon={<StarIcon size={16} />}
-                  disabled={busy}
-                  onClick={() => setFlags(chosenIds, { flagged: true })}
-                />
-              ) : (
-                <IconAction
-                  label={t('mailbox.unflag')}
-                  icon={<StarIcon size={16} />}
-                  active
-                  disabled={busy}
-                  onClick={() => setFlags(chosenIds, { flagged: false })}
-                />
-              )}
-              {sortable && (
-                <IconAction
-                  label={t('mailbox.sortAs')}
-                  icon={<PriorityIcon size={16} />}
-                  disabled={busy}
-                  onClick={() => setSorting(chosenIds)}
-                />
-              )}
-              {archive && folder.id !== archive.id && (
-                <IconAction
-                  label={t('mailbox.archive')}
-                  icon={<ArchiveIcon size={16} />}
-                  disabled={busy}
-                  onClick={() => moveTo(chosenIds, archive.id)}
-                />
-              )}
-              <IconAction
-                label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
-                icon={<JunkIcon size={16} />}
-                disabled={busy}
-                onClick={() => reportJunk(chosenIds, inJunk)}
-              />
-              <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => moveTo(chosenIds, folderId)} />
-              <IconAction
-                label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
-                icon={<TrashIcon size={16} />}
-                className="danger"
-                disabled={busy}
-                onClick={() => deleteItems(chosenIds)}
-              />
-            </>
-          ) : (
-            <>
-              {inTrash && total > 0 && (
-                <button type="button" className="danger" disabled={busy} onClick={() => setEmptying(true)}>
-                  {t('mailbox.emptyTrash')}
-                </button>
-              )}
-            </>
-          )}
         </div>
 
-        {error ? <ErrorMessage error={error} /> : null}
-
-        <ul className="mailbox-rows">
-          {threads.map((thread) => (
-            <Row
-              key={thread.threadId}
-              thread={thread}
-              folderName={
-                everywhere && thread.item.folderId !== folder.id
-                  ? folderLabelOf(folders, thread.item.folderId, t)
-                  : undefined
-              }
-              active={thread.itemIds.includes(itemId ?? '')}
-              selected={selected.has(thread.threadId)}
-              onSelect={(on) =>
-                setSelected((previous) => {
-                  const next = new Set(previous)
-                  if (on) {
-                    next.add(thread.threadId)
-                  } else {
-                    next.delete(thread.threadId)
-                  }
-                  return next
-                })
-              }
-              // A draft goes to its conversation like anything else. It used
-              // to open a page of its own, which is the one place in the
-              // program where a half-written reply is shown without the thing
-              // it is replying to — the composer opens inside the
-              // conversation instead, which is where it opens when the reply
-              // is started.
-              href={within(`/mailbox/${folder.id}/${thread.item.id}`)}
-              onOpen={() => navigate(within(`/mailbox/${folder.id}/${thread.item.id}`))}
-              onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
-            />
-          ))}
-          {!loading && threads.length === 0 && (
-            <li className="mailbox-placeholder">
-              {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
-                t('mailbox.nothingFound')
-              ) : starred ? (
-                t('mailbox.nothingStarred')
-              ) : priority ? (
-                t('mailbox.nothingPriority')
-              ) : folder.kind === 'inbox' && addresses.length === 0 ? (
-                // An Inbox with no address is the first thing a new account
-                // sees, and "nothing here" would leave it wondering why.
-                <>
-                  {t('mailbox.noAddress')}
-                  {managesDomains && (
-                    <>
-                      {' '}
-                      <Link to="/domains">{t('mailbox.noAddressLink')}</Link>
-                    </>
-                  )}
-                </>
-              ) : (
-                t('mailbox.nothing')
-              )}
-            </li>
-          )}
-        </ul>
-
-        <div className="mailbox-foot">
-          <span>{loading ? t('common.loading') : t('mailbox.count', { shown: threads.length, total })}</span>
-          {threads.length < total && !loading && (
-            <button type="button" className="link" onClick={() => load(threads.length)}>
-              {t('mailbox.loadMore')}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="mailbox-pane">
-        {itemId ? (
-          <Reader
-            key={itemId}
-            itemId={itemId}
-            folder={folder}
-            archive={archive}
-            targets={targets}
+        {sorting ? <SortDialog itemIds={sorting} onClose={() => setSorting(null)} /> : null}
+        {emptying && (
+          <ConfirmDialog
+            title={t('mailbox.emptyTrash')}
+            body={t('mailbox.emptyTrashConfirm')}
+            confirmLabel={t('mailbox.emptyTrash')}
             busy={busy}
-            onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
-            onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
-            onMove={(itemIds, target) => moveTo(itemIds, target)}
-            onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
-            onDelete={(itemIds) => deleteItems(itemIds)}
-            onSort={sortable ? (itemIds) => setSorting(itemIds) : undefined}
-            onSubject={(value) => setRead({ itemId, subject: value })}
-            onDiscarded={(discarded) => {
-              remove([discarded])
-              openNext([discarded])
-              void mailboxes.refresh()
-            }}
-            onBack={() => navigate(within(`/mailbox/${folder.id}`))}
+            onConfirm={() =>
+              act(async () => {
+                await graphql(EMPTY_TRASH, { mailboxId: folder.mailboxId })
+                setThreads([])
+                setTotal(0)
+                setEmptying(false)
+                if (itemId) {
+                  navigate(within(`/mailbox/${folder.id}`))
+                }
+              })
+            }
+            onClose={() => setEmptying(false)}
           />
-        ) : (
-          <div className="mailbox-pane-placeholder">
-            <EnvelopeTrail />
-            <span>{t('mailbox.chooseMessage')}</span>
-          </div>
         )}
       </div>
-
-      {sorting ? <SortDialog itemIds={sorting} onClose={() => setSorting(null)} /> : null}
-      {emptying && (
-        <ConfirmDialog
-          title={t('mailbox.emptyTrash')}
-          body={t('mailbox.emptyTrashConfirm')}
-          confirmLabel={t('mailbox.emptyTrash')}
-          busy={busy}
-          onConfirm={() =>
-            act(async () => {
-              await graphql(EMPTY_TRASH, { mailboxId: folder.mailboxId })
-              setThreads([])
-              setTotal(0)
-              setEmptying(false)
-              if (itemId) {
-                navigate(within(`/mailbox/${folder.id}`))
-              }
-            })
-          }
-          onClose={() => setEmptying(false)}
-        />
-      )}
     </div>
   )
 }
@@ -2152,6 +2158,8 @@ export function ThreadMessage({
   const verdict = verdictOf(mail, t)
   // From, To, Received and what the checks said, when somebody asks for them.
   const [details, setDetails] = useState(false)
+  // Whether the dialog for keeping this message's sender is up.
+  const [keeping, setKeeping] = useState(false)
 
   return (
     <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
@@ -2233,22 +2241,47 @@ export function ThreadMessage({
                   mode="mailbox"
                   menuContainer={menuSlot}
                   menuExtra={(close) => (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        close()
-                        setDetails((previous) => !previous)
-                      }}
-                    >
-                      {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
-                    </button>
+                    <>
+                      {/* Keeping the sender: the address book is the only
+                          list of people there is, and nothing arrives in it
+                          by itself. Here, because this is where you find out
+                          you want to keep somebody. */}
+                      {(mail.from || mail.sender) && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            close()
+                            setKeeping(true)
+                          }}
+                        >
+                          {t('mailbox.saveSender')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          close()
+                          setDetails((previous) => !previous)
+                        }}
+                      >
+                        {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
+                      </button>
+                    </>
                   )}
                 />
               )}
             </>
           ) : (
             <p className="muted">{t('mailbox.messageGone')}</p>
+          )}
+          {keeping && mail && (
+            <SaveSenderDialog
+              address={mail.from || mail.sender || ''}
+              displayName={mail.fromName}
+              onClose={() => setKeeping(false)}
+            />
           )}
         </div>
       )}
