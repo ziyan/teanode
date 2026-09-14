@@ -187,7 +187,10 @@ func (self *Tool) PreviewLine(ctx context.Context, arguments json.RawMessage) st
 // a tool and forgetting the sentence gives somebody a line they can act on
 // instead of a blob they have to read as a programmer.
 func describeCall(name string, arguments json.RawMessage) string {
-	said := strings.ReplaceAll(name, "_", " ")
+	said := strings.ReplaceAll(strings.TrimSpace(name), "_", " ")
+	if said == "" {
+		return "Do something"
+	}
 	said = strings.ToUpper(said[:1]) + said[1:]
 	var fields map[string]any
 	if err := json.Unmarshal(arguments, &fields); err != nil || len(fields) == 0 {
@@ -204,8 +207,10 @@ func describeCall(name string, arguments json.RawMessage) string {
 		if value == "" || value == "<nil>" || value == "false" || value == "[]" || value == "map[]" {
 			continue
 		}
-		if len(value) > 80 {
-			value = value[:80] + "…"
+		// Cut by character, not by byte: a card is text somebody reads,
+		// and half a rune is a replacement mark in the middle of a word.
+		if runes := []rune(value); len(runes) > 80 {
+			value = string(runes[:80]) + "…"
 		}
 		parts = append(parts, strings.ReplaceAll(key, "_", " ")+": "+value)
 	}

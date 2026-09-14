@@ -26,7 +26,16 @@ func TestEveryToolThatAsksSaysWhatItWouldDo(t *testing.T) {
 		}
 		// An empty call: the card is drawn before anything is checked, so
 		// it has to say something even for a call that would be refused.
-		for _, arguments := range []string{`{}`, `{"action":"remove"}`, `not json`} {
+		// Nothing a model can emit takes the run down. A card is drawn
+		// before anything checks the call, so it meets arguments that are
+		// empty, half-filled, the wrong type and not JSON at all -- the
+		// filesystem card used to take the first letter of an action that
+		// was not there and panic.
+		for _, arguments := range []string{
+			`{}`, `{"action":"remove"}`, `not json`, `null`, `[]`, `"a string"`,
+			`{"action":5,"name":[],"item_ids":"not a list","path":null}`,
+			`{"action":"","name":"","id":""}`,
+		} {
 			line := tool.PreviewLine(context.Background(), json.RawMessage(arguments))
 			if strings.TrimSpace(line) == "" {
 				t.Errorf("%s: the card says nothing for %s", tool.Name, arguments)
