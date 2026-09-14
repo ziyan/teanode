@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-14
+
 ### Added
 
 - A brief each morning, from one switch: what the day holds, what arrived
