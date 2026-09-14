@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A listener that fails at startup says why. The server stops when one of its
+  listeners does — which is right — but the reason was logged at debug, so
+  what an operator saw at the level they actually run at was "shutting down:
+  imaps listener stopped" a few milliseconds after "teanode is running", with
+  no cause given and the only warning on screen about something else
+  entirely. An imaps port with no certificate now refuses by name and says
+  the three ways out of it: set a certificate, turn on ACME, or take the port
+  out of the configuration. It is also checked before anything is opened,
+  rather than after the server has set itself up.
+
 ## [0.23.0] - 2026-09-14
 
 ### Added
