@@ -151,12 +151,18 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	}
 
 	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}
+	// Closed when the shell the person attached ends. Leaving the shell is
+	// how they detach, so this program ends with it rather than sitting on
+	// a dead pty until they find the key that kills it.
+	var attachedEnded <-chan struct{}
 	if options.Terminal != nil {
 		// The person's own terminal, opened before the hello so that the
 		// server is told about it in the same breath as the computer.
-		if err := held.attachTerminal(ctx, options, ended); err != nil {
+		attached, err := held.attachTerminal(ctx, options, ended)
+		if err != nil {
 			return err
 		}
+		attachedEnded = attached.done
 		hello.Session = AttachedSession
 	}
 	if err := write(hello); err != nil {
@@ -221,12 +227,19 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			}
 		case err := <-readErrors:
 			return err
+		case <-attachedEnded:
+			_ = write(message{Type: "bye"})
+			return ErrTerminalEnded
 		case <-ctx.Done():
 			_ = write(message{Type: "bye"})
 			return ctx.Err()
 		}
 	}
 }
+
+// ErrTerminalEnded is how Serve ends when the shell the person attached
+// has: not a failure, the way they detach.
+var ErrTerminalEnded = errors.New("the shell ended")
 
 func withDefaults(options *Options) *Options {
 	filled := &Options{}

@@ -166,6 +166,17 @@ func (self *StdioTransport) Call(ctx context.Context, request *Request) (*Respon
 	}
 }
 
+// Gone says the far end has closed its output: nothing sent will be
+// answered, and whoever cached this transport should let it go.
+func (self *StdioTransport) Gone() bool {
+	select {
+	case <-self.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Notify writes a notification.
 func (self *StdioTransport) Notify(ctx context.Context, notification *Request) error {
 	return self.write(notification)

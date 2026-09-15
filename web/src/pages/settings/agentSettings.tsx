@@ -1565,22 +1565,22 @@ function ServerDialog({
             onChange={(transport) => set({ transport })}
           />
         </label>
+        {(draft.transport === 'stdio' || (draft.transport === '' && draft.command.trim() !== '')) && (
+          <label className="shrink">
+            <span>{t('agentSettings.serverLocation')}</span>
+            <Select
+              block
+              value={draft.location}
+              label={t('agentSettings.serverLocation')}
+              options={[
+                { value: '', label: t('agentSettings.serverLocationServer') },
+                { value: 'computer', label: t('agentSettings.serverLocationComputer') },
+              ]}
+              onChange={(location) => set({ location })}
+            />
+          </label>
+        )}
       </div>
-      {(draft.transport === 'stdio' || (draft.transport === '' && draft.command.trim() !== '')) && (
-        <label className="shrink">
-          <span>{t('agentSettings.serverLocation')}</span>
-          <Select
-            block
-            value={draft.location}
-            label={t('agentSettings.serverLocation')}
-            options={[
-              { value: '', label: t('agentSettings.serverLocationServer') },
-              { value: 'computer', label: t('agentSettings.serverLocationComputer') },
-            ]}
-            onChange={(location) => set({ location })}
-          />
-        </label>
-      )}
       {draft.transport !== 'stdio' ? (
         <label>
           <span>{t('agentSettings.serverUrl')}</span>

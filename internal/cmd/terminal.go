@@ -65,9 +65,21 @@ func runTerminal(ctx context.Context, command *cli.Command) error {
 	}
 	defer func() { _ = term.Restore(int(os.Stdin.Fd()), previous) }()
 
+	// Its own name by default. A computer's attachment is by name, and a
+	// second attach under the same name replaces the first -- so a terminal
+	// called what `teanode computer` on the same machine is called would
+	// silently detach that computer.
+	name := strings.TrimSpace(command.String("name"))
+	if name == "" {
+		host, _ := os.Hostname()
+		if host == "" {
+			host = "computer"
+		}
+		name = host + "-terminal"
+	}
 	options := &computer.Options{
 		Token: resolved.Token,
-		Name:  command.String("name"),
+		Name:  name,
 		Terminal: &computer.TerminalOptions{
 			Input:  os.Stdin,
 			Output: os.Stdout,
@@ -104,7 +116,8 @@ func runTerminal(ctx context.Context, command *cli.Command) error {
 	err = computer.Serve(ctx, connection, options)
 	var refused *computer.RefusedError
 	switch {
-	case ctx.Err() != nil:
+	case errors.Is(err, computer.ErrTerminalEnded), ctx.Err() != nil:
+		_, _ = fmt.Fprint(os.Stdout, "\r\ndetached\r\n")
 		return nil
 	case errors.As(err, &refused):
 		return refused

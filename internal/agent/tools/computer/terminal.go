@@ -270,6 +270,12 @@ func runTerminal(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return screenResult(id, screen, "sent "+arguments.Signal)
 
 	case "close":
+		if id == holder.AttachedTerminal() {
+			// Theirs, not the agent's: they are sitting in it, and leaving
+			// the shell is how they end it. The prompt says as much; this
+			// is for the round where the prompt was not enough.
+			return nil, fmt.Errorf("that is the terminal the person is sitting in; it is theirs to leave, not yours to close")
+		}
 		if err := holder.CloseSession(ctx, id); err != nil {
 			return nil, err
 		}

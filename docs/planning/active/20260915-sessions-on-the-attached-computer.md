@@ -176,8 +176,31 @@ something that prompts.
 
 ## Progress
 
-Nothing built yet. The plan was settled with the person on 2026-09-15, in
-the order below.
+All five milestones are built and were driven against a real server with a
+real computer attached (gen7), on 2026-09-15.
+
+- **A, subagents** -- a nested run with its own rounds and transcript; its
+  confirmation cards appear in the parent's turn. A subagent ran the github
+  skill through the attached computer and its card was answered in the
+  parent conversation. Merged separately in #97.
+- **B, the session layer** -- `session_start/write/signal/resize/close` and
+  the unsolicited `session_output`/`session_ended`; a bounded buffer per
+  session on the server, sixteen sessions a computer, thirty minutes idle.
+  `cat` started, written to, answering as it went, closed cleanly.
+- **D1, the terminal** -- pty on the computer, screen kept there with a
+  terminal emulator, read as a screen. The agent opened python3, assigned,
+  printed 42, answered an `input()` prompt, printed what it answered, left
+  with ctrl-d. It also opened codex, dismissed the update prompt with down
+  and enter, accepted the trust prompt, typed a request, and read on the
+  screen that codex's own login had expired -- the mechanism working up to
+  a wall that is codex's, and the person's to re-open with `codex login`.
+- **D2, the attached terminal** -- `teanode terminal`, connecting as a
+  computer with one pty already open. The agent read the screen the person
+  was sitting at and typed `echo hello from the agent` into it; the person's
+  own terminal showed the command and its output.
+- **C, a server the computer runs** -- `location: computer`; the stdio
+  transport speaks over a session's pipes. `mc mcp serve` ran on gen7, its
+  two tools were discovered, and `mc_help` answered.
 
 ## Decisions
 
@@ -189,11 +212,27 @@ the order below.
   the pty half is the hard half and driving codex through it is what proves
   the session layer is real.
 
+- **2026-09-15:** the screen lives on the computer, not the server. No
+  terminal emulator on the server, none of the redrawing on the network,
+  and reading the screen is one request however busy the program was.
+- **2026-09-15:** an attached terminal is a computer connection with one
+  session already open, not a new kind of connection. The difference
+  between a terminal the agent opened and one the person is sitting in is
+  who else is looking, which is a fact about the session.
+- **2026-09-15:** opening a terminal asks; the keys after it do not. A card
+  in front of each keystroke is a card nobody reads, and the program the
+  person said yes to is what the keys go to.
+
 ## Still open
 
-- Whether a launched terminal that outlives its turn should be killed or
-  left for the person to find. Killed, for now.
-- What a connected server the computer runs should do when the computer
-  detaches mid-call: refuse the call, or wait for it to come back.
-- Whether `teanode terminal` should offer to show what the agent typed, as
-  it types it, or stay an ordinary terminal the agent happens to share.
+- A launched terminal that outlives its turn is closed by the idle sweep
+  after thirty minutes. Whether that should be sooner, or tied to the turn,
+  is not yet decided.
+- A connected server the computer runs is dropped when the computer
+  detaches and rediscovered when it returns; a call in flight at the moment
+  of detaching fails. Waiting for the computer to come back is not done.
+- With several computers attached, a server on "the computer" runs on the
+  first by name. Choosing one is not yet possible.
+- codex itself was not driven to a finished program: its sign-in on the
+  test machine had expired. The terminal read that off the screen, which is
+  the thing under test; the rest is a login away.

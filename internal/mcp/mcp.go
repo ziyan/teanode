@@ -114,6 +114,17 @@ type Client struct {
 	ready     bool
 }
 
+// Gone says the transport underneath has ended -- a server on somebody's
+// computer whose connection went -- so that a cached client is dropped
+// rather than handed out to fail. A transport that cannot say is taken as
+// still there.
+func (self *Client) Gone() bool {
+	if gone, ok := self.transport.(interface{ Gone() bool }); ok {
+		return gone.Gone()
+	}
+	return false
+}
+
 // NewClient wraps a transport; Initialize makes it a session.
 func NewClient(transport Transport) *Client {
 	return &Client{transport: transport}

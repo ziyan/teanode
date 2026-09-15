@@ -252,7 +252,7 @@ func (self *sessions) resizeTerminal(arguments *SessionResizeArguments) (*Sessio
 // attachTerminal opens the person's own shell in a pty as the attached
 // session: what they type goes to it, what it writes goes to them and to
 // the screen, and the pty follows the size of the terminal they are in.
-func (self *sessions) attachTerminal(ctx context.Context, options *Options, ended pushEnded) error {
+func (self *sessions) attachTerminal(ctx context.Context, options *Options, ended pushEnded) (*session, error) {
 	terminal := options.Terminal
 	shell := strings.TrimSpace(terminal.Shell)
 	if shell == "" {
@@ -283,7 +283,7 @@ func (self *sessions) attachTerminal(ctx context.Context, options *Options, ende
 	command.Env = os.Environ()
 	arguments := &SessionStartArguments{Session: AttachedSession, Kind: "pty", Command: shell, Columns: columns, Rows: rows}
 	if _, err := self.startTerminalWith(reserved, release, command, arguments, ended, terminal.Output); err != nil {
-		return err
+		return nil, err
 	}
 
 	// What the person types goes straight to the pty.
@@ -314,5 +314,5 @@ func (self *sessions) attachTerminal(ctx context.Context, options *Options, ende
 			}
 		}()
 	}
-	return nil
+	return reserved, nil
 }

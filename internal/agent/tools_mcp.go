@@ -252,6 +252,15 @@ func (self *Agent) connection(ctx context.Context, server *config.AgentMCPServer
 
 	entry.mutex.Lock()
 	defer entry.mutex.Unlock()
+	if entry.client != nil && entry.client.Gone() {
+		// The far end went -- the person stopped their computer, the
+		// network dropped -- and a client to it would only fail. Let it
+		// go now rather than hand it out until the discovery interval
+		// runs out, which is how a server came back and stayed broken for
+		// five minutes after.
+		_ = entry.client.Close()
+		entry.client = nil
+	}
 	if entry.client != nil && time.Since(entry.discoveredAt) < discoveryInterval {
 		return entry, nil
 	}
