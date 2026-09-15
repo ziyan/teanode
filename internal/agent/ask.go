@@ -65,6 +65,18 @@ type AskSettings struct {
 	MaxRounds int
 	UsageKind string
 
+	// confirmVia is the turn a subagent's confirmation cards are shown in,
+	// which is the turn that started it. A subagent has the tools its
+	// parent has, and some of those ask before they act -- so the card has
+	// to reach the person, and the person is reading the parent's
+	// conversation, not the run this is happening in.
+	confirmVia *AskRun
+
+	// subagentDepth is how deep in subagents this run is: zero for a turn
+	// somebody asked for, one inside a subagent. One is the limit, and it
+	// is what keeps the subagent tool out of its own catalog.
+	subagentDepth int
+
 	// Short asks for the one-paragraph conduct rather than the full rules.
 	// A run with nobody present and six tools does not need the page about
 	// how to talk to somebody, and sorting runs on every message that
@@ -570,6 +582,15 @@ func (self *AskRun) turn() error {
 			self.loaded[tool.Name] = true
 		}
 	}
+	// Handing work to a run of its own. Built rather than registered,
+	// because starting a run is the agent's to do; and not offered inside
+	// one, which is the whole of the depth limit.
+	if settings.subagentDepth == 0 && FeatureAllowed(configuration, "subagents") {
+		if subagent := self.agent.subagentTool(); !listed(configuration.Agent.Tools.Disabled, subagent) {
+			self.offered = append(self.offered, subagent)
+			self.loaded[subagent.Name] = true
+		}
+	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor an attached tab to
 	// drive; a person's attached tab needs no Chrome beside the server,
@@ -970,6 +991,13 @@ func (self *AskRun) toolAnswer(toolCall llm.ToolCall, content string) string {
 
 // confirm shows the card and waits for the person's word.
 func (self *AskRun) confirm(ctx context.Context, tool *Tool, call *Call) (bool, error) {
+	// Inside a subagent the person is not reading this run, they are
+	// reading the one that started it -- so the card is shown there and
+	// answered there. Without this a subagent with the tools of its parent
+	// would raise a card into an empty room and wait out its timeout.
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.confirm(ctx, tool, call)
+	}
 	channel := make(chan bool, 1)
 	self.mutex.Lock()
 	self.confirmations[call.ID] = channel

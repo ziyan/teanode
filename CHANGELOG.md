@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The agent can hand a piece of work to a run of its own. Some work is a job
+  rather than a question — read these forty messages and say which mention
+  the invoice, go through that repository and find where the timeout is set
+  — and done in the turn itself it fills the conversation with material that
+  mattered for one step and is in the way of every step after it. A subagent
+  does that work somewhere else and answers in one message, with its own
+  rounds and its own context. It has the tools the turn has, so what it can
+  do on somebody's own computer is what they could do themselves; its
+  working is kept as a run of its own to be read afterwards; and a card it
+  raises is shown in the conversation the person is actually reading, not in
+  the run they are not. One deep, and it cannot start another. Operators can
+  switch it off with `agent.features.subagents`.
+
 ## [0.24.0] - 2026-09-15
 
 ### Added
