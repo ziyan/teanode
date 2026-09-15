@@ -1390,7 +1390,7 @@ input[type='datetime-local'] {
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  text-align: left;
+  text-align: start;
 }
 
 label {
@@ -2665,7 +2665,6 @@ body,
   line-height: 1.6;
 }
 
-/* A secret, shown once, in a block wide enough to select in one gesture. */
 /* The secret and its copy button as one object.
 
    The button is inside the box at the right end, centred against it, and the
@@ -2692,6 +2691,7 @@ body,
   transform: translateY(-50%);
 }
 
+/* A secret, shown once, in a block wide enough to select in one gesture. */
 .secret {
   margin: 0 0 var(--space-3);
   padding: var(--space-3);
@@ -2748,8 +2748,8 @@ label.checkbox input {
 
 /* A form is read down a column, and a field stretched across a wide screen is
    a line the eye has to travel to get back from. Wide enough for an address
-   and a hostname, no wider. */
-/* A column of fields, with one rhythm down it.
+   and a hostname, no wider -- and with one rhythm down it.
+
    It was a plain block, so what separated its children was whatever margin
    each happened to carry: a label 10px, a paragraph 15px, and a row of
    fields or a row of buttons nothing at all -- so the buttons under the
@@ -2763,11 +2763,6 @@ label.checkbox input {
   max-width: 520px;
 }
 
-/* Every child gives up its own vertical margin to the gap above. Zeroing
-   only the ones that obviously had margins left .page-actions carrying its
-   own 16px on top of the gap, so the daily brief's buttons sat at 32 where
-   every other form read 16 -- which is the same bug as before wearing a
-   different number. */
 /* A control that follows a column of fields belongs to the same form and
    needs the same gap. form-narrow's own gap governs only what is inside it,
    so a submit button placed after it -- which is how the preferences page
@@ -2778,6 +2773,11 @@ label.checkbox input {
   margin-top: var(--space-4);
 }
 
+/* Every child gives up its own vertical margin to the gap above. Zeroing
+   only the ones that obviously had margins left .page-actions carrying its
+   own 16px on top of the gap, so the daily brief's buttons sat at 32 where
+   every other form read 16 -- which is the same bug as before wearing a
+   different number. */
 .form-narrow > *,
 /* Written twice on purpose: .page-actions:not(:first-child) carries a
    margin-top of its own and is more specific than a bare child selector, so

@@ -1957,7 +1957,7 @@ function Check({
 // SourceCard is one mailbox as a source: whether the agent may reach it, and
 // what it does there, one subject at a time with a Save for each. Also shown
 // on the mailbox's own settings page.
-export function SourceCard({
+function SourceCard({
   source,
   view,
   onChanged,

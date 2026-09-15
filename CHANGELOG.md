@@ -23,6 +23,33 @@ Notable changes to TeaNode. The format follows
 - A button placed after a form, which is how the preferences page is
   written, no longer sits against the last field.
 
+- The settings pages no longer scroll sideways on a phone. A time field was
+  drawn natively there, and a native one sizes itself: it took the width its
+  own clock face wanted, would not shrink into the column it was given, and
+  carried the page with it. Dates and times are ordinary fields now, on every
+  page that has one.
+
+- Rows of controls wrap instead of pushing the page wider than the window.
+  A connected server carries four buttons, which came to more than the column
+  they sit in has between the phone's width and about a thousand pixels.
+
+- The subscriptions page shows one pane at a time on a phone. It was showing
+  the reading side alongside the list, both squeezed, in portrait and
+  landscape alike: the rule that separates them measures a frame the page had
+  never been given.
+
+- A secret shown once — an app password, an API token, a domain credential —
+  has its copy button inside the box with it rather than in the row of
+  actions underneath, where it read as a peer of Done.
+
+### Removed
+
+- The mailbox's Agent tab, which showed the same card the Agent page shows
+  for every source it has. It showed one, and showed an empty card for a
+  mailbox the agent had not been granted yet — the case somebody would open
+  it to fix. Everything it did is on the Agent page, and a kept link goes
+  there.
+
 ## [0.26.0] - 2026-09-15
 
 ### Added
