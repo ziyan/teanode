@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-15
+
 ### Changed
 
 - `storage.directory` is optional when `storage.s3` is enabled, and leaving
