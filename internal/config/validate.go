@@ -453,14 +453,6 @@ func isHostname(value string) bool {
 func (self *Configuration) ValidateFiles() error {
 	validator := &validator{}
 
-	if self.Server.LogDirectory != "" {
-		if info, err := os.Stat(self.Server.LogDirectory); err != nil {
-			validator.add("server.logDirectory", "%q cannot be used: %s", self.Server.LogDirectory, err)
-		} else if !info.IsDir() {
-			validator.add("server.logDirectory", "%q is not a directory", self.Server.LogDirectory)
-		}
-	}
-
 	for path, filename := range map[string]string{
 		"tls.certificateFile": self.TLS.CertificateFile,
 		"tls.privateKeyFile":  self.TLS.PrivateKeyFile,

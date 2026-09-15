@@ -715,7 +715,6 @@ func (self *server) openExchange(configuration *config.Configuration, spamFilter
 		Service:         fmt.Sprintf("teanode/%s", version.Version()),
 		MailServers:     configuration.MailServers(),
 		Secret:          self.secret,
-		LogDirectory:    configuration.Server.LogDirectory,
 		SOCKS5Proxy:     configuration.SMTP.SOCKS5Proxy,
 		DisableSendMail: configuration.SMTP.DisableSend,
 		Relay:           relaySettings(configuration),

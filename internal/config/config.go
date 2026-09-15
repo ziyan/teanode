@@ -203,10 +203,6 @@ type Server struct {
 	// LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL.
 	LogLevel string `yaml:"logLevel"`
 
-	// LogDirectory, when set, receives a copy of every received message as a
-	// .eml file. Useful when debugging; it grows without bound.
-	LogDirectory string `yaml:"logDirectory,omitempty"`
-
 	// Secret signs the bounce return path on outgoing mail and the passwords
 	// derived from SMTP credential keys. Generated on first run.
 	//

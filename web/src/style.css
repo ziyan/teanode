@@ -5202,7 +5202,14 @@ label.check-list-item {
 }
 
 .agent-line.assistant {
-  align-self: stretch;
+  /* As wide as what it says, and no wider. Stretched, a two-word answer was
+     a bubble the width of the drawer with two words adrift at the left of
+     it, which reads as something having gone missing. Not capped at 85% the
+     way the person's own messages are, though: an answer carrying a table,
+     a code block or a picture should have the whole width when it needs it,
+     and fit-content gives it only when it does. */
+  align-self: flex-start;
+  max-width: 100%;
   background: var(--field);
   white-space: normal;
 }

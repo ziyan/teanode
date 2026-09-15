@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The server no longer keeps a copy of every message it receives. A
+  `server.logDirectory` wrote each one to disk as an `.eml` file, for
+  debugging, with no retention and no sweep — so where it was set it had been
+  accumulating every message, in the clear, outside the spool and outside
+  whatever object store the deployment mirrors to, since the day it was
+  switched on. `teanode mail download` produces the same file from the spool
+  for anything inside the retention window, which is what the setting existed
+  for before the command did.
+
+  Worth knowing when upgrading: the setting was readable and writable only in
+  the stored configuration, not through `teanode settings` or the dashboard,
+  so a deployment could have it on with no way to see that from any supported
+  interface. It is ignored now. What it already wrote is left where it is —
+  that is somebody's mail, and deleting it is theirs to decide. Look for it
+  at the path the setting named.
+
 ### Fixed
 
 - Tapping a box on a phone no longer pulls the page in. Safari on iOS zooms

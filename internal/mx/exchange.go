@@ -2,9 +2,6 @@ package mx
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,7 +10,6 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/spamfilter"
 	"github.com/ziyan/teanode/internal/storage"
-	"github.com/ziyan/teanode/internal/util/bufferpool"
 	"github.com/ziyan/teanode/internal/util/clamav"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/util/mailparse"
@@ -126,22 +122,6 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 		log.Debugf("took %s handle mail %q", time.Since(envelope.ReceivedAt), envelope.ID)
 	}()
 
-	// log
-	if envelope.SpecialPrefix != "" {
-		switch envelope.SpecialPrefix {
-		case "dsn":
-			self.logEnvelope(models.MailKindDSN, envelope)
-		case "rua":
-			self.logEnvelope(models.MailKindRUA, envelope)
-		case "ruf":
-			self.logEnvelope(models.MailKindRUF, envelope)
-		}
-	} else if envelope.CredentialID != "" || envelope.DomainID != "" || envelope.MailboxID != "" {
-		self.logEnvelope(models.MailKindOutgoing, envelope)
-	} else {
-		self.logEnvelope(models.MailKindIncoming, envelope)
-	}
-
 	var deliveries []*models.Delivery
 	if err := self.database.Transaction(func(tx db.Transaction) error {
 		var err error
@@ -217,30 +197,6 @@ func distinctMails(deliveries []*models.Delivery) []*models.Mail {
 		mails = append(mails, delivery.Mail)
 	}
 	return mails
-}
-
-func (self *exchange) logEnvelope(kind models.MailKind, envelope *mailparse.Envelope) {
-	// Raw message logging is off unless a directory is configured. Without
-	// this guard the path below resolves to the working directory and every
-	// received message is dropped there, which is how a copy of somebody's
-	// mail ends up in a source tree.
-	if self.settings.LogDirectory == "" {
-		return
-	}
-
-	// get a buffer from pool
-	buffer, releaseBuffer := bufferpool.AcquireBuffer()
-	defer releaseBuffer()
-
-	if err := mailparse.Unsplit(buffer, envelope.Body, envelope.Headers); err != nil {
-		log.Warningf("failed to log mail %s: %s", envelope, err)
-		return
-	}
-
-	if err := os.WriteFile(filepath.Join(self.settings.LogDirectory, fmt.Sprintf("%s.%s.eml", envelope.ID, kind)), buffer.Bytes(), 0664); err != nil {
-		log.Warningf("failed to log mail %s: %s", envelope, err)
-		return
-	}
 }
 
 func (self *exchange) scavengeOnce(ctx context.Context) error {

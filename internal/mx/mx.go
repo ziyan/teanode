@@ -36,7 +36,6 @@ type Settings struct {
 	Secret []byte
 
 	// log directory
-	LogDirectory string
 
 	// socks5 proxy for outbound smtp connections (optional)
 	SOCKS5Proxy string
