@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-15
+
 ### Added
 
 - An operator may name equipment whose certificate is not checked, one host
