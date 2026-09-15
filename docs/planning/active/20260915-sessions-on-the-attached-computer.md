@@ -233,6 +233,8 @@ real computer attached (gen7), on 2026-09-15.
   of detaching fails. Waiting for the computer to come back is not done.
 - With several computers attached, a server on "the computer" runs on the
   first by name. Choosing one is not yet possible.
-- codex itself was not driven to a finished program: its sign-in on the
-  test machine had expired. The terminal read that off the screen, which is
-  the thing under test; the rest is a login away.
+- ~~codex driven to a finished program~~ Done, once codex was signed in
+  again and its pinned model dropped: the agent opened codex in a terminal
+  on gen7, accepted its prompt, asked for fizzbuzz.py, approved what codex
+  asked, left codex, ran the program itself and reported the fifteen lines
+  -- which matched the file on disk when run by hand afterwards.
