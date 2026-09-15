@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-09-15
+
 ### Security
 
 - A skill that signs in before it does anything no longer hands the token it
