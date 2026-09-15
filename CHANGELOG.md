@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-15
+
 ### Added
 
 - `teanode terminal` attaches the terminal the person is sitting in. Their
