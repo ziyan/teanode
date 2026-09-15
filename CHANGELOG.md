@@ -64,69 +64,6 @@ Notable changes to TeaNode. The format follows
 
 ### Changed
 
-- `storage.directory` is optional when `storage.s3` is enabled, and leaving
-  it empty keeps no messages on the server's own disk at all. With both, the
-  directory is still the record and the object store a mirror — a write that
-  reaches the disk has succeeded whatever the network is doing. With the
-  store alone there is no local copy, which is what several instances sharing
-  one store want: a directory there holds only the messages the instance that
-  handled them wrote, so no instance has all of them, every instance keeps a
-  copy of somebody's mail that nothing else needs, and reads fall through to
-  the store anyway. The trade is real and worth stating: the store must
-  answer for a message to be stored, where a directory keeps working while
-  the network does not.
-
-### Removed
-
-- The server no longer keeps a copy of every message it receives. A
-  `server.logDirectory` wrote each one to disk as an `.eml` file, for
-  debugging, with no retention and no sweep — so where it was set it had been
-  accumulating every message, in the clear, outside the spool and outside
-  whatever object store the deployment mirrors to, since the day it was
-  switched on. `teanode mail download` produces the same file from the spool
-  for anything inside the retention window, which is what the setting existed
-  for before the command did.
-
-  Worth knowing when upgrading: the setting was readable and writable only in
-  the stored configuration, not through `teanode settings` or the dashboard,
-  so a deployment could have it on with no way to see that from any supported
-  interface. It is ignored now. What it already wrote is left where it is —
-  that is somebody's mail, and deleting it is theirs to decide. Look for it
-  at the path the setting named.
-
-### Fixed
-
-- Tapping a box on a phone no longer pulls the page in. Safari on iOS zooms
-  when the field it is focusing has text under 16px, and it zooms until that
-  field fills the width — which is why the ask box appeared to drag the page
-  to about its own width, and why it looked like the box's doing. It is the
-  type size, not the width, so on a touch screen the text in a field is now
-  never under 16px. Nothing changes on a mouse.
-
-- A picture or a clip is the right height with the tool lines hidden. Shown,
-  the card sits inside a tool line, which is an ordinary block; hidden, it
-  becomes a child of the transcript, which is a flex column — and a flex
-  item gives way by default, so the same picture that was the right height a
-  line above was squashed into a band.
-
-- The ask box says the agent's name: "Ask Tea …" rather than "Ask your
-  agent…", which is what a stranger would call it.
-
-### Added
-
-- The agent can hand a piece of work to a run of its own. Some work is a job
-  rather than a question — read these forty messages and say which mention
-  the invoice, go through that repository and find where the timeout is set
-  — and done in the turn itself it fills the conversation with material that
-  mattered for one step and is in the way of every step after it. A subagent
-  does that work somewhere else and answers in one message, with its own
-  rounds and its own context. It has the tools the turn has, so what it can
-  do on somebody's own computer is what they could do themselves; its
-  working is kept as a run of its own to be read afterwards; and a card it
-  raises is shown in the conversation the person is actually reading, not in
-  the run they are not. One deep, and it cannot start another. Operators can
-  switch it off with `agent.features.subagents`.
-
 ## [0.25.0] - 2026-09-15
 
 ### Changed
