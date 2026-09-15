@@ -934,7 +934,8 @@ export const zh: Catalog = {
   'agent.serversHint':
     '运营者为所有人接入的服务：快递跟踪、Wiki、工单系统。需要你自己的凭据或授权的，由你来连接；代理以你的身份使用它。',
   'agent.serverHeadless': '可无人运行',
-  'agent.serverShared': '所有人共用；无需连接。',
+  'agent.serverShared': '共用',
+  'agent.serverSharedHint': '所有人共用，无需连接',
   'agent.serverConnectedState': '已连接。',
   'agent.serverError': '无响应：',
   'agent.serverPending': '授权进行中。',

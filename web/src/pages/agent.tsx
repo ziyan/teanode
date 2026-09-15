@@ -967,6 +967,10 @@ function ServersCard() {
           const needsPerson = server.auth === 'user' || server.auth === 'oauth'
           const connected = server.status === 'connected'
           const detail = [server.transport]
+          // The state beside the name is one word, so a server nobody has to
+          // connect to says why here rather than in a tag the width of the
+          // column.
+          if (!needsPerson) detail.push(t('agent.serverSharedHint'))
           if (server.headless) detail.push(t('agent.serverHeadless'))
           if (server.status === 'error' && server.lastError) detail.push(server.lastError)
           return (

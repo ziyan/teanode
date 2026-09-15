@@ -972,7 +972,8 @@ export const en = {
   'agent.serversHint':
     'Services the operator connected for everyone: a tracker, a wiki, a ticketing system. One that takes your own credential, or asks you to authorize it, is yours to connect; the agent uses it as you.',
   'agent.serverHeadless': 'headless',
-  'agent.serverShared': 'Shared by everyone; nothing to connect.',
+  'agent.serverShared': 'Shared',
+  'agent.serverSharedHint': 'shared by everyone, nothing to connect',
   'agent.serverConnectedState': 'Connected.',
   'agent.serverError': 'Not answering:',
   'agent.serverPending': 'Authorization under way.',

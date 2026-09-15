@@ -940,7 +940,13 @@ tr:has(.icon-button) > td {
 .table-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  /* Wrapping at any width. The bar is as wide as the column it sits in, and
+     that column is narrow on a phone but also on a desktop window with the
+     navigation open beside it — a breakpoint on the window cannot see the
+     second case. Wrap only happens when it does not fit, so allowing it
+     everywhere costs a wide bar nothing. */
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   margin-top: var(--space-3);
   font-size: var(--text-label);
 }
@@ -948,6 +954,8 @@ tr:has(.icon-button) > td {
 .table-pagination {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-left: auto;
 }
@@ -959,17 +967,6 @@ tr:has(.icon-button) > td {
 .table-bar > .muted,
 .table-pagination > .muted {
   white-space: nowrap;
-}
-
-/* On a phone all of it does not fit on one line: the count, the rows control,
-   the range and the two arrows want about 340 pixels of a 356 pixel bar, and
-   flex answers that by shrinking the text rather than the control. So the bar
-   wraps — the count on its own line, the controls under it. */
-@media (max-width: 600px) {
-  .table-bar {
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
-  }
 }
 
 .table-pagination label,
@@ -2525,7 +2522,22 @@ body,
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex: 0 0 auto;
+  /* It may shrink, which is what lets it wrap at all: with flex 0 0 auto and
+     an automatic minimum it takes its content's width whatever the room, and
+     a wrap that is allowed never happens. */
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Wrapping at any width, not only on a phone.
+     A row's controls are not always two buttons: a connected server carries
+     four -- Turn off, Unlink, Replace token, Remove -- which come to 415px,
+     and a skill puts a dropdown beside them. That fitted on a wide screen
+     and overflowed everywhere between the phone breakpoint and about a
+     thousand pixels, where the content column is narrower than the buttons
+     and nothing was allowed to wrap: the row pushed the column wider than
+     itself and the page grew a horizontal scrollbar. On a screen with room
+     this changes nothing, because a row that fits never wraps. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Boxes inside boxes, on a screen with no room for them.
