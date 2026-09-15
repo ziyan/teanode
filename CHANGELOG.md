@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-09-15
+
 ### Security
 
 - A stranger's message can no longer end the block it is quoted in. The
