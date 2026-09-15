@@ -1373,3 +1373,116 @@ exercised. And the reviewers were told what is deliberate — the computer
 daemon is unconfined on the owner's own machine, app passwords authenticate
 over Basic, the administrator is trusted — so nothing below those lines was
 examined.
+
+# Fourth pass — the subsystems the third pass predates
+
+- Date: 2026-09-15
+- Reviewed at: `main`, commit `53eb79e`
+- Scope: what landed after the third pass was written — subagents, the object
+  store as the whole of storage, sessions on an attached computer, connected
+  servers running there, and the skills runner. The third pass names none of
+  them, which is why they were the whole of this one.
+
+## Summary
+
+Three findings, all fixed. One of them matters: a skill that signs in before
+it does anything was handing the token it got back to the model.
+
+The rest of what was looked at held. The guards on the newest surfaces are in
+place and were read rather than assumed: a subagent is depth-limited, carries
+its parent's permissions and read-only flag, and answers its confirmations
+through the parent; the terminal tool resolves its computer through the same
+gate every other computer tool does, which refuses a run with nobody present.
+
+## Findings
+
+### SEC-75 — A skill's sign-in token went back to the model (High, fixed)
+
+A tool with more than one step answered with every step's result, "so that
+the model sees the working and not only the end of it". The working is worth
+seeing. A credential is not part of it.
+
+Four of the tools in the Homebridge skill, and the shape is the common one:
+sign in, select `token` from the answer, put it in the `Authorization` header
+of the step that follows. That token went back as part of the tool's answer —
+into the request to the model provider, into the stored conversation, and
+onto the dashboard where the run is shown. It was observed happening on a
+running server, not inferred.
+
+A step may now say `quiet: true`: its answer still feeds the steps after it
+and no longer goes back. That fixes a skill once its author republishes it,
+and an installed skill keeps running as it was written — so a selected field
+with a credential's name (`token`, `access_token`, `password`, `secret`,
+`api_key` and the rest) is kept back from the answer whether the step asked or
+not, while the steps after it go on using the real value. Both are asserted by
+tests that fail if a token appears anywhere in what a tool answers.
+
+The registry's own skills should say `quiet` on their sign-in steps rather
+than leaning on the field names; that is a change to the skills repository,
+not to this one.
+
+### SEC-76 — A value inside a script would have been read as code (Low, fixed)
+
+Every part of a skill's command is quoted before it runs, so a value cannot
+become a second command. That holds exactly as long as no part of the command
+is itself a script: `sh -c "curl {{url}}"` quotes the whole script as one
+argument, and the `sh` that receives it then parses whatever the value
+carried. Where the value comes from a tool argument, the model chooses it;
+where it comes from a message, a stranger does.
+
+No published skill is written that way, and none ever was — this is a latent
+footgun rather than a live hole, found by asking what the quoting depends on.
+It is refused at parse time now, for the shells and for `python`, `ruby`,
+`perl` and `node`, naming the safe form instead: pass the value as an
+argument after the script and let the script name it positionally.
+
+### SEC-77 — An accepted message could lose its content (Medium, functional, fixed)
+
+Storage used to be a local directory. It can now be an object store and
+nothing else, which is a service across a network — and the delivery's row is
+committed before the content is written. Failing to write could not refuse the
+message, because the sender would then send it again and it would be delivered
+twice; so the failure was logged at warning and the message stayed in the
+mailbox with nothing behind it. Nothing retried, and nothing repaired it: the
+reader, IMAP and the agent all just fail to find the content, permanently.
+
+The object client retries what it judges transient. What was missing was
+anything for the rest, so the write is now attempted four times over about
+three and a half seconds — nothing against the minutes a sending server
+allows — and a failure after that is logged at error saying plainly that a
+message was accepted and cannot be read.
+
+Storing before the row is committed would close the window rather than narrow
+it, at the cost of an orphaned object whenever a transaction rolls back. That
+is the right shape and it is a change to the delivery path, which wants more
+than an audit pass behind it.
+
+## Controls verified this time
+
+Named so nobody repeats the work:
+
+- **DAV bodies** are bounded at the mount, before authentication and before
+  any handler, so the `io.ReadAll` calls inside the report paths read from an
+  already-limited reader. This was a suspected finding and is not one.
+- **Usage aggregation** builds its one interpolated query from a whitelist of
+  column expressions and fixed predicates with placeholders; no caller string
+  reaches SQL.
+- **Subagents**: depth capped at one and the tool withheld inside one, tools
+  restricted to the parent's own set less itself, `ReadOnly` and the
+  permission set inherited, confirmations answered through the parent, rounds
+  bounded, usage recorded under its own kind.
+- **The terminal on an attached computer** resolves through the same gate as
+  every other computer tool: refused for a run with nobody present, refused
+  when the operator has not allowed computers, refused when the feature is
+  off.
+- **Self-upgrade** builds its client without a timeout, which is correct: both
+  callers bound their own requests with a context deadline, thirty seconds for
+  the release check and ten minutes for the download.
+- No `math/rand` anywhere a value needs to be unguessable; no
+  `dangerouslySetInnerHTML` in the dashboard.
+
+## What this review did not do
+
+No fuzzing, no penetration test, no run against a live model. The reading
+followed the newest code and the paths that reach it; the subsystems the
+third pass covered were not read again.
