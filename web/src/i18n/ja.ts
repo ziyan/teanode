@@ -1324,6 +1324,8 @@ export const ja: Catalog = {
   'agentSettings.feature.connectedServers': '接続サーバー',
   'agentSettings.feature.computer': '`teanode computer` で接続した本人のコンピューター',
   'agentSettings.feature.chatApps': 'チャットアプリ：本人の Telegram または Discord ボット',
+  'agentSettings.feature.skills': 'スキル：運用者がスキルレジストリから導入したツール',
+  'agentSettings.feature.subagents': 'サブエージェント：一つのターンが仕事を別の実行に渡せる',
   'agentSettings.limits': '上限',
   'agentSettings.limit.dailyTokensPerAgent': '1 人 1 日あたりのトークン',
   'agentSettings.limit.dailyCostPerAgent': '1人あたりの1日の金額',

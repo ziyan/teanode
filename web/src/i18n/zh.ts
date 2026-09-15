@@ -1281,6 +1281,8 @@ export const zh: Catalog = {
   'agentSettings.feature.connectedServers': '已连接的服务器',
   'agentSettings.feature.computer': '通过 `teanode computer` 附加的用户自己的电脑',
   'agentSettings.feature.chatApps': '聊天应用：用户自己的 Telegram 或 Discord 机器人',
+  'agentSettings.feature.skills': '技能：运营者从技能注册表安装的工具',
+  'agentSettings.feature.subagents': '子代理：一次对话可以把一件工作交给独立的运行',
   'agentSettings.limits': '限额',
   'agentSettings.limit.dailyTokensPerAgent': '每人每日 token',
   'agentSettings.limit.dailyCostPerAgent': '每人每日金额',

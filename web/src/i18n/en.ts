@@ -1331,6 +1331,8 @@ export const en = {
   'agentSettings.feature.connectedServers': 'Connected servers',
   'agentSettings.feature.computer': "The person's own computer, attached with `teanode computer`",
   'agentSettings.feature.chatApps': "Chat apps: a person's own Telegram or Discord bot",
+  'agentSettings.feature.skills': 'Skills: the tools an operator installs from the skill registry',
+  'agentSettings.feature.subagents': 'Subagents: a turn may hand a piece of work to a run of its own',
   'agentSettings.limits': 'Limits',
   'agentSettings.limit.dailyTokensPerAgent': 'Tokens per person per day',
   'agentSettings.limit.dailyCostPerAgent': 'Daily cost per person',
