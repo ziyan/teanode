@@ -156,6 +156,18 @@ type Step struct {
 	If       string            `yaml:"if"`
 	Command  []string          `yaml:"command"`
 	Timeout  int               `yaml:"timeout"`
+
+	// Quiet keeps this step's answer out of the tool's, while leaving it
+	// where later steps can still read it.
+	//
+	// A workflow that signs in first selects a token from the answer and
+	// puts it in the next step's header. That token was going back to the
+	// model with everything else, because a tool with more than one step
+	// answers with all of them "so that the model sees the working" -- and
+	// from there into the provider's request, the stored conversation and
+	// the run shown on the dashboard. The working is worth seeing; a
+	// credential is not part of it.
+	Quiet bool `yaml:"quiet"`
 }
 
 // The kinds a tool or a step may be.
@@ -386,6 +398,9 @@ func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
 		if len(tool.Command) == 0 {
 			return fmt.Errorf("skills: %s is a shell tool with no command", where)
 		}
+		if err := checkScripted(where, tool.Command); err != nil {
+			return err
+		}
 		return self.checkList(where, tool.Command, available, nil, secrets)
 	case KindHTTP:
 		return self.checkStep(where, tool.Request(), available, nil, secrets)
@@ -445,6 +460,9 @@ func (self *Skill) checkStep(where string, step *Step, available map[string]bool
 	case KindShell:
 		if len(step.Command) == 0 {
 			return fmt.Errorf("skills: the shell step %s has no command", where)
+		}
+		if err := checkScripted(where, step.Command); err != nil {
+			return err
 		}
 		return self.checkList(where, step.Command, available, earlier, secrets)
 	case KindHTTP:
@@ -507,6 +525,55 @@ func (self *Skill) checkCondition(where, condition string, available map[string]
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// interpreters run a script given on the command line, with the flag each
+// one takes it under.
+var interpreters = map[string]string{
+	"sh": "-c", "bash": "-c", "dash": "-c", "ash": "-c", "zsh": "-c", "ksh": "-c",
+	"python": "-c", "python3": "-c", "ruby": "-e", "perl": "-e", "node": "-e",
+}
+
+// checkScripted refuses a value put inside a script.
+//
+// Every part of a command is quoted before it is run, so a value cannot
+// become a second command -- unless the part it lands in is not a command but
+// a script, and something else is about to interpret it. `sh -c "curl {{url}}"`
+// quotes the whole script as one argument, and whatever the value carries is
+// then read as shell by the sh that receives it. The quoting is exactly as
+// sound as the assumption that no part is a script, and nothing was checking
+// that assumption.
+//
+// The safe form passes the value as an argument instead, where the script
+// names it positionally and the shell never parses it:
+//
+//	command: [sh, -c, 'curl -- "$1"', --, '{{url}}']
+func checkScripted(where string, command []string) error {
+	if len(command) == 0 {
+		return nil
+	}
+	program := command[0]
+	if cut := strings.LastIndex(program, "/"); cut >= 0 {
+		program = program[cut+1:]
+	}
+	flag, interpreted := interpreters[program]
+	if !interpreted {
+		return nil
+	}
+	for at := 1; at < len(command)-1; at++ {
+		if command[at] != flag {
+			continue
+		}
+		// The argument after the flag is the script itself. Anything
+		// further along is an argument to it, which is the safe form.
+		if reference.MatchString(hideDoubled(command[at+1])) {
+			return fmt.Errorf(
+				"skills: %s puts a value inside the script it hands to %s, where %s reads it as code rather than as text; pass it as an argument after the script and name it positionally there",
+				where, program, program)
+		}
+		return nil
 	}
 	return nil
 }
