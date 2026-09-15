@@ -1368,6 +1368,31 @@ input[type='radio'] {
   margin-right: var(--space-1);
 }
 
+/* A clock or a calendar is a text field too.
+
+   Left to itself iOS draws these natively, and a native date or time control
+   sizes itself: it takes the width its own clock face wants and declines to
+   shrink to the column it is in, so on a phone the field sat wider than the
+   one under it and pushed the whole page sideways. Nothing on a desktop shows
+   this — Chrome shrinks them without complaint — and the page-level
+   overflow-x: hidden hides the evidence rather than the cause, which is why
+   it survived so long.
+
+   Turning the native appearance off puts them back under the same rules as
+   every other field: the width they are given, the padding and border above,
+   and their text against the left edge rather than centred in the middle of
+   the box. Tapping one still opens the system picker. */
+input[type='time'],
+input[type='date'],
+input[type='datetime-local'] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+}
+
 label {
   display: block;
   margin-bottom: 10px;
