@@ -701,3 +701,107 @@ func TestAValueCannotForgeTheEscape(t *testing.T) {
 		t.Fatalf("the words themselves still arrive, without their braces: %s", sent)
 	}
 }
+
+// A sign-in step's token does not go back to the model.
+//
+// A workflow that signs in first selects a token and puts it in the header of
+// the step after it. Every step's answer was going back as the tool's answer
+// -- "so that the model sees the working" -- which put that token in the
+// provider's request, the stored conversation, and the run on the dashboard.
+// The step says quiet, the step after it still signs its request with the
+// token, and the answer carries what was asked for and not the credential.
+func TestAQuietStepKeepsItsTokenOutOfTheAnswer(t *testing.T) {
+	const token = "tok-live-do-not-show-a-model"
+	var signed []string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(request.URL.Path, "/login") {
+			_, _ = writer.Write([]byte(`{"access_token":"` + token + `"}`))
+			return
+		}
+		signed = append(signed, request.Header.Get("Authorization"))
+		_, _ = writer.Write([]byte(`{"rooms":[{"name":"Kitchen"}]}`))
+	}))
+	defer service.Close()
+
+	body := "---\nname: house\ndescription: the house\ntools:\n" +
+		"  - name: rooms\n    description: the rooms\n    type: workflow\n" +
+		"    parameters: {type: object, properties: {}}\n" +
+		"    steps:\n" +
+		"      - name: sign_in\n        type: http\n        method: POST\n        url: \"" + service.URL + "/login\"\n        result: json\n        quiet: true\n        select: {token: access_token}\n" +
+		"      - name: list\n        type: http\n        url: \"" + service.URL + "/rooms\"\n        result: json\n        headers: {Authorization: \"Bearer {{steps.sign_in.token}}\"}\n        select: {first: \"rooms.0.name\"}\n" +
+		"---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	answer, err := skill.Run(context.Background(), "rooms", nil, &Running{Client: service.Client()})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(signed) != 1 || signed[0] != "Bearer "+token {
+		t.Fatalf("the step after it still signed with the token: %v", signed)
+	}
+	// One step left to show, so its answer is the answer.
+	if answer["first"] != "Kitchen" {
+		t.Fatalf("what was asked for is in the answer: %v", answer)
+	}
+	if _, found := answer["sign_in"]; found {
+		t.Fatalf("the quiet step is not in the answer: %v", answer)
+	}
+	if written := fmt.Sprintf("%v", answer); strings.Contains(written, token) {
+		t.Fatalf("the token is nowhere in the answer: %s", written)
+	}
+}
+
+// A skill that has not been republished still does not hand over its token.
+//
+// quiet is the way to say it, and the skills in the registry will say it. An
+// installed one keeps running as it was written, though, so a field with a
+// credential's name is kept back from the answer whether or not the step
+// asked -- while the steps after it go on using the real value.
+func TestACredentialFieldIsKeptBackFromAnUnchangedSkill(t *testing.T) {
+	const token = "tok-live-still-secret"
+	var signed []string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(request.URL.Path, "/login") {
+			_, _ = writer.Write([]byte(`{"access_token":"` + token + `","expires":3600}`))
+			return
+		}
+		signed = append(signed, request.Header.Get("Authorization"))
+		_, _ = writer.Write([]byte(`{"rooms":[{"name":"Kitchen"}]}`))
+	}))
+	defer service.Close()
+
+	// No quiet on the sign-in step: the skill as it was written before.
+	body := "---\nname: house\ndescription: the house\ntools:\n" +
+		"  - name: rooms\n    description: the rooms\n    type: workflow\n" +
+		"    parameters: {type: object, properties: {}}\n" +
+		"    steps:\n" +
+		"      - name: sign_in\n        type: http\n        method: POST\n        url: \"" + service.URL + "/login\"\n        result: json\n        select: {token: access_token, expires: expires}\n" +
+		"      - name: list\n        type: http\n        url: \"" + service.URL + "/rooms\"\n        result: json\n        headers: {Authorization: \"Bearer {{steps.sign_in.token}}\"}\n        select: {first: \"rooms.0.name\"}\n" +
+		"---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	answer, err := skill.Run(context.Background(), "rooms", nil, &Running{Client: service.Client()})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(signed) != 1 || signed[0] != "Bearer "+token {
+		t.Fatalf("the real token still signed the request after it: %v", signed)
+	}
+	if written := fmt.Sprintf("%v", answer); strings.Contains(written, token) {
+		t.Fatalf("the token is nowhere in the answer: %s", written)
+	}
+	// The step is still shown, and what is not a credential is still in it.
+	signIn, _ := answer["sign_in"].(map[string]any)
+	if signIn == nil || signIn["token"] != "(kept back)" {
+		t.Fatalf("the field is kept back rather than the step hidden: %v", answer)
+	}
+	if signIn["expires"] != float64(3600) {
+		t.Fatalf("the rest of the step is untouched: %v", signIn)
+	}
+}

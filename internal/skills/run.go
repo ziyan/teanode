@@ -193,7 +193,7 @@ func (self *Skill) Run(ctx context.Context, toolName string, arguments map[strin
 		}
 		steps = found
 	}
-	var last map[string]any
+	quiet := map[string]bool{}
 	for _, step := range steps {
 		skip, err := state.skipped(step)
 		if err != nil {
@@ -207,18 +207,76 @@ func (self *Skill) Run(ctx context.Context, toolName string, arguments map[strin
 			return nil, fmt.Errorf("%s: %w", step.Name, err)
 		}
 		state.steps[step.Name] = answer
-		last = answer
-	}
-	if len(state.steps) == 1 {
-		return last, nil
+		if step.Quiet {
+			quiet[step.Name] = true
+		}
 	}
 	// Everything every step selected, under the step's own name, so that
-	// the model sees the working and not only the end of it.
-	whole := map[string]any{}
+	// the model sees the working and not only the end of it -- except the
+	// steps that asked to be left out of it, which is how a sign-in keeps
+	// its token out of the answer while the steps after it still use it.
+	shown := map[string]map[string]any{}
 	for name, answer := range state.steps {
+		if quiet[name] {
+			continue
+		}
+		shown[name] = withheld(answer)
+	}
+	// One step's answer is that step's answer, not a map with one key in
+	// it. A workflow that signs in and then does the one thing it was
+	// asked reads the same way as the tool that does it in a single step.
+	if len(shown) == 1 {
+		for _, only := range shown {
+			return only, nil
+		}
+	}
+	// Every step was quiet. Saying so beats handing back an empty map,
+	// which a model reads as the tool having done nothing.
+	if len(shown) == 0 {
+		return map[string]any{"done": true}, nil
+	}
+	whole := map[string]any{}
+	for name, answer := range shown {
 		whole[name] = answer
 	}
 	return whole, nil
+}
+
+// credentialFields are the names a skill gives a thing that signs a request.
+//
+// A step saying quiet is the way to keep a credential out of the answer, and
+// it is the one to use. This is for the skills that do not say it yet: an
+// installed skill keeps working as it was written, and until its author
+// republishes it the token it selects would still be read by a model. The
+// names here are the conventional ones, and a field called any of them has no
+// business being shown to anybody.
+var credentialFields = map[string]bool{
+	"token": true, "access_token": true, "refresh_token": true, "id_token": true,
+	"password": true, "secret": true, "api_key": true, "apikey": true,
+	"authorization": true, "session_token": true, "session_key": true,
+}
+
+// withheld is a step's answer with anything credential-shaped taken out of
+// it. The step's own answer is untouched, so the steps after it still read
+// the real value; this is only what goes back to the model.
+func withheld(answer map[string]any) map[string]any {
+	var kept map[string]any
+	for name := range answer {
+		if !credentialFields[strings.ToLower(name)] {
+			continue
+		}
+		if kept == nil {
+			kept = make(map[string]any, len(answer))
+			for each, value := range answer {
+				kept[each] = value
+			}
+		}
+		kept[name] = "(kept back)"
+	}
+	if kept == nil {
+		return answer
+	}
+	return kept
 }
 
 // Tool is one of the skill's tools by name.
