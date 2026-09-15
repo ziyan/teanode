@@ -1,6 +1,6 @@
 # A connected server that is a subprocess is declared only by the operator
 
-- Status: accepted
+- Status: accepted; amended by [20260915-a-server-the-computer-runs-is-the-persons.md](20260915-a-server-the-computer-runs-is-the-persons.md) for a server that runs on the person's own attached computer rather than on this one
 - Date: 2026-09-10
 - Deciders: Ziyan Zhou
 

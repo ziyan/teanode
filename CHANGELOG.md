@@ -8,6 +8,17 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- A connected server may run on the person's own attached computer.
+  `location: computer` on a server declared with a command runs that command
+  there, as them, and its standard input and output reach this server through
+  a session — the protocol is unchanged; only where the process is. Such a
+  server is offered only while that person has a computer attached and never
+  to a run with nobody present, and the configuration refuses to mark it
+  headless. This reopens a decision: a command on this server is the
+  operator's to declare because it runs as this server's own process, and a
+  command on the person's own machine is no more than the shell tool they
+  already have. The record says why the two are not the same thing.
+
 - The agent can drive a terminal on a computer somebody attached. `terminal`
   opens one and runs a program in it, types, presses keys by name — enter,
   the arrows, ctrl-c, the function keys — reads the screen, waits for it to

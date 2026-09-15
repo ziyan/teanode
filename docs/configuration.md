@@ -1327,6 +1327,12 @@ inferred: `stdio` when a command is set and no URL, otherwise `http`.
 **`command`**, **`args`** — The executable and its arguments, for the
 `stdio` transport.
 
+**`location`** — Location is where a command-spoken server runs: "server",
+the default, is this server's own host, as this process; "computer" is the
+person's own attached computer, as them. A server on the computer is reached
+only while one is attached, and never by a run with nobody present, and it
+cannot be marked headless.
+
 **`env`** — Variables given to the subprocess over this server's own
 environment, each with a `name` and a `value`; how a stdio server is given
 its secrets. The values are secrets.

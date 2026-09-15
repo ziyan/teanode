@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -261,5 +262,53 @@ func TestCallingAServerWithNoSessionIsAnErrorNotAPanic(t *testing.T) {
 	}
 	if err := none.Close(); err != nil {
 		t.Fatalf("closing: %s", err)
+	}
+}
+
+// The protocol over pipes that belong to something else.
+//
+// A server on the person's own computer reaches here through a session, not
+// through a subprocess of ours; what the transport is handed is a writer and
+// a reader and a way to end it, and everything above it cannot tell.
+func TestThePipedTransportSpeaksOverAnyPipes(t *testing.T) {
+	t.Parallel()
+
+	toServer, ourWriter := io.Pipe()
+	ourReader, fromServer := io.Pipe()
+	closed := make(chan struct{})
+
+	// A server that answers every request with its id and method.
+	go func() {
+		scanner := bufio.NewScanner(toServer)
+		for scanner.Scan() {
+			var request Request
+			if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == nil {
+				continue
+			}
+			result, _ := json.Marshal(map[string]any{"echo": request.Method})
+			response, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": json.RawMessage(result)})
+			_, _ = fromServer.Write(append(response, '\n'))
+		}
+	}()
+
+	transport := NewPipedTransport(ourWriter, ourReader, func() error { close(closed); return nil })
+	id := int64(7)
+	response, err := transport.Call(context.Background(), &Request{JSONRPC: "2.0", ID: &id, Method: "tools/list"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if response.ID == nil || *response.ID != 7 || !strings.Contains(string(response.Result), "tools/list") {
+		t.Fatalf("answered with what was asked: %+v", response)
+	}
+
+	// Close ends what is at the other end through the closer it was given,
+	// since there is no process of ours to wait for.
+	if err := transport.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatalf("the closer was not called")
 	}
 }

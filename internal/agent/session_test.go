@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -17,8 +18,15 @@ type fakeDevice struct {
 
 	mutex   sync.Mutex
 	started []string
+	ids     []string
 	written []string
 	closed  []string
+}
+
+func (self *fakeDevice) startedIds() []string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return append([]string{}, self.ids...)
 }
 
 func (self *fakeDevice) Send(message []byte) error {
@@ -41,6 +49,7 @@ func (self *fakeDevice) Send(message []byte) error {
 	switch sent.Action {
 	case "session_start":
 		self.started = append(self.started, arguments.Command)
+		self.ids = append(self.ids, arguments.Session)
 	case "session_write":
 		decoded, _ := base64.StdEncoding.DecodeString(arguments.Data)
 		self.written = append(self.written, string(decoded))
@@ -157,5 +166,74 @@ func TestADetachedDeviceEndsItsSessions(t *testing.T) {
 	}
 	if device.link.Session(held.id) != nil {
 		t.Fatalf("the device holds it no longer")
+	}
+}
+
+// A session as a pair of pipes: what a protocol written for a subprocess
+// wants, over a program that is on somebody else's machine. The reader
+// waits for something to arrive, hands over what has, and reports the end
+// of the stream once the program has ended and everything is read.
+func TestASessionReadsAndWritesLikePipes(t *testing.T) {
+	t.Parallel()
+
+	device := &fakeDevice{}
+	device.link = newDeviceLink("the computer", device)
+	writer, reader, closer, err := device.link.SessionPipes(context.Background(), "some-server", []string{"--stdio"}, "", nil)
+	if err != nil {
+		t.Fatalf("pipes: %v", err)
+	}
+	if len(device.started) != 1 || device.started[0] != "some-server" {
+		t.Fatalf("the program was started on the device: %v", device.started)
+	}
+	held := device.link.Session(device.startedIds()[0])
+
+	// Writing goes to the device as the session's input.
+	if _, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if len(device.written) != 1 || !strings.Contains(device.written[0], `"method":"ping"`) {
+		t.Fatalf("written across as it was: %v", device.written)
+	}
+
+	// Reading blocks until the device says something, then hands it over.
+	got := make(chan string, 1)
+	go func() {
+		buffer := make([]byte, 256)
+		read, err := reader.Read(buffer)
+		if err != nil {
+			got <- "error: " + err.Error()
+			return
+		}
+		got <- string(buffer[:read])
+	}()
+	select {
+	case early := <-got:
+		t.Fatalf("read before anything arrived: %q", early)
+	case <-time.After(100 * time.Millisecond):
+	}
+	device.link.sessionSaid(held.id, "output", "stdout",
+		base64.StdEncoding.EncodeToString([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`+"\n")), 0)
+	select {
+	case line := <-got:
+		if !strings.Contains(line, `"id":1`) {
+			t.Fatalf("what the device said: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("the reader did not wake when output arrived")
+	}
+
+	// Once the program has ended and there is nothing left, the stream
+	// ends -- which is how the protocol above learns the server went.
+	device.link.sessionSaid(held.id, "ended", "", "", 0)
+	if _, err := reader.Read(make([]byte, 16)); err != io.EOF {
+		t.Fatalf("end of stream after the end: %v", err)
+	}
+
+	// Closing the pipes closes the session on the device.
+	if err := closer(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if len(device.closed) != 1 {
+		t.Fatalf("the device was told to close it: %v", device.closed)
 	}
 }

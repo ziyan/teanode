@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -324,4 +325,67 @@ func DecodedSessionData(data json.RawMessage) string {
 		return ""
 	}
 	return text
+}
+
+// sessionWriter is a session's input as an io.WriteCloser: what a protocol
+// written for a subprocess's pipes wants, over a program that is on somebody
+// else's machine.
+type sessionWriter struct {
+	link *deviceLink
+	id   string
+}
+
+func (self *sessionWriter) Write(data []byte) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), deviceAnswerWait)
+	defer cancel()
+	if err := self.link.WriteSession(ctx, self.id, data); err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
+
+func (self *sessionWriter) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), deviceAnswerWait)
+	defer cancel()
+	return self.link.CloseSession(ctx, self.id)
+}
+
+// sessionReader is a session's output as an io.Reader. It blocks until
+// something has arrived, hands over what has, and reports the end of the
+// stream once the program has ended and everything it said has been read.
+type sessionReader struct {
+	held    *deviceSession
+	pending []byte
+}
+
+func (self *sessionReader) Read(into []byte) (int, error) {
+	for len(self.pending) == 0 {
+		taken, _, ended, _ := self.held.take()
+		if len(taken) > 0 {
+			self.pending = taken
+			break
+		}
+		if ended {
+			return 0, io.EOF
+		}
+		// Nothing yet: wait for the device to say something, or for the
+		// session to end. A long wait is fine here; a server that is idle
+		// says nothing, and the reader is on a goroutine of its own.
+		self.held.settled(context.Background(), time.Minute)
+	}
+	read := copy(into, self.pending)
+	self.pending = self.pending[read:]
+	return read, nil
+}
+
+// SessionPipes is a stdio session on the device as the pipes a protocol
+// expects: something to write to, something to read, and a way to end it.
+func (self *deviceLink) SessionPipes(ctx context.Context, command string, arguments []string,
+	directory string, environment map[string]string) (io.WriteCloser, io.Reader, func() error, error) {
+	held, err := self.startSession(ctx, "stdio", command, arguments, directory, environment, 0, 0)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	writer := &sessionWriter{link: self, id: held.id}
+	return writer, &sessionReader{held: held}, writer.Close, nil
 }

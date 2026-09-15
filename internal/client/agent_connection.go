@@ -11,6 +11,7 @@ import (
 type AgentServer struct {
 	Name            string     `json:"name"`
 	Transport       string     `json:"transport"`
+	Location        string     `json:"location"`
 	Auth            string     `json:"auth"`
 	Headless        bool       `json:"headless"`
 	Enabled         bool       `json:"enabled"`
@@ -20,7 +21,7 @@ type AgentServer struct {
 	Tools           int        `json:"tools"`
 }
 
-const serverFields = `{ name transport auth headless enabled status lastError lastConnectedAt tools }`
+const serverFields = `{ name transport location auth headless enabled status lastError lastConnectedAt tools }`
 
 // The documents.
 const (

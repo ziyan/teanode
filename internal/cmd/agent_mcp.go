@@ -68,7 +68,11 @@ func runAgentMCPList(ctx context.Context, command *cli.Command) error {
 		if !server.Enabled {
 			state = "off"
 		}
-		rows = append(rows, []string{server.Name, server.Transport, server.Auth, state, server.LastError})
+		where := server.Transport
+		if server.Location == "computer" {
+			where += " on their computer"
+		}
+		rows = append(rows, []string{server.Name, where, server.Auth, state, server.LastError})
 	}
 	return printTable([]string{"server", "transport", "auth", "status", "error"}, rows)
 }

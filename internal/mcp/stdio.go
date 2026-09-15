@@ -24,6 +24,10 @@ type StdioTransport struct {
 	stdin   io.WriteCloser
 	stdout  *bufio.Scanner
 
+	// closer ends whatever is behind the pipes when there is no command
+	// of our own to wait for: a session on somebody's computer.
+	closer func() error
+
 	writeMutex sync.Mutex
 	pending    map[int64]chan *Response
 	mutex      sync.Mutex
@@ -62,14 +66,29 @@ func NewStdioTransport(settings *StdioSettings) (*StdioTransport, error) {
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("mcp: cannot start %s: %w", settings.Command, err)
 	}
-	scanner := bufio.NewScanner(stdout)
+	self := newPipedTransport(stdin, stdout, nil)
+	self.command = command
+	return self, nil
+}
+
+// NewPipedTransport speaks the protocol over a writer and a reader that
+// belong to something else -- a program held open on the person's own
+// computer, whose input and output arrive through a session rather than
+// through pipes of ours. Close calls closer, which is what ends the program
+// at the other end.
+func NewPipedTransport(writer io.WriteCloser, reader io.Reader, closer func() error) *StdioTransport {
+	return newPipedTransport(writer, reader, closer)
+}
+
+func newPipedTransport(writer io.WriteCloser, reader io.Reader, closer func() error) *StdioTransport {
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
-	self := &StdioTransport{command: command, stdin: stdin, stdout: scanner, pending: map[int64]chan *Response{}, closed: make(chan struct{})}
+	self := &StdioTransport{stdin: writer, stdout: scanner, closer: closer, pending: map[int64]chan *Response{}, closed: make(chan struct{})}
 	go func() {
 		defer deferutil.Recover()
 		self.read()
 	}()
-	return self, nil
+	return self
 }
 
 // read dispatches responses to the calls waiting for them.
@@ -156,6 +175,14 @@ func (self *StdioTransport) Notify(ctx context.Context, notification *Request) e
 // does not leave within a moment.
 func (self *StdioTransport) Close() error {
 	_ = self.stdin.Close()
+	if self.command == nil {
+		// Not a process of ours: whatever is at the other end is closed
+		// by whoever holds it.
+		if self.closer != nil {
+			return self.closer()
+		}
+		return nil
+	}
 	done := make(chan error, 1)
 	go func() { done <- self.command.Wait() }()
 	select {

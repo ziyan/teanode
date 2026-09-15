@@ -59,6 +59,7 @@ export type AgentMCPServer = {
   oauthAuthorizationUrl: string
   oauthTokenUrl: string
   headless: boolean
+  location: string
   readOnly: string[]
   disabled: string[]
   timeout: string
@@ -136,7 +137,7 @@ export const AGENT_SELECTION = `agent {
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
-  mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
+  mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless location readOnly disabled timeout enabled }
   works families kinds
 }`
 
@@ -1290,6 +1291,7 @@ type ServerDraft = {
   oauthAuthorizationUrl: string
   oauthTokenUrl: string
   headless: boolean
+  location: string
   readOnly: string
   disabled: string
   timeout: string
@@ -1316,6 +1318,7 @@ function serverDraft(server?: AgentMCPServer): ServerDraft {
         oauthAuthorizationUrl: server.oauthAuthorizationUrl,
         oauthTokenUrl: server.oauthTokenUrl,
         headless: server.headless,
+        location: server.location,
         readOnly: list(server.readOnly),
         disabled: list(server.disabled),
         timeout: server.timeout,
@@ -1339,6 +1342,7 @@ function serverDraft(server?: AgentMCPServer): ServerDraft {
         oauthAuthorizationUrl: '',
         oauthTokenUrl: '',
         headless: false,
+        location: '',
         readOnly: '',
         disabled: '',
         timeout: '',
@@ -1390,6 +1394,7 @@ function serverDraftValues(draft: ServerDraft) {
     oauthAuthorizationUrl: draft.oauthAuthorizationUrl.trim(),
     oauthTokenUrl: draft.oauthTokenUrl.trim(),
     headless: draft.headless,
+    location: draft.location,
     readOnly: split(draft.readOnly),
     disabled: split(draft.disabled),
     timeout: draft.timeout.trim(),
@@ -1561,6 +1566,21 @@ function ServerDialog({
           />
         </label>
       </div>
+      {(draft.transport === 'stdio' || (draft.transport === '' && draft.command.trim() !== '')) && (
+        <label className="shrink">
+          <span>{t('agentSettings.serverLocation')}</span>
+          <Select
+            block
+            value={draft.location}
+            label={t('agentSettings.serverLocation')}
+            options={[
+              { value: '', label: t('agentSettings.serverLocationServer') },
+              { value: 'computer', label: t('agentSettings.serverLocationComputer') },
+            ]}
+            onChange={(location) => set({ location })}
+          />
+        </label>
+      )}
       {draft.transport !== 'stdio' ? (
         <label>
           <span>{t('agentSettings.serverUrl')}</span>
