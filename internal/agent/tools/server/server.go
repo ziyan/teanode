@@ -14,6 +14,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// commandsNamed is the commands a settings change would have this server
+// run: a connected server declared with a command rather than a URL.
+func commandsNamed(values map[string]any) []string {
+	servers, ok := values["mcpServers"].([]any)
+	if !ok {
+		return nil
+	}
+	var named []string
+	for _, each := range servers {
+		server, ok := each.(map[string]any)
+		if !ok {
+			continue
+		}
+		if command, ok := server["command"].(string); ok && strings.TrimSpace(command) != "" {
+			arguments, _ := server["args"].([]any)
+			for _, argument := range arguments {
+				if said, ok := argument.(string); ok {
+					command += " " + said
+				}
+			}
+			named = append(named, command)
+		}
+	}
+	return named
+}
+
 func init() {
 	tools.Register(func() []*tools.Tool {
 		manage := []models.Permission{models.PermissionServerManage}
@@ -85,6 +111,15 @@ func init() {
 					said := "Change the " + tools.Named(call.Section, "server") + " settings"
 					if len(named) > 0 {
 						said += ": " + tools.Some(named, 5)
+					}
+					// One value is named even so. A connected server given
+					// a command runs that command on this machine, as this
+					// server, and "change the agent settings: mcpServers"
+					// is a true sentence that describes none of it. The
+					// command is not a secret; the card is the only place
+					// the person can see what they are approving.
+					if commands := commandsNamed(call.Values); len(commands) > 0 {
+						said += ", running " + tools.Some(commands, 3) + " on this server"
 					}
 					return said
 				}),

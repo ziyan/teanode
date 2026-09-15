@@ -19,6 +19,10 @@ import (
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
+// maximumSendBody is the most a templated send may carry. A template's
+// variables are names and short strings; a megabyte is already generous.
+const maximumSendBody = 1 << 20
+
 func (self *send) sendView(response http.ResponseWriter, request *http.Request) {
 	if err := self.database.Transaction(func(tx db.Transaction) error {
 		// decode authorization
@@ -67,6 +71,12 @@ func (self *send) sendView(response http.ResponseWriter, request *http.Request) 
 
 			Variables map[string]interface{} `json:"variables"`
 		}
+		// Bounded before it is read, as every other handler that takes a
+		// body does. This one decoded straight from the connection into a
+		// free-form map, so a credential scoped to send mail as one address
+		// could stream as much as it liked into memory while holding a
+		// database connection.
+		request.Body = http.MaxBytesReader(response, request.Body, maximumSendBody)
 		if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 			return api.ErrInvalidArguments
 		}
