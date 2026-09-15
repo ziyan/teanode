@@ -1486,3 +1486,214 @@ Named so nobody repeats the work:
 No fuzzing, no penetration test, no run against a live model. The reading
 followed the newest code and the paths that reach it; the subsystems the
 third pass covered were not read again.
+
+# Fifth pass — a coverage-led run over the whole repository
+
+- Date: 2026-09-15
+- Reviewed at: `main`, commit `6c13a89`
+- Method: a coverage ledger of fourteen units across the whole repository, one
+  wave of seven independent hunters, and a fresh adversarial verifier for every
+  candidate. Bounded local checks ran in an OS sandbox — empty environment, no
+  network, the target read-only, writes confined to a scratch directory, with
+  CPU, memory, process, file-size and wall-clock limits.
+
+## Summary
+
+Nineteen findings confirmed — three high, nine medium, seven low — and one
+claim rejected. Verification moved six results: one rejected outright, two
+downgraded from high because no shipped role reaches their precondition, one
+downgraded to low by a direct disproof, one promoted up from needs-validation,
+and two whose scope grew.
+
+Three shapes account for most of it. **A control applied to one field, one call
+site or one sibling path but not its twin**: the grant bound exists on every
+update path and neither create path; the strip for forged authentication
+headers is called from the incoming handler and not the bounce handler; the
+write-path classifier reads one argument and misses the one action whose
+written path is another. **Work done for a stranger before anyone asks who they
+are**: the subscription websocket read an unbounded message for an unbounded
+time before authentication, while the POST half of the same endpoint capped at
+a megabyte. And **a boundary the code argues for and then does not apply**:
+`fenced()` neutralises a closing tag on every tool-result path and its comment
+names the attack, while the five automatic mail prompts did the bare join it
+warns about.
+
+## Fixed in this pass
+
+### SEC-75 — A stranger's message could close the block it was quoted in (High, fixed)
+
+The triage, reply, research, extract and summarize prompts interpolated a
+sender-controlled message into plain `<message>` tags with `text/template`,
+which escapes nothing. A body carrying the closing tag ended the block, and
+what followed arrived beside the prompt's own instructions. `fenced()` has
+protected every tool result from exactly this since it was written; the job
+prompts were the one path a stranger reaches unsolicited, with nobody present,
+and they were the one path it was not applied to. Triage runs by itself on
+delivered mail, and the run it can steer into existence holds `web_fetch` —
+classed read, so it passes the read-only filter and never raises a card — in
+the same context as `mail_read` and `mail_search`.
+
+Fixed in `render`, which every job prompt passes through, rather than at the
+dozen places that set one of these fields: a control that has to be remembered
+is a control that will be forgotten. Both shapes the prompts are given, a map
+and a struct, are covered.
+
+### SEC-76 — The websocket read an unbounded message before authentication (High, fixed)
+
+`GET /api/v1/graphql` is public and a handshake with no `Origin` is admitted on
+purpose, and the loop read a whole message before `connection_init` said who
+the caller was. The library applies a size limit only when given one, and it
+was never given one; the upgrade also clears the server's read deadline, so the
+read was unbounded in time as well. An anonymous caller made a fixture built
+from the same vendored library buffer 320 MiB into 795 MiB of heap before
+authentication. Both limits are now set, and the deadline is lifted only after
+the connection is acknowledged. The two device sockets gained the size limit
+they were also missing.
+
+### SEC-77 — A copy was judged by the file it read (High, fixed)
+
+`PathAsks` puts a write onto a card when it lands where the machine reads on
+its own. It was applied to the call's `path`, which for every action but one is
+the path written; for a copy the written path is the destination. Copying a
+harmless file over `~/.ssh/authorized_keys` asked nothing, while writing the
+same bytes to the same place asked. The shell rule had the same blind spot —
+`cp`, `install`, `ln -sf` and `tee` all classified as ordinary — so both were
+fixed; fixing one alone would have left the route open.
+
+### SEC-78 — The create paths handed out what the caller did not hold (Medium, fixed)
+
+SEC-68 established that nobody hands out more than they hold and guarded four
+call sites, all of them update paths. `CreateUser` accepted `groupIds`
+unbounded and set a password in the same request, so the account could be made
+and signed into without the `Covers` check ever being asked; `CreateGroup`
+accepted roles and members unbounded. A further defect was found during
+verification: `mayHandOut` asks what a group carries *before* the change, so a
+single update carrying both roles and members passed on a group that carried
+nothing yet. The bound is now computed over the permission set the group
+*would* carry.
+
+No shipped role reaches this — Administrator holds everything and Operator
+excludes user, group and role management — so it is reachable only where an
+operator has hand-built a limited role, which is the configuration SEC-68 was
+fixed to make safe.
+
+### SEC-79 — A password reset left the account's API tokens working (Medium, fixed)
+
+The resolver revoked sessions and said in its own comment that whoever was
+signed in is signed out. A token is checked before the cookie, never reads the
+password, carries the whole account with no scopes, and can mint a fresh
+non-expiring successor. Deleting an account takes its tokens by cascade and
+disabling one stops them being accepted; a reset was the outlier.
+`RevokeTokensByUser` already existed in the database layer with no caller.
+
+### SEC-80 — A connected server could aim this server's OAuth posts anywhere (Medium, fixed)
+
+`oauth.go` draws the boundary itself: the plain client for the address the
+operator typed, the guarded one for an address the far end's document chose.
+The registration endpoint was checked by neither and posted to with the plain
+client, returning up to 4 KB of the answer in its error; the token endpoint's
+loopback exception was not conditioned on the server having been declared
+privately, so a server out on the internet could name an address inside the
+operator's host. Both now go through the guarded client, the registration
+endpoint is checked like the other two, and the loopback exception applies only
+where the server itself is private. Demonstrated before the fix by reaching a
+loopback listener and reading its body back out of the error.
+
+### SEC-81 — A bounce return path was a reusable bearer token (Medium, fixed)
+
+The signed address is handed to every recipient in the `Return-Path` of every
+message sent. The handler accepted it any number of times, each replay
+rewriting the delivery's status from text the sender wrote, clearing the error
+when the report carried no status part at all, growing an uncapped array, and
+posting another bounce into the sender's mailbox. A notification now settles a
+delivery once, within a seven-day window, with the stored statuses capped.
+
+### SEC-82 — An unrestricted credential could name any domain in From (Medium, fixed)
+
+An alias-restricted credential was held to its domain in the envelope *and* the
+From header, and the function's comment explains why: a client writes its own
+From line. A credential with no alias returned early, before From was looked
+at, so the ordinary credential handed to a service could put any domain in the
+line the recipient reads. External recipients are protected by DMARC
+misalignment; the gain was an internal recipient, where the loopback delivery
+evaluates nothing.
+
+### SEC-83 — The bounce path was missing three of its sibling's controls (Low, fixed)
+
+`handleDsn` reaches a mailbox by the same door as `handleIncoming` but applied
+neither the forged-header strip, nor the exactly-one-From rule, nor any sender
+authentication. The first two are now applied. The third is left as it was:
+a bounce is generated by a foreign server and routinely fails alignment
+legitimately, which is why the checks were omitted.
+
+### SEC-84 — A forged verdict could hide in a comment or in quotes (Low, fixed)
+
+The strip compares an identifier against this server's own names. The grammar
+allows that identifier to carry parenthesised comments and to be quoted, and
+the parser handled neither — its own note said so — so three of six tested
+forms parsed to nothing, matched nothing, and were kept. The parser now removes
+comments and unquotes, and the strip drops any such header it cannot read: a
+header it cannot read is exactly a header it cannot clear.
+
+### SEC-85 — Other bounded things (Low, fixed)
+
+The templated-send endpoint decoded its body with no limit, the only one of
+eight body-reading handlers that did not. The periodic helper handed every job
+a context nothing could cancel, so a blocked job made shutdown wait for ever;
+the drop-list fetch then used a client with no timeout and read without a
+ceiling. And the settings card, which shows field names and never values by
+design, now names a command a change would have this server run — the command
+is not a secret, and the card is the only place the person can see what they
+are approving.
+
+## Confirmed and deliberately not fixed here
+
+- **An unauthenticated GraphQL document is parsed and validated inside a
+  database transaction** with no depth or complexity limit (Medium). Measured
+  at about one CPU-second and half a gigabyte of allocation per megabyte, with
+  a connection held throughout and no maximum on the pool. Growth is linear and
+  the superlinear shapes do not fire. The fix is a complexity gate plus moving
+  parse and validation outside the transaction, which is a design change rather
+  than a patch.
+- **Risk is classed from a call's arguments, not from the object it would
+  produce** (Medium). An update naming only conditions keeps a stored
+  forwarding or deleting action and is classed an ordinary write, so no card is
+  shown. Classifying correctly means resolving the stored rule at
+  classification time, which the classifier cannot do as written.
+- **Releases are verified by checksum, not by signature** (Medium, and SEC-31).
+  Every local control is careful and not one is independent of the distribution
+  channel, which is why none substitutes for a signature. This needs a key held
+  outside the build platform — an operator decision, not a patch.
+- **IMAP `APPEND` files a client's message as domain-scoped outgoing mail**
+  (Low), and **revoking the write permission does not reach an already-selected
+  folder** (Low). The first changes what the Sent folder means; the second is
+  best fixed by ending the selection, since the protocol reports read-only-ness
+  once and gives no way to change it mid-selection. Both want more than a patch.
+
+## Rejected
+
+A claim that the terminal and coding tools reach the attached computer's shell
+without classification was **rejected**. Every fact in it held, but the
+classifier it says is evaded is an advisory heuristic the shell tool itself
+fails open on: an interpreter invocation that removes a directory tree, a
+script file, and reading a private key all classify as allowed and run with no
+card. An agent wanting uncarded execution needs one shell call — one card fewer
+than the terminal path, which always asks when it opens a session. The
+behaviour is a recorded decision, and the path is refused entirely in a run
+with nobody present.
+
+What that rejection surfaced is worth more than the claim: **`Classify` is
+trivially evadable**, and that is a weakness in the existing control rather
+than in the session layer. It deserves its own pass.
+
+## What this pass did not do
+
+No fuzzing, no penetration test, no run against a live model, and nothing
+against the deployed server. Whether a model obeys text that appears outside
+its block could not be established and is the open question under SEC-75.
+Database-backed packages skip without a test database and starting one was
+prohibited, so evidence in `internal/db`, `internal/mx`, `internal/agent`,
+`internal/dav`, `internal/scheduling` and the GraphQL package is source-derived
+or built from overlaid unit tests. Seven further surfaces were discovered
+during hunting and recorded as deferred rather than assigned, because this was
+a bounded pass over coarsened units and not an exhaustive one.
