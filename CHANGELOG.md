@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `storage.directory` is optional when `storage.s3` is enabled, and leaving
+  it empty keeps no messages on the server's own disk at all. With both, the
+  directory is still the record and the object store a mirror — a write that
+  reaches the disk has succeeded whatever the network is doing. With the
+  store alone there is no local copy, which is what several instances sharing
+  one store want: a directory there holds only the messages the instance that
+  handled them wrote, so no instance has all of them, every instance keeps a
+  copy of somebody's mail that nothing else needs, and reads fall through to
+  the store anyway. The trade is real and worth stating: the store must
+  answer for a message to be stored, where a directory keeps working while
+  the network does not.
+
 ### Removed
 
 - The server no longer keeps a copy of every message it receives. A

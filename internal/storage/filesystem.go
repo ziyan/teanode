@@ -35,13 +35,25 @@ type filesystem struct {
 	cancel    context.CancelFunc
 }
 
-// Open returns storage backed by a directory, optionally mirroring to S3.
+// Open returns storage keeping messages in a directory, in an object store,
+// or in both.
+//
+// With both, the directory is the record and the object store a mirror: a
+// write that reaches the disk has succeeded whatever the network is doing.
+// With an object store alone there is no local copy at all, which is what
+// several instances sharing one store want -- a directory then holds only
+// what the instance that happened to handle a message wrote, which is a
+// cache wearing a spool's name. The cost is that the store stops being a
+// mirror and becomes the thing that has to answer: a write that cannot reach
+// it fails, where before it was a warning.
 func Open(settings *Settings) (Storage, error) {
-	if settings.Directory == "" {
-		return nil, fmt.Errorf("storage: no directory configured")
+	if settings.Directory == "" && settings.S3 == nil {
+		return nil, fmt.Errorf("storage: no directory and no object store configured")
 	}
-	if err := os.MkdirAll(settings.Directory, 0o700); err != nil {
-		return nil, fmt.Errorf("storage: cannot create %s: %w", settings.Directory, err)
+	if settings.Directory != "" {
+		if err := os.MkdirAll(settings.Directory, 0o700); err != nil {
+			return nil, fmt.Errorf("storage: cannot create %s: %w", settings.Directory, err)
+		}
 	}
 
 	self := &filesystem{settings: settings}
@@ -91,6 +103,11 @@ func (self *filesystem) path(id string) (string, error) {
 }
 
 func (self *filesystem) Put(ctx context.Context, id string, headers []string, body []byte) error {
+	if self.settings.Directory == "" {
+		// No local copy: the store is the record, so its failure is the
+		// call's failure rather than a line in the log.
+		return self.mirror.Put(ctx, id, headers, body)
+	}
 	filename, err := self.path(id)
 	if err != nil {
 		return err
@@ -131,6 +148,9 @@ func (self *filesystem) Put(ctx context.Context, id string, headers []string, bo
 }
 
 func (self *filesystem) Get(ctx context.Context, id string) ([]string, []byte, error) {
+	if self.settings.Directory == "" {
+		return self.mirror.Get(ctx, id)
+	}
 	filename, err := self.path(id)
 	if err != nil {
 		return nil, nil, err
@@ -159,6 +179,9 @@ func (self *filesystem) Get(ctx context.Context, id string) ([]string, []byte, e
 }
 
 func (self *filesystem) Delete(ctx context.Context, id string) error {
+	if self.settings.Directory == "" {
+		return self.mirror.Delete(ctx, id)
+	}
 	filename, err := self.path(id)
 	if err != nil {
 		return err
@@ -182,6 +205,18 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 		return nil
 	}
 	cutoff := time.Now().Add(-self.settings.Retention)
+
+	if self.settings.Directory == "" {
+		// Nothing local to walk; the store's own sweep is the whole of it.
+		removed, err := self.mirror.Sweep(ctx, cutoff, self.settings.Keep)
+		if err != nil {
+			return err
+		}
+		if removed > 0 {
+			log.Infof("swept %d message(s) past the retention from the object store", removed)
+		}
+		return nil
+	}
 
 	var removed, kept int
 	err := filepath.WalkDir(self.settings.Directory, func(path string, entry os.DirEntry, err error) error {

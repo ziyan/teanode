@@ -414,8 +414,9 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 			validator.add("storage.s3.region", "required when S3 storage is enabled")
 		}
 	}
-	if self.Storage.Directory == "" {
-		validator.add("storage.directory", "required: where raw messages are kept, for example mail")
+	if self.Storage.Directory == "" && !self.Storage.S3.Enabled {
+		validator.add("storage.directory",
+			"required unless storage.s3 is enabled: where raw messages are kept, for example spool")
 	}
 	if self.Storage.SpoolRetention <= 0 {
 		validator.add("storage.spoolRetention", "must be positive, for example 30d")

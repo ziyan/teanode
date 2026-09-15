@@ -298,3 +298,44 @@ func TestFilesRefuseAnIdentifierThatIsAPath(t *testing.T) {
 		}
 	}
 }
+
+// Storage with an object store and no directory keeps nothing on this
+// machine.
+//
+// Which is what several instances sharing one store want: a directory holds
+// only what the instance that handled a message wrote, so no instance has
+// all of them and each keeps a copy of somebody's mail that nothing else
+// needs. The object store is then the record rather than a mirror, and the
+// difference that matters is that its failure is the call's failure.
+func TestAnObjectStoreWithoutADirectoryKeepsNothingLocally(t *testing.T) {
+	t.Parallel()
+
+	// No directory and no store is the one combination that is not storage
+	// at all, and it is refused rather than started.
+	if _, err := storage.Open(&storage.Settings{}); err == nil {
+		t.Fatalf("neither is refused")
+	} else if !strings.Contains(err.Error(), "no directory and no object store") {
+		t.Fatalf("and says which: %v", err)
+	}
+
+	// A directory alone is still a directory alone.
+	directory := t.TempDir()
+	opened, err := storage.Open(&storage.Settings{Directory: directory, Retention: time.Hour})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = opened.Close() }()
+	if err := opened.Put(context.Background(), "01aaaaaaaaaaaaaaaaaaaaaaaa", []string{"Subject: one"}, []byte("body\r\n")); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	written := 0
+	_ = filepath.WalkDir(directory, func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			written++
+		}
+		return nil
+	})
+	if written != 1 {
+		t.Fatalf("one file on disk, not %d", written)
+	}
+}

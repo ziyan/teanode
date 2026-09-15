@@ -57,6 +57,9 @@ func (self *filesystem) filePath(id string) (string, error) {
 }
 
 func (self *filesystem) PutFile(ctx context.Context, id string, content []byte) error {
+	if self.settings.Directory == "" {
+		return self.mirror.PutFile(ctx, id, content)
+	}
 	filename, err := self.filePath(id)
 	if err != nil {
 		return err
@@ -94,6 +97,9 @@ func (self *filesystem) PutFile(ctx context.Context, id string, content []byte) 
 }
 
 func (self *filesystem) GetFile(ctx context.Context, id string) ([]byte, error) {
+	if self.settings.Directory == "" {
+		return self.mirror.GetFile(ctx, id)
+	}
 	filename, err := self.filePath(id)
 	if err != nil {
 		return nil, err
@@ -123,6 +129,9 @@ func (self *filesystem) GetFile(ctx context.Context, id string) ([]byte, error) 
 }
 
 func (self *filesystem) DeleteFile(ctx context.Context, id string) error {
+	if self.settings.Directory == "" {
+		return self.mirror.DeleteFile(ctx, id)
+	}
 	filename, err := self.filePath(id)
 	if err != nil {
 		return err
