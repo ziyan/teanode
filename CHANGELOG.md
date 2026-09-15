@@ -8,6 +8,15 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- `teanode terminal` attaches the terminal the person is sitting in. Their
+  shell runs in it as usual; their agent can read that same screen and type
+  into it, with the terminal tool's `attached` action, in a conversation they
+  are present in. It is one shell with two people at it — what the agent
+  types appears in front of the person as it is typed, and either can take
+  over. The prompt says so while one is attached, and tells the agent to say
+  what it is about to type before typing it, and never to close it: it is
+  theirs.
+
 - A connected server may run on the person's own attached computer.
   `location: computer` on a server declared with a command runs that command
   there, as them, and its standard input and output reach this server through

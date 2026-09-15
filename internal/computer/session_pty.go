@@ -2,12 +2,15 @@ package computer
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
@@ -81,6 +84,13 @@ type screen struct {
 // its screen. Called with the reservation already made.
 func (self *sessions) startTerminal(reserved *session, release func(), command *exec.Cmd,
 	arguments *SessionStartArguments, ended pushEnded) (*SessionStartResult, error) {
+	return self.startTerminalWith(reserved, release, command, arguments, ended, nil)
+}
+
+// startTerminalWith is startTerminal with somebody sitting in it: tee is
+// their screen, given everything the program writes.
+func (self *sessions) startTerminalWith(reserved *session, release func(), command *exec.Cmd,
+	arguments *SessionStartArguments, ended pushEnded, tee io.Writer) (*SessionStartResult, error) {
 	columns, rows := arguments.Columns, arguments.Rows
 	if columns <= 0 {
 		columns = defaultColumns
@@ -112,9 +122,14 @@ func (self *sessions) startTerminal(reserved *session, release func(), command *
 	self.mutex.Unlock()
 
 	// Everything the program writes goes to the screen, where it is read
-	// on request; it is not streamed. A terminal is read as a screen.
+	// on request; it is not streamed. A terminal is read as a screen. When
+	// somebody is sitting in it, what the program writes goes to them too.
 	go func() {
-		reader := bufio.NewReader(file)
+		var source io.Reader = file
+		if tee != nil {
+			source = io.TeeReader(file, tee)
+		}
+		reader := bufio.NewReader(source)
 		for {
 			if err := drawn.parse(reader); err != nil {
 				return
@@ -232,4 +247,72 @@ func (self *sessions) resizeTerminal(arguments *SessionResizeArguments) (*Sessio
 		return nil, err
 	}
 	return &SessionResult{Session: arguments.Session, OK: true}, nil
+}
+
+// attachTerminal opens the person's own shell in a pty as the attached
+// session: what they type goes to it, what it writes goes to them and to
+// the screen, and the pty follows the size of the terminal they are in.
+func (self *sessions) attachTerminal(ctx context.Context, options *Options, ended pushEnded) error {
+	terminal := options.Terminal
+	shell := strings.TrimSpace(terminal.Shell)
+	if shell == "" {
+		shell = os.Getenv("SHELL")
+	}
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	columns, rows := defaultColumns, defaultRows
+	if terminal.Size != nil {
+		if c, r := terminal.Size(); c > 0 && r > 0 {
+			columns, rows = c, r
+		}
+	}
+
+	self.mutex.Lock()
+	reserved := &session{id: AttachedSession, kind: "pty", done: make(chan struct{})}
+	self.open[AttachedSession] = reserved
+	self.mutex.Unlock()
+	release := func() {
+		self.mutex.Lock()
+		delete(self.open, AttachedSession)
+		self.mutex.Unlock()
+	}
+
+	command := exec.Command(shell)
+	command.Dir = options.Home
+	command.Env = os.Environ()
+	arguments := &SessionStartArguments{Session: AttachedSession, Kind: "pty", Command: shell, Columns: columns, Rows: rows}
+	if _, err := self.startTerminalWith(reserved, release, command, arguments, ended, terminal.Output); err != nil {
+		return err
+	}
+
+	// What the person types goes straight to the pty.
+	if terminal.Input != nil {
+		go func() {
+			_, _ = io.Copy(reserved.pty, terminal.Input)
+		}()
+	}
+	// And the pty follows their window.
+	if terminal.Size != nil {
+		go func() {
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			lastColumns, lastRows := columns, rows
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-reserved.done:
+					return
+				case <-ticker.C:
+					c, r := terminal.Size()
+					if c > 0 && r > 0 && (c != lastColumns || r != lastRows) {
+						lastColumns, lastRows = c, r
+						_ = reserved.screen.resize(reserved.pty, c, r)
+					}
+				}
+			}
+		}()
+	}
+	return nil
 }

@@ -133,7 +133,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 				return
 			}
 			name = message.Name
-			worker.AttachComputer(found.ID, socket, message.Name, message.System, message.Home)
+			worker.AttachComputer(found.ID, socket, message.Name, message.System, message.Home, message.Session)
 			attached = true
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": computerProtocol, "username": username})
 			_ = socket.Send(welcome)

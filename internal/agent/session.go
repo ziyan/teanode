@@ -389,3 +389,15 @@ func (self *deviceLink) SessionPipes(ctx context.Context, command string, argume
 	writer := &sessionWriter{link: self, id: held.id}
 	return writer, &sessionReader{held: held}, writer.Close, nil
 }
+
+// adoptSession records a session the device opened on its own -- the
+// terminal the person attached -- so that it is read and written like one
+// started from here.
+func (self *deviceLink) adoptSession(id, kind string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.sessions == nil {
+		self.sessions = map[string]*deviceSession{}
+	}
+	self.sessions[id] = &deviceSession{id: id, kind: kind, touched: time.Now()}
+}

@@ -31,9 +31,9 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "terminal", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "A terminal on the person's own computer, which you drive. start opens one and runs a program in it (a shell if you name none), and answers with a session id and the first screen; type sends text; keys sends named keys — enter, tab, escape, up, down, left, right, backspace, home, end, pageup, pagedown, space, ctrl-c, ctrl-d, ctrl-z, ctrl-l, f1 through f12 — and either answers with the screen after it; read is the screen now; wait watches the screen until it stops changing, or the program ends, or the seconds run out; resize changes the size; signal sends int, term, kill or hup; close ends it. You read the screen, not a log: what the program is showing at this moment, with the cursor's position. A program that asks something puts the question on the screen and waits; answer it with type and keys enter. Close what you opened when you are done.",
+				Description: "A terminal on the person's own computer, which you drive. start opens one and runs a program in it (a shell if you name none), and answers with a session id and the first screen; attached is the terminal the person is sitting in themselves, when they ran `teanode terminal` — they see everything you type there; type sends text; keys sends named keys — enter, tab, escape, up, down, left, right, backspace, home, end, pageup, pagedown, space, ctrl-c, ctrl-d, ctrl-z, ctrl-l, f1 through f12 — and either answers with the screen after it; read is the screen now; wait watches the screen until it stops changing, or the program ends, or the seconds run out; resize changes the size; signal sends int, term, kill or hup; close ends it. You read the screen, not a log: what the program is showing at this moment, with the cursor's position. A program that asks something puts the question on the screen and waits; answer it with type and keys enter. Close what you opened when you are done.",
 				Parameters: tools.Object(map[string]any{
-					"action":    tools.EnumProperty("what to do", "start", "type", "keys", "read", "wait", "resize", "signal", "close"),
+					"action":    tools.EnumProperty("what to do", "start", "attached", "type", "keys", "read", "wait", "resize", "signal", "close"),
 					"computer":  tools.StringProperty("which of their computers, by name, when more than one is attached"),
 					"session":   tools.StringProperty("the session id start answered with; every action but start needs it"),
 					"command":   tools.StringProperty("start: the program to run, their shell by default"),
@@ -46,7 +46,28 @@ func init() {
 					"seconds":   tools.IntegerProperty("wait: how long to watch for at most, 30 by default, 600 at most; type, keys, start: how long to let the screen settle before answering, 2 by default"),
 					"signal":    tools.StringProperty("signal: int, term, kill or hup"),
 				}, "action"),
-				Guidance: "terminal: read the screen after each step and answer what it asks; wait rather than guessing how long a program takes; close the session when you are done.",
+
+				Guidance: "terminal: read the screen after each step and answer what it asks; wait rather than guessing how long a program takes; close the session when you are done. attached is the terminal the person is sitting in, when they attached one: they see what you type.",
+				// The terminal the person is sitting in, when they attached one: said
+				// every round, because it changes what typing means.
+				Overlay: func(ctx context.Context) string {
+					run := tools.MustRun(ctx)
+					if run.Headless() {
+						return ""
+					}
+					computing, ok := run.(tools.Computing)
+					if !ok || !computing.ComputersAllowed() {
+						return ""
+					}
+					for _, attached := range computing.AttachedComputers() {
+						holder, ok := attached.(tools.SessionHolder)
+						if !ok || holder.AttachedTerminal() == "" {
+							continue
+						}
+						return fmt.Sprintf("<terminal>\nThe person has attached the terminal they are sitting in, on %s, with `teanode terminal`. terminal with action attached (computer: %q) gives you its session; read shows what they see, and type types where their cursor is. You are looking at the same screen: say what you are about to type before you type it, and do not close it -- it is theirs.\n</terminal>", attached.Name(), attached.Name())
+					}
+					return ""
+				},
 				// Opening a terminal runs a program on the person's machine, and
 				// that is the moment they are asked -- not every keystroke after.
 				// A card in front of each key is a card nobody reads, and the
@@ -138,6 +159,17 @@ func runTerminal(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 
 	action := strings.ToLower(strings.TrimSpace(arguments.Action))
+	if action == "attached" {
+		id := holder.AttachedTerminal()
+		if id == "" {
+			return nil, fmt.Errorf("%s has no terminal attached; the person attaches one with `teanode terminal`", attached.Name())
+		}
+		screen, err := holder.ReadScreen(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return screenResult(id, screen, "the terminal "+attached.Name()+" is sitting in")
+	}
 	if action != "start" && strings.TrimSpace(arguments.Session) == "" {
 		return nil, fmt.Errorf("%s needs the session id that start answered with", action)
 	}
@@ -248,7 +280,7 @@ func runTerminal(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		result.Note = "closed the terminal"
 		return result, nil
 	}
-	return nil, fmt.Errorf("%q is not start, type, keys, read, wait, resize, signal or close", arguments.Action)
+	return nil, fmt.Errorf("%q is not start, attached, type, keys, read, wait, resize, signal or close", arguments.Action)
 }
 
 // settle reads the screen until it has stopped changing for a while, the

@@ -49,6 +49,9 @@ type SessionHolder interface {
 	SignalSession(ctx context.Context, id, signal string) error
 	// CloseSession ends it.
 	CloseSession(ctx context.Context, id string) error
+	// AttachedTerminal is the session of a terminal the person is sitting
+	// in themselves, or empty when they attached none.
+	AttachedTerminal() string
 }
 
 // Screen is what a terminal shows at one moment.

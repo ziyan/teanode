@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -49,8 +50,29 @@ const (
 	concurrentAtMost = 4
 )
 
+// TerminalOptions attach the terminal this program is running in: the
+// person's own shell in a pty, which they type into and read as usual, and
+// which their agent can read and type into as well. The pty is a session
+// like any other; what is different is that somebody is sitting in it.
+type TerminalOptions struct {
+	// Input is what the person types; Output is their screen.
+	Input  io.Reader
+	Output io.Writer
+	// Shell is what to run in it; their $SHELL by default.
+	Shell string
+	// Size is the terminal's size now, asked for as the person resizes it.
+	Size func() (columns, rows int)
+}
+
+// AttachedSession is the identifier the attached terminal's session has.
+// One per connection, so it needs no other name.
+const AttachedSession = "attached"
+
 // Options say what the program offers.
 type Options struct {
+	// Terminal, when set, attaches the terminal this program runs in.
+	Terminal *TerminalOptions
+
 	// Token is the person's, from `teanode auth login`.
 	Token string
 	// Name is what the computer is called to the agent; the host name by
@@ -116,7 +138,28 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		defer writes.Unlock()
 		return connection.WriteJSON(value)
 	}
-	if err := write(message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}); err != nil {
+	held := newSessions()
+	// A session belongs to the connection that opened it. When this ends --
+	// the person stopped the program, the network went -- the processes it
+	// started have nobody to answer and are not left running.
+	defer held.closeAll()
+	output := func(session, stream, data string) {
+		_ = write(message{Type: "session", Session: session, Event: "output", Stream: stream, Data: json.RawMessage(quoted(data))})
+	}
+	ended := func(session string, code int) {
+		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
+	}
+
+	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}
+	if options.Terminal != nil {
+		// The person's own terminal, opened before the hello so that the
+		// server is told about it in the same breath as the computer.
+		if err := held.attachTerminal(ctx, options, ended); err != nil {
+			return err
+		}
+		hello.Session = AttachedSession
+	}
+	if err := write(hello); err != nil {
 		return err
 	}
 	welcome := make(chan message, 1)
@@ -149,18 +192,6 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	held := newSessions()
-	// A session belongs to the connection that opened it. When this ends --
-	// the person stopped the program, the network went -- the processes it
-	// started have nobody to answer and are not left running.
-	defer held.closeAll()
-	output := func(session, stream, data string) {
-		_ = write(message{Type: "session", Session: session, Event: "output", Stream: stream, Data: json.RawMessage(quoted(data))})
-	}
-	ended := func(session string, code int) {
-		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
-	}
-
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	slots := make(chan struct{}, concurrentAtMost)

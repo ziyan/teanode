@@ -19,12 +19,23 @@ type attachedComputer struct {
 	name   string
 	system string
 	home   string
+
+	// terminal is the session of the terminal the person is sitting in,
+	// when they attached one; empty otherwise.
+	terminal string
+}
+
+// AttachedTerminal is the session id of the terminal the person attached
+// with `teanode terminal`, or empty. The person is in it too: what the
+// agent types there, they see typed.
+func (self *attachedComputer) AttachedTerminal() string {
+	return self.terminal
 }
 
 // AttachComputer records a person's computer by its name; a second attach
 // under the same name replaces the first, and a different name is another
 // computer beside it.
-func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, name, system, home string) {
+func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, name, system, home, terminal string) {
 	self.computersMutex.Lock()
 	defer self.computersMutex.Unlock()
 	if self.computers == nil {
@@ -36,7 +47,14 @@ func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, n
 	if previous := self.computers[agentId][name]; previous != nil {
 		previous.drop()
 	}
-	self.computers[agentId][name] = &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home}
+	computer := &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home, terminal: terminal}
+	if terminal != "" {
+		// The device opened it before saying hello, so it is registered
+		// here without being asked for: reading and typing then work the
+		// way they do for a session this side started.
+		computer.adoptSession(terminal, "pty")
+	}
+	self.computers[agentId][name] = computer
 }
 
 // DetachComputer forgets a person's computer, if this connection is the one

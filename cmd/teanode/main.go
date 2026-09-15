@@ -86,6 +86,7 @@ func main() {
 			cmd.NewCalendarCommand(),
 			cmd.NewAgentCommand(),
 			cmd.NewComputerCommand(),
+			cmd.NewTerminalCommand(),
 			cmd.NewMailCommand(),
 			cmd.NewDeliveryCommand(),
 			cmd.NewReportCommand(),
