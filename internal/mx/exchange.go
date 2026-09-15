@@ -169,19 +169,60 @@ func (self *exchange) HandleEnvelope(ctx context.Context, envelope *mailparse.En
 	return nil
 }
 
+// storeAttempts is how many times a message's content is offered to storage,
+// and storeFirstWait the pause before the second attempt, doubling after.
+//
+// Storage is not always a local disk. With an object store it is a service
+// across a network, and the row for this message is already committed by the
+// time it is written -- so a failure here is not a message refused, it is a
+// message that exists in somebody's mailbox and can never be opened. The
+// object client retries what it considers transient; this is for the rest,
+// and four attempts spend about three and a half seconds before giving up,
+// which is nothing against the minutes a sender allows.
+const storeAttempts = 4
+
+// A variable rather than a constant so that a test can shorten it; nothing
+// else writes it.
+var storeFirstWait = 500 * time.Millisecond
+
 // store keeps a message's content, whether it was accepted or refused.
 //
 // Failing to store is never a reason to change what was said to the sender:
 // the message has already been accepted or already been refused by the time
-// this runs, so it is logged rather than returned.
+// this runs, so it is logged rather than returned. That is why it tries more
+// than once -- returning the error is not available, so the only thing left
+// is to not need to.
 func (self *exchange) store(ctx context.Context, mail *models.Mail) {
 	if mail == nil || len(mail.Body) == 0 {
 		// Refused before DATA, so there is genuinely nothing to keep.
 		return
 	}
-	if err := self.storage.Put(ctx, mail.ID, mail.Headers, mail.Body); err != nil {
-		log.Warningf("failed to store mail %q: %s", mail.ID, err)
+	wait := storeFirstWait
+	var err error
+	for attempt := 1; attempt <= storeAttempts; attempt++ {
+		if err = self.storage.Put(ctx, mail.ID, mail.Headers, mail.Body); err == nil {
+			if attempt > 1 {
+				log.Noticef("stored mail %q on attempt %d", mail.ID, attempt)
+			}
+			return
+		}
+		if attempt == storeAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			// Shutting down. The last error is reported below rather
+			// than replaced by a cancellation nobody can act on.
+		case <-time.After(wait):
+			wait *= 2
+			continue
+		}
+		break
 	}
+	// Loud, because this is the one failure here that loses something. The
+	// message was taken from the sender, who will not send it again, and
+	// what is left is a row naming content that was never written.
+	log.Errorf("mail %q was accepted but its content could not be stored after %d attempts, so it is in the mailbox and cannot be read: %s", mail.ID, storeAttempts, err)
 }
 
 // distinctMails returns each mail referenced by a set of deliveries once. One

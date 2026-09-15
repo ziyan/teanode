@@ -196,3 +196,43 @@ func TestASecretIsTheOperatorsUnlessItSaysOtherwise(t *testing.T) {
 		t.Fatal("an unknown scope must be refused")
 	}
 }
+
+// A value inside a script is refused; beside it is not.
+//
+// Every part of a command is quoted, so a value cannot become a second
+// command -- unless the part it lands in is a script that something else is
+// about to interpret, and then the quoting protects nothing. No published
+// skill is written that way, which is the reason to refuse it now rather
+// than after one is.
+func TestAValueInsideAScriptIsRefused(t *testing.T) {
+	t.Parallel()
+
+	skill := func(command string) string {
+		return "---\nname: box\ndescription: a box\ntools:\n" +
+			"  - name: look\n    description: look\n    type: shell\n" +
+			"    parameters: {type: object, properties: {where: {type: string}}}\n" +
+			"    command: " + command + "\n---\n"
+	}
+
+	_, err := Parse([]byte(skill(`[sh, -c, "ls {{where}}"]`)))
+	if err == nil || !strings.Contains(err.Error(), "inside the script") {
+		t.Fatalf("a value inside the script is refused: %v", err)
+	}
+	// The same shape, reached by a path and a different interpreter.
+	if _, err := Parse([]byte(skill(`[/bin/bash, -c, "ls {{where}}"]`))); err == nil {
+		t.Fatalf("the path to a shell is still that shell")
+	}
+	if _, err := Parse([]byte(skill(`[python3, -c, "print('{{where}}')"]`))); err == nil {
+		t.Fatalf("an interpreter's script is a script too")
+	}
+
+	// Named positionally, the shell never parses it: this is the way to
+	// write it, and it has to keep working.
+	if _, err := Parse([]byte(skill(`[sh, -c, 'ls -- "$1"', --, "{{where}}"]`))); err != nil {
+		t.Fatalf("a value beside the script is allowed: %v", err)
+	}
+	// Nothing to interpret it, so nothing to refuse.
+	if _, err := Parse([]byte(skill(`[ls, "{{where}}"]`))); err != nil {
+		t.Fatalf("an ordinary command is untouched: %v", err)
+	}
+}

@@ -6,6 +6,31 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- A skill that signs in before it does anything no longer hands the token it
+  got back to the model. A tool with several steps answered with all of them,
+  so a sign-in step's token went into the request to the model provider, the
+  stored conversation and the run shown on the dashboard. A step may now say
+  `quiet: true`, which keeps its answer feeding the steps after it and out of
+  the tool's; and a selected field with a credential's name is kept back
+  whether the step said so or not, so a skill installed before this keeps
+  working and stops leaking.
+
+- A skill cannot put a value inside a script. Every part of a command is
+  quoted, which stops a value becoming a second command — unless the part it
+  lands in is a script handed to `sh -c` or an interpreter's `-e`, where it is
+  read as code instead. No skill was written that way; it is refused at parse
+  time now, naming the safe form.
+
+### Fixed
+
+- A message accepted from a sender is no longer lost when the object store is
+  away. Its row is written before its content, so a failure to store could not
+  refuse the message; it was logged once and the message stayed in the mailbox
+  with nothing behind it, unreadable for good. Storing is attempted four times
+  over a few seconds now, and giving up says plainly what was lost.
+
 ## [0.27.0] - 2026-09-15
 
 ### Fixed
