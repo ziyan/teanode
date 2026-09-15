@@ -1418,6 +1418,14 @@ label span {
   flex: 1;
   min-width: 140px;
 }
+/* Two rows of fields stacked are a form, and want the form's gap between
+   them. Inside .form-narrow its own gap does this; a card that lays rows out
+   directly -- the agent's Limits, among others -- had them flush, so four
+   rows of numbers read as one dense block. */
+.row + .row {
+  margin-top: var(--space-4);
+}
+
 .row > .shrink {
   flex: 0 0 auto;
   min-width: 0;
@@ -2678,8 +2686,43 @@ label.checkbox input {
 /* A form is read down a column, and a field stretched across a wide screen is
    a line the eye has to travel to get back from. Wide enough for an address
    and a hostname, no wider. */
+/* A column of fields, with one rhythm down it.
+   It was a plain block, so what separated its children was whatever margin
+   each happened to carry: a label 10px, a paragraph 15px, and a row of
+   fields or a row of buttons nothing at all -- so the buttons under the
+   daily brief's two fields sat flush against them while the note below had
+   room. One gap here, and the margins of the children that had their own
+   are given up to it, so every form-narrow reads the same way down. */
 .form-narrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   max-width: 520px;
+}
+
+/* Every child gives up its own vertical margin to the gap above. Zeroing
+   only the ones that obviously had margins left .page-actions carrying its
+   own 16px on top of the gap, so the daily brief's buttons sat at 32 where
+   every other form read 16 -- which is the same bug as before wearing a
+   different number. */
+/* A control that follows a column of fields belongs to the same form and
+   needs the same gap. form-narrow's own gap governs only what is inside it,
+   so a submit button placed after it -- which is how the preferences page
+   and others are written -- sat flush against the last field. */
+.form-narrow + button,
+.form-narrow + .page-actions,
+.form-narrow + .row {
+  margin-top: var(--space-4);
+}
+
+.form-narrow > *,
+/* Written twice on purpose: .page-actions:not(:first-child) carries a
+   margin-top of its own and is more specific than a bare child selector, so
+   a one-selector reset lost to it and the gap came out doubled again. This
+   matches its specificity and comes later in the sheet. */
+.form-narrow > *:not(:first-child) {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /* The picture button under a source editor, and the reason beside it. The

@@ -1451,7 +1451,7 @@ function BriefCard() {
             />
           </label>
         </div>
-        <div className="page-actions-end">
+        <div className="page-actions page-actions-end">
           {brief?.enabled ? (
             <>
               <button type="button" disabled={busy} onClick={() => void sendNow()}>

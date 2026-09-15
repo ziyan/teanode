@@ -6,6 +6,23 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Forms space themselves evenly. A column of fields was a plain block, so
+  what separated its parts was whatever margin each happened to carry — a
+  label 10px, a paragraph 15px, a row of fields or a row of buttons nothing
+  at all. The daily brief showed it worst: its Send, Stop and Save sat
+  flush against the field above them while the note below had room. There
+  is one gap down a form now and the children give up their own margins to
+  it, so every form on every page reads the same way down.
+
+- Two rows of fields stacked no longer touch. Inside a form the gap governs
+  them; a card that lays rows out directly — the agent's Limits, four rows
+  of numbers — had them flush, which read as one dense block.
+
+- A button placed after a form, which is how the preferences page is
+  written, no longer sits against the last field.
+
 ## [0.26.0] - 2026-09-15
 
 ### Added
