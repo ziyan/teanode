@@ -237,3 +237,35 @@ func TestASessionReadsAndWritesLikePipes(t *testing.T) {
 		t.Fatalf("the device was told to close it: %v", device.closed)
 	}
 }
+
+// The terminal the person is sitting in is never swept for being idle.
+//
+// Nothing on this side touches its clock when they type in it, so by the
+// sweep's measure it is idle whenever the agent has left them alone for a
+// while -- and closing it would close the shell in front of them.
+func TestTheAttachedTerminalIsNotSweptForBeingIdle(t *testing.T) {
+	t.Parallel()
+
+	device := &fakeDevice{}
+	device.link = newDeviceLink("the computer", device)
+	device.link.adoptSession("attached", "pty")
+	opened, err := device.link.startSession(context.Background(), "pty", "/bin/sh", nil, "", nil, 80, 24)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	long := time.Now().Add(-2 * sessionIdle)
+	for _, id := range []string{"attached", opened.id} {
+		held := device.link.Session(id)
+		held.mutex.Lock()
+		held.touched = long
+		held.mutex.Unlock()
+	}
+	now := time.Now()
+	if device.link.Session("attached").sweepable(now) {
+		t.Fatalf("the person's own terminal is theirs, however long the agent has ignored it")
+	}
+	if !device.link.Session(opened.id).sweepable(now) {
+		t.Fatalf("one the agent opened and forgot is swept")
+	}
+}

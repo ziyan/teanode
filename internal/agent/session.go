@@ -56,6 +56,18 @@ type deviceSession struct {
 	code    int
 	touched time.Time
 	waiting chan struct{}
+
+	// adopted says the device opened this itself -- the terminal the person
+	// is sitting in -- rather than this side asking for it. The idle sweep
+	// leaves it alone: nothing here touches its clock when the person types
+	// in it, and closing it would close the shell in front of them.
+	adopted bool
+}
+
+// sweepable says whether the idle sweep may close it: untouched for the
+// idle time, and something this side opened. Called with the lock held.
+func (self *deviceSession) sweepable(now time.Time) bool {
+	return !self.adopted && now.Sub(self.touched) > sessionIdle
 }
 
 // take returns what has arrived since the last take, and empties it.
@@ -287,7 +299,7 @@ func (self *Agent) sweepSessions() {
 			computer.mutex.Lock()
 			for id, held := range computer.sessions {
 				held.mutex.Lock()
-				idle := time.Since(held.touched) > sessionIdle
+				idle := held.sweepable(time.Now())
 				held.mutex.Unlock()
 				if idle {
 					stale = append(stale, struct {
@@ -399,5 +411,5 @@ func (self *deviceLink) adoptSession(id, kind string) {
 	if self.sessions == nil {
 		self.sessions = map[string]*deviceSession{}
 	}
-	self.sessions[id] = &deviceSession{id: id, kind: kind, touched: time.Now()}
+	self.sessions[id] = &deviceSession{id: id, kind: kind, touched: time.Now(), adopted: true}
 }
