@@ -29,6 +29,10 @@ type GroupOperation interface {
 
 	// GroupPermissions is what belonging to one group carries.
 	GroupPermissions(groupId string) (*models.EffectivePermissions, error)
+
+	// ProposedGroupPermissions is what a group would carry if it were
+	// given these roles over these domains.
+	ProposedGroupPermissions(roleIds, domainIds []string) (*models.EffectivePermissions, error)
 }
 
 type groupModel struct {
@@ -335,6 +339,43 @@ func (self *transaction) EffectivePermissions(userId string) (*models.EffectiveP
 //
 // Asked before a group's membership changes: nobody may put somebody into a
 // group -- themselves included -- that holds more than they hold themselves.
+// ProposedGroupPermissions is what a group WOULD carry if it were given
+// these roles over these domains.
+//
+// GroupPermissions answers for the group as it stands, which is the wrong
+// question when the caller is about to change it: a group that carries
+// nothing today passes any bound, and the roles arriving in the same request
+// are the ones that matter. Creating a group has no stored state to ask
+// about at all.
+func (self *transaction) ProposedGroupPermissions(roleIds, domainIds []string) (*models.EffectivePermissions, error) {
+	if len(roleIds) == 0 {
+		return models.NewEffectivePermissions(nil), nil
+	}
+	byRole, err := loadRolePermissions(self.tx, roleIds)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[models.Permission]bool{}
+	var grants []models.Grant
+	for _, permissions := range byRole {
+		for _, permission := range permissions {
+			if seen[permission] {
+				continue
+			}
+			seen[permission] = true
+			switch permission.Kind() {
+			case models.PermissionKindDomain:
+				for _, domainId := range domainIds {
+					grants = append(grants, models.Grant{Permission: permission, DomainID: domainId})
+				}
+			case models.PermissionKindServer, models.PermissionKindAllDomains:
+				grants = append(grants, models.Grant{Permission: permission})
+			}
+		}
+	}
+	return models.NewEffectivePermissions(grants), nil
+}
+
 func (self *transaction) GroupPermissions(groupId string) (*models.EffectivePermissions, error) {
 	if strings.TrimSpace(groupId) == "" {
 		return models.NewEffectivePermissions(nil), nil

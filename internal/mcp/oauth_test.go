@@ -98,20 +98,29 @@ func baseOf(request *http.Request) string {
 func TestWhereCredentialsMayBeSent(t *testing.T) {
 	t.Parallel()
 
-	if err := usableEndpoint("https://auth.example.com/token"); err != nil {
+	// A server the operator declared out on the internet.
+	public := &OAuthSettings{ServerURL: "https://server.example/mcp"}
+	// And one they declared on their own network.
+	private := &OAuthSettings{ServerURL: "http://127.0.0.1:8080/mcp"}
+
+	if err := usableEndpoint(public, "https://auth.example.com/token"); err != nil {
 		t.Fatalf("an ordinary https endpoint: %s", err)
 	}
-	if err := usableEndpoint("http://auth.example.com/token"); err == nil {
+	if err := usableEndpoint(public, "http://auth.example.com/token"); err == nil {
 		t.Fatal("plain http across the network is refused")
 	}
-	// Except on this machine, where nothing else can read it -- an operator
-	// running a connected server beside this one.
+	// Loopback belongs to the operator running a connected server beside
+	// this one -- and only to them. A server out on the internet naming an
+	// address inside the operator's host is the whole of the attack.
 	for _, address := range []string{"http://127.0.0.1:9000/token", "http://localhost:9000/token", "http://[::1]:9000/token"} {
-		if err := usableEndpoint(address); err != nil {
-			t.Fatalf("%s is on this machine: %s", address, err)
+		if err := usableEndpoint(private, address); err != nil {
+			t.Fatalf("%s is on the operator's own machine: %s", address, err)
+		}
+		if err := usableEndpoint(public, address); err == nil {
+			t.Fatalf("%s was named by a server out on the internet and must be refused", address)
 		}
 	}
-	if err := usableEndpoint("ftp://auth.example.com/token"); err == nil {
+	if err := usableEndpoint(public, "ftp://auth.example.com/token"); err == nil {
 		t.Fatal("and nothing else is an address to send a credential to")
 	}
 

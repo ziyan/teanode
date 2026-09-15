@@ -115,7 +115,16 @@ func init() {
 					// A write into what the machine runs on its own — a
 					// shell's startup file, keys, autostart — asks the way
 					// the shell's rule asks for the same.
-					if computer.PathAsks(call.Path) {
+					//
+					// Both paths, not just the one named path. For every
+					// action but one the path written is call.Path; for a
+					// copy it is call.Destination, and asking about the
+					// source instead meant copying a file over
+					// ~/.ssh/authorized_keys went through silently while
+					// writing the same bytes to the same place asked. The
+					// gate fired on reading the key and stayed quiet on
+					// replacing it.
+					if computer.PathAsks(call.Path) || computer.PathAsks(call.Destination) {
 						return tools.RiskDestructive
 					}
 					return tools.RiskWrite

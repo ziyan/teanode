@@ -172,6 +172,21 @@ func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments
 	}
 	tx := self.transaction(ctx)
 	if arguments.GroupIDs != nil {
+		// Bounded by what the caller holds, exactly as updating an
+		// account's groups is. Putting somebody into a group is deciding
+		// what they may do, and the create path accepted the same field
+		// with no bound -- so the permission to manage accounts was the
+		// permission to make an administrator and sign in as them, which
+		// is the sentence the update path's own comment warns about.
+		principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+		if err != nil {
+			return nil, err
+		}
+		for _, groupId := range *arguments.GroupIDs {
+			if err := self.mayHandOut(ctx, principal, groupId); err != nil {
+				return nil, err
+			}
+		}
 		created.GroupIDs = *arguments.GroupIDs
 	} else if members, err := tx.GetGroupByName(models.GroupNameMembers); err != nil {
 		return nil, err
@@ -365,10 +380,22 @@ func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswor
 	log.Noticef("%s set the password for %q", operatorName(ctx), updated.Username)
 	// An administrator resetting a password is taking the account back;
 	// whoever was signed in as it is signed out.
+	//
+	// Both credentials, not just the one. A token is checked before the
+	// cookie, never reads the password, carries the whole account, and can
+	// mint a fresh non-expiring successor -- so ending only the sessions
+	// left the person being displaced with everything, while the mutation
+	// reported success. Deleting an account takes its tokens with it and
+	// disabling one stops them being accepted; a reset was the outlier.
 	if self.authenticator != nil {
 		if _, err := self.authenticator.RevokeSessions(updated.Username, ""); err != nil {
 			log.Errorf("failed to end the sessions of %q after a password reset: %s", updated.Username, err)
 		}
+	}
+	if revoked, err := self.database.RevokeTokensByUser(updated.ID, time.Now()); err != nil {
+		log.Errorf("failed to revoke the API tokens of %q after a password reset: %s", updated.Username, err)
+	} else if revoked > 0 {
+		log.Noticef("revoked %d API token(s) of %q with the password reset", revoked, updated.Username)
 	}
 	return describeUser(updated), nil
 }

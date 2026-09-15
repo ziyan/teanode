@@ -79,7 +79,13 @@ var asked = []pattern{
 	{regexp.MustCompile(boundary + `(?:dd|truncate|shred|wipefs|fdisk|parted|diskutil)\s`), "writes over storage"},
 	{regexp.MustCompile(boundary + `(?:mkfs|mount|umount|swapoff)\s`), "changes the disks"},
 	{regexp.MustCompile(boundary + `(?:useradd|userdel|usermod|passwd|adduser|deluser)\s`), "changes accounts"},
-	{regexp.MustCompile(`\s>{1,2}\s*(?:~|\$HOME|/)`), "writes a file by its whole path"},
+	{regexp.MustCompile(`\s*>{1,2}\s*(?:~|\$HOME|/)`), "writes a file by its whole path"},
+	// Putting a file somewhere by copying, linking or piping into it is the
+	// same act as writing it, and the list caught only mv. cp over
+	// ~/.ssh/authorized_keys, ln -sf over a shell's startup file and tee
+	// into either are the ordinary ways to do it, and each went through
+	// silently while the redirect above asked.
+	{regexp.MustCompile(boundary + `(?:cp|install|ln|tee)\s`), "puts a file somewhere"},
 	{regexp.MustCompile(boundary + `(?:defaults\s+write|reg\s+add|regedit|osascript|xdotool)\s`), "changes the system's settings"},
 }
 

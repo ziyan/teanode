@@ -40,3 +40,30 @@ func TestARestrictedCredentialIsHeldToItsFromHeaderToo(t *testing.T) {
 		})
 	}
 }
+
+// An unrestricted credential is confined to its domain in the From header
+// too, not only in the envelope.
+//
+// The envelope check was the caller's and the From check was the restricted
+// branch's, so a credential with no alias — the ordinary one handed to a
+// service — walked past both and could name any domain in the line the
+// recipient reads.
+func TestAnUnrestrictedCredentialIsStillHeldToItsDomain(t *testing.T) {
+	t.Parallel()
+
+	domain := &models.Domain{ID: "d1", Domain: "example.com"}
+	unrestricted := &models.Credential{ID: "c1", DomainID: "d1"}
+
+	for _, from := range []string{"security@bank.example", "ceo@other.example", "billing@payments.test"} {
+		if credentialMaySendAs(unrestricted, domain, "bounce@example.com", from) {
+			t.Errorf("From %q is at another domain and must be refused", from)
+		}
+	}
+	// Anyone at its own domain is still fine, which is what unrestricted means.
+	// The caller parses the header into a bare address before this sees it.
+	for _, from := range []string{"sales@example.com", "noreply@example.com", "sales@EXAMPLE.com"} {
+		if !credentialMaySendAs(unrestricted, domain, "bounce@example.com", from) {
+			t.Errorf("From %q is at its own domain and must be allowed", from)
+		}
+	}
+}

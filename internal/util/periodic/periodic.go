@@ -75,7 +75,13 @@ func (self *periodic) run() {
 			log.Fatalf("panic: %s: %s\n%s", self.settings.Name, message, string(debug.Stack()))
 		}
 	}()
-	if err := self.handler(context.Background()); err != nil {
+	// The context Stop cancels, not a fresh background one. Handing every
+	// handler a context nothing could cancel meant a job that blocked --
+	// an external fetch with no deadline, say -- was still running when
+	// Close came to wait for it, and the wait never ended. One caller
+	// already reaches for its own context to work around this and says so
+	// in a comment; it keeps working, because it ignores what it is given.
+	if err := self.handler(self.ctx); err != nil {
 		log.Errorf("failed while running periodically: %s: %s", self.settings.Name, err)
 	}
 }

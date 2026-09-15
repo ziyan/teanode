@@ -77,6 +77,14 @@ func (self *graph) CreateGroup(ctx context.Context, arguments CreateGroupArgumen
 	if arguments.DomainIDs != nil {
 		group.DomainIDs = *arguments.DomainIDs
 	}
+	// Bounded by what the caller holds. A group carries its roles, so
+	// creating one that carries everything and putting yourself in it is
+	// administrator from the next request onwards -- the same sentence
+	// mayWrite exists to stop on the role side, reached from the other end
+	// without ever writing a role.
+	if err := self.mayCarry(ctx, group.RoleIDs, group.DomainIDs); err != nil {
+		return nil, err
+	}
 	created, err := self.transaction(ctx).CreateGroup(group)
 	if err != nil {
 		return nil, translateError(err)
@@ -102,6 +110,27 @@ type UpdateGroupArguments struct {
 // somebody may not give away what they have not got -- least of all to
 // themselves. The console is exempt: it is the account that bootstraps the
 // server and holds everything by construction.
+// mayCarry refuses a group that would carry more than the caller holds.
+//
+// mayHandOut asks what a group carries as it stands, which answers the
+// question for a membership change and the wrong question for a change to
+// the roles themselves -- and no question at all for a group being created.
+func (self *graph) mayCarry(ctx context.Context, roleIds, domainIds []string) error {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return err
+	}
+	carried, err := self.transaction(ctx).ProposedGroupPermissions(roleIds, domainIds)
+	if err != nil {
+		return translateError(err)
+	}
+	if principal.Permissions.Covers(carried) {
+		return nil
+	}
+	return fmt.Errorf("%w: that would carry permissions you do not hold, which is not yours to hand out",
+		api.ErrPermissionDenied)
+}
+
 func (self *graph) mayHandOut(ctx context.Context, principal *api.Principal, groupId string) error {
 	carried, err := self.transaction(ctx).GroupPermissions(groupId)
 	if err != nil {
@@ -140,6 +169,28 @@ func (self *graph) UpdateGroup(ctx context.Context, arguments UpdateGroupArgumen
 	// from the next request onwards, without touching a role at all.
 	if arguments.UserIDs != nil {
 		if err := self.mayHandOut(ctx, principal, arguments.GroupID); err != nil {
+			return nil, err
+		}
+	}
+	// And the roles, which mayHandOut above cannot speak for: it asks what
+	// the group carries now, so a call that changes the roles and the
+	// membership together passed on a group that carried nothing yet.
+	if arguments.RoleIDs != nil || arguments.DomainIDs != nil {
+		existing, err := self.transaction(ctx).GetGroup(arguments.GroupID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		if existing == nil {
+			return nil, api.ErrNotFound
+		}
+		roleIds, domainIds := existing.RoleIDs, existing.DomainIDs
+		if arguments.RoleIDs != nil {
+			roleIds = *arguments.RoleIDs
+		}
+		if arguments.DomainIDs != nil {
+			domainIds = *arguments.DomainIDs
+		}
+		if err := self.mayCarry(ctx, roleIds, domainIds); err != nil {
 			return nil, err
 		}
 	}

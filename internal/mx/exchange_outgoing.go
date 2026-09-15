@@ -377,11 +377,15 @@ func (self *exchange) fileInSent(tx db.Transaction, mailboxId string, mail *mode
 // own From line, so a check on the envelope alone confined nothing — a
 // credential handed to a newsletter service could send as anyone at the
 // domain, signed and aligned. An unrestricted credential may send as any
-// address of its domain, which the caller has already checked the envelope
-// against.
+// address of its domain — of its domain, which is the half that was missing:
+// the caller checks the envelope sender's domain and nothing checked the
+// From header's, so an unrestricted credential could put any domain at all
+// in the line the recipient reads. The restricted branch below had the check
+// all along; the early return walked past it.
 func credentialMaySendAs(credential *models.Credential, domain *models.Domain, envelopeSender, from string) bool {
 	if credential.Alias == "" {
-		return true
+		_, fromDomain := mailparse.SplitAddress(from)
+		return strings.EqualFold(fromDomain, domain.Domain)
 	}
 	senderAlias, _ := mailparse.SplitAddress(envelopeSender)
 	fromAlias, fromDomain := mailparse.SplitAddress(from)

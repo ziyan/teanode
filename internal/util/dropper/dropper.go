@@ -4,6 +4,7 @@ package dropper
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -99,18 +100,28 @@ func (self *dropper) spinOnce(ctx context.Context) error {
 	return nil
 }
 
+// What a published list may cost: a deadline for the whole exchange, and a
+// ceiling on how much of it is read.
+var listClient = &http.Client{Timeout: 2 * time.Minute}
+
+const mostListBytes = 32 << 20
+
 func (self *dropper) addList(ctx context.Context, tree trie.Trie, url string) error {
 	request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
-	response, err := http.DefaultClient.Do(request)
+	// Not http.DefaultClient: its timeout is zero, and the transport bounds
+	// only the dial and the handshake. An upstream that accepted the
+	// connection and then said nothing parked this goroutine for ever, and
+	// Close waits on it.
+	response, err := listClient.Do(request)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	scanner := bufio.NewScanner(response.Body)
+	scanner := bufio.NewScanner(io.LimitReader(response.Body, mostListBytes))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ";") {

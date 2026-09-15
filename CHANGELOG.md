@@ -6,6 +6,67 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- A stranger's message can no longer end the block it is quoted in. The
+  automatic mail jobs — sorting, replying, research, extraction, summaries —
+  put the message between plain tags and rendered them with a bare join, so a
+  body carrying the closing tag ended the block and everything after it arrived
+  beside the prompt's own instructions. Sorting runs by itself on delivered
+  mail, with nobody present, which made it the one path an unknown sender
+  reached without an account. The same neutralisation the agent has always
+  applied to what a tool returns is now applied here, in the one place every
+  prompt passes through.
+
+- The subscription websocket no longer reads an unbounded message from a
+  stranger. It is reached before anybody has said who they are, and it had
+  neither a size limit nor a deadline — the upgrade clears the server's own —
+  so an anonymous caller could make the server hold as much as it cared to
+  send, for as long as it liked, while the same endpoint's ordinary half capped
+  a request at a megabyte. Both limits are set now, and the deadline lifts only
+  once the caller has said who they are.
+
+- A copy is judged by where it lands, not by what it reads. Writing into a
+  shell's startup file or a key file asks first; copying a file over the same
+  place did not, because the rule was asked about the source. The shell rule had
+  the same gap — `cp`, `install`, `ln` and `tee` went through silently where
+  `mv` asked — so both were closed.
+
+- Creating an account or a group can no longer hand out permissions the person
+  doing it does not hold. Updating either has been bounded for a while;
+  creating them was not, and a group's roles could be changed without the bound
+  as well, so the permission to manage accounts was the permission to make an
+  administrator. The check now asks what the group would carry, not what it
+  carries today.
+
+- Resetting somebody's password now ends their API tokens as well as their
+  sessions. A token is checked before the session cookie, never reads the
+  password, and can issue another that does not expire — so an administrator
+  taking an account back left whoever they were displacing with everything,
+  while the page said it had worked.
+
+- A connected server can no longer point this server's sign-in requests at
+  addresses inside the operator's own network. Two of the addresses in a
+  server's own document were reached without the guard the rest of that code
+  applies, and the answer came back in an error message.
+
+- A bounce report settles a delivery once. The return path this server signs is
+  handed to every recipient, and it was accepted any number of times: each
+  replay rewrote the delivery's outcome from text the sender wrote, or cleared
+  it entirely, and posted another message into the sender's mailbox.
+
+- A credential that may send as a domain is now held to that domain in the From
+  header as well as the envelope. One restricted to a single address always was.
+
+- A forged authentication verdict can no longer survive by being written with a
+  comment or in quotes, and a bounce is held to the same header rules as any
+  other message arriving from outside.
+
+- A templated send bounds its request body, as every other endpoint does; the
+  drop-list refresh has a deadline and no longer blocks shutdown; and the card
+  shown for a settings change now names a command that change would run on the
+  server.
+
 ## [0.27.1] - 2026-09-15
 
 ### Security
