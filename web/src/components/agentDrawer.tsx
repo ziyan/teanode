@@ -753,6 +753,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const location = useLocation()
   const [available, setAvailable] = useState(false)
   const [agentName, setAgentName] = useState('')
+  // What the box says before anybody types: the agent's own name where it
+  // has one, because "your agent" is what a stranger calls it. Until the
+  // name has arrived it says the general thing rather than flickering.
+  const askPlaceholder = agentName.trim()
+    ? t('agentDrawer.placeholderNamed', { name: agentName.trim() })
+    : t('agentDrawer.placeholder')
   const [open, setOpen] = useState(() => standalone || remembered(OPEN_KEY) === '1')
   const [conversations, setConversations] = useState<Conversation[]>([])
   // Words typed into the picker find conversations by title, summary or
@@ -2087,8 +2093,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               ref={input}
               rows={1}
               value={draft}
-              placeholder={uploading ? t('agentDrawer.uploading') : t('agentDrawer.placeholder')}
-              aria-label={t('agentDrawer.placeholder')}
+              placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
+              aria-label={askPlaceholder}
               onChange={(event) => {
                 setDraft(event.target.value)
                 // One line until there is more; then as tall as the words,

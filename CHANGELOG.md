@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Tapping a box on a phone no longer pulls the page in. Safari on iOS zooms
+  when the field it is focusing has text under 16px, and it zooms until that
+  field fills the width — which is why the ask box appeared to drag the page
+  to about its own width, and why it looked like the box's doing. It is the
+  type size, not the width, so on a touch screen the text in a field is now
+  never under 16px. Nothing changes on a mouse.
+
+- A picture or a clip is the right height with the tool lines hidden. Shown,
+  the card sits inside a tool line, which is an ordinary block; hidden, it
+  becomes a child of the transcript, which is a flex column — and a flex
+  item gives way by default, so the same picture that was the right height a
+  line above was squashed into a band.
+
+- The ask box says the agent's name: "Ask Tea …" rather than "Ask your
+  agent…", which is what a stranger would call it.
+
 ### Added
 
 - The agent can hand a piece of work to a run of its own. Some work is a job

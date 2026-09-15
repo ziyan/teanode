@@ -1044,6 +1044,7 @@ export const ja: Catalog = {
   'agentDrawer.archive': 'アーカイブ',
   'agentDrawer.empty': 'メールについて尋ねたり、何かを頼んだりできます。開いているものが「これ」の意味になります。',
   'agentDrawer.placeholder': 'エージェントに尋ねる…',
+  'agentDrawer.placeholderNamed': '{name} に尋ねる…',
   'agentDrawer.send': '送信',
   'agentDrawer.stop': '停止',
   'agentDrawer.approve': '実行する',

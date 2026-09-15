@@ -1008,6 +1008,7 @@ export const zh: Catalog = {
   'agentDrawer.archive': '归档',
   'agentDrawer.empty': '可以问邮件的事，也可以让它去做。你打开的内容就是“这个”所指的东西。',
   'agentDrawer.placeholder': '问问代理…',
+  'agentDrawer.placeholderNamed': '问问 {name} …',
   'agentDrawer.send': '发送',
   'agentDrawer.stop': '停止',
   'agentDrawer.approve': '去做',

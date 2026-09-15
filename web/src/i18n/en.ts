@@ -1049,6 +1049,7 @@ export const en = {
   'agentDrawer.archive': 'Archive',
   'agentDrawer.empty': 'Ask about your mail, or ask for something to be done. What you have open is what "this" means.',
   'agentDrawer.placeholder': 'Ask your agent…',
+  'agentDrawer.placeholderNamed': 'Ask {name} …',
   'agentDrawer.send': 'Send',
   'agentDrawer.stop': 'Stop',
   'agentDrawer.approve': 'Do it',

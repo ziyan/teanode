@@ -1343,6 +1343,24 @@ textarea {
   width: 100%;
 }
 
+/* On a touch screen the text in a field is never under 16px.
+
+   Safari on iOS zooms the whole page when a field it is focusing has text
+   smaller than that, and it zooms until the field fills the width -- which
+   is why tapping the ask box pulled the page in to about the width of the
+   box, and why it looked like the box's own doing. It is the type size, not
+   the width: at 16px there is nothing to zoom for, and the page stays where
+   it was. Nothing changes on a mouse, where the 14px the dashboard is
+   drawn at is the point. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .agent-drawer-input textarea {
+    font-size: 16px;
+  }
+}
+
 input:hover:not(:disabled),
 select:hover:not(:disabled),
 textarea:hover:not(:disabled) {
@@ -6620,6 +6638,12 @@ p.notice.domain-logo-note {
   border-radius: 10px;
   background: var(--background);
   overflow: hidden;
+  /* It never gives way. With the tool lines shown this card sits inside
+     one, which is an ordinary block; with them hidden it is a child of the
+     transcript itself, which is a flex column -- and a flex item shrinks
+     by default, so the picture inside it was squashed to a band while the
+     same picture a line above was the right height. */
+  flex: 0 0 auto;
 }
 
 .agent-artifact-head {
