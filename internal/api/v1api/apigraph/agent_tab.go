@@ -88,6 +88,10 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 	if err != nil {
 		return
 	}
+	// A size limit as well as the deadline below: the library's default is
+	// no limit at all, and this socket is reached before the sender has
+	// said who they are.
+	conn.SetReadLimit(maximumRequestSize)
 	defer func() { _ = conn.Close() }()
 	socket := &tabSocket{conn: conn}
 	refuse := func(reason string) {

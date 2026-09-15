@@ -37,6 +37,18 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	// What a stranger may cost before saying who they are.
+	//
+	// The library reads a whole message into one slice and applies a size
+	// limit only when it has been given one; the default is none. Nothing
+	// here had given it one, so an anonymous caller -- this path is public,
+	// and a handshake with no Origin is let through on purpose -- could make
+	// the server allocate as much as it cared to send, and hold it, because
+	// the upgrade also clears the server's read deadline. The POST half of
+	// this same endpoint has capped the body at a megabyte all along for
+	// exactly this reason.
+	conn.SetReadLimit(maximumRequestSize)
+	_ = conn.SetReadDeadline(time.Now().Add(helloWait))
 
 	// handle the connection
 	if err := newWebSocketConnection(self, request, conn).handle(request.Context()); err != nil {
@@ -204,6 +216,9 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				return err
 			}
 			self.isAuthenticated = true
+			// Said who they are, so the pre-authentication deadline is
+			// lifted: a subscription is meant to sit open and quiet.
+			_ = self.conn.SetReadDeadline(time.Time{})
 			waitGroup.Add(1)
 			go func() {
 				defer deferutil.Recover()
