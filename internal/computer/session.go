@@ -35,8 +35,8 @@ type SessionStartArguments struct {
 	// everything after, in both directions.
 	Session string `json:"session"`
 
-	// Kind is "stdio" for a program spoken to over its standard streams.
-	// (A terminal is "pty", which this version does not start.)
+	// Kind is "stdio" for a program spoken to over its standard streams,
+	// or "pty" for one run in a terminal and read as a screen.
 	Kind string `json:"kind"`
 
 	// Command and Arguments are what to run; Directory where; Environment
@@ -45,6 +45,10 @@ type SessionStartArguments struct {
 	Arguments   []string          `json:"arguments,omitempty"`
 	Directory   string            `json:"directory,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
+
+	// Columns and Rows size a terminal; a stdio session ignores them.
+	Columns int `json:"columns,omitempty"`
+	Rows    int `json:"rows,omitempty"`
 }
 
 // SessionStartResult says it started, and what it is.
@@ -101,8 +105,21 @@ type sessions struct {
 
 type session struct {
 	id      string
+	kind    string
 	command *exec.Cmd
 	stdin   io.WriteCloser
+
+	// For a terminal: the pty the program runs in, and the screen it is
+	// drawing, kept here so that reading it is one request and none of the
+	// redrawing ever crosses the network.
+	pty    *os.File
+	screen *screen
+
+	// Set when the process ends. The session stays until it is closed, so
+	// that the last screen and the exit code can still be read.
+	ended bool
+	code  int
+	done  chan struct{}
 }
 
 func newSessions() *sessions {
@@ -118,8 +135,11 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 	if strings.TrimSpace(arguments.Command) == "" {
 		return nil, fmt.Errorf("a session needs a command to run")
 	}
-	// A terminal is a different thing to hold open and is not this version's.
-	if kind := strings.TrimSpace(arguments.Kind); kind != "" && kind != "stdio" {
+	kind := strings.TrimSpace(arguments.Kind)
+	if kind == "" {
+		kind = "stdio"
+	}
+	if kind != "stdio" && kind != "pty" {
 		return nil, fmt.Errorf("%q is not a kind of session this program starts", kind)
 	}
 
@@ -136,7 +156,7 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 		self.mutex.Unlock()
 		return nil, fmt.Errorf("this computer already has %d sessions open", mostSessions)
 	}
-	reserved := &session{id: arguments.Session}
+	reserved := &session{id: arguments.Session, kind: kind, done: make(chan struct{})}
 	self.open[arguments.Session] = reserved
 	self.mutex.Unlock()
 	release := func() {
@@ -158,6 +178,10 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 	command.Env = os.Environ()
 	for key, value := range arguments.Environment {
 		command.Env = append(command.Env, key+"="+value)
+	}
+
+	if kind == "pty" {
+		return self.startTerminal(reserved, release, command, arguments, ended)
 	}
 
 	stdin, err := command.StdinPipe()
@@ -198,9 +222,7 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 				code = -1
 			}
 		}
-		self.mutex.Lock()
-		delete(self.open, arguments.Session)
-		self.mutex.Unlock()
+		self.finish(reserved, code)
 		ended(arguments.Session, code)
 	}()
 
@@ -241,7 +263,14 @@ func (self *sessions) write(arguments *SessionWriteArguments) (*SessionResult, e
 	if err != nil {
 		return nil, fmt.Errorf("what was to be written is not base64: %w", err)
 	}
-	if _, err := held.stdin.Write(decoded); err != nil {
+	if held.hasEnded() {
+		return nil, fmt.Errorf("the session has ended; nothing reads what is written to it")
+	}
+	var writer io.Writer = held.stdin
+	if held.pty != nil {
+		writer = held.pty
+	}
+	if _, err := writer.Write(decoded); err != nil {
 		return nil, fmt.Errorf("cannot write to the session: %w", err)
 	}
 	return &SessionResult{Session: arguments.Session, OK: true}, nil
@@ -287,37 +316,63 @@ func (self *sessions) close(arguments *SessionCloseArguments) (*SessionResult, e
 	// waiting: a program killed the instant it was asked to stop reports as
 	// killed, which loses the difference between one that ended badly and
 	// one that was not given the chance to end at all.
-	_ = held.stdin.Close()
-	if held.command.Process != nil {
+	if held.stdin != nil {
+		_ = held.stdin.Close()
+	}
+	if held.pty != nil {
+		// Closing the terminal is a hangup to everything in it, which is
+		// what a shell reads as the person having left.
+		_ = held.pty.Close()
+	}
+	if held.command.Process != nil && !held.hasEnded() {
 		go func() {
-			if self.waitForEnd(arguments.Session, sessionEndWait) {
+			if held.waitForEnd(sessionEndWait) {
 				return
 			}
 			_ = held.command.Process.Signal(syscall.SIGTERM)
-			if self.waitForEnd(arguments.Session, sessionEndWait) {
+			if held.waitForEnd(sessionEndWait) {
 				return
 			}
 			_ = held.command.Process.Kill()
 		}()
 	}
+	// Forgotten now: a closed session is not read again, and the name is
+	// free for the next one.
+	self.mutex.Lock()
+	delete(self.open, arguments.Session)
+	self.mutex.Unlock()
 	return &SessionResult{Session: arguments.Session, OK: true}, nil
 }
 
-// waitForEnd reports whether the session finished within the wait. The
-// process's own goroutine removes it when it does, so this watches for that
-// rather than reaping it a second time.
-func (self *sessions) waitForEnd(id string, wait time.Duration) bool {
-	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
-		self.mutex.Lock()
-		_, stillOpen := self.open[id]
-		self.mutex.Unlock()
-		if !stillOpen {
-			return true
-		}
-		time.Sleep(20 * time.Millisecond)
+// finish records that the process ended. The session stays open -- it is
+// removed when it is closed -- so that the last screen and the code can be
+// read by whoever was driving it.
+func (self *sessions) finish(held *session, code int) {
+	self.mutex.Lock()
+	if !held.ended {
+		held.ended, held.code = true, code
+		close(held.done)
 	}
-	return false
+	self.mutex.Unlock()
+}
+
+func (self *session) hasEnded() bool {
+	select {
+	case <-self.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// waitForEnd reports whether the process ended within the wait.
+func (self *session) waitForEnd(wait time.Duration) bool {
+	select {
+	case <-self.done:
+		return true
+	case <-time.After(wait):
+		return false
+	}
 }
 
 // closeAll ends every session, for when the connection goes. A process
@@ -333,7 +388,12 @@ func (self *sessions) closeAll() {
 		if one.command == nil {
 			continue // reserved, never started
 		}
-		_ = one.stdin.Close()
+		if one.stdin != nil {
+			_ = one.stdin.Close()
+		}
+		if one.pty != nil {
+			_ = one.pty.Close()
+		}
 		if one.command.Process != nil {
 			_ = one.command.Process.Kill()
 		}

@@ -63,7 +63,7 @@ func TestASessionKeepsWhatArrivesUntilItIsRead(t *testing.T) {
 	device := &fakeDevice{}
 	device.link = newDeviceLink("the computer", device)
 
-	held, err := device.link.StartSession(context.Background(), "stdio", "cat", nil, "", nil)
+	held, err := device.link.startSession(context.Background(), "stdio", "cat", nil, "", nil, 0, 0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestASessionsOutputIsBounded(t *testing.T) {
 
 	device := &fakeDevice{}
 	device.link = newDeviceLink("the computer", device)
-	held, err := device.link.StartSession(context.Background(), "stdio", "yes", nil, "", nil)
+	held, err := device.link.startSession(context.Background(), "stdio", "yes", nil, "", nil, 0, 0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestADetachedDeviceEndsItsSessions(t *testing.T) {
 
 	device := &fakeDevice{}
 	device.link = newDeviceLink("the computer", device)
-	held, err := device.link.StartSession(context.Background(), "stdio", "cat", nil, "", nil)
+	held, err := device.link.startSession(context.Background(), "stdio", "cat", nil, "", nil, 0, 0)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

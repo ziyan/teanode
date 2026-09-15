@@ -254,6 +254,18 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = held.signal(&arguments)
+	case "session_read":
+		var arguments SessionReadArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.readScreen(&arguments)
+	case "session_resize":
+		var arguments SessionResizeArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.resizeTerminal(&arguments)
 	case "session_close":
 		var arguments SessionCloseArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

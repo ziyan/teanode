@@ -8,6 +8,20 @@ Notable changes to TeaNode. The format follows
 
 ### Added
 
+- The agent can drive a terminal on a computer somebody attached. `terminal`
+  opens one and runs a program in it, types, presses keys by name — enter,
+  the arrows, ctrl-c, the function keys — reads the screen, waits for it to
+  settle, resizes, and closes. It reads **the screen**, not the stream of
+  bytes that drew it: what the program is showing at this moment, with the
+  cursor's position. A program that redraws — a progress bar, an editor, a
+  coding agent — says the same thing a hundred times over in escape
+  sequences, and a model handed all of that learns nothing; handed the
+  screen as it stands, it learns what a person looking at it would. The
+  screen is kept on the computer, so none of the redrawing crosses the
+  network and reading it is one request however busy the program has been.
+  Opening a terminal asks the person first, on a card; the keys after it do
+  not, because the program they said yes to is what the keys go to.
+
 - A computer somebody attached can hold a program open. Everything it did
   before was one request to one answer — a command runs and returns, a file
   is read and that is that — which is all the shell and the filesystem ever

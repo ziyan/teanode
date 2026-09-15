@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -125,7 +126,16 @@ func (self *deviceSession) settled(ctx context.Context, wait time.Duration) {
 
 // StartSession opens a program on the device and returns its identifier.
 func (self *deviceLink) StartSession(ctx context.Context, kind, command string, arguments []string,
-	directory string, environment map[string]string) (*deviceSession, error) {
+	directory string, environment map[string]string, columns, rows int) (string, error) {
+	held, err := self.startSession(ctx, kind, command, arguments, directory, environment, columns, rows)
+	if err != nil {
+		return "", err
+	}
+	return held.id, nil
+}
+
+func (self *deviceLink) startSession(ctx context.Context, kind, command string, arguments []string,
+	directory string, environment map[string]string, columns, rows int) (*deviceSession, error) {
 	id := security.NewULID()
 	held := &deviceSession{id: id, kind: kind, touched: time.Now()}
 	// Counted and kept under one lock, so two starts at once cannot both
@@ -145,7 +155,7 @@ func (self *deviceLink) StartSession(ctx context.Context, kind, command string, 
 
 	if _, err := self.Ask(ctx, "session_start", &computer.SessionStartArguments{
 		Session: id, Kind: kind, Command: command, Arguments: arguments,
-		Directory: directory, Environment: environment,
+		Directory: directory, Environment: environment, Columns: columns, Rows: rows,
 	}); err != nil {
 		self.forgetSession(id)
 		return nil, err
@@ -155,10 +165,47 @@ func (self *deviceLink) StartSession(ctx context.Context, kind, command string, 
 
 // WriteSession writes to an open session's input.
 func (self *deviceLink) WriteSession(ctx context.Context, id string, data []byte) error {
+	self.touchSession(id)
 	_, err := self.Ask(ctx, "session_write", &computer.SessionWriteArguments{
 		Session: id, Data: base64.StdEncoding.EncodeToString(data),
 	})
 	return err
+}
+
+// ReadScreen is a terminal session's screen as the device holds it. The
+// screen lives on the device, so this is one request however much the
+// program has drawn since.
+func (self *deviceLink) ReadScreen(ctx context.Context, id string) (*tools.Screen, error) {
+	self.touchSession(id)
+	answer, err := self.Ask(ctx, "session_read", &computer.SessionReadArguments{Session: id})
+	if err != nil {
+		return nil, err
+	}
+	var read computer.SessionScreen
+	if err := json.Unmarshal(answer, &read); err != nil {
+		return nil, fmt.Errorf("%s answered something unreadable: %w", self.what, err)
+	}
+	return &tools.Screen{
+		Columns: read.Columns, Rows: read.Rows, Text: read.Text,
+		CursorX: read.CursorX, CursorY: read.CursorY,
+		Changed: read.Changed, Ended: read.Ended, Code: read.Code,
+	}, nil
+}
+
+// ResizeSession changes a terminal's size.
+func (self *deviceLink) ResizeSession(ctx context.Context, id string, columns, rows int) error {
+	self.touchSession(id)
+	_, err := self.Ask(ctx, "session_resize", &computer.SessionResizeArguments{Session: id, Columns: columns, Rows: rows})
+	return err
+}
+
+// touchSession notes that somebody is still driving it, for the idle sweep.
+func (self *deviceLink) touchSession(id string) {
+	if held := self.Session(id); held != nil {
+		held.mutex.Lock()
+		held.touched = time.Now()
+		held.mutex.Unlock()
+	}
 }
 
 // SignalSession sends a signal to one.
