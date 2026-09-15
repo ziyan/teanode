@@ -86,6 +86,60 @@ the thing standing between a scheduled run and the machine.
 **The rule is the server's alone.** The program runs what it is sent. An
 attached computer trusts its server the way a terminal trusts the person at it.
 
+## A program held open
+
+Everything above is one request to one answer, which is all the shell and the
+filesystem needed: a command runs and returns, a file is read and that is
+that. A program that stays open needs two things that shape does not have —
+output arriving when the program feels like it, and input written to
+something started earlier. So a session has an identifier of its own, and what
+is said about it arrives unasked and is filed under that name. `pending` is
+one entry per request in flight; sessions outlive the request that made them.
+
+Two things sit on that.
+
+**A terminal the agent drives.** `terminal` opens a pty on the computer, runs a
+program in it (the person's shell if none is named), types, presses keys by
+name, and reads **the screen** — what the program is showing at this moment,
+with the cursor — never the bytes that drew it. A program that redraws says
+the same thing a hundred times over in escape sequences; a model handed all of
+that learns nothing, and a model handed the screen learns what a person
+looking at it would. The screen is kept on the computer, so none of the
+redrawing crosses the network and reading it is one request however busy the
+program has been. `wait` watches the screen until it stops changing, so a
+model need not guess how long a program takes to answer. Opening a terminal
+asks the person, on a card; the keys after it do not, because the program they
+said yes to is what the keys go to.
+
+**A connected server that runs there.** A server declared with `location:
+computer` under `agent.mcp.servers` runs its command on the person's attached
+computer, as them, and its standard input and output reach the server through
+a session. The protocol is unchanged; only where the process is. Such a server
+is offered only while a computer is attached, never to a run with nobody
+present, and cannot be marked headless.
+
+The bounds: 256KB of unread output kept per session, sixteen sessions per
+computer, thirty minutes idle before the server closes one, and a session
+belongs to the connection that opened it — when the person stops the program
+or the network goes, the processes it started are killed, and a reader is told
+the session ended rather than left waiting.
+
+## The attached terminal
+
+`teanode terminal` attaches the terminal the person is sitting in. Their shell
+runs in a pty and they use it as they would have anyway; their agent can read
+that same screen and type into it, with `terminal`'s `attached` action. It is
+one shell with two people at it, and either can take over.
+
+It is built on what a launched terminal already is: the program connects as a
+computer with one pty session already open and says so in its hello, and the
+server adopts that session rather than starting one. The difference between a
+terminal the agent opened and one the person is sitting in is who else is
+looking, which is a fact about the session, not a kind of connection. Because
+somebody is watching, the prompt says so while one is attached: the agent is
+told to say what it is about to type before it types it, and never to close
+the terminal, since it is theirs.
+
 ## The attached tab
 
 A Chrome extension the person installs. They sign in through the same
@@ -169,3 +223,11 @@ disabled or confirm lists, and a person can add either to their own.
   one is a tab the agent chose rather than the one the person attached.
 - A computer's fifth concurrent request fails rather than waits, so one long
   command can fail other calls in the same round.
+- **A terminal is read as a screen**, so what scrolled off the top is gone. A
+  program that prints a great deal is better run with its output to a file.
+- **`teanode terminal` attaches under its own name** (`--name`, the host name by
+  default); running it on a machine that also runs `teanode computer` under
+  the same name replaces that attachment. Give one of them a name.
+- A server on the computer is as available as the computer is: gone when the
+  person stops the program, back when they start it. With several computers
+  attached it runs on the first by name; there is no way yet to say which.

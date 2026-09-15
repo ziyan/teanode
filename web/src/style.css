@@ -1343,24 +1343,6 @@ textarea {
   width: 100%;
 }
 
-/* On a touch screen the text in a field is never under 16px.
-
-   Safari on iOS zooms the whole page when a field it is focusing has text
-   smaller than that, and it zooms until the field fills the width -- which
-   is why tapping the ask box pulled the page in to about the width of the
-   box, and why it looked like the box's own doing. It is the type size, not
-   the width: at 16px there is nothing to zoom for, and the page stays where
-   it was. Nothing changes on a mouse, where the 14px the dashboard is
-   drawn at is the point. */
-@media (pointer: coarse) {
-  input,
-  select,
-  textarea,
-  .agent-drawer-input textarea {
-    font-size: 16px;
-  }
-}
-
 input:hover:not(:disabled),
 select:hover:not(:disabled),
 textarea:hover:not(:disabled) {
@@ -7721,5 +7703,36 @@ button.with-icon {
 
 .invitation-answers {
     flex-wrap: wrap;
+  }
+}
+
+/* On a touch screen the text in a field is never under 16px.
+
+   Safari on iOS zooms the whole page when a field it is focusing has text
+   smaller than that, and it zooms until the field fills the width -- which
+   is why tapping the ask box pulled the page in to about the width of the
+   box, and why it looked like the box's own doing. It is the type size, not
+   the width: at 16px there is nothing to zoom for.
+
+   Last in the file on purpose. A rule for the same field written later in
+   the sheet wins at equal specificity, and the drawer's own 14px for its
+   textarea sat four thousand lines below the first version of this -- so
+   the first version changed nothing, and the page went on zooming. The
+   selectors that are more specific than a bare tag are named here so that
+   they are beaten too. Nothing changes on a mouse, where the 13px and 14px
+   the dashboard is drawn at are the point. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .select,
+  .select-search,
+  .agent-drawer-input textarea,
+  .mailbox-toolbar input[type='search'],
+  .mailbox-actions select,
+  .mailbox-pane-actions select,
+  .mailbox-narrowing select,
+  label:has(> input[type='radio']) > input {
+    font-size: 16px;
   }
 }

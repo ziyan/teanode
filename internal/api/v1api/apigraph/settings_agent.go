@@ -211,6 +211,7 @@ type AgentMCPServerSettings struct {
 	OAuthAuthorizationURL string   `json:"oauthAuthorizationUrl"`
 	OAuthTokenURL         string   `json:"oauthTokenUrl"`
 	Headless              bool     `json:"headless"`
+	Location              string   `json:"location"`
 	ReadOnly              []string `json:"readOnly"`
 	Disabled              []string `json:"disabled"`
 	Timeout               string   `json:"timeout"`
@@ -335,6 +336,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			OAuthAuthorizationURL: server.OAuth.AuthorizationURL,
 			OAuthTokenURL:         server.OAuth.TokenURL,
 			Headless:              server.Headless,
+			Location:              server.ResolvedLocation(),
 			ReadOnly:              nonNil(server.ReadOnly),
 			Disabled:              nonNil(server.Disabled),
 			Timeout:               server.Timeout.String(),
@@ -498,6 +500,7 @@ type AgentMCPServerParameters struct {
 	OAuthTokenURL         string   `json:"oauthTokenUrl" graphapi:"nullable"`
 
 	Headless bool     `json:"headless"`
+	Location string   `json:"location"`
 	ReadOnly []string `json:"readOnly" graphapi:"nullable"`
 	Disabled []string `json:"disabled" graphapi:"nullable"`
 	Timeout  string   `json:"timeout" graphapi:"nullable"`
@@ -685,6 +688,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 					TokenURL:         strings.TrimSpace(given.OAuthTokenURL),
 				},
 				Headless: given.Headless,
+				Location: given.Location,
 				ReadOnly: trimmed(given.ReadOnly),
 				Disabled: trimmed(given.Disabled),
 				Enabled:  &enabled,

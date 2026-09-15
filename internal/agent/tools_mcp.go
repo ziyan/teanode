@@ -126,6 +126,20 @@ func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServ
 		for _, entry := range server.Env {
 			environment[entry.Name] = entry.Value
 		}
+		if server.ResolvedLocation() == config.AgentMCPLocationComputer {
+			// The command runs on the person's own attached computer, as
+			// them, and its pipes reach here through a session. Nothing
+			// about the protocol changes; only where the process is.
+			computers := self.computersFor(agentId)
+			if len(computers) == 0 {
+				return nil, fmt.Errorf("the server %q runs on the person's computer, and none is attached", server.Name)
+			}
+			writer, reader, closer, err := computers[0].SessionPipes(ctx, server.Command, server.Args, server.WorkingDir, environment)
+			if err != nil {
+				return nil, err
+			}
+			return mcp.NewPipedTransport(writer, reader, closer), nil
+		}
 		return mcp.NewStdioTransport(&mcp.StdioSettings{Command: server.Command, Args: server.Args, Env: environment, WorkingDir: server.WorkingDir})
 	}
 	headers := func() (http.Header, error) {
@@ -238,6 +252,15 @@ func (self *Agent) connection(ctx context.Context, server *config.AgentMCPServer
 
 	entry.mutex.Lock()
 	defer entry.mutex.Unlock()
+	if entry.client != nil && entry.client.Gone() {
+		// The far end went -- the person stopped their computer, the
+		// network dropped -- and a client to it would only fail. Let it
+		// go now rather than hand it out until the discovery interval
+		// runs out, which is how a server came back and stayed broken for
+		// five minutes after.
+		_ = entry.client.Close()
+		entry.client = nil
+	}
 	if entry.client != nil && time.Since(entry.discoveredAt) < discoveryInterval {
 		return entry, nil
 	}
@@ -309,6 +332,9 @@ func (self *Agent) serverAvailable(ctx context.Context, server *config.AgentMCPS
 	if !server.IsEnabled() {
 		return false
 	}
+	if server.ResolvedLocation() == config.AgentMCPLocationComputer && len(self.computersFor(agentId)) == 0 {
+		return false
+	}
 	switch server.ResolvedAuth() {
 	case config.AgentMCPAuthUser, config.AgentMCPAuthOAuth:
 		var connection *models.AgentConnection
@@ -325,7 +351,7 @@ func (self *Agent) serverAvailable(ctx context.Context, server *config.AgentMCPS
 
 // remoteTools is every tool the connected servers offer this person,
 // as catalog entries.
-func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
+func (self *Agent) remoteTools(ctx context.Context, agentId string, headless bool) []*Tool {
 	configuration := self.settings.Configuration()
 	if !FeatureAllowed(configuration, "connectedServers") {
 		return nil
@@ -334,6 +360,12 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
 	for index := range configuration.Agent.MCP.Servers {
 		server := &configuration.Agent.MCP.Servers[index]
 		if !self.serverAvailable(ctx, server, agentId) {
+			continue
+		}
+		if headless && server.ResolvedLocation() == config.AgentMCPLocationComputer {
+			// Their machine, and they are not there: the same rule as the
+			// shell and the terminal, and the validation refuses the
+			// configuration that would say otherwise.
 			continue
 		}
 		entry, err := self.connection(ctx, server, agentId)

@@ -157,6 +157,9 @@ github.com/cespare/xxhash/v2
 # github.com/coreos/go-oidc/v3 v3.21.0
 ## explicit; go 1.25.0
 github.com/coreos/go-oidc/v3/oidc
+# github.com/creack/pty v1.1.24
+## explicit; go 1.18
+github.com/creack/pty
 # github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 ## explicit; go 1.13
 github.com/emersion/go-ical
@@ -262,6 +265,9 @@ github.com/graphql-go/graphql/language/printer
 github.com/graphql-go/graphql/language/source
 github.com/graphql-go/graphql/language/typeInfo
 github.com/graphql-go/graphql/language/visitor
+# github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
+## explicit; go 1.14
+github.com/hinshun/vt10x
 # github.com/jackc/pgpassfile v1.0.0
 ## explicit; go 1.12
 github.com/jackc/pgpassfile

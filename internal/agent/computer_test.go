@@ -43,7 +43,7 @@ func TestComputerRelayCarriesRequestsAndAnswers(t *testing.T) {
 		}
 		return true, `{"entries":[]}`
 	}}
-	worker.AttachComputer("a1", computer, "laptop", "linux", "/home/alice")
+	worker.AttachComputer("a1", computer, "laptop", "linux", "/home/alice", "")
 	listed := worker.ComputersAttached("a1")
 	if len(listed) != 1 || listed[0].Name != "laptop" || listed[0].System != "linux" || listed[0].Since.IsZero() {
 		t.Fatalf("attached %+v", listed)
@@ -59,12 +59,12 @@ func TestComputerRelayCarriesRequestsAndAnswers(t *testing.T) {
 	// A second computer under another name sits beside the first; the same
 	// name again replaces it.
 	other := &fakeComputer{agent: worker, agentId: "a1", answers: computer.answers}
-	worker.AttachComputer("a1", other, "desktop", "darwin", "/Users/alice")
+	worker.AttachComputer("a1", other, "desktop", "darwin", "/Users/alice", "")
 	if names := worker.ComputersAttached("a1"); len(names) != 2 || names[0].Name != "desktop" || names[1].Name != "laptop" {
 		t.Fatalf("two computers by name: %+v", names)
 	}
 	again := &fakeComputer{agent: worker, agentId: "a1", answers: computer.answers}
-	worker.AttachComputer("a1", again, "laptop", "linux", "/home/alice")
+	worker.AttachComputer("a1", again, "laptop", "linux", "/home/alice", "")
 	worker.DetachComputer("a1", computer)
 	if names := worker.ComputersAttached("a1"); len(names) != 2 {
 		t.Fatalf("detaching a stale connection must not drop the current ones: %+v", names)

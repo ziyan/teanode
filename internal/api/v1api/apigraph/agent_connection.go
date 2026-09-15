@@ -54,7 +54,10 @@ type AgentServerView struct {
 	Transport string `json:"transport"`
 	Auth      string `json:"auth"`
 	Headless  bool   `json:"headless"`
-	Enabled   bool   `json:"enabled"`
+	// Location is where a command-spoken server runs: this server, or the
+	// person's own attached computer.
+	Location string `json:"location"`
+	Enabled  bool   `json:"enabled"`
 
 	// Status is the person's connection: connected, pending, error,
 	// disconnected, or empty when the server needs no connection.
@@ -104,7 +107,7 @@ type pendingAuthorization struct {
 }
 
 func (self *graph) serverView(server *config.AgentMCPServer, connection *models.AgentConnection) *AgentServerView {
-	view := &AgentServerView{Name: server.Name, Transport: server.ResolvedTransport(), Auth: server.ResolvedAuth(), Headless: server.Headless, Enabled: server.IsEnabled()}
+	view := &AgentServerView{Name: server.Name, Transport: server.ResolvedTransport(), Auth: server.ResolvedAuth(), Headless: server.Headless, Location: server.ResolvedLocation(), Enabled: server.IsEnabled()}
 	if connection != nil {
 		view.Status = string(connection.Status)
 		view.LastError = connection.LastError

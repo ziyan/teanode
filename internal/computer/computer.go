@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -49,8 +50,29 @@ const (
 	concurrentAtMost = 4
 )
 
+// TerminalOptions attach the terminal this program is running in: the
+// person's own shell in a pty, which they type into and read as usual, and
+// which their agent can read and type into as well. The pty is a session
+// like any other; what is different is that somebody is sitting in it.
+type TerminalOptions struct {
+	// Input is what the person types; Output is their screen.
+	Input  io.Reader
+	Output io.Writer
+	// Shell is what to run in it; their $SHELL by default.
+	Shell string
+	// Size is the terminal's size now, asked for as the person resizes it.
+	Size func() (columns, rows int)
+}
+
+// AttachedSession is the identifier the attached terminal's session has.
+// One per connection, so it needs no other name.
+const AttachedSession = "attached"
+
 // Options say what the program offers.
 type Options struct {
+	// Terminal, when set, attaches the terminal this program runs in.
+	Terminal *TerminalOptions
+
 	// Token is the person's, from `teanode auth login`.
 	Token string
 	// Name is what the computer is called to the agent; the host name by
@@ -86,6 +108,13 @@ type message struct {
 	OK       bool            `json:"ok,omitempty"`
 	Data     json.RawMessage `json:"data,omitempty"`
 	Error    string          `json:"error,omitempty"`
+
+	// A session says what it did without being asked, so these carry no
+	// request number: the session's own identifier is what names it.
+	Session string `json:"session,omitempty"`
+	Event   string `json:"event,omitempty"`
+	Stream  string `json:"stream,omitempty"`
+	Code    int    `json:"code,omitempty"`
 }
 
 // RefusedError is the server turning the program away in words: a token it
@@ -109,7 +138,34 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		defer writes.Unlock()
 		return connection.WriteJSON(value)
 	}
-	if err := write(message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}); err != nil {
+	held := newSessions()
+	// A session belongs to the connection that opened it. When this ends --
+	// the person stopped the program, the network went -- the processes it
+	// started have nobody to answer and are not left running.
+	defer held.closeAll()
+	output := func(session, stream, data string) {
+		_ = write(message{Type: "session", Session: session, Event: "output", Stream: stream, Data: json.RawMessage(quoted(data))})
+	}
+	ended := func(session string, code int) {
+		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
+	}
+
+	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}
+	// Closed when the shell the person attached ends. Leaving the shell is
+	// how they detach, so this program ends with it rather than sitting on
+	// a dead pty until they find the key that kills it.
+	var attachedEnded <-chan struct{}
+	if options.Terminal != nil {
+		// The person's own terminal, opened before the hello so that the
+		// server is told about it in the same breath as the computer.
+		attached, err := held.attachTerminal(ctx, options, ended)
+		if err != nil {
+			return err
+		}
+		attachedEnded = attached.done
+		hello.Session = AttachedSession
+	}
+	if err := write(hello); err != nil {
 		return err
 	}
 	welcome := make(chan message, 1)
@@ -155,7 +211,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			case slots <- struct{}{}:
 				go func() {
 					defer func() { <-slots }()
-					data, err := handle(ctx, options, request.Action, request.Args)
+					data, err := handle(ctx, options, request.Action, request.Args, held, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
@@ -171,12 +227,19 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			}
 		case err := <-readErrors:
 			return err
+		case <-attachedEnded:
+			_ = write(message{Type: "bye"})
+			return ErrTerminalEnded
 		case <-ctx.Done():
 			_ = write(message{Type: "bye"})
 			return ctx.Err()
 		}
 	}
 }
+
+// ErrTerminalEnded is how Serve ends when the shell the person attached
+// has: not a failure, the way they detach.
+var ErrTerminalEnded = errors.New("the shell ended")
 
 func withDefaults(options *Options) *Options {
 	filled := &Options{}
@@ -200,7 +263,8 @@ func withDefaults(options *Options) *Options {
 }
 
 // handle does one request and returns its answer as JSON.
-func handle(ctx context.Context, options *Options, action string, args json.RawMessage) (json.RawMessage, error) {
+func handle(ctx context.Context, options *Options, action string, args json.RawMessage,
+	held *sessions, output pushOutput, ended pushEnded) (json.RawMessage, error) {
 	var result any
 	var err error
 	switch action {
@@ -216,6 +280,42 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunFilesystem(options, &arguments)
+	case "session_start":
+		var arguments SessionStartArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.start(ctx, options, &arguments, output, ended)
+	case "session_write":
+		var arguments SessionWriteArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.write(&arguments)
+	case "session_signal":
+		var arguments SessionSignalArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.signal(&arguments)
+	case "session_read":
+		var arguments SessionReadArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.readScreen(&arguments)
+	case "session_resize":
+		var arguments SessionResizeArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.resizeTerminal(&arguments)
+	case "session_close":
+		var arguments SessionCloseArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.close(&arguments)
 	default:
 		return nil, fmt.Errorf("%q is not something this program does", action)
 	}

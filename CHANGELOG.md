@@ -6,6 +6,64 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `teanode terminal` attaches the terminal the person is sitting in. Their
+  shell runs in it as usual; their agent can read that same screen and type
+  into it, with the terminal tool's `attached` action, in a conversation they
+  are present in. It is one shell with two people at it — what the agent
+  types appears in front of the person as it is typed, and either can take
+  over. The prompt says so while one is attached, and tells the agent to say
+  what it is about to type before typing it, and never to close it: it is
+  theirs.
+
+- A connected server may run on the person's own attached computer.
+  `location: computer` on a server declared with a command runs that command
+  there, as them, and its standard input and output reach this server through
+  a session — the protocol is unchanged; only where the process is. Such a
+  server is offered only while that person has a computer attached and never
+  to a run with nobody present, and the configuration refuses to mark it
+  headless. This reopens a decision: a command on this server is the
+  operator's to declare because it runs as this server's own process, and a
+  command on the person's own machine is no more than the shell tool they
+  already have. The record says why the two are not the same thing.
+
+- The agent can drive a terminal on a computer somebody attached. `terminal`
+  opens one and runs a program in it, types, presses keys by name — enter,
+  the arrows, ctrl-c, the function keys — reads the screen, waits for it to
+  settle, resizes, and closes. It reads **the screen**, not the stream of
+  bytes that drew it: what the program is showing at this moment, with the
+  cursor's position. A program that redraws — a progress bar, an editor, a
+  coding agent — says the same thing a hundred times over in escape
+  sequences, and a model handed all of that learns nothing; handed the
+  screen as it stands, it learns what a person looking at it would. The
+  screen is kept on the computer, so none of the redrawing crosses the
+  network and reading it is one request however busy the program has been.
+  Opening a terminal asks the person first, on a card; the keys after it do
+  not, because the program they said yes to is what the keys go to.
+
+- A computer somebody attached can hold a program open. Everything it did
+  before was one request to one answer — a command runs and returns, a file
+  is read and that is that — which is all the shell and the filesystem ever
+  needed. A program that stays open needs the two things that shape does not
+  have: output arriving when the program feels like it, and input written to
+  something started earlier. So a session has an identifier of its own, and
+  what is said about it arrives unasked and is filed under that name.
+
+  Nothing uses this yet. It is what a terminal the agent can drive and a
+  connected server spoken to over its own standard input both need, and it is
+  the half that has to exist first.
+
+  What is kept on the server is bounded: the most recent 256KB of a session's
+  output that nobody has read, per session, sixteen sessions per computer. A
+  program that prints forever must not be a way to fill a server's memory
+  from somebody's own machine. A session belongs to the connection that
+  opened it — when the person stops the program or the network goes, the
+  processes it started are not left running, and anybody reading one is told
+  it ended rather than left waiting.
+
+### Changed
+
 ## [0.25.0] - 2026-09-15
 
 ### Changed

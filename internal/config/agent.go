@@ -481,6 +481,10 @@ type AgentMCP struct {
 const (
 	AgentMCPTransportHTTP  = "http"
 	AgentMCPTransportStdio = "stdio"
+
+	// Where a command-spoken server runs.
+	AgentMCPLocationServer   = "server"
+	AgentMCPLocationComputer = "computer"
 )
 
 // AgentMCPAuthNone and the others are the auth modes.
@@ -505,6 +509,16 @@ type AgentMCPServer struct {
 	URL     string   `yaml:"url,omitempty"`
 	Command string   `yaml:"command,omitempty"`
 	Args    []string `yaml:"args,omitempty"`
+
+	// Location is where a command-spoken server runs: "server", the default,
+	// is this server's own host, as this process; "computer" is the
+	// person's own attached computer, as them. The two are not the same
+	// thing at all -- a command on this server is the operator's to declare
+	// and a command on the person's own machine is no more than the shell
+	// tool they already have -- and the decision record for it says why.
+	// A server on the computer is reached only while one is attached, and
+	// never by a run with nobody present.
+	Location string `yaml:"location,omitempty"`
 
 	// Env is passed to the subprocess over this server's own environment;
 	// it is how a stdio server is given its secrets.
@@ -556,6 +570,15 @@ func (self *AgentMCPServer) ResolvedTransport() string {
 		return AgentMCPTransportStdio
 	}
 	return AgentMCPTransportHTTP
+}
+
+// ResolvedLocation is where a command-spoken server runs: this server's own
+// host unless the configuration says the person's computer.
+func (self *AgentMCPServer) ResolvedLocation() string {
+	if self.Location == AgentMCPLocationComputer {
+		return AgentMCPLocationComputer
+	}
+	return AgentMCPLocationServer
 }
 
 // ResolvedAuth infers the auth mode from what is set.
@@ -878,6 +901,19 @@ func (self *Configuration) validateAgent(validator *validator) {
 		case AgentMCPTransportStdio:
 			if server.Command == "" {
 				validator.add(prefix+".command", "required for a stdio server")
+			}
+		}
+		switch server.Location {
+		case "", AgentMCPLocationServer, AgentMCPLocationComputer:
+		default:
+			validator.add(prefix+".location", `must be "server" or "computer"`)
+		}
+		if server.Location == AgentMCPLocationComputer {
+			if server.ResolvedTransport() != AgentMCPTransportStdio {
+				validator.add(prefix+".location", "a server on the person's computer is spoken to over a command, not a URL")
+			}
+			if server.Headless {
+				validator.add(prefix+".headless", "a server on the person's computer is reached only while they are present; it cannot be headless")
 			}
 		}
 		switch server.Auth {
