@@ -111,21 +111,37 @@ function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
   if (!line.result) return []
   try {
     const parsed = JSON.parse(unfenced(line.result)) as Partial<SharedFile> & { files?: Partial<SharedFile>[] }
-    if (parsed.attachment_id && parsed.url && parsed.name) {
-      return [parsed as SharedFile]
-    }
-    if (Array.isArray(parsed.files)) {
-      // A file a skill fetched but could not keep has no address to draw
-      // it from, and is left out rather than drawn as a broken one.
-      return parsed.files.filter(
-        (each): each is SharedFile => Boolean(each?.attachment_id && each?.url && each?.name),
-      )
-    }
+    if (drawable(parsed)) return [parsed]
+    // A file a skill fetched but could not keep has no address to draw it
+    // from, and is left out rather than drawn as a broken one.
+    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable)
   } catch {
     // An error, most likely.
   }
   return []
 }
+
+// drawable says whether this is a file of the conversation, addressed the
+// way this server addresses one.
+//
+// Checking the address, not the tool that named it: most of what a tool
+// answers with came from outside -- a page, a service, a house -- and a
+// file's address is drawn into the page as the source of an image. A
+// service that put a url of its own in its answer could otherwise have the
+// dashboard fetch it, which is somebody else's server learning when the
+// person read their conversation, and from where. So an address is drawn
+// only when it is one of this server's own attachment addresses and names
+// the same file the entry does.
+function drawable(file: Partial<SharedFile> | null | undefined): file is SharedFile {
+  if (!file?.attachment_id || !file.url || !file.name) return false
+  // The exact address this server builds, and nothing that merely contains
+  // it: https://somewhere-else/api/v1/agent/attachments/x ends with the
+  // right path and is not this server.
+  return file.url === ATTACHMENT_PATH + file.attachment_id
+}
+
+const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
+
 
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever

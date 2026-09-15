@@ -600,9 +600,26 @@ func (self *run) fill(text string) (string, error) {
 			}
 			return string(written)
 		}
-		return asText(value)
+		return scrubbed(asText(value))
 	})
 	return showDoubled(filled), failure
+}
+
+// scrubbed is a value with the byte the brace escape hides behind taken
+// out of it.
+//
+// Without this a value could forge the escape. The escape turns \x00{ back
+// into {{ on the way out, and a value is written in before that happens --
+// so a parameter carrying \x00{ would arrive at the service as {{, which in
+// a service whose payloads are templates is not a brace but a program. A
+// skill that renders a fixed template with one word from the caller in it
+// would run whatever that word said. The file itself cannot carry the byte,
+// because Parse refuses one that does; this is the other way in.
+func scrubbed(value string) string {
+	if !strings.ContainsRune(value, 0) {
+		return value
+	}
+	return strings.ReplaceAll(value, "\x00", "")
 }
 
 // fillURL writes the values into an address, escaping each one as it goes:
@@ -632,7 +649,7 @@ func (self *run) fillURL(text string) (string, error) {
 			}
 			return escapeInURL(string(written))
 		}
-		return escapeInURL(asText(value))
+		return escapeInURL(scrubbed(asText(value)))
 	})
 	return showDoubled(filled), failure
 }

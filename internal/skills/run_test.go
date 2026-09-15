@@ -660,3 +660,44 @@ func TestAFileCarryingAZeroByteIsRefused(t *testing.T) {
 		t.Fatalf("refused: %v", err)
 	}
 }
+
+// A value cannot forge the escape and write braces of its own.
+//
+// The escape turns the hidden byte back into {{ on the way out, and values
+// are written in before that happens. So a parameter carrying that byte
+// would arrive at the service as a brace -- and at a service whose payloads
+// are templates, a brace is not punctuation but a program: a skill
+// rendering a fixed template with one word from the caller in it would run
+// whatever the word said.
+func TestAValueCannotForgeTheEscape(t *testing.T) {
+	var sent string
+	service := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		sent = string(body)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true}`))
+	}))
+	defer service.Close()
+
+	body := "---\nname: house\ndescription: a house\ntools:\n" +
+		"  - name: render\n    description: render\n    type: http\n    method: POST\n" +
+		"    url: \"" + service.URL + "/template\"\n" +
+		"    body:\n      template: \"{% for s in states.light %}{{words}}{% endfor %}\"\n" +
+		"    result: json\n" +
+		"    parameters: {type: object, properties: {words: {type: string}}, required: [words]}\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, err := skill.Run(context.Background(), "render",
+		map[string]any{"words": "\x00{ states.persons \x00}"}, &Running{Client: service.Client()}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(sent, "{{") || strings.Contains(sent, "}}") {
+		t.Fatalf("a value forged the escape: %s", sent)
+	}
+	// And the same value in an address cannot do it either.
+	if !strings.Contains(sent, "states.persons") {
+		t.Fatalf("the words themselves still arrive, without their braces: %s", sent)
+	}
+}
