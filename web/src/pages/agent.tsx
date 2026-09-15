@@ -967,6 +967,10 @@ function ServersCard() {
           const needsPerson = server.auth === 'user' || server.auth === 'oauth'
           const connected = server.status === 'connected'
           const detail = [server.transport]
+          // The state beside the name is one word, so a server nobody has to
+          // connect to says why here rather than in a tag the width of the
+          // column.
+          if (!needsPerson) detail.push(t('agent.serverSharedHint'))
           if (server.headless) detail.push(t('agent.serverHeadless'))
           if (server.status === 'error' && server.lastError) detail.push(server.lastError)
           return (
@@ -1451,7 +1455,7 @@ function BriefCard() {
             />
           </label>
         </div>
-        <div className="page-actions-end">
+        <div className="page-actions page-actions-end">
           {brief?.enabled ? (
             <>
               <button type="button" disabled={busy} onClick={() => void sendNow()}>
@@ -1953,7 +1957,7 @@ function Check({
 // SourceCard is one mailbox as a source: whether the agent may reach it, and
 // what it does there, one subject at a time with a Save for each. Also shown
 // on the mailbox's own settings page.
-export function SourceCard({
+function SourceCard({
   source,
   view,
   onChanged,

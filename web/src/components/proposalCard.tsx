@@ -184,7 +184,7 @@ function ProposalCard({
         )}
       </div>
       {proposal.because ? <blockquote className="muted">{proposal.because}</blockquote> : null}
-      <div className="page-actions-end">
+      <div className="page-actions page-actions-end">
         <button type="button" disabled={busy} onClick={() => void dismiss()}>
           {t('proposal.dismiss')}
         </button>

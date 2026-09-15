@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, graphql } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
@@ -13,7 +13,6 @@ import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../co
 import { Tabs, TabItem } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
-import { SourceCard, useAgent } from './agent'
 import { FolderKindIcon } from '../components/folderIcon'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
 import {
@@ -39,7 +38,6 @@ const TABS: TabItem[] = [
   { id: 'rules', label: 'mailboxSettings.tabRules' },
   { id: 'autoreply', label: 'mailboxSettings.tabAutoReply' },
   { id: 'devices', label: 'mailboxSettings.tabDevices' },
-  { id: 'agent', label: 'mailboxSettings.tabAgent' },
 ]
 
 const APP_PASSWORDS = `
@@ -106,6 +104,12 @@ export function MailboxSettingsPage() {
   if (!view) {
     return <p className="muted">{t('mailbox.none')}</p>
   }
+  // The agent used to have a tab here, showing the one card that the Agent
+  // page shows for every source. Somebody who kept the link is sent to it
+  // rather than quietly landing on General.
+  if (tab === 'agent') {
+    return <Navigate to="/settings/agent" replace />
+  }
   if (!TABS.some((candidate) => candidate.id === tab)) {
     return <Navigate to="/mailbox/settings/general" replace />
   }
@@ -117,7 +121,6 @@ export function MailboxSettingsPage() {
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}
       {tab === 'autoreply' && <AutoReplyTab key={view.mailbox.id} view={view} />}
       {tab === 'devices' && <DevicesTab key={view.mailbox.id} view={view} />}
-      {tab === 'agent' && <AgentTab key={view.mailbox.id} view={view} />}
     </>
   )
 }
@@ -1339,9 +1342,16 @@ function DevicesTab({ view }: { view: MailboxView }) {
                 </>
               }
               actions={
-                <button className="link danger" type="button" onClick={() => setDeleting(appPassword)}>
-                  {t('mailboxSettings.revoke')}
-                </button>
+                <Tooltip label={t('mailboxSettings.revoke')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`${appPassword.name}: ${t('mailboxSettings.revoke')}`}
+                    onClick={() => setDeleting(appPassword)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               }
             />
           ))
@@ -1436,41 +1446,5 @@ function DevicesTab({ view }: { view: MailboxView }) {
         />
       )}
     </>
-  )
-}
-
-// --- contacts ------------------------------------------------------------------
-//
-// Whoever has written to the mailbox, and whoever its owner added. Names
-// here are what the compose page completes and what a rule's "sender is a
-// contact" reads.
-
-// AgentTab is this mailbox as a source of the owner's agent: the same card
-// the Agent page shows, so the policy is one thing edited in two places.
-function AgentTab({ view }: { view: MailboxView }) {
-  const { t } = useTranslation()
-  const agent = useAgent()
-  if (agent.loading && !agent.data) {
-    return <Loading />
-  }
-  if (agent.error) {
-    return <ErrorMessage error={agent.error} />
-  }
-  const agentView = agent.data!.ReadAgent
-  const source = agentView.sources.find((candidate) => candidate.mailboxId === view.mailbox.id)
-  return (
-    <div className="card">
-      <h3>{t('mailboxSettings.tabAgent')}</h3>
-      <p className="muted">{t('mailboxSettings.agentHint')}</p>
-      {!agentView.allowed.enabled ? (
-        <p className="muted">{t('agent.notOffered')}</p>
-      ) : !agentView.agent ? (
-        <p className="muted">
-          <Link to="/settings/agent">{t('mailboxSettings.agentTurnOn')}</Link>
-        </p>
-      ) : source ? (
-        <SourceCard source={source} view={agentView} onChanged={agent.reload} />
-      ) : null}
-    </div>
   )
 }

@@ -1,3 +1,4 @@
+import { CopyIconButton } from './common'
 import { useTranslation } from '../i18n/i18n'
 
 // The shape every list of account things takes: a heading with the one action
@@ -107,10 +108,15 @@ export function SecretDialog({
       <div className="dialog dialog-wide" role="alertdialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         <p className="muted">{intro}</p>
-        <pre className="secret">{secret}</pre>
+        {/* Copy sits in the box with the thing it copies, at the right
+            end of it, rather than in the row of actions underneath where it
+            read as a peer of Done. */}
+        <div className="secret-box">
+          <pre className="secret">{secret}</pre>
+          <CopyIconButton value={secret} />
+        </div>
         {extra}
         <div className="dialog-actions">
-          <CopyButton value={secret} />
           <button className="primary" type="button" onClick={onDone}>
             {t('common.done')}
           </button>

@@ -6,6 +6,50 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Forms space themselves evenly. A column of fields was a plain block, so
+  what separated its parts was whatever margin each happened to carry — a
+  label 10px, a paragraph 15px, a row of fields or a row of buttons nothing
+  at all. The daily brief showed it worst: its Send, Stop and Save sat
+  flush against the field above them while the note below had room. There
+  is one gap down a form now and the children give up their own margins to
+  it, so every form on every page reads the same way down.
+
+- Two rows of fields stacked no longer touch. Inside a form the gap governs
+  them; a card that lays rows out directly — the agent's Limits, four rows
+  of numbers — had them flush, which read as one dense block.
+
+- A button placed after a form, which is how the preferences page is
+  written, no longer sits against the last field.
+
+- The settings pages no longer scroll sideways on a phone. A time field was
+  drawn natively there, and a native one sizes itself: it took the width its
+  own clock face wanted, would not shrink into the column it was given, and
+  carried the page with it. Dates and times are ordinary fields now, on every
+  page that has one.
+
+- Rows of controls wrap instead of pushing the page wider than the window.
+  A connected server carries four buttons, which came to more than the column
+  they sit in has between the phone's width and about a thousand pixels.
+
+- The subscriptions page shows one pane at a time on a phone. It was showing
+  the reading side alongside the list, both squeezed, in portrait and
+  landscape alike: the rule that separates them measures a frame the page had
+  never been given.
+
+- A secret shown once — an app password, an API token, a domain credential —
+  has its copy button inside the box with it rather than in the row of
+  actions underneath, where it read as a peer of Done.
+
+### Removed
+
+- The mailbox's Agent tab, which showed the same card the Agent page shows
+  for every source it has. It showed one, and showed an empty card for a
+  mailbox the agent had not been granted yet — the case somebody would open
+  it to fix. Everything it did is on the Agent page, and a kept link goes
+  there.
+
 ## [0.26.0] - 2026-09-15
 
 ### Added

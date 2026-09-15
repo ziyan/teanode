@@ -940,7 +940,13 @@ tr:has(.icon-button) > td {
 .table-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  /* Wrapping at any width. The bar is as wide as the column it sits in, and
+     that column is narrow on a phone but also on a desktop window with the
+     navigation open beside it — a breakpoint on the window cannot see the
+     second case. Wrap only happens when it does not fit, so allowing it
+     everywhere costs a wide bar nothing. */
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   margin-top: var(--space-3);
   font-size: var(--text-label);
 }
@@ -948,6 +954,8 @@ tr:has(.icon-button) > td {
 .table-pagination {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-left: auto;
 }
@@ -959,17 +967,6 @@ tr:has(.icon-button) > td {
 .table-bar > .muted,
 .table-pagination > .muted {
   white-space: nowrap;
-}
-
-/* On a phone all of it does not fit on one line: the count, the rows control,
-   the range and the two arrows want about 340 pixels of a 356 pixel bar, and
-   flex answers that by shrinking the text rather than the control. So the bar
-   wraps — the count on its own line, the controls under it. */
-@media (max-width: 600px) {
-  .table-bar {
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
-  }
 }
 
 .table-pagination label,
@@ -1371,6 +1368,31 @@ input[type='radio'] {
   margin-right: var(--space-1);
 }
 
+/* A clock or a calendar is a text field too.
+
+   Left to itself iOS draws these natively, and a native date or time control
+   sizes itself: it takes the width its own clock face wants and declines to
+   shrink to the column it is in, so on a phone the field sat wider than the
+   one under it and pushed the whole page sideways. Nothing on a desktop shows
+   this — Chrome shrinks them without complaint — and the page-level
+   overflow-x: hidden hides the evidence rather than the cause, which is why
+   it survived so long.
+
+   Turning the native appearance off puts them back under the same rules as
+   every other field: the width they are given, the padding and border above,
+   and their text against the left edge rather than centred in the middle of
+   the box. Tapping one still opens the system picker. */
+input[type='time'],
+input[type='date'],
+input[type='datetime-local'] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  text-align: start;
+}
+
 label {
   display: block;
   margin-bottom: 10px;
@@ -1418,6 +1440,14 @@ label span {
   flex: 1;
   min-width: 140px;
 }
+/* Two rows of fields stacked are a form, and want the form's gap between
+   them. Inside .form-narrow its own gap does this; a card that lays rows out
+   directly -- the agent's Limits, among others -- had them flush, so four
+   rows of numbers read as one dense block. */
+.row + .row {
+  margin-top: var(--space-4);
+}
+
 .row > .shrink {
   flex: 0 0 auto;
   min-width: 0;
@@ -2517,7 +2547,22 @@ body,
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex: 0 0 auto;
+  /* It may shrink, which is what lets it wrap at all: with flex 0 0 auto and
+     an automatic minimum it takes its content's width whatever the room, and
+     a wrap that is allowed never happens. */
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Wrapping at any width, not only on a phone.
+     A row's controls are not always two buttons: a connected server carries
+     four -- Turn off, Unlink, Replace token, Remove -- which come to 415px,
+     and a skill puts a dropdown beside them. That fitted on a wide screen
+     and overflowed everywhere between the phone breakpoint and about a
+     thousand pixels, where the content column is narrower than the buttons
+     and nothing was allowed to wrap: the row pushed the column wider than
+     itself and the page grew a horizontal scrollbar. On a screen with room
+     this changes nothing, because a row that fits never wraps. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* Boxes inside boxes, on a screen with no room for them.
@@ -2620,6 +2665,32 @@ body,
   line-height: 1.6;
 }
 
+/* The secret and its copy button as one object.
+
+   The button is inside the box at the right end, centred against it, and the
+   text is given room to stop before it rather than running underneath. The
+   bottom margin moved out here so that centring is measured against the box
+   itself and not against the box plus the gap under it. */
+.secret-box {
+  position: relative;
+  margin: 0 0 var(--space-3);
+}
+
+.secret-box .secret {
+  margin: 0;
+  padding-right: 40px;
+}
+
+/* Descendant rather than child: the tooltip wraps the button in a span, and
+   though that span is display: contents and lays no box of its own, it is
+   still the button's parent as far as a selector is concerned. */
+.secret-box .copy-button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+
 /* A secret, shown once, in a block wide enough to select in one gesture. */
 .secret {
   margin: 0 0 var(--space-3);
@@ -2677,9 +2748,44 @@ label.checkbox input {
 
 /* A form is read down a column, and a field stretched across a wide screen is
    a line the eye has to travel to get back from. Wide enough for an address
-   and a hostname, no wider. */
+   and a hostname, no wider -- and with one rhythm down it.
+
+   It was a plain block, so what separated its children was whatever margin
+   each happened to carry: a label 10px, a paragraph 15px, and a row of
+   fields or a row of buttons nothing at all -- so the buttons under the
+   daily brief's two fields sat flush against them while the note below had
+   room. One gap here, and the margins of the children that had their own
+   are given up to it, so every form-narrow reads the same way down. */
 .form-narrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   max-width: 520px;
+}
+
+/* A control that follows a column of fields belongs to the same form and
+   needs the same gap. form-narrow's own gap governs only what is inside it,
+   so a submit button placed after it -- which is how the preferences page
+   and others are written -- sat flush against the last field. */
+.form-narrow + button,
+.form-narrow + .page-actions,
+.form-narrow + .row {
+  margin-top: var(--space-4);
+}
+
+/* Every child gives up its own vertical margin to the gap above. Zeroing
+   only the ones that obviously had margins left .page-actions carrying its
+   own 16px on top of the gap, so the daily brief's buttons sat at 32 where
+   every other form read 16 -- which is the same bug as before wearing a
+   different number. */
+.form-narrow > *,
+/* Written twice on purpose: .page-actions:not(:first-child) carries a
+   margin-top of its own and is more specific than a bare child selector, so
+   a one-selector reset lost to it and the gap came out doubled again. This
+   matches its specificity and comes later in the sheet. */
+.form-narrow > *:not(:first-child) {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /* The picture button under a source editor, and the reason beside it. The
