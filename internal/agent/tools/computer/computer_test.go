@@ -118,3 +118,32 @@ func TestFilesystemRisksByAction(t *testing.T) {
 		t.Fatal("an unknown action is refused")
 	}
 }
+
+// A copy is classified by the path it writes, not the one it reads.
+//
+// PathAsks was asked about call.Path, which for every action but this one is
+// the path being written. For a copy the written path is the destination, so
+// copying a harmless file over a shell's startup file or over
+// ~/.ssh/authorized_keys went through with no card, while writing the same
+// bytes to the same place asked.
+func TestACopyIsJudgedByWhereItLands(t *testing.T) {
+	t.Parallel()
+
+	filesystem := find(t, "filesystem")
+	risk := func(arguments string) tools.Risk { return filesystem.RiskOf(json.RawMessage(arguments)) }
+
+	for _, destination := range []string{"~/.ssh/authorized_keys", "~/.bashrc", "/etc/cron.d/x"} {
+		arguments := `{"action":"copy","path":"~/notes.txt","destination":"` + destination + `"}`
+		if got := risk(arguments); got != tools.RiskDestructive {
+			t.Errorf("copy onto %s should be destructive, got %v", destination, got)
+		}
+	}
+	// Somewhere ordinary is still an ordinary write.
+	if got := risk(`{"action":"copy","path":"~/notes.txt","destination":"~/copy.txt"}`); got != tools.RiskWrite {
+		t.Errorf("an ordinary copy stays a write, got %v", got)
+	}
+	// And the source is still asked about, which it already was.
+	if got := risk(`{"action":"copy","path":"~/.ssh/authorized_keys","destination":"~/out.txt"}`); got != tools.RiskDestructive {
+		t.Errorf("copying out of a key file still asks, got %v", got)
+	}
+}

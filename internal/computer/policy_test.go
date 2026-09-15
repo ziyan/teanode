@@ -56,3 +56,29 @@ func TestPathAsks(t *testing.T) {
 		}
 	}
 }
+
+// Putting a file somewhere is writing it.
+//
+// The list asked about mv and about a redirect, and said nothing about the
+// three other ordinary ways to land a file on a path: copying it, linking
+// over it, or piping into it. Each of those reaches ~/.ssh/authorized_keys
+// or a shell's startup file exactly as well as the ones that asked.
+func TestPuttingAFileSomewhereAsksAsMovingOneDoes(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{
+		"cp ~/notes.txt ~/.ssh/authorized_keys",
+		"install -m 600 /tmp/k ~/.ssh/authorized_keys",
+		"ln -sf /tmp/evil ~/.bashrc",
+		"tee ~/.ssh/authorized_keys < /tmp/k",
+		"cat /tmp/k>~/.bashrc",
+	} {
+		if got := Classify(command); got.Action != ActionAsk {
+			t.Errorf("%q should ask, got %s", command, got.Action)
+		}
+	}
+	// Still not everything: an ordinary read is not a write.
+	if got := Classify("cat ~/notes.txt"); got.Action != ActionAllow {
+		t.Errorf("reading a file is not putting one: %s", got.Action)
+	}
+}
