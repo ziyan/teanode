@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-15
+
 ### Fixed
 
 - Forms space themselves evenly. A column of fields was a plain block, so
