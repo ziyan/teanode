@@ -142,12 +142,17 @@ func declaredPrivately(address string) bool {
 // operator configured one, the client secret. Single sign-on has required an
 // https issuer that names itself since it was written; this is the same rule,
 // in the place it was missing.
-func usableEndpoint(endpoint string) error {
+func usableEndpoint(settings *OAuthSettings, endpoint string) error {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil {
 		return fmt.Errorf("mcp: %q is not an address", endpoint)
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") && !loopback(parsed.Hostname()) {
+	// Loopback is allowed for a server the operator declared on their own
+	// network, and only then. Unconditionally, it let a server out on the
+	// internet name an address inside the operator's host and have this
+	// server post a person's code and verifier to it.
+	onTheOperatorsOwnNetwork := loopback(parsed.Hostname()) && declaredPrivately(settings.ServerURL)
+	if !strings.EqualFold(parsed.Scheme, "https") && !onTheOperatorsOwnNetwork {
 		return fmt.Errorf("mcp: %s is not https, and a person's credentials are not sent over anything else", endpoint)
 	}
 	if parsed.Host == "" {
@@ -198,11 +203,11 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 		if metadata.AuthorizationEndpoint == "" || metadata.TokenEndpoint == "" {
 			continue
 		}
-		if err := usableEndpoint(metadata.AuthorizationEndpoint); err != nil {
+		if err := usableEndpoint(settings, metadata.AuthorizationEndpoint); err != nil {
 			lastErr = err
 			continue
 		}
-		if err := usableEndpoint(metadata.TokenEndpoint); err != nil {
+		if err := usableEndpoint(settings, metadata.TokenEndpoint); err != nil {
 			lastErr = err
 			continue
 		}
@@ -287,13 +292,20 @@ func Register(ctx context.Context, settings *OAuthSettings, metadata *Metadata) 
 	if err != nil {
 		return "", "", err
 	}
+	// The registration endpoint comes out of the same document as the other
+	// two and was the one nothing looked at, so it could name anything at
+	// all — including this server's own API on loopback, whose answer came
+	// back to the caller inside the error below.
+	if err := usableEndpoint(settings, metadata.RegistrationEndpoint); err != nil {
+		return "", "", err
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, metadata.RegistrationEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", "", err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	response, err := settings.client().Do(request)
+	response, err := settings.followed().Do(request)
 	if err != nil {
 		return "", "", err
 	}
@@ -448,7 +460,7 @@ func tokenRequest(ctx context.Context, settings *OAuthSettings, endpoint string,
 	if settings.ClientSecret != "" {
 		request.SetBasicAuth(settings.ClientID, settings.ClientSecret)
 	}
-	response, err := settings.client().Do(request)
+	response, err := settings.followed().Do(request)
 	if err != nil {
 		return nil, err
 	}
