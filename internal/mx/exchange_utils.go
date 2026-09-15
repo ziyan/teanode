@@ -882,7 +882,15 @@ func (self *exchange) withoutOwnAuthenticationResults(envelope *mailparse.Envelo
 	for _, header := range envelope.Headers {
 		key, value := mailparse.SplitHeader(header)
 		if strings.EqualFold(key, "Authentication-Results") {
-			identifier, _, _ := authres.Parse(mailparse.DecodeHeaderValue(value))
+			identifier, _, err := authres.Parse(mailparse.DecodeHeaderValue(value))
+			// A header this server cannot read is exactly a header it
+			// cannot clear, so it goes. Keeping it was fail-open for a
+			// control whose whole job is to drop anything claiming to be
+			// ours.
+			if err != nil {
+				log.Warningf("removing an Authentication-Results header that cannot be read, on mail from %q: %s", envelope.Sender, err)
+				continue
+			}
 			forged := false
 			for _, name := range own {
 				if name != "" && strings.EqualFold(strings.TrimSuffix(identifier, "."), strings.TrimSuffix(name, ".")) {

@@ -238,12 +238,62 @@ var results = map[string]newResultFunc{
 	},
 }
 
+// withoutComments removes CFWS comments, which the grammar allows anywhere
+// whitespace is allowed. Parentheses nest.
+func withoutComments(value string) string {
+	var out strings.Builder
+	depth := 0
+	for at := 0; at < len(value); at++ {
+		switch value[at] {
+		case '\\':
+			if depth == 0 && at+1 < len(value) {
+				out.WriteByte(value[at])
+				at++
+				out.WriteByte(value[at])
+				continue
+			}
+			at++
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+				out.WriteByte(' ')
+			}
+		default:
+			if depth == 0 {
+				out.WriteByte(value[at])
+			}
+		}
+	}
+	return out.String()
+}
+
+// unquoted takes the quotes off a quoted-string identifier.
+func unquoted(value string) string {
+	if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		return value
+	}
+	inner := value[1 : len(value)-1]
+	if strings.Contains(inner, `"`) {
+		return value
+	}
+	return strings.ReplaceAll(inner, `\\`, "")
+}
+
 // Parse parses the provided Authentication-Results header field. It returns the
 // authentication service identifier and authentication results.
 func Parse(field string) (identifier string, results []Result, err error) {
 	parts := strings.Split(field, ";")
 
-	identifier = strings.TrimSpace(parts[0])
+	// The grammar allows comments in parentheses around the identifier and
+	// allows it to be quoted, and neither was handled: a header written
+	// "(best effort) mail.example.com; ..." parsed to nothing at all, and a
+	// quoted one kept its quotes. Both forms read as this server's name to
+	// anything that follows the grammar, so a comparison against our own
+	// names matched neither and the header was kept.
+	identifier = strings.TrimSpace(withoutComments(parts[0]))
+	identifier = unquoted(identifier)
 	position := strings.IndexFunc(identifier, unicode.IsSpace)
 	if position > 0 {
 		version := strings.TrimSpace(identifier[position:])

@@ -14,6 +14,13 @@ import (
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
+// How long after a delivery a report about it is still believed, and how
+// many reports are kept on one row.
+const (
+	bounceWindow         = 7 * 24 * time.Hour
+	mostDeliveryStatuses = 16
+)
+
 func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope *mailparse.Envelope) ([]*models.Delivery, error) {
 	// extract some important headers
 	from, _ := mailparse.ParseAddress(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "From")))
@@ -59,10 +66,18 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 	// add Received header
 	receivedHeader := self.formatReceivedHeader(envelope)
 
-	// combine the headers
+	// Exactly one From, as the incoming path requires, so that what a
+	// reader is shown and what anything else reads are the same line.
+	if mailparse.CountHeaders(envelope.Headers, "From") != 1 {
+		return nil, mailparse.ErrInvalidFromHeader
+	}
+
+	// combine the headers, without any this sender wrote claiming to be
+	// ours. The incoming path has always done this; a bounce reaches a
+	// mailbox by the same door and did not.
 	headers := mailparse.MergeHeaders([]string{
 		receivedHeader,
-	}, envelope.Headers)
+	}, self.withoutOwnAuthenticationResults(envelope))
 
 	// prepare mail
 	mail := &models.Mail{
@@ -115,6 +130,21 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 		if delivery.CreatedAt.IsZero() {
 			return mailparse.ErrMailBoxUnavailable
 		}
+		// One notification settles a delivery.
+		//
+		// The address this arrived at is signed, which says which delivery
+		// the report is for and nothing about how often. It is also handed
+		// to every recipient, in the Return-Path of the message itself, so
+		// anybody who received one of ours holds it for ever — and every
+		// replay rewrote the status from text the sender wrote, cleared the
+		// error when it carried no report at all, grew the stored array,
+		// and posted another bounce into the sender's mailbox.
+		if delivery.NotifiedAt != nil {
+			return mailparse.ErrMailBoxUnavailable
+		}
+		if envelope.ReceivedAt.Sub(delivery.CreatedAt) > bounceWindow {
+			return mailparse.ErrMailBoxUnavailable
+		}
 		delivery.Status = models.DeliveryStatusDelivered
 		delivery.Error = ""
 		delivery.NotifiedAt = &envelope.ReceivedAt
@@ -127,7 +157,9 @@ func (self *exchange) handleDsn(ctx context.Context, tx db.Transaction, envelope
 				delivery.Status = models.DeliveryStatusDelayed
 				delivery.Error = deliveryStatus.RecipientStatuses[0].DiagnosticCode
 			}
-			delivery.DeliveryStatuses = append(delivery.DeliveryStatuses, deliveryStatus)
+			if len(delivery.DeliveryStatuses) < mostDeliveryStatuses {
+				delivery.DeliveryStatuses = append(delivery.DeliveryStatuses, deliveryStatus)
+			}
 		}
 		return nil
 	}, nil); err != nil {

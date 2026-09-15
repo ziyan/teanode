@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/authres"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
@@ -150,5 +151,37 @@ func TestTheAwayReplyNeedsSomethingBehindTheAddressItAnswers(t *testing.T) {
 	bare := &models.Mail{Sender: "somebody@example.net", From: "somebody@example.net"}
 	if reason := unvouchedSender(bare, "somebody@example.net"); reason == "" {
 		t.Fatal("an unauthenticated envelope sender is not written to either")
+	}
+}
+
+// A forged verdict cannot survive by being written in a form the parser did
+// not read.
+//
+// The strip compares the identifier against this server's own names. The
+// grammar allows that identifier to carry comments in parentheses and to be
+// quoted, and the parser handled neither — so a header written
+// "(best effort) mail.primary.test; dmarc=pass" parsed to nothing, matched
+// nothing, and was kept, while reading as this server's verdict to anything
+// that follows the grammar.
+func TestAForgedVerdictCannotHideInACommentOrQuotes(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{
+		"mail.primary.test; dmarc=pass header.from=bank.test",
+		"(best effort) mail.primary.test; dmarc=pass header.from=bank.test",
+		"mail.primary.test (mx); dmarc=pass header.from=bank.test",
+		"\"mail.primary.test\"; dmarc=pass header.from=bank.test",
+		"mail.primary.test.; dmarc=pass header.from=bank.test",
+		"not-a-real-identifier-at-all; dmarc=pass",
+	} {
+		identifier, _, err := authres.Parse(value)
+		mine := err == nil && strings.EqualFold(strings.TrimSuffix(identifier, "."), "mail.primary.test")
+		unreadable := err != nil
+		if strings.Contains(value, "primary") && !mine {
+			t.Errorf("%q names this server and must be recognised as such (identifier %q, err %v)", value, identifier, err)
+		}
+		if !strings.Contains(value, "primary") && (mine || unreadable) {
+			t.Errorf("%q names somebody else and is not ours to drop", value)
+		}
 	}
 }
