@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -48,12 +49,119 @@ func RenderConduct(configuration *config.Configuration, agent *models.Agent, own
 	return render("system.txt", data)
 }
 
+// blockTags are the delimiters the job prompts put untrusted text inside.
+//
+// A message body, a subject, a summarizer's own words about a message: each
+// is written by somebody other than this server, and each is placed between
+// one of these pairs so the model reads it as something to consider rather
+// than as something to do.
+var blockTags = []string{"</message>", "</summary>", "</notes>", "</guidance>"}
+
+// unclosable is text that cannot end the block it is put in.
+//
+// ask.go's fenced() does this for everything a tool returns, and says why:
+// written as a bare join, content carrying the closing tag ended the fence
+// itself and everything after it read as the loop's own words. The job
+// prompts were a bare join. They are the one path a stranger reaches without
+// an account and with nobody present -- triage runs on delivered mail -- so
+// they are the last place that should have been left out.
+//
+// Said rather than dropped, so a message that genuinely discusses the
+// marking still reads sensibly.
+func unclosable(content string) string {
+	for _, tag := range blockTags {
+		said := "&lt;" + tag[1:len(tag)-1] + "&gt;"
+		content = strings.ReplaceAll(content, tag, said)
+	}
+	return content
+}
+
+// render fills a prompt, with every string it is given made unclosable
+// first.
+//
+// Done here rather than at each call site on purpose: there are a dozen
+// places that set one of these fields and one place they all pass through,
+// and a control that has to be remembered is a control that will be
+// forgotten. Nothing legitimate carries one of these closing tags, so
+// escaping a field that happens to be the person's own words costs nothing.
 func render(name string, data any) (string, error) {
 	var buffer bytes.Buffer
-	if err := prompts.ExecuteTemplate(&buffer, name, data); err != nil {
+	if err := prompts.ExecuteTemplate(&buffer, name, guarded(data)); err != nil {
 		return "", fmt.Errorf("agent: rendering %s: %w", name, err)
 	}
 	return strings.TrimSpace(buffer.String()) + "\n", nil
+}
+
+// guarded copies a prompt's data with every string field made unclosable.
+// A value that is not a struct is returned as it came.
+func guarded(data any) any {
+	value := reflect.ValueOf(data)
+	for value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return data
+		}
+		value = value.Elem()
+	}
+	// A map is as common here as a struct: triage and extract pass one.
+	if value.Kind() == reflect.Map {
+		if value.Type().Key().Kind() != reflect.String {
+			return data
+		}
+		replaced := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iterator := value.MapRange()
+		for iterator.Next() {
+			replaced.SetMapIndex(iterator.Key(), reflect.ValueOf(guardedValue(iterator.Value())))
+		}
+		return replaced.Interface()
+	}
+	if value.Kind() != reflect.Struct {
+		return data
+	}
+	copied := reflect.New(value.Type()).Elem()
+	copied.Set(value)
+	for at := 0; at < copied.NumField(); at++ {
+		if !copied.Field(at).CanSet() {
+			continue
+		}
+		switch field := copied.Field(at); field.Kind() {
+		case reflect.String:
+			field.SetString(unclosable(field.String()))
+		case reflect.Slice:
+			if field.Type().Elem().Kind() != reflect.String {
+				continue
+			}
+			replaced := reflect.MakeSlice(field.Type(), field.Len(), field.Len())
+			for item := 0; item < field.Len(); item++ {
+				replaced.Index(item).SetString(unclosable(field.Index(item).String()))
+			}
+			field.Set(replaced)
+		}
+	}
+	return copied.Interface()
+}
+
+// guardedValue is one value out of a map, which may hold anything.
+func guardedValue(value reflect.Value) any {
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return value.Interface()
+		}
+		value = value.Elem()
+	}
+	switch value.Kind() {
+	case reflect.String:
+		return unclosable(value.String())
+	case reflect.Slice:
+		if value.Type().Elem().Kind() != reflect.String {
+			return value.Interface()
+		}
+		replaced := make([]string, value.Len())
+		for at := 0; at < value.Len(); at++ {
+			replaced[at] = unclosable(value.Index(at).String())
+		}
+		return replaced
+	}
+	return value.Interface()
 }
 
 func personName(owner *models.User) string {
