@@ -58,6 +58,11 @@ type deviceLink struct {
 	mutex   sync.Mutex
 	next    int64
 	pending map[int64]chan deviceAnswer
+
+	// The programs this device holds open for us. Unlike pending, which is
+	// one entry per request in flight, these outlive the request that
+	// started them and are spoken about by name.
+	sessions map[string]*deviceSession
 }
 
 func newDeviceLink(what string, connection DeviceConnection) *deviceLink {
@@ -132,10 +137,18 @@ func (self *deviceLink) answered(id int64, ok bool, data json.RawMessage, failur
 // drop tells whoever is waiting that the device went.
 func (self *deviceLink) drop() {
 	self.mutex.Lock()
-	defer self.mutex.Unlock()
 	for id, channel := range self.pending {
 		close(channel)
 		delete(self.pending, id)
+	}
+	sessions := self.sessions
+	self.sessions = nil
+	self.mutex.Unlock()
+	// And whatever it was holding open is over, as far as this side is
+	// concerned: the device kills those processes when its own connection
+	// ends, and anybody reading one should be told rather than left waiting.
+	for _, held := range sessions {
+		held.finished(-1)
 	}
 }
 

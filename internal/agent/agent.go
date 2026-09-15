@@ -338,6 +338,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)
 	self.sweepBrowsers()
+	self.sweepSessions()
 	var jobs []*models.AgentJob
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {

@@ -86,6 +86,13 @@ type message struct {
 	OK       bool            `json:"ok,omitempty"`
 	Data     json.RawMessage `json:"data,omitempty"`
 	Error    string          `json:"error,omitempty"`
+
+	// A session says what it did without being asked, so these carry no
+	// request number: the session's own identifier is what names it.
+	Session string `json:"session,omitempty"`
+	Event   string `json:"event,omitempty"`
+	Stream  string `json:"stream,omitempty"`
+	Code    int    `json:"code,omitempty"`
 }
 
 // RefusedError is the server turning the program away in words: a token it
@@ -142,6 +149,18 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	held := newSessions()
+	// A session belongs to the connection that opened it. When this ends --
+	// the person stopped the program, the network went -- the processes it
+	// started have nobody to answer and are not left running.
+	defer held.closeAll()
+	output := func(session, stream, data string) {
+		_ = write(message{Type: "session", Session: session, Event: "output", Stream: stream, Data: json.RawMessage(quoted(data))})
+	}
+	ended := func(session string, code int) {
+		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
+	}
+
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	slots := make(chan struct{}, concurrentAtMost)
@@ -155,7 +174,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			case slots <- struct{}{}:
 				go func() {
 					defer func() { <-slots }()
-					data, err := handle(ctx, options, request.Action, request.Args)
+					data, err := handle(ctx, options, request.Action, request.Args, held, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
@@ -200,7 +219,8 @@ func withDefaults(options *Options) *Options {
 }
 
 // handle does one request and returns its answer as JSON.
-func handle(ctx context.Context, options *Options, action string, args json.RawMessage) (json.RawMessage, error) {
+func handle(ctx context.Context, options *Options, action string, args json.RawMessage,
+	held *sessions, output pushOutput, ended pushEnded) (json.RawMessage, error) {
 	var result any
 	var err error
 	switch action {
@@ -216,6 +236,30 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunFilesystem(options, &arguments)
+	case "session_start":
+		var arguments SessionStartArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.start(ctx, options, &arguments, output, ended)
+	case "session_write":
+		var arguments SessionWriteArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.write(&arguments)
+	case "session_signal":
+		var arguments SessionSignalArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.signal(&arguments)
+	case "session_close":
+		var arguments SessionCloseArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = held.close(&arguments)
 	default:
 		return nil, fmt.Errorf("%q is not something this program does", action)
 	}

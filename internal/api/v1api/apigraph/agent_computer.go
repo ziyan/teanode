@@ -105,6 +105,10 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			OK       bool            `json:"ok"`
 			Data     json.RawMessage `json:"data"`
 			Error    string          `json:"error"`
+			Session  string          `json:"session"`
+			Event    string          `json:"event"`
+			Stream   string          `json:"stream"`
+			Code     int             `json:"code"`
 		}
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
@@ -140,6 +144,14 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 		case "result":
 			if attached {
 				worker.ComputerAnswered(found.ID, socket, message.ID, message.OK, message.Data, message.Error)
+			}
+		case "session":
+			// A session speaks without being asked, so this carries no
+			// request number and answers nobody: it is filed under the
+			// session's own name for whoever is driving it.
+			if attached {
+				worker.ComputerSessionSaid(found.ID, socket, message.Session, message.Event,
+					message.Stream, agent.DecodedSessionData(message.Data), message.Code)
 			}
 		case "bye":
 			return

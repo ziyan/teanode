@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A computer somebody attached can hold a program open. Everything it did
+  before was one request to one answer — a command runs and returns, a file
+  is read and that is that — which is all the shell and the filesystem ever
+  needed. A program that stays open needs the two things that shape does not
+  have: output arriving when the program feels like it, and input written to
+  something started earlier. So a session has an identifier of its own, and
+  what is said about it arrives unasked and is filed under that name.
+
+  Nothing uses this yet. It is what a terminal the agent can drive and a
+  connected server spoken to over its own standard input both need, and it is
+  the half that has to exist first.
+
+  What is kept on the server is bounded: the most recent 256KB of a session's
+  output that nobody has read, per session, sixteen sessions per computer. A
+  program that prints forever must not be a way to fill a server's memory
+  from somebody's own machine. A session belongs to the connection that
+  opened it — when the person stops the program or the network goes, the
+  processes it started are not left running, and anybody reading one is told
+  it ended rather than left waiting.
+
 ### Changed
 
 - `storage.directory` is optional when `storage.s3` is enabled, and leaving
