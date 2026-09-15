@@ -72,7 +72,12 @@ func (self *deviceSession) arrived(data []byte) {
 	self.touched = time.Now()
 	self.output = append(self.output, data...)
 	if excess := len(self.output) - sessionBuffer; excess > 0 {
-		self.output = self.output[excess:]
+		// Copied rather than resliced: a slice cut from the front keeps the
+		// whole old array alive underneath it, and a session that runs for
+		// an hour would hold twice the bound it claims to.
+		kept := make([]byte, sessionBuffer)
+		copy(kept, self.output[excess:])
+		self.output = kept
 		self.dropped += excess
 	}
 	self.wake()
@@ -121,19 +126,17 @@ func (self *deviceSession) settled(ctx context.Context, wait time.Duration) {
 // StartSession opens a program on the device and returns its identifier.
 func (self *deviceLink) StartSession(ctx context.Context, kind, command string, arguments []string,
 	directory string, environment map[string]string) (*deviceSession, error) {
-	self.mutex.Lock()
-	open := len(self.sessions)
-	self.mutex.Unlock()
-	if open >= sessionsPerDevice {
-		return nil, fmt.Errorf("%s already has %d sessions open", self.what, open)
-	}
-
 	id := security.NewULID()
 	held := &deviceSession{id: id, kind: kind, touched: time.Now()}
-	// Kept before the request goes, because output can arrive before the
-	// answer to the request that started it does -- a program that greets
-	// is faster than a round trip.
+	// Counted and kept under one lock, so two starts at once cannot both
+	// pass the bound. Kept before the request goes, because output can
+	// arrive before the answer to the request that started it does -- a
+	// program that greets is faster than a round trip.
 	self.mutex.Lock()
+	if open := len(self.sessions); open >= sessionsPerDevice {
+		self.mutex.Unlock()
+		return nil, fmt.Errorf("%s already has %d sessions open", self.what, open)
+	}
 	if self.sessions == nil {
 		self.sessions = map[string]*deviceSession{}
 	}
@@ -250,11 +253,16 @@ func (self *Agent) sweepSessions() {
 	}
 	self.computersMutex.Unlock()
 
+	// Each on its own, and not waited for: closing asks the device and
+	// waits up to a minute for the answer, and a device that has stopped
+	// answering must not hold the tick for a minute per session.
 	for _, one := range stale {
 		log.Noticef("closing session %s: nothing has touched it in %s", one.id, sessionIdle)
-		ctx, cancel := context.WithTimeout(context.Background(), deviceAnswerWait)
-		_ = one.computer.CloseSession(ctx, one.id)
-		cancel()
+		go func(computer *attachedComputer, id string) {
+			ctx, cancel := context.WithTimeout(context.Background(), deviceAnswerWait)
+			defer cancel()
+			_ = computer.CloseSession(ctx, id)
+		}(one.computer, one.id)
 	}
 }
 

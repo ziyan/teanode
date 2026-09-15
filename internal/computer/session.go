@@ -103,7 +103,6 @@ type session struct {
 	id      string
 	command *exec.Cmd
 	stdin   io.WriteCloser
-	closing bool
 }
 
 func newSessions() *sessions {
@@ -124,6 +123,10 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 		return nil, fmt.Errorf("%q is not a kind of session this program starts", kind)
 	}
 
+	// The name is taken and the slot counted before the process starts,
+	// under one lock, so that two starts at once cannot both pass the
+	// check and end up one over the bound or two under one name. A start
+	// that fails after this gives the reservation back.
 	self.mutex.Lock()
 	if _, taken := self.open[arguments.Session]; taken {
 		self.mutex.Unlock()
@@ -133,7 +136,16 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 		self.mutex.Unlock()
 		return nil, fmt.Errorf("this computer already has %d sessions open", mostSessions)
 	}
+	reserved := &session{id: arguments.Session}
+	self.open[arguments.Session] = reserved
 	self.mutex.Unlock()
+	release := func() {
+		self.mutex.Lock()
+		if self.open[arguments.Session] == reserved {
+			delete(self.open, arguments.Session)
+		}
+		self.mutex.Unlock()
+	}
 
 	// The same directory rule the shell tool follows, so that a session is
 	// not a way around it.
@@ -150,23 +162,27 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 
 	stdin, err := command.StdinPipe()
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("cannot write to %s: %w", arguments.Command, err)
 	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("cannot read %s: %w", arguments.Command, err)
 	}
 	stderr, err := command.StderrPipe()
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("cannot read %s: %w", arguments.Command, err)
 	}
 	if err := command.Start(); err != nil {
+		release()
 		return nil, fmt.Errorf("cannot start %s: %w", arguments.Command, err)
 	}
 
-	held := &session{id: arguments.Session, command: command, stdin: stdin}
+	// The reservation becomes the running session.
 	self.mutex.Lock()
-	self.open[arguments.Session] = held
+	reserved.command, reserved.stdin = command, stdin
 	self.mutex.Unlock()
 
 	go self.pump(arguments.Session, "stdout", stdout, output)
@@ -210,7 +226,7 @@ func (self *sessions) find(id string) (*session, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	held, found := self.open[id]
-	if !found {
+	if !found || held.command == nil {
 		return nil, fmt.Errorf("there is no session called %q here", id)
 	}
 	return held, nil
@@ -264,10 +280,6 @@ func (self *sessions) close(arguments *SessionCloseArguments) (*SessionResult, e
 	if err != nil {
 		return nil, err
 	}
-	self.mutex.Lock()
-	held.closing = true
-	self.mutex.Unlock()
-
 	// Closing its input is what most programs read as "we are done", and it
 	// is the only ending that lets one finish on its own terms -- cat, and
 	// every connected server spoken to this way, exits cleanly on it. The
@@ -318,6 +330,9 @@ func (self *sessions) closeAll() {
 	}
 	self.mutex.Unlock()
 	for _, one := range held {
+		if one.command == nil {
+			continue // reserved, never started
+		}
 		_ = one.stdin.Close()
 		if one.command.Process != nil {
 			_ = one.command.Process.Kill()
