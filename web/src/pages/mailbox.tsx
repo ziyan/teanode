@@ -2336,7 +2336,7 @@ function SortingRows({ insight }: { insight: MailInsight }) {
   const items = insight.actionItems ?? []
   return (
     <>
-      <dt className="mailbox-meta-break">{t('mailbox.sortingCategory')}</dt>
+      <dt>{t('mailbox.sortingCategory')}</dt>
       <dd>{insight.category || t('mailbox.sortingUnsorted')}</dd>
       <dt>{t('mailbox.sortingPriority')}</dt>
       <dd>{insight.priority || t('mailbox.sortingUnsorted')}</dd>

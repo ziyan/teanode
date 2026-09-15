@@ -66,13 +66,29 @@ interface Artifact {
 function artifactOf(line: { tool: string; result?: string }): Artifact | null {
   if (line.tool !== 'artifact' || !line.result) return null
   try {
-    const parsed = JSON.parse(line.result) as Partial<Artifact>
+    const parsed = JSON.parse(unfenced(line.result)) as Partial<Artifact>
     if (parsed.artifact_id && parsed.url && parsed.title) return parsed as Artifact
   } catch {
     // Not an artifact after all: an error, most likely.
   }
   return null
 }
+
+// unfenced is a tool's answer with the fence around it taken off.
+//
+// What a tool fetched from outside is wrapped before it reaches the model,
+// so that a page or a message cannot pass itself off as an instruction. It
+// is still the tool's own JSON inside, and a reader that wants to draw what
+// is in it has to get past the fence first -- which is why a picture a
+// skill fetched was filed, named in the answer, and drawn nowhere.
+function unfenced(result: string): string {
+  const text = result.trim()
+  if (!text.startsWith(UNTRUSTED_OPEN) || !text.endsWith(UNTRUSTED_CLOSE)) return result
+  return text.slice(UNTRUSTED_OPEN.length, text.length - UNTRUSTED_CLOSE.length).trim()
+}
+
+const UNTRUSTED_OPEN = '<untrusted-data>'
+const UNTRUSTED_CLOSE = '</untrusted-data>'
 
 // A file the agent handed over, as share_file answered.
 interface SharedFile {
@@ -84,17 +100,48 @@ interface SharedFile {
   caption?: string
 }
 
-// sharedFileOf reads what share_file answered, if this is its line.
-function sharedFileOf(line: { tool: string; result?: string }): SharedFile | null {
-  if (line.tool !== 'share_file' || !line.result) return null
+// sharedFilesOf reads the files a tool line handed the person.
+//
+// Two tools answer with them and they are not the same shape: share_file
+// was asked for one file and answers with it flat, while a skill whose step
+// fetched pictures or a clip answers with a list of them under files. Both
+// end up drawn the same way, because from the reader's side they are the
+// same thing -- something the agent put in the conversation for them.
+function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
+  if (!line.result) return []
   try {
-    const parsed = JSON.parse(line.result) as Partial<SharedFile>
-    if (parsed.attachment_id && parsed.url && parsed.name) return parsed as SharedFile
+    const parsed = JSON.parse(unfenced(line.result)) as Partial<SharedFile> & { files?: Partial<SharedFile>[] }
+    if (drawable(parsed)) return [parsed]
+    // A file a skill fetched but could not keep has no address to draw it
+    // from, and is left out rather than drawn as a broken one.
+    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable)
   } catch {
     // An error, most likely.
   }
-  return null
+  return []
 }
+
+// drawable says whether this is a file of the conversation, addressed the
+// way this server addresses one.
+//
+// Checking the address, not the tool that named it: most of what a tool
+// answers with came from outside -- a page, a service, a house -- and a
+// file's address is drawn into the page as the source of an image. A
+// service that put a url of its own in its answer could otherwise have the
+// dashboard fetch it, which is somebody else's server learning when the
+// person read their conversation, and from where. So an address is drawn
+// only when it is one of this server's own attachment addresses and names
+// the same file the entry does.
+function drawable(file: Partial<SharedFile> | null | undefined): file is SharedFile {
+  if (!file?.attachment_id || !file.url || !file.name) return false
+  // The exact address this server builds, and nothing that merely contains
+  // it: https://somewhere-else/api/v1/agent/attachments/x ends with the
+  // right path and is not this server.
+  return file.url === ATTACHMENT_PATH + file.attachment_id
+}
+
+const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
+
 
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever
@@ -1585,10 +1632,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         )
       case 'tool': {
         const artifact = artifactOf(line)
-        const shared = sharedFileOf(line)
+        const shared = sharedFilesOf(line)
         if (!showTools) {
           if (artifact) return <ArtifactCard key={line.key} artifact={artifact} />
-          return shared ? <FileCard key={line.key} file={shared} /> : null
+          return shared.length > 0 ? (
+            <Fragment key={line.key}>
+              {shared.map((file) => (
+                <FileCard key={file.attachment_id} file={file} />
+              ))}
+            </Fragment>
+          ) : null
         }
         return (
           <div
@@ -1608,7 +1661,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     </div>
   )}
   {artifact ? <ArtifactCard artifact={artifact} /> : null}
-  {shared ? <FileCard file={shared} /> : null}
+  {shared.map((file) => (
+    <FileCard key={file.attachment_id} file={file} />
+  ))}
           </div>
         )
       }

@@ -55,6 +55,11 @@ type AgentSettings struct {
 	// are let through to, and nothing else.
 	AllowPrivateAddresses []string `json:"allowPrivateAddresses"`
 
+	// SkipCertificateCheck is equipment whose certificate is not checked,
+	// for the controllers that cannot present a valid one for the address
+	// they are reached at.
+	SkipCertificateCheck []string `json:"skipCertificateCheck"`
+
 	Providers  []*AgentProviderSettings  `json:"providers"`
 	Models     *AgentModelsSettings      `json:"models"`
 	Features   *AgentFeaturesSettings    `json:"features"`
@@ -220,6 +225,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		// list folded in: this is the box they edit, and showing it holding
 		// entries they did not put there is how a list edits itself.
 		AllowPrivateAddresses: nonNil(agent.AllowPrivateAddresses),
+		SkipCertificateCheck:  nonNil(agent.SkipCertificateCheck),
 		Providers:             []*AgentProviderSettings{},
 		Models: &AgentModelsSettings{
 			Default:   agent.Models.Default,
@@ -349,6 +355,7 @@ type AgentParameters struct {
 	Instructions          *string   `json:"instructions"`
 	Currency              *string   `json:"currency"`
 	AllowPrivateAddresses *[]string `json:"allowPrivateAddresses"`
+	SkipCertificateCheck  *[]string `json:"skipCertificateCheck"`
 
 	Providers  *[]*AgentProviderParameters  `json:"providers"`
 	Models     *AgentModelsParameters       `json:"models"`
@@ -500,6 +507,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	}
 	if parameters.AllowPrivateAddresses != nil {
 		applyStrings(&agent.AllowPrivateAddresses, parameters.AllowPrivateAddresses)
+	}
+	if parameters.SkipCertificateCheck != nil {
+		applyStrings(&agent.SkipCertificateCheck, parameters.SkipCertificateCheck)
 	}
 	if parameters.Instructions != nil {
 		agent.Instructions = strings.TrimSpace(*parameters.Instructions)

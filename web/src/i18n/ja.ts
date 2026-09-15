@@ -1373,6 +1373,9 @@ export const ja: Catalog = {
   'agentSettings.browserIdleTimeout': 'アイドルタイムアウト',
   'agentSettings.browserMaxContexts': '同時コンテキスト数',
   'agentSettings.allowPrivate': 'エージェントが到達してよい内部ネットワークの機器',
+  'agentSettings.skipCertificates':'証明書を確認できない機器',
+  'agentSettings.skipCertificatesHint':
+    'ホスト名またはアドレスをカンマ区切りで。127.0.0.1 向けに発行された証明書しか持たない機器（UniFi のコントローラーなど）は、実際に接続するアドレスでは決して正当になりません。ここに挙げたホストは証明書を確認しないため、そのアドレスで応答できるものは何でもそれになりすませます。通信は暗号化されますが、相手が誰かの証明にはなりません。これが適用されるのはスキルが自身の接続先へ行く場合だけで、メール内のリンクの取得では必ず確認します。',
   'agentSettings.allowPrivateHint': 'アドレス・範囲・ホスト名をカンマ区切りで。メール内のリンクは差出人が書いたものなので、内部ネットワークへの接続は既定で拒否されます。ここに挙げたものは、スキル自身の接続先とヘッドレスブラウザーにのみ許可され、メール内のリンクの取得には使われません。',
   'agentSettings.browserAllowPrivate': '到達を許すプライベートホスト(カンマ区切り)',
   'agentSettings.browserAttachTabs': '利用者が拡張機能で自分のタブを接続できる',

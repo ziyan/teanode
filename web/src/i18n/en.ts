@@ -1380,6 +1380,9 @@ export const en = {
   'agentSettings.browserIdleTimeout': 'Idle timeout',
   'agentSettings.browserMaxContexts': 'Contexts at once',
   'agentSettings.allowPrivate': 'Equipment on this network the agent may reach',
+  'agentSettings.skipCertificates':'Equipment whose certificate cannot be checked',
+  'agentSettings.skipCertificatesHint':
+    'Hosts or addresses, separated by commas. Some equipment ships a certificate issued for 127.0.0.1, which can never be valid for the address it is reached at — a UniFi controller is the usual one. For a host listed here the certificate is not checked, so anything that can answer at that address can pretend to be it: the connection is still encrypted, but it is no longer proof of who answered. Only a skill reaching its own endpoint is let through this; fetching a link out of mail always checks.',
   'agentSettings.allowPrivateHint':
     'Addresses, ranges or names, separated by commas. The address guard refuses anything on this network by default, because a link in a message is written by whoever sent it. What is listed here is let through when a skill reaches the endpoint it declares, and for the headless browser — never for fetching a link out of mail.',
   'agentSettings.browserAllowPrivate': 'Private hosts it may reach (comma-separated)',

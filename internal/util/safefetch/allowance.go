@@ -1,6 +1,7 @@
 package safefetch
 
 import (
+	"crypto/tls"
 	"net"
 	"net/http"
 	"strings"
@@ -180,5 +181,36 @@ func ClientAllowing(allowance *Allowance) *http.Client {
 		},
 	}
 	transport.DialContext = dialer.DialContext
+	return client
+}
+
+// ClientAllowingUnverified is ClientAllowing, and for the hosts an operator
+// has named it does not check the certificate.
+//
+// This is a real loss and worth saying plainly: for those hosts, anything
+// that can answer at the address can pretend to be them, and TLS becomes
+// encryption without identity. It exists because some equipment cannot be
+// verified at all -- a controller that ships a certificate for 127.0.0.1 can
+// never present a valid one for the address it is actually reached at -- and
+// the alternative is not reaching it.
+//
+// Scoped twice over. Only the hosts on the list, and only the callers that
+// are handed one: a skill going to the endpoint it declares. Nothing that
+// follows an address out of somebody else's mail is given it.
+func ClientAllowingUnverified(allowance *Allowance, unverified *Allowance, host string) *http.Client {
+	client := ClientAllowing(allowance)
+	if !unverified.PermitsHost(host) && !unverified.PermitsAddress(host) {
+		return client
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		return client
+	}
+	transport.TLSClientConfig = &tls.Config{
+		// Named, deliberately, for this host and no other: the client this
+		// returns is built per request.
+		InsecureSkipVerify: true, // #nosec G402 -- the operator named this host
+		MinVersion:         tls.VersionTLS12,
+	}
 	return client
 }
