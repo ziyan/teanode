@@ -403,186 +403,193 @@ export function MailboxSubscriptionsPage() {
           an action did is said in a toast instead. */}
       {query.error ? <ErrorMessage error={query.error} /> : null}
 
-      <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
-        <div className="mailbox-list">
-          {/* Before the switch, because it narrows both sides of it: the
-              counts on the switch are counts of what was asked for. */}
-          <form
-            className="mailbox-toolbar"
-            onSubmit={(event) => {
-              event.preventDefault()
-              look(typed)
-            }}
-          >
-            <input
-              type="search"
-              value={typed}
-              placeholder={t('subscriptions.search')}
-              aria-label={t('subscriptions.search')}
-              onChange={(event) => {
-                setTyped(event.target.value)
-                // Emptying the box is asking for all of them again, and
-                // nobody presses Enter to say "never mind".
-                if (event.target.value === '') {
-                  look('')
-                }
+      {/* The panes measure themselves against mailbox-frame rather than
+          against the window, exactly as the mailbox does: how much room
+          two panes have depends on the rail beside them. Without this the
+          container query has no container to ask, so neither pane was ever
+          hidden and a phone showed the reading side alongside the list. */}
+      <div className="mailbox-frame">
+        <div className={['mailbox', reading ? 'reading' : ''].filter(Boolean).join(' ')}>
+          <div className="mailbox-list">
+            {/* Before the switch, because it narrows both sides of it: the
+                counts on the switch are counts of what was asked for. */}
+            <form
+              className="mailbox-toolbar"
+              onSubmit={(event) => {
+                event.preventDefault()
+                look(typed)
               }}
-              onBlur={() => look(typed)}
-            />
-          </form>
+            >
+              <input
+                type="search"
+                value={typed}
+                placeholder={t('subscriptions.search')}
+                aria-label={t('subscriptions.search')}
+                onChange={(event) => {
+                  setTyped(event.target.value)
+                  // Emptying the box is asking for all of them again, and
+                  // nobody presses Enter to say "never mind".
+                  if (event.target.value === '') {
+                    look('')
+                  }
+                }}
+                onBlur={() => look(typed)}
+              />
+            </form>
 
-          <div className="mailbox-actions">
-            {/* The name and the count, until the switch says both — "
-                Subscriptions · 3" beside "Subscribed · 2 | Unsubscribed · 1"
-                is the same fact twice, and the second telling is the one
-                somebody can act on. */}
-            {!showingLeft && counts.left === 0 && matching === '' && (
-              <span className="muted">
-                {t('subscriptions.title')}
-                {query.data ? ` · ${total}` : ''}
-              </span>
-            )}
-            {/* Shown once there is a second side to go to. Until somebody
-                has left a list there is only one answer, and a switch with
-                one side is a control that does nothing.
+            <div className="mailbox-actions">
+              {/* The name and the count, until the switch says both — "
+                  Subscriptions · 3" beside "Subscribed · 2 | Unsubscribed · 1"
+                  is the same fact twice, and the second telling is the one
+                  somebody can act on. */}
+              {!showingLeft && counts.left === 0 && matching === '' && (
+                <span className="muted">
+                  {t('subscriptions.title')}
+                  {query.data ? ` · ${total}` : ''}
+                </span>
+              )}
+              {/* Shown once there is a second side to go to. Until somebody
+                  has left a list there is only one answer, and a switch with
+                  one side is a control that does nothing.
                 
-                While something is being searched for it stays, even at zero:
-                "Unsubscribed · 0" answers "is it over there?", and a switch
-                that disappears mid-search leaves that question open. */}
-            {(showingLeft || counts.left > 0 || matching !== '') && (
-              <div className="segmented" role="group" aria-label={t('subscriptions.sides')}>
-                <button
-                  type="button"
-                  className={showingLeft ? undefined : 'active'}
-                  aria-pressed={!showingLeft}
-                  onClick={() => showSide(false)}
+                  While something is being searched for it stays, even at zero:
+                  "Unsubscribed · 0" answers "is it over there?", and a switch
+                  that disappears mid-search leaves that question open. */}
+              {(showingLeft || counts.left > 0 || matching !== '') && (
+                <div className="segmented" role="group" aria-label={t('subscriptions.sides')}>
+                  <button
+                    type="button"
+                    className={showingLeft ? undefined : 'active'}
+                    aria-pressed={!showingLeft}
+                    onClick={() => showSide(false)}
+                  >
+                    {t('subscriptions.sideSubscribed', { count: counts.subscribed })}
+                  </button>
+                  <button
+                    type="button"
+                    className={showingLeft ? 'active' : undefined}
+                    aria-pressed={showingLeft}
+                    onClick={() => showSide(true)}
+                  >
+                    {t('subscriptions.sideLeft', { count: counts.left })}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {query.loading && !query.data && <Loading />}
+            {query.data && subscriptions.length === 0 && (
+              <p className="mailbox-placeholder">
+                {/* "No mailing lists have written to this mailbox" is untrue
+                    when some have and none of them match, or when they are all
+                    on the other side of the switch. */}
+                {matching !== ''
+                  ? t('subscriptions.noneMatch')
+                  : showingLeft
+                    ? t('subscriptions.noneLeft')
+                    : t('subscriptions.empty')}
+              </p>
+            )}
+
+            <ul className="mailbox-rows">
+              {subscriptions.map((subscription) => (
+                <li
+                  key={subscription.key}
+                  className={[
+                    'subscription-row',
+                    subscription.unread > 0 ? 'unread' : '',
+                    subscription.id === readingId ? 'active' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => read(subscription)}
                 >
-                  {t('subscriptions.sideSubscribed', { count: counts.subscribed })}
-                </button>
-                <button
-                  type="button"
-                  className={showingLeft ? 'active' : undefined}
-                  aria-pressed={showingLeft}
-                  onClick={() => showSide(true)}
-                >
-                  {t('subscriptions.sideLeft', { count: counts.left })}
-                </button>
+                  <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
+                  <Tooltip label={subscription.from}>
+                    <button
+                      type="button"
+                      className="subscription-row-link"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        read(subscription)
+                      }}
+                    >
+                      <span className="subscription-row-name">{subscription.name}</span>
+                      <span className="subscription-row-meta">
+                        {plural(
+                          subscription.count,
+                          { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
+                          { count: subscription.count },
+                        )}
+                        {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
+                        {subscription.mutedAt ? ` · ${t('subscriptions.muted')}` : ''}
+                      </span>
+                      {subscription.requestedAt ? (
+                        <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
+                          {/* When, because the sentence was written to be
+                              finished by it and never was: it ended on a comma
+                              and stopped. When it was asked matters as well as
+                              that it was — a list often keeps writing for a
+                              while afterwards, and the date is how somebody
+                              decides whether "a while" has gone on too long. */}
+                          {subscription.failed
+                            ? t('subscriptions.leftFailed', {
+                                when: whenAsked(subscription.requestedAt, language),
+                                reason: subscription.error ?? '',
+                              })
+                            : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`, {
+                                when: whenAsked(subscription.requestedAt, language),
+                              })}
+                        </span>
+                      ) : null}
+                    </button>
+                  </Tooltip>
+                  <div className="subscription-row-when">
+                    <RelativeTime value={subscription.lastAt} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {/* What is shown, and the rest of it. The count beside the heading
+                is the whole list; without this the page showed a fraction of it
+                and said nothing. */}
+            {query.data && subscriptions.length > 0 && (
+              <div className="mailbox-foot">
+                <span>
+                  {paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}
+                </span>
+                {subscriptions.length < total && !paging && (
+                  <button type="button" className="link" onClick={() => void loadMore()}>
+                    {t('mailbox.loadMore')}
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {query.loading && !query.data && <Loading />}
-          {query.data && subscriptions.length === 0 && (
-            <p className="mailbox-placeholder">
-              {/* "No mailing lists have written to this mailbox" is untrue
-                  when some have and none of them match, or when they are all
-                  on the other side of the switch. */}
-              {matching !== ''
-                ? t('subscriptions.noneMatch')
-                : showingLeft
-                  ? t('subscriptions.noneLeft')
-                  : t('subscriptions.empty')}
-            </p>
-          )}
-
-          <ul className="mailbox-rows">
-            {subscriptions.map((subscription) => (
-              <li
-                key={subscription.key}
-                className={[
-                  'subscription-row',
-                  subscription.unread > 0 ? 'unread' : '',
-                  subscription.id === readingId ? 'active' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => read(subscription)}
-              >
-                <SenderLogo name={subscription.name} logoDomain={subscription.logoDomain} size={28} />
-                <Tooltip label={subscription.from}>
-                  <button
-                    type="button"
-                    className="subscription-row-link"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      read(subscription)
-                    }}
-                  >
-                    <span className="subscription-row-name">{subscription.name}</span>
-                    <span className="subscription-row-meta">
-                      {plural(
-                        subscription.count,
-                        { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
-                        { count: subscription.count },
-                      )}
-                      {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
-                      {subscription.mutedAt ? ` · ${t('subscriptions.muted')}` : ''}
-                    </span>
-                    {subscription.requestedAt ? (
-                      <span className={subscription.failed ? 'subscription-row-left bad' : 'subscription-row-left'}>
-                        {/* When, because the sentence was written to be
-                            finished by it and never was: it ended on a comma
-                            and stopped. When it was asked matters as well as
-                            that it was — a list often keeps writing for a
-                            while afterwards, and the date is how somebody
-                            decides whether "a while" has gone on too long. */}
-                        {subscription.failed
-                          ? t('subscriptions.leftFailed', {
-                              when: whenAsked(subscription.requestedAt, language),
-                              reason: subscription.error ?? '',
-                            })
-                          : t(`subscriptions.left.${unsubscribeMethod(subscription.method)}`, {
-                              when: whenAsked(subscription.requestedAt, language),
-                            })}
-                      </span>
-                    ) : null}
-                  </button>
-                </Tooltip>
-                <div className="subscription-row-when">
-                  <RelativeTime value={subscription.lastAt} />
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* What is shown, and the rest of it. The count beside the heading
-              is the whole list; without this the page showed a fraction of it
-              and said nothing. */}
-          {query.data && subscriptions.length > 0 && (
-            <div className="mailbox-foot">
-              <span>
-                {paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}
-              </span>
-              {subscriptions.length < total && !paging && (
-                <button type="button" className="link" onClick={() => void loadMore()}>
-                  {t('mailbox.loadMore')}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="mailbox-pane">
-          {reading ? (
-            <SubscriptionReader
-              key={reading.key}
-              mailboxId={mailboxId}
-              subscription={reading}
-              onBack={() => read(null)}
-              onLeave={() => {
-                setProblem(null)
-                setLeaving(reading)
-              }}
-              onMute={(muted) => mute(reading.key, muted)}
-              onImages={(show) => images(reading.key, show)}
-              onChanged={() => void query.reload()}
-            />
-          ) : (
-            <div className="mailbox-pane-placeholder">
-              <EnvelopeTrail />
-              <span>{t('subscriptions.choose')}</span>
-            </div>
-          )}
+          <div className="mailbox-pane">
+            {reading ? (
+              <SubscriptionReader
+                key={reading.key}
+                mailboxId={mailboxId}
+                subscription={reading}
+                onBack={() => read(null)}
+                onLeave={() => {
+                  setProblem(null)
+                  setLeaving(reading)
+                }}
+                onMute={(muted) => mute(reading.key, muted)}
+                onImages={(show) => images(reading.key, show)}
+                onChanged={() => void query.reload()}
+              />
+            ) : (
+              <div className="mailbox-pane-placeholder">
+                <EnvelopeTrail />
+                <span>{t('subscriptions.choose')}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

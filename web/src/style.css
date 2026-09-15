@@ -2666,6 +2666,32 @@ body,
 }
 
 /* A secret, shown once, in a block wide enough to select in one gesture. */
+/* The secret and its copy button as one object.
+
+   The button is inside the box at the right end, centred against it, and the
+   text is given room to stop before it rather than running underneath. The
+   bottom margin moved out here so that centring is measured against the box
+   itself and not against the box plus the gap under it. */
+.secret-box {
+  position: relative;
+  margin: 0 0 var(--space-3);
+}
+
+.secret-box .secret {
+  margin: 0;
+  padding-right: 40px;
+}
+
+/* Descendant rather than child: the tooltip wraps the button in a span, and
+   though that span is display: contents and lays no box of its own, it is
+   still the button's parent as far as a selector is concerned. */
+.secret-box .copy-button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+
 .secret {
   margin: 0 0 var(--space-3);
   padding: var(--space-3);
