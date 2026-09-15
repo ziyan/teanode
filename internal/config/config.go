@@ -203,10 +203,6 @@ type Server struct {
 	// LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL.
 	LogLevel string `yaml:"logLevel"`
 
-	// LogDirectory, when set, receives a copy of every received message as a
-	// .eml file. Useful when debugging; it grows without bound.
-	LogDirectory string `yaml:"logDirectory,omitempty"`
-
 	// Secret signs the bounce return path on outgoing mail and the passwords
 	// derived from SMTP credential keys. Generated on first run.
 	//
@@ -849,12 +845,20 @@ type GeoIP struct {
 	DatabaseFile string `yaml:"databaseFile,omitempty"`
 }
 
-// Storage configures where raw messages are kept. The local spool under
-// server.dataDirectory is always used; S3 is an optional mirror.
+// Storage configures where raw messages are kept: a directory, an object
+// store, or both. With both, the directory is the record and the store a
+// mirror. With the store alone nothing is kept on this machine.
 type Storage struct {
 	// Directory holds the raw messages, relative to server.dataDirectory.
 	// They are kept out of the database because they are large, are never
 	// queried, and would make a backup expensive.
+	//
+	// Empty is allowed when s3 is enabled, and is what several instances
+	// sharing one store want: a directory then holds only the messages the
+	// instance that handled them wrote, so no instance has all of them and
+	// each keeps a copy of somebody's mail that nothing else needs. The
+	// trade is that the store must answer for a message to be stored at
+	// all, where a directory keeps working while the network does not.
 	Directory string `yaml:"directory"`
 
 	// SpoolRetention is how long a message is kept, which is how far back the

@@ -342,6 +342,11 @@ type AgentFeatures struct {
 	Computer         *bool `yaml:"computer,omitempty"`
 	ChatApps         *bool `yaml:"chatApps,omitempty"`
 	Skills           *bool `yaml:"skills,omitempty"`
+
+	// Subagents lets a turn hand a piece of work to a run of its own. It
+	// costs what a second run costs, against the same person's budget, so
+	// a deployment counting tokens may want it off.
+	Subagents *bool `yaml:"subagents,omitempty"`
 }
 
 // featureOn resolves an unset feature to on.
@@ -685,6 +690,8 @@ func (self *Agent) FeatureOn(feature string) bool {
 		return featureOn(self.Features.ChatApps)
 	case "skills":
 		return featureOn(self.Features.Skills)
+	case "subagents":
+		return featureOn(self.Features.Subagents)
 	}
 	return false
 }

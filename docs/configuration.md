@@ -234,9 +234,6 @@ Relative paths elsewhere in this file resolve against it.
 **`logLevel`** — LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR,
 CRITICAL.
 
-**`logDirectory`** — LogDirectory, when set, receives a copy of every received
-message as a .eml file. Useful when debugging; it grows without bound.
-
 **`secret`** — Secret signs the bounce return path on outgoing mail and the
 passwords derived from SMTP credential keys. Generated on first run.  Changing
 it invalidates every SMTP password and orphans bounces for mail already in
@@ -858,6 +855,13 @@ that published rule data when you enable it and load it.
 **`directory`** — Directory holds the raw messages, relative to
 server.dataDirectory. They are kept out of the database because they are
 large, are never queried, and would make a backup expensive.
+
+Empty is allowed when `s3` is enabled, and then nothing is kept on this
+machine at all. That is what several instances sharing one store want: a
+directory there holds only the messages the instance that handled them wrote,
+so no instance has all of them and each keeps a copy of somebody's mail that
+nothing else needs. The trade is that the store must answer for a message to
+be stored, where a directory keeps working while the network does not.
 
 **`spoolRetention`** — SpoolRetention is how long a message is kept, which is
 how far back the dashboard can show content and how long a stalled delivery

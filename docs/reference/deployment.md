@@ -211,8 +211,9 @@ That file carries signing keys and the server secret in the clear — it has to,
 or restoring it would invalidate every SMTP password and every published DKIM
 record. Treat it as a private key.
 
-`./data/teanode` holds the spool and the certificates. Certificates are
-reissued automatically, so it is worth backing up but not urgent.
+`./data/teanode` holds the certificates, the keys, and the spool where one is
+configured. Certificates are reissued automatically, so it is worth backing up
+but not urgent.
 
 ## More than one instance
 
@@ -225,6 +226,18 @@ instance its own `TEANODE_INSTANCE_ID`.
 
 The object store is the part that matters: without it each instance can only
 read the messages it handled itself.
+
+With it, clear `storage.directory` as well. A directory beside an object
+store holds only the messages the instance that handled them wrote — no
+instance has all of them, reads fall through to the store anyway, and every
+machine keeps a copy of somebody's mail that nothing else needs. Empty, and
+nothing is written to the machines at all. What it costs is that the store
+has to answer for a message to be stored: a write it cannot reach fails,
+where a directory keeps working while the network does not.
+
+Before clearing it on a server that has been running, check the store
+actually holds what the disk does. A mirror that could not be reached logged
+a warning and carried on, by design, so a gap is not an error anybody saw.
 
 ## When it does not start
 
