@@ -231,6 +231,19 @@ func (self *Agent) Start() {
 	if err := self.EnsureVectorIndexes(self.ctx); err != nil {
 		log.Warningf("cannot build the vector indexes: %s", err)
 	}
+	// What this instance held when it last stopped is not running now.
+	// Left to the stale-claim rule it would sit a quarter of an hour,
+	// which every deployment paid: two reading passes stood still while
+	// their sources showed "reading".
+	if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
+		released, err := tx.ReleaseAgentJobsClaimedBy(self.settings.Instance)
+		if released > 0 {
+			log.Noticef("put back %d job(s) this instance held before it restarted", released)
+		}
+		return err
+	}); err != nil {
+		log.Warningf("cannot put back the jobs held before the restart: %s", err)
+	}
 	self.worker = periodic.New(self.ctx, &self.waitGroup, self.tick, &periodic.Settings{
 		Interval: self.settings.Tick,
 		Name:     "agent:worker",

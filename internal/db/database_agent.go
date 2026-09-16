@@ -39,6 +39,11 @@ type AgentOperation interface {
 	// whose instance never finished them.
 	ReleaseStaleAgentJobs(before time.Time) (int64, error)
 
+	// ReleaseAgentJobsClaimedBy puts back every job an instance holds:
+	// for that instance's own start-up, when whatever it held before is
+	// certainly not running any more.
+	ReleaseAgentJobsClaimedBy(instance string) (int64, error)
+
 	// CancelAgentJobs cancels what is queued for an agent, or for one of its
 	// mailboxes when mailboxId is given.
 	CancelAgentJobs(agentId, mailboxId string) (int64, error)
@@ -518,6 +523,16 @@ func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.A
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
 	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ?", string(models.AgentJobRunning), before).Updates(map[string]any{
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+	})
+	return result.RowsAffected, result.Error
+}
+
+func (self *transaction) ReleaseAgentJobsClaimedBy(instance string) (int64, error) {
+	if instance == "" {
+		return 0, nil
+	}
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_by\" = ?", string(models.AgentJobRunning), instance).Updates(map[string]any{
 		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
 	})
 	return result.RowsAffected, result.Error
