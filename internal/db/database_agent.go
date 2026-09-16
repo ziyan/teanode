@@ -39,6 +39,10 @@ type AgentOperation interface {
 	// whose instance never finished them.
 	ReleaseStaleAgentJobs(before time.Time) (int64, error)
 
+	// ReleaseStaleAgentJobsOfKind is the same for one kind of job with
+	// its own idea of how long is too long: the night may take an hour.
+	ReleaseStaleAgentJobsOfKind(kind models.AgentJobKind, before time.Time) (int64, error)
+
 	// ReleaseAgentJobsClaimedBy puts back every job an instance holds:
 	// for that instance's own start-up, when whatever it held before is
 	// certainly not running any more.
@@ -526,7 +530,17 @@ func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.A
 }
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
-	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ?", string(models.AgentJobRunning), before).Updates(map[string]any{
+	// Every kind but the night, which has its own bound: a night of forty
+	// minutes was put back at fifteen while still running, and a second
+	// night started beside it.
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" <> ?", string(models.AgentJobRunning), before, string(models.AgentJobDream)).Updates(map[string]any{
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+	})
+	return result.RowsAffected, result.Error
+}
+
+func (self *transaction) ReleaseStaleAgentJobsOfKind(kind models.AgentJobKind, before time.Time) (int64, error) {
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" = ?", string(models.AgentJobRunning), before, string(kind)).Updates(map[string]any{
 		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
 	})
 	return result.RowsAffected, result.Error
