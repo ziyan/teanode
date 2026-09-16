@@ -402,9 +402,20 @@ func (self *Deferral) Error() string {
 	return fmt.Sprintf("deferred until %s: %s", self.Until.Format(time.RFC3339), self.Reason)
 }
 
+// jobTimeout is how long one job may run. Ten minutes for a job that
+// answers somebody; the night is a job too, and ten minutes of reading
+// four hundred chat days left nothing for the phases after it -- the
+// night finished on the deadline every time with its tidying undone.
+func jobTimeout(kind models.AgentJobKind) time.Duration {
+	if kind == models.AgentJobDream {
+		return dreamLongest
+	}
+	return 10 * time.Minute
+}
+
 // execute runs one claimed job and records how it ended.
 func (self *Agent) execute(job *models.AgentJob, now time.Time) {
-	ctx, cancel := context.WithTimeout(self.ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(self.ctx, jobTimeout(job.Kind))
 	defer cancel()
 
 	run, err := self.resolve(ctx, job)

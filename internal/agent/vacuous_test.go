@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -98,5 +99,17 @@ func TestReviseWordingSaysTheOldLinesTheNewWay(t *testing.T) {
 		if got := reviseWording(old); got != want {
 			t.Errorf("%q: got %q, want %q", old, got, want)
 		}
+	}
+}
+
+func TestHalfwayIsHalfOfWhatIsLeft(t *testing.T) {
+	now := time.Date(2026, time.September, 15, 23, 0, 0, 0, time.UTC)
+	if got := halfway(context.Background(), now); !got.IsZero() {
+		t.Fatalf("no deadline: %v", got)
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), now.Add(40*time.Minute))
+	defer cancel()
+	if got := halfway(ctx, now); got != now.Add(20*time.Minute) {
+		t.Fatalf("half of forty minutes: %v", got)
 	}
 }

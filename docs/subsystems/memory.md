@@ -136,7 +136,8 @@ the day's tokens (30% by default), and it never deletes anything.
 
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
-first — and among files, the ones written to be read (a readme, a note,
+first — after the pass over what an older build wrote, which asks no
+model and runs first so a long reading cannot crowd it out — and among files, the ones written to be read (a readme, a note,
 a document) before source code. A checkout is mostly code, and code says
 almost nothing about the person: a night that read four hundred files of
 Go filed two facts, with a hundred thousand more behind them. The code
@@ -287,6 +288,7 @@ measure at this scale.
 | event half-life | 1 year |
 | how-to half-life | 3 years |
 | a night's share of the day | 30% |
+| how long a night may run | 45 minutes, the reading at most half of what is left when it starts |
 | pages the index is sized for | 400 |
 | passages embedded per ingest run | 2000 |
 

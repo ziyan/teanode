@@ -40,6 +40,10 @@ const (
 	// dreamEvery is how often the sweep looks.
 	dreamEvery = 5 * time.Minute
 
+	// dreamLongest is how long one night may run. The reading takes
+	// half of it at most (see halfway), so the rest is never starved.
+	dreamLongest = 45 * time.Minute
+
 	// dreamDigest is how many things one night reads at full resolution,
 	// and dreamConsolidate how many pages it rewrites.
 	dreamDigest      = 400
@@ -227,13 +231,19 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// before the generative one because walking a graph whose weights are
 	// a day stale wanders somewhere nothing has been wanted in months.
 	// And the vectors come before rehearsal, which asks by meaning.
+	// First, and before anything that asks a model: what an older build
+	// of this program wrote, under the rules this one has. It costs no
+	// calls and finishes in seconds, and put after the reading it never
+	// ran -- a night has a deadline, four hundred chat days took all of
+	// it, and the twenty-eight empty pages stood for another day.
+	self.dreamRevise(ctx, run, record)
+	// The reading gets half of what is left of the night, never all of
+	// it: what comes after it is what makes the reading worth doing.
+	budget.digestUntil = halfway(ctx, time.Now())
 	self.dreamDigest(ctx, run, record, budget)
 	self.dreamTimeline(ctx, run, record, budget)
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
-	// Before anything else looks at the graph: what an older build of this
-	// program wrote, under the rules this one has.
-	self.dreamRevise(ctx, run, record)
 	self.dreamQuietHalf(ctx, run, record)
 	self.dreamAssociate(ctx, run, record, budget)
 	// Vectors before rehearsal, because rehearsal asks the graph by
@@ -263,6 +273,25 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 type dreamBudget struct {
 	allowed int64
 	spent   int64
+
+	// digestUntil is when the reading has to stop so the rest of the
+	// night gets its turn; zero means the night has no deadline.
+	digestUntil time.Time
+}
+
+// halfway is the moment half of the night's remaining time is gone, or
+// zero when the night has no deadline.
+func halfway(ctx context.Context, now time.Time) time.Time {
+	deadline, ok := ctx.Deadline()
+	if !ok || !deadline.After(now) {
+		return time.Time{}
+	}
+	return now.Add(deadline.Sub(now) / 2)
+}
+
+// readingTimeLeft says whether the reading may go on.
+func (self *dreamBudget) readingTimeLeft() bool {
+	return self.digestUntil.IsZero() || time.Now().Before(self.digestUntil)
 }
 
 func newDreamBudget(configuration *config.Configuration, agent *models.Agent, share float64) *dreamBudget {
@@ -312,7 +341,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	record.Coarse = backlog > dreamCoarseAbove
 
 	for start := 0; start < len(waiting); start += dreamBatch {
-		if ctx.Err() != nil || !budget.left() {
+		if ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
 			break
 		}
 		end := start + dreamBatch
