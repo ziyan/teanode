@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -285,6 +286,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		Most:    ingestEntries,
 	}, ingestDeviceWait)
 	if err != nil {
+		// Leaving mid-answer is the same as not being there: the daemon
+		// reconnects within the second, and a pass put down for its next
+		// scheduled hour over that stood still until morning, twice.
+		if errors.Is(err, ErrDeviceDetached) {
+			return "", counts, &waitingForDevice{name: source.Specification.Computer}
+		}
 		return "", counts, fmt.Errorf("asking %s to read %s: %w", source.Specification.Computer, source.Specification.Path, err)
 	}
 	var result computer.ScanResult
