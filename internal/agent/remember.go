@@ -416,7 +416,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			break
 		}
 		text := strings.TrimSpace(wanted.Text)
-		if text == "" {
+		if text == "" || isPromptExample(text) || isPromptExample(wanted.Quote) {
 			continue
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
@@ -492,7 +492,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		from := models.NormalizePath(link.From)
 		to := models.NormalizePath(link.To)
 		relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(link.Relation)))
-		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) {
+		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) || isPromptExample(link.Note) {
 			continue
 		}
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {

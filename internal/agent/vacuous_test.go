@@ -139,3 +139,18 @@ func TestSaysNothingOpeningKnowsPadding(t *testing.T) {
 		}
 	}
 }
+
+func TestThePromptsExampleIsNotAFact(t *testing.T) {
+	for _, copied := range []string{
+		"The queue consumer is restarted by hand when it dies.",
+		"Runs the platform team at Acme.",
+		"the consumer died. Restarted it.",
+	} {
+		if !isPromptExample(copied) {
+			t.Errorf("copied from the prompt and not seen: %q", copied)
+		}
+	}
+	if isPromptExample("The queue consumer is restarted by cron every night.") {
+		t.Errorf("a real line about a queue consumer is not the example")
+	}
+}

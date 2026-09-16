@@ -206,3 +206,23 @@ var paddingPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`(project|repository|codebase) (that )?\S+ (contributed to|worked on directly|participated in)`),
 	regexp.MustCompile(`^this is (a|an|the|\S+'s) .*(project|repository|codebase)`),
 }
+
+// isPromptExample says whether a line is the example the prompt showed
+// the model, copied back. A seven-billion-parameter model filed "The
+// queue consumer is restarted by hand when it dies" on the portal page,
+// with the example's date and quote, on its first night: the object it
+// was shown as a shape, taken as content.
+func isPromptExample(text string) bool {
+	text = strings.ToLower(strings.TrimSpace(strings.TrimRight(strings.TrimSpace(text), ".")))
+	return promptExamples[text]
+}
+
+var promptExamples = map[string]bool{
+	"the queue consumer is restarted by hand when it dies": true,
+	"the consumer died. restarted it":                      true,
+	"wrote most of the queue consumer":                     true,
+	"runs the platform team at acme":                       true,
+	"alice, who runs platform at acme":                     true,
+	"runs the team building it":                            true,
+	"led the controls work on it in 2024":                  true,
+}
