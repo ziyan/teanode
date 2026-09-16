@@ -60,6 +60,13 @@ func TestDreamingANight(t *testing.T) {
 		case strings.Contains(prompt, "most likely to ask you tomorrow"):
 			// One the graph can answer and one it cannot.
 			answer = `{"questions": ["what is the portal?", "what did the plumber quote for the boiler?"]}`
+		case strings.Contains(prompt, "Do these notes answer the question"):
+			// The judge: the notes nearest "what is the portal?" are about
+			// the portal and answer it; nothing near the boiler does.
+			answer = `{"answered": false}`
+			if strings.Contains(prompt, "what is the portal?") {
+				answer = `{"answered": true}`
+			}
 		}
 		encoded, _ := json.Marshal(answer)
 		_, _ = fmt.Fprintf(writer,
