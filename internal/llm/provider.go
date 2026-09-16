@@ -36,7 +36,24 @@ type Provider interface {
 // API has it; the others do not, so it is a separate interface a caller
 // asserts.
 type Embedder interface {
-	Embed(ctx context.Context, model string, inputs []string) ([][]float32, Usage, error)
+	Embed(ctx context.Context, request EmbedRequest) ([][]float32, Usage, error)
+}
+
+// EmbedRequest is one call to an embedding model.
+type EmbedRequest struct {
+	Model  string
+	Inputs []string
+
+	// Dimensions asks for a narrower vector than the model's own width.
+	// Zero asks for whatever the model gives.
+	//
+	// Worth asking for over a corpus: the models that take this argument
+	// are trained so that the first few hundred numbers carry nearly all
+	// of the meaning, so half a million chunks cost a third of the store
+	// and rank almost as well. A provider that does not understand the
+	// argument ignores it and answers at its own width, which is why the
+	// width travels with the model's name wherever a vector is kept.
+	Dimensions int
 }
 
 // NewProvider builds a client for a provider kind. It opens no connection;

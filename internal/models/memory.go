@@ -112,6 +112,11 @@ const (
 	FeedbackFiled         AgentFeedbackKind = "filed"
 	FeedbackReplyDeclined AgentFeedbackKind = "reply_declined"
 	FeedbackSorted        AgentFeedbackKind = "sorted"
+
+	// FeedbackUnlearned is a fact the person struck from a page. Shown to
+	// the next filing run as an example of what not to keep, which is the
+	// only way that run learns anything: it sees no other correction.
+	FeedbackUnlearned AgentFeedbackKind = "unlearned"
 )
 
 // AgentFeedback is a correction recorded from the person's own action,

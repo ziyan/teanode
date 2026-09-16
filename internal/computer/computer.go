@@ -31,7 +31,10 @@ import (
 
 // Protocol is the version of the exchange this program speaks; the server
 // refuses another.
-const Protocol = 1
+// Protocol 2 added `scan`, which is the one action a server may ask for
+// with nobody watching. A server that needs it and meets a program
+// speaking 1 says so rather than failing obscurely.
+const Protocol = 2
 
 // The bounds of one request.
 const (
@@ -84,6 +87,12 @@ type Options struct {
 	// ~ and a relative path are from; the person's home directory by
 	// default.
 	Home string
+
+	// ScanRootsFile is where the list of directories this program will
+	// scan for the agent's knowledge is kept. Empty uses the one beside
+	// the person's own profile. See scan.go for why the list lives here
+	// rather than on the server.
+	ScanRootsFile string
 }
 
 // Connection is what Serve needs of the websocket: JSON in, JSON out.
@@ -280,6 +289,12 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunFilesystem(options, &arguments)
+	case "scan":
+		var arguments ScanArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = RunScan(ctx, options, &arguments)
 	case "session_start":
 		var arguments SessionStartArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

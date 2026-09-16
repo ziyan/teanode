@@ -34,12 +34,18 @@ type replyData struct {
 	Language    string
 	Guidance    string
 	Memories    []string
+	Exemplars   []string
 	Corrections []string
 	Summary     string
 	Notes       string
 	Earlier     []string
 	Message     string
 }
+
+// replyExemplars is how many of the person's own past messages a reply is
+// shown. Five is enough to show a shape and few enough to leave room for
+// the message being answered.
+const replyExemplars = 5
 
 // ReplyPrompt builds the messages for one auto-reply call. The draft
 // input carries everything but the guidance, which is the policy's.
@@ -57,6 +63,7 @@ func ReplyPrompt(input *DraftInput, guidance string) ([]llm.ChatMessage, error) 
 		Language:    languageName(Language(input.Agent, input.Owner)),
 		Guidance:    strings.TrimSpace(guidance),
 		Memories:    input.Memories,
+		Exemplars:   input.Exemplars,
 		Corrections: input.Corrections,
 		Summary:     strings.TrimSpace(input.Summary),
 		Notes:       strings.TrimSpace(input.Notes),
@@ -419,6 +426,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		Notes:         notes,
 		Memories:      memories,
 		Corrections:   corrections,
+		Exemplars:     self.exemplarsFor(ctx, run.Agent, message, replyExemplars),
 	}, policy.Guidance)
 	if err != nil {
 		return err

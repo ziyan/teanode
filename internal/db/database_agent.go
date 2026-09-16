@@ -111,6 +111,11 @@ type agentModel struct {
 	DailyTokens        int64      `gorm:"column:daily_tokens"`
 	DailyCost          float64    `gorm:"column:daily_cost"`
 	OperatorDisabledAt *time.Time `gorm:"column:operator_disabled_at"`
+
+	// When the person's night is, and when the nightly run last finished.
+	DreamFrom  string     `gorm:"column:dream_from"`
+	DreamUntil string     `gorm:"column:dream_until"`
+	DreamedAt  *time.Time `gorm:"column:dreamed_at"`
 }
 
 func (agentModel) TableName() string { return "agent" }
@@ -161,6 +166,12 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		AskModel:     model.AskModel,
 		DailyTokens:  model.DailyTokens,
 		DailyCost:    model.DailyCost,
+		DreamFrom:    model.DreamFrom,
+		DreamUntil:   model.DreamUntil,
+	}
+	if model.DreamedAt != nil {
+		at := model.DreamedAt.In(time.Local)
+		agent.DreamedAt = &at
 	}
 	if model.OperatorDisabledAt != nil {
 		at := model.OperatorDisabledAt.In(time.Local)
@@ -201,6 +212,9 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		DailyTokens:        agent.DailyTokens,
 		DailyCost:          agent.DailyCost,
 		OperatorDisabledAt: agent.OperatorDisabledAt,
+		DreamFrom:          agent.DreamFrom,
+		DreamUntil:         agent.DreamUntil,
+		DreamedAt:          agent.DreamedAt,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -364,6 +378,8 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
+			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
+			"dreamed_at": model.DreamedAt,
 		}).Error
 	}); err != nil {
 		return nil, err

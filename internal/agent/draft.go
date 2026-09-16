@@ -42,6 +42,16 @@ type DraftInput struct {
 	// not let go: cancelled, or rewritten before they went. Shown as
 	// examples of what not to write again.
 	Corrections []string
+
+	// Exemplars are the person's own past messages nearest in meaning to
+	// this one: how they actually write to somebody about something like
+	// this. Empty unless they have pointed the agent at their sent mail.
+	//
+	// Their own words rather than a description of them. A voice
+	// described in fields says "friendly, brief"; five of their own
+	// replies say how they open, how much they explain, and whether they
+	// sign off at all.
+	Exemplars []string
 }
 
 type draftData struct {
@@ -50,6 +60,7 @@ type draftData struct {
 	Subject      string
 	Instructions string
 	Memories     []string
+	Exemplars    []string
 	Summary      string
 	Notes        string
 	Earlier      []string
@@ -78,6 +89,7 @@ func DraftPrompt(input *DraftInput) ([]llm.ChatMessage, error) {
 		Subject:      input.Subject,
 		Instructions: strings.TrimSpace(input.Instructions),
 		Memories:     input.Memories,
+		Exemplars:    input.Exemplars,
 		Summary:      strings.TrimSpace(input.Summary),
 		Notes:        strings.TrimSpace(input.Notes),
 		Earlier:      earlier,
@@ -190,6 +202,7 @@ func (self *Agent) DraftReply(ctx context.Context, request *models.AgentDraftReq
 		Summary:       summary,
 		Notes:         notes,
 		Memories:      memories,
+		Exemplars:     self.exemplarsFor(ctx, request.Agent, message, replyExemplars),
 	})
 	if err != nil {
 		return nil, err

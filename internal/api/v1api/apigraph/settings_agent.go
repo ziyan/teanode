@@ -124,6 +124,11 @@ type AgentModelsSettings struct {
 	Schedule  string   `json:"schedule"`
 	Compact   string   `json:"compact"`
 	Choices   []string `json:"choices"`
+
+	// Scan is the model for bulk understanding with nobody present, and
+	// EmbeddingDimensions the width to ask the embedding model for.
+	Scan                string `json:"scan"`
+	EmbeddingDimensions int    `json:"embeddingDimensions"`
 }
 
 // AgentFeaturesSettings is what the deployment offers, resolved.
@@ -142,6 +147,9 @@ type AgentFeaturesSettings struct {
 	ChatApps         bool `json:"chatApps"`
 	Skills           bool `json:"skills"`
 	Subagents        bool `json:"subagents"`
+	Remember         bool `json:"remember"`
+	Knowledge        bool `json:"knowledge"`
+	Dreaming         bool `json:"dreaming"`
 }
 
 // AgentLimitsSettings are the operator's limits.
@@ -157,6 +165,14 @@ type AgentLimitsSettings struct {
 	MaxToolCallsPerRun     int     `json:"maxToolCallsPerRun"`
 	RequestTimeout         string  `json:"requestTimeout"`
 	Concurrency            int     `json:"concurrency"`
+
+	// What the memory work may spend. Embedding is budgeted apart from
+	// everything else because the first pass over a person's own files is
+	// a hundred million tokens at a thousandth of the price of a
+	// conversation.
+	EmbeddingTokensPerDay int64   `json:"embeddingTokensPerDay"`
+	DreamShare            float64 `json:"dreamShare"`
+	IngestChunksPerRun    int     `json:"ingestChunksPerRun"`
 }
 
 // AgentRetentionSettings says how long records are kept.
@@ -242,6 +258,9 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Schedule:  agent.Models.Schedule,
 			Compact:   agent.Models.Compact,
 			Choices:   nonNil(agent.Models.Choices),
+
+			Scan:                agent.Models.Scan,
+			EmbeddingDimensions: agent.Models.EmbeddingDimensions,
 		},
 		Features: &AgentFeaturesSettings{
 			Triage:           agent.FeatureOn("triage"),
@@ -258,6 +277,9 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			ChatApps:         agent.FeatureOn("chatApps"),
 			Skills:           agent.FeatureOn("skills"),
 			Subagents:        agent.FeatureOn("subagents"),
+			Remember:         agent.FeatureOn("remember"),
+			Knowledge:        agent.FeatureOn("knowledge"),
+			Dreaming:         agent.FeatureOn("dreaming"),
 		},
 		Limits: &AgentLimitsSettings{
 			MaxBodyCharacters:      agent.Limits.MaxBodyCharacters,
@@ -271,6 +293,9 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			MaxToolCallsPerRun:     agent.Limits.MaxToolCallsPerRun,
 			RequestTimeout:         agent.Limits.RequestTimeout.String(),
 			Concurrency:            agent.Limits.Concurrency,
+			EmbeddingTokensPerDay:  agent.Limits.EmbeddingTokensPerDay,
+			DreamShare:             agent.Limits.DreamShare,
+			IngestChunksPerRun:     agent.Limits.IngestChunksPerRun,
 		},
 		Retention: &AgentRetentionSettings{
 			Runs:        agent.Retention.Runs.String(),
@@ -401,17 +426,19 @@ type AgentProviderParameters struct {
 // AgentModelsParameters assign work to models; each given field replaces
 // the stored one.
 type AgentModelsParameters struct {
-	Default   *string   `json:"default"`
-	Fast      *string   `json:"fast"`
-	Embedding *string   `json:"embedding"`
-	Triage    *string   `json:"triage"`
-	Research  *string   `json:"research"`
-	Summarize *string   `json:"summarize"`
-	Reply     *string   `json:"reply"`
-	Ask       *string   `json:"ask"`
-	Schedule  *string   `json:"schedule"`
-	Compact   *string   `json:"compact"`
-	Choices   *[]string `json:"choices"`
+	Default             *string   `json:"default"`
+	Fast                *string   `json:"fast"`
+	Embedding           *string   `json:"embedding"`
+	Triage              *string   `json:"triage"`
+	Research            *string   `json:"research"`
+	Summarize           *string   `json:"summarize"`
+	Reply               *string   `json:"reply"`
+	Ask                 *string   `json:"ask"`
+	Schedule            *string   `json:"schedule"`
+	Compact             *string   `json:"compact"`
+	Choices             *[]string `json:"choices"`
+	Scan                *string   `json:"scan"`
+	EmbeddingDimensions *int      `json:"embeddingDimensions"`
 }
 
 // AgentFeaturesParameters switch what the deployment offers.
@@ -430,6 +457,9 @@ type AgentFeaturesParameters struct {
 	ChatApps         *bool `json:"chatApps"`
 	Skills           *bool `json:"skills"`
 	Subagents        *bool `json:"subagents"`
+	Remember         *bool `json:"remember"`
+	Knowledge        *bool `json:"knowledge"`
+	Dreaming         *bool `json:"dreaming"`
 }
 
 // AgentLimitsParameters change the limits.
@@ -445,6 +475,9 @@ type AgentLimitsParameters struct {
 	MaxToolCallsPerRun     *int     `json:"maxToolCallsPerRun"`
 	RequestTimeout         *string  `json:"requestTimeout"`
 	Concurrency            *int     `json:"concurrency"`
+	EmbeddingTokensPerDay  *int64   `json:"embeddingTokensPerDay"`
+	DreamShare             *float64 `json:"dreamShare"`
+	IngestChunksPerRun     *int     `json:"ingestChunksPerRun"`
 }
 
 // AgentRetentionParameters change how long records are kept.
@@ -567,6 +600,8 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&models.Default, parameters.Models.Default)
 		applyString(&models.Fast, parameters.Models.Fast)
 		applyString(&models.Embedding, parameters.Models.Embedding)
+		applyString(&models.Scan, parameters.Models.Scan)
+		applyInt(&models.EmbeddingDimensions, parameters.Models.EmbeddingDimensions)
 		applyString(&models.Triage, parameters.Models.Triage)
 		applyString(&models.Research, parameters.Models.Research)
 		applyString(&models.Summarize, parameters.Models.Summarize)
@@ -592,10 +627,20 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyFeature(&features.ChatApps, parameters.Features.ChatApps)
 		applyFeature(&features.Skills, parameters.Features.Skills)
 		applyFeature(&features.Subagents, parameters.Features.Subagents)
+		applyFeature(&features.Remember, parameters.Features.Remember)
+		applyFeature(&features.Knowledge, parameters.Features.Knowledge)
+		applyFeature(&features.Dreaming, parameters.Features.Dreaming)
 	}
 	if parameters.Limits != nil {
 		limits := &agent.Limits
 		applyInt(&limits.MaxBodyCharacters, parameters.Limits.MaxBodyCharacters)
+		applyInt(&limits.IngestChunksPerRun, parameters.Limits.IngestChunksPerRun)
+		if parameters.Limits.EmbeddingTokensPerDay != nil {
+			limits.EmbeddingTokensPerDay = *parameters.Limits.EmbeddingTokensPerDay
+		}
+		if parameters.Limits.DreamShare != nil {
+			limits.DreamShare = *parameters.Limits.DreamShare
+		}
 		if parameters.Limits.DailyTokensPerAgent != nil {
 			limits.DailyTokensPerAgent = *parameters.Limits.DailyTokensPerAgent
 		}

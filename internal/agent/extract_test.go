@@ -70,6 +70,11 @@ func TestAnAppointmentInTheWordsIsOfferedAndNotWritten(t *testing.T) {
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	// No nightly run: a tick queues whatever is due, and whether a night
+	// is due depends on the hour the test happens to run at. See
+	// schedule_run_test.go for what that cost once.
+	dreamingOff := false
+	configuration.Agent.Features.Dreaming = &dreamingOff
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:sorter"
 	registry, err := llm.Open(&configuration.Agent)

@@ -166,12 +166,40 @@ func TestOpenAIListModelsAndEmbed(t *testing.T) {
 	if len(models) != 2 || models[0].ID != "alpha" || models[1].ID != "zeta" {
 		t.Fatalf("models %+v", models)
 	}
-	vectors, usage, err := provider.(Embedder).Embed(context.Background(), "e", []string{"a", "b"})
+	vectors, usage, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{Model: "e", Inputs: []string{"a", "b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(vectors) != 2 || vectors[0][0] != 1 || vectors[1][0] != 0.5 || usage.PromptTokens != 7 {
 		t.Fatalf("vectors %v usage %+v", vectors, usage)
+	}
+}
+
+// A narrower vector is asked for by passing the width through; a provider
+// that does not understand it answers at its own, which is why the width
+// travels with the model's name wherever a vector is kept.
+func TestEmbeddingAsksForAWidthWhenOneIsWanted(t *testing.T) {
+	var requests []map[string]any
+	server := fakeOpenAI(t, &requests)
+	defer server.Close()
+	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
+		Model: "e", Inputs: []string{"a"}, Dimensions: 512,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	last := requests[len(requests)-1]
+	if last["dimensions"] != float64(512) {
+		t.Fatalf("the width should be asked for: %+v", last)
+	}
+	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
+		Model: "e", Inputs: []string{"a"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	last = requests[len(requests)-1]
+	if _, asked := last["dimensions"]; asked {
+		t.Fatalf("and left out when nobody asked: %+v", last)
 	}
 }
 

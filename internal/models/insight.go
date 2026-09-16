@@ -143,6 +143,13 @@ type AgentConversation struct {
 	// described again.
 	DescribedAt *time.Time `json:"describedAt,omitempty"`
 
+	// RememberedThrough is the last message a run that files what the
+	// conversation taught has read, and RememberedAt when it last ran.
+	// The identifier rather than the time, so a run that dies re-reads
+	// from where it was rather than skipping what arrived meanwhile.
+	RememberedThrough string     `json:"-"`
+	RememberedAt      *time.Time `json:"rememberedAt,omitempty"`
+
 	// JobID, JobKind and SubjectID say which run this is the record of.
 	JobID     string `json:"jobId,omitempty"`
 	JobKind   string `json:"jobKind,omitempty"`

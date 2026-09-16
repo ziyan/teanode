@@ -55,6 +55,15 @@ type InsightOperation interface {
 	// the title or in what was said, newest first, archived ones included.
 	SearchAgentConversations(agentId, query string, limit int) ([]*models.AgentConversation, error)
 
+	// ListAgentConversationsToRemember is every conversation with
+	// something said in it that no remember run has read yet, quiet since
+	// the moment given so that one still being typed into is left alone.
+	ListAgentConversationsToRemember(quietSince time.Time, limit int) ([]*models.AgentConversation, error)
+
+	// MarkAgentConversationRemembered records how far a remember run got.
+	// Called in the same transaction as the facts it wrote.
+	MarkAgentConversationRemembered(conversationId, messageId string, at time.Time) error
+
 	// ListAgentConversationsToDescribe is every conversation quiet since
 	// the given time with something said since it was last described.
 	ListAgentConversationsToDescribe(quietSince time.Time, limit int) ([]*models.AgentConversation, error)
@@ -106,6 +115,10 @@ type agentConversationModel struct {
 	ArchivedAt       *time.Time `gorm:"column:archived_at"`
 	LastAt           time.Time  `gorm:"column:last_at"`
 	CompactedThrough string     `gorm:"column:compacted_through"`
+
+	// How far a remember run has read. See migration 0067.
+	RememberedThrough string     `gorm:"column:remembered_through"`
+	RememberedAt      *time.Time `gorm:"column:remembered_at"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -321,21 +334,26 @@ func (self *transaction) DeleteMailInsights(mailboxId string) (int64, error) {
 
 func conversationFromModel(model *agentConversationModel) *models.AgentConversation {
 	conversation := &models.AgentConversation{
-		ID:               model.ID,
-		CreatedAt:        model.CreatedAt.In(time.Local),
-		ModifiedAt:       model.ModifiedAt.In(time.Local),
-		AgentID:          model.AgentID,
-		MailboxID:        model.MailboxID,
-		Kind:             models.AgentConversationKind(model.Kind),
-		Title:            model.Title,
-		Summary:          model.Summary,
-		TitledBy:         model.TitledBy,
-		JobID:            model.JobID,
-		JobKind:          model.JobKind,
-		SubjectID:        model.SubjectID,
-		Surface:          model.Surface,
-		LastAt:           model.LastAt.In(time.Local),
-		CompactedThrough: model.CompactedThrough,
+		ID:                model.ID,
+		CreatedAt:         model.CreatedAt.In(time.Local),
+		ModifiedAt:        model.ModifiedAt.In(time.Local),
+		AgentID:           model.AgentID,
+		MailboxID:         model.MailboxID,
+		Kind:              models.AgentConversationKind(model.Kind),
+		Title:             model.Title,
+		Summary:           model.Summary,
+		TitledBy:          model.TitledBy,
+		JobID:             model.JobID,
+		JobKind:           model.JobKind,
+		SubjectID:         model.SubjectID,
+		Surface:           model.Surface,
+		LastAt:            model.LastAt.In(time.Local),
+		CompactedThrough:  model.CompactedThrough,
+		RememberedThrough: model.RememberedThrough,
+	}
+	if model.RememberedAt != nil {
+		at := model.RememberedAt.In(time.Local)
+		conversation.RememberedAt = &at
 	}
 	if model.ArchivedAt != nil {
 		at := model.ArchivedAt.In(time.Local)
@@ -466,6 +484,45 @@ func (self *transaction) ListAgentConversationsToDescribe(quietSince time.Time, 
 		conversations = append(conversations, conversationFromModel(&found[index]))
 	}
 	return conversations, nil
+}
+
+// ListAgentConversationsToRemember is the conversations with something in
+// them the agent has not filed.
+//
+// "Not filed" is a message newer than the one the last run stopped at,
+// which is a different question from "changed since we last looked": a run
+// that failed leaves the mark where it was, so the work comes back round
+// rather than being lost.
+func (self *transaction) ListAgentConversationsToRemember(quietSince time.Time, limit int) ([]*models.AgentConversation, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var found []agentConversationModel
+	if err := self.tx.Raw(`
+		SELECT c.* FROM "agent_conversation" c
+		WHERE c."kind" IN ('main', 'named') AND c."last_at" < ?
+		  AND EXISTS (
+			SELECT 1 FROM "agent_message" m
+			WHERE m."conversation_id" = c."id"
+			  AND m."role" IN ('user', 'assistant')
+			  AND (c."remembered_through" = '' OR m."id" > c."remembered_through")
+		  )
+		ORDER BY c."last_at" ASC LIMIT ?`, quietSince, limit).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for index := range found {
+		conversations = append(conversations, conversationFromModel(&found[index]))
+	}
+	return conversations, nil
+}
+
+func (self *transaction) MarkAgentConversationRemembered(conversationId, messageId string, at time.Time) error {
+	if conversationId == "" {
+		return fmt.Errorf("db: marking a conversation filed needs the conversation")
+	}
+	return self.tx.Model(&agentConversationModel{}).Where(`"id" = ?`, conversationId).
+		Updates(map[string]any{"remembered_through": messageId, "remembered_at": at}).Error
 }
 
 func (self *transaction) DeleteAgentConversation(conversationId string) error {

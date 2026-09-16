@@ -158,6 +158,16 @@ type AgentModelPricing struct {
 // PricingFor is what a model of this provider costs: the first entry
 // that names it, or the provider's own prices.
 func (self *AgentProvider) PricingFor(model string) AgentPricing {
+	// "text-embedding-3-small@512" is text-embedding-3-small at a width,
+	// which this program names that way to keep vectors of different
+	// widths apart. It is the same model at the same price, and matching
+	// the whole name against the price list missed it -- so every
+	// embedding was charged at the provider's default rate for chat
+	// input, seven and a half times what it cost, and the dashboard said
+	// forty-seven dollars on a day the provider billed six.
+	if name, _, found := strings.Cut(model, "@"); found {
+		model = name
+	}
 	for index := range self.ModelPricing {
 		priced := &self.ModelPricing[index]
 		if matchesAny([]string{priced.Model}, model) {
@@ -261,6 +271,26 @@ type AgentModels struct {
 	Fast      string `yaml:"fast,omitempty"`
 	Embedding string `yaml:"embedding,omitempty"`
 
+	// EmbeddingDimensions is the width to ask the embedding model for,
+	// where it takes such a request. Zero is the model's own width.
+	//
+	// Worth setting for knowledge, which is where the vectors are: half a
+	// million chunks at 1536 floats is three gigabytes of table and index,
+	// and at 512 it is one. The models that accept this argument are
+	// trained so that the first few hundred numbers carry nearly all of
+	// the meaning, so the search is barely worse and the store is a third
+	// the size. The width travels with the model's name wherever a vector
+	// is kept, because two widths of one model are two spaces and must
+	// never be ranked against each other.
+	EmbeddingDimensions int `yaml:"embeddingDimensions,omitempty"`
+
+	// Scan is the model for bulk understanding with nobody present:
+	// filing what a conversation taught, summarizing a document, writing
+	// a month's page, consolidating a page from its facts. It runs over
+	// everything the person has, so it should be the cheapest model that
+	// can follow an instruction. Empty falls back to Fast.
+	Scan string `yaml:"scan,omitempty"`
+
 	Triage    string `yaml:"triage,omitempty"`
 	Research  string `yaml:"research,omitempty"`
 	Summarize string `yaml:"summarize,omitempty"`
@@ -286,10 +316,13 @@ const (
 	AgentWorkAsk       AgentWork = "ask"
 	AgentWorkSchedule  AgentWork = "schedule"
 	AgentWorkCompact   AgentWork = "compact"
+
+	// AgentWorkScan is the bulk understanding described on Models.Scan.
+	AgentWorkScan AgentWork = "scan"
 )
 
 // AgentWorks is every kind, in the order the settings page shows them.
-var AgentWorks = []AgentWork{AgentWorkTriage, AgentWorkResearch, AgentWorkSummarize, AgentWorkReply, AgentWorkAsk, AgentWorkSchedule, AgentWorkCompact}
+var AgentWorks = []AgentWork{AgentWorkTriage, AgentWorkResearch, AgentWorkSummarize, AgentWorkReply, AgentWorkAsk, AgentWorkSchedule, AgentWorkCompact, AgentWorkScan}
 
 // ForWork is the model name assigned to a kind of work.
 func (self *AgentModels) ForWork(work AgentWork) string {
@@ -310,6 +343,8 @@ func (self *AgentModels) ForWork(work AgentWork) string {
 		override = self.Schedule
 	case AgentWorkCompact:
 		override, fast = self.Compact, true
+	case AgentWorkScan:
+		override, fast = self.Scan, true
 	}
 	if override != "" {
 		return override
@@ -343,6 +378,20 @@ type AgentFeatures struct {
 	ChatApps         *bool `yaml:"chatApps,omitempty"`
 	Skills           *bool `yaml:"skills,omitempty"`
 
+	// Remember is the run after a conversation that files what it taught.
+	// Off means the agent keeps only what the person or the model asked
+	// it to keep, which is what it did before this existed and is
+	// measurably almost nothing.
+	Remember *bool `yaml:"remember,omitempty"`
+
+	// Knowledge is the sources a person points their agent at -- a
+	// checkout, a chat archive, a wiki -- and searching them.
+	Knowledge *bool `yaml:"knowledge,omitempty"`
+
+	// Dreaming is the nightly run that works through what arrived,
+	// rewrites the pages it touched and tidies the graph.
+	Dreaming *bool `yaml:"dreaming,omitempty"`
+
 	// Subagents lets a turn hand a piece of work to a run of its own. It
 	// costs what a second run costs, against the same person's budget, so
 	// a deployment counting tokens may want it off.
@@ -375,6 +424,22 @@ type AgentLimits struct {
 
 	// MonthlyTokensPerServer caps the whole server. Zero means no cap.
 	MonthlyTokensPerServer int64 `yaml:"monthlyTokensPerServer,omitempty"`
+
+	// EmbeddingTokensPerDay bounds embedding separately from everything
+	// else. Zero is no limit, which is the default and is deliberate: the
+	// first pass over a person's checkout and chat archive is a hundred
+	// million tokens at a thousandth of the price of a conversation, and
+	// counting it against the same daily budget would stop the load on its
+	// first night and every night after. The money caps still bind it.
+	EmbeddingTokensPerDay int64 `yaml:"embeddingTokensPerDay,omitempty"`
+
+	// DreamShare is how much of the daily budget the nightly run may
+	// spend, so that a night never eats the day. Zero resolves to 0.3.
+	DreamShare float64 `yaml:"dreamShare,omitempty"`
+
+	// IngestChunksPerRun is how many chunks one pass of an ingest job
+	// embeds before it hands the queue back. Zero resolves to 2000.
+	IngestChunksPerRun int `yaml:"ingestChunksPerRun,omitempty"`
 
 	// The round caps: how many times a run may go back to the model.
 	MaxRoundsPerAsk      int `yaml:"maxRoundsPerAsk"`
@@ -715,6 +780,12 @@ func (self *Agent) FeatureOn(feature string) bool {
 		return featureOn(self.Features.Skills)
 	case "subagents":
 		return featureOn(self.Features.Subagents)
+	case "remember":
+		return featureOn(self.Features.Remember)
+	case "knowledge":
+		return featureOn(self.Features.Knowledge)
+	case "dreaming":
+		return featureOn(self.Features.Dreaming)
 	}
 	return false
 }

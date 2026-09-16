@@ -1,113 +1,130 @@
 package agent
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The words a turn is looked up by: long enough to mean something, no
-// repeats, and not the words every sentence has.
-func TestRecallWords(t *testing.T) {
-	words := recallWords("Could you please tell Maria about the RAID controller, the raid controller again?")
-	joined := strings.Join(words, ",")
-	for _, wanted := range []string{"maria", "raid", "controller"} {
-		if !strings.Contains(joined, wanted) {
-			t.Fatalf("%q should be looked up by %q", joined, wanted)
+// Reciprocal rank fusion ranks by position, not by score, which is the
+// point: a full-text rank and a cosine are not on the same scale and
+// cannot be added. A row two searches both found beats one only the best
+// search found, in first place.
+func TestFusionPrefersWhatTwoSearchesAgree(t *testing.T) {
+	page := func(id string) *models.AgentNode { return &models.AgentNode{ID: id, Path: "topics/" + id} }
+
+	byMeaning := []*models.AgentNode{page("a"), page("b"), page("c")}
+	byWords := []*models.AgentNode{page("d"), page("b")}
+
+	ranked := fuseNodes(10, byMeaning, byWords)
+	if len(ranked) != 4 {
+		t.Fatalf("every row of both lists, once each: %d", len(ranked))
+	}
+	if ranked[0].ID != "b" {
+		t.Fatalf("what both found comes first, and got %q", ranked[0].ID)
+	}
+	// "a" was first in one list, "d" first in the other; the tie is
+	// broken steadily rather than at random.
+	if ranked[1].ID != "a" && ranked[1].ID != "d" {
+		t.Fatalf("then the two firsts: %q", ranked[1].ID)
+	}
+	if shorter := fuseNodes(2, byMeaning, byWords); len(shorter) != 2 {
+		t.Fatalf("the limit is kept: %d", len(shorter))
+	}
+}
+
+func TestFusionOfFacts(t *testing.T) {
+	fact := func(id string) *models.AgentFact { return &models.AgentFact{ID: id, Text: id} }
+	ranked := fuseFacts(10, []*models.AgentFact{fact("x"), fact("y")}, []*models.AgentFact{fact("y")})
+	if len(ranked) != 2 || ranked[0].ID != "y" {
+		t.Fatalf("what both found comes first: %v", ranked)
+	}
+}
+
+// Two facts can be near in meaning and be about two different people. The
+// cosine alone would merge them and lose one, so a shared name or number
+// is required where either sentence has one.
+func TestATwinHasToNameTheSameThing(t *testing.T) {
+	if !sharesAName("Reports to Alice on the platform team.", "Now works for Alice.") {
+		t.Fatalf("the same name in both: a twin")
+	}
+	if sharesAName("The boat next door is Kittiwake.", "The boat next door is Puffin.") {
+		t.Fatalf("two names, two facts, however near they sit")
+	}
+	if !sharesAName("Repainted every spring.", "Gets a coat of paint each spring.") {
+		t.Fatalf("neither names anything, so the cosine decides alone")
+	}
+	if sharesAName("The invoice was 4200.", "The invoice was 3100.") {
+		t.Fatalf("two numbers are two facts")
+	}
+	// The first word of a sentence is capitalized because it is first,
+	// which says nothing about what it names.
+	if !sharesAName("They moved to Tokyo.", "Tokyo is where they live now.") {
+		t.Fatalf("Tokyo is in both: %v %v", properNouns("They moved to Tokyo."), properNouns("Tokyo is where they live now."))
+	}
+	// Except the page's own name, which is a name for certain. Both of
+	// these open with it and share nothing else, and a page fills up with
+	// exactly this shape if they are not recognized as one fact.
+	if !sharesAName("Kittiwake is the neighbour's sailing boat.",
+		"Kittiwake belongs to the neighbour next door.", "Kittiwake") {
+		t.Fatalf("the page's own name counts wherever it appears")
+	}
+	// And knowing the page's name does not make two different facts one:
+	// the other names in them still have to agree.
+	if sharesAName("Kittiwake was repainted by Alice.",
+		"Kittiwake was repainted by Bob.", "Kittiwake") {
+		t.Fatalf("two people, two facts, however near they sit")
+	}
+}
+
+// A page's line in the index says where it is, what it is called, and
+// enough of what it says to be worth the tokens -- inside a width, so a
+// long summary cannot push the rest of the index out of the prompt.
+func TestIndexLineFitsItsWidth(t *testing.T) {
+	node := &models.AgentNode{
+		Path: "people/alice-chen", Name: "Alice Chen",
+		Summary: "Runs the platform team at Acme. Joined in 2019 from a company nobody has heard of, and is the person to ask about anything that touches the fleet.",
+	}
+	line := node.IndexLine(120)
+	if len(line) > 124 {
+		t.Fatalf("within its width: %d characters", len(line))
+	}
+	if !contains(line, "people/alice-chen") || !contains(line, "Alice Chen") {
+		t.Fatalf("the path and the name: %q", line)
+	}
+	if !contains(line, "Runs the platform team") {
+		t.Fatalf("and the first sentence: %q", line)
+	}
+	// A page whose name is its last segment does not say it twice.
+	plain := &models.AgentNode{Path: "topics/kernel", Name: "kernel"}
+	if line := plain.IndexLine(120); line != "topics/kernel" {
+		t.Fatalf("no need to repeat the segment: %q", line)
+	}
+}
+
+func contains(haystack, needle string) bool {
+	return len(haystack) >= len(needle) && (haystack == needle ||
+		len(needle) == 0 || indexOf(haystack, needle) >= 0)
+}
+
+func indexOf(haystack, needle string) int {
+	for index := 0; index+len(needle) <= len(haystack); index++ {
+		if haystack[index:index+len(needle)] == needle {
+			return index
 		}
 	}
-	for _, unwanted := range []string{"could", "please", "about", "again", "the"} {
-		if strings.Contains(joined, unwanted) {
-			t.Fatalf("%q says nothing about the turn, in %q", unwanted, joined)
-		}
-	}
-	if strings.Count(joined, "raid") != 1 {
-		t.Fatalf("a word said twice is looked up once: %q", joined)
-	}
-	if len(recallWords(strings.Repeat("controller alternator distributor carburettor ", 10))) > recallWordsPerAsk {
-		t.Fatal("one message does not search for everything")
-	}
-	if len(recallWords("ok ta yes")) != 0 {
-		t.Fatal("short words are not worth a search")
-	}
+	return -1
 }
 
-// What a memory is worth to a turn is how much of the turn it touches.
-func TestRecallScore(t *testing.T) {
-	memory := &models.AgentMemory{Title: "The RAID controller", Content: "The controller on pycad is failing.", Tags: []string{"hardware"}}
-	if score := recallScore(memory, []string{"raid", "controller", "pycad"}); score != 3 {
-		t.Fatalf("every word it touches counts: %d", score)
+// A fact says what it is when it is shown: that it was inferred rather
+// than said, and when it was true.
+func TestAFactSaysWhatItIs(t *testing.T) {
+	plain := &models.AgentFact{Text: "Runs the platform team."}
+	if plain.Line() != "Runs the platform team." {
+		t.Fatalf("a plain fact is its sentence: %q", plain.Line())
 	}
-	if score := recallScore(memory, []string{"hardware"}); score != 1 {
-		t.Fatalf("a tag counts too: %d", score)
-	}
-	if score := recallScore(memory, []string{"sailing"}); score != 0 {
-		t.Fatalf("an untouched memory scores nothing: %d", score)
-	}
-}
-
-// Nearest ranks by meaning and keeps only what is near enough to be
-// about the same thing.
-func TestNearestMemories(t *testing.T) {
-	boat := &models.AgentMemory{ID: "m1", Title: "Kittiwake", Vector: []float32{1, 0, 0}}
-	sails := &models.AgentMemory{ID: "m2", Title: "The sails", Vector: []float32{0.9, 0.2, 0}}
-	tax := &models.AgentMemory{ID: "m3", Title: "The tax return", Vector: []float32{0, 1, 0}}
-	found := nearest([]float32{1, 0.05, 0}, []*models.AgentMemory{tax, sails, boat}, 5)
-	if len(found) != 2 || found[0].ID != "m1" || found[1].ID != "m2" {
-		t.Fatalf("the two about boats, the nearest first: %v", found)
-	}
-	if kept := nearest([]float32{1, 0, 0}, []*models.AgentMemory{tax}, 5); len(kept) != 0 {
-		t.Fatalf("nothing near enough is nothing: %v", kept)
-	}
-	if kept := nearest([]float32{0, 0, 0}, []*models.AgentMemory{boat}, 5); len(kept) != 0 {
-		t.Fatal("a vector of nothing ranks nothing")
-	}
-	if kept := nearest([]float32{1, 0}, []*models.AgentMemory{boat}, 5); len(kept) != 0 {
-		t.Fatal("vectors of different lengths are not comparable")
-	}
-	if len(nearest([]float32{1, 0, 0}, []*models.AgentMemory{boat, sails}, 1)) != 1 {
-		t.Fatal("the limit is kept")
-	}
-}
-
-// Two ways of saying one thing are the same thing.
-func TestSimilarity(t *testing.T) {
-	if score := similarity([]float32{1, 0}, []float32{1, 0}); score < 0.999 {
-		t.Fatalf("a vector is itself: %v", score)
-	}
-	if score := similarity([]float32{1, 0}, []float32{0, 1}); score > 0.001 {
-		t.Fatalf("and not its opposite: %v", score)
-	}
-	if score := similarity([]float32{1, 0}, []float32{1, 0, 0}); score != 0 {
-		t.Fatalf("different lengths cannot be compared: %v", score)
-	}
-}
-
-// What is embedded of a memory is what it is called, what it says and
-// what it was tagged with, and never more than a model will take.
-func TestMemoryText(t *testing.T) {
-	text := memoryText(&models.AgentMemory{Title: "Kittiwake", Content: "the neighbour's boat", Tags: []string{"boats", "neighbours"}})
-	for _, wanted := range []string{"Kittiwake", "neighbour's boat", "boats", "neighbours"} {
-		if !strings.Contains(text, wanted) {
-			t.Fatalf("%q is missing from %q", wanted, text)
-		}
-	}
-	long := memoryText(&models.AgentMemory{Title: "x", Content: strings.Repeat("y", memoryEmbedCharacters*2)})
-	if len(long) > memoryEmbedCharacters {
-		t.Fatalf("a long memory is cut: %d", len(long))
-	}
-}
-
-// A memory a person addressed to sorting alone is not read out in a
-// conversation because a word of it turned up in what they said.
-func TestRecallKeepsToItsAudience(t *testing.T) {
-	forSorting := &models.AgentMemory{ID: "m1", Title: "Newsletters", AppliesTo: []models.AgentAudience{models.AudienceTriage}}
-	forTalking := &models.AgentMemory{ID: "m2", Title: "Newsletters", AppliesTo: []models.AgentAudience{models.AudienceAsk}}
-	if forSorting.Addressed(models.AudienceAsk) {
-		t.Fatal("a memory for sorting is not for the conversation")
-	}
-	if !forTalking.Addressed(models.AudienceAsk) {
-		t.Fatal("and one for the conversation is")
+	guessed := &models.AgentFact{Text: "Wrote the payload angle check.", Inferred: true}
+	if !contains(guessed.Line(), "inferred") {
+		t.Fatalf("an inference says so: %q", guessed.Line())
 	}
 }

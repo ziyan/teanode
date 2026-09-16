@@ -48,3 +48,13 @@ per conversation turn, so a change of model catches up on its own. Messages
 are not: they are only embedded when they arrive, or by the backfill that
 runs when a mailbox is granted with sorting on, and rows from an old model
 are never removed.
+
+## Superseded in part
+
+The storage decision above — no extension, ranking in Go — is superseded
+for knowledge chunks by
+`docs/decisions/20260915-pgvector-when-present-never-required.md`, which
+adopts pgvector behind the same interface exactly as the "Consequences"
+section anticipated: as an option the server checks for rather than
+requires, over the same `real[]` column. Memories and mail keep the
+bounded candidate set described here.

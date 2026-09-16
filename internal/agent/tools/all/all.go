@@ -18,6 +18,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/datetime"
 	_ "github.com/ziyan/teanode/internal/agent/tools/domain"
 	_ "github.com/ziyan/teanode/internal/agent/tools/folder"
+	_ "github.com/ziyan/teanode/internal/agent/tools/knowledge"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailaudit"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailboxsettings"

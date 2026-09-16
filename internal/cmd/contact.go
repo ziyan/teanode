@@ -78,6 +78,12 @@ func NewContactCommand() *cli.Command {
 				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runContactBookRemove,
 			},
+			{
+				Name:      "me",
+				Usage:     "say which contact is you, so your agent knows your own addresses; with no id, say who it thinks you are",
+				ArgsUsage: "[id]",
+				Action:    runContactBookMe,
+			},
 		},
 	}
 }
@@ -313,4 +319,40 @@ func displayed(contact *client.Contact) string {
 		return contact.Emails[0]
 	}
 	return contact.ID
+}
+
+// runContactBookMe names the contact that is the caller, or says which
+// one is.
+//
+// It is how the agent knows which commits, messages and mail are the
+// person's own rather than somebody else's: without it a checkout of
+// their own work looks like a checkout of a stranger's, and the timeline
+// it would have built is empty. The dashboard has had a button for this
+// since the page was written; this is the same thing from a shell.
+func runContactBookMe(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	id := command.Args().First()
+	if id == "" {
+		// The self page carries it: the contact is read live rather than
+		// copied, so one number changed in the address book is right
+		// everywhere.
+		page, err := client.AgentGraphPageOf(ctx, connection, "self")
+		if err != nil {
+			return describeError(command, err)
+		}
+		if page == nil || page.Contact == nil {
+			_, _ = fmt.Fprintln(command.Writer, "no contact is marked as you; give an id to say which is")
+			return nil
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s <%s>\n", page.Contact.Name, strings.Join(page.Contact.Emails, ", "))
+		return nil
+	}
+	if err := client.SetMyContact(ctx, connection, id); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintln(command.Writer, "that contact is you now; your agent will read its addresses as your own")
+	return nil
 }

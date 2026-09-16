@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { PencilIcon, TrashIcon } from '../components/icons'
+import { PencilIcon, TrashIcon, UserIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
@@ -89,8 +89,18 @@ type Draft = {
 }
 
 const empty: Draft = {
-  id: '', name: '', organization: '', emails: '', phones: '', note: '',
-  street: '', locality: '', region: '', postalCode: '', country: '', addresses: [],
+  id: '',
+  name: '',
+  organization: '',
+  emails: '',
+  phones: '',
+  note: '',
+  street: '',
+  locality: '',
+  region: '',
+  postalCode: '',
+  country: '',
+  addresses: [],
 }
 
 // Where a contact's picture is served from. It lives inside the card as
@@ -108,6 +118,16 @@ function lines(value: string): string[] {
     .filter((line) => line.length > 0)
 }
 
+// Which contact is the person themselves. Kept on the account rather than
+// on the agent, because it is true of them whether or not they have one:
+// the composer and a CardDAV client can read it too. The agent's use of
+// it is to know their own addresses, and so to tell their own mail and
+// their own commits from anybody else's.
+// Asked through the agent's own self page, which is where the card is
+// read: one answer, and no second endpoint saying the same thing.
+const ME = `query { AgentGraphPage(path: "self") { contact { id } } }`
+const SET_ME = `mutation ($contactId: String) { SetMyContact(contactId: $contactId) }`
+
 export function AddressBookPage() {
   const { t, plural } = useTranslation()
   const toast = useToast()
@@ -122,6 +142,11 @@ export function AddressBookPage() {
     [bookId],
     { refresh: false },
   )
+  const me = useQuery(() => graphql<{ AgentGraphPage: { contact: { id: string } | null } | null }>(ME), [], {
+    refresh: false,
+  })
+
+  const myContactId = me.data?.AgentGraphPage?.contact?.id ?? ''
 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
@@ -187,6 +212,22 @@ export function AddressBookPage() {
     }
   }
 
+  // Naming the contact that is the person themselves. One at a time:
+  // choosing a second clears the first, and choosing the one that is
+  // already marked unmarks it.
+  const markAsMe = async (contact: Contact | null) => {
+    setBusy(true)
+    try {
+      await graphql(SET_ME, { contactId: contact?.id ?? null })
+      toast.done(t('agent.myContactSaved'))
+      await me.reload()
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const columns = useMemo<Column<Contact>[]>(
     () => [
       {
@@ -226,9 +267,7 @@ export function AddressBookPage() {
         filter: 'text',
         optional: true,
         value: (contact) => (contact.addresses ?? []).map((address) => address.written ?? '').join(' '),
-        render: (contact) => (
-          <span className="muted">{(contact.addresses ?? [])[0]?.written ?? ''}</span>
-        ),
+        render: (contact) => <span className="muted">{(contact.addresses ?? [])[0]?.written ?? ''}</span>,
       },
       {
         key: 'organization',
@@ -248,15 +287,22 @@ export function AddressBookPage() {
       {
         key: 'actions',
         header: '',
-        width: '5rem',
+        width: '7rem',
         render: (contact) => (
           <div className="row-actions">
-            <Tooltip label={t('common.edit')}>
+            <Tooltip label={contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}>
               <button
                 type="button"
-                disabled={busy || opening === contact.id}
-                onClick={() => void edit(contact)}
+                className={contact.id === myContactId ? 'pinned' : undefined}
+                disabled={busy}
+                aria-label={`${contact.name}: ${contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}`}
+                onClick={() => void markAsMe(contact.id === myContactId ? null : contact)}
               >
+                <UserIcon size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t('common.edit')}>
+              <button type="button" disabled={busy || opening === contact.id} onClick={() => void edit(contact)}>
                 <PencilIcon size={16} />
               </button>
             </Tooltip>
@@ -269,7 +315,7 @@ export function AddressBookPage() {
         ),
       },
     ],
-    [t, busy, opening],
+    [t, busy, opening, myContactId],
   )
 
   const rows = contacts.data?.ListContacts ?? []

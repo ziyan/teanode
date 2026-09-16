@@ -192,3 +192,45 @@ func TestAgentConversationTitleIsBounded(t *testing.T) {
 		}
 	})
 }
+
+// Changing the hours of the agent's night, and the note of when it last
+// ran, saves them.
+//
+// The columns and the model fields existed from the start; the update
+// statement lists its columns by name and did not list these, so the
+// mutation succeeded, returned, and changed nothing. For the hours that
+// meant a window nobody could move. For `dreamed_at` it meant the
+// nightly run never recorded that it had run, so the "not more than once
+// every six hours" rule read a nil and let another night start five
+// minutes later, for ever. A field that reads back as it went in is the
+// only proof that a write happened.
+func TestAgentTheNightIsSaved(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		ran := time.Now().Truncate(time.Microsecond)
+		if _, err := tx.UpdateAgent(agent.ID, func(found *models.Agent) error {
+			found.DreamFrom, found.DreamUntil = "23:30", "05:15"
+			found.DreamedAt = &ran
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgent: %s", err)
+		}
+		found, err := tx.GetAgent(agent.ID)
+		if err != nil || found == nil {
+			t.Fatalf("GetAgent: %v %s", found, err)
+		}
+		if found.DreamFrom != "23:30" || found.DreamUntil != "05:15" {
+			t.Fatalf("the night is %q to %q", found.DreamFrom, found.DreamUntil)
+		}
+		from, until := found.DreamWindow()
+		if from != "23:30" || until != "05:15" {
+			t.Fatalf("and the window follows it: %q to %q", from, until)
+		}
+		if found.DreamedAt == nil || !found.DreamedAt.Equal(ran) {
+			t.Fatalf("and when it last ran is kept, not %v", found.DreamedAt)
+		}
+	})
+}

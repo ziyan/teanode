@@ -623,7 +623,6 @@ a.tile:hover strong {
   margin-right: auto;
 }
 
-
 /* --- the rail ------------------------------------------------------------- */
 /* The product, at the top of its own rail. */
 .sidebar-brand {
@@ -2162,7 +2161,6 @@ pre.message-text {
     min-width: 40px;
     min-height: 40px;
   }
-
 
   /* iOS zooms the whole page in when a field smaller than 16px takes focus,
      and does not zoom back out. Sizing the fields at 16px is the only way to
@@ -6771,7 +6769,6 @@ p.notice.domain-logo-note {
   background: #ffffff;
 }
 
-
 .agent-artifact-body {
   padding: 10px 12px;
   max-height: 320px;
@@ -6798,7 +6795,6 @@ p.notice.domain-logo-note {
   font-size: 12px;
   color: var(--muted);
 }
-
 
 .agent-code-language {
   position: absolute;
@@ -7307,8 +7303,6 @@ button.with-icon {
   flex: none;
 }
 
-
-
 /* A title too long for its box is cut rather than wrapped, so a day with one
    long title stays the height of a day with one short one. */
 .calendar-entry-title {
@@ -7801,13 +7795,13 @@ button.with-icon {
 
   /* One guest a line, so a long list reads as a list rather than as a
    paragraph of names. */
-.invitation-who {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+  .invitation-who {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
 
-.invitation-answers {
+  .invitation-answers {
     flex-wrap: wrap;
   }
 }
@@ -7840,5 +7834,228 @@ button.with-icon {
   .mailbox-narrowing select,
   label:has(> input[type='radio']) > input {
     font-size: 16px;
+  }
+}
+
+/* What the agent knows.
+   
+   Two columns on a wide window: the tree of paths, and the page it is
+   showing. On a phone they stack, tree first, because choosing what to
+   read comes before reading it. The tree scrolls inside its own panel so
+   that a graph of six hundred pages does not make the whole page a
+   kilometre long. */
+/* Three columns, the way a file browser shows a hierarchy: folders, the
+   pages in one folder, and the page. The whole path stays in view, and a
+   deep tree is walked sideways rather than by drilling. The first two are
+   lists that scroll on their own; the third is the page and scrolls with
+   the window. */
+.knowledge-columns {
+  display: grid;
+  /* The page column has a real minimum: below it a paragraph turns into
+     one word per line, which is what happened when the third column was
+     left to take whatever was over. */
+  grid-template-columns: 200px minmax(240px, 300px) minmax(360px, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.knowledge-columns-two {
+  grid-template-columns: minmax(240px, 320px) minmax(360px, 1fr);
+}
+
+/* The folders as a row, above the list, where there is no room for them
+   as a column. */
+.knowledge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.knowledge-chip {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: var(--text-label);
+  cursor: pointer;
+}
+
+.knowledge-chip:hover:not(:disabled),
+.knowledge-chip.selected {
+  background: var(--field);
+  color: var(--text);
+}
+
+.knowledge-column {
+  min-width: 0;
+}
+
+.knowledge-column-folders,
+.knowledge-column-pages {
+  position: sticky;
+  top: var(--space-4);
+}
+
+.knowledge-list {
+  max-height: calc(100vh - var(--space-6) * 3);
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.knowledge-page {
+  min-width: 0;
+}
+
+/* The lookup is the way in; the lists are for when you do not know the
+   name yet. */
+.knowledge-lookup {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.knowledge-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row is a name, one line to tell it from the row above, and a count
+   or a chevron on the right. Whole row lights up; nothing underlined. */
+.knowledge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.knowledge-row:hover:not(:disabled),
+.knowledge-row.selected {
+  background: var(--field);
+}
+
+.knowledge-row.selected .knowledge-row-name {
+  font-weight: 600;
+}
+
+.knowledge-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.knowledge-row-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.knowledge-row-hint {
+  color: var(--muted);
+  font-size: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-row-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-row > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.knowledge-list-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.knowledge-more {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* One column at a time on a phone. The way back is a real navigation --
+   it changes the URL -- so the browser's Back does the same thing. */
+.knowledge-phone .knowledge-list {
+  max-height: none;
+}
+
+.knowledge-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.knowledge-back:hover:not(:disabled) {
+  color: var(--text);
+  background: none;
+}
+
+/* A page is prose the nightly run wrote, so it is read rather than
+   scanned: the measure is capped where the panel is not. */
+.knowledge-summary {
+  max-width: 68ch;
+  overflow-wrap: break-word;
+}
+
+/* The words a fact came from, shown under it. Quiet, because the fact is
+   what is being read and this is why it can be believed. */
+.knowledge-quote {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 900px) {
+  .knowledge-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, the tree is as wide as the screen and scrolls inside
+     itself; the page below it wraps. */
+  .knowledge-tree-table {
+    min-width: 0;
+  }
+
+  /* Stacked, the tree is a list above the page rather than a sidebar
+     beside it: sticky and full height would take the whole screen. */
+  .knowledge-tree {
+    position: static;
+    max-height: 40vh;
   }
 }

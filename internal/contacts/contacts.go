@@ -19,6 +19,8 @@ import (
 
 	"github.com/emersion/go-vcard"
 
+	"github.com/ziyan/teanode/internal/models"
+
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -403,4 +405,32 @@ func splitComponents(value string) []string {
 		built.WriteByte(letter)
 	}
 	return append(components, built.String())
+}
+
+// NotableFields is what a card says beyond its name, organization,
+// addresses and telephone: the job title, the birthday, where they live.
+// One line, for a prompt that carries the card of the person whose agent
+// this is.
+//
+// Empty when the card says nothing more, which is the common case for a
+// card typed into a form.
+func NotableFields(contact *models.Contact) string {
+	if contact == nil || len(contact.Card) == 0 {
+		return ""
+	}
+	parsed, err := Parse([]byte(contact.Card))
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	for _, address := range parsed.Addresses {
+		if written := address.Written(); written != "" {
+			parts = append(parts, "Address: "+strings.ReplaceAll(written, "\n", ", "))
+			break
+		}
+	}
+	if note := strings.TrimSpace(parsed.Note); note != "" {
+		parts = append(parts, note)
+	}
+	return strings.Join(parts, " ")
 }

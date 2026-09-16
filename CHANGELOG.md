@@ -6,6 +6,80 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Your agent keeps what it knows as pages rather than as a list. A page is a
+  person, a project, a place, a thing or a stretch of time; it lives at a path
+  like `people/alice-chen`, and each fact on it is numbered, carries the words
+  it came from, and can be cited as `people/alice-chen#3`. Pages are joined by
+  links that say how — who works on what, who knows whom — and the dashboard's
+  "What it knows" page is where you read and correct all of it.
+
+- It writes what it learns without being asked. A job runs after a conversation
+  goes quiet and files what the conversation taught, so what you told it on
+  Tuesday is there on Wednesday. Before this the model had to decide to write
+  during a turn, and given a task and a memory tool it did the task.
+
+- You can point it at what you already have: a checkout on one of your
+  computers, a chat archive, your notes. It reads them on the machine they are
+  on — the walking, the sniffing and the refusing all happen there, so a secret
+  never crosses the socket — and files what it finds. Directories that look like
+  records about other people are held back until you let them in by name.
+
+- It tidies overnight, in its own hours, which you can now set. It reads what
+  arrived, writes up the month, rewrites the pages that changed, strengthens the
+  links between pages you used together, lets what nothing has wanted sink out
+  of the way, and walks the graph looking for connections nobody wrote down.
+  Then it asks itself the questions you are likely to ask tomorrow and writes
+  down the ones it could not answer. It never deletes anything.
+
+- A project's page is an orientation, not a history: where the checkout
+  is and on which computer, its remote, what it calls itself, what it is
+  written in (languages, not file extensions — one page had said "written
+  mostly in gitignore"), its top-level directories, and how much of its
+  history is yours. Its opening is what the README says the thing is,
+  with the markdown taken off, rather than the README. That is enough for
+  the agent to know where to dig with the tools it already has, and it is
+  recomputed onto the same numbered facts each pass, so a fact cited in a
+  conversation last week still points at the same line.
+
+- `teanode agent knowledge pause` and `resume` stop reading a source and
+  start again without forgetting anything it found. Before, the only way
+  to stop one was to remove it.
+
+- `teanode contact me <id>` says which contact is you, and `teanode
+  contact me` says who it thinks you are. Your agent reads that card's
+  addresses as your own, which is how it tells your commits, your
+  messages and your mail from anybody else's; the dashboard has had a
+  button for it and the command line had nothing. A source that finds
+  commits by addresses it cannot place now lists them and points at the
+  address book, instead of quietly attributing none of your work to you.
+
+- Every change to a page is kept: what changed, who changed it — you, the
+  agent, the nightly run, a source being read — and what was there before. It is
+  on the page in the dashboard and in `teanode agent memory history <path>`.
+
+- Where the `pgvector` extension is present, searching by meaning uses it. Where
+  it is not, everything still works exactly as before. The compose file now uses
+  an image that has it.
+
+### Fixed
+
+- Marking a contact as yourself, or binding a person's page to their
+  card, failed for any card that came from a phone. The column was sized
+  for identifiers this program generates; a CardDAV client brings its own,
+  which are longer. The refusal surfaced as an HTTP 500 with nothing in
+  the log to say why.
+
+### Changed
+
+- What the agent knows is no longer a flat list of memories. What was in that
+  list is moved onto the pages the first time they are touched, and the old
+  commands and API queries keep working for one release.
+
+- Recall no longer needs a word of four letters before it will search by
+  meaning, so "who is he?" finds something.
+
 ## [0.27.2] - 2026-09-15
 
 ### Security

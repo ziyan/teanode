@@ -52,7 +52,15 @@ services:
       - ./data/certs:/certs
 
   postgres:
-    image: postgres:17
+    # The pgvector image is the stock PostgreSQL image with one extension
+    # added: same major version, same data directory, so an existing
+    # deployment changes this line and keeps its data. The extension is
+    # what lets the agent's knowledge be searched by meaning at the size a
+    # code checkout or a chat archive reaches; without it the server ranks
+    # in its own memory over a bounded set, which is right for a mailbox
+    # and not for a corpus. See
+    # docs/decisions/20260915-pgvector-when-present-never-required.md
+    image: pgvector/pgvector:pg17
     restart: always
     depends_on:
       postgres-certs:
@@ -72,6 +80,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teanode}
     # Serve TLS. The connection string in .env asks for it and verifies the
     # certificate, so turning this off means the server can no longer connect.
+    #
+    # The memory settings below are for the vector indexes. PostgreSQL's
+    # defaults assume it shares a small machine: 128 MB of cache and 64 MB
+    # to build an index in. An index over a few hundred thousand vectors
+    # wants more than that to build at speed, and the whole point of the
+    # index is that a search does not read the table. These are modest for
+    # a host running a mail server and nothing else; a host with less
+    # memory should lower them, and a database that is not this container
+    # is the operator's to tune. See docs/reference/deployment.md.
     command:
       - -c
       - ssl=on
@@ -79,6 +96,18 @@ services:
       - ssl_cert_file=/certs/server.crt
       - -c
       - ssl_key_file=/certs/server.key
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-2GB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-2GB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-32MB}
+      # Storage is a solid-state disk on every host this is deployed to;
+      # the default of 4 tells the planner a random read costs four times a
+      # sequential one, which was true of spinning disks and makes it
+      # refuse an index scan it should take.
+      - -c
+      - random_page_cost=1.1
     ports:
       - "127.0.0.1:5432:5432"
     volumes:

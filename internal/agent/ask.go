@@ -157,7 +157,7 @@ type AskRun struct {
 	questions map[string]chan string
 
 	// recalled is what memory searches found this turn, for the overlay;
-	// promptMemories are the ones the prompt already carries, which the
+	// promptMemories are the pages the prompt already carries, which the
 	// turn's own recall does not repeat.
 	recalled       []string
 	promptMemories map[string]bool
@@ -1113,9 +1113,13 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
 		"Situation":         self.situation(ctx, configuration),
 		"Instructions":      strings.TrimSpace(settings.Agent.Instructions),
-		"Memories":          self.memories(ctx),
-		"Guidance":          guidance,
-		"Deferred":          deferredLines,
+		"Knowledge":         self.carryIndex(ctx, indexTokens),
+		// The month as a path, so the prompt can say where this month's
+		// page is without the clock itself going into the cacheable part.
+		"ThisMonth": time.Now().In(tools.Location(settings.Owner)).Format("2006/01"),
+		"Self":      self.agent.selfLines(ctx, settings.Agent, settings.Owner),
+		"Guidance":  guidance,
+		"Deferred":  deferredLines,
 	})
 }
 

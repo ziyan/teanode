@@ -81,6 +81,9 @@ const ServerPage = lazyPage(async () => ({
 const AgentPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/agent')).AgentPage,
 }))
+const KnowledgePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
+}))
 const ProfilePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/profile')).ProfilePage,
 }))
@@ -368,6 +371,7 @@ export function App() {
                     <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
                     <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
                     <Route path="/settings/agent" element={<AgentPage />} />
+                    <Route path="/settings/knowledge/*" element={<KnowledgePage />} />
                     <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                     <Route path="/settings/passkeys" element={<PasskeysPage />} />
                     <Route path="/settings/tokens" element={<TokensPage />} />

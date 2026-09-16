@@ -415,7 +415,7 @@ func (self *openAI) ListModels(ctx context.Context) ([]ModelInformation, error) 
 	return models, nil
 }
 
-func (self *openAI) Embed(ctx context.Context, model string, inputs []string) ([][]float32, Usage, error) {
+func (self *openAI) Embed(ctx context.Context, request EmbedRequest) ([][]float32, Usage, error) {
 	var response struct {
 		Data []struct {
 			Index     int       `json:"index"`
@@ -423,11 +423,14 @@ func (self *openAI) Embed(ctx context.Context, model string, inputs []string) ([
 		} `json:"data"`
 		Usage *openAIUsage `json:"usage"`
 	}
-	body := map[string]any{"model": model, "input": inputs}
+	body := map[string]any{"model": request.Model, "input": request.Inputs}
+	if request.Dimensions > 0 {
+		body["dimensions"] = request.Dimensions
+	}
 	if err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/embeddings", self.headers(), body, &response); err != nil {
 		return nil, Usage{}, err
 	}
-	vectors := make([][]float32, len(inputs))
+	vectors := make([][]float32, len(request.Inputs))
 	for _, item := range response.Data {
 		if item.Index >= 0 && item.Index < len(vectors) {
 			vectors[item.Index] = item.Embedding

@@ -53,6 +53,7 @@ type userModel struct {
 	Timezone       string     `gorm:"column:timezone"`
 	TimezoneMode   string     `gorm:"column:timezone_mode"`
 	TimezoneSeenAt *time.Time `gorm:"column:timezone_seen_at"`
+	ContactID      *string    `gorm:"column:contact_id"`
 }
 
 // "user" is a reserved word in PostgreSQL, so it is quoted. Every identifier
@@ -79,6 +80,9 @@ func userFromModel(model *userModel, groupIds []string) *models.User {
 		Timezone:     model.Timezone,
 		TimezoneMode: model.TimezoneMode,
 		GroupIDs:     groupIds,
+	}
+	if model.ContactID != nil {
+		user.ContactID = *model.ContactID
 	}
 	if model.TimezoneSeenAt != nil {
 		seen := model.TimezoneSeenAt.In(time.Local)
@@ -115,6 +119,10 @@ func userToModel(user *models.User) *userModel {
 	if user.PasswordHash != "" {
 		hash := user.PasswordHash
 		model.PasswordHash = &hash
+	}
+	if user.ContactID != "" {
+		contact := user.ContactID
+		model.ContactID = &contact
 	}
 	return model
 }

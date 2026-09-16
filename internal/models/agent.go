@@ -66,6 +66,28 @@ type Agent struct {
 	// OperatorDisabledAt is set by an operator and cannot be cleared by the
 	// person; while set the agent does nothing and the page says why.
 	OperatorDisabledAt *time.Time `json:"operatorDisabledAt,omitempty" graphapi:"nullable"`
+
+	// DreamFrom and DreamUntil are the hours of the person's night, as
+	// "01:00" in their own zone, within which the nightly run works
+	// through what arrived and tidies what it knows. Empty means the
+	// default window; "00:00" to "00:00" means any time.
+	DreamFrom  string `json:"dreamFrom,omitempty" graphapi:"nullable"`
+	DreamUntil string `json:"dreamUntil,omitempty" graphapi:"nullable"`
+
+	// DreamedAt is when the nightly run last finished.
+	DreamedAt *time.Time `json:"dreamedAt,omitempty" graphapi:"nullable"`
+}
+
+// DreamWindow is the hours of this person's night, filled in.
+func (self *Agent) DreamWindow() (string, string) {
+	from, until := self.DreamFrom, self.DreamUntil
+	if from == "" {
+		from = DreamFromDefault
+	}
+	if until == "" {
+		until = DreamUntilDefault
+	}
+	return from, until
 }
 
 // AgentDefaultName is what an agent is called until the person names it.
@@ -353,6 +375,14 @@ func (self *AgentMailbox) Validate() error {
 	return errors.ErrOrNil()
 }
 
+// The night window a nightly run keeps to, when the person has not said.
+// Three to six in their own zone: late enough that somebody working is
+// finished, early enough to be done before they look.
+const (
+	DreamFromDefault  = "01:00"
+	DreamUntilDefault = "06:00"
+)
+
 // AgentJobKind is what a job does.
 type AgentJobKind string
 
@@ -370,6 +400,25 @@ const (
 	// or somebody's details in its words, and offers what it found. It
 	// writes nothing but the offer.
 	AgentJobExtract AgentJobKind = "extract"
+
+	// AgentJobRemember reads what a conversation taught and files it onto
+	// the graph. Its subject is the conversation.
+	//
+	// A run of its own rather than something asked of the model mid-turn:
+	// a model doing the person's actual work does not stop to keep house,
+	// and the measured result of asking it to was almost nothing kept.
+	AgentJobRemember AgentJobKind = "remember"
+
+	// AgentJobIngest reads one knowledge source. Its subject is the
+	// source, and a pass that leaves work behind queues itself again at
+	// once rather than waiting for the next tick: a first pass over a
+	// checkout is a night's work, not a fortnight's.
+	AgentJobIngest AgentJobKind = "ingest"
+
+	// AgentJobDream is the nightly run: working through what arrived,
+	// writing up the month, rewriting the pages it touched and tidying.
+	// Its subject is the day, so a night runs once.
+	AgentJobDream AgentJobKind = "dream"
 
 	// AgentJobBackfill queues triage for what was already in a mailbox when
 	// it was granted.

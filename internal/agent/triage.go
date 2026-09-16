@@ -128,7 +128,7 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 	}
 	summary := strings.TrimSpace(answer.Summary)
 	if len(summary) > 300 {
-		summary = summary[:300]
+		summary = cutRunes(summary, 300)
 	}
 	// A notification, a newsletter, a receipt, a promotion or a social
 	// network's digest never needs a reply, whatever the model said: on a

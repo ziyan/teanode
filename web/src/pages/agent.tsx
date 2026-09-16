@@ -14,18 +14,12 @@ import {
 } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import {
-  PencilIcon,
-  PinIcon,
-  PinOffIcon,
-  RefreshIcon,
-  ToggleOffIcon,
-  ToggleOnIcon,
-  TrashIcon,
-} from '../components/icons'
+import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
+import { Link } from 'react-router-dom'
+
 import { useTranslation } from '../i18n/i18n'
 import { Select } from '../components/select'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
@@ -71,6 +65,8 @@ export type Agent = {
   notifications?: AgentNotifications | null
   confirm: string[]
   askModel?: string
+  dreamFrom?: string
+  dreamUntil?: string
   dailyTokens: number
   operatorDisabledAt?: string | null
 }
@@ -96,7 +92,7 @@ export type AgentView = {
 }
 
 const VIEW = `{
-  agent { id name enabled instructions language askModel dailyTokens operatorDisabledAt confirm
+  agent { id name enabled instructions language askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -113,9 +109,11 @@ const VIEW = `{
 export const READ_AGENT = `query { ReadAgent ${VIEW} }`
 const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $voice: AgentVoiceInput,
-    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String, $forget: Boolean) {
+    $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
+    $dreamFrom: String, $dreamUntil: String, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, voice: $voice,
-      categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel, forget: $forget) ${VIEW}
+      categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
+      dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -233,7 +231,9 @@ export function AgentPage() {
           <CollectionRow key={collection.id} collection={collection} view={view} onChanged={reload} />
         ))}
       </SettingsSection>
-      <MemoryCard />
+      <LearnedCard />
+      <KnowledgeSourcesCard />
+      <DreamCard agent={agent} busy={busy} onChange={update} />
       <BriefCard />
       <SchedulesCard />
       <ServersCard />
@@ -623,20 +623,98 @@ function CategoriesSection({ agent, view, busy, onSave }: SaveProps & { view: Ag
   )
 }
 
-const MEMORIES = `
-  query ($query: String) {
-    ListAgentMemories(query: $query, first: 200) { id title content tags appliesTo pinned usedAt }
+// What the agent filed lately. The whole graph is its own page; this is
+// the last day of it, which is the part somebody checks.
+const LEARNED = `
+  query ($days: Int, $first: Int) {
+    ListAgentLearned(days: $days, first: $first) {
+      fact { id number text inferred evidence { kind quote } }
+      path
+      name
+    }
   }`
 
-const SAVE_MEMORY = `
-  mutation ($memoryId: String, $title: String, $content: String, $appliesTo: [String!], $pinned: Boolean) {
-    SaveAgentMemory(memoryId: $memoryId, title: $title, content: $content, appliesTo: $appliesTo, pinned: $pinned) { id }
+const STRIKE_FACT = `
+  mutation ($path: String!, $number: Int!) {
+    DeleteAgentFact(path: $path, number: $number)
   }`
 
-const DELETE_MEMORY = `
-  mutation ($memoryId: String!) {
-    DeleteAgentMemory(memoryId: $memoryId)
+// The places the agent reads, and what the nightly run did.
+const KNOWLEDGE_SOURCES = `
+  query {
+    ListAgentKnowledgeSources {
+      id kind name specification { computer path format }
+      enabled cron lastRunAt lastError documentCount chunkCount refusedCount more sensitive allowed
+      unknownAuthors
+    }
   }`
+
+const SAVE_KNOWLEDGE_SOURCE = `
+  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String) {
+    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId) { id name }
+  }`
+
+const DELETE_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
+const SYNC_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
+const ALLOW_KNOWLEDGE_DIRECTORY = `
+  mutation ($sourceId: String!, $name: String!) {
+    AllowAgentKnowledgeDirectory(sourceId: $sourceId, name: $name) { id }
+  }`
+
+const DREAMS = `
+  query {
+    ListAgentDreams(first: 7) {
+      id startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
+      strengthened associated rehearsed gaps revised lastError
+      proposals { kind path to reason }
+    }
+  }`
+
+type LearnedFact = {
+  fact: { id: string; number: number; text: string; inferred: boolean; evidence: { kind: string; quote: string }[] }
+  path: string
+  name: string
+}
+
+type KnowledgeSource = {
+  id: string
+  kind: string
+  name: string
+  specification: { computer: string; path: string; format: string }
+  enabled: boolean
+  cron: string
+  lastRunAt: string | null
+  lastError: string
+  documentCount: number
+  chunkCount: number
+  refusedCount: number
+  more: boolean
+  sensitive: string[]
+  unknownAuthors: string[]
+  allowed: string[]
+}
+
+type Dream = {
+  id: string
+  startedAt: string
+  finishedAt: string | null
+  digested: number
+  filed: number
+  merged: number
+  rewritten: number
+  moved: number
+  dormant: number
+  embedded: number
+  backlog: number
+  coarse: boolean
+  strengthened: number
+  associated: number
+  rehearsed: number
+  gaps: number
+  revised: number
+  lastError: string
+  proposals: { kind: string; path: string; to: string; reason: string }[]
+}
 
 const SCHEDULES = `
   query {
@@ -1163,199 +1241,85 @@ const CORRECTIONS = `
     ListAgentCorrections(first: 50) { id createdAt kind said }
   }`
 
-interface Memory {
-  id: string
-  title: string
-  content: string
-  tags: string[]
-  appliesTo: string[]
-  pinned: boolean
-}
-
-const AUDIENCES = ['ask', 'triage', 'reply', 'summaries', 'research'] as const
-
-// MemoryCard is what the agent remembers, as the person reads and edits it:
-// each memory with who reads it, a way to pin or forget one, and a way to
-// add one by hand.
-function MemoryCard() {
+// LearnedCard is what the agent filed after the person's recent
+// conversations, newest first, with a way to strike anything it should
+// not have kept.
+//
+// The whole of what it knows is its own page; this is the window onto the
+// last day of it, because that is the part somebody actually wants to
+// check. And striking is the only correction the filing run ever gets:
+// it is shown what was struck as an example of what not to keep.
+function LearnedCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentMemories: Memory[] }>(MEMORIES, {}), [], {
-    refresh: false,
-  })
-  // The dialog makes a memory or changes one: editing is the id it keeps.
-  const [adding, setAdding] = useState(false)
-  const [editing, setEditing] = useState<string | null>(null)
-  const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
-  const [appliesTo, setAppliesTo] = useState<string[]>(['ask'])
-  const [filter, setFilter] = useState('')
+  const { data, error, loading, reload } = useQuery(
+    () => graphql<{ ListAgentLearned: LearnedFact[] }>(LEARNED, { days: 2, first: 40 }),
+    [],
+    { refresh: false },
+  )
+  const [striking, setStriking] = useState<LearnedFact | null>(null)
   const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const failed = (caught: unknown) => toast.failed(messageOf(caught))
-  const open = (memory?: Memory) => {
-    setEditing(memory?.id ?? null)
-    setTitle(memory?.title ?? '')
-    setContent(memory?.content ?? '')
-    setAppliesTo(memory?.appliesTo ?? ['ask'])
-    setProblem(null)
-    setAdding(true)
-  }
-  const add = async () => {
+  const facts = data?.ListAgentLearned ?? []
+
+  const strike = async (row: LearnedFact) => {
     setBusy(true)
-    setProblem(null)
     try {
-      await graphql(SAVE_MEMORY, {
-        memoryId: editing ?? undefined,
-        title: title.trim(),
-        content: content.trim(),
-        appliesTo,
-        ...(editing ? {} : { pinned: false }),
-      })
-      setAdding(false)
-      setTitle('')
-      setContent('')
+      await graphql(STRIKE_FACT, { path: row.path, number: row.fact.number })
+      toast.done(t('knowledge.struck'))
       await reload()
     } catch (caught) {
-      setProblem(messageOf(caught))
+      toast.failed(messageOf(caught))
     } finally {
       setBusy(false)
+      setStriking(null)
     }
   }
-  const pin = async (memory: Memory) => {
-    try {
-      await graphql(SAVE_MEMORY, { memoryId: memory.id, pinned: !memory.pinned })
-      await reload()
-    } catch (caught) {
-      failed(caught)
-    }
-  }
-  const forget = async (memory: Memory) => {
-    try {
-      await graphql(DELETE_MEMORY, { memoryId: memory.id })
-      await reload()
-    } catch (caught) {
-      failed(caught)
-    }
-  }
-  const memories = data?.ListAgentMemories ?? []
-  const words = filter.trim().toLowerCase()
-  const shown = words
-    ? memories.filter((memory) =>
-        [memory.title, memory.content, ...memory.tags, ...memory.appliesTo].some((text) =>
-          text.toLowerCase().includes(words),
-        ),
-      )
-    : memories
+
   return (
     <>
       <SettingsSection
         card
-        title={t('agent.memory')}
-        description={t('agent.memoryHint')}
+        title={t('agent.learned')}
+        description={t('agent.learnedHint')}
         action={
-          <button type="button" className="primary" onClick={() => open()}>
-            {t('agent.remember')}
-          </button>
+          <Link className="button" to="/settings/knowledge">
+            {t('agent.learnedOpen')}
+          </Link>
         }
       >
         {error ? <ErrorMessage error={error} /> : null}
         {loading && !data ? <Loading /> : null}
-        {memories.length > 5 ? (
-          <input
-            type="search"
-            className="settings-filter"
-            value={filter}
-            placeholder={t('agent.findMemory')}
-            aria-label={t('agent.findMemory')}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        ) : null}
-        {data && memories.length === 0 ? <SettingsEmpty>{t('agent.noMemory')}</SettingsEmpty> : null}
-        {shown.map((memory) => (
+        {data && facts.length === 0 ? <SettingsEmpty>{t('agent.noLearned')}</SettingsEmpty> : null}
+        {facts.map((row) => (
           <SettingsRow
-            key={memory.id}
-            title={memory.title}
+            key={row.fact.id}
+            title={row.fact.text}
             badge={
               <>
-                {memory.pinned ? <Tag value={t('agent.pinned')} tone="good" /> : null}
-                {memory.appliesTo.map((audience) => (
-                  <Tag key={audience} value={t(`agent.audience.${audience}` as 'agent.audience.ask')} />
-                ))}
+                <Link className="tag knowledge-path" to={`/settings/knowledge/${row.path}`}>
+                  {row.path}#{row.fact.number}
+                </Link>
+                {row.fact.inferred ? <Tag value={t('knowledge.inferred')} tone="warn" /> : null}
               </>
             }
-            subtitle={memory.content}
+            subtitle={row.fact.evidence[0]?.quote ? `\u201c${row.fact.evidence[0].quote}\u201d` : undefined}
             actions={
-              <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agent.editMemory')}
-                  aria-label={`${memory.title}: ${t('agent.editMemory')}`}
-                  onClick={() => open(memory)}
-                >
-                  <PencilIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className={memory.pinned ? 'icon-action pinned' : 'icon-action'}
-                  title={memory.pinned ? t('agent.unpin') : t('agent.pin')}
-                  aria-label={`${memory.title}: ${memory.pinned ? t('agent.unpin') : t('agent.pin')}`}
-                  onClick={() => void pin(memory)}
-                >
-                  {memory.pinned ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
-                </button>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  title={t('agent.forgetMemory')}
-                  aria-label={`${memory.title}: ${t('agent.forgetMemory')}`}
-                  onClick={() => void forget(memory)}
-                >
-                  <TrashIcon size={16} />
-                </button>
-              </div>
+              <button type="button" className="link danger" onClick={() => setStriking(row)}>
+                {t('knowledge.strike')}
+              </button>
             }
           />
         ))}
       </SettingsSection>
-      {adding ? (
-        <FormDialog
-          title={editing ? t('agent.editMemory') : t('agent.remember')}
-          submitLabel={editing ? t('common.save') : t('agent.remember')}
+      {striking ? (
+        <ConfirmDialog
+          title={t('knowledge.strike')}
+          body={t('knowledge.strikeBody', { text: striking.fact.text })}
+          confirmLabel={t('knowledge.strike')}
           busy={busy}
-          error={problem}
-          canSubmit={title.trim() !== '' && content.trim() !== ''}
-          onClose={() => setAdding(false)}
-          onSubmit={() => void add()}
-        >
-          <label>
-            <span>{t('agent.memoryTitle')}</span>
-            <input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} />
-          </label>
-          <label>
-            <span>{t('agent.memoryContent')}</span>
-            <textarea rows={3} value={content} onChange={(event) => setContent(event.target.value)} />
-          </label>
-          <div className="row">
-            {AUDIENCES.map((audience) => (
-              <label key={audience} className="checkbox shrink">
-                <input
-                  type="checkbox"
-                  checked={appliesTo.includes(audience)}
-                  onChange={(event) =>
-                    setAppliesTo((previous) =>
-                      event.target.checked
-                        ? [...previous, audience]
-                        : previous.filter((candidate) => candidate !== audience),
-                    )
-                  }
-                />
-                {t(`agent.audience.${audience}`)}
-              </label>
-            ))}
-          </div>
-        </FormDialog>
+          onClose={() => setStriking(null)}
+          onConfirm={() => void strike(striking)}
+        />
       ) : null}
     </>
   )
@@ -1372,12 +1336,381 @@ interface Schedule {
   nextRunAt?: string | null
 }
 
-// SchedulesCard is what the agent does on its own at set times.
-// The daily brief: one switch, a time, and the days.
+// KnowledgeSourcesCard is the places the person has pointed their agent
+// at, and how far each has got.
 //
-// It writes an ordinary schedule called "Daily brief", which is why the card
-// says where it went: the Schedules card below is where to change what it
-// actually asks for, and anybody who rewrites the prompt has made it theirs.
+// The state of a source is worth as much as the list of them: a first
+// pass over a checkout is a night's work, and a source that is waiting
+// for a laptop to come back says so rather than looking broken.
+function KnowledgeSourcesCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, loading, reload } = useQuery(
+    () => graphql<{ ListAgentKnowledgeSources: KnowledgeSource[] }>(KNOWLEDGE_SOURCES, {}),
+    [],
+    { refresh: true },
+  )
+  const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<KnowledgeSource | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState('computer')
+  const [computer, setComputer] = useState('')
+  const [path, setPath] = useState('')
+  const [format, setFormat] = useState('files')
+
+  const sources = data?.ListAgentKnowledgeSources ?? []
+
+  const run = async (document: string, variables: Record<string, unknown>, said: string) => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await graphql(document, variables)
+      toast.done(said)
+      await reload()
+      return true
+    } catch (caught) {
+      setProblem(messageOf(caught))
+      toast.failed(messageOf(caught))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <SettingsSection
+        card
+        title={t('agent.sourcesKnowledge')}
+        description={t('agent.sourcesKnowledgeHint')}
+        action={
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              setName('')
+              setPath('')
+              setComputer('')
+              setKind('computer')
+              setFormat('files')
+              setProblem(null)
+              setAdding(true)
+            }}
+          >
+            {t('agent.addKnowledgeSource')}
+          </button>
+        }
+      >
+        {error ? <ErrorMessage error={error} /> : null}
+        {loading && !data ? <Loading /> : null}
+        {data && sources.length === 0 ? <SettingsEmpty>{t('agent.noKnowledgeSources')}</SettingsEmpty> : null}
+        {sources.map((source) => (
+          <SettingsRow
+            key={source.id}
+            title={source.name}
+            badge={
+              <>
+                <Tag value={t(`agent.knowledgeKind.${source.kind}` as 'agent.knowledgeKind.computer')} />
+                {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
+                {!source.enabled ? <Tag value={t('agent.knowledgeOff')} tone="warn" /> : null}
+              </>
+            }
+            subtitle={
+              <>
+                {source.specification.path}
+                {source.specification.computer ? ` · ${source.specification.computer}` : ''}
+                <br />
+                {t('agent.knowledgeCounts', { documents: source.documentCount, chunks: source.chunkCount })}
+                {source.refusedCount > 0 ? ` · ${t('agent.knowledgeRefused', { count: source.refusedCount })}` : ''}
+                {source.lastError ? (
+                  <>
+                    <br />
+                    <span className="muted">{source.lastError}</span>
+                  </>
+                ) : null}
+                {/* Whose commits it could not place. Shown before the
+                    directories held back, because this one makes every
+                    answer built on the source quietly empty and takes a
+                    minute to fix. */}
+                {source.unknownAuthors.length > 0 ? (
+                  <>
+                    <br />
+                    <span className="muted">
+                      {t('agent.knowledgeUnknownAuthors', { names: source.unknownAuthors.join(', ') })}
+                    </span>{' '}
+                    <Link className="link" to="/mailbox/contacts">
+                      {t('agent.knowledgeWhichIsYou')}
+                    </Link>
+                  </>
+                ) : null}
+                {source.sensitive.filter((held) => !source.allowed.includes(held)).length > 0 ? (
+                  <>
+                    <br />
+                    {t('agent.knowledgeHeldBack', {
+                      names: source.sensitive.filter((held) => !source.allowed.includes(held)).join(', '),
+                    })}{' '}
+                    {source.sensitive
+                      .filter((held) => !source.allowed.includes(held))
+                      .map((held) => (
+                        <button
+                          key={held}
+                          type="button"
+                          className="link"
+                          onClick={() =>
+                            void run(
+                              ALLOW_KNOWLEDGE_DIRECTORY,
+                              { sourceId: source.id, name: held },
+                              t('agent.knowledgeAllowed', { name: held }),
+                            )
+                          }
+                        >
+                          {t('agent.knowledgeAllow')} {held}
+                        </button>
+                      ))}
+                  </>
+                ) : null}
+              </>
+            }
+            actions={
+              <div className="row-actions">
+                <button
+                  type="button"
+                  className="icon-action"
+                  title={t('agent.knowledgeSync')}
+                  aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
+                  onClick={() => void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))}
+                >
+                  <RefreshIcon size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-action"
+                  title={source.enabled ? t('agent.knowledgeOff') : t('agent.knowledgeReading')}
+                  aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgeOff') : t('agent.knowledgeReading')}`}
+                  onClick={() =>
+                    void run(
+                      SAVE_KNOWLEDGE_SOURCE,
+                      { sourceId: source.id, enabled: !source.enabled },
+                      t('agent.knowledgeSaved'),
+                    )
+                  }
+                >
+                  {source.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                </button>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  title={t('agent.knowledgeRemove')}
+                  aria-label={`${source.name}: ${t('agent.knowledgeRemove')}`}
+                  onClick={() => setRemoving(source)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </div>
+            }
+          />
+        ))}
+      </SettingsSection>
+      {adding ? (
+        <FormDialog
+          title={t('agent.addKnowledgeSource')}
+          submitLabel={t('agent.addKnowledgeSource')}
+          busy={busy}
+          error={problem}
+          canSubmit={name.trim() !== '' && (kind === 'sent' || (path.trim() !== '' && computer.trim() !== ''))}
+          onClose={() => setAdding(false)}
+          onSubmit={() => {
+            void (async () => {
+              if (
+                await run(
+                  SAVE_KNOWLEDGE_SOURCE,
+                  { name: name.trim(), kind, computer: computer.trim(), path: path.trim(), format },
+                  t('agent.knowledgeSaved'),
+                )
+              ) {
+                setAdding(false)
+              }
+            })()
+          }}
+        >
+          <label>
+            <span>{t('agent.knowledgeName')}</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            <span>{t('agent.knowledgeKind')}</span>
+            <select value={kind} onChange={(event) => setKind(event.target.value)}>
+              {['computer', 'archive', 'sent'].map((value) => (
+                <option key={value} value={value}>
+                  {t(`agent.knowledgeKind.${value}` as 'agent.knowledgeKind.computer')}
+                </option>
+              ))}
+            </select>
+          </label>
+          {kind !== 'sent' ? (
+            <>
+              <label>
+                <span>{t('agent.knowledgeComputer')}</span>
+                <input value={computer} onChange={(event) => setComputer(event.target.value)} />
+              </label>
+              <label>
+                <span>{t('agent.knowledgePath')}</span>
+                <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
+              </label>
+              <label>
+                <span>{t('agent.knowledgeFormat')}</span>
+                <select value={format} onChange={(event) => setFormat(event.target.value)}>
+                  {['files', 'mattermost', 'journal'].map((value) => (
+                    <option key={value} value={value}>
+                      {t(`agent.knowledgeFormat.${value}` as 'agent.knowledgeFormat.files')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
+            </>
+          ) : null}
+        </FormDialog>
+      ) : null}
+      {removing ? (
+        <ConfirmDialog
+          title={t('agent.knowledgeRemove')}
+          body={t('agent.knowledgeRemoveBody', { name: removing.name, documents: removing.documentCount })}
+          confirmLabel={t('agent.knowledgeRemove')}
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => {
+            void (async () => {
+              await run(DELETE_KNOWLEDGE_SOURCE, { sourceId: removing.id }, t('agent.knowledgeRemoved'))
+              setRemoving(null)
+            })()
+          }}
+        />
+      ) : null}
+    </>
+  )
+}
+
+// DreamCard is what the agent did overnight.
+//
+// The backlog is the number that matters: a night that could not get
+// through everything says how much is left and roughly how long it will
+// take, so the person can decide whether to give it more of the day
+// rather than being quietly a fortnight behind.
+function DreamCard({
+  agent,
+  busy,
+  onChange,
+}: {
+  agent: NonNullable<AgentView['agent']>
+  busy: boolean
+  onChange: (variables: Record<string, unknown>, done: string) => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const { data, error, loading } = useQuery(() => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, {}), [], {
+    refresh: false,
+  })
+  const dreams = data?.ListAgentDreams ?? []
+
+  return (
+    <SettingsSection card title={t('agent.dream')} description={t('agent.dreamHint')}>
+      {/* When the night is. A person who works at two in the morning
+          should be able to move it rather than have a page rewritten
+          under them while they read it. */}
+      <SettingsRow title={t('agent.dreamWindow')} subtitle={t('agent.dreamWindowHint')} />
+      <div className="row">
+        <label className="shrink">
+          <span>{t('agent.dreamFrom')}</span>
+          <input
+            className="narrow"
+            type="time"
+            disabled={busy}
+            value={agent.dreamFrom || '01:00'}
+            onChange={(event) => void onChange({ dreamFrom: event.target.value }, t('agent.saved'))}
+          />
+        </label>
+        <label className="shrink">
+          <span>{t('agent.dreamUntil')}</span>
+          <input
+            className="narrow"
+            type="time"
+            disabled={busy}
+            value={agent.dreamUntil || '06:00'}
+            onChange={(event) => void onChange({ dreamUntil: event.target.value }, t('agent.saved'))}
+          />
+        </label>
+      </div>
+      {error ? <ErrorMessage error={error} /> : null}
+      {loading && !data ? <Loading /> : null}
+      {data && dreams.length === 0 ? <SettingsEmpty>{t('agent.noDreams')}</SettingsEmpty> : null}
+      {dreams.map((dream) => {
+        const did = [
+          dream.digested > 0 ? t('agent.dreamRead', { count: dream.digested }) : '',
+          dream.filed > 0 ? t('agent.dreamFiled', { count: dream.filed }) : '',
+          dream.rewritten > 0 ? t('agent.dreamRewritten', { count: dream.rewritten }) : '',
+          dream.merged > 0 ? t('agent.dreamMerged', { count: dream.merged }) : '',
+          dream.moved > 0 ? t('agent.dreamMoved', { count: dream.moved }) : '',
+          dream.dormant > 0 ? t('agent.dreamRetired', { count: dream.dormant }) : '',
+          dream.embedded > 0 ? t('agent.dreamEmbedded', { count: dream.embedded }) : '',
+          dream.strengthened > 0 ? t('agent.dreamStrengthened', { count: dream.strengthened }) : '',
+          dream.associated > 0 ? t('agent.dreamAssociated', { count: dream.associated }) : '',
+          dream.rehearsed > 0 ? t('agent.dreamRehearsed', { count: dream.rehearsed }) : '',
+          dream.revised > 0 ? t('agent.dreamRevised', { count: dream.revised }) : '',
+        ].filter(Boolean)
+        return (
+          <SettingsRow
+            key={dream.id}
+            title={formatTime(dream.startedAt)}
+            badge={dream.coarse ? <Tag value={t('agent.knowledgeReading')} tone="warn" /> : null}
+            subtitle={
+              <>
+                {did.length > 0 ? did.join(' · ') : t('agent.dreamNothing')}
+                {dream.backlog > 0 ? (
+                  <>
+                    <br />
+                    {t('agent.dreamBacklog', {
+                      count: dream.backlog,
+                      nights: Math.max(1, Math.ceil(dream.backlog / 400)),
+                    })}
+                  </>
+                ) : null}
+                {dream.coarse ? (
+                  <>
+                    <br />
+                    {t('agent.dreamCoarse')}
+                  </>
+                ) : null}
+                {dream.proposals.map((proposal, index) => (
+                  <span key={`${proposal.kind}-${proposal.path}-${proposal.to}-${index}`}>
+                    <br />
+                    {proposal.kind === 'gap'
+                      ? t('agent.dreamGap', { question: proposal.reason })
+                      : proposal.kind === 'linked'
+                        ? t('agent.dreamLinked', {
+                            path: proposal.path,
+                            to: proposal.to,
+                            reason: proposal.reason,
+                          })
+                        : t('agent.dreamSuggests', { path: proposal.path, under: proposal.to })}
+                  </span>
+                ))}
+                {dream.lastError ? (
+                  <>
+                    <br />
+                    <span className="muted">{dream.lastError}</span>
+                  </>
+                ) : null}
+              </>
+            }
+          />
+        )
+      })}
+    </SettingsSection>
+  )
+}
+
 function BriefCard() {
   const { t } = useTranslation()
   const toast = useToast()

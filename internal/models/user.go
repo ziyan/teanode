@@ -43,6 +43,13 @@ type User struct {
 	// have several.
 	Email string `json:"email,omitempty"`
 
+	// ContactID names the address book entry that is this person
+	// themselves -- what a contacts program calls "my card". It carries
+	// their own addresses, which is how a commit or a sent message is told
+	// from somebody else's, and the agent's "self" page reads it live
+	// rather than copying it. Optional; empty until they choose one.
+	ContactID string `json:"contactId,omitempty"`
+
 	// DisabledAt, when set, means this person cannot sign in. Their mail and
 	// their memberships are kept, so enabling them again restores everything.
 	DisabledAt *time.Time `json:"disabledAt,omitempty"`

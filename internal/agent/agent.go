@@ -87,6 +87,9 @@ type Agent struct {
 	operations   OperationsFactory
 	lastScavenge time.Time
 	lastDescribe time.Time
+	lastRemember time.Time
+	lastIngest   time.Time
+	lastDream    time.Time
 	describing   atomic.Bool
 
 	// connections are the sessions with connected servers, per server and
@@ -186,6 +189,9 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobSchedule, self.runSchedule)
 	self.Register(models.AgentJobResearch, self.runResearch)
 	self.Register(models.AgentJobExtract, self.runExtract)
+	self.Register(models.AgentJobRemember, self.runRemember)
+	self.Register(models.AgentJobIngest, self.runIngest)
+	self.Register(models.AgentJobDream, self.runDream)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -217,6 +223,14 @@ func (self *Agent) Register(kind models.AgentJobKind, handler Handler) {
 
 // Start begins claiming work.
 func (self *Agent) Start() {
+	// The vector indexes before anything else writes a vector. Building
+	// one over a corpus that has already arrived wants more memory than a
+	// small server has; maintaining one as the rows come in costs a tenth
+	// of a millisecond each. So the order matters, and this is where it
+	// is settled.
+	if err := self.EnsureVectorIndexes(self.ctx); err != nil {
+		log.Warningf("cannot build the vector indexes: %s", err)
+	}
 	self.worker = periodic.New(self.ctx, &self.waitGroup, self.tick, &periodic.Settings{
 		Interval: self.settings.Tick,
 		Name:     "agent:worker",
@@ -328,17 +342,29 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	if !configuration.Agent.Enabled {
 		return nil
 	}
-	free := cap(self.slots) - len(self.slots)
-	if free <= 0 {
-		return nil
-	}
+	// Queueing first, and whether or not there is a slot free.
+	//
+	// These write rows; they do not take a slot. Returning early when
+	// every slot was busy meant a worker with a long backlog stopped
+	// noticing that anything else was due at all -- no conversation was
+	// filed, no schedule ran and no night happened for as long as the
+	// backlog lasted, which on a first ingest is days. The queue is what
+	// decides the order; a full queue is not a reason to stop looking.
 	if err := self.dueSchedules(ctx, now); err != nil {
 		log.Warningf("cannot queue the schedules that are due: %s", err)
 	}
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)
+	self.queueRemembering(ctx, now)
+	self.queueIngestion(ctx, now)
+	self.queueDreaming(ctx, now)
 	self.sweepBrowsers()
 	self.sweepSessions()
+
+	free := cap(self.slots) - len(self.slots)
+	if free <= 0 {
+		return nil
+	}
 	var jobs []*models.AgentJob
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {

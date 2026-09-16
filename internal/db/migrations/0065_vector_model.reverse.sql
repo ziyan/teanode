@@ -1,0 +1,2 @@
+ALTER TABLE "mail_embedding" ALTER COLUMN "vector" SET STORAGE EXTENDED;
+DROP TABLE IF EXISTS "vector_model";

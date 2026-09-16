@@ -1,0 +1,176 @@
+package agent
+
+import (
+	"strings"
+	"unicode"
+
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// Facts that say nothing.
+//
+// A page already carries three things: its name, what kind of thing it
+// is, and the fact that it exists at all. A line repeating any of those
+// is not knowledge, and it is worse than an empty page, because a page
+// that says "Formatting is a project or work channel." reads like
+// something was learned.
+//
+// This happened at scale on the first real ingest. A night working
+// coarsely -- titles only, because the backlog was thirty thousand
+// things -- was told it could file "what a title plainly establishes",
+// and a title plainly establishes only that the thing exists. Twenty-two
+// per cent of the graph became "X is a project or work channel" and "the
+// X work channel had activity in September 2026".
+//
+// The prompts say not to now. This is the net under them, because a
+// prompt is a request and the same request will be made of a different
+// model next year.
+
+// emptyWords are the words a sentence of this shape is made of: what a
+// page is, that it exists, and when it was busy. None of them says
+// anything a reader did not have from the page's own line in the index.
+//
+// Deliberately short. Anything that could be the substance of a real
+// sentence stays out of it: "customer", "site", "team" and "owner" all
+// say something, and only the words for *being a page* are here.
+var emptyWords = map[string]bool{
+	"a": true, "active": true, "activity": true, "an": true, "and": true,
+	"are": true, "as": true, "at": true, "be": true, "been": true,
+	"being": true, "called": true, "channel": true, "channels": true,
+	// "about" and "concerning" only ever introduce the page's own name
+	// again: "a work channel concerning Paltac depalletizing" on the page
+	// called Paltac Depalletize.
+	"about": true, "concerning": true,
+	"currently": true, "during": true, "exists": true, "for": true,
+	"had": true, "has": true, "have": true, "in": true, "internal": true,
+	"is": true, "it": true, "its": true, "kind": true, "known": true,
+	"named": true, "occurred": true, "of": true, "on": true, "or": true,
+	// The verbs of belonging to the person whose graph this is: "X is a
+	// project Ziyan works on" says only that X is here at all.
+	"owns": true, "their": true, "theirs": true, "them": true, "they": true,
+	"works": true, "worked": true, "uses": true, "used": true, "my": true,
+	"organization": true,
+	// The verbs of a sentence that only reports that a page was busy:
+	// "activity was recorded in June", "discussion occurred about X in
+	// July". Safe to drop, because a sentence that says what happened has
+	// a word for the what, and that word survives.
+	"discussion": true, "discussions": true, "recorded": true,
+	"mentioned": true, "took": true,
+	"page": true, "person": true, "place": true, "private": true,
+	"project": true, "projects": true, "public": true, "recent": true,
+	"recently": true, "related": true, "repository": true, "seen": true,
+	"subject": true, "the": true, "there": true,
+	"thing": true, "this": true, "to": true, "topic": true, "was": true,
+	"were": true, "with": true, "work": true, "working": true,
+}
+
+// months and the shape of a year, because "had activity in September
+// 2026" is the same empty sentence with a date on the end.
+var months = map[string]bool{
+	"january": true, "february": true, "march": true, "april": true,
+	"may": true, "june": true, "july": true, "august": true,
+	"september": true, "october": true, "november": true, "december": true,
+}
+
+// saysSomethingNew reports whether a fact tells a reader anything the
+// page does not already tell them.
+//
+// The test is subtractive and so cannot be clever: take the sentence,
+// drop the page's own name and path words, drop the words that only say
+// what a page is, drop dates. If nothing is left, nothing was said.
+//
+// It errs towards keeping. One surviving word of substance is enough,
+// because a wrong refusal loses something a person told their agent and
+// a wrong acceptance is one dull line that the nightly run will merge or
+// let sink.
+func saysSomethingNew(text string, node *models.AgentNode, owner *models.User) bool {
+	if node == nil {
+		return true
+	}
+	var itsOwn []string
+	for _, name := range append([]string{node.Name, node.Path}, node.Aliases...) {
+		itsOwn = append(itsOwn, strings.FieldsFunc(strings.ToLower(name), notLetterOrDigit)...)
+	}
+	// And the person's own name, which on their own graph says as little
+	// as the page's does: every page here is about their life, so "Ziyan
+	// works on the mujin project" on the page called mujin is the same
+	// empty sentence as "mujin is a project".
+	if owner != nil {
+		for _, name := range []string{owner.Name, owner.Username} {
+			itsOwn = append(itsOwn, strings.FieldsFunc(strings.ToLower(name), notLetterOrDigit)...)
+		}
+	}
+	for _, word := range strings.FieldsFunc(strings.ToLower(text), notLetterOrDigit) {
+		switch {
+		case len(word) < 3:
+			// Never the substance of anything, and this is where the
+			// wreckage of an apostrophe ends up: "Kawaguchi's" comes
+			// apart into the name and an "s".
+			continue
+		case emptyWords[word], months[word], isYear(word):
+			continue
+		case theSameWord(word, itsOwn):
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// theSameWord says whether a word is one of the page's own, allowing for
+// the ends of words moving: a page called "Paltac Depalletize" and a
+// sentence saying "Paltac depalletizing" are saying one thing.
+//
+// By how far two words agree from the front, which is crude on purpose.
+// A real stemmer would be right more often and would also stem the names
+// this exists to protect -- and the cost of being wrong here is one dull
+// line kept rather than dropped.
+func theSameWord(word string, itsOwn []string) bool {
+	for _, own := range itsOwn {
+		if own == word {
+			return true
+		}
+		shorter := len(own)
+		if len(word) < shorter {
+			shorter = len(word)
+		}
+		common := 0
+		for common < shorter && own[common] == word[common] {
+			common++
+		}
+		// Six characters of agreement, and three quarters of the shorter
+		// word. "Depalletize" and "depalletizing" agree for ten of eleven
+		// and are one word; "paltac" and "palace" agree for three and are
+		// two.
+		if common >= 6 && common*4 >= shorter*3 {
+			return true
+		}
+	}
+	return false
+}
+
+// notLetterOrDigit splits on everything that is not part of a word, so
+// that a path, a slug and a sentence all come apart the same way.
+//
+// By what Unicode says a letter is, not by the ASCII ranges. The first
+// version kept everything above 127 so as not to cut a word of Japanese
+// in half, and so kept the en-dashes a model writes between the parts of
+// a name: "FTWO–DLN Packmaster–Yaskawa" came apart into two tokens that
+// matched nothing in the page's own path, and a sentence saying only
+// that the project existed was kept as though it said something.
+func notLetterOrDigit(letter rune) bool {
+	return !unicode.IsLetter(letter) && !unicode.IsDigit(letter)
+}
+
+// isYear says whether a word is a four-digit year of this era.
+func isYear(word string) bool {
+	if len(word) != 4 {
+		return false
+	}
+	for _, letter := range word {
+		if letter < '0' || letter > '9' {
+			return false
+		}
+	}
+	return word >= "1900" && word <= "2199"
+}

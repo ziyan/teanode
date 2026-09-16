@@ -174,11 +174,14 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	}
 	title := strings.Trim(strings.TrimSpace(strings.Split(answer.Title, "\n")[0]), `"'. `)
 	if len(title) > 80 {
-		title = title[:80]
+		// By character. A title cut at the 80th byte can end in the middle
+		// of one, and PostgreSQL refuses the whole statement rather than
+		// storing half a character.
+		title = cutRunes(title, 80)
 	}
 	summary := strings.TrimSpace(answer.Summary)
 	if len(summary) > 300 {
-		summary = summary[:300]
+		summary = cutRunes(summary, 300)
 	}
 	return mark(title, summary)
 }

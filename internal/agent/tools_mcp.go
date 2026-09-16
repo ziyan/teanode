@@ -396,7 +396,7 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 			name := "mcp__" + server.Name + "__" + remoteTool.Name
 			description := strings.TrimSpace(remoteTool.Description)
 			if len(description) > 600 {
-				description = description[:600] + "…"
+				description = cutRunes(description, 600) + "…"
 			}
 			tools = append(tools, &Tool{
 				Name:        name,

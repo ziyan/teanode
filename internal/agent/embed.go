@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
+
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -84,8 +88,11 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 	}
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, model, []string{embedText(message)})
-	modelName := configuration.Agent.Models.Embedding
+	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
+		Model: model, Inputs: []string{embedText(message)},
+		Dimensions: configuration.Agent.Models.EmbeddingDimensions,
+	})
+	modelName := embeddingModelName(configuration)
 	RecordUsage(run.Database(), run.Agent.ID, run.Mailbox.ID, modelName, string(models.AgentJobEmbed), usage)
 	if err != nil {
 		return fmt.Errorf("embedding: %w", err)
@@ -130,7 +137,7 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	if err != nil {
 		return nil, err
 	}
-	modelName := configuration.Agent.Models.Embedding
+	modelName := embeddingModelName(configuration)
 	var candidates []*db.MailEmbedding
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		candidates, err = tx.ListMailEmbeddings(mailboxId, modelName, embedCandidates)
@@ -143,7 +150,10 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	}
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, model, []string{strings.TrimSpace(query)})
+	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
+		Model: model, Inputs: []string{strings.TrimSpace(query)},
+		Dimensions: configuration.Agent.Models.EmbeddingDimensions,
+	})
 	if agent != nil {
 		RecordUsage(self.settings.Database, agent.ID, mailboxId, modelName, "search", usage)
 	}
@@ -198,6 +208,17 @@ func rankByCosine(query []float32, candidates []*db.MailEmbedding, limit int) []
 		ids = append(ids, entry.id)
 	}
 	return ids
+}
+
+// embeddingModelName is the model a vector is stored under: its name, and
+// the width where one was asked for. Two widths of one model are two
+// spaces, so the width has to be part of what a vector says it is.
+func embeddingModelName(configuration *config.Configuration) string {
+	name := configuration.Agent.Models.Embedding
+	if dimensions := configuration.Agent.Models.EmbeddingDimensions; dimensions > 0 {
+		name += "@" + strconv.Itoa(dimensions)
+	}
+	return name
 }
 
 // meaningFloor is the least similarity a message needs to count as found.

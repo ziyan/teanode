@@ -1,0 +1,60 @@
+This is a page in {{.PersonName}}'s agent's notes. Its facts have changed
+since its opening was written. Rewrite the opening, and say which facts
+are the same thing said twice.
+
+## The page
+
+{{.Path}} — {{.Name}} ({{.Kind}})
+
+{{if .Existing}}What it says now:
+
+<page>
+{{.Existing}}
+</page>
+
+{{end}}Its facts:
+
+<facts>
+{{range .Facts}}{{.}}
+{{end}}</facts>
+
+## What to write
+
+The opening is a paragraph or two saying what this is and why it matters
+to {{.PersonName}}: who a person is to them, what a project is for, what
+is current about it. It is read before the facts, so it should make the
+facts make sense rather than repeat them.
+
+Everything in it comes from the facts above. If the facts do not support
+a sentence, do not write the sentence.
+
+**An empty opening is a good answer.** Where the facts amount to no more
+than what the page's own name and kind already say, write `""`. Padding
+it out -- "This page concerns Formatting, which is currently treated as a
+project or work channel" -- gives a reader nothing and costs them the
+time to find that out. A page with no opening is honest; a page with an
+opening that says nothing is not.
+
+Then look for pairs where one is not worth keeping beside the other.
+That is two shapes, not one:
+
+- **The same thing in different words.** "The boat is repainted every
+  spring" and "its owner gives it a fresh coat each spring".
+- **One that says everything the other says, and more.** "Kittiwake is
+  the neighbour's boat, and it is repainted every spring" covers both
+  "Kittiwake is the neighbour's boat" and "the neighbour repaints
+  Kittiwake every spring". Give the fuller one first; the shorter one
+  goes.
+
+Not two facts that are merely about the same subject. "The boat is
+called Kittiwake" and "the boat was hauled out in November" are two
+things about one boat and both stay.
+
+Give each pair as two numbers, the one to keep first. An empty list is a
+good answer for a page whose facts each say their own thing.
+
+Answer with this object and nothing else:
+
+{"summary": "...", "same": [[3, 7]]}
+
+In `[3, 7]`, 3 is kept and 7 goes.
