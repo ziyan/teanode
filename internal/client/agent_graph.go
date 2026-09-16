@@ -188,7 +188,7 @@ const (
 	}`
 	DocumentDeleteAgentKnowledgeSource   = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource     = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
-	DocumentDreamAgentNow                = `mutation { DreamAgentNow }`
+	DocumentDreamAgentNow                = `mutation ($catchUp: Boolean) { DreamAgentNow(catchUp: $catchUp) }`
 	DocumentLinkAgentNodes               = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
 	DocumentUnlinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
 	DocumentAllowAgentKnowledgeDirectory = `mutation ($sourceId: String!, $name: String!) {
@@ -392,12 +392,13 @@ func ListAgentDreams(ctx context.Context, connection *Client, first int) ([]*Age
 	return result.ListAgentDreams, nil
 }
 
-// DreamAgentNow asks for the night to run at the next tick.
-func DreamAgentNow(ctx context.Context, connection *Client) error {
+// DreamAgentNow asks for the night to run at the next tick; catching
+// up, at every tick until nothing waits to be read.
+func DreamAgentNow(ctx context.Context, connection *Client, catchUp bool) error {
 	var result struct {
 		DreamAgentNow bool `json:"DreamAgentNow"`
 	}
-	return connection.Execute(ctx, DocumentDreamAgentNow, nil, &result)
+	return connection.Execute(ctx, DocumentDreamAgentNow, map[string]any{"catchUp": catchUp}, &result)
 }
 
 // LinkAgentNodes joins two pages.

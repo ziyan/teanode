@@ -76,6 +76,10 @@ type Agent struct {
 
 	// DreamedAt is when the nightly run last finished.
 	DreamedAt *time.Time `json:"dreamedAt,omitempty" graphapi:"nullable"`
+
+	// DreamCatchUp says the night runs again as soon as it can, until
+	// nothing waits to be read; the night clears it itself.
+	DreamCatchUp bool `json:"dreamCatchUp"`
 }
 
 // DreamWindow is the hours of this person's night, filled in.

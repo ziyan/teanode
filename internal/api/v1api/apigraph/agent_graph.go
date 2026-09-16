@@ -87,7 +87,7 @@ type AgentGraphMutation interface {
 
 	// Run the night now, within the agent's own hours, rather than
 	// waiting for its next turn. Needs agent:use.
-	DreamAgentNow(ctx context.Context) (bool, error)
+	DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error)
 
 	// Join two pages, or take the join away. What the agent's memory
 	// tool does with `link`; here so the person can do it too. Needs
@@ -183,6 +183,12 @@ type SaveAgentNodeArguments struct {
 type MoveAgentNodeArguments struct {
 	Path  string `json:"path"`
 	Under string `json:"under"`
+}
+
+// DreamAgentNowArguments is how the night is asked for. CatchUp keeps it running at every tick
+// until nothing waits to be read, rather than once.
+type DreamAgentNowArguments struct {
+	CatchUp bool `json:"catchUp" graphapi:"nullable"`
 }
 
 type LinkAgentNodesArguments struct {
@@ -1016,7 +1022,7 @@ func (self *graph) AllowAgentKnowledgeDirectory(ctx context.Context, arguments A
 	return tx.PutAgentSource(source)
 }
 
-func (self *graph) DreamAgentNow(ctx context.Context) (bool, error) {
+func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return false, err
@@ -1026,6 +1032,9 @@ func (self *graph) DreamAgentNow(ctx context.Context) (bool, error) {
 	// still hold: a night asked for at noon runs when its hours begin.
 	_, err = self.writing(ctx).UpdateAgent(found.ID, func(agent *models.Agent) error {
 		agent.DreamedAt = nil
+		if arguments.CatchUp {
+			agent.DreamCatchUp = true
+		}
 		return nil
 	})
 	return err == nil, err

@@ -199,6 +199,7 @@ func newAgentDreamCommand() *cli.Command {
 			{
 				Name:   "now",
 				Usage:  "run the night at the next tick, within the agent's hours, instead of waiting for its turn",
+				Flags:  []cli.Flag{&cli.BoolFlag{Name: "catch-up", Usage: "and again at every tick until nothing waits to be read; for a first ingest with a model of your own"}},
 				Action: runDreamNow,
 			},
 		},
@@ -210,8 +211,12 @@ func runDreamNow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := client.DreamAgentNow(ctx, connection); err != nil {
+	if err := client.DreamAgentNow(ctx, connection, command.Bool("catch-up")); err != nil {
 		return describeError(command, err)
+	}
+	if command.Bool("catch-up") {
+		_, _ = fmt.Fprintln(command.Writer, "the night starts within the minute and runs again until nothing waits to be read, within your agent's hours")
+		return nil
 	}
 	_, _ = fmt.Fprintln(command.Writer, "the night starts within the minute, if it is within your agent's hours")
 	return nil
@@ -819,7 +824,7 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 		}
 		_, _ = fmt.Fprintf(command.Writer, "  %s\n", strings.Join(parts, ", "))
 		if dream.Backlog > 0 {
-			nights := (dream.Backlog + 399) / 400
+			nights := (dream.Backlog + 1999) / 2000
 			_, _ = fmt.Fprintf(command.Writer, "  %d still waiting, about %d night(s) at this pace\n", dream.Backlog, nights)
 		}
 		if dream.Coarse {

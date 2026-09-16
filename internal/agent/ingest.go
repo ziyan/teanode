@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/llm"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -580,6 +582,10 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		self.notedUnknownAuthors(ctx, source, unplaced)
 	}
 
+	// What the checkout says it is, in the model's words, from its readme:
+	// asked once per head, outside the transaction below.
+	opening, about := self.describeCheckout(ctx, run, source, entry, path)
+
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Marked as the source's, so a page's history can say a sentence
 		// came from a repository rather than from the person.
@@ -597,6 +603,9 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// search; a page that opened with "# Mujin Portal" and six badges
 		// was a page nobody could read.
 		summary := cutRunes(strings.TrimSpace(profile.Description), 600)
+		if opening != "" {
+			summary = opening
+		}
 		node, err := tx.PutAgentNode(&models.AgentNode{
 			AgentID: source.AgentID, Path: path, Kind: models.NodeProject,
 			Name: name, Summary: summary,
@@ -616,6 +625,9 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// last week pointed at nothing by this one.
 		type line struct{ key, text string }
 		facts := []line{}
+		for index, text := range about {
+			facts = append(facts, line{fmt.Sprintf("about-%d", index+1), text})
+		}
 		where := source.Specification.Path
 		if relative := strings.TrimSpace(entry.ExternalID); relative != "" && relative != "." {
 			where = filepath.ToSlash(filepath.Join(where, relative))
@@ -1200,4 +1212,141 @@ func (self *Agent) releaseComputer(computer, sourceId string) {
 	if self.computersBusy[computer] == sourceId {
 		delete(self.computersBusy, computer)
 	}
+}
+
+// describeCheckout is what a checkout is, in the model's words: an
+// opening for its page and a few facts, read from its readme. The
+// profile git gives says where a thing is and what it is written in; it
+// never says what it is for, and a page of forty such profiles read like
+// an inventory. One call per checkout, repeated only when its head moves;
+// the facts are keyed about-1.. so the pass that files them changes them
+// in place.
+func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry, path string) (string, []string) {
+	profile := entry.Repository
+	if profile == nil || profile.Head == "" {
+		return "", nil
+	}
+	// Already said, for this head: what the page has stays.
+	var existingOpening string
+	var existing []string
+	var readme string
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		node, err := tx.GetAgentNode(source.AgentID, path)
+		if err != nil {
+			return err
+		}
+		if node != nil {
+			facts, err := tx.ListAgentFacts(source.AgentID, node.ID, true, 100)
+			if err != nil {
+				return err
+			}
+			byKey := map[string]string{}
+			for _, fact := range facts {
+				for _, evidence := range fact.Evidence {
+					if evidence.Kind == models.EvidenceRepository && strings.HasPrefix(evidence.Quote, "about-") && evidence.ID == profile.Head {
+						byKey[evidence.Quote] = fact.Text
+					}
+				}
+			}
+			for index := 1; index <= 5; index++ {
+				if text, found := byKey[fmt.Sprintf("about-%d", index)]; found {
+					existing = append(existing, text)
+				}
+			}
+			if len(existing) > 0 || strings.TrimSpace(node.Summary) != "" && len(byKey) > 0 {
+				existingOpening = node.Summary
+				return nil
+			}
+		}
+		prefix := strings.Trim(entry.ExternalID, "./")
+		for _, name := range []string{"README.md", "README", "readme.md", "README.rst", "README.txt", "Readme.md"} {
+			id := name
+			if prefix != "" {
+				id = prefix + "/" + name
+			}
+			document, err := tx.GetAgentDocumentByExternal(source.ID, id)
+			if err != nil {
+				return err
+			}
+			if document == nil {
+				continue
+			}
+			chunks, err := tx.ListAgentChunks(source.AgentID, document.ID)
+			if err != nil {
+				return err
+			}
+			var text strings.Builder
+			for _, chunk := range chunks {
+				text.WriteString(chunk.Text)
+				text.WriteByte('\n')
+			}
+			readme = cutRunes(strings.TrimSpace(text.String()), 8000)
+			break
+		}
+		return nil
+	}); err != nil {
+		log.Debugf("cannot read what %q says about itself: %s", path, err)
+		return "", nil
+	}
+	if len(existing) > 0 {
+		return existingOpening, existing
+	}
+	if readme == "" {
+		return "", nil
+	}
+
+	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
+	if err != nil {
+		return "", nil
+	}
+	history := ""
+	if profile.First != nil && profile.Last != nil {
+		history = fmt.Sprintf("%d commits, %s.", profile.Commits, monthSpan(profile.First, profile.Last))
+	}
+	prompt, err := render("describe_project.txt", map[string]any{
+		"PersonName":  personName(run.Owner),
+		"Path":        path,
+		"Name":        models.LastSegment(path),
+		"Languages":   languagesOf(profile.Languages),
+		"Directories": strings.Join(profile.Directories, ", "),
+		"History":     history,
+		"Readme":      readme,
+	})
+	if err != nil {
+		return "", nil
+	}
+	configuration := run.Configuration()
+	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
+	defer cancel()
+	response, err := provider.Chat(callContext, &llm.ChatRequest{
+		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 700,
+	})
+	if response != nil {
+		modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
+		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobIngest), response.Usage)
+	}
+	if err != nil {
+		log.Debugf("cannot ask what %q is: %s", path, err)
+		return "", nil
+	}
+	extracted, err := llm.ExtractJSON(response.Message.Content)
+	if err != nil {
+		return "", nil
+	}
+	var answer struct {
+		Opening string   `json:"opening"`
+		Facts   []string `json:"facts"`
+	}
+	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
+		return "", nil
+	}
+	var about []string
+	for _, text := range answer.Facts {
+		text = strings.TrimSpace(text)
+		if text == "" || isPromptExample(text) || len(about) >= 5 {
+			continue
+		}
+		about = append(about, cutRunes(text, 400))
+	}
+	return cutRunes(strings.TrimSpace(answer.Opening), 600), about
 }

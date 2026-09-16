@@ -46,11 +46,11 @@ const (
 
 	// dreamDigest is how many things one night reads at full resolution,
 	// and dreamConsolidate how many pages it rewrites.
-	dreamDigest      = 400
+	dreamDigest      = 2000
 	dreamConsolidate = 100
 
 	// dreamBatch is how many items go into one call of the digest phase.
-	dreamBatch = 40
+	dreamBatch = 20
 
 	// digestSmallest is the size below which a document is not worth a
 	// share of a call: about two short lines.
@@ -131,7 +131,10 @@ func (self *Agent) ownerOf(ctx context.Context, agent *models.Agent) *models.Use
 
 // dreamDue says whether this agent should work tonight.
 func (self *Agent) dreamDue(ctx context.Context, agent *models.Agent, owner *models.User, now time.Time) bool {
-	if agent.DreamedAt != nil && now.Sub(*agent.DreamedAt) < dreamApart {
+	// Catching up, the six hours between nights do not apply: the night
+	// runs again at the next tick until nothing waits. The hours and the
+	// quiet rule still do.
+	if !agent.DreamCatchUp && agent.DreamedAt != nil && now.Sub(*agent.DreamedAt) < dreamApart {
 		return false
 	}
 	if !insideWindow(agent, owner, now) {
@@ -261,6 +264,13 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		}
 		_, err := tx.UpdateAgent(run.Agent.ID, func(agent *models.Agent) error {
 			agent.DreamedAt = &finished
+			// Catching up ends by itself when the reading has caught up:
+			// nothing left waiting, or nothing read tonight, which is the
+			// same thing said by a night that could not.
+			if agent.DreamCatchUp && (record.Backlog-record.Digested <= 0 || record.Digested == 0) {
+				agent.DreamCatchUp = false
+				log.Noticef("agent %s has caught up; the night is back to its hours", run.Agent.ID)
+			}
 			return nil
 		})
 		return err
