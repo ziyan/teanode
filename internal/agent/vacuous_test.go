@@ -2,6 +2,7 @@ package agent
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -69,5 +70,17 @@ func TestAFactAboutTheThingIsKept(t *testing.T) {
 func TestAFactWithNoPageIsKept(t *testing.T) {
 	if !saysSomethingNew("anything at all", nil, nil) {
 		t.Fatalf("with no page there is nothing for a fact to repeat")
+	}
+}
+
+func TestMonthSpanSaysOneMonthOnce(t *testing.T) {
+	july := time.Date(2026, time.July, 3, 0, 0, 0, 0, time.UTC)
+	later := time.Date(2026, time.July, 28, 0, 0, 0, 0, time.UTC)
+	if got := monthSpan(&july, &later); got != "July 2026" {
+		t.Fatalf("one month: %q", got)
+	}
+	march := time.Date(2024, time.March, 1, 0, 0, 0, 0, time.UTC)
+	if got := monthSpan(&march, &later); got != "March 2024 to July 2026" {
+		t.Fatalf("two months: %q", got)
 	}
 }

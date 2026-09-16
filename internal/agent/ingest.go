@@ -567,6 +567,14 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		if relative := strings.TrimSpace(entry.ExternalID); relative != "" && relative != "." {
 			where = filepath.ToSlash(filepath.Join(where, relative))
 		}
+		// The description is a fact as well as the opening. The night
+		// rewrites openings from the facts alone, and one written from a
+		// readme the facts did not mention was rewritten into "This is
+		// Ziyan's Go project, with Ziyan as the sole author" -- the
+		// readme's one useful sentence gone, and padding in its place.
+		if description := cutRunes(strings.TrimSpace(profile.Description), 300); description != "" {
+			facts = append(facts, line{"description", "Its readme says: " + description})
+		}
 		if where != "" {
 			facts = append(facts, line{"checkout", "The checkout is at " + where + " on " + source.Specification.Computer + "."})
 		}
@@ -589,14 +597,12 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			facts = append(facts, line{"directories", "Top-level directories: " + strings.Join(listed, ", ") + more + "."})
 		}
 		if profile.First != nil && profile.Last != nil {
-			facts = append(facts, line{"history", fmt.Sprintf("%d commits by %s, %s to %s.",
-				profile.Commits, people(contributors),
-				profile.First.Format("January 2006"), profile.Last.Format("January 2006"))})
+			facts = append(facts, line{"history", fmt.Sprintf("%d commits by %s, %s.",
+				profile.Commits, people(contributors), monthSpan(profile.First, profile.Last))})
 		}
 		if own != nil && own.Commits > 0 && own.First != nil && own.Last != nil {
-			facts = append(facts, line{"own", fmt.Sprintf("%s wrote %d of them, %s to %s.",
-				personName(run.Owner), own.Commits,
-				own.First.Format("January 2006"), own.Last.Format("January 2006"))})
+			facts = append(facts, line{"own", fmt.Sprintf("%s wrote %d of the commits, %s.",
+				personName(run.Owner), own.Commits, monthSpan(own.First, own.Last))})
 		}
 		// A profile is recomputed every pass. What it says lands on the
 		// same numbered facts it said it on last time -- changed where the
@@ -1098,6 +1104,17 @@ func ownCommits(own *computer.ScanAuthor) int {
 }
 
 // people is "1 person" or "3 people".
+// monthSpan is when something ran, by month: "July 2026" when it began
+// and ended in one, "March 2024 to July 2026" otherwise. A fact reading
+// "July 2026 to July 2026" said one thing twice.
+func monthSpan(first, last *time.Time) string {
+	from, until := first.Format("January 2006"), last.Format("January 2006")
+	if from == until {
+		return from
+	}
+	return from + " to " + until
+}
+
 func people(count int) string {
 	if count == 1 {
 		return "1 person"
