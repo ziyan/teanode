@@ -105,6 +105,12 @@ type Agent struct {
 	// headless browser contexts in use under the operator's cap.
 	tabsMutex sync.Mutex
 	tabs      map[string]*attachedTab
+
+	// computersBusy is which source each attached computer is reading
+	// for right now, by computer name. One at a time: two big scans at
+	// once on one laptop took it down every hundred seconds.
+	readingMutex  sync.Mutex
+	computersBusy map[string]string
 	// feeds are the subscribers to each conversation's events, by
 	// conversation; the relay queue is what this instance's runs emitted
 	// and the others have not heard yet.

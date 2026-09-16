@@ -105,6 +105,12 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 		}
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			// Why matters: a computer that leaves every hundred seconds
+			// is a program that crashed, a socket a proxy cut, or a
+			// message too big, and the three are told apart only here.
+			if attached {
+				log.Noticef("the computer %q of %s stopped answering: %s", name, username, err)
+			}
 			return
 		}
 		var message struct {

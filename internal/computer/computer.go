@@ -220,7 +220,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			case slots <- struct{}{}:
 				go func() {
 					defer func() { <-slots }()
-					data, err := handle(ctx, options, request.Action, request.Args, held, output, ended)
+					data, err := handleSafely(ctx, options, request.Action, request.Args, held, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
@@ -272,6 +272,19 @@ func withDefaults(options *Options) *Options {
 }
 
 // handle does one request and returns its answer as JSON.
+// handleSafely is handle with a panic turned into an answer. A panic in
+// one scan took the whole program down, and with it every other request
+// open on the computer; the server saw only that the computer had gone.
+func handleSafely(ctx context.Context, options *Options, action string, args json.RawMessage,
+	held *sessions, output pushOutput, ended pushEnded) (data json.RawMessage, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("%s failed on this computer: %v", action, recovered)
+		}
+	}()
+	return handle(ctx, options, action, args, held, output, ended)
+}
+
 func handle(ctx context.Context, options *Options, action string, args json.RawMessage,
 	held *sessions, output pushOutput, ended pushEnded) (json.RawMessage, error) {
 	var result any

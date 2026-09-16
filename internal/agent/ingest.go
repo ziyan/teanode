@@ -130,6 +130,13 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		return nil
 	}
 
+	if computer := source.Specification.Computer; source.Kind == models.SourceComputer && computer != "" {
+		if other, free := self.claimComputer(computer, source.ID); !free {
+			return &Deferral{Until: time.Now().Add(ingestAgain), Reason: fmt.Sprintf("%s is reading %s first", computer, other)}
+		}
+		defer self.releaseComputer(computer, source.ID)
+	}
+
 	counts := db.SourceCounts{
 		Documents: source.DocumentCount,
 		Chunks:    source.ChunkCount,
@@ -1136,4 +1143,27 @@ func people(count int) string {
 		return "1 person"
 	}
 	return fmt.Sprintf("%d people", count)
+}
+
+// claimComputer says this source is reading from the computer now, or
+// which source already is.
+func (self *Agent) claimComputer(computer, sourceId string) (string, bool) {
+	self.readingMutex.Lock()
+	defer self.readingMutex.Unlock()
+	if self.computersBusy == nil {
+		self.computersBusy = map[string]string{}
+	}
+	if other, busy := self.computersBusy[computer]; busy && other != sourceId {
+		return other, false
+	}
+	self.computersBusy[computer] = sourceId
+	return "", true
+}
+
+func (self *Agent) releaseComputer(computer, sourceId string) {
+	self.readingMutex.Lock()
+	defer self.readingMutex.Unlock()
+	if self.computersBusy[computer] == sourceId {
+		delete(self.computersBusy, computer)
+	}
 }
