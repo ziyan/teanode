@@ -188,6 +188,7 @@ const (
 	}`
 	DocumentDeleteAgentKnowledgeSource   = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource     = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
+	DocumentDreamAgentNow                = `mutation { DreamAgentNow }`
 	DocumentAllowAgentKnowledgeDirectory = `mutation ($sourceId: String!, $name: String!) {
 		AllowAgentKnowledgeDirectory(sourceId: $sourceId, name: $name) ` + sourceFields + `
 	}`
@@ -387,4 +388,12 @@ func ListAgentDreams(ctx context.Context, connection *Client, first int) ([]*Age
 		return nil, err
 	}
 	return result.ListAgentDreams, nil
+}
+
+// DreamAgentNow asks for the night to run at the next tick.
+func DreamAgentNow(ctx context.Context, connection *Client) error {
+	var result struct {
+		DreamAgentNow bool `json:"DreamAgentNow"`
+	}
+	return connection.Execute(ctx, DocumentDreamAgentNow, nil, &result)
 }

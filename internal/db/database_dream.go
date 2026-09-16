@@ -47,6 +47,11 @@ type DreamOperation interface {
 	// time. The roots and the period pages are never among them.
 	ListAgentNodesEmpty(agentId string, before time.Time, limit int) ([]*models.AgentNode, error)
 
+	// ListAgentFactsSaidTwice is every fact whose page already carries
+	// the same words on a lower number: the later copies, never the
+	// first.
+	ListAgentFactsSaidTwice(agentId string, limit int) ([]*models.AgentFact, error)
+
 	// RecomputeAgentImportance rewrites what the index is ordered by, and
 	// RetireAgentFacts marks what has not been wanted in a long time
 	// dormant. Neither deletes anything.
@@ -541,4 +546,21 @@ func (self *transaction) ListAgentNodesEmpty(agentId string, before time.Time, l
 		  AND NOT EXISTS (SELECT 1 FROM "agent_edge" e WHERE e."from_id" = n."id" OR e."to_id" = n."id")
 		ORDER BY n."created_at"
 		LIMIT ?`, agentId, before, models.NodeFolder, models.NodePeriod, limit))
+}
+
+func (self *transaction) ListAgentFactsSaidTwice(agentId string, limit int) ([]*models.AgentFact, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	return self.factsFrom(self.tx.Raw(`
+		SELECT f.* FROM "agent_fact" f
+		WHERE f."agent_id" = ? AND f."superseded_by" IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM "agent_fact" g
+			WHERE g."node_id" = f."node_id" AND g."number" < f."number"
+			  AND g."superseded_by" IS NULL
+			  AND lower(btrim(g."text")) = lower(btrim(f."text"))
+		  )
+		ORDER BY f."created_at"
+		LIMIT ?`, agentId, limit))
 }

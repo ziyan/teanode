@@ -18,7 +18,9 @@ Notable changes to TeaNode. The format follows
   room and one at a time where there is not, with the breadcrumb as the way
   back. Each page's Connections is a drawing of what it is linked to that you
   walk by clicking, and each page's URL is its path,
-  `/settings/knowledge/work/portal`.
+  `/settings/knowledge/work/portal`. `teanode agent dream now` runs the
+  night at the next tick instead of waiting for its turn, and `agent dream
+  log` says what it did.
 
 - It writes what it learns without being asked. A job runs after a conversation
   goes quiet and files what the conversation taught, so what you told it on

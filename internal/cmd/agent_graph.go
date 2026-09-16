@@ -177,8 +177,25 @@ func newAgentDreamCommand() *cli.Command {
 				Flags:  []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 14}},
 				Action: runDreamLog,
 			},
+			{
+				Name:   "now",
+				Usage:  "run the night at the next tick, within the agent's hours, instead of waiting for its turn",
+				Action: runDreamNow,
+			},
 		},
 	}
+}
+
+func runDreamNow(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.DreamAgentNow(ctx, connection); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintln(command.Writer, "the night starts within the minute, if it is within your agent's hours")
+	return nil
 }
 
 // --- the graph --------------------------------------------------------

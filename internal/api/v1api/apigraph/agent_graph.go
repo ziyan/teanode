@@ -85,6 +85,10 @@ type AgentGraphMutation interface {
 	// agent:use.
 	SyncAgentKnowledgeSource(ctx context.Context, arguments DeleteAgentKnowledgeSourceArguments) (bool, error)
 
+	// Run the night now, within the agent's own hours, rather than
+	// waiting for its next turn. Needs agent:use.
+	DreamAgentNow(ctx context.Context) (bool, error)
+
 	// Let a directory the scan flagged as being about other people in.
 	// Needs agent:use.
 	AllowAgentKnowledgeDirectory(ctx context.Context, arguments AllowAgentKnowledgeDirectoryArguments) (*models.AgentKnowledgeSource, error)
@@ -997,4 +1001,19 @@ func (self *graph) AllowAgentKnowledgeDirectory(ctx context.Context, arguments A
 	now := time.Now()
 	source.NextRunAt = &now
 	return tx.PutAgentSource(source)
+}
+
+func (self *graph) DreamAgentNow(ctx context.Context) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	// The night is due when it has not run for six hours; forgetting when
+	// it last ran makes it due at the next tick. The hours the person set
+	// still hold: a night asked for at noon runs when its hours begin.
+	_, err = self.writing(ctx).UpdateAgent(found.ID, func(agent *models.Agent) error {
+		agent.DreamedAt = nil
+		return nil
+	})
+	return err == nil, err
 }

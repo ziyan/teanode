@@ -341,7 +341,7 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 
 	// Each question is asked of the graph the way a turn would ask it. A
 	// question nothing comes back for is the gap.
-	var gaps []string
+	var gaps, asked []string
 	for index, question := range answer.Questions {
 		if index >= rehearsalQuestions || ctx.Err() != nil {
 			break
@@ -352,11 +352,16 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 		}
 		record.Rehearsed++
 		if self.canAnswerFromMemory(ctx, run, question) {
+			asked = append(asked, "answered: "+question)
 			continue
 		}
+		asked = append(asked, "gap: "+question)
 		gaps = append(gaps, question)
 	}
 	record.Gaps = len(gaps)
+	// The questions themselves are kept with the night, so the person
+	// can see what their agent thought they would ask, not just a count.
+	record.Notes = strings.Join(asked, "\n")
 	if len(gaps) == 0 {
 		return
 	}
@@ -386,8 +391,12 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 // person would type verbatim is in the embedded text too, so asking by
 // meaning does not lose the exact-match case.
 func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, question string) bool {
-	nodes, facts := self.nearestInGraph(ctx, run.Agent, question, 5)
-	if len(nodes) > 0 || len(facts) > 0 {
+	// A fact answers a question; a page only says the subject exists.
+	// Counting a page as an answer made every question answerable --
+	// "what did I promise the Osaka team" matched the Osaka project at
+	// a quarter's similarity -- and eight nights found no gap at all.
+	_, facts := self.nearestInGraph(ctx, run.Agent, question, 5)
+	if len(facts) > 0 {
 		return true
 	}
 	// No embedding model, or it failed: then there is no way to tell, and
@@ -508,7 +517,38 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 	}); err != nil {
 		log.Warningf("cannot record what was gone over: %s", err)
 	}
+	self.dreamForgetSaidTwice(ctx, run, record)
 	self.dreamForgetEmptyPages(ctx, run, record)
+}
+
+// dreamForgetSaidTwice strikes a fact whose page already says the same
+// words on an earlier number. No judgement is involved -- the words are
+// identical -- so no model is asked. Twelve pages carried "wrote 16 of
+// the commits" twice, from a pass that keyed its lines by evidence and
+// a pass before it that did not; the pass that merges near-duplicates
+// would have got to them a page a night.
+func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *models.AgentDream) {
+	var twice []*models.AgentFact
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		twice, err = tx.ListAgentFactsSaidTwice(run.Agent.ID, reviseBatch)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list what is said twice: %s", err)
+		return
+	}
+	for _, fact := range twice {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			tx.AsActor(models.ActorDream)
+			return tx.DeleteAgentFact(run.Agent.ID, fact.ID)
+		}); err != nil {
+			log.Warningf("cannot strike the second copy of %s: %s", fact.ID, err)
+			continue
+		}
+		record.Merged++
+	}
 }
 
 // dreamForgetEmptyPages removes the pages that say nothing at all.

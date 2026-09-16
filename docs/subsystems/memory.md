@@ -308,8 +308,11 @@ meaning at all, so "who is he?" recalled nothing.
   question's words with OR, which is right for recall and wrong for "do
   I know this": it answers yes to almost anything, and a rehearsal that
   never finds a gap is a phase that costs a call and reports nothing.
-  Where there is no embedding model there are no gaps rather than all of
-  them.
+  And only a fact counts as an answer: a page matching at a quarter's
+  similarity says the subject exists, not that the question is answered,
+  and counting it made every question answerable. The questions and
+  their verdicts are kept in the night's notes. Where there is no
+  embedding model there are no gaps rather than all of them.
 - **The generative half can be wrong.** A link it writes is a link the
   agent will state as though it were told. It starts at half weight and
   carries the walk that suggested it as its evidence, which is what a

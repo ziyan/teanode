@@ -623,10 +623,12 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 				}
 			}
 		}
+		kept := map[string]bool{}
 		for _, wanted := range facts {
 			evidence := []models.Evidence{{Kind: models.EvidenceRepository, ID: profile.Head, Quote: wanted.key}}
 			if before := previous[wanted.key]; before != nil {
 				delete(previous, wanted.key)
+				kept[before.ID] = true
 				if before.Text == wanted.text {
 					continue
 				}
@@ -647,8 +649,10 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			}
 		}
 		// What the profile no longer says goes, and so does anything an
-		// earlier version wrote without a key. After the loop above,
-		// previous holds exactly the keys nothing wanted this time.
+		// earlier version wrote without a key, and any second line under
+		// a key that one line now carries. After the loop above, previous
+		// holds exactly the keys nothing wanted this time, and kept the
+		// one fact chosen for each key that was.
 		for _, fact := range existing {
 			var repository *models.Evidence
 			for index := range fact.Evidence {
@@ -661,7 +665,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 				continue
 			}
 			_, unwanted := previous[repository.Quote]
-			if repository.Quote == "" || unwanted {
+			if repository.Quote == "" || unwanted || !kept[fact.ID] {
 				if err := tx.DeleteAgentFact(source.AgentID, fact.ID); err != nil {
 					return err
 				}
