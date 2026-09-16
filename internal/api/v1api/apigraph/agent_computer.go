@@ -29,7 +29,7 @@ import (
 // and an older program repeated that on the same file every time. A
 // limit at all because the library's default is none, and this socket
 // is reached before the sender has said who they are.
-const computerAnswerSize = 64 << 20
+const computerAnswerSize = 512 << 20
 
 // computerProtocol is the version the program must speak. It is
 // internal/computer's Protocol, and the two move together: 2 added
