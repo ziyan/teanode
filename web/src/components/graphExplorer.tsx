@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
+import { ConfirmDialog } from './dialog'
 import { ErrorMessage, Loading } from './common'
 import { SettingsEmpty } from './settingsList'
 import { graphql } from '../api'
 import { useQuery } from './useQuery'
+import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
 import { useSession } from '../session'
 
@@ -24,6 +26,10 @@ const NEIGHBOURS = `query ($path: String!) {
     neighbours { node { id path kind name } relation outward note }
     children
   }
+}`
+
+const UNLINK = `mutation ($path: String!, $to: String!, $relation: String!) {
+  UnlinkAgentNodes(path: $path, to: $to, relation: $relation)
 }`
 
 type GraphNode = { id: string; path: string; kind: string; name: string }
@@ -81,7 +87,22 @@ type Placed = {
   // on. No relation means no line: a page walked through earlier is not
   // claimed to be linked to anything.
   relation: string
+  // The same relations as the graph stores them, which is what an unlink
+  // has to name. The line above says them in the reader's language, and
+  // that is not a thing the server has a word for.
+  relations: string[]
   direction: 'out' | 'in' | 'none'
+}
+
+// A link somebody has just walked along, kept so it can be taken back
+// again. The pair of paths rather than the drawing's own nodes, because
+// by the time the button is pressed the drawing has moved on to the far
+// end of it.
+type Walked = { from: string; fromName: string; to: string; relations: string[] }
+
+// messageOf is what went wrong, in words a person can act on.
+function messageOf(caught: unknown): string {
+  return caught instanceof Error ? caught.message : String(caught)
 }
 
 // lastSegment is the name a path carries when the page has none: the leaf
@@ -149,9 +170,22 @@ function useBoxWidth(element: React.RefObject<HTMLDivElement | null>): number | 
   return width
 }
 
-export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: string) => void }) {
+export function GraphExplorer({
+  path,
+  onOpen,
+  version = 0,
+}: {
+  path: string
+  onOpen: (path: string) => void
+  // Changed by whoever made a link to this page, to say the
+  // neighbourhood is not what it was. A number rather than a key, so the
+  // drawing fetches again instead of starting over: somebody three pages
+  // into a walk should not be put back at the beginning of it.
+  version?: number
+}) {
   const me = useSession().name || ''
   const { t } = useTranslation()
+  const toast = useToast()
   const box = useRef<HTMLDivElement | null>(null)
   const measured = useBoxWidth(box)
   const phone = usePhone()
@@ -169,18 +203,23 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
   // line would say they are.
   const [seen, setSeen] = useState<GraphNode[]>([])
   const [homeName, setHomeName] = useState(() => lastSegment(path))
+  const [walked, setWalked] = useState<Walked | null>(null)
+  const [unlinking, setUnlinking] = useState<Walked | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
 
   // Another page in the column is another neighbourhood: the walk that led
   // here was about the page that has just been left.
   useEffect(() => {
     setCentre(path)
     setSeen([])
+    setWalked(null)
     setHomeName(lastSegment(path))
   }, [path])
 
   const around = useQuery(
     () => graphql<{ AgentGraphNeighbours: Neighbourhood | null }>(NEIGHBOURS, { path: centre }),
-    [centre],
+    [centre, version],
     { refresh: false },
   )
   const neighbourhood = around.data?.AgentGraphNeighbours ?? null
@@ -194,8 +233,9 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
   }, [neighbourhood, path, me])
 
   const recentre = useCallback(
-    (next: GraphNode) => {
-      if (next.path === centre) {
+    (step: Placed) => {
+      const next = step.node
+      if (!next || next.path === centre) {
         return
       }
       const here = neighbourhood?.node
@@ -203,9 +243,18 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         const kept = before.filter((node) => node.path !== next.path && node.path !== here?.path)
         return (here ? [...kept, here] : kept).slice(-MAX_NODES)
       })
+      // Only a stated link can be taken back. Where a page is filed is
+      // changed by moving it rather than by unlinking, and a page walked
+      // through earlier has no line to the middle at all.
+      const takeable = step.role === 'link' ? step.relations.filter((relation) => relation !== 'part_of') : []
+      setWalked(
+        here && takeable.length > 0
+          ? { from: here.path, fromName: nameOf(here, me), to: next.path, relations: takeable }
+          : null,
+      )
       setCentre(next.path)
     },
-    [centre, neighbourhood],
+    [centre, me, neighbourhood],
   )
 
   // relationWords is the relation in the reader's language. The graph takes
@@ -218,6 +267,28 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
     },
     [t],
   )
+
+  // Two pages joined by two relations are one line on the drawing, so
+  // taking that line back is a call per relation: leaving one of them
+  // behind would redraw the line the press was meant to remove.
+  const unlink = async (link: Walked) => {
+    setBusy(true)
+    setProblem('')
+    try {
+      for (const relation of link.relations) {
+        await graphql(UNLINK, { path: link.from, to: link.to, relation })
+      }
+      toast.done(t('knowledge.unlinked'))
+      setUnlinking(null)
+      setWalked(null)
+      await around.reload()
+    } catch (caught) {
+      setProblem(messageOf(caught))
+      toast.failed(messageOf(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const width = measured ?? (phone ? 360 : 720)
   const height = phone ? 300 : 360
@@ -318,6 +389,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         y: middleY,
         radius: radius + 6,
         relation: '',
+        relations: [],
         direction: 'none',
       },
     ]
@@ -334,6 +406,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         y: radius + 10,
         radius,
         relation: relationWords('part_of'),
+        relations: ['part_of'],
         direction: 'out',
       })
     }
@@ -353,6 +426,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         y: height - radius - 24,
         radius,
         relation: relationWords('part_of'),
+        relations: ['part_of'],
         direction: 'in',
       })
     }
@@ -369,6 +443,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         ...at(index),
         radius,
         relation: link.relations.map(relationWords).join(', '),
+        relations: link.relations,
         direction: outward,
       })
     })
@@ -384,6 +459,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
         ...at(linked.length + index),
         radius: radius - 6,
         relation: '',
+        relations: [],
         direction: 'none',
       })
     })
@@ -473,7 +549,7 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
           {nodes.map((node) => {
             const page = node.node
             const open = page ? () => onOpen(page.path) : undefined
-            const walk = page && page.path !== centre ? () => recentre(page) : undefined
+            const walk = page && page.path !== centre ? () => recentre(node) : undefined
             return (
               <g
                 key={node.key}
@@ -502,14 +578,52 @@ export function GraphExplorer({ path, onOpen }: { path: string; onOpen: (path: s
       ) : null}
       {moved ? (
         <div className="graph-explorer-foot">
-          <button type="button" className="knowledge-chip" onClick={() => setCentre(path)}>
+          <button
+            type="button"
+            className="knowledge-chip"
+            onClick={() => {
+              setCentre(path)
+              setWalked(null)
+            }}
+          >
             {t('knowledge.backTo', { name: homeName })}
           </button>
           <span className="muted graph-explorer-here">{centre}</span>
           <button type="button" className="link" onClick={() => onOpen(centre)}>
             {t('knowledge.openPage')}
           </button>
+          {/* Offered only for the link just walked along, because that is
+              the only pair of pages on screen whose join the reader has
+              seen stated. */}
+          {walked && walked.to === centre ? (
+            <button
+              type="button"
+              className="link danger"
+              disabled={busy}
+              onClick={() => {
+                setProblem('')
+                setUnlinking(walked)
+              }}
+            >
+              {t('knowledge.unlinkFrom', { name: walked.fromName })}
+            </button>
+          ) : null}
         </div>
+      ) : null}
+      {unlinking ? (
+        <ConfirmDialog
+          title={t('knowledge.unlink')}
+          body={t('knowledge.unlinkBody', {
+            from: unlinking.from,
+            to: unlinking.to,
+            relation: unlinking.relations.map(relationWords).join(', '),
+          })}
+          confirmLabel={t('knowledge.unlink')}
+          busy={busy}
+          error={problem}
+          onClose={() => setUnlinking(null)}
+          onConfirm={() => void unlink(unlinking)}
+        />
       ) : null}
     </div>
   )

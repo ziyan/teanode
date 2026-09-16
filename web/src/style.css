@@ -8144,6 +8144,13 @@ button.with-icon {
   overflow-wrap: anywhere;
 }
 
+/* The fields that make a link, under the drawing they change. Flush
+   against it they read as part of the picture rather than as the way to
+   add to it. */
+.graph-explorer + .row {
+  margin-top: var(--space-4);
+}
+
 @media (max-width: 600px) {
   .graph-explorer-canvas {
     height: 300px;

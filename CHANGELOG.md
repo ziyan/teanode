@@ -20,7 +20,9 @@ Notable changes to TeaNode. The format follows
   walk by clicking, and each page's URL is its path,
   `/settings/knowledge/work/portal`. `teanode agent dream now` runs the
   night at the next tick instead of waiting for its turn, and `agent dream
-  log` says what it did.
+  log` says what it did. Everything the agent's memory tool can do, you can
+  do too, from the dashboard and the command line: move a page, link two
+  pages and unlink them, pause and resume a source, run the night now.
 
 - It writes what it learns without being asked. A job runs after a conversation
   goes quiet and files what the conversation taught, so what you told it on

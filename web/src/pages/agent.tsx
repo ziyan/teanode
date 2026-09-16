@@ -665,10 +665,12 @@ const DREAMS = `
   query {
     ListAgentDreams(first: 7) {
       id startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
-      strengthened associated rehearsed gaps revised lastError
+      strengthened associated rehearsed gaps revised notes lastError
       proposals { kind path to reason }
     }
   }`
+
+const DREAM_NOW = `mutation { DreamAgentNow }`
 
 type LearnedFact = {
   fact: { id: string; number: number; text: string; inferred: boolean; evidence: { kind: string; quote: string }[] }
@@ -712,6 +714,11 @@ type Dream = {
   rehearsed: number
   gaps: number
   revised: number
+  // What the night wrote down about the questions it asked itself, one
+  // line each. Prose rather than counts: "answered: ..." and "gap: ..."
+  // are the sentences a person reads to see whether the night was any
+  // use, which no number above can say.
+  notes: string
   lastError: string
   proposals: { kind: string; path: string; to: string; reason: string }[]
 }
@@ -1414,7 +1421,7 @@ function KnowledgeSourcesCard() {
               <>
                 <Tag value={t(`agent.knowledgeKind.${source.kind}` as 'agent.knowledgeKind.computer')} />
                 {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
-                {!source.enabled ? <Tag value={t('agent.knowledgeOff')} tone="warn" /> : null}
+                {!source.enabled ? <Tag value={t('agent.knowledgePausedBadge')} tone="warn" /> : null}
               </>
             }
             subtitle={
@@ -1424,6 +1431,15 @@ function KnowledgeSourcesCard() {
                 <br />
                 {t('agent.knowledgeCounts', { documents: source.documentCount, chunks: source.chunkCount })}
                 {source.refusedCount > 0 ? ` · ${t('agent.knowledgeRefused', { count: source.refusedCount })}` : ''}
+                {/* What pausing means, said where the pause is: the
+                    index is kept, so resuming does not start the first
+                    pass over again. */}
+                {!source.enabled ? (
+                  <>
+                    <br />
+                    <span className="muted">{t('agent.knowledgePaused')}</span>
+                  </>
+                ) : null}
                 {source.lastError ? (
                   <>
                     <br />
@@ -1487,13 +1503,13 @@ function KnowledgeSourcesCard() {
                 <button
                   type="button"
                   className="icon-action"
-                  title={source.enabled ? t('agent.knowledgeOff') : t('agent.knowledgeReading')}
-                  aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgeOff') : t('agent.knowledgeReading')}`}
+                  title={source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}
+                  aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
                   onClick={() =>
                     void run(
                       SAVE_KNOWLEDGE_SOURCE,
                       { sourceId: source.id, enabled: !source.enabled },
-                      t('agent.knowledgeSaved'),
+                      source.enabled ? t('agent.knowledgePaused') : t('agent.knowledgeResumed'),
                     )
                   }
                 >
@@ -1609,13 +1625,40 @@ function DreamCard({
   onChange: (variables: Record<string, unknown>, done: string) => Promise<void>
 }) {
   const { t } = useTranslation()
-  const { data, error, loading } = useQuery(() => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, {}), [], {
+  const toast = useToast()
+  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, {}), [], {
     refresh: false,
   })
   const dreams = data?.ListAgentDreams ?? []
+  const [starting, setStarting] = useState(false)
+
+  // Asking for the night now only moves it to the next tick, and only
+  // within the hours below: a run that rewrites pages while somebody is
+  // reading them is the thing those hours exist to prevent.
+  const startNow = async () => {
+    setStarting(true)
+    try {
+      await graphql(DREAM_NOW, {})
+      toast.done(t('agent.dreamNowAsked'))
+      await reload()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setStarting(false)
+    }
+  }
 
   return (
-    <SettingsSection card title={t('agent.dream')} description={t('agent.dreamHint')}>
+    <SettingsSection
+      card
+      title={t('agent.dream')}
+      description={t('agent.dreamHint')}
+      action={
+        <button type="button" disabled={starting} onClick={() => void startNow()}>
+          {t('agent.dreamNow')}
+        </button>
+      }
+    >
       {/* When the night is. A person who works at two in the morning
           should be able to move it rather than have a page rewritten
           under them while they read it. */}
@@ -1696,6 +1739,19 @@ function DreamCard({
                         : t('agent.dreamSuggests', { path: proposal.path, under: proposal.to })}
                   </span>
                 ))}
+                {/* What it asked itself and what it could not answer, in
+                    its own words. Not translated: the night wrote them,
+                    and it writes in the language the agent is set to. */}
+                {(dream.notes || '')
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line, index) => (
+                    <span key={`note-${index}`} className="muted">
+                      <br />
+                      {line}
+                    </span>
+                  ))}
                 {dream.lastError ? (
                   <>
                     <br />

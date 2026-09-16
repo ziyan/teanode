@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ErrorMessage, Loading, Tag } from '../components/common'
-import { ChevronRightIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
+import { ChevronRightIcon, MoveIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { graphql } from '../api'
 import { useQuery } from '../components/useQuery'
@@ -64,8 +64,32 @@ const HISTORY = `query ($path: String!, $first: Int) {
   }
 }`
 
+const MOVE_NODE = `mutation ($path: String!, $under: String!) {
+  MoveAgentNode(path: $path, under: $under) { id path }
+}`
+
+const LINK_NODES = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) {
+  LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note)
+}`
+
 const DELETE_FACT = `mutation ($path: String!, $number: Int!) { DeleteAgentFact(path: $path, number: $number) }`
 const DELETE_NODE = `mutation ($path: String!) { DeleteAgentNode(path: $path) }`
+
+// The relations the graph states, the same list and the same order the
+// agent's own memory tool offers. Stated rather than free text: a link
+// typed as "workson" once is a link nothing ever walks along again.
+const RELATIONS = [
+  'part_of',
+  'works_on',
+  'member_of',
+  'knows',
+  'owns',
+  'uses',
+  'located_in',
+  'related_to',
+  'decided_in',
+  'about',
+]
 
 type Node = {
   id: string
@@ -126,6 +150,14 @@ const PAGE_SIZE = 50
 // a source has been filed under since -- so nothing here is a list.
 function rootOf(path: string): string {
   return path.split('/')[0]
+}
+
+// parentOf is the page a path is filed under, and empty for a root. A
+// root is the shape of the graph rather than a page about anything, so
+// there is nowhere above it to move it to.
+function parentOf(path: string): string {
+  const cut = path.lastIndexOf('/')
+  return cut < 0 ? '' : path.slice(0, cut)
 }
 
 // folderName is a root's name as a heading: the person's own name on
@@ -598,6 +630,12 @@ function PageView({
   const [adding, setAdding] = useState<Fact | null | undefined>(undefined)
   const [removing, setRemoving] = useState<Fact | null>(null)
   const [removingPage, setRemovingPage] = useState(false)
+  const [moving, setMoving] = useState(false)
+  // Bumped whenever a link is made from here, which is how the drawing
+  // below is told to fetch this page's neighbourhood again. A key would
+  // redraw it from scratch and throw away the walk somebody is in the
+  // middle of; this only refetches.
+  const [linked, setLinked] = useState(0)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
 
@@ -613,6 +651,33 @@ function PageView({
       setProblem(messageOf(caught))
       onFailed(caught)
       return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Moving is not a save: the page answers to a new path afterwards, so
+  // the column has to follow it there. Reloading the one it was at would
+  // show the empty page that is no longer anything.
+  async function move(under: string) {
+    setBusy(true)
+    setProblem('')
+    try {
+      const result = await graphql<{ MoveAgentNode: { id: string; path: string } | null }>(MOVE_NODE, {
+        path: node.path,
+        under,
+      })
+      onDone(t('knowledge.moved'))
+      setMoving(false)
+      const now = result.MoveAgentNode?.path
+      if (now && now !== node.path) {
+        onSelect(now)
+      } else {
+        onChanged()
+      }
+    } catch (caught) {
+      setProblem(messageOf(caught))
+      onFailed(caught)
     } finally {
       setBusy(false)
     }
@@ -640,6 +705,19 @@ function PageView({
             >
               <PencilIcon size={16} />
             </button>
+            {/* A root is where things are filed rather than a page about
+                anything, so there is nowhere above it to move it to. */}
+            {parentOf(node.path) ? (
+              <button
+                type="button"
+                className="icon-action"
+                title={t('knowledge.movePage')}
+                aria-label={`${node.path}: ${t('knowledge.movePage')}`}
+                onClick={() => setMoving(true)}
+              >
+                <MoveIcon size={16} />
+              </button>
+            ) : null}
             <button
               type="button"
               className={node.pinned ? 'icon-action pinned' : 'icon-action'}
@@ -734,7 +812,18 @@ function PageView({
       </SettingsSection>
 
       <SettingsSection card title={t('knowledge.connections')} description={t('knowledge.connectionsHint')}>
-        <GraphExplorer path={node.path} onOpen={onSelect} />
+        <GraphExplorer path={node.path} onOpen={onSelect} version={linked} />
+        <LinkForm
+          path={node.path}
+          busy={busy}
+          onLink={async (to, relation, note) => {
+            const made = await run(LINK_NODES, { path: node.path, to, relation, note }, t('knowledge.linked'))
+            if (made) {
+              setLinked((before) => before + 1)
+            }
+            return made
+          }}
+        />
       </SettingsSection>
 
       {page.children.length > 0 ? (
@@ -764,6 +853,16 @@ function PageView({
           onSubmit={async (fields) => {
             if (await run(SAVE_NODE, { path: node.path, ...fields }, t('knowledge.pageSaved'))) setEditing(false)
           }}
+        />
+      ) : null}
+
+      {moving ? (
+        <MovePageDialog
+          node={node}
+          busy={busy}
+          error={problem}
+          onClose={() => setMoving(false)}
+          onSubmit={(under) => void move(under)}
         />
       ) : null}
 
@@ -934,6 +1033,107 @@ function EditPageDialog({
       </label>
       <p className="muted">{t('knowledge.summaryHint')}</p>
     </FormDialog>
+  )
+}
+
+// MovePageDialog asks where a page belongs.
+//
+// The field is the folder or page it is filed under, prefilled with the
+// one it is under now, because most moves are a page in the wrong
+// project rather than a page with no home at all.
+function MovePageDialog({
+  node,
+  busy,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  node: Node
+  busy: boolean
+  error: string
+  onClose: () => void
+  onSubmit: (under: string) => void
+}) {
+  const { t } = useTranslation()
+  const [under, setUnder] = useState(parentOf(node.path))
+
+  return (
+    <FormDialog
+      title={t('knowledge.movePage')}
+      submitLabel={t('knowledge.movePage')}
+      busy={busy}
+      error={error}
+      canSubmit={under.trim() !== '' && under.trim() !== parentOf(node.path)}
+      onClose={onClose}
+      onSubmit={() => onSubmit(under.trim())}
+    >
+      <label>
+        <span>{t('knowledge.moveUnder')}</span>
+        <input value={under} placeholder="projects" onChange={(event) => setUnder(event.target.value)} />
+      </label>
+      <p className="muted">{t('knowledge.moveUnderHint', { path: node.path })}</p>
+    </FormDialog>
+  )
+}
+
+// LinkForm joins this page to another one.
+//
+// Under the drawing rather than behind a dialog: a link is made while
+// looking at what is already there, and the drawing above is the answer
+// to "is it there now" the moment the button is pressed.
+function LinkForm({
+  path,
+  busy,
+  onLink,
+}: {
+  path: string
+  busy: boolean
+  onLink: (to: string, relation: string, note: string) => Promise<boolean>
+}) {
+  const { t } = useTranslation()
+  const [to, setTo] = useState('')
+  // The general one to start from. Anything more specific is a claim the
+  // person is making, and should be chosen rather than defaulted into.
+  const [relation, setRelation] = useState('related_to')
+  const [note, setNote] = useState('')
+  const other = to.trim()
+
+  return (
+    <div className="row">
+      <label>
+        <span>{t('knowledge.linkTo')}</span>
+        <input value={to} placeholder="people/alice-chen" onChange={(event) => setTo(event.target.value)} />
+      </label>
+      <label>
+        <span>{t('knowledge.linkRelation')}</span>
+        <select value={relation} onChange={(event) => setRelation(event.target.value)}>
+          {RELATIONS.map((value) => (
+            <option key={value} value={value}>
+              {t(`knowledge.relation.${value}` as 'knowledge.relation.works_on')}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>{t('knowledge.linkNote')}</span>
+        <input value={note} onChange={(event) => setNote(event.target.value)} />
+      </label>
+      <button
+        type="button"
+        className="shrink"
+        disabled={busy || other === '' || other === path}
+        onClick={() => {
+          void (async () => {
+            if (await onLink(other, relation, note.trim())) {
+              setTo('')
+              setNote('')
+            }
+          })()
+        }}
+      >
+        {t('knowledge.link')}
+      </button>
+    </div>
   )
 }
 
