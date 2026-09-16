@@ -466,7 +466,7 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument)
 	if err != nil {
 		log.Debugf("cannot file what a nightly digest found: %s", err)
 	}

@@ -202,7 +202,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 			theirWords[message.ID] = true
 		}
 	}
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation)
 	if err != nil {
 		return err
 	}
@@ -404,7 +404,7 @@ func transcriptFor(messages []*models.AgentMessage) string {
 
 // fileWhatWasLearned writes the run's answer onto the graph and says how
 // much it kept.
-func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool) (int, error) {
+func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind) (int, error) {
 	if answer == nil {
 		return 0, nil
 	}
@@ -469,8 +469,10 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 				HappenedAt: whenHappened(run, wanted.Happened),
 				Confidence: 1,
 				Evidence: []models.Evidence{{
-					Kind:  models.EvidenceConversation,
-					ID:    wanted.MessageID,
+					Kind: evidenceKind,
+					// The digest marks each item "[id]", and a model that
+					// copies the marker whole is answering as asked.
+					ID:    strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
 					Quote: cutRunes(strings.TrimSpace(wanted.Quote), models.QuoteLength),
 				}},
 				Audiences: []models.AgentAudience{models.AudienceAsk},

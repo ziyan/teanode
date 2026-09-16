@@ -525,6 +525,13 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 			// is a true thing said badly, and the page it is on may
 			// belong to a source that is paused and will not say it
 			// again.
+			// Filed by a digest that borrowed the conversation's evidence
+			// shape: the id names a document, and the page said "from
+			// conversation" over a chat thread.
+			if rekinded := self.documentEvidence(tx, run.Agent.ID, fact); rekinded {
+				record.Revised++
+				return nil
+			}
 			if reworded := reviseWording(fact.Text); reworded != fact.Text {
 				if _, err := tx.UpdateAgentFact(run.Agent.ID, fact.ID, func(existing *models.AgentFact) error {
 					existing.Text = reworded
@@ -706,3 +713,33 @@ var (
 	wroteOfThem    = regexp.MustCompile(`^(.+) wrote (\d+) of them, (.+)\.$`)
 	sameMonthTwice = regexp.MustCompile(`^(.*, )([A-Z][a-z]+ \d{4}) to ([A-Z][a-z]+ \d{4})\.$`)
 )
+
+// documentEvidence corrects a fact whose evidence says conversation but
+// names a document, and says whether it did.
+func (self *Agent) documentEvidence(tx db.Transaction, agentId string, fact *models.AgentFact) bool {
+	changed := false
+	for index := range fact.Evidence {
+		evidence := &fact.Evidence[index]
+		if evidence.Kind != models.EvidenceConversation {
+			continue
+		}
+		id := strings.Trim(strings.TrimSpace(evidence.ID), "[]")
+		document, err := tx.GetAgentDocument(agentId, id)
+		if err != nil || document == nil {
+			continue
+		}
+		evidence.Kind, evidence.ID = models.EvidenceDocument, id
+		changed = true
+	}
+	if !changed {
+		return false
+	}
+	if _, err := tx.UpdateAgentFact(agentId, fact.ID, func(existing *models.AgentFact) error {
+		existing.Evidence = fact.Evidence
+		return nil
+	}); err != nil {
+		log.Debugf("cannot correct the evidence of %s: %s", fact.ID, err)
+		return false
+	}
+	return true
+}
