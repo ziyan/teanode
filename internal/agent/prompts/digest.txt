@@ -60,10 +60,6 @@ the searchable copy is already kept, and a fact repeating it is noise.
 Anything that will be false next week. Pleasantries, build results,
 status updates.
 
-**Never a password, a key, a passphrase or a token.** A network's name is
-a fact; its passphrase is not, however plainly somebody pasted it. File
-where such a thing is kept, if that was said, and nothing of the thing.
-
 **A chat unit belongs to its channel.** Its title names the channel, and
 the channel is the project or the team: file what it teaches under that
 page, or under a person or a thing it names, not under a page whose name
