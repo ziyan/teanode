@@ -592,6 +592,7 @@ function PageView({
   onDone: (said: string) => void
 }) {
   const { t } = useTranslation()
+  const me = useSession().name || ''
   const node = page.node
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState<Fact | null | undefined>(undefined)
@@ -622,7 +623,7 @@ function PageView({
       <div className="card">
         <div className="knowledge-heading">
           <div>
-            <h3>{node.name || node.path}</h3>
+            <h3>{node.path === 'self' && me ? me : node.name || node.path}</h3>
             <p className="muted">
               <code className="tag knowledge-path">{node.path}</code>{' '}
               <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
