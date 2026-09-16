@@ -771,7 +771,81 @@ digest, complete and terse, which the next fine dream improves.
 
 ## Outcomes & Retrospective
 
-Nothing yet. To be written at each milestone.
+### 2026-09-16, the audit of the small graph and the first full ingest
+
+Audited with the small set (191 pages, 747 facts, 72 links) before the
+full ingest, tested by asking the agent, and looped on the night until
+the numbers converged. What it found, and what was done:
+
+- **The agent uses the graph.** Seven of eight questions about the
+  person's own projects, things and people were answered from memory,
+  correctly, with checkout paths. The eighth was answered too, but the
+  agent first tried to open a terminal to read a file it invented. Not
+  yet addressed: a prompt-level nudge toward memory before tools on
+  questions about the person's own history.
+- **Openings were padding.** Fifteen `work/*` pages opened with "this
+  project matters to Ziyan because they contributed to its development",
+  written by the consolidation from a repository profile alone, and the
+  first rewording of the prompt wrote it again. The prompt now says a
+  profile is not an opening; the revise pass clears an opening made of
+  those phrases (`saysNothingOpening`) once per build and makes the page
+  due. After one night: zero padded openings, honest empty ones.
+- **A readme's sentence was lost.** Ingest put it in the opening and
+  nowhere else; the night writes openings from the facts alone and
+  threw it away. It is a keyed fact now (`Its readme says: …`).
+- **Facts said twice.** Twelve pages carried the same repository line
+  twice, from a keyed pass that kept one fact per key and never struck
+  a second under the same key. One per key now, and the night strikes
+  any fact whose page already says the same words on a lower number.
+- **Rehearsal found no gap in eight nights.** Any page or fact within a
+  quarter's similarity counted as an answer. Now only a fact counts, and
+  the model is shown the nearest five and asked whether they answer the
+  question; the questions and verdicts are kept in the night's notes.
+  The first night after: eight of eight were gaps, all about intentions
+  and follow-ups, which repository profiles cannot answer -- honest,
+  and the phase's point.
+- **The night ran out of time.** Every job had ten minutes; reading four
+  hundred chat-days took all of it and the phases after (revise, embed,
+  rehearse) were cut, twice in a row. A night may take 45 minutes now,
+  the reading stops at half of what is left, and the revise pass runs
+  first because it asks no model.
+- **The digest read code.** Four hundred Go files a night filed two
+  facts, with a hundred thousand more behind them. Files written to be
+  read come first now; documents under 160 bytes are marked read without
+  a call (channel-days that are one person joining).
+- **Twenty-eight empty pages**, a name and nothing else, from sources
+  naming channels; removed after two days empty.
+- **Old wording from a paused source** ("1 commits by 1 people, July
+  2026 to July 2026") reworded in place by the revise pass, since no
+  pass would say it again. The pass is paced at two thousand rows: every
+  build shipped makes every row an older build's again.
+- **Parity.** Links could only be made by the agent's tool. `LinkAgentNodes`
+  and `UnlinkAgentNodes`, `agent memory link|unlink`, a tool `unlink`,
+  and on the dashboard: move, link/unlink, pause/resume a source, run
+  tonight now, and the night's questions. `agent dream now` exists
+  because the night could not be started any other way without writing
+  to the database by hand.
+
+The full ingest, started 2026-09-16 00:00, turned up four more:
+
+- **A restart stalled every pass for a quarter of an hour.** Jobs the
+  replaced container held stayed "running" until the stale-claim rule
+  put them back. An instance now releases its own claims at start-up.
+- **A one-second detach put a pass down until its scheduled hour.** The
+  detach mid-answer is a named error now and treated as the computer
+  not being there: retry in five minutes.
+- **Two big scans at once took the computer down every hundred seconds**
+  -- or so it looked. The server now logs why a computer's socket ended,
+  and the reason was `read limit exceeded`: the chat scanner appended a
+  whole channel file's units before checking the page bound, and a
+  support channel with years of posts was one answer of tens of
+  megabytes. The scanner pages within a file now (`posts/x.jsonl#unit`
+  cursors), one source reads a computer at a time, the daemon answers a
+  panic in a request instead of dying, and the server takes a larger
+  answer from an older program until it is rebuilt.
+- **Pace.** `work` (17.9k documents) and `projects` (44.8k) completed a
+  full pass in about forty minutes each; `mattermost` reads about two
+  thousand units a run through the monitor channels.
 
 ## Context and Orientation
 
