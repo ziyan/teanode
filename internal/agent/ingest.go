@@ -57,10 +57,10 @@ const (
 	// meeting should not put a first pass an hour behind, and a source
 	// that still has more to read stays due anyway, so this is really
 	// only the bound for one that has nothing waiting.
-	ingestSoon = 5 * time.Minute
+	ingestSoon = 15 * time.Second
 
 	// ingestEvery is how often the sweep looks for sources that are due.
-	ingestEvery = time.Minute
+	ingestEvery = 15 * time.Second
 
 	// ingestAgain is how long a source with more to read waits before its
 	// next slot.
