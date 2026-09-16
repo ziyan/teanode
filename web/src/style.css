@@ -8023,6 +8023,118 @@ button.with-icon {
   margin-bottom: 2px;
 }
 
+/* The pages around one page, drawn.
+
+   The box is laid out in the pixels it is drawn in -- the viewBox is the
+   element's own width and height, measured -- so a label is twelve real
+   pixels wide on a phone and on a laptop. A fixed viewBox scaled to fit
+   made the names on a narrow column too small to read, which is the one
+   thing this panel exists to show. */
+.graph-explorer-canvas {
+  display: block;
+  width: 100%;
+  height: 360px;
+  /* A node is tapped, and a double tap on it opens the page. Without this
+     the browser spends its own 300ms deciding whether the first tap was a
+     zoom. */
+  touch-action: manipulation;
+}
+
+.graph-explorer-edge {
+  stroke: var(--border-strong);
+  fill: none;
+}
+
+.graph-explorer-arrow {
+  fill: var(--border-strong);
+  stroke: none;
+}
+
+/* The relation, on the line it belongs to. The line runs under the word,
+   so the word is drawn with the panel's own colour around it rather than
+   on top of the stroke. */
+.graph-explorer-relation {
+  fill: var(--muted);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.graph-explorer-node circle {
+  fill: var(--field);
+  stroke: var(--border-strong);
+}
+
+.graph-explorer-node text {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.graph-explorer-node.centre circle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+
+/* Filed under it, as a count rather than as pages: dashed, because it is
+   not one page and cannot be walked onto. */
+.graph-explorer-node.children circle {
+  fill: none;
+  stroke-dasharray: 3 3;
+}
+
+/* A page walked through earlier. Quiet: it is where you have been, not
+   what the page in the middle says. */
+.graph-explorer-node.seen circle {
+  fill: none;
+  stroke: var(--border);
+}
+
+.graph-explorer-node.seen text {
+  fill: var(--muted);
+}
+
+.graph-explorer-node[role='button'] {
+  cursor: pointer;
+}
+
+.graph-explorer-node[role='button']:hover circle,
+.graph-explorer-node[role='button']:focus-visible circle {
+  stroke: var(--accent);
+}
+
+.graph-explorer-node:focus {
+  outline: none;
+}
+
+.graph-explorer-node:focus-visible circle {
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+
+/* The way back, and the way in: which page the drawing is showing now,
+   and the one action that leaves the page being read. */
+.graph-explorer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.graph-explorer-here {
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .graph-explorer-canvas {
+    height: 300px;
+  }
+}
+
 @media (max-width: 900px) {
   .knowledge-layout {
     grid-template-columns: minmax(0, 1fr);

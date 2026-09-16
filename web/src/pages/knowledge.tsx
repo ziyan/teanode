@@ -13,6 +13,7 @@ import { useIsDesktop } from '../components/sidebar'
 import { useSession } from '../session'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Markdown } from '../components/markdown'
+import { GraphExplorer } from '../components/graphExplorer'
 
 // messageOf is what went wrong, in words a person can act on.
 function messageOf(caught: unknown): string {
@@ -30,7 +31,6 @@ const PAGE = `query ($path: String!) {
   AgentGraphPage(path: $path) {
     node { id path kind name aliases summary contactId pinned dormant usedAt modifiedAt }
     facts { id number kind text happenedAt inferred evidence { kind id quote } audiences createdAt }
-    edges { relation fromPath toPath }
     children { id path kind name summary }
     contact { id name emails organization }
   }
@@ -96,8 +96,6 @@ type Fact = {
   createdAt: string
 }
 
-type Edge = { relation: string; fromPath: string; toPath: string }
-
 type Revision = {
   revision: number
   kind: string
@@ -114,7 +112,6 @@ type Revision = {
 type Page = {
   node: Node
   facts: Fact[]
-  edges: Edge[]
   children: Node[]
   contact?: { id: string; name: string; emails: string[]; organization: string } | null
 }
@@ -728,28 +725,9 @@ function PageView({
         ))}
       </SettingsSection>
 
-      {page.edges.filter((edge) => edge.relation !== 'part_of').length > 0 ? (
-        <SettingsSection card title={t('knowledge.links')} description={t('knowledge.linksHint')}>
-          {page.edges
-            .filter((edge) => edge.relation !== 'part_of')
-            .map((edge) => {
-              const outward = edge.fromPath === node.path
-              const other = outward ? edge.toPath : edge.fromPath
-              return (
-                <SettingsRow
-                  key={`${edge.fromPath}-${edge.relation}-${edge.toPath}`}
-                  title={
-                    <button type="button" className="link" onClick={() => onSelect(other)}>
-                      {other}
-                    </button>
-                  }
-                  badge={<Tag value={t(`knowledge.relation.${edge.relation}` as 'knowledge.relation.works_on')} />}
-                  subtitle={outward ? t('knowledge.linkOut') : t('knowledge.linkIn')}
-                />
-              )
-            })}
-        </SettingsSection>
-      ) : null}
+      <SettingsSection card title={t('knowledge.connections')} description={t('knowledge.connectionsHint')}>
+        <GraphExplorer path={node.path} onOpen={onSelect} />
+      </SettingsSection>
 
       {page.children.length > 0 ? (
         <SettingsSection card title={t('knowledge.under')} description={t('knowledge.underHint')}>
