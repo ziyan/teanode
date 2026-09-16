@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -136,7 +137,7 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 			result.Next = relative
 			break
 		}
-		entries, err := readChannelFile(root, relative, users, channels, arguments)
+		entries, err := channelEntries(root, relative, users, channels, arguments)
 		if err != nil {
 			// A channel file this program cannot read is reported as one
 			// entry saying so, rather than silently missing from the
@@ -148,14 +149,6 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 			result.Refused++
 			continue
 		}
-		// In a fixed order, so that "the units after this one" means
-		// the same thing on the next request as it did on this one.
-		sort.SliceStable(entries, func(left, right int) bool {
-			if entries[left].HappenedAt != nil && entries[right].HappenedAt != nil && !entries[left].HappenedAt.Equal(*entries[right].HappenedAt) {
-				return entries[left].HappenedAt.Before(*entries[right].HappenedAt)
-			}
-			return entries[left].ExternalID < entries[right].ExternalID
-		})
 		skipping := afterUnit != "" && relative == afterFile
 		afterUnit = ""
 		for _, entry := range entries {
@@ -170,6 +163,11 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 				// next page starts with the one after it.
 				result.Next = result.Entries[len(result.Entries)-1].ExternalID
 				return result, nil
+			}
+			// What the server already holds is named and not sent again.
+			if arguments.Known[entry.ExternalID] == entry.Hash {
+				entry.Unchanged = true
+				entry.Text = ""
 			}
 			carried += len(entry.Text)
 			result.Entries = append(result.Entries, entry)
@@ -293,10 +291,6 @@ func readChannelFile(root, relative string, users map[string]mattermostUser, cha
 				"posts": len(group), "purpose": channel.Purpose,
 			},
 		}
-		if arguments.Known[external] == hash {
-			entry.Unchanged = true
-			entry.Text = ""
-		}
 		entries = append(entries, entry)
 	}
 
@@ -416,3 +410,46 @@ func whenOf(post mattermostPost) time.Time {
 }
 
 func pointerTo(when time.Time) *time.Time { return &when }
+
+// channelEntries is readChannelFile through a cache of one file: the
+// last channel read, in the fixed order the pages walk it.
+//
+// A page mid-file used to read and cut the whole file again -- twenty
+// seconds a page for a monitor channel of a hundred megabytes, and a run
+// of pages over it ran past its deadline. The units are the same on
+// every page until the file changes, so they are kept, and the pages of
+// a file after the first cost nothing.
+func channelEntries(root, relative string, users map[string]mattermostUser, channels map[string]mattermostChannel, arguments *ScanArguments) ([]ScanEntry, error) {
+	path := filepath.Join(root, relative)
+	information, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	channelCache.mutex.Lock()
+	defer channelCache.mutex.Unlock()
+	if channelCache.path == path && channelCache.modified.Equal(information.ModTime()) && channelCache.size == information.Size() {
+		return channelCache.entries, nil
+	}
+	entries, err := readChannelFile(root, relative, users, channels, arguments)
+	if err != nil {
+		return nil, err
+	}
+	// In a fixed order, so that "the units after this one" means the same
+	// thing on the next request as it did on this one.
+	sort.SliceStable(entries, func(left, right int) bool {
+		if entries[left].HappenedAt != nil && entries[right].HappenedAt != nil && !entries[left].HappenedAt.Equal(*entries[right].HappenedAt) {
+			return entries[left].HappenedAt.Before(*entries[right].HappenedAt)
+		}
+		return entries[left].ExternalID < entries[right].ExternalID
+	})
+	channelCache.path, channelCache.modified, channelCache.size, channelCache.entries = path, information.ModTime(), information.Size(), entries
+	return entries, nil
+}
+
+var channelCache struct {
+	mutex    sync.Mutex
+	path     string
+	modified time.Time
+	size     int64
+	entries  []ScanEntry
+}

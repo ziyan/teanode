@@ -724,4 +724,15 @@ func TestAChannelFileIsPagedWithinItself(t *testing.T) {
 			t.Fatalf("%s sent %d times", id, count)
 		}
 	}
+	// A unit the server already holds is named and not sent again, on a
+	// page served from the cache as much as on the first.
+	first := scanIn(t, files, &ScanArguments{Format: FormatMattermost, Most: 3})
+	known := map[string]string{first.Entries[0].ExternalID: first.Entries[0].Hash}
+	again := scanIn(t, files, &ScanArguments{Format: FormatMattermost, Most: 3, Known: known})
+	if !again.Entries[0].Unchanged || again.Entries[0].Text != "" {
+		t.Fatalf("a known unit is marked unchanged and carries no text: %+v", again.Entries[0])
+	}
+	if again.Entries[1].Unchanged {
+		t.Fatalf("an unknown unit is sent")
+	}
 }

@@ -43,8 +43,10 @@ const (
 	ingestPasses = 16
 
 	// ingestTurn is how long a source waits when another is reading the
-	// same computer.
-	ingestTurn = 30 * time.Second
+	// same computer, and ingestRetry how long a pass that failed mid-tree
+	// waits before trying the page again.
+	ingestTurn  = 30 * time.Second
+	ingestRetry = 5 * time.Minute
 
 	// ingestEmbedBatch is how many chunks go in one call to the embedding
 	// model. A hundred is what the providers take comfortably.
@@ -243,6 +245,14 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	nextRun := self.nextRunOf(source, run.Owner)
 	if more && failure == "" {
 		nextRun = time.Now().Add(ingestAgain)
+	}
+	// A failure with the cursor mid-tree is tried again in a few
+	// minutes, not at the next scheduled hour: the page that failed is
+	// named in the error and the person can see it, and most such
+	// failures -- a deadline, a computer that blinked -- do not repeat.
+	if failure != "" && (cursor["after"] != nil || cursor["before"] != nil) {
+		nextRun = time.Now().Add(ingestRetry)
+		more = true
 	}
 	// With a context that outlives the deadline: this is the write that
 	// says where the run got to, and it is the one write that must not be
