@@ -73,7 +73,11 @@ const (
 	// reviseBatch is how much of what an older build wrote one night goes
 	// back over. Pacing, as everywhere here: what is not looked at
 	// tonight is looked at tomorrow, and nothing is dropped.
-	reviseBatch = 500
+	// Two thousand rather than five hundred: the pass asks no model, and
+	// every build that ships makes every row an older build's again, so
+	// a batch smaller than the graph never reached the newest rows while
+	// builds were shipping daily.
+	reviseBatch = 2000
 
 	// emptyPageGrace is how long a page may stand with nothing on it
 	// before the night takes it as never going to have anything.

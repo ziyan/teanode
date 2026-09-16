@@ -52,6 +52,10 @@ const (
 	// dreamBatch is how many items go into one call of the digest phase.
 	dreamBatch = 40
 
+	// digestSmallest is the size below which a document is not worth a
+	// share of a call: about two short lines.
+	digestSmallest = 160
+
 	// dreamCoarseAbove is the backlog at which a night stops reading
 	// things one by one and works a stretch at a time instead. Two
 	// thousand is about five nights at full resolution: below that,
@@ -339,6 +343,28 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		return
 	}
 	record.Coarse = backlog > dreamCoarseAbove
+
+	// A document too small to say anything -- a channel-day that is one
+	// person joining, a file of twenty bytes -- is marked read without a
+	// call. Four hundred of them a night, forty to a call, filed three
+	// facts; the calls are better spent on the ones with words in them.
+	var tiny []string
+	kept := waiting[:0]
+	for _, document := range waiting {
+		if document.Bytes < digestSmallest {
+			tiny = append(tiny, document.ID)
+			continue
+		}
+		kept = append(kept, document)
+	}
+	waiting = kept
+	if len(tiny) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.MarkAgentDocumentsDigested(tiny, time.Now())
+		}); err != nil {
+			log.Warningf("cannot mark the small ones as read: %s", err)
+		}
+	}
 
 	for start := 0; start < len(waiting); start += dreamBatch {
 		if ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
