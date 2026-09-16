@@ -456,7 +456,10 @@ function FolderPages({
     <>
       <p className="knowledge-list-heading">
         {label}
-        <span className="knowledge-row-count">{total}</span>
+        {/* No number until there is one: a heading reading "Projects 0"
+            for the second the list took to arrive said the folder was
+            empty, which is the one thing it was not. */}
+        {loading && rows.length === 0 ? null : <span className="knowledge-row-count">{total}</span>}
       </p>
       <ul className="knowledge-rows">
         {rows.map((row) => (
