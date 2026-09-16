@@ -40,7 +40,7 @@ const (
 	// ingestPasses is how many pages one job reads before handing the
 	// queue back, so that one source cannot hold a slot for ever. The
 	// job's own deadline bounds it too.
-	ingestPasses = 32
+	ingestPasses = 16
 
 	// ingestTurn is how long a source waits when another is reading the
 	// same computer.
@@ -217,6 +217,12 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		} else {
 			cursor["after"] = next
 		}
+		// Written down after every page, not only at the end of the run:
+		// a run the deadline ends between pages used to lose all of them,
+		// and read the same pages again next time.
+		if err := self.markSource(ctx, source, cursor, counts, true, "", time.Now().Add(ingestAgain)); err != nil {
+			log.Warningf("cannot record where source %q got to: %s", source.ID, err)
+		}
 		if pass == ingestPasses-1 {
 			more = true
 		}
@@ -238,7 +244,10 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	if more && failure == "" {
 		nextRun = time.Now().Add(ingestAgain)
 	}
-	return self.markSource(ctx, source, cursor, counts, more, failure, nextRun)
+	// With a context that outlives the deadline: this is the write that
+	// says where the run got to, and it is the one write that must not be
+	// the deadline's victim.
+	return self.markSource(context.WithoutCancel(ctx), source, cursor, counts, more, failure, nextRun)
 }
 
 // waitingForDevice is a source whose computer is not attached.
