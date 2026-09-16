@@ -13,7 +13,12 @@ Notable changes to TeaNode. The format follows
   like `people/alice-chen`, and each fact on it is numbered, carries the words
   it came from, and can be cited as `people/alice-chen#3`. Pages are joined by
   links that say how — who works on what, who knows whom — and the dashboard's
-  "What it knows" page is where you read and correct all of it.
+  Knowledge page, under Settings, is where you read and correct all of it: the
+  folders, the pages in one, and the page itself, side by side where there is
+  room and one at a time where there is not, with the breadcrumb as the way
+  back. Each page's Connections is a drawing of what it is linked to that you
+  walk by clicking, and each page's URL is its path,
+  `/settings/knowledge/work/portal`.
 
 - It writes what it learns without being asked. A job runs after a conversation
   goes quiet and files what the conversation taught, so what you told it on
