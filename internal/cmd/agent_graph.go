@@ -84,6 +84,25 @@ func newAgentGraphCommands() []*cli.Command {
 			Action:    runAgentGraphForget,
 		},
 		{
+			Name:      "link",
+			Usage:     "join two pages: what the first is to the second",
+			ArgsUsage: "<path> <to>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in or about", Value: "related_to"},
+				&cli.StringFlag{Name: "note", Usage: "a few words on the link, such as 'led the controls work on it in 2024'"},
+			},
+			Action: runAgentGraphLink,
+		},
+		{
+			Name:      "unlink",
+			Usage:     "take a join between two pages away",
+			ArgsUsage: "<path> <to>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "relation", Usage: "which join, when there are several", Value: "related_to"},
+			},
+			Action: runAgentGraphUnlink,
+		},
+		{
 			Name:      "history",
 			Usage:     "what has happened to a page: every change, and who made it",
 			ArgsUsage: "<path>",
@@ -444,6 +463,38 @@ func runAgentGraphMove(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s is now %s\n", command.Args().First(), node.Path)
+	return nil
+}
+
+func runAgentGraphLink(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("link what to what? teanode agent memory link people/alice-chen projects/portal --relation works_on")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	from, to := command.Args().First(), command.Args().Get(1)
+	if err := client.LinkAgentNodes(ctx, connection, from, to, command.String("relation"), command.String("note")); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s %s %s\n", from, command.String("relation"), to)
+	return nil
+}
+
+func runAgentGraphUnlink(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("unlink what from what? teanode agent memory unlink people/alice-chen projects/portal --relation works_on")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	from, to := command.Args().First(), command.Args().Get(1)
+	if err := client.UnlinkAgentNodes(ctx, connection, from, to, command.String("relation")); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s and %s are no longer joined by %s\n", from, to, command.String("relation"))
 	return nil
 }
 

@@ -89,6 +89,12 @@ type AgentGraphMutation interface {
 	// waiting for its next turn. Needs agent:use.
 	DreamAgentNow(ctx context.Context) (bool, error)
 
+	// Join two pages, or take the join away. What the agent's memory
+	// tool does with `link`; here so the person can do it too. Needs
+	// agent:use.
+	LinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error)
+	UnlinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error)
+
 	// Let a directory the scan flagged as being about other people in.
 	// Needs agent:use.
 	AllowAgentKnowledgeDirectory(ctx context.Context, arguments AllowAgentKnowledgeDirectoryArguments) (*models.AgentKnowledgeSource, error)
@@ -177,6 +183,13 @@ type SaveAgentNodeArguments struct {
 type MoveAgentNodeArguments struct {
 	Path  string `json:"path"`
 	Under string `json:"under"`
+}
+
+type LinkAgentNodesArguments struct {
+	Path     string `json:"path"`
+	To       string `json:"to"`
+	Relation string `json:"relation"`
+	Note     string `json:"note" graphapi:"nullable"`
 }
 
 type DeleteAgentNodeArguments struct {
@@ -1016,4 +1029,69 @@ func (self *graph) DreamAgentNow(ctx context.Context) (bool, error) {
 		return nil
 	})
 	return err == nil, err
+}
+
+func (self *graph) LinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	fromNode, toNode, relation, err := self.endsOfLink(ctx, found.ID, arguments)
+	if err != nil {
+		return false, err
+	}
+	err = self.writing(ctx).PutAgentEdge(&models.AgentEdge{
+		AgentID: found.ID, FromID: fromNode.ID, ToID: toNode.ID, Relation: relation,
+		Note: strings.TrimSpace(arguments.Note),
+	})
+	return err == nil, err
+}
+
+func (self *graph) UnlinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	fromNode, toNode, relation, err := self.endsOfLink(ctx, found.ID, arguments)
+	if err != nil {
+		return false, err
+	}
+	err = self.writing(ctx).DeleteAgentEdge(found.ID, fromNode.ID, toNode.ID, relation)
+	return err == nil, err
+}
+
+// endsOfLink is the two pages a link joins and what the join is called,
+// or why it cannot be made.
+func (self *graph) endsOfLink(ctx context.Context, agentId string, arguments LinkAgentNodesArguments) (*models.AgentNode, *models.AgentNode, models.AgentEdgeRelation, error) {
+	from, to := models.NormalizePath(arguments.Path), models.NormalizePath(arguments.To)
+	if from == "" || to == "" {
+		return nil, nil, "", fmt.Errorf("link what to what? give path and to")
+	}
+	relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(arguments.Relation)))
+	if relation == "" {
+		relation = models.EdgeRelatedTo
+	}
+	if !models.IsAgentEdgeRelation(relation) {
+		names := make([]string, 0, len(models.AgentEdgeRelations))
+		for _, known := range models.AgentEdgeRelations {
+			names = append(names, string(known))
+		}
+		return nil, nil, "", fmt.Errorf("%q is not a relation; use one of %s", arguments.Relation, strings.Join(names, ", "))
+	}
+	tx := self.transaction(ctx)
+	fromNode, err := tx.GetAgentNode(agentId, from)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if fromNode == nil {
+		return nil, nil, "", fmt.Errorf("there is no page at %s", from)
+	}
+	toNode, err := tx.GetAgentNode(agentId, to)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if toNode == nil {
+		return nil, nil, "", fmt.Errorf("there is no page at %s", to)
+	}
+	return fromNode, toNode, relation, nil
 }

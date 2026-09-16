@@ -189,6 +189,8 @@ const (
 	DocumentDeleteAgentKnowledgeSource   = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource     = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentDreamAgentNow                = `mutation { DreamAgentNow }`
+	DocumentLinkAgentNodes               = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
+	DocumentUnlinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
 	DocumentAllowAgentKnowledgeDirectory = `mutation ($sourceId: String!, $name: String!) {
 		AllowAgentKnowledgeDirectory(sourceId: $sourceId, name: $name) ` + sourceFields + `
 	}`
@@ -396,4 +398,20 @@ func DreamAgentNow(ctx context.Context, connection *Client) error {
 		DreamAgentNow bool `json:"DreamAgentNow"`
 	}
 	return connection.Execute(ctx, DocumentDreamAgentNow, nil, &result)
+}
+
+// LinkAgentNodes joins two pages.
+func LinkAgentNodes(ctx context.Context, connection *Client, path, to, relation, note string) error {
+	var result struct {
+		LinkAgentNodes bool `json:"LinkAgentNodes"`
+	}
+	return connection.Execute(ctx, DocumentLinkAgentNodes, map[string]any{"path": path, "to": to, "relation": relation, "note": note}, &result)
+}
+
+// UnlinkAgentNodes takes a join away.
+func UnlinkAgentNodes(ctx context.Context, connection *Client, path, to, relation string) error {
+	var result struct {
+		UnlinkAgentNodes bool `json:"UnlinkAgentNodes"`
+	}
+	return connection.Execute(ctx, DocumentUnlinkAgentNodes, map[string]any{"path": path, "to": to, "relation": relation}, &result)
 }

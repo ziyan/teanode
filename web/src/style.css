@@ -8007,6 +8007,21 @@ button.with-icon {
   max-height: none;
 }
 
+/* A path is one word to the browser -- projects/210236-aeonglobalscm-
+   shikoku-single-sku-depalletize-to-convey -- and a tag does not wrap,
+   so a long one ran out of the card. It breaks wherever it has to. */
+.knowledge-path {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.knowledge-page h3,
+.page-heading,
+.breadcrumb .crumb {
+  overflow-wrap: anywhere;
+}
+
 /* A page is prose the nightly run wrote, so it is read rather than
    scanned: the measure is capped where the panel is not. */
 .knowledge-summary {

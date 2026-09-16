@@ -65,7 +65,7 @@ func init() {
 				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do",
-						"index", "get", "search", "note", "page", "link", "move", "forget", "batch"),
+						"index", "get", "search", "note", "page", "link", "unlink", "move", "forget", "batch"),
 					"path":       tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
 					"depth":      tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
 					"query":      tools.StringProperty("for search: words"),
@@ -106,6 +106,8 @@ func init() {
 						return "Rewrite " + page
 					case "link":
 						return "Link " + page + " to " + tools.Named(call.To, "another page")
+					case "unlink":
+						return "Unlink " + page + " from " + tools.Named(call.To, "another page")
 					case "move":
 						return "File " + page + " under " + tools.Named(call.To, "somewhere else")
 					case "forget":
@@ -214,6 +216,8 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return pageAction(ctx, run, arguments)
 	case "link":
 		return linkAction(ctx, run, arguments)
+	case "unlink":
+		return unlinkAction(ctx, run, arguments)
 	case "move":
 		return moveAction(ctx, run, arguments)
 	case "forget":
@@ -771,6 +775,43 @@ func linkAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	}
 	result := tools.TextResult("%s", from+" "+string(relation)+" "+to)
 	result.Note = "linked " + from + " to " + to
+	return result, nil
+}
+
+// unlinkAction takes a join away: the person said two pages are not
+// what the notes say they are to each other.
+func unlinkAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
+	from := models.NormalizePath(arguments.Path)
+	to := models.NormalizePath(arguments.To)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("unlink what from what? give path and to")
+	}
+	relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(arguments.Relation)))
+	if relation == "" {
+		relation = models.EdgeRelatedTo
+	}
+	agentId := run.Agent().ID
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		fromNode, err := tx.GetAgentNode(agentId, from)
+		if err != nil {
+			return err
+		}
+		if fromNode == nil {
+			return fmt.Errorf("there is no page at %s", from)
+		}
+		toNode, err := tx.GetAgentNode(agentId, to)
+		if err != nil {
+			return err
+		}
+		if toNode == nil {
+			return fmt.Errorf("there is no page at %s", to)
+		}
+		return tx.DeleteAgentEdge(agentId, fromNode.ID, toNode.ID, relation)
+	}); err != nil {
+		return nil, err
+	}
+	result := tools.TextResult("%s and %s are no longer joined by %s", from, to, relation)
+	result.Note = "unlinked " + from + " from " + to
 	return result, nil
 }
 
