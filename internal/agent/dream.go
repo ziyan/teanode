@@ -56,14 +56,6 @@ const (
 	// share of a call: about two short lines.
 	digestSmallest = 160
 
-	// dreamCoarseAboveRetired was the backlog at which a night read titles
-	// instead of contents. Retired: see dreamDigest.
-	// dreamCoarseAbove is the backlog at which a night stops reading
-	// things one by one and works a stretch at a time instead. Two
-	// thousand is about five nights at full resolution: below that,
-	// waiting is reasonable.
-	dreamCoarseAbove = 2000
-
 	// dreamShareDefault is how much of the day's budget a night may
 	// spend when the operator has not said.
 	dreamShareDefault = 0.3
