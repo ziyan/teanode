@@ -28,12 +28,23 @@ import (
 
 // The bounds.
 const (
-	// ingestEntries is how many things one pass asks a device for.
-	ingestEntries = 256
+	// ingestEntries is how many things one pass asks a device for, and
+	// ingestChatEntries how many units of a chat archive. A page is
+	// bounded by bytes as well, and a chat unit is a few hundred bytes:
+	// 256 of them was a page of 150 kilobytes against a bound of three
+	// megabytes, and an archive of four hundred thousand units read at a
+	// twentieth of what the socket allowed.
+	ingestEntries     = 256
+	ingestChatEntries = 2048
 
 	// ingestPasses is how many pages one job reads before handing the
-	// queue back, so that one source cannot hold a slot for ever.
-	ingestPasses = 8
+	// queue back, so that one source cannot hold a slot for ever. The
+	// job's own deadline bounds it too.
+	ingestPasses = 32
+
+	// ingestTurn is how long a source waits when another is reading the
+	// same computer.
+	ingestTurn = 30 * time.Second
 
 	// ingestEmbedBatch is how many chunks go in one call to the embedding
 	// model. A hundred is what the providers take comfortably.
@@ -60,7 +71,7 @@ const (
 	// megabytes a day, so a home directory would have taken weeks. The
 	// eight-page limit is what keeps one source from holding the queue;
 	// this is what keeps it from crawling.
-	ingestAgain = 2 * time.Minute
+	ingestAgain = 20 * time.Second
 
 	// ingestDeviceWait is how long a scan may take on the device. A first
 	// pass over a large repository walks the whole tree.
@@ -132,7 +143,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 
 	if computer := source.Specification.Computer; source.Kind == models.SourceComputer && computer != "" {
 		if other, free := self.claimComputer(computer, source.ID); !free {
-			return &Deferral{Until: time.Now().Add(ingestAgain), Reason: fmt.Sprintf("%s is reading %s first", computer, other)}
+			return &Deferral{Until: time.Now().Add(ingestTurn), Reason: fmt.Sprintf("%s is reading %s first", computer, other)}
 		}
 		defer self.releaseComputer(computer, source.ID)
 	}
@@ -281,6 +292,10 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		return "", counts, err
 	}
 	after, _ := cursor["after"].(string)
+	most := ingestEntries
+	if source.Specification.Format == computer.FormatMattermost {
+		most = ingestChatEntries
+	}
 
 	answer, err := device.Ask(ctx, "scan", &computer.ScanArguments{
 		Root:    source.Specification.Path,
@@ -290,7 +305,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		Allowed: source.Allowed,
 		Known:   known,
 		After:   after,
-		Most:    ingestEntries,
+		Most:    most,
 	}, ingestDeviceWait)
 	if err != nil {
 		// Leaving mid-answer is the same as not being there: the daemon
