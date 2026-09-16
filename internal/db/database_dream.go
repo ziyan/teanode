@@ -42,6 +42,11 @@ type DreamOperation interface {
 	ListAgentNodesToConsolidate(agentId string, limit int) ([]*models.AgentNode, error)
 	MarkAgentNodeConsolidated(nodeId string, at time.Time) error
 
+	// ListAgentNodesEmpty is the pages that say nothing: no opening, no
+	// facts, nothing under them, no links, and made before the given
+	// time. The roots and the period pages are never among them.
+	ListAgentNodesEmpty(agentId string, before time.Time, limit int) ([]*models.AgentNode, error)
+
 	// RecomputeAgentImportance rewrites what the index is ordered by, and
 	// RetireAgentFacts marks what has not been wanted in a long time
 	// dormant. Neither deletes anything.
@@ -197,11 +202,21 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, limit int) (
 		SELECT * FROM "agent_document"
 		WHERE "agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')
 		ORDER BY
-			CASE "kind" WHEN 'journal' THEN 0 WHEN 'commit' THEN 1 WHEN 'chat' THEN 2 ELSE 3 END,
+			CASE "kind" WHEN 'journal' THEN 0 WHEN 'commit' THEN 1 WHEN 'chat' THEN 2
+				WHEN 'file' THEN CASE WHEN lower("title") ~ ? THEN 3 ELSE 5 END
+				ELSE 4 END,
 			"happened_at" DESC NULLS LAST
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, proseFile, limit))
 	return documents, backlog, err
 }
+
+// proseFile is a file somebody wrote to be read: a readme, a note, a
+// document. It is read before source code, which is the bulk of any
+// checkout and says almost nothing about the person: a night that read
+// four hundred files of Go filed two facts, with a hundred thousand more
+// files behind them. The code stays indexed for search, and is read only
+// once everything written in words has been.
+const proseFile = `(^|/)(readme|changelog|contributing|notes?|todo)$|\.(md|markdown|txt|rst|adoc|org|tex|pdf|docx?|pptx?|xlsx?|odt|html?|eml)$`
 
 // MarkAgentDocumentsDigested says these have been read.
 //
@@ -510,4 +525,20 @@ func (self *transaction) MarkAgentFactsSeen(agentId string, factIds []string) er
 	return self.tx.Exec(
 		`UPDATE "agent_fact" SET "version" = ? WHERE "agent_id" = ? AND "id" = ANY(?)`,
 		version.Version(), agentId, pq.Array(factIds)).Error
+}
+
+func (self *transaction) ListAgentNodesEmpty(agentId string, before time.Time, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	return self.nodesFrom(self.tx.Raw(`
+		SELECT n.* FROM "agent_node" n
+		WHERE n."agent_id" = ? AND n."created_at" < ?
+		  AND n."kind" NOT IN (?, ?) AND n."parent_id" IS NOT NULL
+		  AND btrim(n."summary") = ''
+		  AND NOT EXISTS (SELECT 1 FROM "agent_fact" f WHERE f."node_id" = n."id")
+		  AND NOT EXISTS (SELECT 1 FROM "agent_node" c WHERE c."parent_id" = n."id")
+		  AND NOT EXISTS (SELECT 1 FROM "agent_edge" e WHERE e."from_id" = n."id" OR e."to_id" = n."id")
+		ORDER BY n."created_at"
+		LIMIT ?`, agentId, before, models.NodeFolder, models.NodePeriod, limit))
 }

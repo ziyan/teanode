@@ -84,3 +84,19 @@ func TestMonthSpanSaysOneMonthOnce(t *testing.T) {
 		t.Fatalf("two months: %q", got)
 	}
 }
+
+func TestReviseWordingSaysTheOldLinesTheNewWay(t *testing.T) {
+	cases := map[string]string{
+		"1 commits by 1 people, August 2015 to August 2015.":     "1 commits by 1 person, August 2015.",
+		"63 commits by 4 people, October 2014 to April 2016.":    "63 commits by 4 people, October 2014 to April 2016.",
+		"Ziyan wrote 5 of them, November 2012 to November 2012.": "Ziyan wrote 5 of the commits, November 2012.",
+		"Ziyan wrote 389 of them, April 2013 to January 2015.":   "Ziyan wrote 389 of the commits, April 2013 to January 2015.",
+		"Written in Go.": "Written in Go.",
+		"Its readme says: a test, July 2026 to July 2026 it ran.": "Its readme says: a test, July 2026 to July 2026 it ran.",
+	}
+	for old, want := range cases {
+		if got := reviseWording(old); got != want {
+			t.Errorf("%q: got %q, want %q", old, got, want)
+		}
+	}
+}

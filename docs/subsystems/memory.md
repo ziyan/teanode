@@ -136,7 +136,12 @@ the day's tokens (30% by default), and it never deletes anything.
 
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
-first. Every bound here is pacing, never truncation — what is not read
+first — and among files, the ones written to be read (a readme, a note,
+a document) before source code. A checkout is mostly code, and code says
+almost nothing about the person: a night that read four hundred files of
+Go filed two facts, with a hundred thousand more behind them. The code
+stays indexed for search and is read last. Every bound here is pacing,
+never truncation — what is not read
 tonight is read tomorrow, the backlog is reported as a number the person
 can see, and when the backlog is larger than anybody would wait for the
 night reads a stretch at a time instead of an item at a time and marks
@@ -239,8 +244,15 @@ afterwards except a person with a regular expression. Now the first thing
 a night does is offer everything an older build wrote to the rules as
 they stand, strike what fails them — in the page's history, as the
 nightly run's doing, with the words it used to say — and stamp the rest
-so tomorrow looks elsewhere. No model runs in that pass: a rule worth
-applying to a graph unattended is one that can be stated in code.
+so tomorrow looks elsewhere. A line an older build worded badly — "1
+commits by 1 people, July 2026 to July 2026" — is reworded rather than
+struck, since the source it came from may be paused and never say it
+again. The same pass removes pages that say nothing at all: no opening,
+no facts, nothing under them, no links, two days old. A source names a
+channel and makes a page for it; a page that has stood empty for two days
+is not going to fill, and is made again if the name comes up. No model
+runs in that pass: a rule worth applying to a graph unattended is one
+that can be stated in code.
 
 Revision numbers are taken from a high-water mark on the page, the same
 way fact numbers are, so they rise and are never reused. A link written

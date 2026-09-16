@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
@@ -73,6 +74,10 @@ const (
 	// back over. Pacing, as everywhere here: what is not looked at
 	// tonight is looked at tomorrow, and nothing is dropped.
 	reviseBatch = 500
+
+	// emptyPageGrace is how long a page may stand with nothing on it
+	// before the night takes it as never going to have anything.
+	emptyPageGrace = 48 * time.Hour
 )
 
 // dreamQuietHalf is the arithmetic half: links strengthened by use,
@@ -448,6 +453,21 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 			// old build filled with nine wordings of one sentence keeps
 			// all nine for ever, because nothing ever touches it again.
 			due[node.ID] = true
+			// A line an older build worded badly is reworded, not
+			// struck: "1 commits by 1 people, July 2026 to July 2026"
+			// is a true thing said badly, and the page it is on may
+			// belong to a source that is paused and will not say it
+			// again.
+			if reworded := reviseWording(fact.Text); reworded != fact.Text {
+				if _, err := tx.UpdateAgentFact(run.Agent.ID, fact.ID, func(existing *models.AgentFact) error {
+					existing.Text = reworded
+					return nil
+				}); err != nil {
+					return err
+				}
+				record.Revised++
+				return nil
+			}
 			if saysSomethingNew(fact.Text, node, run.Owner) {
 				return nil
 			}
@@ -488,4 +508,60 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 	}); err != nil {
 		log.Warningf("cannot record what was gone over: %s", err)
 	}
+	self.dreamForgetEmptyPages(ctx, run, record)
 }
+
+// dreamForgetEmptyPages removes the pages that say nothing at all.
+//
+// A source that names a channel or a directory makes a page for it, and
+// a run that meant to write something may make one and then not. Either
+// way what is left is a name with nothing under it -- twenty-nine of
+// them in a graph of two hundred pages -- and a page that has said
+// nothing for two days is not going to. If the name comes up again the
+// page is made again, with something on it this time.
+func (self *Agent) dreamForgetEmptyPages(ctx context.Context, run *Run, record *models.AgentDream) {
+	var empty []*models.AgentNode
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		empty, err = tx.ListAgentNodesEmpty(run.Agent.ID, time.Now().Add(-emptyPageGrace), reviseBatch)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the pages that say nothing: %s", err)
+		return
+	}
+	for _, node := range empty {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			tx.AsActor(models.ActorDream)
+			_, err := tx.DeleteAgentNode(run.Agent.ID, node.Path)
+			return err
+		}); err != nil {
+			log.Warningf("cannot remove the empty page %q: %s", node.Path, err)
+			continue
+		}
+		record.Revised++
+	}
+}
+
+// reviseWording is the old phrasing of a computed line, said the way the
+// current build says it, so that the pages of a paused source read like
+// the rest. It changes nothing it does not recognise.
+func reviseWording(text string) string {
+	if match := oneCommitBy.FindStringSubmatch(text); match != nil {
+		text = match[1] + " commits by 1 person, " + match[2] + "."
+	}
+	if match := wroteOfThem.FindStringSubmatch(text); match != nil {
+		text = match[1] + " wrote " + match[2] + " of the commits, " + match[3] + "."
+	}
+	if match := sameMonthTwice.FindStringSubmatch(text); match != nil && match[2] == match[3] {
+		text = match[1] + match[2] + "."
+	}
+	return text
+}
+
+var (
+	oneCommitBy    = regexp.MustCompile(`^(\d+) commits by 1 people, (.+)\.$`)
+	wroteOfThem    = regexp.MustCompile(`^(.+) wrote (\d+) of them, (.+)\.$`)
+	sameMonthTwice = regexp.MustCompile(`^(.*, )([A-Z][a-z]+ \d{4}) to ([A-Z][a-z]+ \d{4})\.$`)
+)
