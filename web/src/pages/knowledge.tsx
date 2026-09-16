@@ -247,7 +247,11 @@ export function KnowledgePage() {
   const folders = <Folders roots={rootNodes} selected={folder} onSelect={goFolder} me={me} />
   const pages = search ? (
     <SearchResults found={found.data?.SearchAgentGraph} loading={found.loading} onSelect={goPage} />
-  ) : folder && folder !== 'self' ? (
+  ) : folder === 'self' ? (
+    // The person's own page is not a folder, so the middle column has no
+    // list to show. It said "pick a folder" beside a highlighted Ziyan.
+    <SettingsEmpty>{t('knowledge.selfFolder')}</SettingsEmpty>
+  ) : folder ? (
     <FolderPages folder={folder} label={folderLabel} selected={open} onSelect={goPage} />
   ) : null
 

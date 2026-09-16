@@ -2285,6 +2285,7 @@ export const ja: Catalog = {
     'エージェントがあなたについて学んだことすべてを、ページとしてまとめたものです。各ページにはパスがあり、各事実には出どころが記されています。誤りは直してください。取り消したものは「覚えるべきでない例」として示されます。{pages} ページ。',
   'knowledge.find': 'ページを検索',
   'knowledge.pickFolder': '左のフォルダを選ぶか、検索してください。',
+  'knowledge.selfFolder': 'あなた自身のページです。エージェントがあなたについて学んだことは右側にあります。',
   'knowledge.emptyFolder': 'まだ何もありません。',
   'knowledge.showMore': 'さらに {count} 件',
   'knowledge.empty': 'まだありません。話しかけるうちに、学んだことがここに整理されます。',

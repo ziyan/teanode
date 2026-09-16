@@ -2210,6 +2210,7 @@ export const zh: Catalog = {
     '代理关于你所学到的一切，以页面的形式呈现。每一页都有一个路径，页面上的每条事实都注明来源。有错就改；你划掉的内容会作为「不该记住的例子」给它看。共 {pages} 页。',
   'knowledge.find': '搜索页面',
   'knowledge.pickFolder': '在左边选一个分类，或者搜索。',
+  'knowledge.selfFolder': '你自己的页面：你的助理对你的了解在右侧。',
   'knowledge.emptyFolder': '这里还没有内容。',
   'knowledge.showMore': '再显示 {count} 条',
   'knowledge.empty': '还没有。你与代理交谈时，它会把学到的归档在这里。',
