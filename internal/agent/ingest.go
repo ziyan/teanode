@@ -163,11 +163,16 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// clearing it meant a first pass stalled until the hour
 				// was up, which is what happened here every time the
 				// server was restarted.
+				// Mid-tree counts as more, whatever the source said last
+				// time: a source resumed by hand had More off from the
+				// pass before its pause, lost the computer on its first
+				// page, and sat until its hour with the cursor halfway.
+				midway := cursor["after"] != "" || cursor["before"] != ""
 				when := self.nextRunOf(source, run.Owner)
-				if source.More {
+				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
 				}
-				return self.markSource(ctx, source, cursor, counts, source.More, waiting.Error(), when)
+				return self.markSource(ctx, source, cursor, counts, source.More || midway, waiting.Error(), when)
 			}
 			failure = err.Error()
 			break
