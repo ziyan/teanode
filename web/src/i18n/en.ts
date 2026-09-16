@@ -2341,9 +2341,9 @@ export const en = {
   'knowledge.happened': 'When it was true',
   'knowledge.happenedHint':
     'A year or a month, such as 2023 or 2023-06. Leave it empty for something that is true now.',
-  'knowledge.strike': 'Strike',
+  'knowledge.strike': 'Forget',
   'knowledge.strikeBody': 'Forget this, and show it to your agent as an example of what not to keep: "{text}"',
-  'knowledge.struck': 'Struck',
+  'knowledge.struck': 'Forgotten',
   'knowledge.inferred': 'Worked out, not told',
   'knowledge.links': 'Linked to',
   'knowledge.linksHint': 'What this page is to another.',

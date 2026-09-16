@@ -184,7 +184,7 @@ anticipated.
   filled last month.
 
 - The maintainer's own answer to the last of it: their account address is
-  the one they sign in with (`ziyan.joe@gmail.com`) and their commits are
+  the one they sign in with (the address they sign in with) and their commits are
   authored as three others, none of which the agent knew. `ownAddresses`
   matched nothing, so 358 facts were filed about their checkouts and one
   link was drawn, and their career timeline was empty. They chose to put
@@ -202,6 +202,18 @@ anticipated.
   database. And a source now keeps the commit addresses it could not
   place (migration 0076) and says so, on the page and on the command
   line, because the failure was otherwise total and silent.
+
+- The maintainer: "why $47.72 of $100.00 today? I only see 6.22 USD on
+  the provider's usage page". That page showed 304.7 M embedding
+  tokens, which at the real $0.02 per million is $6.09. This program
+  names a model used at a width "text-embedding-3-small@512" so that
+  vectors of different widths stay apart, and the price lookup matched
+  the whole name against the list -- so it missed, fell back to the
+  provider's default rate for chat input ($0.15), and charged the same
+  tokens seven and a half times over: 304.7 M × 0.15 = $45.70. The token
+  counts themselves were right (cached tokens are taken out of the
+  prompt count on every path). Costs are computed from stored token
+  counts at read time, so the dashboard corrected itself on deploy.
 
 - Observation, and the reason the graph had no edges at all: a
   repository inside the scanned tree had its profile computed on the
@@ -448,8 +460,8 @@ anticipated.
   facts are the card's fields, with evidence kind `contact`, and they are
   re-read whenever the card changes. The card's addresses are also what
   attributes a commit to the person: gen7's repositories carry ten of
-  theirs (`ziyan.zhou@mujin.co.jp`, `zhou@ziyan.net`, `zhou@ziyan.info`,
-  `ziyan.zhou@mujin-corp.com`, `ziyan.joe@gmail.com` and five older ones),
+  theirs (one of their own addresses, one of their own addresses, one of their own addresses,
+  one of their own addresses, the address they sign in with and five older ones),
   and a scan that meets one the card lacks offers it as an addition.
   Date/Author: 2026-09-15, asked for by the maintainer.
 
@@ -1282,8 +1294,8 @@ meets, and the design below is shaped by it. Measured 2026-09-15:
     git authors, distinct:                                 3,279
     commits, all repositories:                           107,932   2005 .. 2026
     repositories with no commit by the person:                23 of 126
-    the person's own author addresses:                        10  (ziyan.zhou@mujin.co.jp 9,732 commits,
-                                                                    zhou@ziyan.net 2,298, zhou@ziyan.info 1,764, ...)
+    the person's own author addresses:                        10  (one of their own addresses 9,732 commits,
+                                                                    one of their own addresses 2,298, one of their own addresses 1,764, ...)
     extractors on the machine: pdftotext, libreoffice, ffprobe; no pandoc, no tesseract
 
 Four things follow, and each is a rule in the ingestion rather than advice.
@@ -1649,7 +1661,7 @@ reviewed, 655 issues, 157 GitHub pull requests, 125 Confluence pages), a
 and a top-repositories table, and a `<year>/<year>-<MM>.md` per month
 grouped by theme, every merge request linked, written in the person's own
 plain style ("no em dashes; explain why, not what; name the concrete
-thing"). Its `scripts/` are the pipeline: `collect.sh` (git logs from local
+thing"). Its `scripts/` are the pipeline: `collect` (git logs from local
 clones restricted to `origin` refs, GitLab merge requests and issues by
 API, GitHub pull requests, Confluence pages by year), `dedupe.py` (the same
 commit hash lives in several forks and renamed repositories; attribute it
@@ -1804,7 +1816,7 @@ at five of ten, and records the number.
 
 ## Concrete Steps
 
-All commands run from the repository root, `/home/ziyan/projects/ziyan/teanode`
+All commands run from the repository root, the checkout
 (or the worktree in use). `make` formats, builds and tests; `make test`
 starts its own PostgreSQL container. Use `TEANODE_PROFILE=local` for the
 command line client against a development server (the active profile in

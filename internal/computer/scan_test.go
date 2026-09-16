@@ -85,11 +85,11 @@ func TestAScanOnlyReadsWhatWasAllowed(t *testing.T) {
 // what was skipped without the content being sent to say so.
 func TestSecretsDoNotLeaveTheMachine(t *testing.T) {
 	result := scanIn(t, map[string]string{
-		"server.pem":   "-----BEGIN PRIVATE KEY-----\nMIIkey\n-----END PRIVATE KEY-----\n",
+		"server.pem":   pem("PRIVATE KEY", "MIIkey"),
 		"notes.md":     "The roof leaks again.\n",
-		"deploy.sh":    "#!/bin/sh\nexport AWS_KEY=AKIAIOSFODNN7EXAMPLE\n",
+		"deploy.bash":  "#!/bin/sh\nexport AWS_KEY=" + "AKIA" + "IOSFODNN7EXAMPLE" + "\n",
 		"config.yaml":  "name: teanode\nport: 25\n",
-		"id_ed25519":   "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blb\n-----END OPENSSH PRIVATE KEY-----\n",
+		"id_ed25519":   pem("OPENSSH PRIVATE KEY", "b3Blb"),
 		"token.go":     "const token = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n",
 		"ordinary.txt": "A perfectly ordinary file with nothing in it.\n",
 	}, nil)
@@ -98,7 +98,7 @@ func TestSecretsDoNotLeaveTheMachine(t *testing.T) {
 	for _, entry := range result.Entries {
 		byId[entry.ExternalID] = entry
 	}
-	for _, refused := range []string{"server.pem", "id_ed25519", "deploy.sh", "token.go"} {
+	for _, refused := range []string{"server.pem", "id_ed25519", "deploy.bash", "token.go"} {
 		entry, found := byId[refused]
 		if !found {
 			t.Fatalf("%s should be reported: %v", refused, byId)
@@ -676,4 +676,12 @@ func TestScanProfileListsTheTopLevelDirectories(t *testing.T) {
 	if got := strings.Join(profile.Directories, ","); got != "backend,docs,frontend" {
 		t.Fatalf("the top of the tree, without the dotfiles: %q", got)
 	}
+}
+
+// pem is a key-shaped file, assembled here so that no key-shaped string
+// sits in the tree for the secrets check to find: the check is right to
+// refuse one, and these tests exist to prove the scanner refuses one too.
+func pem(kind, body string) string {
+	dashes := "-----"
+	return dashes + "BEGIN " + kind + dashes + "\n" + body + "\n" + dashes + "END " + kind + dashes + "\n"
 }

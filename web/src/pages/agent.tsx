@@ -1304,7 +1304,7 @@ function LearnedCard() {
             }
             subtitle={row.fact.evidence[0]?.quote ? `\u201c${row.fact.evidence[0].quote}\u201d` : undefined}
             actions={
-              <button type="button" className="link danger" onClick={() => setStriking(row)}>
+              <button type="button" className="danger" onClick={() => setStriking(row)}>
                 {t('knowledge.strike')}
               </button>
             }

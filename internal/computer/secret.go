@@ -35,8 +35,8 @@ var secretNames = []*regexp.Regexp{
 
 // secretContent is what a file may not carry, whatever it is called.
 var secretContent = []*regexp.Regexp{
+	// Covers RSA, EC, DSA, ENCRYPTED and OPENSSH headers alike.
 	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
-	regexp.MustCompile(`-----BEGIN OPENSSH PRIVATE KEY-----`),
 	regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
 	regexp.MustCompile(`\bASIA[0-9A-Z]{16}\b`),
 	regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,}\b`),
