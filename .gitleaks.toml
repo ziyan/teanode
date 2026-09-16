@@ -37,4 +37,9 @@ regexes = [
   # before the scanner met them and they were reworded; the history keeps
   # them, and they never opened anything.
   '''^a-secret-long-enough-to-(sign|seal)-with-1234567890$''',
+  # The two fake keys the secret-filter tests in internal/computer used, in
+  # one commit of the memory-graph branch before they were assembled at run
+  # time. Six characters of body each; the history keeps them, and they
+  # never opened anything.
+  '''-----BEGIN (OPENSSH )?PRIVATE KEY-----\\n(MIIkey|b3Blb)\\n-----END''',
 ]
