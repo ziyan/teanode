@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -173,4 +174,35 @@ func isYear(word string) bool {
 		}
 	}
 	return word >= "1900" && word <= "2199"
+}
+
+// saysNothingOpening says whether a page's opening is padding: the
+// facts said again in a sentence about how much the page matters. "This
+// project matters to Ziyan because they contributed to its development"
+// was written on fifteen pages by a prompt that asked for an opening
+// and got one whether or not there was anything to say. The phrases are
+// the ones that model reached for; a real opening says what the thing
+// is, and does not need any of them.
+func saysNothingOpening(summary string) bool {
+	text := strings.ToLower(strings.TrimSpace(summary))
+	if text == "" {
+		return false
+	}
+	for _, phrase := range paddingPhrases {
+		if phrase.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+var paddingPhrases = []*regexp.Regexp{
+	regexp.MustCompile(`matters to \S+ (because|as a|as the)`),
+	regexp.MustCompile(`the facts below`),
+	regexp.MustCompile(`to which \S+ (has )?contributed`),
+	regexp.MustCompile(`relevant to \S+ as`),
+	regexp.MustCompile(`closely associated with`),
+	regexp.MustCompile(`is a (software|code|work|shared|collaborative|mostly \S+) (software |code )?(project|repository|codebase)`),
+	regexp.MustCompile(`(project|repository|codebase) (that )?\S+ (contributed to|worked on directly|participated in)`),
+	regexp.MustCompile(`^this is (a|an|the|\S+'s) .*(project|repository|codebase)`),
 }

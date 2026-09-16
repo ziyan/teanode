@@ -113,3 +113,29 @@ func TestHalfwayIsHalfOfWhatIsLeft(t *testing.T) {
 		t.Fatalf("half of forty minutes: %v", got)
 	}
 }
+
+func TestSaysNothingOpeningKnowsPadding(t *testing.T) {
+	padding := []string{
+		"This project matters to Ziyan because they contributed to its development.",
+		"This is a software project to which Ziyan contributed; the facts below describe its implementation.",
+		"rgmpo is a Python-oriented code project with a recorded repository location. It matters to Ziyan because they were a substantial contributor.",
+		"baconator is a work project closely associated with Ziyan.",
+	}
+	for _, text := range padding {
+		if !saysNothingOpening(text) {
+			t.Errorf("padding not seen: %q", text)
+		}
+	}
+	real := []string{
+		"",
+		"Drunkmoon is an early Linux networking prototype intended to provide virtual Ethernet-like interfaces.",
+		"A command-line download/upload speed test for the China Telecom Guangdong network.",
+		"mussh is a MUJIN internal utility for helping people connect to controllers over SSH.",
+		"Kittiwake is the neighbour's sailing boat, repainted every spring.",
+	}
+	for _, text := range real {
+		if saysNothingOpening(text) {
+			t.Errorf("real opening taken as padding: %q", text)
+		}
+	}
+}

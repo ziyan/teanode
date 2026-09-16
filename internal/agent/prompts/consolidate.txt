@@ -37,6 +37,15 @@ identify where they work on it" -- gives a reader nothing and costs them
 the time to find that out. A page with no opening is honest; a page with
 an opening that says nothing is not.
 
+**A repository's profile is not an opening.** Where a checkout is, what
+it is written in, which directories it has, how many commits by how many
+people: those are facts, and they stay facts. An opening says what the
+thing *is* and what it is *for*. If no fact says that -- no readme
+sentence, nothing {{.PersonName}} said -- the opening is `""`. "X is a
+Python project hosted at the listed repository, to which {{.PersonName}}
+was a substantial contributor" is the facts again with "matters to" in
+front, and it is the exact sentence not to write.
+
 **What it says now was written from evidence too.** A sentence in the
 current opening that no fact repeats is not thereby wrong: the fact it
 came from may have been folded into another since. Keep it unless a fact

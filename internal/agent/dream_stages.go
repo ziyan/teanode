@@ -351,7 +351,7 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 			continue
 		}
 		record.Rehearsed++
-		if self.canAnswerFromMemory(ctx, run, question) {
+		if self.canAnswerFromMemory(ctx, run, budget, question) {
 			asked = append(asked, "answered: "+question)
 			continue
 		}
@@ -390,14 +390,18 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 // being asked: is anything in this graph about this. An identifier the
 // person would type verbatim is in the embedded text too, so asking by
 // meaning does not lose the exact-match case.
-func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, question string) bool {
+func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, budget *dreamBudget, question string) bool {
 	// A fact answers a question; a page only says the subject exists.
 	// Counting a page as an answer made every question answerable --
 	// "what did I promise the Osaka team" matched the Osaka project at
 	// a quarter's similarity -- and eight nights found no gap at all.
+	// And a fact that is merely near is not an answer either: "what was
+	// my next step for gogcli" is near "the checkout is at ~/gogcli",
+	// which does not say. So the nearest facts are shown to the model
+	// with the question, and it says whether they answer it.
 	_, facts := self.nearestInGraph(ctx, run.Agent, question, 5)
 	if len(facts) > 0 {
-		return true
+		return self.factsAnswer(ctx, run, budget, question, facts)
 	}
 	// No embedding model, or it failed: then there is no way to tell, and
 	// reporting every question as a gap would be worse than reporting
@@ -406,6 +410,56 @@ func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, question s
 		return true
 	}
 	return false
+}
+
+// factsAnswer asks the model whether these facts answer the question.
+// When it cannot be asked, near is taken as answered: a night that
+// reports every question as a gap is worse than one that reports none.
+func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudget, question string, facts []*models.AgentFact) bool {
+	if !budget.left() {
+		return true
+	}
+	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
+	if err != nil {
+		return true
+	}
+	lines := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		lines = append(lines, "- "+cutRunes(fact.Text, 400))
+	}
+	prompt, err := render("rehearse_check.txt", map[string]any{
+		"PersonName": personName(run.Owner),
+		"Question":   question,
+		"Facts":      lines,
+	})
+	if err != nil {
+		return true
+	}
+	configuration := run.Configuration()
+	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
+	defer cancel()
+	response, err := provider.Chat(callContext, &llm.ChatRequest{
+		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 100,
+	})
+	if response != nil {
+		modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
+		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobDream), response.Usage)
+		budget.note(response.Usage)
+	}
+	if err != nil {
+		return true
+	}
+	extracted, err := llm.ExtractJSON(response.Message.Content)
+	if err != nil {
+		return true
+	}
+	var answer struct {
+		Answered bool `json:"answered"`
+	}
+	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
+		return true
+	}
+	return answer.Answered
 }
 
 // dreamRevise goes back over what an older build of this program filed
@@ -519,6 +573,49 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 	}
 	self.dreamForgetSaidTwice(ctx, run, record)
 	self.dreamForgetEmptyPages(ctx, run, record)
+	self.dreamClearPaddedOpenings(ctx, run, record)
+}
+
+// dreamClearPaddedOpenings takes the opening off a page where it only
+// says the page matters, and makes the page due a fresh one. Every page
+// whose opening another build wrote is looked at once and stamped.
+func (self *Agent) dreamClearPaddedOpenings(ctx context.Context, run *Run, record *models.AgentDream) {
+	build := version.Version()
+	var nodes []*models.AgentNode
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		nodes, err = tx.ListAgentNodesWithOpeningWrittenBefore(run.Agent.ID, build, reviseBatch)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the openings an older build wrote: %s", err)
+		return
+	}
+	seen := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if ctx.Err() != nil {
+			return
+		}
+		seen = append(seen, node.ID)
+		if !saysNothingOpening(node.Summary) {
+			continue
+		}
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			tx.AsActor(models.ActorDream)
+			node.Summary = ""
+			if _, err := tx.PutAgentNode(node); err != nil {
+				return err
+			}
+			return tx.MarkAgentNodeConsolidated(node.ID, time.Time{})
+		}); err != nil {
+			log.Warningf("cannot clear the opening of %q: %s", node.Path, err)
+			continue
+		}
+		record.Revised++
+	}
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.MarkAgentNodesSeen(run.Agent.ID, seen)
+	}); err != nil {
+		log.Warningf("cannot record which openings were gone over: %s", err)
+	}
 }
 
 // dreamForgetSaidTwice strikes a fact whose page already says the same

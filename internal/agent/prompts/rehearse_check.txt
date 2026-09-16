@@ -1,0 +1,22 @@
+{{.PersonName}}'s agent is checking its own notes. Here is a question
+{{.PersonName}} might ask tomorrow, and the notes nearest to it.
+
+## The question
+
+{{.Question}}
+
+## The nearest notes
+
+{{range .Facts}}{{.}}
+{{end}}
+## What to answer
+
+Do these notes answer the question -- not touch on its subject, answer
+it? "Where is gogcli checked out" is answered by a note giving the path.
+"What was my next step for gogcli" is not answered by that note, nor by
+one saying the project is written in Go; it needs a note that says what
+the next step was.
+
+Answer with this object and nothing else:
+
+{"answered": false}
