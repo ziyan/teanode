@@ -433,6 +433,12 @@ type AgentLimits struct {
 	// first night and every night after. The money caps still bind it.
 	EmbeddingTokensPerDay int64 `yaml:"embeddingTokensPerDay,omitempty"`
 
+	// ScanConcurrency is how many calls the nightly reading makes at
+	// once. One for a service that meters by the call; as many as it has
+	// slots for a model of the person's own, where the reading is bound
+	// by nothing but the machine.
+	ScanConcurrency int `yaml:"scanConcurrency,omitempty"`
+
 	// DreamShare is how much of the daily budget the nightly run may
 	// spend, so that a night never eats the day. Zero resolves to 0.3.
 	DreamShare float64 `yaml:"dreamShare,omitempty"`
@@ -451,6 +457,11 @@ type AgentLimits struct {
 	// that arrives, and nearly every message can be sorted from what is in
 	// front of the model.
 	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
+
+	// MaxRoundsPerDream is how many turns one call of a dream may take:
+	// a reading batch, a month written up, a page divided. Each may look
+	// a page up before it answers, and few need to more than twice.
+	MaxRoundsPerDream  int `yaml:"maxRoundsPerDream"`
 	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
 
 	// RequestTimeout bounds one call to a provider.
@@ -689,6 +700,7 @@ func defaultAgent() Agent {
 			MaxRoundsPerResearch: 8,
 			MaxRoundsPerReply:    6,
 			MaxRoundsPerTriage:   3,
+			MaxRoundsPerDream:    4,
 			MaxToolCallsPerRun:   60,
 			RequestTimeout:       Duration(60 * time.Second),
 			Concurrency:          2,
@@ -911,6 +923,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		{"maxRoundsPerResearch", agent.Limits.MaxRoundsPerResearch},
 		{"maxRoundsPerReply", agent.Limits.MaxRoundsPerReply},
 		{"maxRoundsPerTriage", agent.Limits.MaxRoundsPerTriage},
+		{"maxRoundsPerDream", agent.Limits.MaxRoundsPerDream},
 		{"maxToolCallsPerRun", agent.Limits.MaxToolCallsPerRun},
 	} {
 		if field.value <= 0 {

@@ -63,11 +63,19 @@ type AgentGraphMutation interface {
 	// Put a page under another. Needs agent:use.
 	MoveAgentNode(ctx context.Context, arguments MoveAgentNodeArguments) (*models.AgentNode, error)
 
+	// Fold one page into another: facts, links and children move over,
+	// the name becomes an alias, and the page goes. Needs agent:use.
+	MergeAgentNodes(ctx context.Context, arguments MergeAgentNodesArguments) (*models.AgentNode, error)
+
 	// Remove a page and everything under it. Needs agent:use.
 	DeleteAgentNode(ctx context.Context, arguments DeleteAgentNodeArguments) (bool, error)
 
 	// Put a fact on a page, or change one. Needs agent:use.
 	SaveAgentFact(ctx context.Context, arguments SaveAgentFactArguments) (*models.AgentFact, error)
+
+	// Put a fact on another page, for a sentence filed under the wrong
+	// name. Needs agent:use.
+	MoveAgentFact(ctx context.Context, arguments MoveAgentFactArguments) (*models.AgentFact, error)
 
 	// Strike a fact. What the person struck is shown to the next filing
 	// run as an example of what not to keep, which is the only way that
@@ -88,6 +96,11 @@ type AgentGraphMutation interface {
 	// Run the night now, within the agent's own hours, rather than
 	// waiting for its next turn. Needs agent:use.
 	DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error)
+
+	// Put back into the night's queue everything marked read in the last
+	// so many minutes, for a night that marked what it never read. Says
+	// how many. Needs agent:use.
+	RereadAgentDocuments(ctx context.Context, arguments RereadAgentDocumentsArguments) (int, error)
 
 	// Join two pages, or take the join away. What the agent's memory
 	// tool does with `link`; here so the person can do it too. Needs
@@ -125,6 +138,9 @@ type AgentGraphChildrenArguments struct {
 type AgentGraphChild struct {
 	Node *models.AgentNode `json:"node"`
 	Hint string            `json:"hint"`
+	// Children is how many pages are filed under this one: what makes a
+	// row something to walk into, and the number on it.
+	Children int `json:"children"`
 }
 
 // AgentGraphChildrenResult is one page of a folder and how big the folder
@@ -141,6 +157,10 @@ type AgentGraphNeighbour struct {
 	Relation string            `json:"relation"`
 	Outward  bool              `json:"outward"`
 	Note     string            `json:"note"`
+	// Weight is the link's, one for a link somebody stated, less for one
+	// the night proposed, more for one that keeps being used together;
+	// a child has none.
+	Weight float64 `json:"weight"`
 }
 
 // AgentGraphNeighboursResult is a page and the pages one step from it.
@@ -180,15 +200,25 @@ type SaveAgentNodeArguments struct {
 	Pinned  *bool    `json:"pinned" graphapi:"nullable"`
 }
 
+type MergeAgentNodesArguments struct {
+	Path string `json:"path"`
+	Into string `json:"into"`
+}
+
 type MoveAgentNodeArguments struct {
 	Path  string `json:"path"`
 	Under string `json:"under"`
 }
 
-// DreamAgentNowArguments is how the night is asked for. CatchUp keeps it running at every tick
-// until nothing waits to be read, rather than once.
+// DreamAgentNowArguments is how the night is asked for. Bootstrap, when
+// given, switches bootstrapping on or off: the night running at every
+// tick with wider limits until nothing waits to be read.
 type DreamAgentNowArguments struct {
-	CatchUp bool `json:"catchUp" graphapi:"nullable"`
+	Bootstrap *bool `json:"bootstrap" graphapi:"nullable"`
+}
+
+type RereadAgentDocumentsArguments struct {
+	Minutes int `json:"minutes"`
 }
 
 type LinkAgentNodesArguments struct {
@@ -209,6 +239,12 @@ type SaveAgentFactArguments struct {
 	Text      string   `json:"text"`
 	Happened  string   `json:"happened" graphapi:"nullable"`
 	Audiences []string `json:"audiences" graphapi:"nullable"`
+}
+
+type MoveAgentFactArguments struct {
+	Path   string `json:"path"`
+	Number int    `json:"number"`
+	To     string `json:"to"`
 }
 
 type DeleteAgentFactArguments struct {
@@ -427,13 +463,21 @@ func (self *graph) AgentGraphChildren(ctx context.Context, arguments AgentGraphC
 	if err != nil {
 		return nil, err
 	}
+	all := make([]string, 0, len(nodes))
+	for _, child := range nodes {
+		all = append(all, child.ID)
+	}
+	counts, err := tx.CountAgentNodeChildren(found.ID, all)
+	if err != nil {
+		return nil, err
+	}
 	rows := make([]*AgentGraphChild, 0, len(nodes))
 	for _, child := range nodes {
 		hint := firstLine(child.Summary)
 		if hint == "" {
 			hint = lines[child.ID]
 		}
-		rows = append(rows, &AgentGraphChild{Node: child, Hint: hint})
+		rows = append(rows, &AgentGraphChild{Node: child, Hint: hint, Children: counts[child.ID]})
 	}
 	return &AgentGraphChildrenResult{Rows: rows, Total: int(total)}, nil
 }
@@ -508,7 +552,7 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 		}
 		if other := byId[id]; other != nil && !other.Dormant {
 			result.Neighbours = append(result.Neighbours, &AgentGraphNeighbour{
-				Node: other, Relation: string(edge.Relation), Outward: outward, Note: edge.Note,
+				Node: other, Relation: string(edge.Relation), Outward: outward, Note: edge.Note, Weight: float64(edge.Weight),
 			})
 		}
 	}
@@ -853,6 +897,48 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	return folded, nil
 }
 
+// MoveAgentFact puts a fact on another page.
+//
+// The alternative a person has without it is to strike the sentence and
+// type it again on the right page, which throws away the words it came
+// from and the day it was learned. Moving keeps both; only the number
+// changes, because a number belongs to the page it is on.
+func (self *graph) MoveAgentFact(ctx context.Context, arguments MoveAgentFactArguments) (*models.AgentFact, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path, to := models.NormalizePath(arguments.Path), models.NormalizePath(arguments.To)
+	if path == "" || to == "" {
+		return nil, fmt.Errorf("move a fact from where to where? give path and to")
+	}
+	tx := self.writing(ctx)
+	node, err := tx.GetAgentNode(found.ID, path)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil {
+		return nil, fmt.Errorf("there is no page at %s", path)
+	}
+	fact, err := tx.GetAgentFact(found.ID, node.ID, arguments.Number)
+	if err != nil {
+		return nil, err
+	}
+	if fact == nil {
+		return nil, fmt.Errorf("there is no %s#%d", path, arguments.Number)
+	}
+	// The destination is not made on the way: a typo in a path would
+	// otherwise take the sentence somewhere nobody looks.
+	destination, err := tx.GetAgentNode(found.ID, to)
+	if err != nil {
+		return nil, err
+	}
+	if destination == nil {
+		return nil, fmt.Errorf("there is no page at %s", to)
+	}
+	return tx.MoveAgentFact(found.ID, fact.ID, destination.ID)
+}
+
 // DeleteAgentFact strikes a fact, and records that it was struck.
 //
 // The record is the point. The run that files what a conversation taught
@@ -1031,10 +1117,13 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 	// it last ran makes it due at the next tick. The hours the person set
 	// still hold: a night asked for at noon runs when its hours begin.
 	_, err = self.writing(ctx).UpdateAgent(found.ID, func(agent *models.Agent) error {
-		agent.DreamedAt = nil
-		if arguments.CatchUp {
-			agent.DreamCatchUp = true
+		if arguments.Bootstrap != nil {
+			agent.DreamBootstrap = *arguments.Bootstrap
+			if !*arguments.Bootstrap {
+				return nil
+			}
 		}
+		agent.DreamedAt = nil
 		return nil
 	})
 	return err == nil, err
@@ -1103,4 +1192,30 @@ func (self *graph) endsOfLink(ctx context.Context, agentId string, arguments Lin
 		return nil, nil, "", fmt.Errorf("there is no page at %s", to)
 	}
 	return fromNode, toNode, relation, nil
+}
+
+func (self *graph) MergeAgentNodes(ctx context.Context, arguments MergeAgentNodesArguments) (*models.AgentNode, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path := models.NormalizePath(arguments.Path)
+	for _, root := range models.AgentRoots {
+		if root.Path == path {
+			return nil, fmt.Errorf("%s is one of the places things are filed, and cannot be merged away", path)
+		}
+	}
+	return self.writing(ctx).MergeAgentNodes(found.ID, path, models.NormalizePath(arguments.Into))
+}
+
+func (self *graph) RereadAgentDocuments(ctx context.Context, arguments RereadAgentDocumentsArguments) (int, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if arguments.Minutes <= 0 {
+		return 0, fmt.Errorf("how far back? give minutes")
+	}
+	put, err := self.writing(ctx).UnmarkAgentDocumentsDigested(found.ID, time.Now().Add(-time.Duration(arguments.Minutes)*time.Minute))
+	return int(put), err
 }

@@ -312,6 +312,11 @@ type AgentDream struct {
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 
+	// JobID is the job that ran it. Every model call a dream makes is a
+	// run tagged with that job, so a dream's runs can be listed and each
+	// opened, as a sorting run can.
+	JobID string `json:"jobId,omitempty"`
+
 	Digested  int `json:"digested"`
 	Filed     int `json:"filed"`
 	Merged    int `json:"merged"`

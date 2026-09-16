@@ -32,16 +32,10 @@ export function QueuePage() {
   const [search] = useSearchParams()
   const requestedFilters = useFilterParams(search)
 
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListPendingDeliveries: Delivery[] }>(PENDING),
-    [],
-  )
+  const { data, error, loading, reload } = useQuery(() => graphql<{ ListPendingDeliveries: Delivery[] }>(PENDING), [])
   const domainQuery = useQuery(() => graphql<{ ListDomains: Domain[] }>(DOMAINS), [])
   const domains = domainQuery.data?.ListDomains ?? []
-  const domainNames = useMemo(
-    () => new Map(domains.map((domain) => [domain.id, domain.domain])),
-    [domains],
-  )
+  const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Delivery>[]>(
     () => [
@@ -56,9 +50,7 @@ export function QueuePage() {
         options: domains.map((domain) => ({ value: domain.domain, label: domain.domain })),
         value: (delivery) => domainNames.get(delivery.domainId ?? ''),
         sort: (first, second) =>
-          (domainNames.get(first.domainId ?? '') ?? '').localeCompare(
-            domainNames.get(second.domainId ?? '') ?? '',
-          ),
+          (domainNames.get(first.domainId ?? '') ?? '').localeCompare(domainNames.get(second.domainId ?? '') ?? ''),
         render: (delivery) => <DomainLink domainId={delivery.domainId} names={domainNames} />,
       },
       {
@@ -70,11 +62,7 @@ export function QueuePage() {
         value: (delivery) => delivery.recipient,
         sort: (first, second) => (first.recipient ?? '').localeCompare(second.recipient ?? ''),
         render: (delivery) =>
-          delivery.mailId ? (
-            <Link to={`/mail/${delivery.mailId}`}>{delivery.recipient}</Link>
-          ) : (
-            delivery.recipient
-          ),
+          delivery.mailId ? <Link to={`/mail/${delivery.mailId}`}>{delivery.recipient}</Link> : delivery.recipient,
       },
       {
         key: 'kind',

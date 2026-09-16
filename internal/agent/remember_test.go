@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +33,11 @@ type rememberWorld struct {
 	owner        *models.User
 	agent        *models.Agent
 	conversation *models.AgentConversation
-	prompts      []string
+
+	// Describing runs beside the tick, so more than one goroutine asks the
+	// model at once and the prompts are guarded.
+	asked   sync.Mutex
+	prompts []string
 }
 
 // theirMessage finds the identifier of the person's own message in the
@@ -48,17 +53,33 @@ func newRememberWorld(t *testing.T, answer func(prompt string) string) *remember
 	world := &rememberWorld{database: database}
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
+		// The last thing the person's side said: every call is a turn of the
+		// loop now, so the persona goes first and the prompt after it.
 		prompt := ""
-		if len(body.Messages) > 0 {
-			prompt = body.Messages[len(body.Messages)-1].Content
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
 		}
+		world.asked.Lock()
 		world.prompts = append(world.prompts, prompt)
+		world.asked.Unlock()
 		content, _ := json.Marshal(answer(prompt))
+		if body.Stream {
+			// A round of the loop streams: one chunk with the whole answer.
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(writer,
+				"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+				content)
+			return
+		}
 		_, _ = fmt.Fprintf(writer,
 			`{"choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`,
 			content)
@@ -87,6 +108,10 @@ func newRememberWorld(t *testing.T, answer func(prompt string) string) *remember
 		Configuration: func() *config.Configuration { return configuration },
 		Instance:      "test", Tick: time.Hour,
 	})
+	// Every call the filing run makes is a turn of the loop, which acts as
+	// the person and so needs somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	world.worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
@@ -123,6 +148,8 @@ func newRememberWorld(t *testing.T, answer func(prompt string) string) *remember
 // model more than one thing per sweep, and a test wants its own.
 func (self *rememberWorld) promptSaying(t *testing.T, words string) string {
 	t.Helper()
+	self.asked.Lock()
+	defer self.asked.Unlock()
 	for _, prompt := range self.prompts {
 		if strings.Contains(prompt, words) {
 			return prompt
@@ -134,6 +161,8 @@ func (self *rememberWorld) promptSaying(t *testing.T, words string) string {
 
 // filingPrompts is how many times the filing run asked the model.
 func (self *rememberWorld) filingPrompts() int {
+	self.asked.Lock()
+	defer self.asked.Unlock()
 	count := 0
 	for _, prompt := range self.prompts {
 		if strings.Contains(prompt, "What to file") {

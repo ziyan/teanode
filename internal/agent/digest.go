@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -25,13 +26,18 @@ import (
 
 // The bounds of one digest.
 const (
-	// digestDocuments is how many things one digest reads.
-	digestDocuments = 2000
+	// digestDocuments is how many things one digest reads: a busy month
+	// of a chat archive is several thousand, and a record cut at the
+	// middle of the month is a page about half of it.
+	digestDocuments = 10000
 
 	// digestSubjects is how many commit subjects are listed per
 	// repository, and digestTitles how many requests or threads.
 	digestSubjects = 60
 	digestTitles   = 40
+
+	// digestOpening is how much of a thread's first words go in.
+	digestOpening = 240
 
 	// digestCharacters is how long the text may be. A month of a busy
 	// person is thousands of lines; what the writing-up needs is the
@@ -46,17 +52,46 @@ const (
 func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *models.User, from, until time.Time) (string, error) {
 	var documents []*models.AgentDocument
 	var facts []*models.AgentFact
-	var insights []*models.MailInsight
+	var own []*models.AgentDocument
+	openings := map[string]string{}
+	pages := map[string]string{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if documents, err = tx.ListAgentDocumentsBetween(agent.ID, nil, from, until, digestDocuments); err != nil {
 			return err
 		}
-		facts, err = tx.ListAgentFactsBetween(agent.ID, from, until, 500)
-		return err
+		if facts, err = tx.ListAgentFactsBetween(agent.ID, from, until, 500); err != nil {
+			return err
+		}
+		// A thread's title is its channel and its day, which says
+		// nothing about what was said. Its first words do.
+		own = theirThreads(documents, chatNamesOf(owner))
+		for _, document := range busiest(own, models.DocumentChat, digestTitles) {
+			chunks, err := tx.ListAgentChunks(agent.ID, document.ID)
+			if err != nil {
+				return err
+			}
+			if len(chunks) > 0 {
+				openings[document.ID] = cutRunes(strings.Join(strings.Fields(chunks[0].Text), " "), digestOpening)
+			}
+		}
+		// A fact carries the page it is on, so that four facts from four
+		// pages are not written up as one story.
+		for _, fact := range facts {
+			if _, seen := pages[fact.NodeID]; seen {
+				continue
+			}
+			node, err := tx.GetAgentNodeByID(agent.ID, fact.NodeID)
+			if err != nil {
+				return err
+			}
+			if node != nil {
+				pages[fact.NodeID] = node.Path
+			}
+		}
+		return nil
 	}); err != nil {
 		return "", err
 	}
-	_ = insights
 
 	var builder strings.Builder
 	theirs := self.ownAddresses(ctx, owner)
@@ -86,10 +121,13 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 		builder.WriteString("\n")
 	}
 
-	// Chat, by channel, with how much of it was theirs.
-	channels := byChannel(documents)
+	// Chat: only the threads they took part in, by channel, and then
+	// the threads themselves. An archive holds every channel there is,
+	// and a page about their month written from a count of threads in
+	// channels they never opened is a page about somebody else.
+	channels := byChannel(own)
 	if len(channels) > 0 {
-		builder.WriteString("## chat\n\n")
+		builder.WriteString("## chat they took part in\n\n")
 		names := make([]string, 0, len(channels))
 		for name := range channels {
 			names = append(names, name)
@@ -105,6 +143,17 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 			fmt.Fprintf(&builder, "- %s (%d threads)\n", name, channels[name])
 		}
 		builder.WriteString("\n")
+		if threads := busiest(own, models.DocumentChat, digestTitles); len(threads) > 0 {
+			builder.WriteString("## their threads, and how each began\n\n")
+			for _, thread := range threads {
+				line := "- " + thread.Cite()
+				if opening := openings[thread.ID]; opening != "" {
+					line += ": " + opening
+				}
+				builder.WriteString(line + "\n")
+			}
+			builder.WriteString("\n")
+		}
 	}
 
 	// Notes they wrote at the time, which is the most direct evidence of
@@ -121,12 +170,16 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	// Mail worth mentioning, and everything else the graph already knows
 	// happened then.
 	if len(facts) > 0 {
-		builder.WriteString("## already known about this time\n\n")
+		builder.WriteString("## already known about this time, by page\n\n")
 		for index, fact := range facts {
 			if index >= 100 {
 				break
 			}
-			builder.WriteString("- " + fact.Line() + "\n")
+			line := "- "
+			if path := pages[fact.NodeID]; path != "" {
+				line += path + ": "
+			}
+			builder.WriteString(line + fact.Line() + "\n")
 		}
 		builder.WriteString("\n")
 	}
@@ -165,6 +218,27 @@ func byRepository(documents []*models.AgentDocument, kind models.AgentDocumentKi
 	return grouped
 }
 
+// theirThreads keeps the chat the person was in, by the names they go by
+// in chat, and everything that is not chat.
+func theirThreads(documents []*models.AgentDocument, names []string) []*models.AgentDocument {
+	var kept []*models.AgentDocument
+	for _, document := range documents {
+		if document.Kind != models.DocumentChat {
+			kept = append(kept, document)
+			continue
+		}
+		participants, _ := document.Metadata["participants"].([]any)
+		for _, participant := range participants {
+			name, _ := participant.(string)
+			if slices.Contains(names, strings.ToLower(strings.TrimSpace(name))) {
+				kept = append(kept, document)
+				break
+			}
+		}
+	}
+	return kept
+}
+
 // byChannel is how many threads happened in each channel.
 func byChannel(documents []*models.AgentDocument) map[string]int {
 	counted := map[string]int{}
@@ -179,6 +253,32 @@ func byChannel(documents []*models.AgentDocument) map[string]int {
 		counted[name]++
 	}
 	return counted
+}
+
+// busiest is the documents of a kind with the most posts in them, most
+// first, up to a limit: the threads worth a line are the ones where
+// something was said back.
+func busiest(documents []*models.AgentDocument, kind models.AgentDocumentKind, limit int) []*models.AgentDocument {
+	var kept []*models.AgentDocument
+	for _, document := range documents {
+		if document.Kind == kind {
+			kept = append(kept, document)
+		}
+	}
+	posts := func(document *models.AgentDocument) int {
+		switch count := document.Metadata["posts"].(type) {
+		case float64:
+			return int(count)
+		case int:
+			return count
+		}
+		return 0
+	}
+	sort.SliceStable(kept, func(left, right int) bool { return posts(kept[left]) > posts(kept[right]) })
+	if len(kept) > limit {
+		kept = kept[:limit]
+	}
+	return kept
 }
 
 // titlesOf is the titles of documents of a kind, newest first.

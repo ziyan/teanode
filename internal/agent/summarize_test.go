@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,18 +27,39 @@ func TestSummarizeThroughTheWorker(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	// The summarize job is a one-round turn of the loop, so the model is
+	// asked with stream on and the conversation to summarize sits after
+	// the persona, as the last thing the person's side said.
+	var mutex sync.Mutex
 	var prompts []string
 	calls := 0
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
-		prompts = append(prompts, body.Messages[len(body.Messages)-1].Content)
+		if !body.Stream {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		prompt := ""
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
+		}
+		mutex.Lock()
+		prompts = append(prompts, prompt)
 		calls++
-		_, _ = fmt.Fprintf(writer, `{"choices":[{"message":{"role":"assistant","content":"Summary number %d."},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`, calls)
+		numbered := calls
+		mutex.Unlock()
+		_, _ = fmt.Fprintf(writer,
+			"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"Summary number %d.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+			numbered)
 	}))
 	defer provider.Close()
 
@@ -66,6 +88,10 @@ func TestSummarizeThroughTheWorker(t *testing.T) {
 		Instance:      "test",
 		Tick:          time.Hour,
 	})
+	// A turn of the loop acts as the person; a summary reaches for no
+	// tool, but there still has to be somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var owner *models.User
 	var mailbox *models.Mailbox
@@ -130,6 +156,15 @@ func TestSummarizeThroughTheWorker(t *testing.T) {
 		}
 		if summary.Summary != "Summary number 1." || summary.MessageCount != 3 || summary.Model != "fake:writer" || summary.RunID == "" {
 			t.Fatalf("summary %+v", summary)
+		}
+		// The turn left the transcript the summary points at, named for
+		// what it summarized.
+		runs, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
+		if err != nil {
+			t.Fatalf("ListAgentConversations: %s", err)
+		}
+		if len(runs) != 1 || runs[0].ID != summary.RunID || runs[0].JobKind != string(models.AgentJobSummarize) || !strings.HasPrefix(runs[0].Title, "Summarized ") {
+			t.Fatalf("run transcript %+v", runs)
 		}
 		mails, _ := tx.GetMails([]string{summary.ThroughMailID}, nil)
 		if len(mails) != 1 || !strings.Contains(prompts[0], "Thursday at three") || !strings.Contains(prompts[0], "The roof leaks") {

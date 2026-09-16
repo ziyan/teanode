@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -12,13 +12,15 @@ import {
   formatMoney,
   formatTime,
 } from '../components/common'
-import { Column, DataTable } from '../components/dataTable'
+import { Column, DataTable, Range } from '../components/dataTable'
+import { RUN_KINDS } from '../agentRuns'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
+import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
-import { Link } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useTranslation } from '../i18n/i18n'
 import { Select } from '../components/select'
@@ -26,8 +28,10 @@ import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
-// it costs. Grouped the way a person thinks of it — about me, tell me when,
-// then one card per mailbox — rather than the way it is stored.
+// it costs. Grouped the way a person thinks of it — about me, what it may
+// reach, what it remembers — rather than the way it is stored, and in tabs
+// rather than one scroll, which is how the server's page and the operator's
+// view of everybody's agents are already read.
 
 export type AgentVoice = { tone?: string; length?: string; greeting?: string; signoff?: string }
 export type AgentCategory = { name: string; description?: string }
@@ -141,12 +145,39 @@ function messageOf(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught)
 }
 
+// The tabs of /settings/agent, and the path a person can be sent to. One
+// scroll of fourteen cards meant scrolling past a mailbox's policies to
+// reach what the agent remembered; the six subjects here are the six
+// questions somebody opens this page with.
+const AGENT_TABS: TabItem[] = [
+  { id: 'overview', label: 'agent.tabOverview' },
+  { id: 'sources', label: 'agent.tabSources' },
+  { id: 'memory', label: 'agent.tabMemory' },
+  { id: 'dreams', label: 'agent.tabDreams' },
+  { id: 'connections', label: 'agent.tabConnections' },
+  { id: 'activity', label: 'agent.tabActivity' },
+]
+
 export function AgentPage() {
   const { t } = useTranslation()
   const { data, error, loading, reload } = useAgent()
   const toast = useToast()
+  const { tab } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [forgetting, setForgetting] = useState(false)
+  // The dream whose runs the activity table is narrowed to, if any. It is
+  // held here rather than in the activity tab, so that the dream log's Runs
+  // button can set it and then switch tabs without it going with the card.
+  const [runsOf, setRunsOf] = useState<{ id: string; when: string } | null>(null)
+  const showRunsOf = (dream: { jobId: string; startedAt: string }) => {
+    setRunsOf({ id: dream.jobId, when: formatTime(dream.startedAt) })
+    navigate('/settings/agent/activity')
+    // The dream log is long, and a tab arrived at from half way down it
+    // opened below its own heading. The column scrolls, not the window.
+    document.querySelector('.content')?.scrollTo({ top: 0 })
+  }
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorMessage error={error} />
@@ -194,85 +225,115 @@ export function AgentPage() {
   }
 
   const agent = view.agent
+  // A path that names no tab, or one this page has never had, lands on the
+  // first — except coming back from an authorization, where the server is
+  // named in the query and only Connections holds the card that finishes
+  // it. The query is carried over either way: it is the code and the state
+  // the server sent back, and dropping it lost the connection silently.
+  if (!AGENT_TABS.some((candidate) => candidate.id === tab)) {
+    const landing = new URLSearchParams(location.search).has('connect') ? 'connections' : AGENT_TABS[0].id
+    return <Navigate to={`/settings/agent/${landing}${location.search}`} replace />
+  }
   return (
     <>
-      <div className="card">
-        <h3>{t('agent.title')}</h3>
-        {agent.operatorDisabledAt ? <p className="warning">{t('agent.operatorDisabled')}</p> : null}
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={agent.enabled}
-            disabled={busy || !!agent.operatorDisabledAt}
-            onChange={(event) =>
-              void update(
-                { enabled: event.target.checked },
-                event.target.checked ? t('agent.turnedOn') : t('agent.turnedOff'),
-              )
-            }
-          />
-          {t('agent.enabled')}
-        </label>
-        <BudgetBar budget={view.budget} zone={view.timezone} />
-        <p className="muted">
-          {t('agent.timezone', { zone: view.timezone })} · {t('agent.language', { language: view.language || '—' })}
-        </p>
-      </div>
-      <div className="card">
-        <AboutForm agent={agent} view={view} busy={busy} onSave={update} />
-        <VoiceForm agent={agent} busy={busy} onSave={update} />
-      </div>
-      <CategoriesSection agent={agent} view={view} busy={busy} onSave={update} />
-      <SettingsSection card title={t('agent.sources')} description={t('agent.sourcesHint')}>
-        {view.sources.map((source) => (
-          <SourceCard key={source.mailboxId} source={source} view={view} onChanged={reload} />
-        ))}
-        {view.collections.map((collection) => (
-          <CollectionRow key={collection.id} collection={collection} view={view} onChanged={reload} />
-        ))}
-      </SettingsSection>
-      <LearnedCard />
-      <KnowledgeSourcesCard />
-      <DreamCard agent={agent} busy={busy} onChange={update} />
-      <BriefCard />
-      <SchedulesCard />
-      <ServersCard />
-      <SkillSecretsCard />
-      <ChatAppsCard />
-      <RepliesCard />
-      <ActivityCard />
-      <CorrectionsCard />
-      <div className="card">
-        <h3>{t('agent.advanced')}</h3>
-        <div className="form-narrow">
-          {view.choices.length > 0 ? (
-            <label>
-              <span>{t('agent.askModel')}</span>
-              <Select
-                block
-                value={agent.askModel ?? ''}
-                disabled={busy}
-                label={t('agent.askModel')}
-                options={[
-                  { value: '', label: t('agent.askModelDefault') },
-                  ...view.choices.map((choice) => ({ value: choice, label: choice })),
-                ]}
-                onChange={(value) => void update({ askModel: value }, t('agent.saved'))}
+      <Tabs items={AGENT_TABS} active={tab} onSelect={(id) => navigate(`/settings/agent/${id}`)} />
+      {tab === 'overview' ? (
+        <>
+          <div className="card">
+            <h3>{t('agent.title')}</h3>
+            {agent.operatorDisabledAt ? <p className="warning">{t('agent.operatorDisabled')}</p> : null}
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={agent.enabled}
+                disabled={busy || !!agent.operatorDisabledAt}
+                onChange={(event) =>
+                  void update(
+                    { enabled: event.target.checked },
+                    event.target.checked ? t('agent.turnedOn') : t('agent.turnedOff'),
+                  )
+                }
               />
+              {t('agent.enabled')}
             </label>
-          ) : null}
-        </div>
-        <ConfirmForm agent={agent} busy={busy} onSave={update} />
-        <div className="settings-subform">
-          <h4>{t('agent.forget')}</h4>
-          <p className="muted">{t('agent.forgetHint')}</p>
-          <div className="page-actions">
-            <button type="button" className="danger" disabled={busy} onClick={() => setForgetting(true)}>
-              {t('agent.forget')}
-            </button>
+            <BudgetBar budget={view.budget} zone={view.timezone} />
+            <p className="muted">
+              {t('agent.timezone', { zone: view.timezone })} · {t('agent.language', { language: view.language || '—' })}
+            </p>
           </div>
-        </div>
-      </div>
+          <div className="card">
+            <AboutForm agent={agent} view={view} busy={busy} onSave={update} />
+            <VoiceForm agent={agent} busy={busy} onSave={update} />
+          </div>
+          <div className="card">
+            <h3>{t('agent.advanced')}</h3>
+            <div className="form-narrow">
+              {view.choices.length > 0 ? (
+                <label>
+                  <span>{t('agent.askModel')}</span>
+                  <Select
+                    block
+                    value={agent.askModel ?? ''}
+                    disabled={busy}
+                    label={t('agent.askModel')}
+                    options={[
+                      { value: '', label: t('agent.askModelDefault') },
+                      ...view.choices.map((choice) => ({ value: choice, label: choice })),
+                    ]}
+                    onChange={(value) => void update({ askModel: value }, t('agent.saved'))}
+                  />
+                </label>
+              ) : null}
+            </div>
+            <ConfirmForm agent={agent} busy={busy} onSave={update} />
+            <div className="settings-subform">
+              <h4>{t('agent.forget')}</h4>
+              <p className="muted">{t('agent.forgetHint')}</p>
+              <div className="page-actions">
+                <button type="button" className="danger" disabled={busy} onClick={() => setForgetting(true)}>
+                  {t('agent.forget')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+      {tab === 'sources' ? (
+        <>
+          <SettingsSection card title={t('agent.sources')} description={t('agent.sourcesHint')}>
+            {view.sources.map((source) => (
+              <SourceCard key={source.mailboxId} source={source} view={view} onChanged={reload} />
+            ))}
+            {view.collections.map((collection) => (
+              <CollectionRow key={collection.id} collection={collection} view={view} onChanged={reload} />
+            ))}
+          </SettingsSection>
+          <CategoriesSection agent={agent} view={view} busy={busy} onSave={update} />
+        </>
+      ) : null}
+      {tab === 'memory' ? (
+        <>
+          <LearnedCard />
+          <CorrectionsCard />
+          <KnowledgeSourcesCard />
+        </>
+      ) : null}
+      {tab === 'dreams' ? <DreamCard agent={agent} busy={busy} onChange={update} onOpenRuns={showRunsOf} /> : null}
+      {tab === 'connections' ? (
+        <>
+          <SchedulesCard />
+          <ServersCard />
+          <SkillSecretsCard />
+          <ChatAppsCard />
+          <BriefCard />
+        </>
+      ) : null}
+      {tab === 'activity' ? (
+        <>
+          <ActivityCard job={runsOf} onAll={() => setRunsOf(null)} />
+          <RepliesCard />
+        </>
+      ) : null}
       {forgetting ? (
         <ConfirmDialog
           title={t('agent.forget')}
@@ -423,7 +484,7 @@ function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView 
           />
         </label>
       </div>
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -505,7 +566,7 @@ function VoiceForm({ agent, busy, onSave }: SaveProps) {
           </label>
         </div>
       </div>
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -662,15 +723,17 @@ const ALLOW_KNOWLEDGE_DIRECTORY = `
   }`
 
 const DREAMS = `
-  query {
-    ListAgentDreams(first: 7) {
-      id startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
+  query ($first: Int) {
+    ListAgentDreams(first: $first) {
+      id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
       strengthened associated rehearsed gaps revised notes lastError
       proposals { kind path to reason }
     }
   }`
 
 const DREAM_NOW = `mutation { DreamAgentNow }`
+const DREAM_BOOTSTRAP = `mutation ($on: Boolean!) { DreamAgentNow(bootstrap: $on) }`
+const BOOTSTRAPPING = `query { ReadAgent { agent { dreamBootstrap } } }`
 
 type LearnedFact = {
   fact: { id: string; number: number; text: string; inferred: boolean; evidence: { kind: string; quote: string }[] }
@@ -698,6 +761,7 @@ type KnowledgeSource = {
 
 type Dream = {
   id: string
+  jobId: string
   startedAt: string
   finishedAt: string | null
   digested: number
@@ -1619,18 +1683,47 @@ function DreamCard({
   agent,
   busy,
   onChange,
+  onOpenRuns,
 }: {
   agent: NonNullable<AgentView['agent']>
   busy: boolean
   onChange: (variables: Record<string, unknown>, done: string) => Promise<void>
+  onOpenRuns: (dream: { jobId: string; startedAt: string }) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, {}), [], {
-    refresh: false,
-  })
+  // Seven at first, and seven more each time the person asks for
+  // earlier ones: a dream log is read from the top, not paged.
+  const [shown, setShown] = useState(7)
+  const { data, error, loading, reload } = useQuery(
+    () => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, { first: shown }),
+    [shown],
+    { refresh: false },
+  )
   const dreams = data?.ListAgentDreams ?? []
   const [starting, setStarting] = useState(false)
+  // Bootstrapping: the night at every tick, with wider limits, until
+  // nothing waits to be read. What a first ingest needs, and switched
+  // off by the night itself when the backlog is gone.
+  const bootstrapping = useQuery(
+    () => graphql<{ ReadAgent: { agent: { dreamBootstrap: boolean } } }>(BOOTSTRAPPING, {}),
+    [],
+    { refresh: false },
+  )
+  const bootstrap = bootstrapping.data?.ReadAgent.agent.dreamBootstrap ?? false
+  // What waits to be read, from the last dream that finished: a dream
+  // still working has not counted yet, and reads as nothing waiting.
+  const backlog = dreams.find((dream) => dream.finishedAt)?.backlog ?? 0
+  const setBootstrap = async (on: boolean) => {
+    try {
+      await graphql(DREAM_BOOTSTRAP, { on })
+      toast.done(t(on ? 'agent.bootstrapOnAsked' : 'agent.bootstrapOffAsked'))
+      await bootstrapping.reload()
+      await reload()
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    }
+  }
 
   // Asking for the night now only moves it to the next tick, and only
   // within the hours below: a run that rewrites pages while somebody is
@@ -1659,32 +1752,51 @@ function DreamCard({
         </button>
       }
     >
-      {/* When the night is. A person who works at two in the morning
+      {/* When it may dream. A person who works at two in the morning
           should be able to move it rather than have a page rewritten
           under them while they read it. */}
-      <SettingsRow title={t('agent.dreamWindow')} subtitle={t('agent.dreamWindowHint')} />
-      <div className="row">
-        <label className="shrink">
-          <span>{t('agent.dreamFrom')}</span>
-          <input
-            className="narrow"
-            type="time"
-            disabled={busy}
-            value={agent.dreamFrom || '01:00'}
-            onChange={(event) => void onChange({ dreamFrom: event.target.value }, t('agent.saved'))}
-          />
-        </label>
-        <label className="shrink">
-          <span>{t('agent.dreamUntil')}</span>
-          <input
-            className="narrow"
-            type="time"
-            disabled={busy}
-            value={agent.dreamUntil || '06:00'}
-            onChange={(event) => void onChange({ dreamUntil: event.target.value }, t('agent.saved'))}
-          />
-        </label>
-      </div>
+      <SettingsRow
+        title={t('agent.bootstrap')}
+        subtitle={backlog > 0 ? t('agent.bootstrapHint', { count: backlog }) : t('agent.bootstrapHintEmpty')}
+        badge={bootstrap ? <Tag value={t('agent.bootstrapOn')} tone="good" /> : undefined}
+        actions={
+          <button type="button" className={bootstrap ? '' : 'primary'} onClick={() => void setBootstrap(!bootstrap)}>
+            {bootstrap ? t('agent.bootstrapStop') : t('agent.bootstrapStart')}
+          </button>
+        }
+      />
+      {/* The hours sit in the row that explains them, as its action, so
+          the two clocks are not two unlabelled fields under a heading. */}
+      <SettingsRow
+        title={t('agent.dreamWindow')}
+        subtitle={t('agent.dreamWindowHint')}
+        actions={
+          <span className="hours">
+            <label>
+              <span>{t('agent.dreamFrom')}</span>
+              <input
+                className="narrow"
+                type="time"
+                disabled={busy}
+                aria-label={t('agent.dreamFromLabel')}
+                value={agent.dreamFrom || '01:00'}
+                onChange={(event) => void onChange({ dreamFrom: event.target.value }, t('agent.saved'))}
+              />
+            </label>
+            <label>
+              <span>{t('agent.dreamUntil')}</span>
+              <input
+                className="narrow"
+                type="time"
+                disabled={busy}
+                aria-label={t('agent.dreamUntilLabel')}
+                value={agent.dreamUntil || '06:00'}
+                onChange={(event) => void onChange({ dreamUntil: event.target.value }, t('agent.saved'))}
+              />
+            </label>
+          </span>
+        }
+      />
       {error ? <ErrorMessage error={error} /> : null}
       {loading && !data ? <Loading /> : null}
       {data && dreams.length === 0 ? <SettingsEmpty>{t('agent.noDreams')}</SettingsEmpty> : null}
@@ -1707,15 +1819,28 @@ function DreamCard({
             key={dream.id}
             title={formatTime(dream.startedAt)}
             badge={dream.coarse ? <Tag value={t('agent.knowledgeReading')} tone="warn" /> : null}
+            actions={
+              dream.jobId ? (
+                <button type="button" onClick={() => onOpenRuns(dream)}>
+                  {t('agent.dreamRuns')}
+                </button>
+              ) : null
+            }
             subtitle={
               <>
-                {did.length > 0 ? did.join(' · ') : t('agent.dreamNothing')}
+                {did.length > 0
+                  ? did.join(' · ')
+                  : !dream.finishedAt
+                    ? t('agent.dreamWorking')
+                    : dream.lastError
+                      ? t('agent.dreamCutShort')
+                      : t('agent.dreamNothing')}
                 {dream.backlog > 0 ? (
                   <>
                     <br />
                     {t('agent.dreamBacklog', {
                       count: dream.backlog,
-                      nights: Math.max(1, Math.ceil(dream.backlog / 400)),
+                      dreams: Math.max(1, Math.ceil(dream.backlog / 2000)),
                     })}
                   </>
                 ) : null}
@@ -1740,7 +1865,7 @@ function DreamCard({
                   </span>
                 ))}
                 {/* What it asked itself and what it could not answer, in
-                    its own words. Not translated: the night wrote them,
+                    its own words. Not translated: the dream wrote them,
                     and it writes in the language the agent is set to. */}
                 {(dream.notes || '')
                   .split('\n')
@@ -1763,6 +1888,13 @@ function DreamCard({
           />
         )
       })}
+      {dreams.length >= shown ? (
+        <div className="row">
+          <button type="button" onClick={() => setShown(shown + 7)}>
+            {t('agent.earlierDreams')}
+          </button>
+        </div>
+      ) : null}
     </SettingsSection>
   )
 }
@@ -2062,22 +2194,50 @@ function SchedulesCard() {
 }
 
 const RUNS = `
-  query ($first: Int) {
-    ListAgentRuns(first: $first) { id title jobKind lastAt }
+  query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) {
+    ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) {
+      total
+      runs { id title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
+    }
   }`
 
 // ActivityCard is what the agent did on its own: every run kept, newest
-// first, as a table that pages and filters, each row a transcript the
-// drawer opens. Runs are swept by the operator's retention, so what the
-// query returns is the whole of what there is.
-type Run = { id: string; title: string; jobKind: string; lastAt: string }
+// first, as a table that pages and filters on the server, each row a
+// transcript the drawer opens. A bootstrapping dream makes hundreds of
+// runs a night, so the table holds one page at a time and asks for the
+// next.
+type Run = {
+  id: string
+  title: string
+  jobKind: string
+  lastAt: string
+  usage: { promptTokens: number; cacheReadTokens: number; completionTokens: number; cost: number }
+}
+type RunPage = { total: number; runs: Run[] }
 
-function ActivityCard() {
+// Every model call is a run, and a dream makes many: the dream log's Open
+// shows the table narrowed to that dream's runs, by the job that made
+// them, until the person asks for all of them again.
+function ActivityCard({ job, onAll }: { job: { id: string; when: string } | null; onAll: () => void }) {
   const { t, plural } = useTranslation()
-  const { data, error, loading } = useQuery(() => graphql<{ ListAgentRuns: Run[] }>(RUNS, { first: 1000 }), [], {
-    refresh: false,
-  })
-  const runs = data?.ListAgentRuns ?? []
+  const [range, setRange] = useState<Range>({ offset: 0, limit: 50, filters: {}, order: null })
+  const kinds = range.filters.jobKind
+  const query = range.filters.title
+  const { data, error, loading } = useQuery(
+    () =>
+      graphql<{ ListAgentRuns: RunPage }>(RUNS, {
+        first: range.limit,
+        offset: range.offset,
+        jobId: job?.id ?? null,
+        kinds: Array.isArray(kinds) && kinds.length > 0 ? kinds : null,
+        query: typeof query === 'string' && query.trim() !== '' ? query.trim() : null,
+      }),
+    [job?.id, range.offset, range.limit, JSON.stringify(kinds), query],
+    { refresh: false },
+  )
+  const runs = data?.ListAgentRuns.runs ?? []
+  const total = data?.ListAgentRuns.total ?? 0
+  const onRange = useCallback((next: Range) => setRange(next), [])
   if (error) {
     return null
   }
@@ -2087,17 +2247,30 @@ function ActivityCard() {
       header: t('agent.when'),
       width: '11rem',
       value: (run) => formatTime(run.lastAt),
-      sort: (first, second) => first.lastAt.localeCompare(second.lastAt),
     },
     {
       key: 'jobKind',
       header: t('agent.runKind'),
       width: '8rem',
       filter: 'select',
+      options: RUN_KINDS.map((kind) => ({ value: kind, label: kind })),
       value: (run) => run.jobKind,
       render: (run) => <Tag value={run.jobKind} />,
     },
     { key: 'title', header: t('agent.runWhat'), filter: 'text', truncate: true, value: (run) => run.title },
+    {
+      key: 'cost',
+      header: t('agent.runCost'),
+      width: '9rem',
+      optional: true,
+      value: (run) => String(run.usage.cost),
+      render: (run) => (
+        <span className="muted">
+          {formatCount(run.usage.promptTokens + run.usage.cacheReadTokens + run.usage.completionTokens)}
+          {run.usage.cost ? ` · ${formatMoney(run.usage.cost)}` : ''}
+        </span>
+      ),
+    },
     {
       key: 'open',
       header: '',
@@ -2115,12 +2288,25 @@ function ActivityCard() {
     },
   ]
   return (
-    <SettingsSection card title={t('agent.activity')} description={t('agent.activityHint')}>
+    <SettingsSection
+      card
+      id="activity"
+      title={t('agent.activity')}
+      description={job ? t('agent.runsOfDream', { when: job.when }) : t('agent.activityHint')}
+      action={
+        job ? (
+          <button type="button" onClick={onAll}>
+            {t('agent.allRuns')}
+          </button>
+        ) : null
+      }
+    >
       <DataTable
         columns={columns}
         rows={runs}
         rowKey={(run) => run.id}
         loading={loading && !data}
+        remote={{ total, onRange }}
         emptyMessage={t('agent.noActivity')}
         countLabel={(count, filtering) =>
           filtering
@@ -2285,7 +2471,7 @@ function ConfirmForm({ agent, busy, onSave }: SaveProps) {
         defaultWord="allow"
         onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
       />
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -2547,7 +2733,7 @@ function SortingForm({ policy, allowed, busy, onSave }: PolicyProps) {
           </label>
         </div>
       </div>
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -2602,7 +2788,7 @@ function SummariesForm({ policy, allowed, busy, onSave }: PolicyProps) {
           </label>
         </div>
       </div>
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -2646,7 +2832,7 @@ function HelpForm({ policy, allowed, busy, onSave }: PolicyProps) {
         label={t('agent.research')}
         onChange={(research) => setHelp({ ...help, research })}
       />
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }
@@ -2807,7 +2993,7 @@ function AnsweringForm({ policy, allowed, busy, onSave }: PolicyProps) {
           </label>
         </div>
       </div>
-      <SaveRow busy={busy} saved={false} note={t('agent.saved')} />
+      <SaveRow busy={busy} saved={false} />
     </form>
   )
 }

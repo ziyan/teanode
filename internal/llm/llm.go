@@ -34,15 +34,26 @@ func (self *APIError) Error() string {
 // was too long for the model, which is the one error a caller can fix by
 // sending less.
 func IsContextLengthError(err error) bool {
-	var apiError *APIError
-	if !errors.As(err, &apiError) {
+	if err == nil {
 		return false
 	}
-	message := strings.ToLower(apiError.Message)
+	// The provider's own message where there is one; the words of the
+	// error otherwise, since a turn that failed on it is reported as text
+	// by the loop and still has to be told apart from a model being down.
+	message := err.Error()
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		message = apiError.Message
+	}
+	message = strings.ToLower(message)
 	return strings.Contains(message, "context length") ||
 		strings.Contains(message, "context_length") ||
 		strings.Contains(message, "too many tokens") ||
 		strings.Contains(message, "maximum context") ||
 		strings.Contains(message, "prompt is too long") ||
-		strings.Contains(message, "exceeds the maximum")
+		strings.Contains(message, "exceeds the maximum") ||
+		// llama.cpp: "request (18438 tokens) exceeds the available
+		// context size (16384 tokens)".
+		strings.Contains(message, "exceeds the available context") ||
+		strings.Contains(message, "context size")
 }

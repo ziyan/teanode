@@ -209,6 +209,12 @@ type AgentReference struct {
 	ThreadID string `json:"threadId,omitempty" graphapi:"nullable"`
 	Subject  string `json:"subject,omitempty" graphapi:"nullable"`
 	From     string `json:"from,omitempty" graphapi:"nullable"`
+
+	// Path and Name point at a page of the agent's own memory instead of
+	// a message: the person pressed Ask on a page of the graph, and wants
+	// the agent to dig into it, or to change what it says and links to.
+	Path string `json:"path,omitempty" graphapi:"nullable"`
+	Name string `json:"name,omitempty" graphapi:"nullable"`
 }
 
 // AgentToolCall is a tool the model asked for, as recorded.

@@ -9,6 +9,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // reload that is not there.
 const REFRESH_INTERVAL = 10_000
 
+// sameAnswer says whether two answers are the same data, by their JSON: what
+// the server sent is plain data, and a refresh is compared once.
+function sameAnswer(previous: unknown, next: unknown): boolean {
+  try {
+    return JSON.stringify(previous) === JSON.stringify(next)
+  } catch {
+    return false
+  }
+}
+
 export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [], options: { refresh?: boolean } = {}) {
   const { refresh = true } = options
   const [data, setData] = useState<T | null>(null)
@@ -43,7 +53,12 @@ export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [],
         if (mine !== generation.current) {
           return
         }
-        setData(answer)
+        // The same answer is the same object. A background refresh that
+        // brought back what was already on screen used to hand out a new
+        // object every ten seconds, and every form that copies its
+        // settings into its fields when they change put the fields back
+        // as the person was typing into them.
+        setData((previous) => (previous !== null && sameAnswer(previous, answer) ? previous : answer))
         setError(null)
         loaded.current = true
       } catch (caught) {

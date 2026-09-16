@@ -98,9 +98,7 @@ export function SmtpForm({ settings, onSaved }: { settings: Smtp; onSaved: () =>
       }}
     >
       <h3>{t('serverSettings.smtpTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.smtpIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.smtpIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -146,7 +144,7 @@ export function SmtpForm({ settings, onSaved }: { settings: Smtp; onSaved: () =>
         <p className="muted field-hint">{t('serverSettings.trustedSendersHint')}</p>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedLive')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -175,9 +173,7 @@ export function ResolverForm({ settings, onSaved }: { settings: Resolver; onSave
       }}
     >
       <h3>{t('serverSettings.resolverTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.resolverIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.resolverIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -199,7 +195,7 @@ export function ResolverForm({ settings, onSaved }: { settings: Resolver; onSave
         <p className="muted field-hint">{t('serverSettings.externalAddressServicesHint')}</p>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedLive')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -223,9 +219,7 @@ export function SessionForm({ settings, onSaved }: { settings: SessionSettings; 
       }}
     >
       <h3>{t('serverSettings.sessionTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.sessionIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.sessionIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -235,13 +229,7 @@ export function SessionForm({ settings, onSaved }: { settings: SessionSettings; 
         <p className="muted field-hint">{t('serverSettings.sessionLifetimeHint')}</p>
       </div>
 
-      <SaveRow
-        busy={busy}
-        saved={saved}
-        problem={problem}
-        canSave={lifetime !== settings.lifetime}
-        note={t('serverSettings.savedLive')}
-      />
+      <SaveRow busy={busy} saved={saved} problem={problem} canSave={lifetime !== settings.lifetime} />
     </form>
   )
 }
@@ -282,9 +270,7 @@ export function PasskeyForm({ settings, onSaved }: { settings: Passkey; onSaved:
       }}
     >
       <h3>{t('serverSettings.passkeyTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.passkeyIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.passkeyIntro')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -317,7 +303,7 @@ export function PasskeyForm({ settings, onSaved }: { settings: Passkey; onSaved:
         <p className="muted field-hint">{t('serverSettings.passkeyMaximumHint')}</p>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedLive')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -371,9 +357,7 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
       }}
     >
       <h3>{t('serverSettings.listenTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.listenIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.listenIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -445,13 +429,7 @@ export function ListenForm({ settings, onSaved }: { settings: Listen; onSaved: (
           </button>
         </>
       ) : (
-        <SaveRow
-          busy={busy}
-          saved={saved}
-          problem={problem}
-          canSave={changed}
-          note={t('serverSettings.savedNeedsRestart')}
-        />
+        <SaveRow busy={busy} saved={saved} problem={problem} canSave={changed} />
       )}
     </form>
   )
@@ -492,9 +470,7 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
       }}
     >
       <h3>{t('serverSettings.identityTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.identityIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.identityIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -531,7 +507,10 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
             block
             value={logLevel.toUpperCase()}
             label={t('serverSettings.logLevel')}
-            options={['DEBUG', 'INFO', 'NOTICE', 'WARNING', 'ERROR', 'CRITICAL'].map((level) => ({ value: level, label: level }))}
+            options={['DEBUG', 'INFO', 'NOTICE', 'WARNING', 'ERROR', 'CRITICAL'].map((level) => ({
+              value: level,
+              label: level,
+            }))}
             onChange={setLogLevel}
           />
         </label>
@@ -549,7 +528,7 @@ export function IdentityForm({ settings, onSaved }: { settings: Identity; onSave
         <p className="muted field-hint">{t('serverSettings.dataDirectoryHint')}</p>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedLive')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -577,9 +556,7 @@ export function StorageForm({ settings, onSaved }: { settings: StorageSettings; 
       }}
     >
       <h3>{t('serverSettings.storageTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.storageIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.storageIntro')}</p>
 
       <div className="form-narrow">
         <label>
@@ -597,7 +574,7 @@ export function StorageForm({ settings, onSaved }: { settings: StorageSettings; 
 
       <RestartNote />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -624,9 +601,7 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
       }}
     >
       <h3>{t('serverSettings.geoipTitle')}</h3>
-      <p className="muted">
-        {t('serverSettings.geoipIntro')}
-      </p>
+      <p className="muted">{t('serverSettings.geoipIntro')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -643,7 +618,7 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
 
       <RestartNote />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('serverSettings.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }

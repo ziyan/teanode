@@ -5,9 +5,11 @@ One turn of a conversation, from what a person said to what the agent answers.
 
 ## Starting a turn
 
-`Agent.Ask(settings)` refuses unless the agent feature `ask` is on for the
-deployment and a model registry exists, and unless it is given an agent, an
-owner, an `Operations`, a conversation and a non-blank message. It builds an
+`Agent.Ask(settings)` refuses unless a model registry exists and, for a turn
+somebody typed, unless the agent feature `ask` is on for the deployment; a
+headless turn is gated by the feature that owns its work, which its caller
+checked. It refuses too unless it is given an agent, an owner, an
+`Operations`, a conversation and a non-blank message. It builds an
 `AskRun` with a ULID, registers it, and returns immediately — the turn runs in
 a goroutine of its own. The caller gets a handle it can subscribe to, stop, or
 answer a card on.
@@ -124,6 +126,19 @@ rather than thrown away. `finish()` closes the run's browser context first, so
 watchers see the turn end with the context already gone, then closes every
 subscriber, confirmation and question channel. The run stays findable for ten
 minutes, so a drawer that reconnects late can still replay it.
+
+## Every model call is a turn
+
+Nothing in the agent asks a model except through this loop. A job's work,
+the dream's phases, the description of a checkout, a conversation's title,
+the compaction note and the composer's draft all go through `think` in
+`internal/agent/thinking.go`: a headless, read-only turn in a run
+conversation of its own, with a named set of tools and a cap on rounds.
+`AskSettings.Work` names the kind of work, which chooses the model
+(`Models.ForWork`) and the name on the usage rows; a call that needs no
+tools passes an empty allow set and one round, which is `oneShot`. The
+transcript is then the prompt, the answer and its usage — the same rows a
+person's turn writes — and the person can open it.
 
 ## What is written down
 

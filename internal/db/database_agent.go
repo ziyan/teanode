@@ -122,10 +122,10 @@ type agentModel struct {
 	OperatorDisabledAt *time.Time `gorm:"column:operator_disabled_at"`
 
 	// When the person's night is, and when the nightly run last finished.
-	DreamFrom    string     `gorm:"column:dream_from"`
-	DreamUntil   string     `gorm:"column:dream_until"`
-	DreamedAt    *time.Time `gorm:"column:dreamed_at"`
-	DreamCatchUp bool       `gorm:"column:dream_catch_up"`
+	DreamFrom      string     `gorm:"column:dream_from"`
+	DreamUntil     string     `gorm:"column:dream_until"`
+	DreamedAt      *time.Time `gorm:"column:dreamed_at"`
+	DreamBootstrap bool       `gorm:"column:dream_bootstrap"`
 }
 
 func (agentModel) TableName() string { return "agent" }
@@ -163,22 +163,22 @@ func (agentUsageModel) TableName() string { return "agent_usage" }
 
 func agentFromModel(model *agentModel) (*models.Agent, error) {
 	agent := &models.Agent{
-		ID:           model.ID,
-		CreatedAt:    model.CreatedAt.In(time.Local),
-		ModifiedAt:   model.ModifiedAt.In(time.Local),
-		UserID:       model.UserID,
-		Name:         model.Name,
-		Enabled:      model.Enabled,
-		Instructions: model.Instructions,
-		Language:     model.Language,
-		Categories:   []models.AgentCategory{},
-		Confirm:      []string{},
-		AskModel:     model.AskModel,
-		DailyTokens:  model.DailyTokens,
-		DailyCost:    model.DailyCost,
-		DreamFrom:    model.DreamFrom,
-		DreamUntil:   model.DreamUntil,
-		DreamCatchUp: model.DreamCatchUp,
+		ID:             model.ID,
+		CreatedAt:      model.CreatedAt.In(time.Local),
+		ModifiedAt:     model.ModifiedAt.In(time.Local),
+		UserID:         model.UserID,
+		Name:           model.Name,
+		Enabled:        model.Enabled,
+		Instructions:   model.Instructions,
+		Language:       model.Language,
+		Categories:     []models.AgentCategory{},
+		Confirm:        []string{},
+		AskModel:       model.AskModel,
+		DailyTokens:    model.DailyTokens,
+		DailyCost:      model.DailyCost,
+		DreamFrom:      model.DreamFrom,
+		DreamUntil:     model.DreamUntil,
+		DreamBootstrap: model.DreamBootstrap,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -226,7 +226,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		DreamFrom:          agent.DreamFrom,
 		DreamUntil:         agent.DreamUntil,
 		DreamedAt:          agent.DreamedAt,
-		DreamCatchUp:       agent.DreamCatchUp,
+		DreamBootstrap:     agent.DreamBootstrap,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -391,8 +391,8 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
-			"dreamed_at":     model.DreamedAt,
-			"dream_catch_up": model.DreamCatchUp,
+			"dreamed_at":      model.DreamedAt,
+			"dream_bootstrap": model.DreamBootstrap,
 		}).Error
 	}); err != nil {
 		return nil, err

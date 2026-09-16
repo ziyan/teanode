@@ -125,15 +125,23 @@ export function SkillsSection() {
         title={t('agentSettings.skills')}
         description={t('agentSettings.skillsDescription')}
         action={
-          <button type="button" className="primary" onClick={() => void browse()} disabled={browsing && offers === null}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void browse()}
+            disabled={browsing && offers === null}
+          >
             {t('agentSettings.browseSkills')}
           </button>
         }
       >
-        {installed !== null && installed.length === 0 ? <SettingsEmpty>{t('agentSettings.noSkills')}</SettingsEmpty> : null}
+        {installed !== null && installed.length === 0 ? (
+          <SettingsEmpty>{t('agentSettings.noSkills')}</SettingsEmpty>
+        ) : null}
         {(installed ?? []).map((skill) => {
           const detail = [skill.description]
-          if (skill.tools.length > 0) detail.push(t('agentSettings.skillBrings', { tools: skill.tools.map((tool) => tool.name).join(', ') }))
+          if (skill.tools.length > 0)
+            detail.push(t('agentSettings.skillBrings', { tools: skill.tools.map((tool) => tool.name).join(', ') }))
           if (skill.secrets.length > 0) detail.push(t('agentSettings.skillNeeds', { keys: skill.secrets.join(', ') }))
           if (skill.personalSecrets.length > 0)
             detail.push(t('agentSettings.skillNeedsPersonal', { keys: skill.personalSecrets.join(', ') }))
@@ -145,7 +153,9 @@ export function SkillsSection() {
               badge={
                 <>
                   <Tag value={skill.version} />
-                  {skill.tools.some((tool) => tool.needsComputer) && <Tag value={t('agentSettings.skillRunsCommands')} />}
+                  {skill.tools.some((tool) => tool.needsComputer) && (
+                    <Tag value={t('agentSettings.skillRunsCommands')} />
+                  )}
                   {!skill.readable && <Tag value={t('agentSettings.skillUnreadable')} />}
                   {!skill.enabled && <Tag value={t('agentSettings.disabled')} />}
                 </>
@@ -176,7 +186,9 @@ export function SkillsSection() {
                     onClick={() =>
                       void act(
                         skill.name,
-                        skill.enabled ? t('agentSettings.skillDisabled', { name: skill.name }) : t('agentSettings.skillEnabled', { name: skill.name }),
+                        skill.enabled
+                          ? t('agentSettings.skillDisabled', { name: skill.name })
+                          : t('agentSettings.skillEnabled', { name: skill.name }),
                         () => graphql(SET_ENABLED, { name: skill.name, enabled: !skill.enabled }),
                       )
                     }
@@ -203,40 +215,46 @@ export function SkillsSection() {
       </SettingsSection>
 
       {offers !== null && (
-        <SettingsSection card title={t('agentSettings.skillRegistry')} description={t('agentSettings.skillRegistryDescription')}>
+        <SettingsSection
+          card
+          title={t('agentSettings.skillRegistry')}
+          description={t('agentSettings.skillRegistryDescription')}
+        >
           {offers.length === 0 ? <SettingsEmpty>{t('agentSettings.noOffers')}</SettingsEmpty> : null}
           {offers.map((offer) => (
             <Fragment key={offer.name}>
-            <SettingsRow
-              title={offer.name}
-              badge={
-                <>
-                  <Tag value={offer.version} />
-                  {offer.tags.map((tag) => (
-                    <Tag key={tag} value={tag} />
-                  ))}
-                </>
-              }
-              subtitle={offer.description}
-              actions={
-                <button
-                  type="button"
-                  className={offer.installed && !offer.newer ? '' : 'primary'}
-                  disabled={busy === offer.name || Boolean(offer.installed && !offer.newer)}
-                  onClick={() =>
-                    void act(offer.name, t('agentSettings.skillInstalledToast', { name: offer.name, version: offer.version }), () =>
-                      graphql(INSTALL, { name: offer.name }),
-                    )
-                  }
-                >
-                  {offer.newer
-                    ? t('agentSettings.skillUpdate', { version: offer.version })
-                    : offer.installed
-                      ? t('agentSettings.skillInstalled')
-                      : t('agentSettings.skillInstall')}
-                </button>
-              }
-            />
+              <SettingsRow
+                title={offer.name}
+                badge={
+                  <>
+                    <Tag value={offer.version} />
+                    {offer.tags.map((tag) => (
+                      <Tag key={tag} value={tag} />
+                    ))}
+                  </>
+                }
+                subtitle={offer.description}
+                actions={
+                  <button
+                    type="button"
+                    className={offer.installed && !offer.newer ? '' : 'primary'}
+                    disabled={busy === offer.name || Boolean(offer.installed && !offer.newer)}
+                    onClick={() =>
+                      void act(
+                        offer.name,
+                        t('agentSettings.skillInstalledToast', { name: offer.name, version: offer.version }),
+                        () => graphql(INSTALL, { name: offer.name }),
+                      )
+                    }
+                  >
+                    {offer.newer
+                      ? t('agentSettings.skillUpdate', { version: offer.version })
+                      : offer.installed
+                        ? t('agentSettings.skillInstalled')
+                        : t('agentSettings.skillInstall')}
+                  </button>
+                }
+              />
             </Fragment>
           ))}
         </SettingsSection>
@@ -253,7 +271,9 @@ export function SkillsSection() {
           onConfirm={() => {
             const skill = removing
             setRemoving(null)
-            void act(skill.name, t('agentSettings.skillRemoved', { name: skill.name }), () => graphql(REMOVE, { name: skill.name }))
+            void act(skill.name, t('agentSettings.skillRemoved', { name: skill.name }), () =>
+              graphql(REMOVE, { name: skill.name }),
+            )
           }}
         />
       ) : null}

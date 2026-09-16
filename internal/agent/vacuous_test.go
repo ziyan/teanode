@@ -154,3 +154,46 @@ func TestThePromptsExampleIsNotAFact(t *testing.T) {
 		t.Errorf("a real line about a queue consumer is not the example")
 	}
 }
+
+func TestTwoQuoteMarksAreNoOpening(t *testing.T) {
+	for _, text := range []string{`""`, `''`, "“”", "null"} {
+		if !saysNothingOpening(text) {
+			t.Errorf("%q is the prompt's marker for nothing, not an opening", text)
+		}
+	}
+}
+
+// A month page keeps what the record said and loses what the model
+// supposed: the guessing sentences go, a guessing list item goes whole,
+// and a heading with nothing left under it goes with them. A count that
+// was in the record stays, however thin.
+func TestAMonthPageLosesItsGuesses(t *testing.T) {
+	page := `## The Portal
+
+The queue consumer was moved into the bridge. This suggests the team was under pressure. It restarts itself now.
+
+## Fleet Manager
+
+Two threads on the 3rd. The involvement likely pertains to planning.
+
+Also:
+- Threaded in the pico channel on the 4th.
+- Engaged with modex, which indicates preparation for the show.
+`
+	want := `## The Portal
+
+The queue consumer was moved into the bridge. It restarts itself now.
+
+## Fleet Manager
+
+Two threads on the 3rd.
+
+Also:
+- Threaded in the pico channel on the 4th.`
+	if got := dropGuesses(page); got != want {
+		t.Fatalf("dropGuesses:\n%s\n--- wanted ---\n%s", got, want)
+	}
+	if got := dropGuesses("## June\n\nEverything here probably happened."); got != "" {
+		t.Fatalf("a page that was all guesses should be empty, got %q", got)
+	}
+}

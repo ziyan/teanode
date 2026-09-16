@@ -1,8 +1,14 @@
 package agent_test
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +21,56 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
+// compactingModel answers a compaction turn with the note and any other
+// round with the answer, and keeps what it was sent.
+//
+// Writing the note is a turn of the loop in its own right now, so which
+// call this is cannot be told from how many came before it: the older
+// conversation is read in as many parts as it takes.
+func compactingModel(note, answer string) (*httptest.Server, *[]map[string]any) {
+	var requests []map[string]any
+	var mutex sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		mutex.Lock()
+		requests = append(requests, body)
+		mutex.Unlock()
+		said := answer
+		if strings.Contains(lastThingAsked(body), "Write a note that stands in for it") {
+			said = note
+		}
+		content, _ := json.Marshal(said)
+		if stream, _ := body["stream"].(bool); !stream {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(writer,
+				`{"id":"d","model":"m","choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`,
+				content)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(writer,
+			"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+			content)
+	}))
+	return server, &requests
+}
+
+// lastThingAsked is the last message the person's side sent, which is
+// where the prompt sits: the persona goes in front of it as a system
+// message, so the last message of all is not it.
+func lastThingAsked(body map[string]any) string {
+	asked := ""
+	messages, _ := body["messages"].([]any)
+	for _, message := range messages {
+		row, _ := message.(map[string]any)
+		if row["role"] == "user" {
+			asked = toString(row["content"])
+		}
+	}
+	return asked
+}
+
 // A long conversation is compacted before the round: the model gets a
 // note and the recent turns verbatim. The next turn gets the same note
 // and the same tail, not the note alone, and does not compact again.
@@ -22,7 +78,9 @@ func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
-	model, requests := fakeModel(t, []string{answerRound})
+	const note = "Decided: the regatta is on the 21st. Open: what the mooring costs."
+	const answered = "The invoice is [Invoice 42](mail:item1)."
+	model, requests := compactingModel(note, answered)
 	defer model.Close()
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
@@ -37,6 +95,10 @@ func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 		t.Fatalf("storage.Open: %s", err)
 	}
 	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	// Writing the note is a turn of its own, and a turn acts as the person.
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) {
+		return &fakeOperations{permissions: models.NewEffectivePermissions(nil)}, nil
+	})
 
 	var owner *models.User
 	var found *models.Agent
@@ -94,11 +156,25 @@ func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 		}
 		return false
 	}
+	// The round that carried a question, which is the turn itself rather
+	// than one of the calls that wrote the note.
+	roundAsking := func(question string) []string {
+		for _, request := range *requests {
+			if texts := contents(request); has(texts, question) {
+				return texts
+			}
+		}
+		t.Fatalf("no round carried %q; %d were asked", question, len(*requests))
+		return nil
+	}
 
 	ask("and the regatta?")
-	first := contents((*requests)[0])
+	first := roundAsking("and the regatta?")
 	if !strings.HasPrefix(first[1], "Note on the earlier conversation") {
 		t.Fatalf("the round should open with the note after the conduct, got %q", first[1][:min(len(first[1]), 60)])
+	}
+	if !strings.Contains(first[1], note) {
+		t.Fatalf("and carry what the note said, got %q", first[1])
 	}
 	if !has(first, "reply 30:") || has(first, "turn 3:") {
 		t.Fatalf("the recent turns stay verbatim and the old ones go: %d messages", len(first))
@@ -129,11 +205,11 @@ func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 	})
 
 	ask("and the mooring fee?")
-	second := contents((*requests)[1])
+	second := roundAsking("and the mooring fee?")
 	if !strings.HasPrefix(second[1], "Note on the earlier conversation") {
 		t.Fatal("the next turn should open with the note")
 	}
-	for _, want := range []string{"reply 30:", "and the regatta?", "The invoice is", "and the mooring fee?"} {
+	for _, want := range []string{"reply 30:", "and the regatta?", answered, "and the mooring fee?"} {
 		if !has(second, want) {
 			t.Fatalf("the next turn lost %q", want)
 		}

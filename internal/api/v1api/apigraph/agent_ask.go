@@ -46,7 +46,10 @@ type AgentAskQuery interface {
 
 	// The transcripts of the agent's runs — sorting, summaries, replies —
 	// newest first: what it did while nobody was there. Needs agent:use.
-	ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) ([]*models.AgentConversation, error)
+	ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
+	// ListAllAgentRuns is every person's runs, for an operator with
+	// agent:act: what every agent on the server did, openable.
+	ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
 }
 
 // AgentAskMutation is a turn, its confirmations, and the conversations.
@@ -131,6 +134,10 @@ type AgentConversationView struct {
 	Messages     []*models.AgentMessage    `json:"messages"`
 	Total        int                       `json:"total"`
 	Todos        []*models.AgentTodo       `json:"todos"`
+	// ActingAs is the person whose agent this is, when it is not the
+	// caller's own: an operator reading it, and speaking into it, does so
+	// as that person, and the drawer says so.
+	ActingAs string `json:"actingAs,omitempty"`
 }
 
 // ReadAgentRunArguments name a run and where to read from.
@@ -341,16 +348,94 @@ func (self *graph) ownConversation(tx db.Transaction, found *models.Agent, conve
 	return conversation, nil
 }
 
-// ListAgentRunsArguments bound the listing.
-type ListAgentRunsArguments struct {
-	First int `json:"first" graphapi:"nullable"`
+// conversationFor is the conversation the caller may read or speak into:
+// their own agent's, or -- with agent:act -- any agent's, handed back with
+// that agent and its person so the caller acts as them. The agent and
+// person are nil for the caller's own.
+func (self *graph) conversationFor(tx db.Transaction, principal *api.Principal, found *models.Agent, conversationId string, readingRuns bool) (*models.AgentConversation, *models.Agent, *models.User, error) {
+	conversation, err := self.ownConversation(tx, found, conversationId, readingRuns)
+	if err == nil || !errors.Is(err, api.ErrNotFound) || !principal.Permissions.Has(models.PermissionAgentAct) {
+		return conversation, nil, nil, err
+	}
+	conversation, err = tx.GetAgentConversation(conversationId)
+	if err != nil || conversation == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	other, err := tx.GetAgent(conversation.AgentID)
+	if err != nil || other == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	owner, err := tx.GetUser(other.UserID)
+	if err != nil || owner == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	return conversation, other, owner, nil
 }
 
-func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) ([]*models.AgentConversation, error) {
+// ListAgentRunsArguments bound the listing.
+type ListAgentRunsArguments struct {
+	First  int `json:"first" graphapi:"nullable"`
+	Offset int `json:"offset" graphapi:"nullable"`
+	// AgentID, for ListAllAgentRuns, narrows the operator's listing to one
+	// person's agent; empty is everybody's.
+	AgentID string `json:"agentId" graphapi:"nullable"`
+	// JobID narrows the listing to the runs one job made: a dream's, by
+	// the job on its record. Kinds narrows it to some kinds of run, and
+	// Query to titles carrying the words.
+	JobID string   `json:"jobId" graphapi:"nullable"`
+	Kinds []string `json:"kinds" graphapi:"nullable"`
+	Query string   `json:"query" graphapi:"nullable"`
+}
+
+// AgentRunPage is a page of runs and how many there are in all, each with
+// what it cost.
+type AgentRunPage struct {
+	Runs  []*AgentRunSummary `json:"runs"`
+	Total int64              `json:"total"`
+}
+
+// AgentRunSummary is one run as a list shows it: the conversation's
+// fields a list needs, and what every call in it cost added up.
+type AgentRunSummary struct {
+	ID        string                `json:"id"`
+	AgentID   string                `json:"agentId"`
+	Kind      string                `json:"kind"`
+	Title     string                `json:"title"`
+	Summary   string                `json:"summary,omitempty"`
+	JobID     string                `json:"jobId,omitempty"`
+	JobKind   string                `json:"jobKind,omitempty"`
+	SubjectID string                `json:"subjectId,omitempty"`
+	Surface   string                `json:"surface,omitempty"`
+	LastAt    time.Time             `json:"lastAt"`
+	Usage     models.AgentUsageNote `json:"usage"`
+}
+
+// runSummaries is the runs with their usage attached.
+func runSummaries(tx db.Transaction, runs []*models.AgentConversation) ([]*AgentRunSummary, error) {
+	ids := make([]string, 0, len(runs))
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	totals, err := tx.SumAgentRunUsage(ids)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]*AgentRunSummary, 0, len(runs))
+	for _, run := range runs {
+		summaries = append(summaries, &AgentRunSummary{
+			ID: run.ID, AgentID: run.AgentID, Kind: string(run.Kind), Title: run.Title, Summary: run.Summary,
+			JobID: run.JobID, JobKind: run.JobKind, SubjectID: run.SubjectID, Surface: run.Surface, LastAt: run.LastAt,
+			Usage: totals[run.ID],
+		})
+	}
+	return summaries, nil
+}
+
+func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		if errors.Is(err, agent.ErrUnavailable) {
-			return []*models.AgentConversation{}, nil
+			return &AgentRunPage{Runs: []*AgentRunSummary{}}, nil
 		}
 		return nil, err
 	}
@@ -358,7 +443,25 @@ func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArg
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return self.transaction(ctx).ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationRun}, &db.Options{Limit: uint64(limit)})
+	offset := arguments.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	filter := &db.AgentRunFilter{JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query}
+	tx := self.transaction(ctx)
+	runs, err := tx.ListAgentRuns(found.ID, filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountAgentRuns(found.ID, filter)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := runSummaries(tx, runs)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentRunPage{Runs: summaries, Total: total}, nil
 }
 
 func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAgentConversationsArguments) ([]*models.AgentConversation, error) {
@@ -391,14 +494,19 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 }
 
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
+	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
+	}
+	actingAs := ""
+	if other != nil {
+		actingAs = owner.Username
+		log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
 	}
 	messages, err := tx.ListAgentMessages(conversation.ID, nil)
 	if err != nil {
@@ -424,7 +532,33 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	if err != nil {
 		return nil, err
 	}
-	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos}, nil
+	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs}, nil
+}
+
+func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
+	if _, err := self.requirePermission(ctx, models.PermissionAgentAct); err != nil {
+		return nil, err
+	}
+	limit := arguments.First
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := max(arguments.Offset, 0)
+	filter := &db.AgentRunFilter{JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query}
+	tx := self.transaction(ctx)
+	runs, err := tx.ListAgentRuns(arguments.AgentID, filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountAgentRuns(arguments.AgentID, filter)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := runSummaries(tx, runs)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentRunPage{Runs: summaries, Total: total}, nil
 }
 
 func (self *graph) ReadAgentRun(ctx context.Context, arguments ReadAgentRunArguments) (*AgentRunView, error) {
@@ -529,9 +663,22 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	// A run's transcript can be talked into: the person reading what the
 	// agent did on its own — sorted a message, wrote a reply — asks about
 	// it right there, with the message and the decision as the history.
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
+	//
+	// An operator with agent:act may speak into another person's
+	// conversation, and does so as that person: their agent, their
+	// permissions, their tools. It is said in the log every time.
+	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
+	}
+	asking, person := found, principal.User
+	var operations agent.Operations = &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions}
+	if other != nil {
+		asking, person = other, owner
+		if operations, err = worker.OperationsFor(ctx, owner); err != nil {
+			return nil, err
+		}
+		log.Noticef("%s spoke to %s's agent as them", operatorName(ctx), owner.Username)
 	}
 	surface := strings.TrimSpace(arguments.Surface)
 	if surface == "" {
@@ -547,14 +694,14 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		return nil, fmt.Errorf("%w: an attachment is missing", api.ErrInvalidArguments)
 	}
 	for _, attachment := range attachments {
-		if attachment.AgentID != found.ID || (attachment.MessageID != "" && attachment.ConversationID != conversation.ID) {
+		if attachment.AgentID != asking.ID || (attachment.MessageID != "" && attachment.ConversationID != conversation.ID) {
 			return nil, api.ErrNotFound
 		}
 	}
 	run, err := worker.Ask(&agent.AskSettings{
-		Agent:        found,
-		Owner:        principal.User,
-		Operations:   &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions},
+		Agent:        asking,
+		Owner:        person,
+		Operations:   operations,
 		Conversation: conversation,
 		Message:      arguments.Message,
 		Viewing:      arguments.Viewing,
@@ -810,20 +957,16 @@ func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArg
 
 func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error) {
 	// The lookup needs a transaction of its own, as AgentRunEvents does.
-	var found *models.Agent
 	var conversation *models.AgentConversation
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		var err error
-		if _, found, err = self.requireAgentPerson(api.ContextWithTransaction(ctx, tx)); err != nil {
+		principal, found, err := self.requireAgentPerson(api.ContextWithTransaction(ctx, tx))
+		if err != nil {
 			return err
 		}
-		conversation, err = tx.GetAgentConversation(arguments.ConversationID)
+		conversation, _, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 		return err
 	}); err != nil {
 		return nil, err
-	}
-	if conversation == nil || conversation.AgentID != found.ID {
-		return nil, api.ErrNotFound
 	}
 	worker := self.agentWorker()
 	if worker == nil {

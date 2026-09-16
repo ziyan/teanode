@@ -177,10 +177,11 @@ func (self *Agent) selfLines(ctx context.Context, agent *models.Agent, owner *mo
 		if summary := strings.TrimSpace(node.Summary); summary != "" {
 			lines = append(lines, cutRunes(summary, selfSummary))
 		}
-		facts, err := tx.ListAgentFacts(agent.ID, node.ID, false, 20)
+		facts, err := tx.ListAgentFactsLively(agent.ID, node.ID, 20)
 		if err != nil {
 			return err
 		}
+		byNumber(facts)
 		for _, fact := range facts {
 			lines = append(lines, "- "+fact.Line())
 		}
@@ -350,6 +351,17 @@ const (
 // It costs one embedding call and no round trip to the model, which is
 // why it happens every turn rather than being asked for.
 func (self *AskRun) recallForTurn(ctx context.Context) {
+	// A job's turn is not the person speaking. Its message is a prompt
+	// the code wrote -- a batch of twenty documents, a month's record, a
+	// thread to summarize -- and what it needs from the graph is in that
+	// prompt already, put there by the code that knows what the job is
+	// about. Searched by its words it did the opposite of recalling:
+	// nine thousand tokens of instructions, any word of which matches,
+	// ranked the whole corpus of a third of a million documents, eleven
+	// times at once, for seven minutes, while the model sat idle.
+	if self.settings.Headless {
+		return
+	}
 	// Anything written before there was an embedding model, or before
 	// this one, catches up a few at a time.
 	if _, err := self.agent.EmbedGraph(ctx, self.settings.Agent, graphBackfill); err != nil {
@@ -1316,4 +1328,10 @@ func (self *Agent) exemplarsFor(ctx context.Context, agent *models.Agent, messag
 		exemplars = append(exemplars, when+cutRunes(strings.TrimSpace(chunk.Text), 1200))
 	}
 	return exemplars
+}
+
+// byNumber puts facts back in the order they are numbered, for reading,
+// after a query chose which of them to show.
+func byNumber(facts []*models.AgentFact) {
+	sort.Slice(facts, func(left, right int) bool { return facts[left].Number < facts[right].Number })
 }

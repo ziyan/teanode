@@ -60,7 +60,43 @@ const (
 	PathTopics   = "topics"
 	PathNotes    = "notes"
 	PathTime     = "time"
+
+	// PathWork is the child of "self" where the ingest files the person's
+	// own span on each checkout. A hundred checkouts are a hundred lines,
+	// which would bury the page that says who they are.
+	PathWork = "self/work"
 )
+
+// IsThePerson says whether a path under people names the person whose
+// agent this is: by their username, by any word of their name, by their
+// name's slug, or by what their own page is called and also called. The
+// account's name can be a first name alone -- "Ziyan" -- while a model
+// files under the full one, so the self page's aliases, which carry every
+// name the person has been found under, are part of the check. Such a
+// page is a duplicate of "self", where what the agent knows about them
+// lives, and everything that files or links routes it there.
+func IsThePerson(path string, owner *User, self *AgentNode) bool {
+	if owner == nil || !strings.HasPrefix(path, PathPeople+"/") {
+		return false
+	}
+	last := strings.ToLower(LastSegment(path))
+	names := []string{owner.Username, owner.Name}
+	names = append(names, strings.Fields(owner.Name)...)
+	if self != nil {
+		names = append(names, self.Name)
+		names = append(names, self.Aliases...)
+	}
+	for _, name := range names {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if len(name) < 3 || strings.Contains(name, "@") {
+			continue
+		}
+		if last == name || last == strings.ToLower(Slug(name)) {
+			return true
+		}
+	}
+	return false
+}
 
 // AgentRoot is one of the roots and what it is called.
 type AgentRoot struct {
@@ -723,7 +759,7 @@ func (self *AgentRevision) Describe() string {
 		ActorPerson:   "you",
 		ActorAgent:    "the agent",
 		ActorRemember: "filing a conversation",
-		ActorDream:    "the nightly run",
+		ActorDream:    "a dream",
 		ActorIngest:   "reading a source",
 	}[self.Actor]
 	if who == "" {

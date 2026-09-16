@@ -22,7 +22,20 @@ import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
 import { RelativeTime } from './relativeTime'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, ComputerIcon, GlobeIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChevronDownIcon,
+  ComputerIcon,
+  GlobeIcon,
+  PaperclipIcon,
+  PencilIcon,
+  StarIcon,
+  PlusIcon,
+  SparkIcon,
+  TrashIcon,
+  ExternalIcon,
+} from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
@@ -142,7 +155,6 @@ function drawable(file: Partial<SharedFile> | null | undefined): file is SharedF
 
 const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
 
-
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever
 // runs out first stops the day, and the ring shows that one.
@@ -162,7 +174,12 @@ function budgetShown(budget: Budget): { used: string; limit: string; fraction: n
   const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
   if (tokens < 0 && money < 0) return null
   if (money >= tokens) {
-    return { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency), fraction: money, money: true }
+    return {
+      used: formatMoney(budget.cost, budget.currency),
+      limit: formatMoney(budget.costLimit, budget.currency),
+      fraction: money,
+      money: true,
+    }
   }
   return { used: formatCount(budget.used), limit: formatCount(budget.limit), fraction: tokens, money: false }
 }
@@ -194,7 +211,8 @@ interface StoredMessage {
 }
 
 interface RunEvent {
-  kind: 'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
+  kind:
+    'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
   runId: string
   sequence: number
   at?: string
@@ -255,6 +273,7 @@ const CONVERSATION = `
   query ($conversationId: String, $first: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first) {
       conversation { id kind title summary lastAt archivedAt }
+      actingAs
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
@@ -314,15 +333,7 @@ const MAKE_MAIN = `
 // The tools after which what the mailbox shows may have changed. The rules
 // and the folders are one tool each now, whatever action they were asked
 // for: a list is a read and refreshing after one costs nothing.
-const MAIL_TOOLS = new Set([
-  'mail_act',
-  'mail_draft',
-  'mail_send',
-  'folder',
-  'rule',
-  'mailbox_settings',
-  'reply_queue',
-])
+const MAIL_TOOLS = new Set(['mail_act', 'mail_draft', 'mail_send', 'folder', 'rule', 'mailbox_settings', 'reply_queue'])
 
 const OPEN_KEY = 'teanode.agent.drawer'
 const CONVERSATION_KEY = 'teanode.agent.conversation'
@@ -456,9 +467,26 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
       results.set(message.toolCallId, message.content)
     }
   }
+  // What a turn cost is what every round of it cost: the rounds that
+  // only called tools have usage and no words, and the answer at the end
+  // used to show its own round alone, which for a turn of six rounds
+  // was a sixth of the truth. Added up from the person's message on, and
+  // shown once, on the turn's last answer.
+  const running: { turn: Usage | null; lastAnswer: number } = { turn: null, lastAnswer: -1 }
+  const closeTurn = () => {
+    if (running.lastAnswer >= 0 && running.turn) {
+      const answer = lines[running.lastAnswer]
+      if (answer.kind === 'assistant') {
+        lines[running.lastAnswer] = { ...answer, usage: running.turn }
+      }
+    }
+    running.turn = null
+    running.lastAnswer = -1
+  }
   for (const message of messages) {
     switch (message.role) {
       case 'user':
+        closeTurn()
         lines.push({
           kind: 'user',
           key: message.id,
@@ -469,8 +497,21 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         })
         break
       case 'assistant':
+        if (message.usage) {
+          running.turn = {
+            promptTokens: (running.turn?.promptTokens ?? 0) + message.usage.promptTokens,
+            completionTokens: (running.turn?.completionTokens ?? 0) + message.usage.completionTokens,
+            cost: (running.turn?.cost ?? 0) + (message.usage.cost ?? 0),
+          }
+        }
         if (message.content.trim()) {
-          lines.push({ kind: 'assistant', key: message.id, text: message.content, at: message.createdAt, usage: message.usage })
+          lines.push({
+            kind: 'assistant',
+            key: message.id,
+            text: message.content,
+            at: message.createdAt,
+          })
+          running.lastAnswer = lines.length - 1
         }
         for (const call of message.toolCalls ?? []) {
           lines.push({
@@ -488,12 +529,17 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         lines.push({ kind: 'note', key: message.id, text: '' })
         break
       case 'note':
-        lines.push({ kind: 'note', key: message.id, text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content })
+        lines.push({
+          kind: 'note',
+          key: message.id,
+          text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content,
+        })
         break
       default:
         break
     }
   }
+  closeTurn()
   return lines
 }
 
@@ -560,7 +606,13 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
         ) : isImage(attachment.contentType) ? (
           <AttachedPicture key={attachment.id} attachment={attachment} />
         ) : (
-          <a key={attachment.id} href={attachmentHref(attachment)} className="agent-attachment-chip" download={attachment.name} onClick={openAttachment}>
+          <a
+            key={attachment.id}
+            href={attachmentHref(attachment)}
+            className="agent-attachment-chip"
+            download={attachment.name}
+            onClick={openAttachment}
+          >
             <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
           </a>
         ),
@@ -569,13 +621,24 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
   )
 }
 
-function ReferenceChips({ references, onRemove }: { references: AgentReference[]; onRemove?: (index: number) => void }) {
+function ReferenceChips({
+  references,
+  onRemove,
+}: {
+  references: AgentReference[]
+  onRemove?: (index: number) => void
+}) {
   const { t } = useTranslation()
   return (
     <div className="agent-references">
       {references.map((reference, index) => (
-        <span key={`${reference.itemId ?? ''}-${index}`} className="agent-reference-chip" title={reference.from ?? ''}>
-          <SparkIcon size={11} /> {reference.subject || reference.itemId || reference.threadId}
+        <span
+          key={`${reference.itemId ?? reference.path ?? ''}-${index}`}
+          className="agent-reference-chip"
+          title={reference.from ?? reference.path ?? ''}
+        >
+          <SparkIcon size={11} />{' '}
+          {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
           {onRemove && (
             <button type="button" className="link" aria-label={t('agentDrawer.remove')} onClick={() => onRemove(index)}>
               ×
@@ -641,7 +704,9 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
         </a>
       </div>
       {artifact.kind === 'markdown' ? (
-        <div className="agent-artifact-body">{markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}</div>
+        <div className="agent-artifact-body">
+          {markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}
+        </div>
       ) : framed ? (
         <iframe
           ref={frame}
@@ -698,7 +763,17 @@ function FileCard({ file }: { file: SharedFile }) {
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
 // page a click away. Nothing is drawn where there is no limit to be near.
-function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone: string; framed: boolean; onLeaving: () => void }) {
+function BudgetRing({
+  budget,
+  zone,
+  framed,
+  onLeaving,
+}: {
+  budget: Budget
+  zone: string
+  framed: boolean
+  onLeaving: () => void
+}) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
   if (!shown) return null
@@ -709,7 +784,9 @@ function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone:
   const round = 2 * Math.PI * radius
   // Said in whichever the budget is counted in, and what it came to in
   // money when that is not the same thing.
-  const spent = shown.money ? '' : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
+  const spent = shown.money
+    ? ''
+    : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
   const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })}${spent} ${t(
     'agentDrawer.budgetResets',
     { at: formatClock(budget.resetsAt, zone) },
@@ -732,7 +809,13 @@ function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone:
       {framed ? (
         // Framed into another site, the drawer sends the person to the
         // dashboard itself rather than drawing a settings page in here.
-        <a className="agent-drawer-budget" href={`${window.location.origin}/settings/agent`} target="_blank" rel="noreferrer" aria-label={label}>
+        <a
+          className="agent-drawer-budget"
+          href={`${window.location.origin}/settings/agent`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={label}
+        >
           {ring}
         </a>
       ) : (
@@ -780,6 +863,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
   const [loaded, setLoaded] = useState<Conversation | null>(null)
+  // Whose conversation this is, when it is not the person's own: an
+  // operator reading another person's agent speaks to it as them, and
+  // must be told so every time the drawer is open on it.
+  const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
   const [todos, setTodos] = useState<{ id: string; text: string; doneAt?: string | null }[]>([])
   const [draft, setDraft] = useState('')
@@ -867,6 +954,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const response = await graphql<{
       ReadAgentConversation: {
         conversation: Conversation
+        actingAs?: string | null
         messages: StoredMessage[]
         todos: { id: string; text: string; doneAt?: string | null }[]
       }
@@ -876,6 +964,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     })
     setConversationId(response.ReadAgentConversation.conversation.id)
     setLoaded(response.ReadAgentConversation.conversation)
+    setActingAs(response.ReadAgentConversation.actingAs ?? null)
     remember(CONVERSATION_KEY, response.ReadAgentConversation.conversation.id)
     setLines(linesOf(response.ReadAgentConversation.messages, t))
     setTodos(response.ReadAgentConversation.todos ?? [])
@@ -1189,7 +1278,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       if (!available || !detail) return
       detail.handled = true
       setReferences((previous) =>
-        previous.some((reference) => reference.itemId === detail.reference.itemId) ? previous : [...previous, detail.reference],
+        previous.some(
+          (reference) =>
+            (reference.itemId && reference.itemId === detail.reference.itemId) ||
+            (reference.path && reference.path === detail.reference.path),
+        )
+          ? previous
+          : [...previous, detail.reference],
       )
       setOpen(true)
       remember(OPEN_KEY, '1')
@@ -1282,7 +1377,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
-    if (event.kind === 'tool_result' && event.tool && MAIL_TOOLS.has(event.tool) && !(event.text ?? '').startsWith('{"error"')) {
+    if (
+      event.kind === 'tool_result' &&
+      event.tool &&
+      MAIL_TOOLS.has(event.tool) &&
+      !(event.text ?? '').startsWith('{"error"')
+    ) {
       announceMailChanged()
     }
     if (event.kind === 'error') {
@@ -1432,7 +1532,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         text: message,
         at: new Date().toISOString(),
         references: pointed.length > 0 ? pointed : undefined,
-        attachments: files.map((file, index) => ({ id: `pending-${index}`, name: file.name, contentType: file.type, size: file.size })),
+        attachments: files.map((file, index) => ({
+          id: `pending-${index}`,
+          name: file.name,
+          contentType: file.type,
+          size: file.size,
+        })),
       },
     ])
     try {
@@ -1450,7 +1555,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           setUploading(false)
         }
         setLines((previous) =>
-          previous.map((line) => (line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line)),
+          previous.map((line) =>
+            line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line,
+          ),
         )
       }
       sending.current += 1
@@ -1602,38 +1709,38 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'user':
         return (
           <div
-  key={line.key}
-  className={['agent-line user', timed.has(line.key) ? 'timed' : ''].filter(Boolean).join(' ')}
-  title={line.at ? formatTime(line.at) : undefined}
-  onClick={() => toggleTimed(line.key)}
+            key={line.key}
+            className={['agent-line user', timed.has(line.key) ? 'timed' : ''].filter(Boolean).join(' ')}
+            title={line.at ? formatTime(line.at) : undefined}
+            onClick={() => toggleTimed(line.key)}
           >
-  {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
-  {line.text}
-  {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-  {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
+            {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
+            {line.text}
+            {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+            {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
           </div>
         )
       case 'assistant':
         return (
           <div
-  key={line.key}
-  className={['agent-line assistant', line.streaming ? 'streaming' : '', timed.has(line.key) ? 'timed' : '']
-    .filter(Boolean)
-    .join(' ')}
-  title={line.at ? formatTime(line.at) : undefined}
-  onClick={() => toggleTimed(line.key)}
+            key={line.key}
+            className={['agent-line assistant', line.streaming ? 'streaming' : '', timed.has(line.key) ? 'timed' : '']
+              .filter(Boolean)
+              .join(' ')}
+            title={line.at ? formatTime(line.at) : undefined}
+            onClick={() => toggleTimed(line.key)}
           >
-  <Markdown text={line.text} onLeaving={leaving} />
-  {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
-  {showUsage && line.usage && (
-    <div className="agent-usage muted">
-      {t('agentDrawer.tokens', {
-        in: formatCount(line.usage.promptTokens),
-        out: formatCount(line.usage.completionTokens),
-      })}
-      {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
-    </div>
-  )}
+            <Markdown text={line.text} onLeaving={leaving} />
+            {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
+            {showUsage && line.usage && (
+              <div className="agent-usage muted">
+                {t('agentDrawer.tokens', {
+                  in: formatCount(line.usage.promptTokens),
+                  out: formatCount(line.usage.completionTokens),
+                })}
+                {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
+              </div>
+            )}
           </div>
         )
       case 'tool': {
@@ -1651,50 +1758,50 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         }
         return (
           <div
-  key={line.key}
-  className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
-    .filter(Boolean)
-    .join(' ')}
+            key={line.key}
+            className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
+              .filter(Boolean)
+              .join(' ')}
           >
-  <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
-    {line.done ? '✓' : '…'} {line.tool}
-    {line.note ? <span className="muted"> · {line.note}</span> : null}
-  </button>
-  {expanded.has(line.key) && (
-    <div className="agent-tool-detail">
-      {line.arguments && <CodeBlock text={line.arguments} tidy />}
-      {line.result && <CodeBlock text={line.result} tidy />}
-    </div>
-  )}
-  {artifact ? <ArtifactCard artifact={artifact} /> : null}
-  {shared.map((file) => (
-    <FileCard key={file.attachment_id} file={file} />
-  ))}
+            <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
+              {line.done ? '✓' : '…'} {line.tool}
+              {line.note ? <span className="muted"> · {line.note}</span> : null}
+            </button>
+            {expanded.has(line.key) && (
+              <div className="agent-tool-detail">
+                {line.arguments && <CodeBlock text={line.arguments} tidy />}
+                {line.result && <CodeBlock text={line.result} tidy />}
+              </div>
+            )}
+            {artifact ? <ArtifactCard artifact={artifact} /> : null}
+            {shared.map((file) => (
+              <FileCard key={file.attachment_id} file={file} />
+            ))}
           </div>
         )
       }
       case 'confirmation':
         return (
           <div key={line.key} className={['agent-line confirmation', line.risk].filter(Boolean).join(' ')}>
-  <p>{line.summary}</p>
-  {line.resolved ? (
-    <p className="muted">
-      {line.resolved === 'approved' ? t('agentDrawer.approved') : t('agentDrawer.declined')}
-    </p>
-  ) : (
-    <div className="row">
-      <button
-        type="button"
-        className={line.risk === 'destructive' ? 'danger' : 'primary'}
-        onClick={() => void resolve(line, true)}
-      >
-        {t('agentDrawer.approve')}
-      </button>
-      <button type="button" onClick={() => void resolve(line, false)}>
-        {t('agentDrawer.decline')}
-      </button>
-    </div>
-  )}
+            <p>{line.summary}</p>
+            {line.resolved ? (
+              <p className="muted">
+                {line.resolved === 'approved' ? t('agentDrawer.approved') : t('agentDrawer.declined')}
+              </p>
+            ) : (
+              <div className="row">
+                <button
+                  type="button"
+                  className={line.risk === 'destructive' ? 'danger' : 'primary'}
+                  onClick={() => void resolve(line, true)}
+                >
+                  {t('agentDrawer.approve')}
+                </button>
+                <button type="button" onClick={() => void resolve(line, false)}>
+                  {t('agentDrawer.decline')}
+                </button>
+              </div>
+            )}
           </div>
         )
       case 'question':
@@ -1702,13 +1809,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'note':
         return (
           <div key={line.key} className="agent-line note muted">
-  {line.text || t('agentDrawer.compacted')}
+            {line.text || t('agentDrawer.compacted')}
           </div>
         )
       case 'error':
         return (
           <div key={line.key} className="agent-line error">
-  {line.text}
+            {line.text}
           </div>
         )
       default:
@@ -1747,7 +1854,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       )}
       {open && (
         <aside
-          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : ''].filter(Boolean).join(' ')}
+          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : '']
+            .filter(Boolean)
+            .join(' ')}
           aria-label={agentName || t('agent.title')}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -1779,26 +1888,35 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 details on hover: the transcript is for the conversation. */}
             {tab?.attached && (
               <Tooltip label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
-                <span className="agent-drawer-device" aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
+                <span
+                  className="agent-drawer-device"
+                  aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
+                >
                   <GlobeIcon size={14} />
                 </span>
               </Tooltip>
             )}
             {computers.length > 0 && (
-              <Tooltip label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
-                <span className="agent-drawer-device" aria-label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
+              <Tooltip
+                label={
+                  computers.length === 1
+                    ? t('agentDrawer.computerAttached', { name: computers[0] })
+                    : t('agentDrawer.computersAttached', { names: computers.join(', ') })
+                }
+              >
+                <span
+                  className="agent-drawer-device"
+                  aria-label={
+                    computers.length === 1
+                      ? t('agentDrawer.computerAttached', { name: computers[0] })
+                      : t('agentDrawer.computersAttached', { names: computers.join(', ') })
+                  }
+                >
                   <ComputerIcon size={14} />
                 </span>
               </Tooltip>
             )}
-            {budget && (
-              <BudgetRing
-                budget={budget}
-                zone={agentZone}
-                framed={standalone}
-                onLeaving={leaving}
-              />
-            )}
+            {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -1829,7 +1947,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 />
                 {found === null && (
                   <>
-                    <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void startNew()}>
+                    <button
+                      type="button"
+                      className="agent-drawer-list-row new"
+                      role="menuitem"
+                      onClick={() => void startNew()}
+                    >
                       <PlusIcon size={14} />
                       <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
                     </button>
@@ -1851,96 +1974,96 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
                   )
                   .map((conversation) => (
-                  <div
-                    key={conversation.id}
-                    className={[
-                      'agent-drawer-list-row',
-                      conversation.id === conversationId ? 'active' : '',
-                      conversation.kind === 'main' ? 'main' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {renaming?.id === conversation.id ? (
-                      <form
-                        className="agent-drawer-rename"
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          void rename()
-                        }}
-                      >
-                        <input
-                          autoFocus
-                          value={renaming.title}
-                          aria-label={t('agentDrawer.rename')}
-                          onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
-                          onBlur={() => void rename()}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              setRenaming(null)
-                            }
+                    <div
+                      key={conversation.id}
+                      className={[
+                        'agent-drawer-list-row',
+                        conversation.id === conversationId ? 'active' : '',
+                        conversation.kind === 'main' ? 'main' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {renaming?.id === conversation.id ? (
+                        <form
+                          className="agent-drawer-rename"
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            void rename()
                           }}
-                        />
-                      </form>
-                    ) : (
-                      <button
-                        type="button"
-                        className="agent-drawer-list-title"
-                        role="menuitem"
-                        title={conversation.summary || undefined}
-                        onClick={() => void switchTo(conversation.id)}
-                      >
-                        <span className="agent-drawer-list-name">
-                          {conversation.kind === 'main' ? (
-                            <>
-                              <StarIcon size={12} /> {t('agentDrawer.main')}
-                            </>
-                          ) : (
-                            conversation.title || t('agentDrawer.untitled')
-                          )}
-                        </span>
-                        {/* When it was last spoken in, which is what
+                        >
+                          <input
+                            autoFocus
+                            value={renaming.title}
+                            aria-label={t('agentDrawer.rename')}
+                            onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
+                            onBlur={() => void rename()}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                setRenaming(null)
+                              }
+                            }}
+                          />
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          className="agent-drawer-list-title"
+                          role="menuitem"
+                          title={conversation.summary || undefined}
+                          onClick={() => void switchTo(conversation.id)}
+                        >
+                          <span className="agent-drawer-list-name">
+                            {conversation.kind === 'main' ? (
+                              <>
+                                <StarIcon size={12} /> {t('agentDrawer.main')}
+                              </>
+                            ) : (
+                              conversation.title || t('agentDrawer.untitled')
+                            )}
+                          </span>
+                          {/* When it was last spoken in, which is what
                             tells one of these apart from the next; the
                             summary is the row's tooltip. */}
-                        <span className="agent-drawer-list-summary muted">
-                          <RelativeTime value={conversation.lastAt} />
+                          <span className="agent-drawer-list-summary muted">
+                            <RelativeTime value={conversation.lastAt} />
+                          </span>
+                        </button>
+                      )}
+                      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
+                        <span className="agent-drawer-list-actions">
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={t('agentDrawer.makeMain')}
+                            title={t('agentDrawer.makeMain')}
+                            onClick={() => void makeMain(conversation.id)}
+                          >
+                            <StarIcon size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={t('agentDrawer.rename')}
+                            title={t('agentDrawer.rename')}
+                            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+                          >
+                            <PencilIcon size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button danger"
+                            aria-label={t('agentDrawer.delete')}
+                            title={t('agentDrawer.delete')}
+                            onClick={() => setDeleting(conversation)}
+                          >
+                            <TrashIcon size={14} />
+                          </button>
                         </span>
-                      </button>
-                    )}
-                    {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
-                      <span className="agent-drawer-list-actions">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={t('agentDrawer.makeMain')}
-                          title={t('agentDrawer.makeMain')}
-                          onClick={() => void makeMain(conversation.id)}
-                        >
-                          <StarIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={t('agentDrawer.rename')}
-                          title={t('agentDrawer.rename')}
-                          onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-                        >
-                          <PencilIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button danger"
-                          aria-label={t('agentDrawer.delete')}
-                          title={t('agentDrawer.delete')}
-                          onClick={() => setDeleting(conversation)}
-                        >
-                          <TrashIcon size={14} />
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  ))}
               </div>
             </>
           )}
@@ -1993,15 +2116,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 drawn
               )
             })}
-            {running && !(lines[lines.length - 1]?.kind === 'assistant' && (lines[lines.length - 1] as { streaming?: boolean }).streaming) && (
-              <div className="agent-line thinking" aria-label={t('agentDrawer.thinking')} title={t('agentDrawer.thinking')}>
-                <span className="agent-dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              </div>
-            )}
+            {running &&
+              !(
+                lines[lines.length - 1]?.kind === 'assistant' &&
+                (lines[lines.length - 1] as { streaming?: boolean }).streaming
+              ) && (
+                <div
+                  className="agent-line thinking"
+                  aria-label={t('agentDrawer.thinking')}
+                  title={t('agentDrawer.thinking')}
+                >
+                  <span className="agent-dots" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </div>
+              )}
           </div>
           {!atBottom && lines.length > 0 && (
             <button
@@ -2055,6 +2186,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               )}
             </div>
           )}
+          {actingAs ? (
+            <div className="agent-drawer-readonly notice">{t('agentDrawer.actingAs', { name: actingAs })}</div>
+          ) : null}
           {isRun ? (
             <div className="agent-drawer-readonly muted">
               {t('agentDrawer.runTranscript')}{' '}

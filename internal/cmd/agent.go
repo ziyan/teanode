@@ -176,7 +176,7 @@ func newAgentSettingsCommand() *cli.Command {
 				Usage:     "change your agent; turns it on the first time",
 				ArgsUsage: "key=value [key=value ...]",
 				Description: "Keys: enabled, name, instructions, language, ask-model, confirm (comma list),\n" +
-					"dream-from, dream-until (HH:MM in your zone: when the nightly run may work),\n" +
+					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
 					"A value of \"-\" reads standard input.\n\n" +
@@ -546,11 +546,11 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if until == "" {
 		until = models.DreamUntilDefault
 	}
-	night := from + " to " + until
+	hours := from + " to " + until
 	if agent.DreamedAt != nil {
-		night += ", last ran " + formatTime(agent.DreamedAt)
+		hours += ", last ran " + formatTime(agent.DreamedAt)
 	}
-	fields = append(fields, [2]string{"works overnight", night})
+	fields = append(fields, [2]string{"dreams", hours})
 	if view.Budget != nil {
 		limit := "unlimited"
 		if view.Budget.Limit > 0 {

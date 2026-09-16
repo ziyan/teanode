@@ -28,7 +28,12 @@ has a one-paragraph summary, which is what the page is *about*.
 the third thing the agent knows about Alice, and that is how the agent
 cites it in a conversation and how the person finds it again. Numbers are
 never reused: a page keeps a high-water mark, so striking #3 does not
-hand that number to the next thing written.
+hand that number to the next thing written. A sentence filed under the
+wrong name is moved rather than rewritten — the memory tool's `move` with
+a number, `teanode agent memory move --number 3 people/alice-chen
+projects/portal`, the `MoveAgentFact` mutation — which keeps the words it
+came from and the day it was learned, and gives it a new number on the
+page it lands on.
 
 A fact carries two dates, because they answer different questions:
 `happened_at` is when it was true and `created_at` is when the agent
@@ -53,13 +58,15 @@ Which commits are **yours** is decided by matching the commit author
 against the addresses on the card you marked as yourself, so that card is
 what makes a career timeline possible at all. A source that finds commits
 by nobody it recognizes keeps those addresses and says so, rather than
-quietly attributing none of your work to you.
+quietly attributing none of your work to you. Each span is filed as one
+event on `self/work`, a page of its own, so a person with a hundred
+checkouts does not get a hundred lines on the page that says who they are.
 
 The first edges come from git, with no model involved: a repository the
 person committed to becomes `self works_on <project>`, with the commit
 span as its sentence. That matters more than it looks — until something
 draws the first edges the graph is a list of pages, and the half of the
-night that looks for connections has nothing to look at.
+dream that looks for connections has nothing to look at.
 
 **A document** is something read from somewhere else: a file in a
 checkout, a commit, a chat thread, a note, a message. Documents are not
@@ -69,7 +76,7 @@ graph with their passages and their vectors.
 ## What every prompt carries
 
 The top of the graph: the most important pages, each as one line, in a
-fixed order. Importance is recomputed by the nightly run and nowhere
+fixed order. Importance is recomputed by a dream and nowhere
 else, on purpose — a list reordered by every read is a prompt prefix that
 is never a cache hit.
 
@@ -91,7 +98,7 @@ reads the same exchange twice and never misses one.
 
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
-nightly run turns them into facts.
+dream turns them into facts.
 
 ## Not making the same page twice
 
@@ -128,11 +135,24 @@ starts at 0.85 of a stated one.
 Pages and edges decay the same way, with periods and pinned pages exempt:
 a page about September 2026 does not become less true in October.
 
-## What happens overnight
+## What happens in a dream
 
-A night runs when the person has been quiet for half an hour, inside
-their own night, at most once every six hours. It has its own share of
+A dream is one run of the agent over its own graph, and not only at
+night: it runs when the person has been quiet for half an hour, inside
+the hours they set for it, at most once every six hours. It has its own share of
 the day's tokens (30% by default), and it never deletes anything.
+
+Every call a dream makes to a model is a turn of the conversation loop
+(`docs/subsystems/the-ask-loop.md`), in a run conversation of its own,
+tagged with the dream's job: a batch of documents read, a month written up,
+a page divided, a walk judged. The turn is read-only and may reach the
+`memory` and `knowledge` tools, so the model can look a page up before it
+files to it or read a document whole when its first passage is not enough;
+what it changes it changes through the object it ends with, which the code
+files with its evidence. `limits.maxRoundsPerDream` (three by default) is
+how many times one call may go back to the model. The dream log's Open
+button on the agent page shows that dream's runs in the activity table, and
+`teanode agent dream runs <id>` lists them for `teanode agent run show`.
 
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
@@ -140,23 +160,41 @@ first, and a chat archive only where the person was in the thread: a
 thread they took part in, of three posts or more, is read before
 anything else, and a thread they were not in is never read on its own —
 it is searched when a question needs it. A quarter of a million other
-people's threads at four hundred a night is years of reading and none of
+people's threads at four hundred a dream is years of reading and none of
 the person's business. Nothing is read coarsely any more: titles instead
 of contents made pages and no facts — after the pass over what an older build wrote, which asks no
 model and runs first so a long reading cannot crowd it out — and among files, the ones written to be read (a readme, a note,
 a document) before source code. A checkout is mostly code, and code says
-almost nothing about the person: a night that read four hundred files of
+almost nothing about the person: a dream that read four hundred files of
 Go filed two facts, with a hundred thousand more behind them. The code
 stays indexed for search and is read last. Every bound here is pacing,
 never truncation — what is not read
-tonight is read tomorrow, the backlog is reported as a number the person
+in this dream is read in the next, the backlog is reported as a number the person
 can see, and when the backlog is larger than anybody would wait for the
-night reads a stretch at a time instead of an item at a time and marks
-that it did, so a later night can go back over it finely.
+dream reads a stretch at a time instead of an item at a time and marks
+that it did, so a later dream can go back over it finely.
+
+**Divide what has outgrown a page.** A page past forty facts is put to
+the model once — three to eight themed groups, a slug each, at least
+three facts a group — and the facts move to children under it
+(`projects/pepsico-carlisle/wes-configuration`), keeping their
+identifiers and taking new numbers; both histories say so, and both
+pages are due a fresh opening. The person's own page divides the same
+way, into topics: who they are stays, their finances go under it. Five
+pages a dream. A turn reads twenty facts of a page and the tool shows
+sixty, most recently wanted or changed first — by number they were the
+oldest twenty, and the fact filed last week never reached a prompt.
 
 **Write up the month.** One call for the month in hand, from a digest
 assembled without a model at all (`digest.go`: commits by repository,
-threads by channel, the person's own notes, with the noise dropped).
+the threads the person took part in by channel and by first words, their own
+notes, with the noise dropped). Other people's channels are not in it:
+a month written from a count of threads the person never opened is a
+month about somebody else. Then the months before, most recent first,
+six a dream, where the person's own record amounts to something. A
+month whose page reads like a guess ("suggests", "likely", "must have")
+is owed again, after the months with no page at all, because a page
+that says what a count implies is not a diary.
 
 **Rewrite what changed.** A page that gained four facts today is a page
 whose opening no longer says what it is about. The same pass merges the
@@ -164,21 +202,29 @@ facts that say the same thing — the older keeps its number, the newer
 goes dormant carrying a pointer to it. Never deleted: a merge the person
 disagrees with can be undone.
 
+**Fold the person into self.** A page under `people` that names the person
+themselves — by username, by a word of their name, by its slug — is
+`self` under another name, and the dream folds it in. The filing and the
+memory tool route such a path to `self` before it is written; this is for
+the page that was made before those rules, or by a model that spelt them
+differently, and for the conversation that, asked to consolidate the two,
+crowned the duplicate.
+
 **File the orphans.** Pages under `notes` are offered a home. A move to a
 path that already exists is made; anything else is a proposal with a
 button, because a hierarchy invented while nobody is watching is one the
 person will not recognize.
 
-Then the night splits in two.
+Then the dream splits in two.
 
 **The quiet half** is arithmetic and no model runs in it. Importance is
 five things: how many facts a page has, how many links, how recently it
 was wanted, what kind of thing it is, and a fortnight of grace for being
 new — that last one because the other four make a trap between them, in
-which a page written last night has never been used, so is not in the
+which a page written in the last dream has never been used, so is not in the
 index, so nothing can use it, so it never will be. Every link is
 downscaled a little; then any link whose *both* ends were wanted today
-rises. Down first and then up, so a link used today ends the night above
+rises. Down first and then up, so a link used today ends the dream above
 where it started. Importance is recomputed, facts nothing has wanted in
 half a year go dormant, and pages that fall under a threshold the graph
 sets for itself — mean importance minus a standard deviation scaled by
@@ -188,7 +234,7 @@ forty-five days to be wanted is exempt.
 
 **The generative half** walks the graph from what matters, five steps,
 weighted by link strength with enough jitter that it does not take the
-same path every night. It puts the two ends of the walk to the model and
+same path every dream. It puts the two ends of the walk to the model and
 asks whether there is a real relation between them. "No" is the ordinary
 answer and the right one: almost everything in a person's life is
 reachable from almost everything else in five steps. When the answer is
@@ -199,7 +245,7 @@ This is the only phase that adds a relation nobody typed, which is the
 whole reason to keep a graph rather than a list.
 
 **Rehearsal** is last, after the vectors are written, because it asks
-the graph by meaning and everything filed tonight has no vector until
+the graph by meaning and everything filed in this dream has no vector until
 then. The agent writes down the questions the person is
 most likely to ask tomorrow, tries each against its own memory, and
 records the ones it cannot answer. Nobody reads the answers; the failures
@@ -216,7 +262,7 @@ and that it exists. A line repeating any of those is not knowledge, and
 it is worse than an empty page, because "Formatting is a project or work
 channel." reads like something was learned.
 
-This happened at scale on the first real ingest. A night working
+This happened at scale on the first real ingest. A dream working
 coarsely — titles only, because the backlog was thirty thousand things —
 was told it could file "what a title plainly establishes", and a title
 plainly establishes only that the thing exists. Twenty-two per cent of
@@ -235,22 +281,22 @@ substance is enough.
 
 Every write files a revision against the page: what kind of change, who
 made it (the person, the agent, the job that files conversations, the
-nightly run, a source being read), what it moved, and what was there
+a dream, a source being read), what it moved, and what was there
 before. A link files one against *both* pages it joins, each naming the
 other end.
 
 Without the "before", a history can be read but not undone, which is the
 half somebody wants at the moment they go looking. Without the actor, a
-page the nightly run wrote and a page the person wrote look identical.
+page a dream wrote and a page the person wrote look identical.
 
 Every page and every fact also carries the **build that last wrote it**,
 which is what lets a newer version of the program go back over what an
 older one filed. A graph outlives its code: the rule above did not exist
 when those twenty-eight lines were written, and nothing could find them
 afterwards except a person with a regular expression. Now the first thing
-a night does is offer everything an older build wrote to the rules as
+a dream does is offer everything an older build wrote to the rules as
 they stand, strike what fails them — in the page's history, as the
-nightly run's doing, with the words it used to say — and stamp the rest
+dream's doing, with the words it used to say — and stamp the rest
 so tomorrow looks elsewhere. A line an older build worded badly — "1
 commits by 1 people, July 2026 to July 2026" — is reworded rather than
 struck, since the source it came from may be paused and never say it
@@ -264,7 +310,7 @@ that can be stated in code.
 Revision numbers are taken from a high-water mark on the page, the same
 way fact numbers are, so they rise and are never reused. A link written
 again with nothing changed files nothing — the quiet half writes every
-edge every night, and a history full of changes nobody made is a history
+edge every dream, and a history full of changes nobody made is a history
 nobody reads.
 
 It is on the page in the dashboard, in `teanode agent memory history
@@ -293,8 +339,8 @@ measure at this scale.
 | status half-life | 90 days |
 | event half-life | 1 year |
 | how-to half-life | 3 years |
-| a night's share of the day | 30% |
-| how long a night may run | 45 minutes, the reading at most half of what is left when it starts |
+| a dream's share of the day | 30% |
+| how long a dream may run | 45 minutes, the reading at most half of what is left when it starts |
 | pages the index is sized for | 400 |
 | passages embedded per ingest run | 2000 |
 
@@ -307,11 +353,31 @@ without disappearing. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
 
+## Bootstrapping
+
+A first ingest brings years of record at once, and a dream that reads two
+thousand documents and rests six hours is a dream for a graph that grows
+a day at a time. Bootstrapping is the person saying "read it all, as fast
+as you can": `teanode agent dream bootstrap on`, or the switch on the
+agent page. While it is on, a dream runs again at the very next tick,
+waits five minutes after the person's last word rather than thirty, reads
+for seventy percent of its time and up to five thousand documents, writes
+up twelve owed months and divides ten crowded pages. It switches itself
+off when nothing waits to be read.
+
+It is meant for a model of the person's own. Point `models.scan` at it
+(an OpenAI-compatible server such as llama.cpp or vLLM, declared as a
+provider at zero price) and set `limits.scanConcurrency` to the slots it
+has; the reading then costs nothing but the machine's time, and a dream
+that would have been a dollar of a metered service is free. On a metered
+service bootstrapping is still bounded by the dream's share of the daily
+budget.
+
 ## Caveats
 
-- **A night is paced, not complete.** A large backlog takes several
-  nights, and the log says how many. Nothing is dropped, but a fact from
-  a document read tonight may not be on its page until tomorrow.
+- **A dream is paced, not complete.** A large backlog takes several
+  dreams, and the log says how many. Nothing is dropped, but a fact from
+  a document read in one dream may not be on its page until the next.
 - **Rehearsal asks by meaning and not by words.** The word search joins a
   question's words with OR, which is right for recall and wrong for "do
   I know this": it answers yes to almost anything, and a rehearsal that
@@ -319,7 +385,7 @@ meaning at all, so "who is he?" recalled nothing.
   And only a fact counts as an answer: a page matching at a quarter's
   similarity says the subject exists, not that the question is answered,
   and counting it made every question answerable. The questions and
-  their verdicts are kept in the night's notes. Where there is no
+  their verdicts are kept in the dream's notes. Where there is no
   embedding model there are no gaps rather than all of them.
 - **The generative half can be wrong.** A link it writes is a link the
   agent will state as though it were told. It starts at half weight and
@@ -331,7 +397,7 @@ meaning at all, so "who is he?" recalled nothing.
   oldest-first meant sorting half a million rows to return a hundred.
 - **A scan page is bounded by bytes and by count.** Both, because 256
   commit subjects are nothing and 256 source files are tens of megabytes.
-- **Pages are retired, never deleted, by the nightly run** — but a person
+- **Pages are retired, never deleted, by a dream** — but a person
   deleting a page deletes everything under it.
 - **Dormant is not gone.** A dormant page or fact is out of the index and
   still findable by search, which is why retiring is safe and why a

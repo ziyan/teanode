@@ -740,3 +740,24 @@ export function BellOffIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// GraphIcon is three pages and the lines between them: the graph explorer.
+export function GraphIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="10" cy="18" r="2.5" />
+      <path d="M8.3 7.1 15.7 8.6M7.2 8.2l1.9 7.6M12.3 17l4.6-6.6" />
+    </Icon>
+  )
+}
+
+// MinusIcon is the one line: less, fold away.
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+    </Icon>
+  )
+}

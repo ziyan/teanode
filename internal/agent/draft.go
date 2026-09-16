@@ -120,18 +120,14 @@ func (self *Agent) DraftReply(ctx context.Context, request *models.AgentDraftReq
 	if !FeatureAllowed(configuration, "draftReplies") {
 		return nil, ErrUnavailable
 	}
-	if self.settings.Registry == nil {
+	if self.settings.Registry == nil || !self.canThink(configuration) {
 		return nil, ErrUnavailable
-	}
-	provider, model, err := self.settings.Registry.ForWork(config.AgentWorkReply)
-	if err != nil {
-		return nil, err
 	}
 
 	var mails []*models.Mail
 	var memories []string
 	summary, notes := "", ""
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if err := RequireBudget(tx, configuration, request.Agent, request.Owner, time.Now()); err != nil {
 			return err
 		}
@@ -207,43 +203,17 @@ func (self *Agent) DraftReply(ctx context.Context, request *models.AgentDraftReq
 	if err != nil {
 		return nil, err
 	}
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model:     model,
-		Messages:  messages,
-		MaxTokens: 1200,
-	})
-	modelName := self.settings.Registry.Configuration().Models.ForWork(config.AgentWorkReply)
-	if response != nil {
-		RecordUsage(self.settings.Database, request.Agent.ID, mailbox.ID, modelName, "draft", response.Usage)
-	}
+	// The one thing the agent does in the request rather than from the
+	// queue, and still a run: the person can open it afterwards.
+	thinking, err := self.oneShot(ctx, self.runFor(request.Agent, request.Owner, mailbox, mail.ID),
+		fmt.Sprintf("Drafted a reply to %q", mail.Subject), messages[1].Content, models.AgentJobDraft, config.AgentWorkReply)
 	if err != nil {
 		return nil, fmt.Errorf("asking the model: %w", err)
 	}
-	text := strings.TrimSpace(response.Message.Content)
+	modelName := self.settings.Registry.Configuration().Models.ForWork(config.AgentWorkReply)
+	text := thinking.Text
 	if text == "" {
 		return nil, fmt.Errorf("the model answered with nothing")
 	}
-	draft := &models.AgentDraft{Text: text, Model: modelName}
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		transcript, err := recordCall(tx, &callRecord{
-			AgentID:   request.Agent.ID,
-			MailboxID: mailbox.ID,
-			Kind:      "draft",
-			SubjectID: mail.ID,
-			Note:      fmt.Sprintf("Drafted a reply to %q", mail.Subject),
-			Prompt:    messages[1].Content,
-			Response:  response,
-			Model:     modelName,
-		})
-		if err != nil {
-			return err
-		}
-		draft.RunID = transcript.ID
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return draft, nil
+	return &models.AgentDraft{Text: text, Model: modelName, RunID: thinking.Conversation.ID}, nil
 }

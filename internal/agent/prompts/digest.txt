@@ -32,6 +32,11 @@ said.
 {{end}}
 ## What to file
 
+You have the memory tool. `get` a page before filing to it when you are
+not sure it exists or what it already says, and `search` when you cannot
+guess its path; a fact a page already carries is not filed again. Look
+at most twice, then answer.
+
 Answer with this object and nothing else:
 
 {"facts": [{"path": "projects/portal", "node_kind": "project",

@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '../i18n/i18n'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ErrorMessage, Loading, Tag } from '../components/common'
-import { ChevronRightIcon, MoveIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  GraphIcon,
+  MoveIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  TrashIcon,
+  SparkIcon,
+} from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
-import { graphql } from '../api'
+import { askAgentAbout, graphql } from '../api'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useIsDesktop } from '../components/sidebar'
@@ -38,7 +48,7 @@ const PAGE = `query ($path: String!) {
 
 const CHILDREN = `query ($path: String!, $first: Int, $offset: Int) {
   AgentGraphChildren(path: $path, first: $first, offset: $offset) {
-    rows { node { id path kind name summary pinned dormant importance } hint }
+    rows { node { id path kind name summary pinned dormant importance } hint children }
     total
   }
 }`
@@ -160,23 +170,43 @@ function parentOf(path: string): string {
   return cut < 0 ? '' : path.slice(0, cut)
 }
 
-// folderName is a root's name as a heading: the person's own name on
-// their page, the server's name for the ones it made, and a capital on
-// the ones a source made in lower case.
-function folderName(node: Node, me: string): string {
+// depthOf is how far down the graph a path is. It is what decides which
+// way the navigator slides: a deeper folder comes in from the right, and
+// anything shallower -- or sideways, from a lookup -- comes back.
+function depthOf(path: string): number {
+  return path === '' ? 0 : path.split('/').length
+}
+
+// folderName is the navigator's heading for a folder: the person's own
+// name on their page, the node's name where the node it is showing has
+// arrived, and the last segment with a capital where it has not. The
+// heading is wanted before a query for the folder itself could answer
+// it, and a page open in the column beside it only names its own folder
+// half the time.
+function folderName(node: Node | null, path: string, me: string): string {
+  if (path === 'self' && me) return me
+  const name = node && node.path === path ? node.name || path : path.split('/').pop() || path
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+// nameOf is what one row is called: the person's own name on their own
+// page, the node's name where it says more than the path does, and the
+// last segment of the path where it does not.
+function nameOf(node: Node, me: string): string {
   if (node.path === 'self' && me) return me
-  const name = node.name || node.path
+  const segment = node.path.split('/').pop() || node.path
+  const name = node.name || segment
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 // What the agent knows, as the person reads and corrects it.
 //
-// Three columns, the way a file browser shows a hierarchy: the folders,
-// the pages in one folder, and one page. The columns are what the
-// research on this kind of data says works -- the whole path stays in
-// view and a deep tree is walked sideways rather than by drilling -- and
-// on a phone they show one at a time, each with a way back, so the URL
-// says where you are and the browser's own Back agrees.
+// Two columns: the navigator, and one page. The navigator is walked one
+// folder at a time -- what is inside a folder slides in from the right,
+// the way back slides it out again -- because the graph is a tree of no
+// fixed depth, and a column per level runs out of window at three. On a
+// phone the two show one at a time, and the URL says which, so the
+// browser's own Back agrees with the way back on the screen.
 //
 // The lookup box at the top is the primary way in. A graph of thousands
 // of pages is not browsed; it is looked up, and the list is for when you
@@ -186,35 +216,71 @@ export function KnowledgePage() {
   const toast = useToast()
   const desktop = useIsDesktop()
   const me = useSession().name || ''
-  // The URL is the graph path: /settings/knowledge/work/portal is the
-  // page, /settings/knowledge/projects is the folder's list, and nothing
-  // is the top. A root that is a folder opens its list; any other path
-  // opens the page.
+  // The URL is the graph path: /settings/knowledge/projects/portal is
+  // that page, /settings/knowledge/projects is that folder's list, and
+  // nothing is the top. Which of the two a path is, is the node's own
+  // kind and not the shape of the path: a folder can be nested, and a
+  // page can have pages filed under it, so counting slashes gets both
+  // wrong.
   const navigate = useNavigate()
   const at = (useParams()['*'] || '').replace(/^\/+|\/+$/g, '')
-  const isFolderPath = at !== '' && !at.includes('/') && at !== 'self'
-  const path = isFolderPath ? '' : at
-  const folder = isFolderPath ? at : path ? rootOf(path) : null
-  const go = useCallback((next: string) => navigate('/settings/knowledge' + (next ? '/' + next : '')), [navigate])
   // How many columns there is room for, measured on the page itself
   // rather than the window: the sidebar takes a third of a laptop, and a
-  // window that fits three columns with it closed does not with it open.
-  // Below two columns' worth it is one at a time, the way a phone is.
+  // window that fits two columns with it closed does not with it open.
   const frameRef = useRef<HTMLDivElement | null>(null)
   const width = useContainerWidth(frameRef)
-  const columns = width === null ? (desktop ? 2 : 1) : width >= 1040 ? 3 : width >= 760 ? 2 : 1
-  const wide = columns === 3
+  const onePane = (width === null ? (desktop ? 2 : 1) : width >= 760 ? 2 : 1) === 1
   const [filter, setFilter] = useState('')
   const search = filter.trim()
+  // The page the navigator is showing the inside of, when the URL alone
+  // would have shown the folder it is filed in. A page with children is
+  // two things at one address -- something to read and something to walk
+  // through -- and the chevron is what says which was meant. Kept
+  // against the path it belongs to, so that going back to it comes back
+  // to the list and going anywhere else does not.
+  const [walkedInto, setWalkedInto] = useState('')
 
   // Desktop with nothing open shows the person's own page.
-  const open = path || (columns > 1 && !folder ? 'self' : '')
+  const open = at || (onePane ? '' : 'self')
 
+  // The answer carries the path it answered for. Until the new one
+  // arrives the old page is still in hand, and deciding from it whether
+  // this path is a folder would put the wrong column up for as long as
+  // the query takes.
   const page = useQuery(
-    () => (open ? graphql<{ AgentGraphPage: Page | null }>(PAGE, { path: open }) : Promise.resolve(null)),
+    async () => ({
+      path: open,
+      found: open ? (await graphql<{ AgentGraphPage: Page | null }>(PAGE, { path: open })).AgentGraphPage : null,
+    }),
     [open],
     { refresh: false },
   )
+  const answered = page.data?.path === open
+  const current = answered ? (page.data?.found ?? null) : null
+  const node = current?.node ?? null
+  // The folder being listed is not always the page in hand -- a page
+  // shows its parent's list -- and the header wants the folder's name,
+  // not the slug it is filed under.
+  const folderPath = at === '' ? '' : node?.kind === 'folder' ? at : parentOf(at)
+  const folderNode = useQuery(
+    async () =>
+      folderPath && folderPath !== node?.path
+        ? ((await graphql<{ AgentGraphPage: Page | null }>(PAGE, { path: folderPath })).AgentGraphPage?.node ?? null)
+        : null,
+    [folderPath, node?.path],
+    { refresh: false },
+  )
+  const isFolder = node?.kind === 'folder'
+  // Which folder the navigator is listing, and null while that is still
+  // a question: the top, the page in the address if it was walked into,
+  // the folder in the address, and otherwise the folder that page is
+  // filed in, with the page's own row marked in it.
+  const folder = at === '' || walkedInto === at ? at : !answered ? null : isFolder ? at : parentOf(at)
+  // A page walked into keeps the one pane for its list; on two columns
+  // it is read on the right while its children are walked on the left.
+  const showingPage = open !== '' && !isFolder && !(onePane && folder === at)
+  const showingDetail = onePane ? showingPage : open !== ''
+
   const found = useQuery(
     () =>
       search
@@ -227,79 +293,99 @@ export function KnowledgePage() {
     { refresh: false },
   )
 
-  const goFolder = useCallback(
-    (next: Node) => {
-      go(next.path)
+  // Going somewhere is one move: the address changes, the lookup is put
+  // away, and the navigator is told whether the chevron or the name was
+  // pressed -- the two lead to the same address and mean different
+  // things once it is open.
+  const goTo = useCallback(
+    (next: string, into: boolean) => {
+      setWalkedInto(into ? next : '')
       setFilter('')
+      navigate('/settings/knowledge' + (next ? '/' + next : ''))
     },
-    [go],
+    [navigate],
   )
-  const goPage = useCallback(
-    (next: string) => {
-      go(next)
-      setFilter('')
-    },
-    [go],
-  )
+  const goPage = useCallback((next: string) => goTo(next, false), [goTo])
+  // Up is the folder this one is filed in, walked into rather than read:
+  // it may be a page with children itself.
+  const goUp = useCallback(() => goTo(parentOf(folder ?? ''), true), [goTo, folder])
 
+  // The lookup, and beside it the whole graph drawn. They are the two ways
+  // in and they answer different questions -- what is this called, and what
+  // does this sit among -- so neither one is behind the other.
   const lookup = (
-    <input
-      type="search"
-      className="knowledge-lookup"
-      value={filter}
-      placeholder={t('knowledge.find')}
-      aria-label={t('knowledge.find')}
-      onChange={(event) => setFilter(event.target.value)}
-    />
+    <div className="knowledge-lookup-row">
+      <input
+        type="search"
+        className="knowledge-lookup"
+        value={filter}
+        placeholder={t('knowledge.find')}
+        aria-label={t('knowledge.find')}
+        onChange={(event) => setFilter(event.target.value)}
+      />
+      {/* An icon beside the box, the way the mailbox lays out its
+          toolbar: the words are the title and the label. */}
+      <Link
+        className="icon-action knowledge-lookup-action"
+        to="/settings/knowledge/explore"
+        title={t('knowledge.explore.go')}
+        aria-label={t('knowledge.explore.go')}
+      >
+        <GraphIcon size={18} />
+      </Link>
+    </div>
   )
 
-  const roots = useQuery(
-    () =>
-      graphql<{ AgentGraphChildren: { rows: { node: Node; hint: string }[]; total: number } }>(CHILDREN, {
-        path: '',
-        first: 100,
-      }),
-    [],
-    { refresh: false },
-  )
-  const rootNodes = roots.data?.AgentGraphChildren.rows.map((row) => row.node) ?? []
-  const folderNode = rootNodes.find((node) => node.path === folder)
-  const folderLabel = folderNode ? folderName(folderNode, me) : folder || ''
-  const pageName = page.data?.AgentGraphPage?.node.name ?? null
+  const pageName = current ? nameOf(current.node, me) : null
 
   // One column at a time, so the breadcrumb is the way back: the folder
   // above the page, the top above the folder. With the columns side by
   // side the page is still Knowledge, and the trail says so.
-  const onePane = columns === 1
+  // While the page walked into is still being answered, folder is null
+  // and the header must not flash "Knowledge": it keeps saying what it
+  // said until the answer names the new folder.
+  const lastFolderLabel = useRef(t('knowledge.root'))
+  const folderLabel =
+    folder === null
+      ? lastFolderLabel.current
+      : folder
+        ? folderName(folderNode.data ?? node, folder, me)
+        : t('knowledge.root')
+  useEffect(() => {
+    if (folder !== null) lastFolderLabel.current = folderLabel
+  }, [folder, folderLabel])
   useBreadcrumbDetail(
-    onePane && folder ? (folder === 'self' ? me || pageName : folderLabel) : null,
-    onePane && path && folder !== 'self' ? (pageName ?? '…') : null,
+    onePane ? (showingPage ? (folder ? folderLabel : (pageName ?? '…')) : folder ? folderLabel : null) : null,
+    onePane && showingPage && folder ? (pageName ?? '…') : null,
   )
 
-  const folders = <Folders roots={rootNodes} selected={folder} onSelect={goFolder} me={me} />
-  const pages = search ? (
-    <SearchResults found={found.data?.SearchAgentGraph} loading={found.loading} onSelect={goPage} />
-  ) : folder === 'self' ? (
-    // The person's own page is not a folder, so the middle column has no
-    // list to show. It said "pick a folder" beside a highlighted Ziyan.
-    <SettingsEmpty>{t('knowledge.selfFolder')}</SettingsEmpty>
-  ) : folder ? (
-    <FolderPages folder={folder} label={folderLabel} selected={open} onSelect={goPage} />
-  ) : null
+  const list = search ? (
+    <SearchResults found={found.data?.SearchAgentGraph} loading={found.loading} me={me} onSelect={goPage} />
+  ) : (
+    <Navigator
+      path={folder}
+      label={folderLabel}
+      selected={showingPage ? open : ''}
+      me={me}
+      onOpen={goPage}
+      onInto={(next: string) => goTo(next, true)}
+      onUp={goUp}
+    />
+  )
 
-  const detail = open ? (
+  const detail = showingDetail ? (
     <>
-      {page.loading && !page.data ? <Loading /> : null}
+      {page.loading && !current ? <Loading /> : null}
       {page.error ? <ErrorMessage error={page.error} /> : null}
-      {page.data && !page.data.AgentGraphPage ? (
+      {answered && !current ? (
         <div className="card">
           <h3>{open}</h3>
           <SettingsEmpty>{t('knowledge.noPage')}</SettingsEmpty>
         </div>
       ) : null}
-      {page.data?.AgentGraphPage ? (
+      {current ? (
         <PageView
-          page={page.data.AgentGraphPage}
+          page={current}
           onChanged={() => void page.reload()}
           onSelect={goPage}
           onFailed={(caught: unknown) => toast.failed(messageOf(caught))}
@@ -311,32 +397,20 @@ export function KnowledgePage() {
 
   if (onePane) {
     // One column at a time. Which one is in the URL, so Back is Back,
-    // and the breadcrumb on the bar is the way up.
+    // and the breadcrumb on the bar is the way up out of the navigator.
     return (
       <div ref={frameRef} className="knowledge-phone">
-        {path ? detail : null}
-        {!path && folder ? lookup : null}
-        {!path && folder ? <div className="card knowledge-list">{pages}</div> : null}
-        {!path && !folder ? lookup : null}
-        {!path && !folder ? <div className="card knowledge-list">{search ? pages : folders}</div> : null}
+        {showingDetail ? detail : lookup}
+        {showingDetail ? null : <div className="card knowledge-list">{list}</div>}
       </div>
     )
   }
 
-  // Three columns where there is room for three; otherwise the folders
-  // fold into a row of chips above the list and it is two.
   return (
-    <div ref={frameRef} className={wide ? 'knowledge-columns' : 'knowledge-columns knowledge-columns-two'}>
-      {wide ? (
-        <div className="knowledge-column knowledge-column-folders">
-          {lookup}
-          <div className="card knowledge-list">{folders}</div>
-        </div>
-      ) : null}
-      <div className="knowledge-column knowledge-column-pages">
-        {wide ? null : lookup}
-        {wide ? null : <FolderChips roots={rootNodes} selected={folder} onSelect={goFolder} me={me} />}
-        <div className="card knowledge-list">{pages ?? <SettingsEmpty>{t('knowledge.pickFolder')}</SettingsEmpty>}</div>
+    <div ref={frameRef} className="knowledge-columns">
+      <div className="knowledge-column knowledge-column-navigator">
+        {lookup}
+        <div className="card knowledge-list">{list}</div>
       </div>
       <div className="knowledge-column knowledge-page">{detail}</div>
     </div>
@@ -360,117 +434,137 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>): number 
   return width
 }
 
-// FolderChips is the folders as one row, for when there is no room for
-// them as a column.
-function FolderChips({
-  roots,
+// SLIDE_MILLISECONDS is how long a folder takes to leave, and matches
+// the animations in the stylesheet: long enough to be read as a
+// direction, short enough that walking four folders deep is not a wait.
+const SLIDE_MILLISECONDS = 200
+
+// A row of a folder: the page, the line that tells it from the row above
+// it, and how much is filed inside it -- null where that could not be
+// asked, which is not the same as nothing.
+type Row = { node: Node; hint: string; children: number | null }
+
+// Navigator is the hierarchy, one folder at a time.
+//
+// Two lists live in the frame while one is replacing the other: the one
+// being left slides out and the one being entered slides in, and the
+// frame drops the old one when the animation is over. They are keyed by
+// path so that the list on its way out keeps the rows it had already
+// fetched rather than remounting and flashing "loading" as it goes.
+function Navigator({
+  path,
+  label,
   selected,
-  onSelect,
   me,
+  onOpen,
+  onInto,
+  onUp,
 }: {
-  roots: Node[]
-  selected: string | null
-  onSelect: (root: Node) => void
+  path: string | null
+  label: string
+  selected: string
   me: string
+  onOpen: (path: string) => void
+  onInto: (path: string) => void
+  onUp: () => void
 }) {
+  const { t } = useTranslation()
+  const [shown, setShown] = useState(path)
+  const [leaving, setLeaving] = useState<{ path: string; deeper: boolean } | null>(null)
+
+  useEffect(() => {
+    if (path === null || path === shown) return
+    // The first folder is not a change of folder: a deep link is where
+    // the person already is, and sliding it in from the right would be
+    // saying they had just walked there.
+    const still = shown === null || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    setLeaving(still ? null : { path: shown, deeper: depthOf(path) > depthOf(shown) })
+    setShown(path)
+  }, [path, shown])
+
+  useEffect(() => {
+    if (!leaving) return
+    const timer = window.setTimeout(() => setLeaving(null), SLIDE_MILLISECONDS)
+    return () => window.clearTimeout(timer)
+  }, [leaving])
+
+  const way = leaving?.deeper ? 'deeper' : 'back'
+  const panels = leaving
+    ? [
+        { path: leaving.path, className: `knowledge-navigator-panel leaving ${way}` },
+        { path: shown ?? '', className: `knowledge-navigator-panel entering ${way}` },
+      ]
+    : [{ path: shown ?? '', className: 'knowledge-navigator-panel' }]
+
   return (
-    <div className="knowledge-chips">
-      {roots.map((root) => (
-        <button
-          key={root.id}
-          type="button"
-          className={root.path === selected ? 'knowledge-chip selected' : 'knowledge-chip'}
-          onClick={() => onSelect(root)}
-        >
-          {folderName(root, me)}
-        </button>
-      ))}
+    <div className="knowledge-navigator">
+      <div className="knowledge-navigator-header">
+        {shown ? (
+          <button
+            type="button"
+            className="icon-action"
+            title={t('knowledge.back')}
+            aria-label={t('knowledge.back')}
+            onClick={onUp}
+          >
+            <ChevronLeftIcon size={16} />
+          </button>
+        ) : null}
+        <span className="knowledge-navigator-name">{label}</span>
+      </div>
+      {shown === null ? (
+        <Loading />
+      ) : (
+        <div className="knowledge-navigator-frame">
+          {panels.map((panel) => (
+            <div key={panel.path} className={panel.className}>
+              <NavigatorList path={panel.path} selected={selected} me={me} onOpen={onOpen} onInto={onInto} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-// Folders is the top of the graph: each root with how much is under it.
-function Folders({
-  roots,
+// NavigatorList is what is filed inside one folder, fifty at a time,
+// each row with enough of a hint to tell it from its neighbours.
+function NavigatorList({
+  path,
   selected,
-  onSelect,
   me,
+  onOpen,
+  onInto,
 }: {
-  roots: Node[]
-  selected: string | null
-  onSelect: (root: Node) => void
-  me: string
-}) {
-  const counts = useQuery(
-    async () => {
-      const entries = await Promise.all(
-        roots
-          .filter((root) => root.kind === 'folder')
-          .map(async (root) => {
-            const result = await graphql<{ AgentGraphChildren: { total: number } }>(CHILDREN, {
-              path: root.path,
-              first: 1,
-            })
-            return [root.path, result.AgentGraphChildren.total] as const
-          }),
-      )
-      return Object.fromEntries(entries) as Record<string, number>
-    },
-    [roots.map((root) => root.path).join(',')],
-    { refresh: false },
-  )
-  if (roots.length === 0) return <Loading />
-  return (
-    <ul className="knowledge-rows">
-      {roots.map((root) => (
-        <li key={root.id}>
-          <button
-            type="button"
-            className={root.path === selected ? 'knowledge-row selected' : 'knowledge-row'}
-            onClick={() => onSelect(root)}
-          >
-            <span className="knowledge-row-name">{folderName(root, me)}</span>
-            {root.kind === 'folder' && counts.data ? (
-              <span className="knowledge-row-count">{counts.data[root.path] ?? 0}</span>
-            ) : null}
-            <ChevronRightIcon size={14} />
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-// FolderPages is what is under one folder, fifty at a time, most important
-// first, each with enough of a hint to tell it from its neighbours.
-function FolderPages({
-  folder,
-  label,
-  selected,
-  onSelect,
-}: {
-  folder: string
-  label: string
+  path: string
   selected: string
-  onSelect: (path: string) => void
+  me: string
+  onOpen: (path: string) => void
+  onInto: (path: string) => void
 }) {
   const { t } = useTranslation()
-  const [rows, setRows] = useState<{ node: Node; hint: string }[]>([])
+  const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
+  // Loading before anything has been asked for, because the first render
+  // happens before the effect that asks: "nothing here yet" for one
+  // frame said the folder was empty, which is the one thing it was not.
+  const [loading, setLoading] = useState(true)
   const [problem, setProblem] = useState<unknown>(null)
 
   const load = useCallback(
     async (offset: number) => {
       setLoading(true)
       try {
-        const result = await graphql<{ AgentGraphChildren: { rows: { node: Node; hint: string }[]; total: number } }>(
-          CHILDREN,
-          { path: folder, first: PAGE_SIZE, offset },
-        )
-        setRows((before) =>
-          offset === 0 ? result.AgentGraphChildren.rows : [...before, ...result.AgentGraphChildren.rows],
-        )
+        const result = await graphql<{
+          AgentGraphChildren: { rows: { node: Node; hint: string; children: number }[]; total: number }
+        }>(CHILDREN, { path, first: PAGE_SIZE, offset })
+        const batch = result.AgentGraphChildren.rows
+        // Ordered within the batch it arrived in rather than across the
+        // whole list: a folder that turned up in the second fifty
+        // jumping over pages somebody has already read past is worse
+        // than its being where the server put it.
+        const fresh = ordered(batch.map((row) => ({ ...row, children: row.children })))
+        setRows((before) => (offset === 0 ? fresh : [...before, ...fresh]))
         setTotal(result.AgentGraphChildren.total)
       } catch (caught) {
         setProblem(caught)
@@ -478,29 +572,33 @@ function FolderPages({
         setLoading(false)
       }
     },
-    [folder],
+    [path],
   )
   useEffect(() => {
     setRows([])
     setTotal(0)
+    setProblem(null)
     void load(0)
   }, [load])
+  // The open page's row is in the list even when it sorts past the
+  // first fifty: a page opened from a link is otherwise selected in a
+  // list that does not show it.
+  useEffect(() => {
+    if (loading || !selected || rows.length === 0 || rows.length >= total) return
+    if (rows.some((row) => row.node.path === selected)) return
+    if (rows.length >= PAGE_SIZE * 10) return
+    void load(rows.length)
+  }, [loading, selected, rows, total, load])
 
   if (problem) return <ErrorMessage error={problem} />
-  if (!loading && rows.length === 0) return <SettingsEmpty>{t('knowledge.emptyFolder')}</SettingsEmpty>
+  if (loading && rows.length === 0) return <Loading />
+  if (rows.length === 0) return <SettingsEmpty>{t('knowledge.emptyFolder')}</SettingsEmpty>
   return (
     <>
-      <p className="knowledge-list-heading">
-        {label}
-        {/* No number until there is one: a heading reading "Projects 0"
-            for the second the list took to arrive said the folder was
-            empty, which is the one thing it was not. */}
-        {loading && rows.length === 0 ? null : <span className="knowledge-row-count">{total}</span>}
-      </p>
       <ul className="knowledge-rows">
         {rows.map((row) => (
           <li key={row.node.id}>
-            <PageRow node={row.node} hint={row.hint} selected={row.node.path === selected} onSelect={onSelect} />
+            <NavigatorRow row={row} selected={row.node.path === selected} me={me} onOpen={onOpen} onInto={onInto} />
           </li>
         ))}
       </ul>
@@ -509,43 +607,118 @@ function FolderPages({
           {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, total - rows.length) })}
         </button>
       ) : null}
-      {loading && rows.length === 0 ? <Loading /> : null}
     </>
   )
 }
 
-// PageRow is one page in a list: its name, and one line to tell it from
-// the row above it -- the opening where there is one, the kind where
+// NavigatorRow is one row of a folder. The name and the line under it
+// open the page; the chevron beside them walks into what is filed under
+// it. Two presses because they are two places: a page with children is
+// both something to read and something to walk through, and a row that
+// did only one of them made the other unreachable.
+function NavigatorRow({
+  row,
+  selected,
+  me,
+  onOpen,
+  onInto,
+}: {
+  row: Row
+  selected: boolean
+  me: string
+  onOpen: (path: string) => void
+  onInto: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const name = nameOf(row.node, me)
+  return (
+    <div className={selected ? 'knowledge-row selected' : 'knowledge-row'}>
+      {/* A folder is a place rather than a page to read, so its name and
+          its chevron are the same door. They lead to the same address
+          either way; saying so here is what stops the press waiting for
+          a query to come back and say which it was. */}
+      <button
+        type="button"
+        className="knowledge-row-open"
+        onClick={() => (row.node.kind === 'folder' ? onInto(row.node.path) : onOpen(row.node.path))}
+      >
+        <RowText node={row.node} name={name} hint={row.hint} />
+      </button>
+      {row.node.kind === 'folder' && row.children !== null ? (
+        <span className="knowledge-row-count">{row.children}</span>
+      ) : null}
+      {opensInto(row) ? (
+        <button
+          type="button"
+          className="knowledge-row-into"
+          title={t('knowledge.into', { name })}
+          aria-label={t('knowledge.into', { name })}
+          onClick={() => onInto(row.node.path)}
+        >
+          <ChevronRightIcon size={14} />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+// opensInto is whether a row can be walked into. A folder always can,
+// empty or not, because that is what a folder is for; anything else can
+// when something is filed under it, which a page may have now.
+function opensInto(row: Row): boolean {
+  return row.node.kind === 'folder' || (row.children ?? 0) > 0
+}
+
+// ordered is the order the navigator shows a folder's rows in: the
+// person's own page and anything pinned stay where the server put them,
+// then what opens into something, then the pages that do not. Two
+// subfolders buried alphabetically among forty pages is a folder whose
+// shape nobody finds. Sorting is stable, so within each of the three the
+// server's own order -- pinned, then by name -- survives.
+function ordered(rows: Row[]): Row[] {
+  return [...rows].sort((left, right) => rankOf(left) - rankOf(right))
+}
+
+function rankOf(row: Row): number {
+  if (row.node.kind === 'self' || row.node.pinned) return 0
+  return opensInto(row) ? 1 : 2
+}
+
+// RowText is a row's two lines: its name, and the one line that tells it
+// from the row above -- the opening where there is one, the kind where
 // there is not. A list of bare names is the thing a person cannot use.
+function RowText({ node, name, hint }: { node: Node; name: string; hint?: string }) {
+  const { t } = useTranslation()
+  const line = hint || node.summary
+  const shown = line ? cut(line, 90) : t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')
+  return (
+    <span className="knowledge-row-text">
+      <span className="knowledge-row-name">
+        {name}
+        {node.pinned ? <PinIcon size={12} /> : null}
+      </span>
+      <span className="knowledge-row-hint">{shown}</span>
+    </span>
+  )
+}
+
+// PageRow is one page as the lookup lists it: the whole row opens it,
+// because a result is somewhere to go rather than somewhere to walk
+// through.
 function PageRow({
   node,
   hint,
-  selected,
+  me,
   onSelect,
 }: {
   node: Node
   hint?: string
-  selected: boolean
+  me: string
   onSelect: (path: string) => void
 }) {
-  const { t } = useTranslation()
-  const segment = node.path.split('/').pop() || node.path
-  const name = node.name && node.name.toLowerCase() !== segment.toLowerCase() ? node.name : segment
-  const line = hint || node.summary
-  const shown = line ? cut(line, 90) : t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')
   return (
-    <button
-      type="button"
-      className={selected ? 'knowledge-row selected' : 'knowledge-row'}
-      onClick={() => onSelect(node.path)}
-    >
-      <span className="knowledge-row-text">
-        <span className="knowledge-row-name">
-          {name}
-          {node.pinned ? <PinIcon size={12} /> : null}
-        </span>
-        <span className="knowledge-row-hint">{shown}</span>
-      </span>
+    <button type="button" className="knowledge-row" onClick={() => onSelect(node.path)}>
+      <RowText node={node} name={nameOf(node, me)} hint={hint} />
       <ChevronRightIcon size={14} />
     </button>
   )
@@ -556,10 +729,12 @@ function PageRow({
 function SearchResults({
   found,
   loading,
+  me,
   onSelect,
 }: {
   found?: { nodes: Node[]; facts: { fact: Fact; path: string; name: string }[] } | null
   loading: boolean
+  me: string
   onSelect: (path: string) => void
 }) {
   const { t } = useTranslation()
@@ -580,7 +755,7 @@ function SearchResults({
           <ul className="knowledge-rows">
             {nodes.map((node) => (
               <li key={node.id}>
-                <PageRow node={node} selected={false} onSelect={onSelect} />
+                <PageRow node={node} me={me} onSelect={onSelect} />
               </li>
             ))}
           </ul>
@@ -624,6 +799,7 @@ function PageView({
   onDone: (said: string) => void
 }) {
   const { t } = useTranslation()
+  const [factsShown, setFactsShown] = useState(PAGE_SIZE)
   const me = useSession().name || ''
   const node = page.node
   const [editing, setEditing] = useState(false)
@@ -733,6 +909,22 @@ function PageView({
             >
               {node.pinned ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
             </button>
+            {/* The agent, pointed at this page, the way the reader points
+                it at a thread: the drawer opens with a chip for it, and
+                the person asks it to dig deeper, or to change what the
+                page says and links to. */}
+            <button
+              type="button"
+              className="icon-action"
+              title={t('knowledge.askAgent')}
+              aria-label={`${node.path}: ${t('knowledge.askAgent')}`}
+              onClick={() => {
+                if (!askAgentAbout({ path: node.path, name: nameOf(node, me) }))
+                  window.location.assign('/settings/agent')
+              }}
+            >
+              <SparkIcon size={16} />
+            </button>
             <button
               type="button"
               className="icon-action danger"
@@ -772,7 +964,7 @@ function PageView({
         }
       >
         {page.facts.length === 0 ? <SettingsEmpty>{t('knowledge.noFacts')}</SettingsEmpty> : null}
-        {page.facts.map((fact) => (
+        {page.facts.slice(0, factsShown).map((fact) => (
           <SettingsRow
             key={fact.id}
             title={`#${fact.number} ${fact.text}`}
@@ -809,9 +1001,26 @@ function PageView({
             }
           />
         ))}
+        {page.facts.length > factsShown ? (
+          <button type="button" className="knowledge-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
+            {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, page.facts.length - factsShown) })}
+          </button>
+        ) : null}
       </SettingsSection>
 
-      <SettingsSection card title={t('knowledge.connections')} description={t('knowledge.connectionsHint')}>
+      {/* The drawing beside the card is this page's neighbourhood; the one
+          behind the action is whatever is reached from it, with the room to
+          walk there. It opens on this page rather than at the roots. */}
+      <SettingsSection
+        card
+        title={t('knowledge.connections')}
+        description={t('knowledge.connectionsHint')}
+        action={
+          <Link className="knowledge-chip" to={`/settings/knowledge/explore?from=${encodeURIComponent(node.path)}`}>
+            {t('knowledge.explore.from')}
+          </Link>
+        }
+      >
         <GraphExplorer path={node.path} onOpen={onSelect} version={linked} />
         <LinkForm
           path={node.path}

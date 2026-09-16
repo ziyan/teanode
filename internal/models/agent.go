@@ -77,9 +77,10 @@ type Agent struct {
 	// DreamedAt is when the nightly run last finished.
 	DreamedAt *time.Time `json:"dreamedAt,omitempty" graphapi:"nullable"`
 
-	// DreamCatchUp says the night runs again as soon as it can, until
-	// nothing waits to be read; the night clears it itself.
-	DreamCatchUp bool `json:"dreamCatchUp"`
+	// DreamBootstrap says the night runs again as soon as it can, with
+	// wider limits, until nothing waits to be read: what a first ingest
+	// needs. The night clears it itself.
+	DreamBootstrap bool `json:"dreamBootstrap"`
 }
 
 // DreamWindow is the hours of this person's night, filled in.
@@ -431,6 +432,15 @@ const (
 	// AgentJobNoop does nothing and records that it ran; it proves the
 	// queue end to end before any kind that costs tokens exists.
 	AgentJobNoop AgentJobKind = "noop"
+
+	// Three kinds that are never queued but name a run: every model call
+	// is a run of the loop, and these are made in the request or inside
+	// a turn rather than from the queue. Draft writes an answer for the
+	// composer, describe titles a conversation, compact writes the note
+	// that stands in for a conversation's earlier part.
+	AgentJobDraft    AgentJobKind = "draft"
+	AgentJobDescribe AgentJobKind = "describe"
+	AgentJobCompact  AgentJobKind = "compact"
 )
 
 // AgentJobStatus is where a job is.

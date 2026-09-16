@@ -75,7 +75,6 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
-
       {/* One list, the way the tokens page lists tokens. Two cards said
           "this browser" and "other browsers" about rows that are the same
           thing and are told apart by a badge anyway — and the second card
@@ -128,7 +127,7 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
           busy={busy}
           onConfirm={async () => {
             setBusy(true)
-                    try {
+            try {
               await graphql(REVOKE_ALL)
               // This browser's session was one of them, so the shell has to
               // notice it is signed out.

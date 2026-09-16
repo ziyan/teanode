@@ -345,7 +345,7 @@ export function CalendarPage() {
   const calendarId = calendar?.id ?? ''
   // Sunday unless this calendar says Monday. The server answers with one of
   // the two, so this only has to cope with an answer that has not arrived.
-  const weekStart: WeekStart = calendar?.weekStart === 'monday' ? 'monday' : 'sunday' 
+  const weekStart: WeekStart = calendar?.weekStart === 'monday' ? 'monday' : 'sunday'
 
   // The window asked for is whole weeks for a month, the week for a week, and
   // a month ahead for an agenda.
@@ -450,9 +450,7 @@ export function CalendarPage() {
         // is not what anybody means by "ends". An event on the 14th said
         // it ended on the 15th, and typing the 14th and the 15th to mean
         // two days made one.
-        endDate: full.allDay
-          ? lastDayOf(full)
-          : dayKey(ends),
+        endDate: full.allDay ? lastDayOf(full) : dayKey(ends),
         endTime: clockKey(ends),
         allDay: full.allDay,
         recurrence: full.recurrence ?? '',

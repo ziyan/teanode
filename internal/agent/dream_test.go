@@ -28,7 +28,7 @@ import (
 // rather than at the database: each is a prompt, a model, a parse and a
 // write, and every one of those four is somewhere the phase can silently
 // do nothing.
-func TestDreamingANight(t *testing.T) {
+func TestDreamingRunsEveryPhase(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -40,14 +40,20 @@ func TestDreamingANight(t *testing.T) {
 			return
 		}
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
+		// The last thing the person's side said: every call of a dream is
+		// a turn of the loop now, so the prompt sits after the persona.
 		prompt := ""
-		if len(body.Messages) > 0 {
-			prompt = body.Messages[len(body.Messages)-1].Content
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
 		}
 		asked.Lock()
 		prompts = append(prompts, prompt)
@@ -69,6 +75,14 @@ func TestDreamingANight(t *testing.T) {
 			}
 		}
 		encoded, _ := json.Marshal(answer)
+		if body.Stream {
+			// A round of the loop streams: one chunk with the whole answer.
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(writer,
+				"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+				encoded)
+			return
+		}
 		_, _ = fmt.Fprintf(writer,
 			`{"choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`,
 			encoded)
@@ -97,6 +111,10 @@ func TestDreamingANight(t *testing.T) {
 		Configuration: func() *config.Configuration { return configuration },
 		Instance:      "test", Tick: time.Hour,
 	})
+	// Every call a dream makes is a turn of the loop, which acts as the
+	// person and so needs somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var found *models.Agent
 	var alice, portal, gripper *models.AgentNode
@@ -154,13 +172,13 @@ func TestDreamingANight(t *testing.T) {
 	}
 	worker.Wait()
 
-	var night *models.AgentDream
+	var dream *models.AgentDream
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		nights, err := tx.ListAgentDreams(found.ID, 5)
-		if err != nil || len(nights) == 0 {
-			t.Fatalf("a night happened: %v %s", nights, err)
+		dreams, err := tx.ListAgentDreams(found.ID, 5)
+		if err != nil || len(dreams) == 0 {
+			t.Fatalf("a dream happened: %v %s", dreams, err)
 		}
-		night = nights[0]
+		dream = dreams[0]
 
 		// The quiet half: the link whose both ends were wanted today ends
 		// above where it started, and the one nothing touched below.
@@ -176,7 +194,7 @@ func TestDreamingANight(t *testing.T) {
 			t.Fatalf("the link used today ends above the one that was not: %v", weights)
 		}
 
-		// The generative half: a link the night worked out, with the
+		// The generative half: a link the dream worked out, with the
 		// sentence that justifies it and below the weight of a stated one.
 		joined, err := tx.ListAgentEdges(found.ID, alice.ID)
 		if err != nil {
@@ -202,22 +220,22 @@ func TestDreamingANight(t *testing.T) {
 		}
 	})
 
-	if night.Strengthened == 0 {
-		t.Fatalf("the night says how many links it reweighted")
+	if dream.Strengthened == 0 {
+		t.Fatalf("the dream says how many links it reweighted")
 	}
-	if night.Associated != 1 {
-		t.Fatalf("and that it found one connection, not %d", night.Associated)
+	if dream.Associated != 1 {
+		t.Fatalf("and that it found one connection, not %d", dream.Associated)
 	}
 	// Rehearsal: two questions asked, and the one about a boiler nothing
 	// in the graph mentions is reported as a gap rather than answered.
-	if night.Rehearsed != 2 {
-		t.Fatalf("two questions rehearsed, not %d", night.Rehearsed)
+	if dream.Rehearsed != 2 {
+		t.Fatalf("two questions rehearsed, not %d", dream.Rehearsed)
 	}
-	if night.Gaps != 1 {
-		t.Fatalf("one of them unanswerable, not %d", night.Gaps)
+	if dream.Gaps != 1 {
+		t.Fatalf("one of them unanswerable, not %d", dream.Gaps)
 	}
 	gap := ""
-	for _, proposal := range night.Proposals {
+	for _, proposal := range dream.Proposals {
 		if proposal.Kind == "gap" {
 			gap = proposal.Reason
 		}

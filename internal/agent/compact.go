@@ -176,27 +176,21 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 	if through == "" {
 		return history, nil
 	}
-	registry := self.agent.settings.Registry
-	compactProvider, compactModel, err := registry.ForWork(config.AgentWorkCompact)
-	if err != nil {
-		compactProvider, compactModel = provider, model
-	}
+	// Each chunk's note is a run of its own, on the compact model: a turn
+	// inside a turn, with no tools and one round, that the person can
+	// open like any other.
 	note := ""
 	for _, chunk := range chunkHistory(older, compactChunkTokens) {
 		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk, compactMessageCharacters)})
 		if err != nil {
 			return nil, err
 		}
-		callContext, cancel := context.WithTimeout(ctx, self.agent.settings.Configuration().Agent.Limits.RequestTimeout.Duration())
-		response, err := compactProvider.Chat(callContext, &llm.ChatRequest{Model: compactModel, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 800})
-		cancel()
-		if response != nil {
-			RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", modelName, "compact", response.Usage)
-		}
+		thinking, err := self.agent.oneShot(ctx, self.agent.runFor(self.settings.Agent, self.settings.Owner, nil, self.settings.Conversation.ID),
+			"Compacted the earlier part of a conversation", prompt, models.AgentJobCompact, config.AgentWorkCompact)
 		if err != nil {
 			return nil, err
 		}
-		note = strings.TrimSpace(response.Message.Content)
+		note = thinking.Text
 		if note == "" {
 			return nil, errors.New("the model wrote no note")
 		}

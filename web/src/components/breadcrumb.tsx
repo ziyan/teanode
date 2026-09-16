@@ -26,6 +26,7 @@ type Crumb = { label: Key; to?: string }
 const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
   { prefix: '/access', trail: [{ label: 'nav.access', to: '/access' }] },
+  { prefix: '/agent', trail: [{ label: 'nav.agentAdmin', to: '/agent' }] },
   // Every /settings/* page gets its own crumb from SETTINGS_SURFACES below,
   // so there is one entry here rather than one per page.
   //
@@ -158,9 +159,13 @@ function useTrail(): { label: string; to?: string }[] {
     // the detail and itself as the item. Side by side, the page is still
     // Knowledge and names nothing.
     if (section === 'settings' && folderId === 'knowledge' && detail) {
-      const root = location.pathname.split('/')[3] ?? ''
+      // The folder is the whole path but the last segment, not its first
+      // segment: the graph nests as deep as it likes, and a page four
+      // levels down whose way back was its root came back to the wrong
+      // list.
+      const under = location.pathname.split('/').slice(3).filter(Boolean).slice(0, -1).join('/')
       if (item) {
-        return [...crumbs, { label: detail, to: `/settings/knowledge/${root}` }, { label: item }]
+        return [...crumbs, { label: detail, to: '/settings/knowledge' + (under ? '/' + under : '') }, { label: item }]
       }
       return [...crumbs, { label: detail }]
     }

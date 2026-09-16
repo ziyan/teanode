@@ -78,7 +78,6 @@ const UPGRADE_TIMEOUT_MS = 15 * 60_000
 // thirty-second timeout of its own on the server.
 const CHECK_TIMEOUT_MS = 40_000
 
-
 // ServerAboutPage is what this instance is, which version it is running, and
 // the two controls that act on the process rather than on the configuration:
 // upgrade, and restart.
@@ -89,10 +88,7 @@ const CHECK_TIMEOUT_MS = 40_000
 // other instances feel.
 export function ServerAboutPage() {
   const { t } = useTranslation()
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ GetServerStatus: ServerStatus }>(STATUS),
-    [],
-  )
+  const { data, error, loading, reload } = useQuery(() => graphql<{ GetServerStatus: ServerStatus }>(STATUS), [])
 
   // Asked separately from the status, and allowed to fail on its own: a
   // server that cannot reach the release list is a server with an out-of-date
@@ -351,8 +347,7 @@ export function ServerAboutPage() {
 
           <dt>{t('server.started')}</dt>
           <dd>
-            <RelativeTime value={status.startedAt} />{' '}
-            <span className="muted">{formatTime(status.startedAt)}</span>
+            <RelativeTime value={status.startedAt} /> <span className="muted">{formatTime(status.startedAt)}</span>
           </dd>
 
           <dt>{t('server.supervision')}</dt>
@@ -527,9 +522,7 @@ function UpgradeCard({
 
       {status.automatic && (
         <p className="notice">
-          {status.window
-            ? t('upgrade.automaticOnWindow', { window: status.window })
-            : t('upgrade.automaticOn')}
+          {status.window ? t('upgrade.automaticOnWindow', { window: status.window }) : t('upgrade.automaticOn')}
         </p>
       )}
 

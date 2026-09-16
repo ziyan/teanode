@@ -70,6 +70,9 @@ things about one boat and both stay.
 Give each pair as two numbers, the one to keep first. An empty list is a
 good answer for a page whose facts each say their own thing.
 
+You have the memory tool: `get` the pages this one links to if what they
+say would change the opening. Look at most once, then answer.
+
 Answer with this object and nothing else:
 
 {"summary": "...", "same": [[3, 7]]}

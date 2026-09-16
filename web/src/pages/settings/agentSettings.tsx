@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../../api'
-import { SaveRow } from '../../components/common'
+import { SaveRow, announceSaved } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
@@ -190,7 +190,7 @@ function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
     setBusy(true)
     try {
       await graphql(UPDATE, { agent: values })
-      toast.done(t('integrations.savedNeedsRestart'))
+      await announceSaved(toast, t)
       await onSaved()
       return true
     } catch (caught) {
@@ -318,7 +318,7 @@ function GeneralForm({ settings, onSaved }: Props) {
         />
       </label>
       <p className="muted field-hint">{t('agentSettings.skipCertificatesHint')}</p>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -917,7 +917,7 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
           </>
         ) : null}
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -951,7 +951,7 @@ function FeaturesForm({ settings, onSaved }: Props) {
           {t(`agentSettings.feature.${feature}`)}
         </label>
       ))}
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1070,7 +1070,7 @@ function LimitsForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1130,7 +1130,7 @@ function ToolsForm({ settings, onSaved }: Props) {
         defaultWord="allow"
         onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
       />
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1184,7 +1184,7 @@ function SearchForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1268,7 +1268,7 @@ function BrowserForm({ settings, onSaved }: Props) {
         />
         {t('agentSettings.browserAttachTabs')}
       </label>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }

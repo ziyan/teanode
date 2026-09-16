@@ -143,9 +143,8 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	if !FeatureAllowed(configuration, "remember") {
 		return nil
 	}
-	registry := run.Registry()
-	if registry == nil {
-		return fmt.Errorf("no model registry")
+	if !self.canThink(configuration) {
+		return fmt.Errorf("no way to act as the person")
 	}
 
 	var conversation *models.AgentConversation
@@ -192,7 +191,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		unread = unread[len(unread)-rememberMessages:]
 	}
 
-	answer, prompt, response, modelName, err := self.askWhatWasLearned(ctx, run, conversation, unread)
+	answer, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
 	if err != nil {
 		return err
 	}
@@ -207,16 +206,22 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		return err
 	}
 
-	// The mark and the transcript in one transaction with nothing else:
+	// The mark and the run's title in one transaction with nothing else:
 	// a crash before this point re-reads, a crash after it does not
-	// re-file.
+	// re-file. The loop wrote the transcript as it went; what is left is
+	// to say what the run turned out to be.
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		note := "Filed nothing from this conversation"
 		if filed > 0 {
 			note = fmt.Sprintf("Filed %d thing(s) from %q", filed, conversation.Title)
 		}
-		if _, err := self.recordRun(tx, run, note, prompt, response, modelName); err != nil {
-			return err
+		if transcript != nil {
+			if _, err := tx.UpdateAgentConversation(transcript.ID, func(found *models.AgentConversation) error {
+				found.Title = note
+				return nil
+			}); err != nil {
+				return err
+			}
 		}
 		last := messages[len(messages)-1]
 		return tx.MarkAgentConversationRemembered(conversation.ID, last.ID, time.Now())
@@ -258,14 +263,7 @@ func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 }
 
 // askWhatWasLearned puts the conversation to the scan model.
-func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation *models.AgentConversation, unread []*models.AgentMessage) (*RememberAnswer, string, *llm.ChatResponse, string, error) {
-	configuration := run.Configuration()
-	registry := run.Registry()
-	provider, model, err := registry.ForWork(config.AgentWorkScan)
-	if err != nil {
-		return nil, "", nil, "", err
-	}
-	modelName := registry.Configuration().Models.ForWork(config.AgentWorkScan)
+func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation *models.AgentConversation, unread []*models.AgentMessage) (*RememberAnswer, *models.AgentConversation, error) {
 
 	var index []string
 	var pages []string
@@ -306,7 +304,7 @@ func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation
 		}
 		return nil
 	}); err != nil {
-		return nil, "", nil, "", err
+		return nil, nil, err
 	}
 
 	prompt, err := render("remember.txt", map[string]any{
@@ -318,36 +316,27 @@ func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation
 		"Most":       rememberFacts,
 	})
 	if err != nil {
-		return nil, "", nil, "", err
+		return nil, nil, err
 	}
 
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model:     model,
-		Messages:  []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
-		MaxTokens: 2000,
-	})
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobRemember), response.Usage)
-	}
+	thinking, err := self.oneShot(ctx, run, fmt.Sprintf("Filing what %q taught", conversation.Title), prompt, models.AgentJobRemember, config.AgentWorkScan)
 	if err != nil {
-		return nil, prompt, response, modelName, fmt.Errorf("asking the model: %w", err)
+		return nil, nil, fmt.Errorf("asking the model: %w", err)
 	}
-	extracted, err := llm.ExtractJSON(response.Message.Content)
+	extracted, err := llm.ExtractJSON(thinking.Text)
 	if err != nil {
 		// A run that answered with prose taught nothing this time. Not a
 		// failure: the mark still moves, and the next conversation is a
 		// fresh try.
 		log.Debugf("the filing run answered with no object: %s", err)
-		return &RememberAnswer{}, prompt, response, modelName, nil
+		return &RememberAnswer{}, thinking.Conversation, nil
 	}
 	answer := &RememberAnswer{}
 	if err := json.Unmarshal([]byte(extracted), answer); err != nil {
 		log.Debugf("the filing run's object is not what was asked for: %s", err)
-		return &RememberAnswer{}, prompt, response, modelName, nil
+		return &RememberAnswer{}, thinking.Conversation, nil
 	}
-	return answer, prompt, response, modelName, nil
+	return answer, thinking.Conversation, nil
 }
 
 // pagesTouched is the pages the conversation's own words touch, in full,
@@ -410,6 +399,16 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	}
 	filed := 0
 	agentId := run.Agent.ID
+	// The person's own page, for telling a page about them from one about
+	// somebody else: its aliases carry every name they have been found
+	// under, which the account's own name need not.
+	var selfPage *models.AgentNode
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		selfPage, err = tx.GetAgentNode(agentId, models.PathSelf)
+		return err
+	}); err != nil {
+		return 0, err
+	}
 
 	for index, wanted := range answer.Facts {
 		if index >= rememberFacts {
@@ -433,6 +432,12 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		path := models.NormalizePath(wanted.Path)
 		if path == "" {
 			path = models.JoinPath(models.PathNotes, models.Slug(firstWordsOf(text, 5)))
+		}
+		// A page for the person under people/, by their chat name or
+		// their own, is the person's page: a digest of their own threads
+		// made people/ziyan and put their work there.
+		if models.IsThePerson(path, run.Owner, selfPage) {
+			path = models.PathSelf
 		}
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorRemember)

@@ -188,12 +188,101 @@ func saysNothingOpening(summary string) bool {
 	if text == "" {
 		return false
 	}
+	// The prompt's own marker for "no opening", written out.
+	if strings.Trim(text, "\"'\u201c\u201d ") == "" || text == "null" {
+		return true
+	}
 	for _, phrase := range paddingPhrases {
 		if phrase.MatchString(text) {
 			return true
 		}
 	}
 	return false
+}
+
+// guessedPattern is a PostgreSQL regular expression for a page that
+// guesses: the words a model reaches for when the record is a count and
+// the page is meant to be a story. A month page that matches is written
+// again from its record.
+const guessedPattern = `\m(suggests?|suggesting|likely|indicates?|indicating|probably|presumably|must have|seems? to)\M`
+
+// guessed is the same words, for the page in hand.
+var guessed = regexp.MustCompile(`(?i)\b(suggests?|suggesting|likely|indicates?|indicating|probably|presumably|must have|seems? to)\b`)
+
+// dropGuesses takes the guessing out of a page written in Markdown: every
+// sentence that reaches for one of the words above goes, a list item
+// that does goes whole, and a heading left with nothing under it goes
+// too. A twenty-seven-billion-parameter model told four ways not to
+// guess from a count of threads guessed on eleven pages of eleven; a
+// rule the page cannot argue with is the only one it keeps.
+func dropGuesses(page string) string {
+	lines := strings.Split(page, "\n")
+	var kept []string
+	headingAt := -1 // index in kept of the last heading, until prose follows it
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "#"):
+			if headingAt >= 0 {
+				kept = kept[:headingAt]
+			}
+			headingAt = len(kept)
+			kept = append(kept, line)
+			continue
+		case trimmed == "":
+			kept = append(kept, line)
+			continue
+		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* "):
+			if guessed.MatchString(trimmed) {
+				continue
+			}
+			kept = append(kept, line)
+			headingAt = -1
+			continue
+		}
+		var sentences []string
+		for _, sentence := range splitSentences(trimmed) {
+			if sentence = strings.TrimSpace(sentence); sentence != "" && !guessed.MatchString(sentence) {
+				sentences = append(sentences, sentence)
+			}
+		}
+		if len(sentences) == 0 {
+			continue
+		}
+		kept = append(kept, strings.Join(sentences, " "))
+		headingAt = -1
+	}
+	if headingAt >= 0 {
+		kept = kept[:headingAt]
+	}
+	// A blank run is one blank line; the page keeps its shape.
+	var out []string
+	for _, line := range kept {
+		if strings.TrimSpace(line) == "" && (len(out) == 0 || strings.TrimSpace(out[len(out)-1]) == "") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+// splitSentences cuts prose where a full stop, a question mark or an
+// exclamation mark is followed by a space. Go's regexps have no
+// look-behind, so this is written out.
+func splitSentences(text string) []string {
+	var sentences []string
+	start := 0
+	runes := []rune(text)
+	for index := 0; index < len(runes)-1; index++ {
+		if strings.ContainsRune(".!?", runes[index]) && unicode.IsSpace(runes[index+1]) {
+			sentences = append(sentences, string(runes[start:index+1]))
+			start = index + 1
+		}
+	}
+	if start < len(runes) {
+		sentences = append(sentences, string(runes[start:]))
+	}
+	return sentences
 }
 
 var paddingPhrases = []*regexp.Regexp{

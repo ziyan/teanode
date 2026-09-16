@@ -62,7 +62,7 @@ export function PasskeysPage() {
     } catch (caught) {
       if (!canceled(caught)) {
         setProblem(caught instanceof Error ? caught.message : t('passkeys.failed'))
-      toast.failure(caught, t('passkeys.failed'))
+        toast.failure(caught, t('passkeys.failed'))
       }
     } finally {
       setBusy(false)
@@ -129,11 +129,7 @@ export function PasskeysPage() {
                 // is the difference between a passkey in a password manager
                 // and one on a single security key — and decides what losing
                 // the device costs.
-                passkey.backupState ? (
-                  <Tag value={t('passkeys.synced')} />
-                ) : (
-                  <Tag value={t('passkeys.thisDevice')} />
-                )
+                passkey.backupState ? <Tag value={t('passkeys.synced')} /> : <Tag value={t('passkeys.thisDevice')} />
               }
               subtitle={
                 <>

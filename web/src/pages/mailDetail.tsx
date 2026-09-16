@@ -303,13 +303,7 @@ export function MailDetailPage() {
 // What is attached, in one line: a paperclip, the name, and the size. Each is
 // a real link with a download attribute, so saving one works the way saving
 // anything else in a browser works — right click, middle click, keyboard.
-function Attachments({
-  mailId,
-  attachments,
-}: {
-  mailId: string
-  attachments?: MailContent['attachments']
-}) {
+function Attachments({ mailId, attachments }: { mailId: string; attachments?: MailContent['attachments'] }) {
   const { t } = useTranslation()
   if (!attachments?.length) {
     return null

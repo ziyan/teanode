@@ -482,3 +482,51 @@ func TestOpenAIRetriesWithReasoningOffWhenToolsRefused(t *testing.T) {
 		t.Fatalf("the model should be remembered as refusing, got %d calls", len(bodies))
 	}
 }
+
+// A template that takes one system message, at the front, refuses the
+// second one the loop sends after the history. The provider folds them
+// into one and asks again, and from then on sends them folded first time.
+func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
+	var systems []int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		count := 0
+		for index, message := range body.Messages {
+			if message.Role == "system" {
+				count++
+				if index > 0 {
+					writer.WriteHeader(http.StatusInternalServerError)
+					_, _ = writer.Write([]byte(`{"error":{"code":500,"message":"raise_exception('System message must be at the beginning')"}}`))
+					return
+				}
+			}
+		}
+		systems = append(systems, count)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer server.Close()
+	provider, _ := NewProvider("openai", server.URL+"/v1", "k", time.Second)
+	request := &ChatRequest{Model: "m", Messages: []ChatMessage{
+		{Role: RoleSystem, Content: "You are helpful."},
+		{Role: RoleUser, Content: "hi"},
+		{Role: RoleSystem, Content: "It is Tuesday."},
+	}}
+	for round := 0; round < 2; round++ {
+		response, err := provider.Chat(context.Background(), request)
+		if err != nil || response.Message.Content != "ok" {
+			t.Fatalf("round %d: %v %+v", round, err, response)
+		}
+	}
+	// One answered call per round, each with one system message; the
+	// refusal on the first round is not in the list.
+	if len(systems) != 2 || systems[0] != 1 || systems[1] != 1 {
+		t.Fatalf("system messages per answered call: %v", systems)
+	}
+}

@@ -72,8 +72,9 @@ func newAgentGraphCommands() []*cli.Command {
 		},
 		{
 			Name:      "move",
-			Usage:     "file a page under another",
-			ArgsUsage: "<path> <under>",
+			Usage:     "file a page under another, or one fact (with --number) onto another page",
+			ArgsUsage: "<path> <under | to>",
+			Flags:     []cli.Flag{&cli.IntFlag{Name: "number", Usage: "move the fact with this number rather than the page"}},
 			Action:    runAgentGraphMove,
 		},
 		{
@@ -82,6 +83,12 @@ func newAgentGraphCommands() []*cli.Command {
 			ArgsUsage: "<path>",
 			Flags:     []cli.Flag{&cli.IntFlag{Name: "number", Usage: "the fact's number on the page"}},
 			Action:    runAgentGraphForget,
+		},
+		{
+			Name:      "merge",
+			Usage:     "fold one page into another: its facts, links and children move over, its name becomes an alias, and it goes",
+			ArgsUsage: "<path> <into>",
+			Action:    runAgentGraphMerge,
 		},
 		{
 			Name:      "link",
@@ -188,22 +195,77 @@ func newAgentKnowledgeCommand() *cli.Command {
 func newAgentDreamCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "dream",
-		Usage: "what your agent did overnight",
+		Usage: "what your agent dreams: the runs that read, file and rehearse, and when",
 		Commands: []*cli.Command{
 			{
 				Name:   "log",
-				Usage:  "the nights, newest first",
+				Usage:  "the dreams, newest first",
 				Flags:  []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 14}},
 				Action: runDreamLog,
 			},
 			{
+				Name:      "runs",
+				Usage:     "the runs one dream made, newest first: every call it made to a model, each openable with 'agent run show'",
+				ArgsUsage: "<dream id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runDreamRuns,
+			},
+			{
+				Name:   "reread",
+				Usage:  "put back into the queue what a dream marked read in the last so many minutes, for a dream that marked what it never read",
+				Flags:  []cli.Flag{&cli.IntFlag{Name: "minutes", Usage: "how far back", Value: 60}},
+				Action: runDreamReread,
+			},
+			{
 				Name:   "now",
-				Usage:  "run the night at the next tick, within the agent's hours, instead of waiting for its turn",
-				Flags:  []cli.Flag{&cli.BoolFlag{Name: "catch-up", Usage: "and again at every tick until nothing waits to be read; for a first ingest with a model of your own"}},
+				Usage:  "dream at the next tick, within the agent's hours, instead of waiting for its turn",
 				Action: runDreamNow,
+			},
+			{
+				Name:      "bootstrap",
+				Usage:     "switch bootstrapping on or off: a dream at every tick with wider limits until nothing waits to be read, for a first ingest -- best with a model of your own doing the reading",
+				ArgsUsage: "on|off",
+				Action:    runDreamBootstrap,
 			},
 		},
 	}
+}
+
+func runDreamReread(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	put, err := client.RereadAgentDocuments(ctx, connection, int(command.Int("minutes")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%d document(s) are waiting to be read again\n", put)
+	return nil
+}
+
+func runDreamBootstrap(ctx context.Context, command *cli.Command) error {
+	var on bool
+	switch command.Args().First() {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return fmt.Errorf("on or off? teanode agent dream bootstrap on")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.DreamAgentNow(ctx, connection, &on); err != nil {
+		return describeError(command, err)
+	}
+	if on {
+		_, _ = fmt.Fprintln(command.Writer, "bootstrapping: a dream starts within the minute and runs again until nothing waits to be read; it switches itself off then")
+	} else {
+		_, _ = fmt.Fprintln(command.Writer, "dreaming is back to its hours")
+	}
+	return nil
 }
 
 func runDreamNow(ctx context.Context, command *cli.Command) error {
@@ -211,14 +273,10 @@ func runDreamNow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := client.DreamAgentNow(ctx, connection, command.Bool("catch-up")); err != nil {
+	if err := client.DreamAgentNow(ctx, connection, nil); err != nil {
 		return describeError(command, err)
 	}
-	if command.Bool("catch-up") {
-		_, _ = fmt.Fprintln(command.Writer, "the night starts within the minute and runs again until nothing waits to be read, within your agent's hours")
-		return nil
-	}
-	_, _ = fmt.Fprintln(command.Writer, "the night starts within the minute, if it is within your agent's hours")
+	_, _ = fmt.Fprintln(command.Writer, "the dream starts within the minute, if it is within your agent's hours")
 	return nil
 }
 
@@ -463,11 +521,39 @@ func runAgentGraphMove(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	node, err := client.MoveAgentNode(ctx, connection, command.Args().First(), command.Args().Get(1))
+	path, to := command.Args().First(), command.Args().Get(1)
+	// With a number it is one sentence that is on the wrong page, not
+	// the page itself; the fact takes a new number where it lands,
+	// because numbers belong to the page.
+	if number := command.Int("number"); number > 0 {
+		fact, err := client.MoveAgentFact(ctx, connection, path, int(number), to)
+		if err != nil {
+			return describeError(command, err)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s#%d is now %s#%d\n", path, number, to, fact.Number)
+		return nil
+	}
+	node, err := client.MoveAgentNode(ctx, connection, path, to)
 	if err != nil {
 		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s is now %s\n", command.Args().First(), node.Path)
+	_, _ = fmt.Fprintf(command.Writer, "%s is now %s\n", path, node.Path)
+	return nil
+}
+
+func runAgentGraphMerge(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("merge what into what? teanode agent memory merge people/ziyan self")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	into, err := client.MergeAgentNodes(ctx, connection, command.Args().First(), command.Args().Get(1))
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s is now part of %s\n", command.Args().First(), into.Path)
 	return nil
 }
 
@@ -780,6 +866,48 @@ func knowledgeSourceNamed(ctx context.Context, command *cli.Command) (*client.Cl
 
 // --- the nightly run --------------------------------------------------
 
+// runDreamRuns lists the runs of one dream: it finds the dream in the log
+// for the job that ran it, and lists the runs tagged with that job.
+func runDreamRuns(ctx context.Context, command *cli.Command) error {
+	dreamId := command.Args().First()
+	if dreamId == "" {
+		return fmt.Errorf("which dream? give its id, as `teanode agent dream log --json` shows it")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	dreams, err := client.ListAgentDreams(ctx, connection, 200)
+	if err != nil {
+		return describeError(command, err)
+	}
+	jobId := ""
+	for _, dream := range dreams {
+		if dream.ID == dreamId {
+			jobId = dream.JobID
+		}
+	}
+	if jobId == "" {
+		return fmt.Errorf("no dream %q in the last two hundred, or one from before dreams kept their job", dreamId)
+	}
+	runs, total, err := client.ListAgentRuns(ctx, connection, 200, 0, jobId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if int64(len(runs)) < total {
+		_, _ = fmt.Fprintf(command.Writer, "the first %d of %d\n", len(runs), total)
+	}
+	if command.Bool("json") {
+		return PrintJSON(runs)
+	}
+	rows := make([][]string, 0, len(runs))
+	for _, run := range runs {
+		rows = append(rows, []string{run.ID, run.LastAt.Local().Format("15:04:05"),
+			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title})
+	}
+	return printTable([]string{"id", "when", "tokens in/out", "cost", "what"}, rows)
+}
+
 func runDreamLog(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
@@ -793,11 +921,11 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(dreams)
 	}
 	if len(dreams) == 0 {
-		_, _ = fmt.Fprintln(command.Writer, "it has not had a night yet")
+		_, _ = fmt.Fprintln(command.Writer, "it has not dreamed yet")
 		return nil
 	}
 	for _, dream := range dreams {
-		_, _ = fmt.Fprintf(command.Writer, "%s\n", dream.StartedAt.Format("Mon 2 Jan, 15:04"))
+		_, _ = fmt.Fprintf(command.Writer, "%s  %s\n", dream.StartedAt.Format("Mon 2 Jan, 15:04"), dream.ID)
 		var parts []string
 		for _, pair := range []struct {
 			count int
@@ -819,16 +947,19 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 		switch {
 		case dream.FinishedAt == nil:
 			parts = append([]string{"still working"}, parts...)
-		case len(parts) == 0:
+		case len(parts) == 0 && dream.LastError == "":
 			parts = []string{"nothing needed doing"}
+		case len(parts) == 0:
+			// The line under it says why there is nothing to count.
+			parts = []string{"cut short"}
 		}
 		_, _ = fmt.Fprintf(command.Writer, "  %s\n", strings.Join(parts, ", "))
 		if dream.Backlog > 0 {
-			nights := (dream.Backlog + 1999) / 2000
-			_, _ = fmt.Fprintf(command.Writer, "  %d still waiting, about %d night(s) at this pace\n", dream.Backlog, nights)
+			dreamsNeeded := (dream.Backlog + 1999) / 2000
+			_, _ = fmt.Fprintf(command.Writer, "  %d still waiting, about %d dream(s) at this pace\n", dream.Backlog, dreamsNeeded)
 		}
 		if dream.Coarse {
-			_, _ = fmt.Fprintln(command.Writer, "  worked a stretch at a time to keep up; a later night can go back over it")
+			_, _ = fmt.Fprintln(command.Writer, "  worked a stretch at a time to keep up; a later dream can go back over it")
 		}
 		for _, proposal := range dream.Proposals {
 			switch proposal.Kind {

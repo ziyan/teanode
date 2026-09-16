@@ -442,7 +442,10 @@ function FoldersTab({ view }: { view: MailboxView }) {
               label={t('mailboxSettings.folderParent')}
               options={[
                 { value: '', label: t('mailboxSettings.folderTop') },
-                ...parents.map(({ folder, depth }) => ({ value: folder.id, label: '\u2003'.repeat(depth) + folderLabel(t, folder) })),
+                ...parents.map(({ folder, depth }) => ({
+                  value: folder.id,
+                  label: '\u2003'.repeat(depth) + folderLabel(t, folder),
+                })),
               ]}
               onChange={setParentId}
             />
@@ -902,7 +905,10 @@ function RulesTab({ view }: { view: MailboxView }) {
                   <Select
                     label={t('mailboxSettings.operator')}
                     value={condition.operator}
-                    options={operatorsFor(condition.field).map((operator) => ({ value: operator, label: t(OPERATOR_LABELS[operator]) }))}
+                    options={operatorsFor(condition.field).map((operator) => ({
+                      value: operator,
+                      label: t(OPERATOR_LABELS[operator]),
+                    }))}
                     onChange={(value) =>
                       change((current) => ({
                         ...current,
@@ -933,7 +939,11 @@ function RulesTab({ view }: { view: MailboxView }) {
                     <>
                       <Combobox
                         label={t('mailboxSettings.value')}
-                        suggestions={condition.field === 'category' ? CATEGORIES.filter((name) => name.includes((condition.value ?? '').toLowerCase())) : []}
+                        suggestions={
+                          condition.field === 'category'
+                            ? CATEGORIES.filter((name) => name.includes((condition.value ?? '').toLowerCase()))
+                            : []
+                        }
                         placeholder={condition.field === 'category' ? t('mailboxSettings.categoryHint') : undefined}
                         value={condition.value ?? ''}
                         onChange={(value) =>
@@ -999,11 +1009,16 @@ function RulesTab({ view }: { view: MailboxView }) {
                   label={t('mailboxSettings.chooseFolder')}
                   value={action.folderId ?? ''}
                   placeholder={t('mailboxSettings.chooseFolder')}
-                  options={folders.map(({ folder, depth }) => ({ value: folder.id, label: '\u2003'.repeat(depth) + folderLabel(t, folder) }))}
+                  options={folders.map(({ folder, depth }) => ({
+                    value: folder.id,
+                    label: '\u2003'.repeat(depth) + folderLabel(t, folder),
+                  }))}
                   onChange={(value) =>
                     change((current) => ({
                       ...current,
-                      actions: current.actions.map((item, at) => (at === actionIndex ? { ...item, folderId: value } : item)),
+                      actions: current.actions.map((item, at) =>
+                        at === actionIndex ? { ...item, folderId: value } : item,
+                      ),
                     }))
                   }
                 />

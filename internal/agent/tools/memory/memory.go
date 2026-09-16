@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,8 +65,8 @@ func init() {
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
 				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong.",
 				Parameters: tools.Object(map[string]any{
-					"action": tools.EnumProperty("what to do",
-						"index", "get", "search", "note", "page", "link", "unlink", "move", "forget", "batch"),
+					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
+						"index", "get", "search", "note", "page", "link", "unlink", "move", "merge", "forget", "batch"),
 					"path":       tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
 					"depth":      tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
 					"query":      tools.StringProperty("for search: words"),
@@ -78,13 +79,13 @@ func init() {
 					"aliases":    tools.ArrayProperty("for page: what else they call it", tools.StringProperty("an alias")),
 					"pinned":     tools.BooleanProperty("for page: always in your prompt"),
 					"applies_to": tools.ArrayProperty("for note: which runs besides the conversation read it; any of "+strings.Join(audiences, ", "), tools.StringProperty("an audience")),
-					"to":         tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under"),
+					"to":         tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under, or with number the page the fact goes on. For merge: the page that survives"),
 					"relation":   tools.EnumProperty("for link: what the first page is to the second", relations...),
-					"number":     tools.IntegerProperty("for forget: the fact's number on the page; without it the whole page goes"),
+					"number":     tools.IntegerProperty("for forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself"),
 					"limit":      tools.IntegerProperty("for search and index: how many"),
 					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
+				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `self` is the person you are talking to: what is known about them lives there, and a page under people about them is a duplicate to `merge` into self, never the other way round. `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact on the wrong page is `move`d with its number rather than forgotten and written again, which would lose the words it came from. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action string `json:"action"`
 					Path   string `json:"path"`
@@ -109,7 +110,12 @@ func init() {
 					case "unlink":
 						return "Unlink " + page + " from " + tools.Named(call.To, "another page")
 					case "move":
+						if call.Number > 0 {
+							return "Move one thing it knows about " + page + " to " + tools.Named(call.To, "another page")
+						}
 						return "File " + page + " under " + tools.Named(call.To, "somewhere else")
+					case "merge":
+						return "Merge " + page + " into " + tools.Named(call.To, "another page")
 					case "forget":
 						if call.Number > 0 {
 							return "Forget one thing about " + page
@@ -146,6 +152,9 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 			return tools.RiskDestructive
 		}
 		return tools.RiskWrite
+	case "merge":
+		// A page goes, even though what was on it stays.
+		return tools.RiskDestructive
 	case "batch":
 		risk := tools.RiskRead
 		for _, item := range call.Items {
@@ -220,12 +229,34 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return unlinkAction(ctx, run, arguments)
 	case "move":
 		return moveAction(ctx, run, arguments)
+	case "merge":
+		return mergeAction(ctx, run, arguments)
 	case "forget":
 		return forgetAction(ctx, run, arguments)
 	case "batch":
 		return batchAction(ctx, run, call, arguments)
 	}
 	return nil, fmt.Errorf("%q is not an action of memory", arguments.Action)
+}
+
+// ownPath is the path as the graph has it: a page under people that names
+// the person themselves is "self", where what is known about them lives,
+// so a model that writes people/<their name> reads and files there rather
+// than making a second page about them.
+func ownPath(run tools.Run, path string) string {
+	path = models.NormalizePath(path)
+	if !strings.HasPrefix(path, models.PathPeople+"/") {
+		return path
+	}
+	var selfPage *models.AgentNode
+	_ = run.Database().Transaction(func(tx db.Transaction) (err error) {
+		selfPage, err = tx.GetAgentNode(run.Agent().ID, models.PathSelf)
+		return err
+	})
+	if models.IsThePerson(path, run.Owner(), selfPage) {
+		return models.PathSelf
+	}
+	return path
 }
 
 // --- reading ----------------------------------------------------------
@@ -278,7 +309,7 @@ func indexAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 // getAction is one page: what it says, its facts numbered, what it is
 // joined to, and what is under it.
 func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
-	path := models.NormalizePath(arguments.Path)
+	path := ownPath(run, arguments.Path)
 	if path == "" {
 		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
 	}
@@ -291,9 +322,13 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 		if node, err = tx.GetAgentNode(agentId, path); err != nil || node == nil {
 			return err
 		}
-		if facts, err = tx.ListAgentFacts(agentId, node.ID, false, factsShown); err != nil {
+		// The liveliest sixty, shown in number order: a page of two
+		// hundred is not read whole, and the sixty oldest were the wrong
+		// sixty.
+		if facts, err = tx.ListAgentFactsLively(agentId, node.ID, factsShown); err != nil {
 			return err
 		}
+		sort.Slice(facts, func(left, right int) bool { return facts[left].Number < facts[right].Number })
 		if edges, err = tx.ListAgentEdges(agentId, node.ID); err != nil {
 			return err
 		}
@@ -538,7 +573,7 @@ func mergeFacts(first, second []*models.AgentFact, limit int) []*models.AgentFac
 
 // noteAction puts a fact on a page, making the page if it is missing.
 func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
-	path := models.NormalizePath(arguments.Path)
+	path := ownPath(run, arguments.Path)
 	text := strings.TrimSpace(arguments.Text)
 	if text == "" {
 		return nil, fmt.Errorf("note what? give the fact as text")
@@ -685,7 +720,7 @@ func joinKinds() string {
 
 // pageAction rewrites what a page says.
 func pageAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
-	path := models.NormalizePath(arguments.Path)
+	path := ownPath(run, arguments.Path)
 	if path == "" {
 		return nil, fmt.Errorf("which page? give a path")
 	}
@@ -734,8 +769,8 @@ func pageAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 
 // linkAction joins two pages.
 func linkAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
-	from := models.NormalizePath(arguments.Path)
-	to := models.NormalizePath(arguments.To)
+	from := ownPath(run, arguments.Path)
+	to := ownPath(run, arguments.To)
 	if from == "" || to == "" {
 		return nil, fmt.Errorf("link what to what? give path and to")
 	}
@@ -815,12 +850,40 @@ func unlinkAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	return result, nil
 }
 
-// moveAction files a page somewhere else.
+// mergeAction folds one page into another: two pages for one thing is
+// the graph's commonest wrong shape, and the person notices it first.
+func mergeAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
+	path := models.NormalizePath(arguments.Path)
+	into := models.NormalizePath(arguments.To)
+	if path == "" || into == "" {
+		return nil, fmt.Errorf("merge what into what? give path and to")
+	}
+	for _, root := range models.AgentRoots {
+		if root.Path == path {
+			return nil, fmt.Errorf("%s is one of the places things are filed, and cannot be merged away", path)
+		}
+	}
+	var survivor *models.AgentNode
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		survivor, err = tx.MergeAgentNodes(run.Agent().ID, path, into)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	result := tools.TextResult("%s is now part of %s", path, survivor.Path)
+	result.Note = "merged " + path + " into " + survivor.Path
+	return result, nil
+}
+
+// moveAction files a page somewhere else, or one fact onto another page.
 func moveAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
 	path := models.NormalizePath(arguments.Path)
 	under := models.NormalizePath(arguments.To)
 	if path == "" {
 		return nil, fmt.Errorf("move what? give a path")
+	}
+	if arguments.Number > 0 {
+		return moveFactAction(ctx, run, path, under, arguments.Number)
 	}
 	var moved *models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -831,6 +894,55 @@ func moveAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	}
 	result := tools.TextResult("%s", path+" is now "+moved.Path)
 	result.Note = "filed " + path + " under " + tools.Named(under, "the top")
+	return result, nil
+}
+
+// moveFactAction puts one fact on another page.
+//
+// Without it the only way to correct a sentence filed under the wrong
+// name is to forget it and write it again, which loses the words it came
+// from and the day it was learned. The page it lands on is not made on
+// the way: a mistyped path would otherwise hide the sentence on a page
+// nobody reads.
+func moveFactAction(ctx context.Context, run tools.Run, path, to string, number int) (*tools.Result, error) {
+	if to == "" {
+		return nil, fmt.Errorf("move the fact to which page? give to")
+	}
+	agentId := run.Agent().ID
+	var answer string
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		node, err := tx.GetAgentNode(agentId, path)
+		if err != nil {
+			return err
+		}
+		if node == nil {
+			return fmt.Errorf("there is no page at %s", path)
+		}
+		fact, err := tx.GetAgentFact(agentId, node.ID, number)
+		if err != nil {
+			return err
+		}
+		if fact == nil {
+			return fmt.Errorf("there is no %s", path+"#"+strconv.Itoa(number))
+		}
+		destination, err := tx.GetAgentNode(agentId, to)
+		if err != nil {
+			return err
+		}
+		if destination == nil {
+			return fmt.Errorf("there is no page at %s", to)
+		}
+		moved, err := tx.MoveAgentFact(agentId, fact.ID, destination.ID)
+		if err != nil {
+			return err
+		}
+		answer = path + "#" + strconv.Itoa(number) + " is now " + moved.Reference(to)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	result := tools.TextResult("%s", answer)
+	result.Note = answer
 	return result, nil
 }
 

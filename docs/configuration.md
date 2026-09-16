@@ -1179,7 +1179,10 @@ The values the installed skills need and do not carry. A skill declares the
 keys it wants; an operator fills them in here, one entry per value with the
 `skill` that asked for it, the `key` it asked under, and the `value`, which
 is a secret. `teanode agent skill list` says which keys each installed skill
-is waiting for.
+is waiting for. On a running server the stored configuration is changed
+with `teanode settings set agent 'skillSecrets:=[{"skill":"news","key":"NEWSAPI_KEY","value":"..."}]'`,
+which merges by skill and key; a blank value removes one, and `teanode
+settings show agent` says which are filled in without showing them.
 
 Only the keys a skill scoped to the operator, which is the default. A key it
 scoped to the person is each person's own: they fill it in on their agent
@@ -1227,6 +1230,12 @@ same way. Zero means no cap.
 the model.
 
 **`maxRoundsPerResearch`** — The same for a research run.
+
+**`maxRoundsPerDream`** — How many turns one call of a dream may take: a
+batch of documents read, a month written up, a page divided. Each is a run
+of the conversation loop that may look a page up with the memory tool before
+it answers; four by default, the last of which is told it is the last and
+must answer.
 
 **`maxRoundsPerReply`** — How many turns a drafting run may take. A reply is a
 run of the conversation loop now, with the thread, the mailbox, the address

@@ -844,8 +844,52 @@ The full ingest, started 2026-09-16 00:00, turned up four more:
   panic in a request instead of dying, and the server takes a larger
   answer from an older program until it is rebuilt.
 - **Pace.** `work` (17.9k documents) and `projects` (44.8k) completed a
-  full pass in about forty minutes each; `mattermost` reads about two
-  thousand units a run through the monitor channels.
+  full pass in about forty minutes each. `mattermost` finished its first
+  full pass at 07:18 on the 16th: 464,844 units from 890 of the 940
+  channel files; the 50 left out are the monitoring and bot channels
+  (the largest 426 MB), refused by the bot-channel rule or made of
+  system posts. Pages of 2,048 chat units, sixteen pages a run, twenty
+  seconds between runs, and the daemon keeping the last channel file it
+  cut, took the rate from two thousand units a run to about four
+  thousand a minute.
+
+### 2026-09-16, the shape of a big graph
+
+Asked whether a page of seventy facts scales: reads were bounded (twenty
+facts a turn, sixty in the tool) but by number, oldest first, so the fact
+filed last week never reached a prompt; and nothing divided a page. Now
+recall and the tool take the liveliest facts first, the night divides a
+page past forty facts into themed children (the PepsiCo page became six:
+AGV operations, controllers, PLC, UI, vision, WES), pages merge
+(`agent memory merge`, the tool's `merge`) -- three PepsiCo pages from
+three channel names became one, and `people/ziyan` folded into `self`,
+which a digest of the person's own threads is now routed to. The dashboard
+gained a full-page graph explorer (pan, zoom, edges by weight, expand on
+click, search) and a drill-down navigator that slides into any depth of
+folder with a back button, replacing the three columns; facts page fifty
+at a time. A night that marked four thousand documents read while the
+model was unreachable led to two rules: a batch the model never answered
+is not marked, and `agent dream reread --minutes N` puts back what a
+night marked in that window.
+
+### 2026-09-16, the person's own model
+
+The scan work -- digest, consolidation, rehearsal, association, and now
+the description of each checkout from its readme -- runs on a model of
+the person's own: Qwen3.8-27B (IQ4_XS, llama.cpp) on their GPU machine,
+reached by the server through two ssh forwards, declared as the
+`station` provider at zero price. A 7B vision model was tried first and
+copied the prompts' examples back as facts and as rehearsal questions;
+the 27B files specific, dated, sourced facts from the person's own
+threads (the PepsiCo Carlisle page gained eight in an hour). With the
+model free, the night reads two thousand documents in batches of twenty,
+`agent dream now --catch-up` keeps it running at every tick until nothing
+waits, the request timeout is five minutes (the 27B answers a long prompt
+in one to two), and a running night is no longer put back as stale at
+fifteen minutes -- which had started a second night beside the first.
+Chat is read only where the person was in the thread, three posts or
+more; the rest stays searchable and is not counted as waiting. Facts a
+digest files cite the document, not a conversation.
 
 ## Context and Orientation
 

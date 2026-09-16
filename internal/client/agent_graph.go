@@ -112,6 +112,7 @@ type AgentKnowledgeSpecification struct {
 // AgentDream is what the nightly run did.
 type AgentDream struct {
 	ID         string     `json:"id"`
+	JobID      string     `json:"jobId"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt"`
 	Digested   int        `json:"digested"`
@@ -144,7 +145,7 @@ const nodeFields = `{ id path kind name aliases summary contactId pinned importa
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more sensitive allowed unknownAuthors }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
-const dreamFields = `{ id startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps revised tokens lastError proposals { kind path to reason } }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps revised tokens lastError proposals { kind path to reason } }`
 
 // The documents.
 const (
@@ -172,12 +173,16 @@ const (
 	DocumentSaveAgentNode = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $aliases: [String!], $pinned: Boolean) {
 		SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, aliases: $aliases, pinned: $pinned) ` + nodeFields + `
 	}`
-	DocumentMoveAgentNode = `mutation ($path: String!, $under: String!) {
+	DocumentMergeAgentNodes = `mutation ($path: String!, $into: String!) { MergeAgentNodes(path: $path, into: $into) { id path name } }`
+	DocumentMoveAgentNode   = `mutation ($path: String!, $under: String!) {
 		MoveAgentNode(path: $path, under: $under) ` + nodeFields + `
 	}`
 	DocumentDeleteAgentNode = `mutation ($path: String!) { DeleteAgentNode(path: $path) }`
 	DocumentSaveAgentFact   = `mutation ($path: String!, $number: Int, $kind: String, $text: String!, $happened: String, $audiences: [String!]) {
 		SaveAgentFact(path: $path, number: $number, kind: $kind, text: $text, happened: $happened, audiences: $audiences) ` + factFields + `
+	}`
+	DocumentMoveAgentFact = `mutation ($path: String!, $number: Int!, $to: String!) {
+		MoveAgentFact(path: $path, number: $number, to: $to) ` + factFields + `
 	}`
 	DocumentDeleteAgentFact = `mutation ($path: String!, $number: Int!) { DeleteAgentFact(path: $path, number: $number) }`
 	DocumentSetMyContact    = `mutation ($contactId: String) { SetMyContact(contactId: $contactId) }`
@@ -188,7 +193,8 @@ const (
 	}`
 	DocumentDeleteAgentKnowledgeSource   = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource     = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
-	DocumentDreamAgentNow                = `mutation ($catchUp: Boolean) { DreamAgentNow(catchUp: $catchUp) }`
+	DocumentDreamAgentNow                = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
+	DocumentRereadAgentDocuments         = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
 	DocumentLinkAgentNodes               = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
 	DocumentUnlinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
 	DocumentAllowAgentKnowledgeDirectory = `mutation ($sourceId: String!, $name: String!) {
@@ -285,6 +291,18 @@ func SaveAgentFact(ctx context.Context, connection *Client, fields map[string]an
 		return nil, err
 	}
 	return result.SaveAgentFact, nil
+}
+
+// MoveAgentFact puts one fact on another page, where it takes a new
+// number.
+func MoveAgentFact(ctx context.Context, connection *Client, path string, number int, to string) (*AgentFact, error) {
+	var result struct {
+		MoveAgentFact *AgentFact `json:"MoveAgentFact"`
+	}
+	if err := connection.Execute(ctx, DocumentMoveAgentFact, map[string]any{"path": path, "number": number, "to": to}, &result); err != nil {
+		return nil, err
+	}
+	return result.MoveAgentFact, nil
 }
 
 // DeleteAgentFact strikes one.
@@ -392,13 +410,18 @@ func ListAgentDreams(ctx context.Context, connection *Client, first int) ([]*Age
 	return result.ListAgentDreams, nil
 }
 
-// DreamAgentNow asks for the night to run at the next tick; catching
-// up, at every tick until nothing waits to be read.
-func DreamAgentNow(ctx context.Context, connection *Client, catchUp bool) error {
+// DreamAgentNow asks for the night to run at the next tick. bootstrap,
+// when given, switches bootstrapping on or off: the night at every tick
+// with wider limits until nothing waits to be read.
+func DreamAgentNow(ctx context.Context, connection *Client, bootstrap *bool) error {
 	var result struct {
 		DreamAgentNow bool `json:"DreamAgentNow"`
 	}
-	return connection.Execute(ctx, DocumentDreamAgentNow, map[string]any{"catchUp": catchUp}, &result)
+	variables := map[string]any{}
+	if bootstrap != nil {
+		variables["bootstrap"] = *bootstrap
+	}
+	return connection.Execute(ctx, DocumentDreamAgentNow, variables, &result)
 }
 
 // LinkAgentNodes joins two pages.
@@ -415,4 +438,27 @@ func UnlinkAgentNodes(ctx context.Context, connection *Client, path, to, relatio
 		UnlinkAgentNodes bool `json:"UnlinkAgentNodes"`
 	}
 	return connection.Execute(ctx, DocumentUnlinkAgentNodes, map[string]any{"path": path, "to": to, "relation": relation}, &result)
+}
+
+// MergeAgentNodes folds one page into another.
+func MergeAgentNodes(ctx context.Context, connection *Client, path, into string) (*AgentNode, error) {
+	var result struct {
+		MergeAgentNodes *AgentNode `json:"MergeAgentNodes"`
+	}
+	if err := connection.Execute(ctx, DocumentMergeAgentNodes, map[string]any{"path": path, "into": into}, &result); err != nil {
+		return nil, err
+	}
+	return result.MergeAgentNodes, nil
+}
+
+// RereadAgentDocuments puts back what a night marked read in the last so
+// many minutes.
+func RereadAgentDocuments(ctx context.Context, connection *Client, minutes int) (int, error) {
+	var result struct {
+		RereadAgentDocuments int `json:"RereadAgentDocuments"`
+	}
+	if err := connection.Execute(ctx, DocumentRereadAgentDocuments, map[string]any{"minutes": minutes}, &result); err != nil {
+		return 0, err
+	}
+	return result.RereadAgentDocuments, nil
 }

@@ -155,6 +155,11 @@ type Run struct {
 	// hold or a deferral is judged against the same clock that claimed it.
 	Now time.Time
 
+	// Subject is what a run no job queued is about -- the message a draft
+	// answers, the conversation being titled or compacted -- so that its
+	// transcript names it as a job's would.
+	Subject string
+
 	settings *Settings
 }
 
@@ -390,9 +395,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		// general fifteen minutes it was started a second time beside
 		// itself.
 		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobDream, now.Add(-dreamLongest-5*time.Minute)); err != nil {
-			log.Warningf("cannot put back a night that died: %s", err)
+			log.Warningf("cannot put back a dream that died: %s", err)
 		} else if released > 0 {
-			log.Noticef("put back %d night(s) that died", released)
+			log.Noticef("put back %d dream(s) that died", released)
 		}
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {
 			return err

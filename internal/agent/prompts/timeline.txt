@@ -39,6 +39,20 @@ Every claim comes from the record above. Where the record does not say
 why something was done, say what was done and stop. Do not invent a
 reason, a person or a date.
 
+Much of the record is counts: threads in a channel, commits in a
+repository. A count is a count. "The Amiens channel had 359 threads" may
+be said once, and nothing follows from it -- not what the work was, not
+how it went, not what it means. Never write "suggests", "likely",
+"indicates", "probably", "presumably" or "must have": a sentence that
+needs one of those is a guess, and a guess on this page reads as memory.
+A thin record makes a short page; a month of counts and titles is a few
+lines, not four themes.
+
+What is already known comes with the page each fact is on. Facts on
+different pages are different things: a network on one project's page
+and an error on another's do not become one story because they share a
+month. Say each under what it is about, or leave it out.
+
 {{if .Style}}## How {{.PersonName}} writes
 
 {{.Style}}

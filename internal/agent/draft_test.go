@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,20 +24,44 @@ import (
 // A draft is written in the request: refused where the mailbox has not
 // been granted with drafts on, and otherwise returned as text with the
 // tokens recorded and a transcript left behind.
+//
+// The writing is a one-round turn of the conversation loop with no tools,
+// so the model is asked with stream on, and the request sits after the
+// persona rather than being the only message.
 func TestDraftReply(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	written, err := json.Marshal("Thursday at three works. Bring the plan.\n\n— Z")
+	if err != nil {
+		t.Fatalf("json.Marshal: %s", err)
+	}
+	var mutex sync.Mutex
 	var prompt string
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
-		prompt = body.Messages[len(body.Messages)-1].Content
-		_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Thursday at three works. Bring the plan.\n\n— Z"},"finish_reason":"stop"}],"usage":{"prompt_tokens":80,"completion_tokens":20}}`))
+		mutex.Lock()
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
+		}
+		mutex.Unlock()
+		if !body.Stream {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(writer,
+			"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":80,\"completion_tokens\":20}}\n\ndata: [DONE]\n\n",
+			written)
 	}))
 	defer provider.Close()
 
@@ -59,6 +85,10 @@ func TestDraftReply(t *testing.T) {
 		Instance:      "test",
 		Tick:          time.Hour,
 	})
+	// A turn of the loop acts as the person; a draft reaches for no tool,
+	// but there still has to be somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var owner *models.User
 	var mailbox *models.Mailbox
@@ -113,8 +143,8 @@ func TestDraftReply(t *testing.T) {
 			t.Fatalf("usage %+v", totals)
 		}
 		runs, _ := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
-		if len(runs) != 1 || runs[0].ID != draft.RunID || runs[0].JobKind != "draft" || runs[0].SubjectID != mail.ID {
-			t.Fatalf("transcript %+v", runs)
+		if len(runs) != 1 || runs[0].ID != draft.RunID || runs[0].JobKind != "draft" || runs[0].MailboxID != mailbox.ID || runs[0].SubjectID != mail.ID {
+			t.Fatalf("transcript %+v", runs[0])
 		}
 	})
 

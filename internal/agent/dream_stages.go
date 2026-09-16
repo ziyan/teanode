@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -183,12 +182,6 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 		return false
 	}
 
-	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
-	if err != nil {
-		return false
-	}
-	modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
-
 	var through []string
 	for _, node := range path {
 		line := node.Path
@@ -214,20 +207,11 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 	if err != nil {
 		return false
 	}
-	configuration := run.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 400,
-	})
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobDream), response.Usage)
-		budget.note(response.Usage)
-	}
+	said, err := self.dreamThink(ctx, run, budget, "Looked for a link between "+start.Path+" and "+end.Path, prompt, false)
 	if err != nil {
 		return false
 	}
-	extracted, err := llm.ExtractJSON(response.Message.Content)
+	extracted, err := llm.ExtractJSON(said)
 	if err != nil {
 		return false
 	}
@@ -255,7 +239,7 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 			Evidence: []models.Evidence{{Kind: models.EvidenceDocument, Quote: strings.Join(through, " → ")}},
 		})
 	}); err != nil {
-		log.Debugf("cannot keep a link the night found: %s", err)
+		log.Debugf("cannot keep a link the dream found: %s", err)
 		return false
 	}
 	record.Proposals = append(record.Proposals, models.DreamProposal{
@@ -305,11 +289,6 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 		return
 	}
 
-	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
-	if err != nil {
-		return
-	}
-	modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
 	prompt, err := render("rehearse.txt", map[string]any{
 		"PersonName": personName(run.Owner),
 		"Index":      index,
@@ -319,20 +298,11 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 	if err != nil {
 		return
 	}
-	configuration := run.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 1200,
-	})
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobDream), response.Usage)
-		budget.note(response.Usage)
-	}
+	said, err := self.dreamThink(ctx, run, budget, "Rehearsed what might be asked", prompt, false)
 	if err != nil {
 		return
 	}
-	extracted, err := llm.ExtractJSON(response.Message.Content)
+	extracted, err := llm.ExtractJSON(said)
 	if err != nil {
 		return
 	}
@@ -423,10 +393,6 @@ func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudge
 	if !budget.left() {
 		return true
 	}
-	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
-	if err != nil {
-		return true
-	}
 	lines := make([]string, 0, len(facts))
 	for _, fact := range facts {
 		lines = append(lines, "- "+cutRunes(fact.Text, 400))
@@ -439,21 +405,11 @@ func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudge
 	if err != nil {
 		return true
 	}
-	configuration := run.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 100,
-	})
-	if response != nil {
-		modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
-		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobDream), response.Usage)
-		budget.note(response.Usage)
-	}
+	said, err := self.dreamThink(ctx, run, budget, "Judged whether memory answers: "+cutRunes(question, 80), prompt, false)
 	if err != nil {
 		return true
 	}
-	extracted, err := llm.ExtractJSON(response.Message.Content)
+	extracted, err := llm.ExtractJSON(said)
 	if err != nil {
 		return true
 	}
@@ -582,9 +538,46 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 	}); err != nil {
 		log.Warningf("cannot record what was gone over: %s", err)
 	}
+	self.dreamMergeThePerson(ctx, run, record)
 	self.dreamForgetSaidTwice(ctx, run, record)
 	self.dreamForgetEmptyPages(ctx, run, record)
 	self.dreamClearPaddedOpenings(ctx, run, record)
+}
+
+// dreamMergeThePerson folds a page under people that names the person
+// themselves into self. The filing routes such a page to self, and the
+// memory tool does too, but a page made before either rule existed, or by
+// a model naming them a little differently, sat beside self as a second
+// person -- and a conversation asked to consolidate the two crowned the
+// duplicate as the canonical one instead.
+func (self *Agent) dreamMergeThePerson(ctx context.Context, run *Run, record *models.AgentDream) {
+	var people []*models.AgentNode
+	var selfPage *models.AgentNode
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if selfPage, err = tx.GetAgentNode(run.Agent.ID, models.PathSelf); err != nil {
+			return err
+		}
+		people, err = tx.ListAgentNodesUnder(run.Agent.ID, models.PathPeople, 500)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the people: %s", err)
+		return
+	}
+	for _, node := range people {
+		if !models.IsThePerson(node.Path, run.Owner, selfPage) {
+			continue
+		}
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			tx.AsActor(models.ActorDream)
+			_, err := tx.MergeAgentNodes(run.Agent.ID, node.Path, models.PathSelf)
+			return err
+		}); err != nil {
+			log.Warningf("cannot fold %q into self: %s", node.Path, err)
+			continue
+		}
+		log.Noticef("folded %q into self: it was the person", node.Path)
+		record.Merged++
+	}
 }
 
 // dreamClearPaddedOpenings takes the opening off a page where it only

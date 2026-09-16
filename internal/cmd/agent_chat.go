@@ -105,9 +105,11 @@ func newAgentRunCommand() *cli.Command {
 		Usage: "what the agent did on its own: the transcripts of its runs",
 		Commands: []*cli.Command{
 			{
-				Name:   "list",
-				Usage:  "recent runs, newest first",
-				Flags:  []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}},
+				Name:  "list",
+				Usage: "recent runs, newest first",
+				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}, &cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
+					&cli.BoolFlag{Name: "all", Usage: "every person's runs, for an operator with agent:act"},
+					&cli.StringFlag{Name: "agent", Usage: "one person's runs by their agent id, for an operator with agent:act"}},
 				Action: runAgentRunList,
 			},
 			{
@@ -465,18 +467,32 @@ func runAgentRunList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	runs, err := client.ListAgentRuns(ctx, connection, int(command.Int("first")))
+	first, offset := int(command.Int("first")), int(command.Int("offset"))
+	var runs []*client.AgentRunSummary
+	var total int64
+	if command.Bool("all") || command.String("agent") != "" {
+		runs, total, err = client.ListAllAgentRuns(ctx, connection, first, offset, command.String("agent"))
+	} else {
+		runs, total, err = client.ListAgentRuns(ctx, connection, first, offset, "")
+	}
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
-		return PrintJSON(runs)
+		return PrintJSON(map[string]any{"total": total, "runs": runs})
 	}
 	rows := make([][]string, 0, len(runs))
 	for _, run := range runs {
-		rows = append(rows, []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"), run.Title})
+		rows = append(rows, []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"),
+			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title})
 	}
-	return printTable([]string{"id", "kind", "when", "what"}, rows)
+	if err := printTable([]string{"id", "kind", "when", "tokens in/out", "cost", "what"}, rows); err != nil {
+		return err
+	}
+	if int64(offset+len(runs)) < total {
+		_, _ = fmt.Fprintf(command.Writer, "%d of %d; --offset %d for the next\n", offset+len(runs), total, offset+len(runs))
+	}
+	return nil
 }
 
 func runAgentRunShow(ctx context.Context, command *cli.Command) error {

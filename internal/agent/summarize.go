@@ -145,16 +145,15 @@ func (self *Agent) runSummarize(ctx context.Context, run *Run) error {
 	if registry == nil {
 		return fmt.Errorf("no model registry")
 	}
-	provider, model, err := registry.ForWork(config.AgentWorkSummarize)
-	if err != nil {
-		return err
+	if !self.canThink(configuration) {
+		return fmt.Errorf("no way to act as the person")
 	}
 	threadId := run.Job.SubjectID
 
 	var mails []*models.Mail
 	var previous *models.ThreadSummary
 	var memories []string
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if err := RequireBudget(tx, configuration, run.Agent, run.Owner, time.Now()); err != nil {
 			return err
 		}
@@ -216,25 +215,13 @@ func (self *Agent) runSummarize(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	maximumTokens := 400
-	if run.Source.Summaries.Style == "detailed" {
-		maximumTokens = 900
-	}
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model:     model,
-		Messages:  messages,
-		MaxTokens: maximumTokens,
-	})
-	modelName := registry.Configuration().Models.ForWork(config.AgentWorkSummarize)
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, run.Mailbox.ID, modelName, string(models.AgentJobSummarize), response.Usage)
-	}
+	title := fmt.Sprintf("Summarized %q, %d messages", subject, len(mails))
+	thinking, err := self.oneShot(ctx, run, title, messages[1].Content, models.AgentJobSummarize, config.AgentWorkSummarize)
 	if err != nil {
-		return fmt.Errorf("asking the model: %w", err)
+		return err
 	}
-	text := strings.TrimSpace(response.Message.Content)
+	modelName := registry.Configuration().Models.ForWork(config.AgentWorkSummarize)
+	text := thinking.Text
 	if text == "" {
 		return fmt.Errorf("the model answered with nothing")
 	}
@@ -249,11 +236,7 @@ func (self *Agent) runSummarize(ctx context.Context, run *Run) error {
 			MessageCount:  len(mails),
 			Model:         modelName,
 		}
-		transcript, err := self.recordRun(tx, run, fmt.Sprintf("Summarized %q, %d messages", subject, len(mails)), messages[1].Content, response, modelName)
-		if err != nil {
-			return err
-		}
-		summary.RunID = transcript.ID
+		summary.RunID = thinking.Conversation.ID
 		return tx.PutThreadSummary(summary)
 	})
 }

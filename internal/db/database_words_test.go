@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A question is mostly words the question is made of. Searching for
 // those finds everything, and requiring them finds nothing.
@@ -23,6 +26,9 @@ func TestSearchTextKeepsWhatTheQuestionIsAbout(t *testing.T) {
 		{"what is this", "what is this"},
 		// Not English, and not this list's business either.
 		{"払い戻しはいつですか", "払い戻しはいつですか"},
+		// A pasted page is cut to its first words: any word matching is
+		// the rule, and a page of them matches every row there is.
+		{strings.Repeat("word ", 100), strings.TrimSpace(strings.Repeat("word ", 64))},
 	} {
 		if got := SearchText(row.query); got != row.want {
 			t.Errorf("SearchText(%q) = %q, want %q", row.query, got, row.want)

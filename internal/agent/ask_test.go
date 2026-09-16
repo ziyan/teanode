@@ -60,11 +60,10 @@ func fakeModel(t *testing.T, script []string) (*httptest.Server, *[]map[string]a
 		var body map[string]any
 		_ = json.NewDecoder(request.Body).Decode(&body)
 		if stream, _ := body["stream"].(bool); !stream {
-			// The one call that does not stream is the description a
-			// conversation gets after a turn; it is not a round of the
-			// script.
-			writer.Header().Set("Content-Type", "application/json")
-			_, _ = writer.Write([]byte(`{"id":"d","model":"m","choices":[{"message":{"role":"assistant","content":"{\"title\":\"The plumber\",\"summary\":\"Finding the plumber's invoice.\"}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12}}`))
+			// Every call is a round of the loop and streams; a call that
+			// does not is a mistake the test should see.
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write([]byte(`{"error":{"message":"every call streams"}}`))
 			return
 		}
 		mutex.Lock()

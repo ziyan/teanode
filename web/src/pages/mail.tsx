@@ -71,10 +71,7 @@ export function MailPage() {
   )
 
   const domains = domainQuery.data?.ListDomains ?? []
-  const domainNames = useMemo(
-    () => new Map(domains.map((domain) => [domain.id, domain.domain])),
-    [domains],
-  )
+  const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Mail>[]>(
     () => [
@@ -98,8 +95,7 @@ export function MailPage() {
         filter: 'text',
         truncate: true,
         value: (mail) => mail.from || mail.sender || '',
-        sort: (first, second) =>
-          (first.from || first.sender || '').localeCompare(second.from || second.sender || ''),
+        sort: (first, second) => (first.from || first.sender || '').localeCompare(second.from || second.sender || ''),
       },
       {
         key: 'subject',
@@ -110,9 +106,7 @@ export function MailPage() {
         value: (mail) => mail.subject ?? '',
         sort: (first, second) => (first.subject ?? '').localeCompare(second.subject ?? ''),
         render: (mail) => (
-          <Link to={`/mail/${mail.id}`}>
-            {mail.subject || <span className="muted">{t('mail.noSubject')}</span>}
-          </Link>
+          <Link to={`/mail/${mail.id}`}>{mail.subject || <span className="muted">{t('mail.noSubject')}</span>}</Link>
         ),
       },
       {
@@ -132,9 +126,7 @@ export function MailPage() {
         filter: 'select',
         value: (mail) => label.status(mail.status),
         sort: (first, second) => label.status(first.status).localeCompare(label.status(second.status)),
-        render: (mail) => (
-          <Tag value={label.status(mail.status) || t('common.none')} tone={toneFor(mail.status)} />
-        ),
+        render: (mail) => <Tag value={label.status(mail.status) || t('common.none')} tone={toneFor(mail.status)} />,
       },
       {
         key: 'size',

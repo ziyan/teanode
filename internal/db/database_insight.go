@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -49,6 +50,16 @@ type InsightOperation interface {
 	GetAgentConversation(conversationId string) (*models.AgentConversation, error)
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
+
+	// ListAgentRuns is the runs, newest first, narrowed by the filter and
+	// paged by the options; CountAgentRuns is how many the filter leaves.
+	// An empty agent is every agent's, for an operator.
+	ListAgentRuns(agentId string, filter *AgentRunFilter, options *Options) ([]*models.AgentConversation, error)
+	CountAgentRuns(agentId string, filter *AgentRunFilter) (int64, error)
+
+	// SumAgentRunUsage is what each of these conversations cost: every
+	// message's usage added up, keyed by conversation.
+	SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error)
 	DeleteAgentConversation(conversationId string) error
 
 	// SearchAgentConversations finds a person's conversations by words in
@@ -427,6 +438,97 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	return self.GetAgentConversation(conversationId)
 }
 
+// AgentRunFilter narrows a listing of runs: to one job's (a dream makes
+// many, one per call), to some kinds, to titles carrying some words.
+type AgentRunFilter struct {
+	JobID string
+	Kinds []string
+	Query string
+}
+
+func (self *transaction) agentRunQuery(agentId string, filter *AgentRunFilter) *gorm.DB {
+	query := self.tx.Model(&agentConversationModel{}).Where("\"kind\" = ?", string(models.AgentConversationRun))
+	// No agent means every agent's: the operator's view.
+	if agentId != "" {
+		query = query.Where("\"agent_id\" = ?", agentId)
+	}
+	if filter == nil {
+		return query
+	}
+	if filter.JobID != "" {
+		query = query.Where("\"job_id\" = ?", filter.JobID)
+	}
+	if len(filter.Kinds) > 0 {
+		query = query.Where("\"job_kind\" IN ?", filter.Kinds)
+	}
+	if words := strings.TrimSpace(filter.Query); words != "" {
+		query = query.Where("\"title\" ILIKE ?", "%"+escapeLike(words)+"%")
+	}
+	return query
+}
+
+// ListAgentRuns is the runs, newest first, as the activity table shows
+// them: a page at a time, because a bootstrapping dream makes hundreds a
+// night and the table is meant to page through all of them.
+func (self *transaction) ListAgentRuns(agentId string, filter *AgentRunFilter, options *Options) ([]*models.AgentConversation, error) {
+	query := self.agentRunQuery(agentId, filter).Order("\"last_at\" DESC")
+	if options != nil && options.Limit > 0 {
+		query = query.Limit(int(options.Limit)).Offset(int(options.Offset))
+	}
+	var rows []agentConversationModel
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(rows))
+	for index := range rows {
+		conversations = append(conversations, conversationFromModel(&rows[index]))
+	}
+	return conversations, nil
+}
+
+// SumAgentRunUsage adds up the usage on every message of each conversation,
+// so a list of runs can say what each cost without reading its transcript.
+func (self *transaction) SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error) {
+	totals := map[string]models.AgentUsageNote{}
+	if len(conversationIds) == 0 {
+		return totals, nil
+	}
+	var rows []struct {
+		ConversationID   string
+		PromptTokens     int
+		CompletionTokens int
+		CacheReadTokens  int
+		CacheWriteTokens int
+		Cost             float64
+	}
+	if err := self.tx.Raw(`
+		SELECT "conversation_id",
+		       coalesce(sum(("usage"->>'promptTokens')::bigint), 0) AS prompt_tokens,
+		       coalesce(sum(("usage"->>'completionTokens')::bigint), 0) AS completion_tokens,
+		       coalesce(sum(("usage"->>'cacheReadTokens')::bigint), 0) AS cache_read_tokens,
+		       coalesce(sum(("usage"->>'cacheWriteTokens')::bigint), 0) AS cache_write_tokens,
+		       coalesce(sum(("usage"->>'cost')::double precision), 0) AS cost
+		FROM "agent_message"
+		WHERE "conversation_id" = ANY(?) AND "usage" IS NOT NULL
+		GROUP BY "conversation_id"`, pq.Array(conversationIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		totals[row.ConversationID] = models.AgentUsageNote{
+			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
+			CacheReadTokens: row.CacheReadTokens, CacheWriteTokens: row.CacheWriteTokens, Cost: row.Cost,
+		}
+	}
+	return totals, nil
+}
+
+// CountAgentRuns is how many runs the filter leaves, for the pager.
+func (self *transaction) CountAgentRuns(agentId string, filter *AgentRunFilter) (int64, error) {
+	var total int64
+	err := self.agentRunQuery(agentId, filter).Count(&total).Error
+	return total, err
+}
+
 func (self *transaction) ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error) {
 	query := self.tx.Where("\"agent_id\" = ?", agentId).Order("\"last_at\" DESC")
 	if len(kinds) > 0 {
@@ -538,12 +640,15 @@ func (self *transaction) AppendAgentMessage(message *models.AgentMessage) (*mode
 	if message.ConversationID == "" || message.Role == "" {
 		return nil, fmt.Errorf("db: a message needs a conversation and a role")
 	}
+	// A message is text. A prompt that quotes a file read from disk may
+	// carry bytes that are not, and PostgreSQL refuses the row for one of
+	// them; the replacement character keeps the row and marks the spot.
 	model := &agentMessageModel{
 		ID:             newID(),
 		CreatedAt:      time.Now(),
 		ConversationID: message.ConversationID,
 		Role:           message.Role,
-		Content:        message.Content,
+		Content:        strings.ToValidUTF8(message.Content, "\uFFFD"),
 		ToolCallID:     message.ToolCallID,
 		Name:           message.Name,
 	}

@@ -621,6 +621,24 @@ a.tile:hover strong {
    pressing it by accident is not the same size of mistake. */
 .dialog-actions-other {
   margin-right: auto;
+  /* More than one button on the far side keeps the row's own spacing. */
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* The explorer's far-side actions are icons as tall as the buttons beside
+   them, with a border so they read as buttons. */
+.graph-explore-dialog-action {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* A button keeps its word whole; the icons beside it are narrow enough
+   that the row fits a phone. */
+.dialog-actions button {
+  white-space: nowrap;
 }
 
 /* --- the rail ------------------------------------------------------------- */
@@ -7838,39 +7856,22 @@ button.with-icon {
 }
 
 /* What the agent knows.
-   
-   Two columns on a wide window: the tree of paths, and the page it is
-   showing. On a phone they stack, tree first, because choosing what to
-   read comes before reading it. The tree scrolls inside its own panel so
-   that a graph of six hundred pages does not make the whole page a
+
+   Two columns on a wide window: the navigator, which is one folder of
+   the hierarchy at a time, and the page it is showing. On a phone they
+   show one at a time, the navigator first, because choosing what to read
+   comes before reading it. The navigator scrolls inside its own panel so
+   that a folder of six hundred pages does not make the whole page a
    kilometre long. */
-/* Three columns, the way a file browser shows a hierarchy: folders, the
-   pages in one folder, and the page. The whole path stays in view, and a
-   deep tree is walked sideways rather than by drilling. The first two are
-   lists that scroll on their own; the third is the page and scrolls with
-   the window. */
 .knowledge-columns {
   display: grid;
   /* The page column has a real minimum: below it a paragraph turns into
-     one word per line, which is what happened when the third column was
+     one word per line, which is what happened when the last column was
      left to take whatever was over. */
-  grid-template-columns: 200px minmax(240px, 300px) minmax(360px, 1fr);
+  grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr);
   gap: var(--space-4);
   align-items: start;
   min-width: 0;
-}
-
-.knowledge-columns-two {
-  grid-template-columns: minmax(240px, 320px) minmax(360px, 1fr);
-}
-
-/* The folders as a row, above the list, where there is no room for them
-   as a column. */
-.knowledge-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
 }
 
 .knowledge-chip {
@@ -7884,8 +7885,7 @@ button.with-icon {
   cursor: pointer;
 }
 
-.knowledge-chip:hover:not(:disabled),
-.knowledge-chip.selected {
+.knowledge-chip:hover:not(:disabled) {
   background: var(--field);
   color: var(--text);
 }
@@ -7894,8 +7894,7 @@ button.with-icon {
   min-width: 0;
 }
 
-.knowledge-column-folders,
-.knowledge-column-pages {
+.knowledge-column-navigator {
   position: sticky;
   top: var(--space-4);
 }
@@ -7915,6 +7914,108 @@ button.with-icon {
 .knowledge-lookup {
   width: 100%;
   margin-bottom: var(--space-3);
+}
+
+/* The hierarchy, one folder at a time.
+
+   The header says which folder is open and is the way out of it; the
+   frame below holds the list. A tree of no fixed depth cannot be a
+   column per level -- the window runs out at three -- so it is one
+   column walked into, and the slide is what says which way you went. */
+.knowledge-navigator {
+  min-width: 0;
+}
+
+.knowledge-navigator-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* Level with the rows below it, which are inset by the row's own
+     padding, so the folder's name and its pages line up. */
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The back button is where the chevron on the row that led here was, so
+   the two read as the same door from both sides. */
+.knowledge-navigator-header .icon-action {
+  margin-left: calc(var(--space-2) * -1);
+}
+
+.knowledge-navigator-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Two lists live here while one is replacing the other. The one arriving
+   is the one taken out of the flow, so the panel keeps the height of the
+   list being left until the slide is over: the other way round, a list
+   that had not answered yet collapsed the card to the height of the word
+   "loading" and grew it back a tenth of a second later. */
+.knowledge-navigator-frame {
+  position: relative;
+  overflow: hidden;
+}
+
+.knowledge-navigator-panel.entering {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.knowledge-navigator-panel.leaving {
+  /* It is already gone as far as the person is concerned; a press that
+     landed on it while it slid opened something they had not aimed at. */
+  pointer-events: none;
+}
+
+/* Animations rather than transitions: a list that has just been mounted
+   has no previous position to transition from, and the two frames of
+   nothing that a transition needs to be given one showed as a flicker. */
+.knowledge-navigator-panel.entering.deeper {
+  animation: knowledge-slide-in-right 200ms ease-out;
+}
+
+.knowledge-navigator-panel.leaving.deeper {
+  animation: knowledge-slide-out-left 200ms ease-out both;
+}
+
+.knowledge-navigator-panel.entering.back {
+  animation: knowledge-slide-in-left 200ms ease-out;
+}
+
+.knowledge-navigator-panel.leaving.back {
+  animation: knowledge-slide-out-right 200ms ease-out both;
+}
+
+@keyframes knowledge-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes knowledge-slide-out-left {
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes knowledge-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes knowledge-slide-out-right {
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
 }
 
 .knowledge-rows {
@@ -7949,6 +8050,52 @@ button.with-icon {
   font-weight: 600;
 }
 
+/* In the navigator the row is not one button but two: the name opens the
+   page, the chevron walks into what is filed under it. They share the
+   row's own lit-up background, so it still reads as one row. */
+/* The row's padding belongs to its buttons, not to the row: with it on
+   the row, a tap on the row's edge landed on nothing, and the ripple showed
+   the button ending a finger short of where the row did. */
+.knowledge-row:has(.knowledge-row-open) {
+  padding: 0;
+  gap: 0;
+}
+
+.knowledge-row-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-row-into {
+  flex: none;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  /* As tall as the row and as wide as a finger: the chevron's target is
+     the whole right edge, not the glyph. */
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.knowledge-row-into:hover {
+  color: var(--text);
+}
+
 .knowledge-row-text {
   flex: 1;
   min-width: 0;
@@ -7974,6 +8121,7 @@ button.with-icon {
 
 .knowledge-row-count {
   margin-left: auto;
+  padding-right: var(--space-2);
   color: var(--muted);
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
@@ -8157,6 +8305,445 @@ button.with-icon {
   }
 }
 
+/* The lookup, and beside it the way into the drawing. It wraps rather than
+   squeezing: in the folders column there is room for one of them on a line
+   and no more. */
+.knowledge-lookup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.knowledge-lookup-row .knowledge-lookup {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.knowledge-lookup-row .knowledge-chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A chip that leads somewhere is an anchor, and an anchor in this dashboard
+   is underlined unless the thing it is drawn as says otherwise. */
+a.knowledge-chip {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* The whole graph, drawn.
+
+   A page rather than a card. A drawing that is panned and dragged wants the
+   window, and it must not be inside anything that scrolls: a drag that the
+   page also reads is a drag that scrolls the page out from under the finger.
+   So the box takes exactly the room left under the heading — measured, in
+   the component, against the scrolling area's own padding — and the controls
+   float over the canvas instead of sitting above it, where they would take
+   back the height they are there to save. */
+.graph-explore {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  /* Nothing here is text to select, and a drag that starts on a name should
+     move the drawing rather than highlight the name. */
+  user-select: none;
+}
+
+/* The browser's fullscreen: the frame is the screen, whatever height the
+   page had measured for it, and the border is gone. */
+.graph-explore:fullscreen {
+  height: 100vh !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.graph-explore-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Every gesture on the canvas is one this page handles: one finger pans
+     and two zoom, so the browser must not also scroll or zoom. */
+  touch-action: none;
+  cursor: grab;
+}
+
+/* The colours a kind is drawn in.
+
+   Here rather than in tokens.css: the rest of the dashboard is deliberately
+   almost colourless, and this is one page's palette rather than a set of
+   chrome tokens anything else should reach for. Nine hues that stay apart at
+   the size of a circle, lifted for dark where the light ones go muddy. */
+:root {
+  --graph-self: #5468d4;
+  --graph-person: #2f80c8;
+  --graph-organization: #16867a;
+  --graph-project: #c1543f;
+  --graph-topic: #8a5cc2;
+  --graph-place: #3d8f4f;
+  --graph-thing: #b06f2a;
+  --graph-period: #7a8b2b;
+  --graph-folder: #8e949c;
+  /* A kind the server grew after this was written. It is drawn, quietly,
+     rather than left invisible. */
+  --graph-other: #9aa0a6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --graph-self: #8b9bf0;
+    --graph-person: #6db0e8;
+    --graph-organization: #4fc0b0;
+    --graph-project: #e5836e;
+    --graph-topic: #b58ce0;
+    --graph-place: #72c98a;
+    --graph-thing: #dda05e;
+    --graph-period: #b4c464;
+    --graph-folder: #9ba1a9;
+    --graph-other: #a0a0a8;
+  }
+}
+
+:root[data-theme='dark'] {
+  --graph-self: #8b9bf0;
+  --graph-person: #6db0e8;
+  --graph-organization: #4fc0b0;
+  --graph-project: #e5836e;
+  --graph-topic: #b58ce0;
+  --graph-place: #72c98a;
+  --graph-thing: #dda05e;
+  --graph-period: #b4c464;
+  --graph-folder: #9ba1a9;
+  --graph-other: #a0a0a8;
+}
+
+.graph-explore-kind-self {
+  --graph-kind: var(--graph-self);
+}
+.graph-explore-kind-person {
+  --graph-kind: var(--graph-person);
+}
+.graph-explore-kind-organization {
+  --graph-kind: var(--graph-organization);
+}
+.graph-explore-kind-project {
+  --graph-kind: var(--graph-project);
+}
+.graph-explore-kind-topic {
+  --graph-kind: var(--graph-topic);
+}
+.graph-explore-kind-place {
+  --graph-kind: var(--graph-place);
+}
+.graph-explore-kind-thing {
+  --graph-kind: var(--graph-thing);
+}
+.graph-explore-kind-period {
+  --graph-kind: var(--graph-period);
+}
+.graph-explore-kind-folder {
+  --graph-kind: var(--graph-folder);
+}
+
+.graph-explore-node {
+  cursor: pointer;
+}
+
+/* The child combinator, not a descendant: the badge in the corner is a
+   circle too, and it is not the page. */
+.graph-explore-node > circle {
+  fill: var(--graph-kind, var(--graph-other));
+  stroke: var(--surface);
+  stroke-width: 1.5px;
+}
+
+/* A ring on a page whose neighbourhood has been fetched, so that the edge of
+   what is drawn is visible: everything without one may have more behind it. */
+.graph-explore-node.expanded > circle {
+  stroke: var(--text);
+  stroke-opacity: 0.35;
+  stroke-width: 2px;
+}
+
+.graph-explore-node.selected > circle {
+  stroke: var(--accent);
+  stroke-opacity: 1;
+  stroke-width: 2.5px;
+}
+
+/* More behind it than is drawn: pages filed under it, or a page nobody has
+   opened yet. */
+.graph-explore-more circle {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1px;
+}
+
+.graph-explore-more path {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.4px;
+  stroke-linecap: round;
+}
+
+/* The names are inside the group that carries the zoom, so their size is
+   divided by it as it is drawn — which is what keeps a name twelve real
+   pixels tall however far in or out the drawing is. Below half scale they
+   are closer together than they are tall and are not drawn at all. */
+.graph-explore-name {
+  fill: var(--text);
+  font-size: var(--graph-explore-label, 12px);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  display: none;
+}
+
+.graph-explore-canvas.names .graph-explore-name {
+  display: block;
+}
+
+.graph-explore-edge line {
+  fill: none;
+  stroke: var(--border-strong);
+}
+
+/* Where a page is filed rather than something somebody stated about it:
+   thinner, dashed, and no arrow. The hierarchy is already in the path. */
+.graph-explore-edge.under line {
+  stroke: var(--border);
+  stroke-dasharray: 3 4;
+}
+
+.graph-explore-arrow {
+  fill: var(--border-strong);
+  stroke: none;
+}
+
+/* The relation, on the line. Only once the line is long enough on screen to
+   hold the word; until then it is on the line's tooltip. */
+.graph-explore-relation {
+  fill: var(--muted);
+  font-size: calc(var(--graph-explore-label, 12px) * 0.85);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  display: none;
+}
+
+.graph-explore-canvas.relations .graph-explore-relation {
+  display: block;
+}
+
+.graph-explore-lookup {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  width: min(280px, calc(100% - var(--space-6)));
+}
+
+.graph-explore-lookup input {
+  width: 100%;
+  background: var(--surface);
+}
+
+.graph-explore-found {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
+  max-height: 320px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-floating);
+}
+
+.graph-explore-found li {
+  padding: 0;
+}
+
+.graph-explore-found li.muted {
+  padding: var(--space-2);
+  font-size: var(--text-label);
+}
+
+.graph-explore-found button {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-explore-found button:hover {
+  background: var(--field);
+}
+
+.graph-explore-found button .muted {
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.graph-explore-zoom {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Over a drawing rather than on a toolbar, so these carry their own outline:
+   a borderless button on a canvas full of circles is not a button. */
+.graph-explore-zoom .icon-button,
+.graph-explore-zoom .knowledge-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.graph-explore-zoom .icon-button {
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.graph-explore-legend {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  max-width: min(560px, calc(100% - 180px));
+  /* A legend is read, not pressed, and a drag that starts on it should pan
+     the drawing behind it. */
+  pointer-events: none;
+}
+
+.graph-explore-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.graph-explore-swatch i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-round);
+  background: var(--graph-kind, var(--graph-other));
+}
+
+.graph-explore-hint {
+  flex-basis: 100%;
+  font-size: var(--text-label);
+}
+
+.graph-explore-nothing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  pointer-events: none;
+}
+
+/* What one page says, beside the drawing rather than instead of it: reading
+   a page is a click away, and choosing one on the canvas should not take the
+   canvas away. */
+
+.graph-explore-facts {
+  margin-top: var(--space-3);
+  max-height: 40vh;
+  overflow: auto;
+}
+
+/* On a phone the dialog is the screen, and the facts are what the screen
+   is for: the list takes every line the opening and the buttons leave,
+   and scrolls inside, rather than stopping at a third of the height with
+   the rest of the screen empty under the buttons. */
+@media (max-width: 640px) {
+  .dialog:has(.graph-explore-facts) {
+    display: flex;
+    flex-direction: column;
+  }
+  .dialog:has(.graph-explore-facts) .dialog-actions {
+    margin-top: auto;
+  }
+  .graph-explore-facts {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+.graph-explore-fact {
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-label);
+  line-height: 1.4;
+}
+
+.graph-explore-opening {
+  font-size: var(--text-body);
+  overflow-wrap: break-word;
+}
+
+.graph-explore-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* On a phone the panel is a sheet across the foot of the screen. A 300px
+   card floating over a 390px window is the window. */
+
+@media (max-width: 600px) {
+  /* Full width, no side frame, the same way a card gives up its own at this
+     size: every pixel of a drawing is the drawing. */
+  .graph-explore {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    width: auto;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  /* The sheet covers the foot of the canvas, so the legend goes up out of
+     its way and the sentence about dragging goes: the gestures are the ones
+     the phone already teaches. */
+  .graph-explore-legend {
+    max-width: calc(100% - 140px);
+  }
+
+  .graph-explore-hint {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
   .knowledge-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -8174,4 +8761,23 @@ button.with-icon {
     position: static;
     max-height: 40vh;
   }
+}
+
+/* The hours a dream may start: two clocks in the row that explains them,
+   each with a word before it, on one line while there is room. */
+.hours {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.hours label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.hours label > span {
+  color: var(--muted);
+  font-size: 0.85rem;
 }

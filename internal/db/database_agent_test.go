@@ -204,7 +204,7 @@ func TestAgentConversationTitleIsBounded(t *testing.T) {
 // every six hours" rule read a nil and let another night start five
 // minutes later, for ever. A field that reads back as it went in is the
 // only proof that a write happened.
-func TestAgentTheNightIsSaved(t *testing.T) {
+func TestAgentTheDreamIsSaved(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 

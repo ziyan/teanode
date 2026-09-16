@@ -74,23 +74,41 @@ func TestAutoReplyIsHeldThenSent(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	// Sorting a message and answering it are both turns of the conversation
+	// loop: the model is asked with stream on, and what it was asked is the
+	// last thing the person's side said, after the persona.
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
-		prompt := body.Messages[len(body.Messages)-1].Content
-		answer := `{\"category\":\"personal\",\"priority\":\"high\",\"needs_reply\":true,\"research\":false,\"summary\":\"Maria asks about Thursday.\",\"action_items\":[]}`
-		if strings.Contains(prompt, "<guidance>") {
-			if strings.Contains(prompt, "money") && strings.Contains(prompt, "Please wire") {
-				answer = `{\"reply\": null, \"reason\": \"the message asks for money\"}`
-			} else {
-				answer = `{\"reply\": \"Thursday works, see you at three.\", \"reason\": null}`
+		if !body.Stream {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		prompt := ""
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
 			}
 		}
-		_, _ = fmt.Fprintf(writer, `{"choices":[{"message":{"role":"assistant","content":"%s"},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":10}}`, answer)
+		answer := `{"category":"personal","priority":"high","needs_reply":true,"research":false,"summary":"Maria asks about Thursday.","action_items":[]}`
+		if strings.Contains(prompt, "<guidance>") {
+			if strings.Contains(prompt, "money") && strings.Contains(prompt, "Please wire") {
+				answer = `{"reply": null, "reason": "the message asks for money"}`
+			} else {
+				answer = `{"reply": "Thursday works, see you at three.", "reason": null}`
+			}
+		}
+		encoded, _ := json.Marshal(answer)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(writer,
+			"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":40,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+			encoded)
 	}))
 	defer provider.Close()
 
@@ -123,6 +141,10 @@ func TestAutoReplyIsHeldThenSent(t *testing.T) {
 		Tick:          time.Hour,
 	})
 	worker.SetMailer(sender)
+	// A turn of the loop acts as the person: sorting and answering both
+	// read mail, and neither may write.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var owner *models.User
 	var mailbox *models.Mailbox

@@ -322,9 +322,7 @@ export function TemplateEditorPage() {
           <h3>{t('editor.preview')}</h3>
           {variables.length > 0 ? (
             <>
-              <p className="muted">
-                {t('editor.sampleValues')}
-              </p>
+              <p className="muted">{t('editor.sampleValues')}</p>
               <div className="variables">
                 {variables.map((variable) => (
                   <label key={variable} style={{ margin: 0 }}>
@@ -338,9 +336,7 @@ export function TemplateEditorPage() {
               </div>
             </>
           ) : (
-            <p className="muted">
-              {t('editor.noVariablesYet')}
-            </p>
+            <p className="muted">{t('editor.noVariablesYet')}</p>
           )}
           <RenderedPreview rendered={rendered} error={renderProblem} />
         </div>

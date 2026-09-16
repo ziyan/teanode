@@ -584,7 +584,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 
 	// What the checkout says it is, in the model's words, from its readme:
 	// asked once per head, outside the transaction below.
-	opening, about := self.describeCheckout(ctx, run, source, entry, path)
+	opening, about, links := self.describeCheckout(ctx, run, source, entry, path)
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Marked as the source's, so a page's history can say a sentence
@@ -736,21 +736,50 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 				}
 			}
 		}
+		for _, link := range links {
+			target, err := tx.GetAgentNode(source.AgentID, link.To)
+			if err != nil {
+				return err
+			}
+			if target == nil {
+				continue
+			}
+			if err := tx.PutAgentEdge(&models.AgentEdge{
+				AgentID: source.AgentID, FromID: node.ID, ToID: target.ID,
+				Relation: models.AgentEdgeRelation(link.Relation), Note: cutRunes(link.Note, 200),
+				Evidence: []models.Evidence{{Kind: models.EvidenceRepository, ID: profile.Head, Quote: "readme"}},
+			}); err != nil {
+				return err
+			}
+		}
 		log.Debugf("filed the checkout %q as %q: %d commits, %d of them theirs",
 			entry.ExternalID, path, profile.Commits, ownCommits(own))
 		// The person's own span on this project becomes an event on
-		// their own page: a career timeline nobody had to type, from
+		// their work page: a career timeline nobody had to type, from
 		// dates that are already in git.
 		if own != nil && own.Commits >= ownCommitsWorthRecording && own.First != nil && own.Last != nil {
 			selfPage, err := tx.GetAgentNode(source.AgentID, models.PathSelf)
 			if err != nil || selfPage == nil {
 				return err
 			}
+			workPage, err := tx.GetAgentNode(source.AgentID, models.PathWork)
+			if err != nil {
+				return err
+			}
+			if workPage == nil {
+				workPage, err = tx.PutAgentNode(&models.AgentNode{
+					AgentID: source.AgentID, Path: models.PathWork, Kind: models.NodeTopic,
+					Name: "Work history", Summary: "What they have built, project by project, from the dates in git.",
+				})
+				if err != nil {
+					return err
+				}
+			}
 			text := fmt.Sprintf("Worked on %s: %d commits, %s to %s.",
 				name, own.Commits,
 				own.First.Format("January 2006"), own.Last.Format("January 2006"))
 			// One event per project, rewritten rather than repeated.
-			events, err := tx.ListAgentFacts(source.AgentID, selfPage.ID, true, 200)
+			events, err := tx.ListAgentFacts(source.AgentID, workPage.ID, true, 500)
 			if err != nil {
 				return err
 			}
@@ -763,7 +792,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			}
 			happened := *own.First
 			if _, err := tx.AddAgentFact(&models.AgentFact{
-				AgentID: source.AgentID, NodeID: selfPage.ID, Kind: models.FactEvent,
+				AgentID: source.AgentID, NodeID: workPage.ID, Kind: models.FactEvent,
 				Text: text, HappenedAt: &happened,
 				Evidence: []models.Evidence{{Kind: models.EvidenceRepository, ID: profile.Head}},
 			}); err != nil {
@@ -1221,15 +1250,27 @@ func (self *Agent) releaseComputer(computer, sourceId string) {
 // an inventory. One call per checkout, repeated only when its head moves;
 // the facts are keyed about-1.. so the pass that files them changes them
 // in place.
-func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry, path string) (string, []string) {
+// A link the readme supports -- the website of a project, a plugin of a
+// system -- is filed too, to a page the person already has.
+type describedLink struct {
+	To       string `json:"to"`
+	Relation string `json:"relation"`
+	Note     string `json:"note"`
+}
+
+func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry, path string) (string, []string, []describedLink) {
 	profile := entry.Repository
 	if profile == nil || profile.Head == "" {
-		return "", nil
+		return "", nil, nil
 	}
-	// Already said, for this head: what the page has stays.
+	// Already said, for this head: what the page has stays. Said for an
+	// older head, it stays too unless a fresh one is written: a call that
+	// failed used to leave the page with nothing, since the pass that
+	// files the profile strikes every line it was not asked for.
 	var existingOpening string
-	var existing []string
+	var existing, fallback []string
 	var readme string
+	var index []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		node, err := tx.GetAgentNode(source.AgentID, path)
 		if err != nil {
@@ -1240,11 +1281,15 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 			if err != nil {
 				return err
 			}
-			byKey := map[string]string{}
+			byKey, older := map[string]string{}, map[string]string{}
 			for _, fact := range facts {
 				for _, evidence := range fact.Evidence {
-					if evidence.Kind == models.EvidenceRepository && strings.HasPrefix(evidence.Quote, "about-") && evidence.ID == profile.Head {
-						byKey[evidence.Quote] = fact.Text
+					if evidence.Kind == models.EvidenceRepository && strings.HasPrefix(evidence.Quote, "about-") {
+						if evidence.ID == profile.Head {
+							byKey[evidence.Quote] = fact.Text
+						} else {
+							older[evidence.Quote] = fact.Text
+						}
 					}
 				}
 			}
@@ -1252,11 +1297,17 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 				if text, found := byKey[fmt.Sprintf("about-%d", index)]; found {
 					existing = append(existing, text)
 				}
+				if text, found := older[fmt.Sprintf("about-%d", index)]; found {
+					fallback = append(fallback, text)
+				}
 			}
-			if len(existing) > 0 || strings.TrimSpace(node.Summary) != "" && len(byKey) > 0 {
-				existingOpening = node.Summary
+			existingOpening = node.Summary
+			if len(existing) > 0 {
 				return nil
 			}
+		}
+		if lines, err := memoryLines(tx, source.AgentID, models.AudienceAsk, 10, false); err == nil {
+			index = lines
 		}
 		prefix := strings.Trim(entry.ExternalID, "./")
 		for _, name := range []string{"README.md", "README", "readme.md", "README.rst", "README.txt", "Readme.md"} {
@@ -1286,19 +1337,15 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		return nil
 	}); err != nil {
 		log.Debugf("cannot read what %q says about itself: %s", path, err)
-		return "", nil
+		return existingOpening, fallback, nil
 	}
 	if len(existing) > 0 {
-		return existingOpening, existing
+		return existingOpening, existing, nil
 	}
 	if readme == "" {
-		return "", nil
+		return existingOpening, fallback, nil
 	}
 
-	provider, model, err := run.Registry().ForWork(config.AgentWorkScan)
-	if err != nil {
-		return "", nil
-	}
 	history := ""
 	if profile.First != nil && profile.Last != nil {
 		history = fmt.Sprintf("%d commits, %s.", profile.Commits, monthSpan(profile.First, profile.Last))
@@ -1311,34 +1358,30 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		"Directories": strings.Join(profile.Directories, ", "),
 		"History":     history,
 		"Readme":      readme,
+		"Index":       index,
 	})
 	if err != nil {
-		return "", nil
+		return existingOpening, fallback, nil
 	}
-	configuration := run.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model: model, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 700,
-	})
-	if response != nil {
-		modelName := run.Registry().Configuration().Models.ForWork(config.AgentWorkScan)
-		RecordUsage(run.Database(), run.Agent.ID, "", modelName, string(models.AgentJobIngest), response.Usage)
-	}
+	// A run of the loop, like every call: it may look the graph up for
+	// the pages a link could point at before it answers.
+	thinking, err := self.think(ctx, run, "Described the checkout "+path, prompt, dreamTools,
+		roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan)
 	if err != nil {
 		log.Debugf("cannot ask what %q is: %s", path, err)
-		return "", nil
+		return existingOpening, fallback, nil
 	}
-	extracted, err := llm.ExtractJSON(response.Message.Content)
+	extracted, err := llm.ExtractJSON(thinking.Text)
 	if err != nil {
-		return "", nil
+		return existingOpening, fallback, nil
 	}
 	var answer struct {
-		Opening string   `json:"opening"`
-		Facts   []string `json:"facts"`
+		Opening string          `json:"opening"`
+		Facts   []string        `json:"facts"`
+		Links   []describedLink `json:"links"`
 	}
 	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
-		return "", nil
+		return existingOpening, fallback, nil
 	}
 	var about []string
 	for _, text := range answer.Facts {
@@ -1348,5 +1391,14 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		}
 		about = append(about, cutRunes(text, 400))
 	}
-	return cutRunes(strings.TrimSpace(answer.Opening), 600), about
+	var links []describedLink
+	for _, link := range answer.Links {
+		link.To = models.NormalizePath(link.To)
+		link.Relation = strings.ToLower(strings.TrimSpace(link.Relation))
+		if link.To == "" || link.To == path || !models.IsAgentEdgeRelation(models.AgentEdgeRelation(link.Relation)) || isPromptExample(link.Note) {
+			continue
+		}
+		links = append(links, link)
+	}
+	return cutRunes(strings.TrimSpace(answer.Opening), 600), about, links
 }

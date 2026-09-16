@@ -381,3 +381,91 @@ func TestGraphTheContactThatIsThePerson(t *testing.T) {
 		}
 	})
 }
+
+// A night the server restarted under is closed when the next one starts,
+// with a word about why, rather than saying "still working" for ever.
+func TestGraphADreamCutShortIsClosedByTheNext(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		first, err := tx.StartAgentDream(&models.AgentDream{AgentID: agent.ID})
+		if err != nil {
+			t.Fatalf("StartAgentDream: %s", err)
+		}
+		second, err := tx.StartAgentDream(&models.AgentDream{AgentID: agent.ID})
+		if err != nil {
+			t.Fatalf("StartAgentDream again: %s", err)
+		}
+		dreams, err := tx.ListAgentDreams(agent.ID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentDreams: %s", err)
+		}
+		if len(dreams) != 2 {
+			t.Fatalf("expected two dreams, got %d", len(dreams))
+		}
+		for _, dream := range dreams {
+			switch dream.ID {
+			case first.ID:
+				if dream.FinishedAt == nil || dream.LastError == "" {
+					t.Errorf("the first night should be closed with a word about why, got finished %v, error %q", dream.FinishedAt, dream.LastError)
+				}
+			case second.ID:
+				if dream.FinishedAt != nil {
+					t.Errorf("the second night should still be working")
+				}
+			}
+		}
+	})
+}
+
+// A month with record and no page is owed a page. So is a month whose
+// page reads like a guess, but after the months with none: a page that
+// says what a count "suggests" is rewritten, not left as memory.
+func TestGraphAGuessedMonthIsOwedAgain(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		self, err := tx.GetAgentNode(agent.ID, models.PathSelf)
+		if err != nil || self == nil {
+			t.Fatalf("self page: %v", err)
+		}
+		for _, month := range []string{"2025-03", "2025-04", "2025-05"} {
+			happened, _ := time.Parse("2006-01", month)
+			if _, err := tx.AddAgentFact(&models.AgentFact{
+				AgentID: agent.ID, NodeID: self.ID, Kind: models.FactEvent,
+				Text: "Something happened in " + month + ".", HappenedAt: &happened,
+			}); err != nil {
+				t.Fatalf("AddAgentFact: %s", err)
+			}
+		}
+		for path, summary := range map[string]string{
+			"time/2025/03": "The month was spent on the portal.",
+			"time/2025/05": "The count of threads suggests a busy month.",
+		} {
+			if _, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: agent.ID, Path: path, Kind: models.NodePeriod, Name: path, Summary: summary,
+			}); err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+		}
+		guessed := `\m(suggests?|likely)\M`
+		owed, err := tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, guessed)
+		if err != nil {
+			t.Fatalf("ListAgentMonthsToWriteUp: %s", err)
+		}
+		if len(owed) != 2 || owed[0] != "2025/04" || owed[1] != "2025/05" {
+			t.Fatalf("expected the unwritten month then the guessed one, got %v", owed)
+		}
+		owed, err = tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, "")
+		if err != nil {
+			t.Fatalf("ListAgentMonthsToWriteUp without a pattern: %s", err)
+		}
+		if len(owed) != 1 || owed[0] != "2025/04" {
+			t.Fatalf("expected only the unwritten month, got %v", owed)
+		}
+	})
+}

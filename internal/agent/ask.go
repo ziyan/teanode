@@ -65,6 +65,12 @@ type AskSettings struct {
 	MaxRounds int
 	UsageKind string
 
+	// Work is the kind of work this turn is, which chooses the model: a
+	// dream runs on the operator's scan model, sorting on the triage one.
+	// Empty means the person's own choice, or the ask model, which is
+	// what a turn somebody typed gets.
+	Work config.AgentWork
+
 	// confirmVia is the turn a subagent's confirmation cards are shown in,
 	// which is the turn that started it. A subagent has the tools its
 	// parent has, and some of those ask before they act -- so the card has
@@ -208,7 +214,14 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		return nil, ErrUnavailable
 	}
 	configuration := self.settings.Configuration()
-	if !FeatureAllowed(configuration, "ask") || self.settings.Registry == nil {
+	if self.settings.Registry == nil {
+		return nil, ErrUnavailable
+	}
+	// The ask feature is the person's own chat. A headless run is gated by
+	// the feature that owns its work -- sorting, dreaming, research --
+	// which its caller checked; every model call is a turn of this loop,
+	// so gating them all here would make "ask" the switch for everything.
+	if (settings == nil || !settings.Headless) && !FeatureAllowed(configuration, "ask") {
 		return nil, ErrUnavailable
 	}
 	if settings == nil || settings.Agent == nil || settings.Owner == nil || settings.Operations == nil || settings.Conversation == nil {
@@ -356,10 +369,13 @@ func (self *AskRun) Configuration() *config.Configuration { return self.agent.se
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
 func (self *AskRun) ReadOnly() bool                       { return self.settings.ReadOnly }
-func (self *AskRun) Offered() []*tools.Tool               { return self.offered }
-func (self *AskRun) Loaded() map[string]bool              { return self.loaded }
-func (self *AskRun) Load(name string)                     { self.loaded[name] = true }
-func (self *AskRun) Storage() storage.Storage             { return self.agent.settings.Storage }
+
+// Usage is what the turn has spent so far, every round added up.
+func (self *AskRun) Usage() llm.Usage         { return self.usage }
+func (self *AskRun) Offered() []*tools.Tool   { return self.offered }
+func (self *AskRun) Loaded() map[string]bool  { return self.loaded }
+func (self *AskRun) Load(name string)         { self.loaded[name] = true }
+func (self *AskRun) Storage() storage.Storage { return self.agent.settings.Storage }
 func (self *AskRun) Recalled() []string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -505,7 +521,14 @@ func (self *AskRun) loop() {
 			})
 			self.emit(Event{Kind: EventNote, Note: "stopped"})
 		} else {
+			// In the transcript too: a run that failed used to hold its
+			// prompt and nothing else, and the reason was in the server
+			// log where the person never looks.
 			log.Warningf("the agent of %q failed a turn: %s", self.settings.Owner.Username, err)
+			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
+				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "failed: " + err.Error()})
+				return err
+			})
 			self.emit(Event{Kind: EventError, Error: err.Error()})
 		}
 	}
@@ -522,7 +545,10 @@ func (self *AskRun) turn() error {
 		return err
 	}
 	modelName := registry.Configuration().Models.ForWork(config.AgentWorkAsk)
-	if settings.Agent.AskModel != "" {
+	switch {
+	case settings.Work != "":
+		modelName = registry.Configuration().Models.ForWork(settings.Work)
+	case settings.Agent.AskModel != "":
 		modelName = settings.Agent.AskModel
 	}
 
@@ -720,8 +746,19 @@ func (self *AskRun) turn() error {
 		for _, tool := range sent {
 			definitions = append(definitions, tool.Definition())
 		}
+		// The last round is told it is the last, so that it answers. A
+		// model that spent every round looking things up ended with a
+		// tool result and no answer at all. Told instead of stripped of
+		// its tools: without the definitions a model trained on them
+		// writes the call out as words, which the server then mangles,
+		// and the answer is neither a call nor an answer.
+		toolChoice := ""
+		if round == maximumRounds-1 && len(definitions) > 0 {
+			messages = append(messages, llm.ChatMessage{Role: llm.RoleUser, Content: lastRoundNotice})
+			toolChoice = "none"
+		}
 
-		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: 4000})
+		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: 4000, ToolChoice: toolChoice})
 		if response != nil {
 			self.usage = self.usage.Add(response.Usage)
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
@@ -771,6 +808,20 @@ func (self *AskRun) turn() error {
 		}
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
+		}
+		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && round < maximumRounds-1 {
+			// A tool call written out as words is one the server could not
+			// read: a local model's template asks for XML the server parses
+			// only when it is well formed, and two calls in one breath, or
+			// one cut short, come back as mangled text with no call in it.
+			// Told, and asked again, rather than taken as the answer.
+			self.emit(Event{Kind: EventNote, Note: "a tool call the server could not read; asked again"})
+			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
+				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: models.AgentMessageNote, Content: "a tool call the server could not read; asked again"})
+				return err
+			})
+			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: unreadableCallNotice})
+			continue
 		}
 		if len(answer.ToolCalls) == 0 {
 			// A new named conversation is titled now, so the picker has a
@@ -840,9 +891,13 @@ func (self *AskRun) turn() error {
 	return nil
 }
 
-// chooseModel is the provider and model for this person's Ask: their own
-// choice when the operator offers choices, else the one for ask work.
+// chooseModel is the provider and model for this turn: the one for its
+// kind of work when the turn is a job's, else the person's own choice
+// when the operator offers choices, else the one for ask work.
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
+	if self.settings.Work != "" {
+		return registry.ForWork(self.settings.Work)
+	}
 	if chosen := strings.TrimSpace(self.settings.Agent.AskModel); chosen != "" {
 		for _, choice := range configuration.Agent.Models.Choices {
 			if choice == chosen {
@@ -852,6 +907,20 @@ func (self *AskRun) chooseModel(configuration *config.Configuration, registry *l
 	}
 	return registry.ForWork(config.AgentWorkAsk)
 }
+
+// unreadableCallNotice is what a round is told when its tool call came
+// back as words. Sent, not stored as the person's.
+const unreadableCallNotice = "That tool call could not be read. Call one tool at a time, with its arguments exactly as its definition asks, or answer in words with what was asked for."
+
+// textualToolCall says whether an answer is a tool call written out rather
+// than made: the markers the Qwen family's templates use.
+func textualToolCall(content string) bool {
+	return strings.Contains(content, "<tool_call>") || strings.Contains(content, "<function=")
+}
+
+// lastRoundNotice is what the final round is told. Sent, not stored: it is
+// the loop's word, not the person's, and the transcript is theirs.
+const lastRoundNotice = "This is the last round: no tool can be called now. Answer in words, with the object that was asked for, from what you have."
 
 // chat streams when the provider can, so the drawer sees the words as they
 // come, and falls back to one call when it cannot.

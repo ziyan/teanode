@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -81,6 +82,20 @@ type GraphOperation interface {
 	// AddAgentFact puts a sentence on a page, taking the next number.
 	AddAgentFact(fact *models.AgentFact) (*models.AgentFact, error)
 
+	// CountAgentNodeChildren is how many pages are filed under each of
+	// the given ones, in one query.
+	CountAgentNodeChildren(agentId string, nodeIds []string) (map[string]int, error)
+
+	// MergeAgentNodes folds one page into another: its facts move over,
+	// its links are re-pointed, its children go under the other, its
+	// aliases and name join the other's aliases, and it is deleted. Two
+	// pages for one thing is the graph's commonest wrong shape.
+	MergeAgentNodes(agentId, fromPath, intoPath string) (*models.AgentNode, error)
+
+	// MoveAgentFact puts a fact on another page, keeping its identifier
+	// and taking the next number there; both pages' histories say so.
+	MoveAgentFact(agentId, factId, toNodeId string) (*models.AgentFact, error)
+
 	// UpdateAgentFact changes one, by identifier.
 	UpdateAgentFact(agentId, factId string, modify func(*models.AgentFact) error) (*models.AgentFact, error)
 
@@ -91,6 +106,9 @@ type GraphOperation interface {
 
 	// ListAgentFacts is a page's facts, live ones first by use.
 	ListAgentFacts(agentId, nodeId string, includeDormant bool, limit int) ([]*models.AgentFact, error)
+	// ListAgentFactsLively is the same, most recently wanted or changed
+	// first, for a reader that has room for only some of them.
+	ListAgentFactsLively(agentId, nodeId string, limit int) ([]*models.AgentFact, error)
 
 	// ListAgentFactsForAudience is what an unattended run of a kind
 	// reads, newest and most used first.
@@ -851,6 +869,18 @@ func (self *transaction) ListAgentFacts(agentId, nodeId string, includeDormant b
 	return self.factsFrom(query.Order(`"number" ASC`).Limit(limit))
 }
 
+// ListAgentFactsLively is a page's facts with the ones most recently
+// wanted or changed first: what a reader with room for twenty of a
+// hundred should see. By number, the twenty were the oldest, and the
+// fact filed last week never reached a prompt on a page of eighty.
+func (self *transaction) ListAgentFactsLively(agentId, nodeId string, limit int) ([]*models.AgentFact, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	return self.factsFrom(self.tx.Where(`"agent_id" = ? AND "node_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL`, agentId, nodeId).
+		Order(`"used_at" DESC NULLS LAST, "modified_at" DESC`).Limit(limit))
+}
+
 func (self *transaction) ListAgentFactsForAudience(agentId string, audience models.AgentAudience, limit int) ([]*models.AgentFact, error) {
 	if limit <= 0 {
 		limit = 30
@@ -1224,4 +1254,151 @@ func (self *transaction) SetUserContact(userId, contactId string) error {
 		value = contactId
 	}
 	return self.tx.Exec(`UPDATE "user" SET "contact_id" = ? WHERE "id" = ?`, value, userId).Error
+}
+
+// ErrNoSuchFact is a fact that is not there any more: struck, or merged
+// away, between a caller reading it and acting on it.
+var ErrNoSuchFact = errors.New("db: no such fact")
+
+func (self *transaction) MoveAgentFact(agentId, factId, toNodeId string) (*models.AgentFact, error) {
+	facts, err := self.factsFrom(self.tx.Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1))
+	if err != nil {
+		return nil, err
+	}
+	if len(facts) == 0 {
+		return nil, fmt.Errorf("%w: %q", ErrNoSuchFact, factId)
+	}
+	fact := facts[0]
+	if fact.NodeID == toNodeId {
+		return fact, nil
+	}
+	var numbers []int
+	if err := self.tx.Raw(
+		`UPDATE "agent_node" SET "next_fact_number" = "next_fact_number" + 1
+		 WHERE "id" = ? AND "agent_id" = ? RETURNING "next_fact_number" - 1`,
+		toNodeId, agentId).Scan(&numbers).Error; err != nil {
+		return nil, err
+	}
+	if len(numbers) == 0 {
+		return nil, fmt.Errorf("db: no page %q to move a fact to", toNodeId)
+	}
+	from := fact.NodeID
+	before := map[string]any{"number": fact.Number, "text": fact.Text}
+	fact.NodeID, fact.Number, fact.ModifiedAt = toNodeId, numbers[0], time.Now().Truncate(time.Microsecond)
+	if err := self.tx.Model(&agentFactModel{}).Where(`"id" = ?`, fact.ID).Updates(map[string]any{
+		"node_id": fact.NodeID, "number": fact.Number, "modified_at": fact.ModifiedAt,
+	}).Error; err != nil {
+		return nil, err
+	}
+	paths := self.pathsOf(agentId, from, toNodeId)
+	self.note(agentId, from, models.RevisionFactGone, withOther(before, paths[toNodeId]), nil, "moved")
+	self.note(agentId, toNodeId, models.RevisionFactAdded, nil,
+		withOther(map[string]any{"number": fact.Number, "text": fact.Text, "kind": string(fact.Kind)}, paths[from]), "moved")
+	return fact, nil
+}
+
+func (self *transaction) MergeAgentNodes(agentId, fromPath, intoPath string) (*models.AgentNode, error) {
+	from, err := self.GetAgentNode(agentId, fromPath)
+	if err != nil {
+		return nil, err
+	}
+	if from == nil {
+		return nil, fmt.Errorf("there is no page at %s", fromPath)
+	}
+	into, err := self.GetAgentNode(agentId, intoPath)
+	if err != nil {
+		return nil, err
+	}
+	if into == nil {
+		return nil, fmt.Errorf("there is no page at %s", intoPath)
+	}
+	if from.ID == into.ID {
+		return into, nil
+	}
+	facts, err := self.ListAgentFacts(agentId, from.ID, true, 10000)
+	if err != nil {
+		return nil, err
+	}
+	for _, fact := range facts {
+		if _, err := self.MoveAgentFact(agentId, fact.ID, into.ID); err != nil {
+			return nil, err
+		}
+	}
+	edges, err := self.ListAgentEdges(agentId, from.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, edge := range edges {
+		moved := *edge
+		if moved.FromID == from.ID {
+			moved.FromID = into.ID
+		}
+		if moved.ToID == from.ID {
+			moved.ToID = into.ID
+		}
+		if err := self.DeleteAgentEdge(agentId, edge.FromID, edge.ToID, edge.Relation); err != nil {
+			return nil, err
+		}
+		// A link from the page to itself, after the merge, is no link.
+		if moved.FromID == moved.ToID {
+			continue
+		}
+		if err := self.PutAgentEdge(&moved); err != nil {
+			return nil, err
+		}
+	}
+	children, err := self.ListAgentNodeChildren(agentId, from.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, child := range children {
+		if _, err := self.MoveAgentNode(agentId, child.Path, into.Path); err != nil {
+			return nil, err
+		}
+	}
+	// What the merged page was called is another name for the survivor.
+	aliases := append([]string{}, into.Aliases...)
+	known := map[string]bool{strings.ToLower(into.Name): true}
+	for _, alias := range aliases {
+		known[strings.ToLower(alias)] = true
+	}
+	for _, name := range append([]string{from.Name, models.LastSegment(from.Path)}, from.Aliases...) {
+		if name = strings.TrimSpace(name); name != "" && !known[strings.ToLower(name)] {
+			aliases = append(aliases, name)
+			known[strings.ToLower(name)] = true
+		}
+	}
+	into.Aliases = aliases
+	if strings.TrimSpace(into.Summary) == "" {
+		into.Summary = from.Summary
+	}
+	if into, err = self.PutAgentNode(into); err != nil {
+		return nil, err
+	}
+	self.note(agentId, into.ID, models.RevisionMoved, map[string]any{"merged": from.Path}, nil, "merged into this page")
+	if _, err := self.DeleteAgentNode(agentId, from.Path); err != nil {
+		return nil, err
+	}
+	return into, nil
+}
+
+func (self *transaction) CountAgentNodeChildren(agentId string, nodeIds []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(nodeIds) == 0 {
+		return counts, nil
+	}
+	var rows []struct {
+		ParentID string `gorm:"column:parent_id"`
+		Count    int    `gorm:"column:count"`
+	}
+	if err := self.tx.Raw(`
+		SELECT "parent_id", count(*) AS "count" FROM "agent_node"
+		WHERE "agent_id" = ? AND "parent_id" = ANY(?) AND NOT "dormant"
+		GROUP BY "parent_id"`, agentId, pq.Array(nodeIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.ParentID] = row.Count
+	}
+	return counts, nil
 }

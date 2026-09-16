@@ -111,7 +111,6 @@ export function TemplatesTab() {
 
   return (
     <>
-
       <SettingsSection
         title={t('templates.title')}
         description={t('templates.intro')}

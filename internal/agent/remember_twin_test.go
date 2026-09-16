@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,10 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
+// theirSentence is the person's own line in the transcript a filing run
+// was given: its identifier, and what they said.
+var theirSentence = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] them: (.+)`)
+
 // The same thing said twice on different days ends up as one fact.
 //
 // This is the failure a graph actually has: not forgetting, but keeping
@@ -32,50 +37,64 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	// The second is the first said the other way round. It has to be a
+	// rewording the fake embedder below can see through: it reads a
+	// sentence as the words in it, so a paraphrase that swaps a word for
+	// its cousin lands further apart than the twin check's floor, which
+	// says nothing about the check and everything about the fake.
 	said := []string{
 		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
-		"The neighbour's boat Kittiwake gets repainted by them every spring.",
+		"Every spring they repaint Kittiwake, the neighbour's boat.",
 	}
-	turn := 0
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if strings.Contains(request.URL.Path, "embeddings") {
 			writeMeaning(writer, request)
 			return
 		}
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
+		// The last thing the person's side said: every call is a turn of the
+		// loop now, so the persona goes first and the prompt after it.
 		prompt := ""
-		if len(body.Messages) > 0 {
-			prompt = body.Messages[len(body.Messages)-1].Content
+		for _, message := range body.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
 		}
-		// Whatever it is asked, it files the sentence for this turn
-		// against the boat's page, citing the person's own message.
-		message := theirMessage.FindStringSubmatch(prompt)
-		id := ""
-		if len(message) > 1 {
-			id = message[1]
+		// It files the sentence this run was given against the boat's page,
+		// citing the person's own message. Taken from the transcript rather
+		// than counted off, because the filing run is no longer the only
+		// call a tick makes.
+		answer := `{"facts": []}`
+		if said := theirSentence.FindStringSubmatch(prompt); len(said) > 2 {
+			answer = fmt.Sprintf(
+				`{"facts": [{"path": "things/kittiwake", "nodeKind": "thing", "nodeName": "Kittiwake", "kind": "fact", "text": %q, "messageId": %q, "quote": %q}]}`,
+				said[2], said[1], said[2])
 		}
-		text := said[0]
-		if turn > 0 && turn <= len(said) {
-			text = said[turn-1]
+		content, _ := json.Marshal(answer)
+		if body.Stream {
+			// A round of the loop streams: one chunk with the whole answer.
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(writer,
+				"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":10}}\n\ndata: [DONE]\n\n",
+				content)
+			return
 		}
-		turn++
-		answer, _ := json.Marshal(fmt.Sprintf(
-			`{"facts": [{"path": "things/kittiwake", "nodeKind": "thing", "nodeName": "Kittiwake", "kind": "fact", "text": %q, "messageId": %q, "quote": %q}]}`,
-			text, id, text))
 		_, _ = fmt.Fprintf(writer,
 			`{"choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`,
-			answer)
+			content)
 	}))
 	defer provider.Close()
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
-	// No nightly run: a tick queues whatever is due, and whether a night
+	// No dream: a tick queues whatever is due, and whether a dream
 	// is due depends on the hour the test happens to run at. See
 	// schedule_run_test.go for what that cost once.
 	dreamingOff := false
@@ -96,6 +115,10 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 		Configuration: func() *config.Configuration { return configuration },
 		Instance:      "test", Tick: time.Hour,
 	})
+	// Every call the filing run makes is a turn of the loop, which acts as
+	// the person and so needs somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var found *models.Agent
 	var conversation *models.AgentConversation

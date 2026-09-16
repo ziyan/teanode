@@ -97,6 +97,19 @@ export type Sort = { key: string; direction: 'ascending' | 'descending' }
 
 const PAGE_SIZES = [25, 50, 100, 200]
 
+// Remote is a list the server pages: the rows given are one page of it,
+// total is how long the whole list is, and onRange is told which page,
+// how many rows, which filters and which order to fetch whenever any of
+// them change. The table then filters, sorts and slices nothing itself.
+// For a list that is hundreds of thousands long -- every run the agent
+// made -- a table that had to hold all of it to page it could not.
+export type Range = {
+  offset: number
+  limit: number
+  filters: Record<string, string | string[]>
+  order: Sort | null
+}
+
 export function DataTable<Row>({
   columns,
   rows,
@@ -109,10 +122,12 @@ export function DataTable<Row>({
   selected,
   onSelect,
   selectionActions,
+  remote,
 }: {
   columns: Column<Row>[]
   rows: Row[]
   rowKey: (row: Row) => string
+  remote?: { total: number; onRange: (range: Range) => void }
 
   // Where a row goes when it is clicked. A row that has somewhere to go is a
   // bigger target than the one link inside it, and people aim at the row.
@@ -200,21 +215,23 @@ export function DataTable<Row>({
 
   const filtered = useMemo(
     () =>
-      rows.filter((row) =>
-        columns.every((column) => {
-          const filter = filters[column.key]
-          if (!filter || filter.length === 0) {
-            return true
-          }
-          const value = column.value?.(row)
-          return Array.isArray(filter) ? matchesSelection(value, filter) : matchesText(value, filter)
-        }),
-      ),
-    [rows, columns, filters],
+      remote
+        ? rows
+        : rows.filter((row) =>
+            columns.every((column) => {
+              const filter = filters[column.key]
+              if (!filter || filter.length === 0) {
+                return true
+              }
+              const value = column.value?.(row)
+              return Array.isArray(filter) ? matchesSelection(value, filter) : matchesText(value, filter)
+            }),
+          ),
+    [rows, columns, filters, remote],
   )
 
   const sorted = useMemo(() => {
-    if (!order) {
+    if (!order || remote) {
       return filtered
     }
     const column = columns.find((candidate) => candidate.key === order.key)
@@ -241,9 +258,19 @@ export function DataTable<Row>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pageSize, order])
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
+  // How long the list is: the rows in hand, or what the server says.
+  const total = remote ? remote.total : filtered.length
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const current = Math.min(page, pageCount - 1)
-  const visible = sorted.slice(current * pageSize, current * pageSize + pageSize)
+  const visible = remote ? rows : sorted.slice(current * pageSize, current * pageSize + pageSize)
+
+  // A remote list is fetched for the page, size, filters and order in
+  // force, whenever any of them change.
+  const onRange = remote?.onRange
+  useEffect(() => {
+    onRange?.({ offset: current * pageSize, limit: pageSize, filters, order })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onRange, current, pageSize, JSON.stringify(filters), order?.key, order?.direction])
 
   // Scroll position: saved as it changes, restored once the rows exist —
   // there is nothing to scroll to before then.
@@ -325,8 +352,7 @@ export function DataTable<Row>({
                       if (input) {
                         // Some but not all: the box says so rather than
                         // looking empty when half the list is chosen.
-                        input.indeterminate =
-                          chosen.length > 0 && !visible.every((row) => selected?.has(rowKey(row)))
+                        input.indeterminate = chosen.length > 0 && !visible.every((row) => selected?.has(rowKey(row)))
                       }
                     }}
                     onChange={(event) => {
@@ -467,9 +493,9 @@ export function DataTable<Row>({
         )}
       </div>
 
-      {filtered.length > 0 && (
+      {total > 0 && (
         <div className="table-bar">
-          <span className="muted">{countLabel(filtered.length, filtered.length !== rows.length)}</span>
+          <span className="muted">{countLabel(total, remote ? filtering : filtered.length !== rows.length)}</span>
 
           {filtering && (
             <button className="link" onClick={() => setFilters({})}>
@@ -496,8 +522,8 @@ export function DataTable<Row>({
             <span className="muted">
               {t('table.range', {
                 first: current * pageSize + 1,
-                last: Math.min(filtered.length, (current + 1) * pageSize),
-                total: filtered.length,
+                last: Math.min(total, (current + 1) * pageSize),
+                total,
               })}
             </span>
 

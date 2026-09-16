@@ -20,20 +20,24 @@ import (
 )
 
 // sortingWorld is a granted mailbox with one message in it, and a model that
-// answers whatever the script says: the streaming rounds of the loop, and the
-// single call the sorting run falls back to.
+// answers whatever the script says: the streaming rounds of the loop, and
+// anything asked of the model outside it.
 type sortingWorld struct {
-	database  db.Database
-	worker    *agent.Agent
-	owner     *models.User
-	agent     *models.Agent
-	mailbox   *models.Mailbox
-	mail      *models.Mail
-	streamed  *[]map[string]any
-	singleUse *int
+	database    db.Database
+	worker      *agent.Agent
+	owner       *models.User
+	agent       *models.Agent
+	mailbox     *models.Mailbox
+	mail        *models.Mail
+	streamed    *[]map[string]any
+	directCalls *int
 }
 
-func newSortingWorld(t *testing.T, rounds []string, single string) *sortingWorld {
+// newSortingWorld builds that world. rounds are the streamed rounds of the
+// loop, one after another; direct is what any call made outside the loop is
+// answered with, and how many of those were made is counted, because the
+// sorting run should make none.
+func newSortingWorld(t *testing.T, rounds []string, direct string) *sortingWorld {
 	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	t.Cleanup(closeDatabase)
@@ -45,13 +49,13 @@ func newSortingWorld(t *testing.T, rounds []string, single string) *sortingWorld
 		var body map[string]any
 		_ = json.NewDecoder(request.Body).Decode(&body)
 		if stream, _ := body["stream"].(bool); !stream {
-			// Not a round of the loop: either the one call the sorting run
-			// falls back to, or the description a conversation is given.
+			// Not a round of the loop: the description a conversation is
+			// given, and nothing else.
 			mutex.Lock()
 			calls++
 			mutex.Unlock()
 			writer.Header().Set("Content-Type", "application/json")
-			_, _ = writer.Write([]byte(single))
+			_, _ = writer.Write([]byte(direct))
 			return
 		}
 		mutex.Lock()
@@ -89,7 +93,7 @@ func newSortingWorld(t *testing.T, rounds []string, single string) *sortingWorld
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
 	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
-	world := &sortingWorld{database: database, worker: worker, streamed: &requests, singleUse: &calls}
+	world := &sortingWorld{database: database, worker: worker, streamed: &requests, directCalls: &calls}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
 		if world.owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"}); err != nil {
@@ -201,27 +205,39 @@ func TestSortingCanLookSomethingUpFirst(t *testing.T) {
 	})
 }
 
-// A model that will not end with the object still sorts the mail.
+// A model that will not end with the object has not sorted the message.
 //
-// The loop is better when the model is good enough to finish with clean
-// JSON. An operator pointing this server at a small local model must still
-// get their mail sorted, so the single call the run used to make is still
-// there, behind it.
-func TestSortingFallsBackToTheSingleCall(t *testing.T) {
+// There used to be a single call behind the loop to catch this: a turn that
+// ended in prose was asked again, at one prompt, and whatever it said then
+// was filed. Every model call is a turn of the loop now, and there is no
+// second way of asking, so a run that ends in prose files nothing and the
+// job says why -- which is a failure the person can see and retry, rather
+// than a sorting done quietly by another route.
+func TestSortingWillNotFileProseAsAnInsight(t *testing.T) {
 	prose := `{"id":"s1","model":"m","choices":[{"delta":{"content":"I think this one is personal, and fairly urgent."},"finish_reason":"stop"}]}
 {"id":"s1","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
-	single := `{"id":"c1","model":"m","choices":[{"message":{"role":"assistant","content":"` + sortedObject + `"},"finish_reason":"stop"}],"usage":{"prompt_tokens":80,"completion_tokens":20}}`
+	// Nothing outside the loop should be asked at all; this is what such a
+	// call would be answered with, so that making one is visible.
+	direct := `{"id":"c1","model":"m","choices":[{"message":{"role":"assistant","content":"` + sortedObject + `"},"finish_reason":"stop"}],"usage":{"prompt_tokens":80,"completion_tokens":20}}`
 
-	world := newSortingWorld(t, []string{prose}, single)
-	insight := world.sort(t)
+	world := newSortingWorld(t, []string{prose}, direct)
 
-	if insight == nil || insight.Category != "personal" || insight.Priority != "high" {
-		t.Fatalf("the insight, from the call behind the loop: %+v", insight)
+	if insight := world.sort(t); insight != nil {
+		t.Fatalf("prose is not a sorting: %+v", insight)
 	}
-	if *world.singleUse == 0 {
-		t.Fatal("the single call is what sorted it")
+	if *world.directCalls != 0 {
+		t.Fatalf("no call was made for sorting outside the loop, got %d", *world.directCalls)
 	}
-	if insight.RunID == "" {
-		t.Fatal("and it left a transcript of its own")
-	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.agent.ID}, nil)
+		if err != nil {
+			t.Fatalf("ListAgentJobs: %s", err)
+		}
+		if len(jobs) != 1 || jobs[0].Kind != models.AgentJobTriage {
+			t.Fatalf("the one triage job: %+v", jobs)
+		}
+		if !strings.Contains(jobs[0].Error, "did not end with the object") {
+			t.Fatalf("the job should say what went wrong: %+v", jobs[0])
+		}
+	})
 }

@@ -41,6 +41,10 @@ type DreamOperation interface {
 	// waiting.
 	ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error)
 	MarkAgentDocumentsDigested(documentIds []string, at time.Time) error
+	// UnmarkAgentDocumentsDigested puts back into the queue everything
+	// marked read since the given time: for a night that marked what it
+	// never read. Says how many.
+	UnmarkAgentDocumentsDigested(agentId string, since time.Time) (int64, error)
 
 	// ListAgentNodesToConsolidate is the pages whose facts have changed
 	// since their summary was written.
@@ -57,6 +61,17 @@ type DreamOperation interface {
 	// says this one has been over them.
 	ListAgentNodesWithOpeningWrittenBefore(agentId, version string, limit int) ([]*models.AgentNode, error)
 	MarkAgentNodesSeen(agentId string, nodeIds []string) error
+
+	// ListAgentMonthsToWriteUp is the months that hold at least so much of
+	// the person's own record -- facts placed in them, their commits,
+	// threads they took part in -- and have no page yet, or a page that
+	// is blank or reads like a guess (matches the pattern), as
+	// "2025/08". Months with no page come first, then most recent first.
+	ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string) ([]string, error)
+
+	// ListAgentNodesCrowded is the pages holding more than so many facts,
+	// most crowded first, never a folder.
+	ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error)
 
 	// ListAgentFactsSaidTwice is every fact whose page already carries
 	// the same words on a lower number: the later copies, never the
@@ -96,6 +111,7 @@ type agentDreamModel struct {
 	AgentID    string     `gorm:"column:agent_id"`
 	StartedAt  time.Time  `gorm:"column:started_at"`
 	FinishedAt *time.Time `gorm:"column:finished_at"`
+	JobID      string     `gorm:"column:job_id"`
 	Digested   int        `gorm:"column:digested"`
 	Filed      int        `gorm:"column:filed"`
 	Merged     int        `gorm:"column:merged"`
@@ -120,9 +136,12 @@ type agentDreamModel struct {
 
 func (agentDreamModel) TableName() string { return "agent_dream" }
 
+// dreamCutShort is what a dream says when the server restarted under it.
+const dreamCutShort = "the server restarted before the dream was over"
+
 func (self *transaction) StartAgentDream(dream *models.AgentDream) (*models.AgentDream, error) {
 	if dream.AgentID == "" {
-		return nil, fmt.Errorf("db: a nightly run needs an agent")
+		return nil, fmt.Errorf("db: a dream needs an agent")
 	}
 	created := *dream
 	created.ID = newID()
@@ -130,9 +149,17 @@ func (self *transaction) StartAgentDream(dream *models.AgentDream) (*models.Agen
 		created.StartedAt = time.Now()
 	}
 	created.StartedAt = created.StartedAt.Truncate(time.Microsecond)
+	// One night at a time. An earlier one still marked as working was cut
+	// short by a restart, since the night that ended it would have written
+	// its finish. Left as it is, it says "still working" forever.
+	if err := self.tx.Model(&agentDreamModel{}).
+		Where("\"agent_id\" = ? AND \"finished_at\" IS NULL", created.AgentID).
+		Updates(map[string]any{"finished_at": created.StartedAt, "last_error": dreamCutShort}).Error; err != nil {
+		return nil, err
+	}
 	row := &agentDreamModel{
 		ID: created.ID, AgentID: created.AgentID, StartedAt: created.StartedAt,
-		Proposals: []byte("[]"),
+		JobID: created.JobID, Proposals: []byte("[]"),
 	}
 	if err := self.tx.Create(row).Error; err != nil {
 		return nil, err
@@ -173,6 +200,7 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 		row := &rows[index]
 		dream := &models.AgentDream{
 			ID: row.ID, AgentID: row.AgentID, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
+			JobID:    row.JobID,
 			Digested: row.Digested, Filed: row.Filed, Merged: row.Merged, Rewritten: row.Rewritten,
 			Moved: row.Moved, Dormant: row.Dormant, Embedded: row.Embedded, Backlog: row.Backlog,
 			Coarse: row.Coarse, Tokens: row.Tokens, Notes: row.Notes, LastError: row.LastError,
@@ -605,4 +633,62 @@ func (self *transaction) MarkAgentNodesSeen(agentId string, nodeIds []string) er
 	return self.tx.Exec(
 		`UPDATE "agent_node" SET "version" = ? WHERE "agent_id" = ? AND "id" = ANY(?)`,
 		version.Version(), agentId, pq.Array(nodeIds)).Error
+}
+
+func (self *transaction) ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	return self.nodesFrom(self.tx.Raw(`
+		SELECT n.* FROM "agent_node" n
+		WHERE n."agent_id" = ? AND n."kind" <> ? AND NOT n."dormant"
+		  AND (SELECT count(*) FROM "agent_fact" f WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL) > ?
+		ORDER BY (SELECT count(*) FROM "agent_fact" f WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL) DESC
+		LIMIT ?`, agentId, models.NodeFolder, above, limit))
+}
+
+func (self *transaction) UnmarkAgentDocumentsDigested(agentId string, since time.Time) (int64, error) {
+	result := self.tx.Exec(
+		`UPDATE "agent_document" SET "metadata" = "metadata" - 'digested'
+		 WHERE "agent_id" = ? AND jsonb_exists("metadata", 'digested')
+		   AND ("metadata"->>'digested')::timestamptz >= ?`, agentId, since)
+	return result.RowsAffected, result.Error
+}
+
+func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string) ([]string, error) {
+	if limit <= 0 {
+		limit = 3
+	}
+	if len(names) == 0 {
+		names = []string{""}
+	}
+	var months []string
+	if err := self.tx.Raw(`
+		WITH record AS (
+			SELECT to_char("happened_at", 'YYYY/MM') AS month, count(*) AS how_many
+			FROM "agent_fact"
+			WHERE "agent_id" = ? AND "happened_at" IS NOT NULL AND "superseded_by" IS NULL
+			GROUP BY 1
+			UNION ALL
+			SELECT to_char("happened_at", 'YYYY/MM'), count(*)
+			FROM "agent_document"
+			WHERE "agent_id" = ? AND "happened_at" IS NOT NULL
+			  AND ("kind" = 'commit' OR ("kind" = 'chat' AND jsonb_exists_any("metadata"->'participants', ?::text[])))
+			GROUP BY 1
+		)
+		, owed AS (
+			SELECT month, EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month) AS written
+			FROM record
+			GROUP BY month
+			HAVING sum(how_many) >= ?
+		)
+		SELECT month FROM owed
+		WHERE NOT written
+		   OR EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month
+		              AND (btrim(n."summary") = '' OR (? <> '' AND n."summary" ~* ?)))
+		ORDER BY written ASC, month DESC
+		LIMIT ?`, agentId, agentId, pq.Array(names), agentId, least, agentId, guessed, guessed, limit).Scan(&months).Error; err != nil {
+		return nil, err
+	}
+	return months, nil
 }

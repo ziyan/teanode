@@ -50,6 +50,9 @@ var searchStopWords = map[string]bool{
 // was typed. Empty when the query was nothing but those, and the caller
 // then searches for what was typed rather than for nothing: a person who
 // types "who" alone means it.
+// searchWordsMost is how many words of a query are searched for.
+const searchWordsMost = 64
+
 func SearchText(query string) string {
 	fields := strings.FieldsFunc(query, func(letter rune) bool {
 		switch {
@@ -75,6 +78,13 @@ func SearchText(query string) string {
 	}
 	if len(kept) == 0 {
 		return strings.TrimSpace(query)
+	}
+	// A search is a question, not a document. Any of the words matching
+	// is the rule, so a pasted page of text matches every row there is
+	// and ranks them all; the first words of what somebody asks are the
+	// question, and the rest is what they pasted.
+	if len(kept) > searchWordsMost {
+		kept = kept[:searchWordsMost]
 	}
 	return strings.Join(kept, " ")
 }

@@ -89,7 +89,9 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
           // Nothing to count until the first check has run, and a dash at
           // this size reads as a rule rather than as an absence — so the
           // detail line carries it instead.
-          value={records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing}
+          value={
+            records.length === 0 ? <span className="tile-unknown">?</span> : missing === 0 ? records.length : missing
+          }
           unit={
             records.length === 0
               ? undefined
@@ -100,10 +102,7 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
           icon={missing > 0 ? <WarningIcon size={18} /> : undefined}
           detail={
             domain.records?.checkedAt ? (
-              <Trans
-                k="domainOverview.checked"
-                nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }}
-              />
+              <Trans k="domainOverview.checked" nodes={{ time: <RelativeTime value={domain.records.checkedAt} /> }} />
             ) : (
               t('domainOverview.dnsNever')
             )
@@ -116,10 +115,7 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
           value={counts.total}
           detail={
             newest?.receivedAt ? (
-              <Trans
-                k="domainOverview.lastReceived"
-                nodes={{ time: <RelativeTime value={newest.receivedAt} /> }}
-              />
+              <Trans k="domainOverview.lastReceived" nodes={{ time: <RelativeTime value={newest.receivedAt} /> }} />
             ) : (
               t('domainOverview.nothingReceived')
             )
@@ -156,7 +152,6 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
           }
           to={`/queue?domain=${encodeURIComponent(domain.domain)}`}
         />
-
       </Section>
     </>
   )

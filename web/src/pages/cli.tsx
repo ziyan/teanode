@@ -182,8 +182,13 @@ export function CommandLinePage({ username }: { username: string }) {
   }
 
   return (
-    <AuthCard purpose={forExtension ? t('cli.extensionIntro') : t('cli.intro')} onSubmit={(event) => void authorize(event)}>
-      {forExtension && <AuthField label={t('cli.extensionLabel')} value={extensionIdOf(redirect)} className="mono" readOnly />}
+    <AuthCard
+      purpose={forExtension ? t('cli.extensionIntro') : t('cli.intro')}
+      onSubmit={(event) => void authorize(event)}
+    >
+      {forExtension && (
+        <AuthField label={t('cli.extensionLabel')} value={extensionIdOf(redirect)} className="mono" readOnly />
+      )}
       <AuthField label={t('cli.signedInAs')} value={username} readOnly />
       <AuthField label={t('cli.tokenLabel')} value={tokenName} readOnly />
       <label className="auth-field">

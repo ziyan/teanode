@@ -11,12 +11,15 @@ import { useTranslation } from '../i18n/i18n'
 // wrap; a column cannot.
 
 export function SettingsSection({
+  id,
   title,
   description,
   action,
   card,
   children,
 }: {
+  // An anchor, for a page that scrolls to the section from elsewhere.
+  id?: string
   title?: string
   description?: React.ReactNode
   action?: React.ReactNode
@@ -28,7 +31,7 @@ export function SettingsSection({
   children?: React.ReactNode
 }) {
   return (
-    <section className={card ? 'settings-section card' : 'settings-section'}>
+    <section id={id} className={card ? 'settings-section card' : 'settings-section'}>
       {(title || action) && (
         <div className="settings-section-head">
           <div>
