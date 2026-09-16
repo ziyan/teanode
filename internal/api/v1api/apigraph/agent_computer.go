@@ -23,10 +23,13 @@ import (
 //
 // Larger than a GraphQL request body because this socket carries a page
 // of a scan: the program bounds a page at a few megabytes of text, and
-// this is that with room for the JSON around it. A limit at all because
-// the library's default is none, and this socket is reached before the
-// sender has said who they are.
-const computerAnswerSize = 8 << 20
+// this is that with room for the JSON around it -- and room for a
+// program that bounds less well than this one, since a page over the
+// limit closes the socket and fails every scan open on that computer,
+// and an older program repeated that on the same file every time. A
+// limit at all because the library's default is none, and this socket
+// is reached before the sender has said who they are.
+const computerAnswerSize = 64 << 20
 
 // computerProtocol is the version the program must speak. It is
 // internal/computer's Protocol, and the two move together: 2 added

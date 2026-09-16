@@ -81,12 +81,17 @@ type mattermostChannel struct {
 	TeamID      string `json:"team_id"`
 }
 
-// scanMattermost reads an export, one channel file per page.
+// scanMattermost reads an export a page at a time.
 //
-// A channel at a time rather than a post at a time, because a unit needs
-// the posts around it and a channel file is the natural boundary. The
-// cursor is the channel's own path, so a pass that stops halfway through
-// an archive goes on from the next channel.
+// A channel file at a time where it fits, because a unit needs the posts
+// around it and a channel file is the natural boundary; but a page is
+// bounded within a file too. A support channel with years of posts came
+// back as one answer of tens of megabytes, the server refused it and
+// closed the socket, every scan open on that computer failed with it,
+// and the next pass tried the same file again. The cursor is the
+// channel's path, or the path and the last unit sent -- "posts/x.jsonl"
+// or "posts/x.jsonl#p123" -- so a pass goes on from the next channel or
+// from the next unit of the same one.
 func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResult, error) {
 	result := &ScanResult{}
 	users, err := readUsers(filepath.Join(root, "users.json"))
@@ -108,16 +113,24 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 	}
 	sort.Strings(files)
 
+	afterFile, afterUnit := arguments.After, ""
+	if cut := strings.Index(arguments.After, "#"); cut >= 0 {
+		afterFile, afterUnit = arguments.After[:cut], arguments.After
+	}
 	started := arguments.After == ""
 	// One channel file becomes many threads, so a page here fills by
 	// bytes long before it fills by count.
 	carried := 0
 	for _, relative := range files {
 		if !started {
-			if relative == arguments.After {
-				started = true
+			if relative != afterFile {
+				continue
 			}
-			continue
+			started = true
+			// Stopped at the end of this file last time: on to the next.
+			if afterUnit == "" {
+				continue
+			}
 		}
 		if len(result.Entries) >= most || carried >= scanPageBytes {
 			result.Next = relative
@@ -135,10 +148,32 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 			result.Refused++
 			continue
 		}
+		// In a fixed order, so that "the units after this one" means
+		// the same thing on the next request as it did on this one.
+		sort.SliceStable(entries, func(left, right int) bool {
+			if entries[left].HappenedAt != nil && entries[right].HappenedAt != nil && !entries[left].HappenedAt.Equal(*entries[right].HappenedAt) {
+				return entries[left].HappenedAt.Before(*entries[right].HappenedAt)
+			}
+			return entries[left].ExternalID < entries[right].ExternalID
+		})
+		skipping := afterUnit != "" && relative == afterFile
+		afterUnit = ""
 		for _, entry := range entries {
+			if skipping {
+				if entry.ExternalID == afterUnit || entry.ExternalID == arguments.After {
+					skipping = false
+				}
+				continue
+			}
+			if len(result.Entries) >= most || carried >= scanPageBytes {
+				// Mid-file: the cursor names the last unit sent, and the
+				// next page starts with the one after it.
+				result.Next = result.Entries[len(result.Entries)-1].ExternalID
+				return result, nil
+			}
 			carried += len(entry.Text)
+			result.Entries = append(result.Entries, entry)
 		}
-		result.Entries = append(result.Entries, entries...)
 	}
 	return result, nil
 }

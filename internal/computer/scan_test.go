@@ -685,3 +685,43 @@ func pem(kind, body string) string {
 	dashes := "-----"
 	return dashes + "BEGIN " + kind + dashes + "\n" + body + "\n" + dashes + "END " + kind + dashes + "\n"
 }
+
+// A channel file bigger than a page is sent over several pages, the
+// cursor naming the last unit sent, and nothing is sent twice or lost.
+func TestAChannelFileIsPagedWithinItself(t *testing.T) {
+	var lines []string
+	for index := 0; index < 7; index++ {
+		// Posts a day apart, so each is its own window.
+		at := 1700000000000 + int64(index)*86400000
+		lines = append(lines, fmt.Sprintf(`{"id":"p%d","create_at":"%d","user_id":"u1","channel_id":"c1","root_id":"","message":"note number %d"}`, index, at, index))
+	}
+	files := map[string]string{
+		"users.json":                 `[{"id":"u1","username":"alice"}]`,
+		"channels.json":              `[{"id":"c1","name":"support","type":"O"}]`,
+		"posts/team/support.jsonl":   strings.Join(lines, "\n"),
+		"posts/team/zzz-after.jsonl": `{"id":"q1","create_at":"1700000000000","user_id":"u1","channel_id":"c1","root_id":"","message":"in the next file"}`,
+	}
+	seen := map[string]int{}
+	after := ""
+	for page := 0; page < 10; page++ {
+		result := scanIn(t, files, &ScanArguments{Format: FormatMattermost, After: after, Most: 3})
+		if len(result.Entries) > 3 {
+			t.Fatalf("page %d carried %d entries, more than asked", page, len(result.Entries))
+		}
+		for _, entry := range result.Entries {
+			seen[entry.ExternalID]++
+		}
+		if result.Next == "" {
+			break
+		}
+		after = result.Next
+	}
+	if len(seen) != 8 {
+		t.Fatalf("seven windows and one more file: %d seen %v", len(seen), seen)
+	}
+	for id, count := range seen {
+		if count != 1 {
+			t.Fatalf("%s sent %d times", id, count)
+		}
+	}
+}
