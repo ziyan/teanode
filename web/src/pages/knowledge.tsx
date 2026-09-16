@@ -4,12 +4,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ErrorMessage, Loading, Tag } from '../components/common'
-import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
+import { ChevronRightIcon, PencilIcon, PinIcon, PinOffIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { graphql } from '../api'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useIsDesktop } from '../components/sidebar'
+import { useSession } from '../session'
+import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Markdown } from '../components/markdown'
 
 // messageOf is what went wrong, in words a person can act on.
@@ -129,9 +131,11 @@ function rootOf(path: string): string {
   return path.split('/')[0]
 }
 
-// folderName is a root's name as a heading: the server's name for the
-// ones it made, and a capital on the ones a source made in lower case.
-function folderName(node: Node): string {
+// folderName is a root's name as a heading: the person's own name on
+// their page, the server's name for the ones it made, and a capital on
+// the ones a source made in lower case.
+function folderName(node: Node, me: string): string {
+  if (node.path === 'self' && me) return me
   const name = node.name || node.path
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
@@ -152,6 +156,7 @@ export function KnowledgePage() {
   const { t } = useTranslation()
   const toast = useToast()
   const desktop = useIsDesktop()
+  const me = useSession().name || ''
   // The URL is the graph path: /settings/knowledge/work/portal is the
   // page, /settings/knowledge/projects is the folder's list, and nothing
   // is the top. A root that is a folder opens its list; any other path
@@ -162,13 +167,19 @@ export function KnowledgePage() {
   const path = isFolderPath ? '' : at
   const folder = isFolderPath ? at : path ? rootOf(path) : null
   const go = useCallback((next: string) => navigate('/settings/knowledge' + (next ? '/' + next : '')), [navigate])
-  const columnsRef = useRef<HTMLDivElement | null>(null)
-  const wide = useContainerWide(columnsRef, 1040)
+  // How many columns there is room for, measured on the page itself
+  // rather than the window: the sidebar takes a third of a laptop, and a
+  // window that fits three columns with it closed does not with it open.
+  // Below two columns' worth it is one at a time, the way a phone is.
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const width = useContainerWidth(frameRef)
+  const columns = width === null ? (desktop ? 2 : 1) : width >= 1040 ? 3 : width >= 760 ? 2 : 1
+  const wide = columns === 3
   const [filter, setFilter] = useState('')
   const search = filter.trim()
 
   // Desktop with nothing open shows the person's own page.
-  const open = path || (desktop && !folder ? 'self' : '')
+  const open = path || (columns > 1 && !folder ? 'self' : '')
 
   const page = useQuery(
     () => (open ? graphql<{ AgentGraphPage: Page | null }>(PAGE, { path: open }) : Promise.resolve(null)),
@@ -201,10 +212,6 @@ export function KnowledgePage() {
     },
     [go],
   )
-  const goBack = useCallback(() => {
-    if (path) go(rootOf(path) === 'self' ? '' : rootOf(path))
-    else go('')
-  }, [path, go])
 
   const lookup = (
     <input
@@ -228,9 +235,19 @@ export function KnowledgePage() {
   )
   const rootNodes = roots.data?.AgentGraphChildren.rows.map((row) => row.node) ?? []
   const folderNode = rootNodes.find((node) => node.path === folder)
-  const folderLabel = folderNode ? folderName(folderNode) : folder || ''
+  const folderLabel = folderNode ? folderName(folderNode, me) : folder || ''
+  const pageName = page.data?.AgentGraphPage?.node.name ?? null
 
-  const folders = <Folders roots={rootNodes} selected={folder} onSelect={goFolder} />
+  // One column at a time, so the breadcrumb is the way back: the folder
+  // above the page, the top above the folder. With the columns side by
+  // side the page is still Knowledge, and the trail says so.
+  const onePane = columns === 1
+  useBreadcrumbDetail(
+    onePane && folder ? (folder === 'self' ? me || pageName : folderLabel) : null,
+    onePane && path && folder !== 'self' ? (pageName ?? '…') : null,
+  )
+
+  const folders = <Folders roots={rootNodes} selected={folder} onSelect={goFolder} me={me} />
   const pages = search ? (
     <SearchResults found={found.data?.SearchAgentGraph} loading={found.loading} onSelect={goPage} />
   ) : folder && folder !== 'self' ? (
@@ -259,44 +276,24 @@ export function KnowledgePage() {
     </>
   ) : null
 
-  if (!desktop) {
-    // One column at a time. Which one is in the URL, so Back is Back.
-    if (path) {
-      return (
-        <div className="knowledge-phone">
-          <button type="button" className="knowledge-back" onClick={goBack}>
-            <ChevronLeftIcon size={16} /> {folderLabel || t('knowledge.folders')}
-          </button>
-          {detail}
-        </div>
-      )
-    }
-    if (folder) {
-      return (
-        <div className="knowledge-phone">
-          <button type="button" className="knowledge-back" onClick={goBack}>
-            <ChevronLeftIcon size={16} /> {t('knowledge.folders')}
-          </button>
-          {lookup}
-          <div className="card knowledge-list">{pages}</div>
-        </div>
-      )
-    }
+  if (onePane) {
+    // One column at a time. Which one is in the URL, so Back is Back,
+    // and the breadcrumb on the bar is the way up.
     return (
-      <div className="knowledge-phone">
-        {lookup}
-        <div className="card knowledge-list">{search ? pages : folders}</div>
+      <div ref={frameRef} className="knowledge-phone">
+        {path ? detail : null}
+        {!path && folder ? lookup : null}
+        {!path && folder ? <div className="card knowledge-list">{pages}</div> : null}
+        {!path && !folder ? lookup : null}
+        {!path && !folder ? <div className="card knowledge-list">{search ? pages : folders}</div> : null}
       </div>
     )
   }
 
   // Three columns where there is room for three; otherwise the folders
-  // fold into a row of chips above the list and it is two. Measured on
-  // the columns themselves rather than the window, because the sidebar
-  // takes a third of a laptop and a window that fits three columns with
-  // it closed does not with it open.
+  // fold into a row of chips above the list and it is two.
   return (
-    <div ref={columnsRef} className={wide ? 'knowledge-columns' : 'knowledge-columns knowledge-columns-two'}>
+    <div ref={frameRef} className={wide ? 'knowledge-columns' : 'knowledge-columns knowledge-columns-two'}>
       {wide ? (
         <div className="knowledge-column knowledge-column-folders">
           {lookup}
@@ -305,7 +302,7 @@ export function KnowledgePage() {
       ) : null}
       <div className="knowledge-column knowledge-column-pages">
         {wide ? null : lookup}
-        {wide ? null : <FolderChips roots={rootNodes} selected={folder} onSelect={goFolder} />}
+        {wide ? null : <FolderChips roots={rootNodes} selected={folder} onSelect={goFolder} me={me} />}
         <div className="card knowledge-list">{pages ?? <SettingsEmpty>{t('knowledge.pickFolder')}</SettingsEmpty>}</div>
       </div>
       <div className="knowledge-column knowledge-page">{detail}</div>
@@ -313,21 +310,21 @@ export function KnowledgePage() {
   )
 }
 
-// useContainerWide says whether an element is at least so many pixels
-// wide, and keeps saying so as it changes.
-function useContainerWide(ref: React.RefObject<HTMLDivElement | null>, least: number): boolean {
-  const [wide, setWide] = useState(true)
+// useContainerWidth is how wide an element is, kept up to date as it
+// changes, and null before it has been measured.
+function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>): number | null {
+  const [width, setWidth] = useState<number | null>(null)
   useEffect(() => {
     const element = ref.current
     if (!element) return
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setWide(entry.contentRect.width >= least)
+      for (const entry of entries) setWidth(entry.contentRect.width)
     })
     observer.observe(element)
-    setWide(element.getBoundingClientRect().width >= least)
+    setWidth(element.getBoundingClientRect().width)
     return () => observer.disconnect()
-  }, [ref, least])
-  return wide
+  }, [ref])
+  return width
 }
 
 // FolderChips is the folders as one row, for when there is no room for
@@ -336,10 +333,12 @@ function FolderChips({
   roots,
   selected,
   onSelect,
+  me,
 }: {
   roots: Node[]
   selected: string | null
   onSelect: (root: Node) => void
+  me: string
 }) {
   return (
     <div className="knowledge-chips">
@@ -350,7 +349,7 @@ function FolderChips({
           className={root.path === selected ? 'knowledge-chip selected' : 'knowledge-chip'}
           onClick={() => onSelect(root)}
         >
-          {folderName(root)}
+          {folderName(root, me)}
         </button>
       ))}
     </div>
@@ -362,10 +361,12 @@ function Folders({
   roots,
   selected,
   onSelect,
+  me,
 }: {
   roots: Node[]
   selected: string | null
   onSelect: (root: Node) => void
+  me: string
 }) {
   const counts = useQuery(
     async () => {
@@ -395,7 +396,7 @@ function Folders({
             className={root.path === selected ? 'knowledge-row selected' : 'knowledge-row'}
             onClick={() => onSelect(root)}
           >
-            <span className="knowledge-row-name">{folderName(root)}</span>
+            <span className="knowledge-row-name">{folderName(root, me)}</span>
             {root.kind === 'folder' && counts.data ? (
               <span className="knowledge-row-count">{counts.data[root.path] ?? 0}</span>
             ) : null}

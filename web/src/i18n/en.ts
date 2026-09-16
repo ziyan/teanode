@@ -2296,7 +2296,6 @@ export const en = {
   'knowledge.intro':
     'Everything your agent has learned about you, as pages. Each has a path, and each fact on it says where it came from. Correct anything that is wrong; what you strike is shown to it as an example of what not to keep. {pages} pages.',
   'knowledge.find': 'Search the pages',
-  'knowledge.folders': 'Pages',
   'knowledge.pickFolder': 'Pick a folder on the left, or search.',
   'knowledge.emptyFolder': 'Nothing here yet.',
   'knowledge.showMore': 'Show {count} more',

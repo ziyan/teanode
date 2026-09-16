@@ -153,6 +153,18 @@ function useTrail(): { label: string; to?: string }[] {
       return [{ label: detail }]
     }
 
+    // Knowledge shown one column at a time is a folder, then a page in
+    // it, and the trail is the way back up: the page names its folder as
+    // the detail and itself as the item. Side by side, the page is still
+    // Knowledge and names nothing.
+    if (section === 'settings' && folderId === 'knowledge' && detail) {
+      const root = location.pathname.split('/')[3] ?? ''
+      if (item) {
+        return [...crumbs, { label: detail, to: `/settings/knowledge/${root}` }, { label: item }]
+      }
+      return [...crumbs, { label: detail }]
+    }
+
     if (detail) {
       const owner = /^\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
       const rest = owner?.[2] ?? ''

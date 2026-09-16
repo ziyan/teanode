@@ -8007,24 +8007,6 @@ button.with-icon {
   max-height: none;
 }
 
-.knowledge-back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.knowledge-back:hover:not(:disabled) {
-  color: var(--text);
-  background: none;
-}
-
 /* A page is prose the nightly run wrote, so it is read rather than
    scanned: the measure is capped where the panel is not. */
 .knowledge-summary {
