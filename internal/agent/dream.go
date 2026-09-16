@@ -56,6 +56,8 @@ const (
 	// share of a call: about two short lines.
 	digestSmallest = 160
 
+	// dreamCoarseAboveRetired was the backlog at which a night read titles
+	// instead of contents. Retired: see dreamDigest.
 	// dreamCoarseAbove is the backlog at which a night stops reading
 	// things one by one and works a stretch at a time instead. Two
 	// thousand is about five nights at full resolution: below that,
@@ -332,7 +334,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	var waiting []*models.AgentDocument
 	var backlog int64
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		waiting, backlog, err = tx.ListAgentDocumentsToDigest(run.Agent.ID, dreamDigest)
+		waiting, backlog, err = tx.ListAgentDocumentsToDigest(run.Agent.ID, chatNamesOf(run.Owner), dreamDigest)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list what is waiting to be read: %s", err)
@@ -342,7 +344,11 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	if len(waiting) == 0 {
 		return
 	}
-	record.Coarse = backlog > dreamCoarseAbove
+	// Never coarsely. Reading titles instead of contents made pages and
+	// no facts -- twenty-eight of them with nothing on them -- and a
+	// backlog is pacing: what is not read tonight is read on a later
+	// night, in full, in the order that matters.
+	record.Coarse = false
 
 	// A document too small to say anything -- a channel-day that is one
 	// person joining, a file of twenty bytes -- is marked read without a
@@ -873,4 +879,28 @@ func (self *Agent) dreamEmbed(ctx context.Context, run *Run, record *models.Agen
 		log.Debugf("cannot embed what was indexed: %s", err)
 	}
 	record.Embedded += chunks
+}
+
+// chatNamesOf is what the person may be called in a chat archive: their
+// username, and each word of their name, in lower case. A thread whose
+// participants include one of these is one they took part in.
+func chatNamesOf(owner *models.User) []string {
+	if owner == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	add := func(name string) {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if len(name) < 3 || seen[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	add(owner.Username)
+	for _, word := range strings.Fields(owner.Name) {
+		add(word)
+	}
+	return names
 }

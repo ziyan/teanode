@@ -34,7 +34,12 @@ type DreamOperation interface {
 	// themselves, then what they took part in, then the rest newest
 	// first. The count beside it is what the log reports, so a backlog is
 	// a number the person can see rather than work silently dropped.
-	ListAgentDocumentsToDigest(agentId string, limit int) ([]*models.AgentDocument, int64, error)
+	//
+	// names are what the person is called in chat: a thread they took
+	// part in is read before anything else, and a chat they were not in
+	// is not read at all -- it stays searchable, and is not counted as
+	// waiting.
+	ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error)
 	MarkAgentDocumentsDigested(documentIds []string, at time.Time) error
 
 	// ListAgentNodesToConsolidate is the pages whose facts have changed
@@ -191,18 +196,30 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 // took part in, then everything else newest first. A night gets through
 // as much as its budget allows and the rest waits, which is why the
 // second return value -- how much is waiting -- is reported and shown.
-func (self *transaction) ListAgentDocumentsToDigest(agentId string, limit int) ([]*models.AgentDocument, int64, error) {
+func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error) {
 	if limit <= 0 {
 		limit = 400
 	}
+	if len(names) == 0 {
+		names = []string{""}
+	}
+	// jsonb_exists and jsonb_exists_any rather than the ? and ?| operators:
+	// ? is how a parameter is written, so the driver read the operator as
+	// one and substituted the next argument into it.
+	//
+	// A chat unit is read only when the person was in it and it is a
+	// conversation rather than a remark: three posts or more. The rest of
+	// an archive -- other people's channels, a quarter of a million of
+	// them -- is searched when a question needs it and never read on its
+	// own; reading it at four hundred a night would take years and file
+	// other people's business.
+	const eligible = `"agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')
+		AND ("kind" <> 'chat' OR (
+			jsonb_exists_any("metadata"->'participants', ?::text[])
+			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))`
 	var total []int64
-	if err := self.tx.Raw(
-		// jsonb_exists rather than the ? operator: ? is how a parameter is
-		// written, so the driver read the operator as one and substituted
-		// the next argument into it. The count survived because it had no
-		// other argument to take; the query below did not.
-		`SELECT count(*) FROM "agent_document" WHERE "agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')`,
-		agentId).Scan(&total).Error; err != nil {
+	if err := self.tx.Raw(`SELECT count(*) FROM "agent_document" WHERE `+eligible,
+		agentId, pq.Array(names)).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var backlog int64
@@ -211,13 +228,13 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, limit int) (
 	}
 	documents, err := self.documentsFrom(self.tx.Raw(`
 		SELECT * FROM "agent_document"
-		WHERE "agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')
+		WHERE `+eligible+`
 		ORDER BY
-			CASE "kind" WHEN 'journal' THEN 0 WHEN 'commit' THEN 1 WHEN 'chat' THEN 2
+			CASE "kind" WHEN 'chat' THEN 0 WHEN 'journal' THEN 1 WHEN 'commit' THEN 2
 				WHEN 'file' THEN CASE WHEN lower("title") ~ ? THEN 3 ELSE 5 END
 				ELSE 4 END,
 			"happened_at" DESC NULLS LAST
-		LIMIT ?`, agentId, proseFile, limit))
+		LIMIT ?`, agentId, pq.Array(names), proseFile, limit))
 	return documents, backlog, err
 }
 

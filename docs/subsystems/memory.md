@@ -136,7 +136,13 @@ the day's tokens (30% by default), and it never deletes anything.
 
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
-first — after the pass over what an older build wrote, which asks no
+first, and a chat archive only where the person was in the thread: a
+thread they took part in, of three posts or more, is read before
+anything else, and a thread they were not in is never read on its own —
+it is searched when a question needs it. A quarter of a million other
+people's threads at four hundred a night is years of reading and none of
+the person's business. Nothing is read coarsely any more: titles instead
+of contents made pages and no facts — after the pass over what an older build wrote, which asks no
 model and runs first so a long reading cannot crowd it out — and among files, the ones written to be read (a readme, a note,
 a document) before source code. A checkout is mostly code, and code says
 almost nothing about the person: a night that read four hundred files of
