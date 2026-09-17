@@ -23,6 +23,7 @@ import { useIsDesktop } from '../components/sidebar'
 import { useSession } from '../session'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Markdown } from '../components/markdown'
+import { Tooltip } from '../components/tooltip'
 import { GraphExplorer } from '../components/graphExplorer'
 
 // messageOf is what went wrong, in words a person can act on.
@@ -813,6 +814,7 @@ function PageView({
   // middle of; this only refetches.
   const [linked, setLinked] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [linking, setLinking] = useState(false)
   const [problem, setProblem] = useState('')
 
   async function run(document: string, variables: Record<string, unknown>, said: string) {
@@ -1016,24 +1018,42 @@ function PageView({
         title={t('knowledge.connections')}
         description={t('knowledge.connectionsHint')}
         action={
-          <Link className="knowledge-chip" to={`/settings/knowledge/explore?from=${encodeURIComponent(node.path)}`}>
-            {t('knowledge.explore.from')}
-          </Link>
+          <>
+            <Tooltip label={t('knowledge.explore.from')}>
+              <Link
+                className="icon-button"
+                aria-label={t('knowledge.explore.from')}
+                to={`/settings/knowledge/explore?from=${encodeURIComponent(node.path)}`}
+              >
+                <GraphIcon />
+              </Link>
+            </Tooltip>
+            {/* Behind a button: the agent draws nearly every link, and a
+                form of three fields standing open under every page was
+                a page of controls nobody used. */}
+            <button type="button" onClick={() => setLinking(true)}>
+              {t('knowledge.linkPage')}
+            </button>
+          </>
         }
       >
         <GraphExplorer path={node.path} onOpen={onSelect} version={linked} />
-        <LinkForm
+      </SettingsSection>
+      {linking ? (
+        <LinkDialog
           path={node.path}
           busy={busy}
+          onClose={() => setLinking(false)}
           onLink={async (to, relation, note) => {
             const made = await run(LINK_NODES, { path: node.path, to, relation, note }, t('knowledge.linked'))
             if (made) {
               setLinked((before) => before + 1)
+              setLinking(false)
             }
             return made
           }}
         />
-      </SettingsSection>
+      ) : null}
 
       {page.children.length > 0 ? (
         <SettingsSection card title={t('knowledge.under')} description={t('knowledge.underHint')}>
@@ -1285,18 +1305,18 @@ function MovePageDialog({
   )
 }
 
-// LinkForm joins this page to another one.
-//
-// Under the drawing rather than behind a dialog: a link is made while
-// looking at what is already there, and the drawing above is the answer
-// to "is it there now" the moment the button is pressed.
-function LinkForm({
+// LinkDialog joins this page to another one, in a dialog: a link is a
+// claim the person makes on purpose, and rare, since the agent draws
+// nearly all of them.
+function LinkDialog({
   path,
   busy,
+  onClose,
   onLink,
 }: {
   path: string
   busy: boolean
+  onClose: () => void
   onLink: (to: string, relation: string, note: string) => Promise<boolean>
 }) {
   const { t } = useTranslation()
@@ -1308,10 +1328,19 @@ function LinkForm({
   const other = to.trim()
 
   return (
-    <div className="row">
+    <FormDialog
+      title={t('knowledge.linkPage')}
+      submitLabel={t('knowledge.link')}
+      busy={busy}
+      canSubmit={other !== '' && other !== path}
+      onClose={onClose}
+      onSubmit={() => {
+        void onLink(other, relation, note.trim())
+      }}
+    >
       <label>
         <span>{t('knowledge.linkTo')}</span>
-        <input value={to} placeholder="people/alice-chen" onChange={(event) => setTo(event.target.value)} />
+        <input autoFocus value={to} placeholder="people/alice-chen" onChange={(event) => setTo(event.target.value)} />
       </label>
       <label>
         <span>{t('knowledge.linkRelation')}</span>
@@ -1327,22 +1356,7 @@ function LinkForm({
         <span>{t('knowledge.linkNote')}</span>
         <input value={note} onChange={(event) => setNote(event.target.value)} />
       </label>
-      <button
-        type="button"
-        className="shrink"
-        disabled={busy || other === '' || other === path}
-        onClick={() => {
-          void (async () => {
-            if (await onLink(other, relation, note.trim())) {
-              setTo('')
-              setNote('')
-            }
-          })()
-        }}
-      >
-        {t('knowledge.link')}
-      </button>
-    </div>
+    </FormDialog>
   )
 }
 

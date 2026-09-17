@@ -2378,6 +2378,7 @@ export const ja: Catalog = {
   'knowledge.openPage': '開く',
   'knowledge.backTo': '{name} に戻る',
   'knowledge.moreUnder': '配下に {count} 件',
+  'knowledge.linkPage': 'ページをリンク',
   'knowledge.linkTo': 'ページにつなぐ',
   'knowledge.linkRelation': 'どうつながるか',
   'knowledge.linkNote': '理由（必要なら）',
@@ -2475,12 +2476,9 @@ export const ja: Catalog = {
   'agent.knowledgeMailbox': 'どのメールボックス',
   'agent.knowledgeAllowFirst':
     'まずそのコンピューターで許可してください：teanode computer allow {path}。それまで何も読まれません。',
-  'agent.knowledgeHeldBack': 'あなたの判断待ち：{names}',
   'agent.knowledgeUnknownAuthors':
     'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeWhichIsYou': 'どの連絡先があなたかを指定する',
-  'agent.knowledgeAllow': '読むことを許す',
-  'agent.knowledgeAllowed': '今後 {name} を読みます',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
   'agent.dream': '夢の整理',
   'agent.dreamHint':

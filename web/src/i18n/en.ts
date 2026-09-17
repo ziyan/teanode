@@ -2390,6 +2390,7 @@ export const en = {
   'knowledge.openPage': 'Open',
   'knowledge.backTo': 'Back to {name}',
   'knowledge.moreUnder': '{count} under it',
+  'knowledge.linkPage': 'Link a page',
   'knowledge.linkTo': 'Link to a page',
   'knowledge.linkRelation': 'How they are joined',
   'knowledge.linkNote': 'Why, if it needs saying',
@@ -2490,12 +2491,9 @@ export const en = {
   'agent.knowledgeMailbox': 'Which mailbox',
   'agent.knowledgeAllowFirst':
     'On that computer, allow it first: teanode computer allow {path}. Nothing is read until you do.',
-  'agent.knowledgeHeldBack': 'Waiting for you: {names}',
   'agent.knowledgeUnknownAuthors':
     'The commits here are by {names}, and none of those is you — so none of this counts as your work.',
   'agent.knowledgeWhichIsYou': 'Say which contact is you',
-  'agent.knowledgeAllow': 'Let it in',
-  'agent.knowledgeAllowed': '{name} will be read from now on',
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.dream': 'What it dreams',
   'agent.dreamHint':

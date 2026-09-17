@@ -652,6 +652,17 @@ export function PictureIcon(props: IconProps) {
 }
 
 // Back: an arrow pointing at where you came from.
+// Unlink: the two links of LinkIcon with a stroke through them.
+export function UnlinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+      <path d="M4 4l16 16" />
+    </Icon>
+  )
+}
+
 export function ArrowLeftIcon(props: IconProps) {
   return (
     <Icon {...props}>

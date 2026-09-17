@@ -8290,6 +8290,8 @@ button.with-icon {
 .graph-explorer-here {
   font-size: var(--text-label);
   overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* The fields that make a link, under the drawing they change. Flush

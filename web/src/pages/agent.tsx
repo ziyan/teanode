@@ -705,7 +705,7 @@ const KNOWLEDGE_SOURCES = `
   query {
     ListAgentKnowledgeSources {
       id kind name specification { computer path format }
-      enabled cron lastRunAt lastError documentCount chunkCount refusedCount more sensitive allowed
+      enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
       unknownAuthors
     }
   }`
@@ -717,10 +717,6 @@ const SAVE_KNOWLEDGE_SOURCE = `
 
 const DELETE_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 const SYNC_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
-const ALLOW_KNOWLEDGE_DIRECTORY = `
-  mutation ($sourceId: String!, $name: String!) {
-    AllowAgentKnowledgeDirectory(sourceId: $sourceId, name: $name) { id }
-  }`
 
 const DREAMS = `
   query ($first: Int) {
@@ -754,9 +750,7 @@ type KnowledgeSource = {
   chunkCount: number
   refusedCount: number
   more: boolean
-  sensitive: string[]
   unknownAuthors: string[]
-  allowed: string[]
 }
 
 type Dream = {
@@ -1538,10 +1532,9 @@ function KnowledgeSourcesCard() {
                     <span className="muted">{source.lastError}</span>
                   </>
                 ) : null}
-                {/* Whose commits it could not place. Shown before the
-                    directories held back, because this one makes every
-                    answer built on the source quietly empty and takes a
-                    minute to fix. */}
+                {/* Whose commits it could not place: the one thing that
+                    makes every answer built on the source quietly empty,
+                    and takes a minute to fix. */}
                 {source.unknownAuthors.length > 0 ? (
                   <>
                     <br />
@@ -1551,32 +1544,6 @@ function KnowledgeSourcesCard() {
                     <Link className="link" to="/mailbox/contacts">
                       {t('agent.knowledgeWhichIsYou')}
                     </Link>
-                  </>
-                ) : null}
-                {source.sensitive.filter((held) => !source.allowed.includes(held)).length > 0 ? (
-                  <>
-                    <br />
-                    {t('agent.knowledgeHeldBack', {
-                      names: source.sensitive.filter((held) => !source.allowed.includes(held)).join(', '),
-                    })}{' '}
-                    {source.sensitive
-                      .filter((held) => !source.allowed.includes(held))
-                      .map((held) => (
-                        <button
-                          key={held}
-                          type="button"
-                          className="link"
-                          onClick={() =>
-                            void run(
-                              ALLOW_KNOWLEDGE_DIRECTORY,
-                              { sourceId: source.id, name: held },
-                              t('agent.knowledgeAllowed', { name: held }),
-                            )
-                          }
-                        >
-                          {t('agent.knowledgeAllow')} {held}
-                        </button>
-                      ))}
                   </>
                 ) : null}
               </>

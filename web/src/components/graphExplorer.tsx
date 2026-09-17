@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { ConfirmDialog } from './dialog'
+import { Tooltip } from './tooltip'
+import { ArrowLeftIcon, ExternalIcon, UnlinkIcon } from './icons'
 import { ErrorMessage, Loading } from './common'
 import { SettingsEmpty } from './settingsList'
 import { graphql } from '../api'
@@ -578,35 +580,51 @@ export function GraphExplorer({
       ) : null}
       {moved ? (
         <div className="graph-explorer-foot">
-          <button
-            type="button"
-            className="knowledge-chip"
-            onClick={() => {
-              setCentre(path)
-              setWalked(null)
-            }}
-          >
-            {t('knowledge.backTo', { name: homeName })}
-          </button>
+          {/* Icons with their words on hover: three sentences of buttons
+              under a drawing on a phone were most of the screen, and the
+              page names inside them wrapped onto three lines each. */}
+          <Tooltip label={t('knowledge.backTo', { name: homeName })}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('knowledge.backTo', { name: homeName })}
+              onClick={() => {
+                setCentre(path)
+                setWalked(null)
+              }}
+            >
+              <ArrowLeftIcon />
+            </button>
+          </Tooltip>
           <span className="muted graph-explorer-here">{centre}</span>
-          <button type="button" className="link" onClick={() => onOpen(centre)}>
-            {t('knowledge.openPage')}
-          </button>
+          <Tooltip label={t('knowledge.openPage')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('knowledge.openPage')}
+              onClick={() => onOpen(centre)}
+            >
+              <ExternalIcon />
+            </button>
+          </Tooltip>
           {/* Offered only for the link just walked along, because that is
               the only pair of pages on screen whose join the reader has
               seen stated. */}
           {walked && walked.to === centre ? (
-            <button
-              type="button"
-              className="link danger"
-              disabled={busy}
-              onClick={() => {
-                setProblem('')
-                setUnlinking(walked)
-              }}
-            >
-              {t('knowledge.unlinkFrom', { name: walked.fromName })}
-            </button>
+            <Tooltip label={t('knowledge.unlinkFrom', { name: walked.fromName })}>
+              <button
+                type="button"
+                className="icon-button danger"
+                aria-label={t('knowledge.unlinkFrom', { name: walked.fromName })}
+                disabled={busy}
+                onClick={() => {
+                  setProblem('')
+                  setUnlinking(walked)
+                }}
+              >
+                <UnlinkIcon />
+              </button>
+            </Tooltip>
           ) : null}
         </div>
       ) : null}
