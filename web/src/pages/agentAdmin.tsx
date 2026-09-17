@@ -59,6 +59,7 @@ type Job = {
   agentId: string
   mailboxId: string
   kind: string
+  subjectId: string
   attempts: number
   error: string
   finishedAt?: string | null
@@ -70,7 +71,7 @@ const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt daily
 const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
   AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
-  ListAgentDeadLetters { id agentId mailboxId kind attempts error finishedAt }
+  ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
 }`
 const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
 const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
@@ -112,6 +113,9 @@ export function AgentAdminPage() {
       (candidate.id !== 'runs' || hasPermission(session.permissions, 'agent:act')) &&
       (candidate.id !== 'settings' || hasPermission(session.permissions, 'server:manage')),
   )
+  // The job whose runs the Runs tab is narrowed to, from a job given up
+  // on: what it tried is the way to see why it failed.
+  const [jobRuns, setJobRuns] = useState<string | null>(null)
   const [by, setBy] = useState('day')
   // The range, as dates the person picks; thirty days back by default,
   // and the end date inclusive, so "to today" means through tonight.
@@ -349,7 +353,7 @@ export function AgentAdminPage() {
           </SettingsSection>
         </>
       ) : null}
-      {tab === 'runs' ? <RunsSection agents={agents} /> : null}
+      {tab === 'runs' ? <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} /> : null}
       {tab === 'settings' ? <IntegrationsSection section="agent" /> : null}
       {tab === 'jobs' ? (
         <>
@@ -374,12 +378,36 @@ export function AgentAdminPage() {
                     </>
                   }
                   actions={
-                    <button
-                      type="button"
-                      onClick={() => void act(() => graphql(RETRY, { jobId: job.id }), t('agentAdmin.retried'))}
-                    >
-                      {t('agentAdmin.retry')}
-                    </button>
+                    <div className="row-actions">
+                      {/* What the job worked on, and what it tried: a
+                          remember job's subject is a conversation, which
+                          opens; any job's runs show in the Runs tab. */}
+                      {job.kind === 'remember' && job.subjectId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!openAgentConversation(job.subjectId)) window.scrollTo(0, 0)
+                          }}
+                        >
+                          {t('agentAdmin.openConversation')}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setJobRuns(job.id)
+                          navigate('/agent/runs')
+                        }}
+                      >
+                        {t('agentAdmin.jobRuns')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void act(() => graphql(RETRY, { jobId: job.id }), t('agentAdmin.retried'))}
+                      >
+                        {t('agentAdmin.retry')}
+                      </button>
+                    </div>
                   }
                 />
               ))
@@ -451,8 +479,8 @@ export function AgentAdminPage() {
 }
 
 const ALL_RUNS = `
-  query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) {
-    ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) {
+  query ($first: Int, $offset: Int, $agentId: String, $jobId: String, $kinds: [String!], $query: String) {
+    ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, jobId: $jobId, kinds: $kinds, query: $query) {
       total
       runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
     }
@@ -470,7 +498,7 @@ type Run = {
 // RunsSection is every model call any agent on this server made, newest
 // first, paged and filtered on the server, each row a transcript the drawer
 // opens -- and, for whoever holds agent:act, speaks into as that person.
-function RunsSection({ agents }: { agents: Summary[] }) {
+function RunsSection({ agents, job, onAll }: { agents: Summary[]; job: string | null; onAll: () => void }) {
   const { t, plural } = useTranslation()
   const [range, setRange] = useState<Range>({ offset: 0, limit: 50, filters: {}, order: null })
   const chosenAgent = range.filters.agentId
@@ -483,11 +511,14 @@ function RunsSection({ agents }: { agents: Summary[] }) {
         first: range.limit,
         offset: range.offset,
         agentId,
+        jobId: job,
         kinds: Array.isArray(kinds) && kinds.length > 0 ? kinds : null,
         query: typeof query === 'string' && query.trim() !== '' ? query.trim() : null,
       }),
-    [range.offset, range.limit, agentId, JSON.stringify(kinds), query],
-    { refresh: false },
+    [range.offset, range.limit, agentId, job, JSON.stringify(kinds), query],
+    // Refreshed: runs are ordered by their last message, and a run that
+    // just spoke belongs at the top while the person watches.
+    { refresh: true },
   )
   const runs = data?.ListAllAgentRuns.runs ?? []
   const total = data?.ListAllAgentRuns.total ?? 0
@@ -547,7 +578,18 @@ function RunsSection({ agents }: { agents: Summary[] }) {
     },
   ]
   return (
-    <SettingsSection card title={t('agentAdmin.runs')} description={t('agentAdmin.runsHint')}>
+    <SettingsSection
+      card
+      title={t('agentAdmin.runs')}
+      description={job ? t('agentAdmin.runsOfJob') : t('agentAdmin.runsHint')}
+      action={
+        job ? (
+          <button type="button" onClick={onAll}>
+            {t('agent.allRuns')}
+          </button>
+        ) : null
+      }
+    >
       <DataTable
         columns={columns}
         rows={runs}

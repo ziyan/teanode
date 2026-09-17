@@ -2233,7 +2233,9 @@ function ActivityCard({ job, onAll }: { job: { id: string; when: string } | null
         query: typeof query === 'string' && query.trim() !== '' ? query.trim() : null,
       }),
     [job?.id, range.offset, range.limit, JSON.stringify(kinds), query],
-    { refresh: false },
+    // Refreshed: runs are ordered by their last message, and a run that
+    // just spoke belongs at the top while the person watches.
+    { refresh: true },
   )
   const runs = data?.ListAgentRuns.runs ?? []
   const total = data?.ListAgentRuns.total ?? 0

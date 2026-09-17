@@ -1212,6 +1212,9 @@ export const ja: Catalog = {
   'agentAdmin.tabRuns': '実行記録',
   'agentAdmin.tabJobs': '断念したもの',
   'agentAdmin.tabSettings': '設定',
+  'agentAdmin.openConversation': '会話を開く',
+  'agentAdmin.jobRuns': '実行記録',
+  'agentAdmin.runsOfJob': '断念したジョブの実行記録：止まるまでに行った呼び出しを、新しい順に。',
   'agentAdmin.runs': 'すべての実行記録',
   'agentAdmin.runsHint':
     'このサーバーのすべてのエージェントがモデルに行った呼び出しを、新しい順に。開くと読めます。そこで話しかけると、その人としてそのエージェントに届き、サーバーのログに残ります。',

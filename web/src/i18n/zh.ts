@@ -1171,6 +1171,9 @@ export const zh: Catalog = {
   'agentAdmin.tabRuns': '运行记录',
   'agentAdmin.tabJobs': '已放弃',
   'agentAdmin.tabSettings': '设置',
+  'agentAdmin.openConversation': '打开对话',
+  'agentAdmin.jobRuns': '运行记录',
+  'agentAdmin.runsOfJob': '一项已放弃任务的运行记录：它停止之前的每一次调用，最新的在前。',
   'agentAdmin.runs': '全部运行记录',
   'agentAdmin.runsHint':
     '这台服务器上所有助手对模型的每一次调用，最新的在前。打开可阅读；你在其中说的话会以该用户的身份传给其助手，并记入服务器日志。',
