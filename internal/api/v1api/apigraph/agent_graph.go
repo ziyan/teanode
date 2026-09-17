@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -38,6 +39,13 @@ type AgentGraphQuery interface {
 
 	// Pages and facts by words. Needs agent:use.
 	SearchAgentGraph(ctx context.Context, arguments SearchAgentGraphArguments) (*AgentGraphSearchResult, error)
+
+	// What a turn asking this question would be carried from the graph,
+	// without asking it: the pages recall would expand and the facts on
+	// each. Nothing is said to a model and nothing in the graph moves,
+	// which is what makes it safe to replay a question set through.
+	// Needs agent:use.
+	RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error)
 
 	// What has been filed lately: what the agent page shows under
 	// "Learned". Needs agent:use.
@@ -170,6 +178,12 @@ type AgentGraphNeighboursResult struct {
 type SearchAgentGraphArguments struct {
 	Query string `json:"query"`
 	First int    `json:"first" graphapi:"nullable"`
+}
+
+// RecallAgentMemoryArguments are the question to recall for, as a person
+// would have typed it.
+type RecallAgentMemoryArguments struct {
+	Question string `json:"question"`
 }
 
 type ListAgentLearnedArguments struct {
@@ -325,6 +339,26 @@ type AgentGraphPageResult struct {
 type AgentGraphSearchResult struct {
 	Nodes []*models.AgentNode `json:"nodes"`
 	Facts []*AgentLearnedFact `json:"facts"`
+}
+
+// RecallAgentMemoryResult is what a turn would have been carried.
+type RecallAgentMemoryResult struct {
+	Pages []*RecalledAgentPage `json:"pages"`
+}
+
+// RecalledAgentPage is one page of that, with the facts recall would have
+// put in front of the model from it.
+type RecalledAgentPage struct {
+	Path  string               `json:"path"`
+	Facts []*RecalledAgentFact `json:"facts"`
+}
+
+// RecalledAgentFact is a fact as the page cites it: its number and what
+// it says. Enough to grade a question on, and not the whole row, because
+// what is being asked is what the model was told.
+type RecalledAgentFact struct {
+	Number int    `json:"number"`
+	Text   string `json:"text"`
 }
 
 // AgentFoldedFact is a fact that stands behind another, with the number
@@ -635,6 +669,34 @@ func (self *graph) SearchAgentGraph(ctx context.Context, arguments SearchAgentGr
 		nodes = []*models.AgentNode{}
 	}
 	return &AgentGraphSearchResult{Nodes: nodes, Facts: withPaths}, nil
+}
+
+func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	question := strings.TrimSpace(arguments.Question)
+	if question == "" {
+		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
+	}
+	recalled, err := worker.RecallForQuestion(ctx, found, principal.User, question)
+	if err != nil {
+		return nil, err
+	}
+	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
+	for _, page := range recalled {
+		carried := &RecalledAgentPage{Path: page.Path, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
+		for _, fact := range page.Facts {
+			carried.Facts = append(carried.Facts, &RecalledAgentFact{Number: fact.Number, Text: fact.Text})
+		}
+		result.Pages = append(result.Pages, carried)
+	}
+	return result, nil
 }
 
 func (self *graph) ListAgentLearned(ctx context.Context, arguments ListAgentLearnedArguments) ([]*AgentLearnedFact, error) {

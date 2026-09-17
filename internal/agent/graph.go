@@ -492,91 +492,127 @@ func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limi
 	return self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
 }
 
-// writeRecalled expands what was found into the overlay the next round
-// sees, under a token budget.
+// recalledBlock is one piece of the overlay: the text the next round
+// sees, the page it came from, and the facts it carried.
 //
-// A page is built, measured, and only then written and counted as used.
-// It used to be counted as it was built, so a block that turned out not
-// to fit still marked every fact in it as wanted: `used_at` moved on
-// facts the model never saw, which feeds importance, decay and what the
-// index carries tomorrow. Recall is supposed to record what the prompt
-// carried, not what it considered.
-func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact) {
+// Choosing the blocks is kept apart from writing them so that what a turn
+// would carry can be asked for without taking a turn, which is what
+// `teanode agent memory evaluate` replays a question set through.
+type recalledBlock struct {
+	// NodeID is the page this block expands. Empty for a loose fact,
+	// whose page did not make the cut and so was not used.
+	NodeID string
+
+	// Path is the page the block is about, which a loose fact has too.
+	Path string
+
+	// Text is what goes into the overlay.
+	Text string
+
+	// Facts are the facts the block carried, in the order it carried
+	// them.
+	Facts []*models.AgentFact
+}
+
+// chooseRecalled picks what the overlay carries under the token budget:
+// the top pages expanded, then the loose facts the words hit directly.
+//
+// A page is built, measured, and only then kept. It used to be counted as
+// it was built, so a block that turned out not to fit still marked every
+// fact in it as wanted: `used_at` moved on facts the model never saw,
+// which feeds importance, decay and what the index carries tomorrow.
+// Recall is supposed to record what the prompt carried, not what it
+// considered.
+func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode, facts []*models.AgentFact) ([]*recalledBlock, error) {
 	agentId := self.settings.Agent.ID
+	paths, err := pathsOfFacts(tx, agentId, facts)
+	if err != nil {
+		return nil, err
+	}
 	spent := 0
 	shown := map[string]bool{}
 	expanded := map[string]bool{}
-	var usedNodes, usedFacts []string
+	blocks := []*recalledBlock{}
+	pages := 0
+	for _, node := range nodes {
+		if pages >= recallPages || expanded[node.ID] {
+			continue
+		}
+		pageFactsFound, err := tx.ListAgentFacts(agentId, node.ID, false, pageFacts)
+		if err != nil {
+			return nil, err
+		}
+		text := node.Path
+		if node.Name != "" {
+			text += " — " + node.Name
+		}
+		// Indexed is not expanded. A page the prompt's own index
+		// names is carried there as a line about what the page is,
+		// which is not what it knows -- so the facts go in all the
+		// same when the turn's words hit the page, and only the
+		// opening, which the index line already has the gist of, is
+		// left out.
+		if summary := strings.TrimSpace(node.Summary); summary != "" && !self.inPrompt(node.ID) {
+			text += "\n  " + cutRunes(summary, 600)
+		}
+		for _, fact := range pageFactsFound {
+			text += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
+		}
+		cost := llm.EstimateTokens(text)
+		if spent+cost > recallTokens {
+			// A smaller page further down may still fit, so this one
+			// is passed over rather than ending the loop -- but once
+			// what is left could not hold a page at all there is no
+			// sense reading the rest of them out of the store.
+			if recallTokens-spent < recallTokens/8 {
+				break
+			}
+			continue
+		}
+		spent += cost
+		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Facts: pageFactsFound})
+		for _, fact := range pageFactsFound {
+			shown[fact.ID] = true
+		}
+		expanded[node.ID] = true
+		pages++
+	}
+	// Then the loose facts: ones whose page did not make the cut but
+	// which the turn's words hit directly.
+	kept := 0
+	for _, fact := range facts {
+		if kept >= recallFacts || shown[fact.ID] {
+			continue
+		}
+		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
+		cost := llm.EstimateTokens(line)
+		if spent+cost > recallTokens {
+			break
+		}
+		spent += cost
+		blocks = append(blocks, &recalledBlock{Path: paths[fact.NodeID], Text: line, Facts: []*models.AgentFact{fact}})
+		kept++
+	}
+	return blocks, nil
+}
 
+// writeRecalled expands what was found into the overlay the next round
+// sees, and marks what it carried as used.
+func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact) {
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		paths, err := pathsOfFacts(tx, agentId, facts)
+		blocks, err := self.chooseRecalled(tx, nodes, facts)
 		if err != nil {
 			return err
 		}
-		pages := 0
-		for _, node := range nodes {
-			if pages >= recallPages || expanded[node.ID] {
-				continue
+		var usedNodes, usedFacts []string
+		for _, block := range blocks {
+			self.Recall(block.Text)
+			if block.NodeID != "" {
+				usedNodes = append(usedNodes, block.NodeID)
 			}
-			pageFactsFound, err := tx.ListAgentFacts(agentId, node.ID, false, pageFacts)
-			if err != nil {
-				return err
+			for _, fact := range block.Facts {
+				usedFacts = append(usedFacts, fact.ID)
 			}
-			block := node.Path
-			if node.Name != "" {
-				block += " — " + node.Name
-			}
-			// Indexed is not expanded. A page the prompt's own index
-			// names is carried there as a line about what the page is,
-			// which is not what it knows -- so the facts go in all the
-			// same when the turn's words hit the page, and only the
-			// opening, which the index line already has the gist of, is
-			// left out.
-			if summary := strings.TrimSpace(node.Summary); summary != "" && !self.inPrompt(node.ID) {
-				block += "\n  " + cutRunes(summary, 600)
-			}
-			factIds := make([]string, 0, len(pageFactsFound))
-			for _, fact := range pageFactsFound {
-				block += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
-				factIds = append(factIds, fact.ID)
-			}
-			cost := llm.EstimateTokens(block)
-			if spent+cost > recallTokens {
-				// A smaller page further down may still fit, so this one
-				// is passed over rather than ending the loop -- but once
-				// what is left could not hold a page at all there is no
-				// sense reading the rest of them out of the store.
-				if recallTokens-spent < recallTokens/8 {
-					break
-				}
-				continue
-			}
-			spent += cost
-			self.Recall(block)
-			for _, id := range factIds {
-				shown[id] = true
-				usedFacts = append(usedFacts, id)
-			}
-			usedNodes = append(usedNodes, node.ID)
-			expanded[node.ID] = true
-			pages++
-		}
-		// Then the loose facts: ones whose page did not make the cut but
-		// which the turn's words hit directly.
-		kept := 0
-		for _, fact := range facts {
-			if kept >= recallFacts || shown[fact.ID] {
-				continue
-			}
-			line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
-			cost := llm.EstimateTokens(line)
-			if spent+cost > recallTokens {
-				break
-			}
-			spent += cost
-			self.Recall(line)
-			usedFacts = append(usedFacts, fact.ID)
-			kept++
 		}
 		now := time.Now()
 		if err := tx.TouchAgentNodes(usedNodes, now); err != nil {
@@ -586,6 +622,65 @@ func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode
 	}); err != nil {
 		log.Warningf("cannot recall for %q: %s", self.settings.Owner.Username, err)
 	}
+}
+
+// RecalledPage is one page recall would carry and the facts it would
+// carry from it.
+type RecalledPage struct {
+	Path  string
+	Facts []*models.AgentFact
+}
+
+// RecallForQuestion answers what the graph would put in front of the
+// model for a question, without asking it anything.
+//
+// The same two steps a turn takes -- the fused search, then the choice of
+// blocks under the token budget -- so that what this reports is what a
+// turn would carry and not a second implementation of it that drifts.
+// What it deliberately leaves out is the turn's bookkeeping: no `used_at`
+// is moved and no vectors are backfilled, because an evaluation that
+// changed importance and decay as it ran would be measuring its own last
+// pass.
+func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
+	if self == nil || found == nil || owner == nil {
+		return nil, ErrUnavailable
+	}
+	words := strings.TrimSpace(question)
+	if words == "" {
+		return []*RecalledPage{}, nil
+	}
+	// Nothing is in this run's index, so a page carries its opening as
+	// well as its facts. The facts, which are what a question is graded
+	// on, are the same either way.
+	run := &AskRun{
+		agent:          self,
+		settings:       &AskSettings{Agent: found, Owner: owner, Message: words},
+		promptMemories: map[string]bool{},
+	}
+	run.ctx = ctx
+	nodes, facts := run.searchGraph(ctx, words, recallCandidates)
+	var blocks []*recalledBlock
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		blocks, err = run.chooseRecalled(tx, nodes, facts)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	// A loose fact can sit on a page that was expanded too, when it was
+	// not among the five facts the page showed, so the blocks are
+	// gathered by path rather than listed one for one.
+	pages := []*RecalledPage{}
+	byPath := map[string]*RecalledPage{}
+	for _, block := range blocks {
+		page := byPath[block.Path]
+		if page == nil {
+			page = &RecalledPage{Path: block.Path, Facts: []*models.AgentFact{}}
+			byPath[block.Path] = page
+			pages = append(pages, page)
+		}
+		page.Facts = append(page.Facts, block.Facts...)
+	}
+	return pages, nil
 }
 
 // fuseNodes and fuseFacts rank what several searches found by reciprocal

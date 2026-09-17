@@ -1,0 +1,78 @@
+[
+  {
+    "id": "example-direct-01",
+    "question": "what does Alice Chen do at Example Ltd?",
+    "kind": "direct",
+    "expects": [{ "path": "people/alice-chen", "words": ["platform", "team"] }],
+    "forbids": []
+  },
+  {
+    "id": "example-direct-02",
+    "question": "which cluster does the portal run on?",
+    "kind": "direct",
+    "expects": [{ "path": "projects/portal", "words": ["frankfurt"] }],
+    "forbids": []
+  },
+  {
+    "id": "example-paraphrase-01",
+    "question": "who should I ask about the customer-facing site?",
+    "kind": "paraphrase",
+    "expects": [{ "path": "projects/portal", "words": ["alice"] }],
+    "forbids": []
+  },
+  {
+    "id": "example-paraphrase-02",
+    "question": "where is Bo based these days?",
+    "kind": "paraphrase",
+    "expects": [{ "path": "people/bo-nilsson", "words": ["gothenburg"] }],
+    "forbids": []
+  },
+  {
+    "id": "example-changed-01",
+    "question": "where does Alice work from?",
+    "kind": "changed",
+    "expects": [{ "path": "people/alice-chen", "words": ["lisbon"] }],
+    "forbids": [{ "path": "people/alice-chen", "words": ["berlin"] }]
+  },
+  {
+    "id": "example-changed-02",
+    "question": "what is the kittiwake project called now?",
+    "kind": "changed",
+    "expects": [{ "path": "projects/kittiwake", "words": ["renamed", "harrier"] }],
+    "forbids": [{ "path": "projects/kittiwake", "words": ["working", "title"] }]
+  },
+  {
+    "id": "example-multihop-01",
+    "question": "who runs the team behind the Frankfurt cluster work?",
+    "kind": "multihop",
+    "expects": [
+      { "path": "projects/portal", "words": ["frankfurt"] },
+      { "path": "people/alice-chen", "words": ["platform", "team"] }
+    ],
+    "forbids": []
+  },
+  {
+    "id": "example-multihop-02",
+    "question": "which of the people I work with is in Sweden?",
+    "kind": "multihop",
+    "expects": [
+      { "path": "people/bo-nilsson", "words": ["gothenburg"] },
+      { "path": "organizations/example-ltd", "words": ["sweden"] }
+    ],
+    "forbids": []
+  },
+  {
+    "id": "example-abstain-01",
+    "question": "what is Alice Chen's brother called?",
+    "kind": "abstain",
+    "expects": [],
+    "forbids": [{ "path": "people/alice-chen", "words": ["brother"] }]
+  },
+  {
+    "id": "example-abstain-02",
+    "question": "what did we decide about the Reykjavik office?",
+    "kind": "abstain",
+    "expects": [],
+    "forbids": [{ "path": "organizations/example-ltd", "words": ["reykjavik"] }]
+  }
+]

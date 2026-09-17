@@ -73,6 +73,16 @@ Notable changes to TeaNode. The format follows
   commits by addresses it cannot place now lists them and points at the
   address book, instead of quietly attributing none of your work to you.
 
+- `teanode agent memory evaluate questions.json` says whether its memory is
+  getting better or worse, in numbers. It replays a set of questions through
+  the same recall a conversation uses and prints, for each one, whether the
+  facts that question needs would have been put in front of the model, with
+  totals by kind of question and a non-zero exit when anything missed. It asks
+  no model anything and changes nothing, so it costs nothing to run and can be
+  run either side of a night to see what the night was worth. The shape of the
+  file, and a starter set to replace with questions from your own graph, are in
+  `docs/evaluation/`.
+
 - Every change to a page is kept: what changed, who changed it — you, the
   agent, the nightly run, a source being read — and what was there before. It is
   on the page in the dashboard and in `teanode agent memory history <path>`.
