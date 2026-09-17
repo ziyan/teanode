@@ -19,10 +19,10 @@ func init() {
 			{
 				Name: "mail_draft", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailSend},
-				Description: "Write a draft: a new message, a reply, a reply to all, or a forward. It is saved in Drafts, in its conversation, for the person to send; nothing goes out. Gives back draft_id for mail_send.",
+				Description: "Write a draft: a new message, a reply, a reply to all, or a forward. It is saved in Drafts, in its conversation, for the person to send; nothing goes out. Gives back draft_id for mail_send, and for `discard`, which throws the draft away for good as the Discard button does.",
 				Guidance:    "mail_draft: plain text is the ordinary answer to a message and needs no html. Reach for html when the person asked for something made rather than said -- a summary with headings, a table of figures, an announcement. Mail is not the web: no script runs, nothing loads from another server, and no CSS variable survives, so write the colours out; and a picture has to travel with the message, so it must already be a file of this conversation -- one the person handed you, or one share_file fetched off their computer or out of a message -- and named in images. Most clients refuse SVG, so a drawing has to arrive as a PNG or a JPEG. Lay a wide thing out with a table rather than with flex or grid, which older clients ignore; keep to system fonts and to colours that read on white, since many clients paint their own background.",
 				Parameters: tools.Object(map[string]any{
-					"mode":        tools.EnumProperty("what kind of message", "new", "reply", "reply_all", "forward"),
+					"mode":        tools.EnumProperty("what kind of message, or discard to throw a draft away", "new", "reply", "reply_all", "forward", "discard"),
 					"in_reply_to": tools.StringProperty("for reply, reply_all and forward: the item_id of the message"),
 					"mailbox":     mailbox.MailboxProperty,
 					"from":        tools.StringProperty("one of the mailbox's addresses; the one the message was sent to by default"),
@@ -33,8 +33,8 @@ func init() {
 					"text":        tools.StringProperty("the body, plain text, in the person's voice; no placeholders"),
 					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for wants a heading, a table or a card. Write an ordinary document with a <style> block: the server moves the stylesheet into the elements, which is what makes it survive a mail client"),
 					"images":      tools.ArrayProperty("optional: files of this conversation to put in the body -- a picture you were given, or one you made. Refer to each by name in the html: <img src=\"cid:chart.png\">", tools.StringProperty("an attachment id of this conversation")),
-					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one"),
-				}, "mode", "text"),
+					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one; for discard, the draft to throw away"),
+				}, "mode"),
 				Preview: tools.PreviewOf(func(call struct {
 					Mode    string   `json:"mode"`
 					Subject string   `json:"subject"`
@@ -47,6 +47,8 @@ func init() {
 						named += " to " + to
 					}
 					switch call.Mode {
+					case "discard":
+						return "Discard a draft"
 					case "reply", "reply_all":
 						return "Write a reply in Drafts: " + named
 					case "forward":
@@ -104,13 +106,16 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(arguments.Text) == "" {
-		return nil, fmt.Errorf("a draft needs text")
-	}
 	operations := run.Operations()
 	views, err := mailbox.GrantedMailboxes(ctx, operations)
 	if err != nil {
 		return nil, err
+	}
+	if arguments.Mode == "discard" {
+		return discard(ctx, operations, views, arguments.DraftID)
+	}
+	if strings.TrimSpace(arguments.Text) == "" {
+		return nil, fmt.Errorf("a draft needs text")
 	}
 	var view *mailbox.MailboxView
 	var original *mailbox.ThreadView
@@ -264,5 +269,37 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 		return nil, err
 	}
 	answer.Note = fmt.Sprintf("drafted %q to %s", subject, strings.Join(to, ", "))
+	return answer, nil
+}
+
+// discard throws a draft away the way the composer's Discard button does:
+// the item is deleted outright rather than moved to Trash, where a draft
+// would only sit as a message to restore. The draft is found by the key it
+// keeps across saves, because the item id mail_draft was given names one
+// save and is stale the moment the person opens the draft.
+func discard(ctx context.Context, operations tools.Operations, views []*mailbox.MailboxView, draftId string) (*tools.Result, error) {
+	if strings.TrimSpace(draftId) == "" {
+		return nil, fmt.Errorf("which draft? give draft_id")
+	}
+	var found *mailbox.DraftView
+	var view *mailbox.MailboxView
+	for _, candidate := range views {
+		if draft, err := mailbox.FindDraft(ctx, operations, candidate, draftId); err == nil && draft != nil {
+			found, view = draft, candidate
+			break
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("there is no draft %q; it may have been sent or thrown away already", draftId)
+	}
+	var deleted map[string]any
+	if err := operations.Execute(ctx, `mutation ($itemIds: [String!]!) { DeleteMailboxItems(itemIds: $itemIds) }`, map[string]any{"itemIds": []string{found.ItemID}}, &deleted); err != nil {
+		return nil, err
+	}
+	answer, err := tools.JSONResult(map[string]any{"draft_id": draftId, "mailbox": view.Mailbox.Name, "subject": found.Subject, "note": "discarded; the draft is gone for good"})
+	if err != nil {
+		return nil, err
+	}
+	answer.Note = "discarded " + tools.Named(found.Subject, "a draft")
 	return answer, nil
 }

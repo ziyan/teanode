@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -18,7 +19,7 @@ func init() {
 			{
 				Name: "mail_act", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailWrite},
-				Description: "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever. Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result.",
+				Description: "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever. Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result. A draft sent to trash is discarded for good, as the Discard button does; a message it was a reply to stays where it is.",
 				Parameters: tools.Object(map[string]any{
 					"action":         tools.EnumProperty("what to do", "mark_read", "mark_unread", "star", "unstar", "archive", "move", "junk", "not_junk", "trash", "delete_forever"),
 					"item_ids":       tools.ArrayProperty("the messages", tools.StringProperty("item id")),
@@ -178,9 +179,26 @@ func runMailAct(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		err = move(folder)
 		where = "Archive"
 	case "trash":
-		folder := mailbox.FolderOfKind(view, models.MailboxFolderKindTrash)
-		err = move(folder)
-		where = "Trash"
+		// A draft has no life in Trash: the dashboard's Discard button
+		// deletes it outright, and a draft the agent trashes goes the
+		// same way rather than turning up as a message to restore.
+		var drafts []string
+		for _, entry := range thread.Items {
+			if entry.Item.Draft && slices.Contains(itemIds, entry.Item.ID) {
+				drafts = append(drafts, entry.Item.ID)
+			}
+		}
+		itemIds = slices.DeleteFunc(itemIds, func(itemId string) bool { return slices.Contains(drafts, itemId) })
+		if len(drafts) > 0 {
+			err = execute(`mutation ($itemIds: [String!]!) { DeleteMailboxItems(itemIds: $itemIds) }`, map[string]any{"itemIds": drafts})
+			where = "gone"
+		}
+		if err == nil && len(itemIds) > 0 {
+			folder := mailbox.FolderOfKind(view, models.MailboxFolderKindTrash)
+			err = move(folder)
+			where = "Trash"
+		}
+		itemIds = append(itemIds, drafts...)
 	case "move":
 		folder, findErr := mailbox.FindFolder(view, arguments.Folder)
 		if findErr != nil {
