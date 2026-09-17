@@ -100,7 +100,12 @@ The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
 dream turns them into facts. A document a full pass no longer reports is
 removed with its passages; a document the source still holds but could
-not read is kept.
+not read is kept. The hashes of everything a source holds go to the daemon once a pass,
+under the pass's name, and every later page names the pass instead of
+carrying them: for a source of four hundred thousand documents the map is
+fifty megabytes, and sending it with every page of two hundred and fifty
+entries was most of what a page cost. A daemon restarted mid-pass no
+longer holds the map, says so, and is sent it again.
 
 ## Not making the same page twice
 
