@@ -8781,3 +8781,10 @@ a.knowledge-chip {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* The contact that is the person: a filled mark in the accent, so the state
+   is visible without the tooltip. */
+.row-actions button.marked {
+  color: var(--accent);
+  border-color: var(--accent);
+}

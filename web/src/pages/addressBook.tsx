@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { PencilIcon, TrashIcon, UserIcon } from '../components/icons'
+import { PencilIcon, TrashIcon, UserIcon, KeptPersonIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
@@ -291,14 +291,17 @@ export function AddressBookPage() {
         render: (contact) => (
           <div className="row-actions">
             <Tooltip label={contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}>
+              {/* The card that is the person shows a person with a tick,
+                  in the accent: the same outline in both states left "not
+                  me" and "that is you" telling apart by tooltip alone. */}
               <button
                 type="button"
-                className={contact.id === myContactId ? 'pinned' : undefined}
+                className={contact.id === myContactId ? 'marked' : undefined}
                 disabled={busy}
                 aria-label={`${contact.name}: ${contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}`}
                 onClick={() => void markAsMe(contact.id === myContactId ? null : contact)}
               >
-                <UserIcon size={16} />
+                {contact.id === myContactId ? <KeptPersonIcon size={16} /> : <UserIcon size={16} />}
               </button>
             </Tooltip>
             <Tooltip label={t('common.edit')}>
