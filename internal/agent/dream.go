@@ -602,7 +602,25 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 		builder.WriteString("\n")
 	}
 
+	// Where this source's pages live. A batch is one source's documents,
+	// and a source has a folder of its own -- the work checkouts and the
+	// work chat under work/, a personal checkout under projects/ -- but
+	// the model, shown only projects/portal as an example, filed a
+	// hundred and seventy of an employer's customer projects under
+	// projects/ beside the person's own.
+	sourceName, sourceRoot := "", ""
+	if len(documents) > 0 {
+		_ = run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			source, err := tx.GetAgentSource(run.Agent.ID, documents[0].SourceID)
+			if err == nil && source != nil {
+				sourceName, sourceRoot = source.Name, strings.Trim(source.RootPath, "/")
+			}
+			return nil
+		})
+	}
 	prompt, err := render("digest.txt", map[string]any{
+		"SourceName": sourceName,
+		"SourceRoot": sourceRoot,
 		"PersonName": personName(run.Owner),
 		"Index":      index,
 		"Items":      builder.String(),

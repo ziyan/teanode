@@ -31,7 +31,14 @@ date something happened. Do not guess at what the contents would have
 said.
 {{end}}
 ## What to file
-
+{{if .SourceName}}
+These items come from the source `{{.SourceName}}`{{if .SourceRoot}}, whose
+pages live under `{{.SourceRoot}}/`. A project, a customer, a system or a
+piece of equipment that belongs to this source goes on a page under
+`{{.SourceRoot}}/`, not under `projects/` -- `projects/` is for what
+{{.PersonName}} does on their own account. People stay under `people/`
+and months under `time/` wherever they came from{{end}}.
+{{end}}
 You have the memory tool. `get` a page before filing to it when you are
 not sure it exists or what it already says, and `search` when you cannot
 guess its path; a fact a page already carries is not filed again. Look
