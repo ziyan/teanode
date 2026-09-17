@@ -64,8 +64,16 @@ and the mark goes.
   silent-turn doubling, the resume on the person's turn, the mail when it
   stops, and the goal in the prompt's situation. Five tests with a
   scripted provider and a unit test for the doubling.
-- [ ] Milestone 3: the drawer: set, see, change, clear, and the list mark;
-  checked in Chrome at desktop and phone width.
+- [x] (2026-09-17 12:23Z) Milestone 3: the drawer: the four fields on the
+  conversation documents and `goal` on `UPDATE`, `TargetIcon`, the target
+  button and the state chip in the head with the goal as its tooltip, the
+  `FormDialog` with the note read-only and Clear as its other action, the
+  two toasts, the coloured mark in the picker rows, the
+  check-in drawn as one muted line, and the waiting note above the
+  composer. Checked in Chrome on the dev server and on the maintainer's
+  server (2026-09-17 13:35Z): the icon-only chip in its three colours,
+  the dialog's status list reading `met · since 9:22 AM · 1 turn today ·
+  last note`, the check-in line opening on its prompt.
 - [x] (2026-09-17 12:11Z) Milestone 4, the documents:
   `conversations.md` gains "A goal", `jobs-and-schedules.md` the `goal`
   kind and the table of how it differs from a schedule, `the-ask-loop.md`
@@ -75,6 +83,14 @@ and the mark goes.
   Milestone 3.
 
 ## Surprises & Discoveries
+
+- Observation (2026-09-17 17:40Z): a goal at the five-minute cadence kept
+  the night from starting. The dream's quiet rule read the newest
+  conversation's `LastAt`, which every turn writes, the agent's own
+  included, so while the turn-bound test ran no dream began for a
+  quarter of an hour. The rule now asks when the person last wrote
+  (`LastAgentPersonWordAt`: their words in their own conversations, not
+  a check-in), which is what "not while they are talking" meant.
 
 - Observation: no existing path runs a turn *inside* a person's
   conversation without the person. A schedule runs a headless turn in a
@@ -119,7 +135,68 @@ and the mark goes.
   `deliverSchedule`. It is now `mailToPerson`, which the goal uses too;
   nothing about the schedule's behaviour changed.
 
+- Observation: the first real goal on the maintainer's server (2026-09-17
+  12:37Z, "list the open pull requests and failed runs from the GitHub
+  folder, then mark the goal met") wrote its table in twelve seconds and
+  never called the goal tool, so the row said nothing about when to look
+  again and the silent-turn rule put the next look an hour out. The dev
+  goal, on the same model, had called it every time. The handler now asks
+  once more when a turn ends without the tool, with the goal tool alone
+  in front of the model and two rounds; a check-in is also numbered ("the
+  2nd today") because the model, told to mark a goal met after the second
+  check-in, took a third.
+
 ## Decision Log
+
+- Decision (2026-09-17 20:10Z): the bound's stop is a stall, said in the
+  transcript. The state stays `waiting` -- no fourth state -- but the
+  note reads "Goal stalled: 24 turns since you last wrote and it is not
+  met. Write to keep going, or clear or change it.", that line is
+  appended to the conversation, and the mail's subject is "Goal stalled:
+  …".
+  Rationale: the maintainer, after the bound fired on the test goal:
+  "maybe we should say goal failed? And let user clear it or change it?"
+  The goal was never cleared by the bound, and the dialog already offers
+  clear and change; what was missing was any trace in the conversation,
+  since a wait adds no line and here no turn ran to say anything. Stalled
+  rather than failed because the agent does not know the goal is
+  impossible, only that nothing moved while nobody watched.
+
+- Decision (2026-09-17 16:20Z): a goal stops after twenty-four turns of its
+  own with no word from the person, set to `waiting` with a note asking
+  whether to go on, and they are mailed as for any wait; writing resumes
+  it and restarts the count, which is taken from the job rows since the
+  later of the goal's setting and their last message.
+  Rationale: the maintainer asked that an unachievable goal not burn
+  tokens indefinitely. The day's cap bounded a day, and the doubling only
+  a turn that said nothing: a goal that answered "look again in five
+  minutes" to a build that never goes green would have cost forty-eight
+  turns a day for as long as nobody looked. The person's own word is the
+  right reset because it is the one signal that somebody is still
+  watching.
+
+- Decision (2026-09-17 15:00Z): the goal's beginning and end are lines of
+  the transcript. Setting, changing and clearing a goal, and the agent
+  calling `met`, each append a note to the conversation -- "Goal set:
+  …", "Goal changed: …", "Goal cleared: …", "Goal met: …" with the
+  agent's note -- drawn as the muted line a schedule's run or a stop
+  already is. A `note` or a `wait` does not: the chip and the bar carry
+  those, and a line for every check-in would be the clutter the
+  simplification took out.
+  Rationale: the maintainer, reading the transcript back: the goal lived
+  in a dialog and a chip, so the conversation showed the agent working
+  toward something it never said, and ending without saying it was done.
+  The wording is one function, `models.GoalChangeNote`, called from the
+  dialog's path, a new conversation's, and the tool's, so the three say
+  the same thing.
+
+- Decision (2026-09-17 13:50Z): the picker row's second line is the time
+  of the last message on every row, goal or not; the goal's note is read
+  in the dialog.
+  Rationale: the maintainer, seeing "Discarded the saved draft; nothing
+  was sent." where every other row said "12 hours ago": the time is what
+  tells the rows apart, and a row that swaps it for a sentence breaks the
+  list's one column of like with like.
 
 - Decision: the goal lives on the conversation row, as text with a state,
   not as a schedule and not as a todo.
@@ -203,7 +280,66 @@ and the mark goes.
   written down in the caveats.
   Date/Author: 2026-09-17, the agent.
 
+- Decision (2026-09-17 13:05Z): no set-a-goal button in the drawer. The
+  agent sets and clears the goal from what the person says, through the
+  tool's `set`; the drawer shows the goal that exists and offers Clear.
+  Rationale: the maintainer, seeing the button, said the agent should set
+  the goal according to the person's input; a form for a sentence the
+  person would type into the composer anyway is a second way to say one
+  thing.
+  Date/Author: 2026-09-17, the maintainer.
+
 ## Outcomes & Retrospective
+
+**The bound on turns alone, on the maintainer's server (2026-09-17
+18:50Z).** A conversation was given a goal that says it cannot be met and
+asks for a five-minute note every turn. Twenty-four turns ran from 16:39Z
+to 18:38Z, each calling the tool once, none failing; the twenty-fifth job
+ran at 18:43Z, asked the model nothing, set the goal `waiting` with "24
+turns on this since you last wrote, and it is not met; write if I should
+keep going", and one mail went out with the goal as its subject. One
+message from the person resumed it: the next turn ran a minute later and
+the goal was working again, because the count restarts from their word.
+The goal was then cleared. Cost of the whole run: about thirty cents.
+Seen along the way: the dream's quiet rule read the conversation's last
+message time, which the goal's own turns kept fresh, so no night began
+while the goal ran; the rule now reads the person's last word.
+
+**Second real goal, end to end (2026-09-17 13:35Z).** "Draft a short,
+friendly reply to the newest mail in my Inbox thanking the sender, save it
+as a draft, then wait for me to say whether to send it. Do not send
+anything." The check-in searched, drafted, and called `wait` with a
+one-line note; the mail for `waiting` went to the notification address
+and the bar above the composer showed the note. The person's next turn
+resumed the goal, the agent discarded the draft and called `met`; no mail
+went out for `met`, as decided. Two things it turned up. The agent threw
+the draft away with `mail_act trash`, which moved it to Trash, where the
+dashboard's Discard deletes a draft for good -- so `mail_draft` gained a
+`discard` mode that finds the draft by the key it keeps across saves and
+deletes it as the composer does, and `mail_act trash` deletes rather than
+moves any draft among its items. And the first try at `mail_act trash`
+failed on the `draft_id` it had just been given, because a draft's item
+id names one save and the id `mail_draft` answers is the key: `discard`
+takes the key, which is what the model holds.
+
+**First real goal (2026-09-17 12:50Z).** On the maintainer's server, a new
+conversation was given the goal "look at my GitHub folder: list the open
+pull requests and failed workflow runs the mails there mention from the
+last two days, in one short table; then mark the goal met". The first
+check-in ran twelve seconds after the goal was set, searched the folder
+twice, wrote the table (60k tokens in, 513 out, $0.13 on the person's
+model) and ended without the goal tool; the second, brought forward by
+hand and running under the follow-up ask, called `met` with a one-line
+note, and the drawer showed the chip go from "working · next look 8:37 AM"
+to "met" with the conversation titled by the describer. No mail went out:
+the account has no notification address, which is the condition the mail
+waits on, and nothing else says so to the person. The dev trial before it
+ran a counting goal through two turns of its own and one of the person's,
+with `waiting` and `met` shown from rows set by hand. Open: a check-in on
+a paid model carries the whole conversation each time, so a goal looking
+every five minutes at a long conversation would be dear; compaction bounds
+it, and the five-minute floor may want raising once more real goals have
+been seen.
 
 **Milestones 1 and 2 (2026-09-17 12:11Z).** The row, the API, the command
 line, the tool, the job and the documents are in. What the plan expected
@@ -293,21 +429,21 @@ Docs to update: `docs/subsystems/conversations.md`, `docs/subsystems/the-ask-loo
 What the person sees and does, before any file is named. Everything below
 is checked in Chrome at 1600 and 420 wide before it is deployed.
 
-Setting a goal. In the drawer's header, beside the conversation's name, a
-target icon. Pressing it opens a dialog titled "Goal for this
-conversation" with one text box and the hint "What the agent should keep
-working toward, in a sentence. It will take turns on its own until this
-is met or you clear it." Save puts the goal on the conversation and shows
-the toast "Goal set". The same happens when the person writes "keep
-working on this until the deploy is green" and the agent calls the tool:
-the goal appears in the header and the agent's answer says so. On the
-phone the icon is the same and the dialog is full width.
+Setting a goal. The person says it: "keep working on this until the
+deploy is green", "check every hour whether the build is fixed and tell
+me", "drop the goal". The agent calls the goal tool's `set` from the
+person's words, or clears it the same way, and its answer says what it
+set. There is no button for it: a goal is a thing asked for in the
+conversation, and a form beside the composer for a sentence the person
+would type into the composer anyway was a second way to say one thing
+(the maintainer's call, 2026-09-17 13:05Z, after seeing the button).
 
-Seeing it. With a goal set, the icon becomes a chip carrying the state:
-"working · next look 10:42", "waiting for you", or "met". The chip's
-tooltip is the goal's text. Pressing the chip opens the same dialog, now
-with the text filled in, the agent's last note under it in muted type,
-and two actions: Save, and Clear at the far end. In the conversation
+Seeing it. With a goal set, a chip in the drawer's header carries the
+state: "working · next look 10:42", "waiting for you", or "met". The
+chip's tooltip is the goal's text. Pressing the chip opens a small
+dialog showing the goal, its state and the agent's last note, with one
+action, Clear, the stop control a person may want without a word; with
+no goal there is nothing in the header. In the conversation
 list, a conversation with a goal shows a small target mark before its
 title, in the accent colour while working, the warning colour while
 waiting, muted when met, and the agent's note as the row's second line
@@ -331,13 +467,14 @@ message clears the bar and the goal goes back to working. With the drawer
 shut, the same note is the first line of a mail to the notification
 address, subject "Goal: two drafts are ready", when the account has one.
 
-Met. The chip says "met", the note is the agent's closing word, the mark
-in the list goes muted. The goal text stays until the person clears it,
+Met. The icon goes muted, the dialog's state says "met" with the agent's
+closing word as the last note, the mark in the list goes muted; no mail. The goal text stays until the person clears it,
 so they can read what was done and set the next one from the same dialog.
 
-Stopping. Clear in the dialog removes the goal, stops a turn under way,
-and shows "Goal cleared". The existing stop button on a running turn
-still works and does not clear the goal.
+Stopping. Clear in the dialog, or telling the agent to drop the goal,
+removes it and stops a turn under way; the dialog shows "Goal cleared".
+The existing stop button on a running turn still works and does not
+clear the goal.
 
 Errors. A goal that cannot run, because the day's budget is spent or the
 cap of forty-eight turns is reached, is not an error the person is shown
@@ -456,11 +593,12 @@ The handler, `runGoal` in `internal/agent/goal.go`:
 4. If the turn ended without a `goal` call, sets `GoalNextAt` to twice
    the last interval (kept as the gap between the turn and the previous
    `GoalNextAt`), capped at `goalLatest`.
-5. When the state left `working` in this turn (`waiting` or `met`) and
-   the account has a notification address and a granted mailbox, one
-   mail with the note as its first line, the way `deliverSchedule` mails,
-   subject "Goal: <first words>"; best effort, logged, never a dead
-   letter.
+5. When the state became `waiting` in this turn and the account has a
+   notification address and a granted mailbox, one mail with the note as
+   its first line, the way `deliverSchedule` mails, subject "Goal: <first
+   words>"; best effort, logged, never a dead letter. A goal that is met
+   is not mailed about (the maintainer's ask, 2026-09-17 13:20Z): the
+   mark in the drawer and the closing note are there when they next look.
 
 The person's controls are the existing ones: `UpdateAgentConversation(goal:
 "")` clears, and clearing also stops a turn under way through
@@ -497,8 +635,8 @@ when there is one, Save, and Clear as the `otherAction`. Setting a goal on
 a `met` conversation starts it again.
 
 In the picker rows (2032-2058), a target mark before the title for a
-conversation with a goal, coloured by state, with the note as the row's
-second line when there is one.
+conversation with a goal, coloured by state. The row's second line stays
+the time of the last message, on every row.
 
 In the transcript, a user message that begins with the `[goal check-in]`
 marker (the exact string `goalCheckInMarker` the handler writes, exported

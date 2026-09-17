@@ -83,6 +83,13 @@ The check-in a turn arrives as opens with `models.GoalCheckInMarker`
 (`[goal check-in]`), exactly, so a reader can tell it from the person's own
 words, and says in the same breath that nobody is speaking.
 
+The goal's beginning and end are lines of the transcript as well: setting,
+changing or clearing it, and the agent calling `met`, each append a `note`
+message -- "Goal set: …", "Goal changed: …", "Goal cleared: …", "Goal met:
+…" with the agent's note -- worded by `models.GoalChangeNote` so the
+dialog, a new conversation and the tool say the same thing. A `note` or a
+`wait` from the tool adds no line; the chip and the bar carry those.
+
 How the turns are queued, bounded and delivered is in
 `jobs-and-schedules.md`. Setting and clearing a goal is
 `UpdateAgentConversation(goal:)`, or `teanode agent conversation goal`;

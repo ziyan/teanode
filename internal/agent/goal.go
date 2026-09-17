@@ -45,6 +45,15 @@ const (
 	// column. Forty-eight is a turn every half hour around the clock,
 	// which is the most any goal worth having needs.
 	goalTurnsPerDay = 48
+
+	// goalTurnsAlone is as many turns of its own as a goal takes without
+	// a word from the person before it stops and asks them. The day's cap
+	// bounds a day; this bounds the goal nobody can meet, which would
+	// otherwise cost the cap every day until somebody noticed the bill.
+	// Twenty-four is a day of hourly looks, or two hours of the fastest
+	// cadence, either of which is long enough to know that the next look
+	// is not the one.
+	goalTurnsAlone = 24
 )
 
 // dueGoals queues a turn for every conversation whose goal is working and
@@ -137,6 +146,66 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		return self.moveGoalOn(ctx, conversation.ID, tomorrow, fmt.Sprintf("%d turns today; it goes on tomorrow, or when you write", goalTurnsPerDay))
 	}
 
+	// The run without the person, counted the same way from the later of
+	// the goal's setting and their last word. A goal the agent cannot
+	// meet -- a build that never goes green, a reply that never comes --
+	// answers "look again" for ever, and the day's cap only makes that
+	// forty-eight turns a day rather than more. At the bound it stops and
+	// waits for the person, who resumes it by writing, which is also what
+	// starts the count again.
+	var alone int64
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		since := time.Time{}
+		if conversation.GoalSetAt != nil {
+			since = *conversation.GoalSetAt
+		}
+		if spoke, err := tx.LastAgentPersonMessageAt(conversation.ID); err != nil {
+			return err
+		} else if spoke != nil && spoke.After(since) {
+			since = *spoke
+		}
+		var err error
+		alone, err = tx.CountAgentJobs(&db.AgentJobFilter{
+			AgentID:   run.Agent.ID,
+			Kinds:     []models.AgentJobKind{models.AgentJobGoal},
+			Statuses:  []models.AgentJobStatus{models.AgentJobDone},
+			SubjectID: conversation.ID,
+			Since:     since,
+		})
+		return err
+	}); err != nil {
+		return err
+	}
+	if alone >= goalTurnsAlone {
+		// Stalled, not failed: nothing moved and nobody was watching,
+		// which is all the agent knows. The goal stays on the
+		// conversation as waiting, with the person's three ways on in
+		// the note, and the stop is written into the transcript because
+		// no turn ran to say it there.
+		note := fmt.Sprintf("Goal stalled: %d turns since you last wrote and it is not met. Write to keep going, or clear or change it.", goalTurnsAlone)
+		var stalled *models.AgentConversation
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			stalled, err = tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
+				if conversation.Goal == "" || conversation.GoalState != models.GoalWorking {
+					return nil
+				}
+				conversation.GoalState, conversation.GoalNextAt, conversation.GoalNote = models.GoalWaiting, nil, note
+				return nil
+			})
+			if err != nil || stalled == nil || stalled.GoalState != models.GoalWaiting {
+				return err
+			}
+			_, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note})
+			return err
+		}); err != nil {
+			return err
+		}
+		if stalled != nil && stalled.GoalState == models.GoalWaiting {
+			self.tellAboutGoal(ctx, run, stalled)
+		}
+		return nil
+	}
+
 	// The budget, before a model is asked anything. A goal that has run
 	// the person out of tokens waits for the reset rather than failing
 	// the job over and over until it dead-letters.
@@ -158,39 +227,30 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	turn, err := self.Ask(&AskSettings{
-		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: goalCheckIn(conversation, run.Owner, now), Surface: "goal", Headless: true,
-		UsageKind: string(models.AgentJobGoal), MaxRounds: configuration.Agent.Limits.MaxRoundsPerAsk,
-	})
+	failure, err := self.goalTurn(ctx, run, operations, conversation,
+		goalCheckIn(conversation, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
 	if err != nil {
 		return err
 	}
-	events, unsubscribe := turn.Subscribe()
-	defer unsubscribe()
-	failure := ""
-	for event := range events {
-		// The job's own deadline, not the agent's: a turn past its time
-		// is stopped here, before another instance is handed the job.
-		if ctx.Err() != nil {
-			turn.Stop()
-			break
-		}
-		if event.Kind == EventError {
-			failure = event.Error
-		}
+
+	after, err := self.goalAfterTurn(ctx, run, conversation.ID)
+	if err != nil || after == nil {
+		return err
 	}
 
-	var after *models.AgentConversation
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		after, err = tx.GetAgentConversation(conversation.ID)
-		return err
-	}); err != nil {
-		return err
-	}
-	// Cleared while the turn ran, or the conversation deleted under it.
-	if after == nil || after.Goal == "" {
-		return nil
+	// A model that answered and never called the tool is asked once more,
+	// with the goal tool alone in front of it: the first real goal on the
+	// maintainer's server wrote its table and stopped, and the row said
+	// nothing about when to look again or whether it was done.
+	if failure == "" && after.GoalState == models.GoalWorking && (after.GoalNextAt == nil || !after.GoalNextAt.After(now)) {
+		failure, err = self.goalTurn(ctx, run, operations, after, goalCheckInAgain(), map[string]bool{"goal": true}, 2)
+		if err != nil {
+			return err
+		}
+		after, err = self.goalAfterTurn(ctx, run, conversation.ID)
+		if err != nil || after == nil {
+			return err
+		}
 	}
 
 	// A turn that did not call the tool said nothing about when to look
@@ -206,15 +266,67 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		if err := self.moveGoalOn(ctx, conversation.ID, now.Add(next), note); err != nil {
 			return err
 		}
-	} else if after.GoalState != models.GoalWorking {
-		// It stopped: it needs the person, or it is done. Either way they
-		// are told, in case they are not reading the conversation.
+	} else if after.GoalState == models.GoalWaiting {
+		// It needs the person, so they are told in case they are not
+		// reading the conversation. A goal that is met is not mailed
+		// about: the maintainer asked not to be, and the drawer's mark
+		// and the closing note are there when they next look.
 		self.tellAboutGoal(ctx, run, after)
 	}
 	if failure != "" {
 		return fmt.Errorf("the goal turn failed: %s", failure)
 	}
 	return nil
+}
+
+// goalTurn runs one headless turn in the person's conversation and waits
+// for it, answering with what went wrong when something did.
+func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
+	turn, err := self.Ask(&AskSettings{
+		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
+		Message: message, Surface: "goal", Headless: true, Allow: allow,
+		UsageKind: string(models.AgentJobGoal), MaxRounds: rounds,
+	})
+	if err != nil {
+		return "", err
+	}
+	events, unsubscribe := turn.Subscribe()
+	defer unsubscribe()
+	failure := ""
+	for event := range events {
+		// The job's own deadline, not the agent's: a turn past its time
+		// is stopped here, before another instance is handed the job.
+		if ctx.Err() != nil {
+			turn.Stop()
+			break
+		}
+		if event.Kind == EventError {
+			failure = event.Error
+		}
+	}
+	return failure, nil
+}
+
+// goalAfterTurn is the conversation as the turn left it, or nil when the
+// goal was cleared while the turn ran or the conversation deleted under it.
+func (self *Agent) goalAfterTurn(ctx context.Context, run *Run, conversationId string) (*models.AgentConversation, error) {
+	var after *models.AgentConversation
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		after, err = tx.GetAgentConversation(conversationId)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if after == nil || after.Goal == "" {
+		return nil, nil
+	}
+	return after, nil
+}
+
+// goalCheckInAgain is the second ask of a turn that answered without the
+// goal tool: the tool alone is offered, and the words say why.
+func goalCheckInAgain() string {
+	return models.GoalCheckInMarker + " You ended your turn without the goal tool. Call it now, once: note with where you are and the minutes until your next turn, wait when you need the person, or met when the goal is done."
 }
 
 // goalDoubled is how long to wait after a turn that said nothing: twice
@@ -275,6 +387,8 @@ func (self *Agent) tellAboutGoal(ctx context.Context, run *Run, conversation *mo
 	subject := "Goal: " + firstWords(conversation.Goal, 60)
 	if conversation.GoalState == models.GoalMet {
 		subject = "Goal met: " + firstWords(conversation.Goal, 60)
+	} else if strings.HasPrefix(conversation.GoalNote, "Goal stalled:") {
+		subject = "Goal stalled: " + firstWords(conversation.Goal, 60)
 	}
 	body := strings.TrimSpace(conversation.GoalNote)
 	if body == "" {
@@ -298,9 +412,13 @@ func (self *Agent) tellAboutGoal(ctx context.Context, run *Run, conversation *mo
 // schedule the agent wrote for itself is framed, and for the same reason:
 // handed over as an ordinary user turn, a sentence the agent read
 // somewhere would come back as an instruction from the person.
-func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time) string {
+func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now time.Time, turn int) string {
+	// Numbered, because a goal often says "after the second look" or
+	// "three times a day", and a model that has to count its own turns
+	// from the transcript counted wrong: told to mark a goal met after the
+	// second check-in, it took a third.
 	lines := []string{
-		models.GoalCheckInMarker + " This is your own turn toward the goal on this conversation, not the person speaking; they are not here.",
+		models.GoalCheckInMarker + fmt.Sprintf(" This is your own turn toward the goal on this conversation, the %s today, not the person speaking; they are not here.", ordinal(turn)),
 		"",
 		"The goal: " + conversation.Goal,
 	}
@@ -314,6 +432,21 @@ func goalCheckIn(conversation *models.AgentConversation, owner *models.User, now
 		"End by calling the goal tool exactly once: note with where you are and the minutes until your next turn, wait when you need them, or met when it is done.",
 	)
 	return strings.Join(lines, "\n")
+}
+
+// ordinal is 1st, 2nd, 3rd, 4th for the check-in's number.
+func ordinal(number int) string {
+	suffix := "th"
+	switch {
+	case number%100 >= 11 && number%100 <= 13:
+	case number%10 == 1:
+		suffix = "st"
+	case number%10 == 2:
+		suffix = "nd"
+	case number%10 == 3:
+		suffix = "rd"
+	}
+	return fmt.Sprintf("%d%s", number, suffix)
 }
 
 // firstWords is the beginning of a sentence, cut on a space so a subject

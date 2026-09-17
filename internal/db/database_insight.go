@@ -89,6 +89,14 @@ type InsightOperation interface {
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// LastAgentPersonMessageAt is when the person last wrote in the
+	// conversation: their own words, not a goal check-in the agent was
+	// handed as a user turn. Nil when they never have.
+	LastAgentPersonMessageAt(conversationId string) (*time.Time, error)
+	// LastAgentPersonWordAt is when the person last wrote to this agent in
+	// any of their own conversations: their words, not a goal check-in.
+	// Nil when they never have.
+	LastAgentPersonWordAt(agentId string) (*time.Time, error)
 }
 
 type mailInsightModel struct {
@@ -141,6 +149,7 @@ type agentConversationModel struct {
 	GoalState  string     `gorm:"column:goal_state"`
 	GoalNote   string     `gorm:"column:goal_note"`
 	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
+	GoalSetAt  *time.Time `gorm:"column:goal_set_at"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -380,6 +389,10 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		at := model.GoalNextAt.In(time.Local)
 		conversation.GoalNextAt = &at
 	}
+	if model.GoalSetAt != nil {
+		at := model.GoalSetAt.In(time.Local)
+		conversation.GoalSetAt = &at
+	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
 		conversation.RememberedAt = &at
@@ -417,6 +430,7 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		GoalState:  string(conversation.GoalState),
 		GoalNote:   conversation.GoalNote,
 		GoalNextAt: conversation.GoalNextAt,
+		GoalSetAt:  conversation.GoalSetAt,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -454,7 +468,7 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
-		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt,
+		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -771,6 +785,34 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.Time, error) {
+	var last []time.Time
+	if err := self.tx.Model(&agentMessageModel{}).
+		Where("\"conversation_id\" = ? AND \"role\" = ? AND \"content\" NOT LIKE ?", conversationId, "user", models.GoalCheckInMarker+"%").
+		Order("\"created_at\" DESC").Limit(1).Pluck("created_at", &last).Error; err != nil {
+		return nil, err
+	}
+	if len(last) == 0 {
+		return nil, nil
+	}
+	return &last[0], nil
+}
+
+func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, error) {
+	var last []time.Time
+	if err := self.tx.Model(&agentMessageModel{}).
+		Joins("JOIN \"agent_conversation\" ON \"agent_conversation\".\"id\" = \"agent_message\".\"conversation_id\"").
+		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ? AND \"agent_message\".\"content\" NOT LIKE ?",
+			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user", models.GoalCheckInMarker+"%").
+		Order("\"agent_message\".\"created_at\" DESC").Limit(1).Pluck("\"agent_message\".\"created_at\"", &last).Error; err != nil {
+		return nil, err
+	}
+	if len(last) == 0 {
+		return nil, nil
+	}
+	return &last[0], nil
 }
 
 var _ = gorm.ErrRecordNotFound

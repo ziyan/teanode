@@ -33,6 +33,7 @@ type AgentConversation struct {
 	GoalState  string     `json:"goalState"`
 	GoalNote   string     `json:"goalNote"`
 	GoalNextAt *time.Time `json:"goalNextAt"`
+	GoalSetAt  *time.Time `json:"goalSetAt"`
 }
 
 // AgentRunSummary is one run as a list shows it, with what it cost.
@@ -153,7 +154,7 @@ type AgentTool struct {
 	Core        bool   `json:"core"`
 }
 
-const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt }`
+const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt goalSetAt }`
 
 // The documents.
 const (

@@ -33,11 +33,12 @@ import {
   StarIcon,
   PlusIcon,
   SparkIcon,
+  TargetIcon,
   TrashIcon,
   ExternalIcon,
 } from './icons'
 import { CodeBlock } from './codeBlock'
-import { ConfirmDialog } from './dialog'
+import { ConfirmDialog, FormDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
@@ -59,6 +60,10 @@ const DEVICES_EVERY = 10_000
 // person never waits to type; files come with a turn, and a thread can be
 // pointed at from the reader.
 
+// Where a conversation's goal stands, as the server writes it. Empty is
+// the fourth answer and the commonest one: there is no goal.
+type GoalState = 'working' | 'waiting' | 'met'
+
 interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run'
@@ -66,7 +71,21 @@ interface Conversation {
   summary?: string
   lastAt: string
   archivedAt?: string | null
+  // The standing instruction this conversation carries, if any: what the
+  // agent keeps working toward across turns of its own. goalNote is its
+  // last word on where it is, and goalNextAt when it looks again.
+  goal?: string
+  goalState?: GoalState | ''
+  goalNote?: string
+  goalNextAt?: string | null
+  goalSetAt?: string | null
 }
+
+// The marker a turn of the agent's own begins with, which is
+// models.GoalCheckInMarker on the server. A user message starting with it
+// is the agent checking in against the goal, not the person, and the
+// transcript draws it as a line rather than as their bubble.
+const GOAL_CHECK_IN_MARKER = '[goal check-in]'
 
 interface Artifact {
   artifact_id: string
@@ -249,8 +268,11 @@ type Line =
       choices: string[]
       answered?: string
     }
-  | { kind: 'note'; key: string; text: string }
+  | { kind: 'note'; key: string; text: string; at?: string }
   | { kind: 'error'; key: string; text: string }
+  // A turn the agent started against the goal. Its words are framing for
+  // the model and were never the person's, so only the hour is drawn.
+  | { kind: 'checkin'; key: string; at?: string; text: string }
 
 const AGENT = `
   query {
@@ -266,14 +288,17 @@ const TAB = `
 
 const CONVERSATIONS = `
   query ($archived: Boolean, $query: String) {
-    ListAgentConversations(archived: $archived, query: $query) { id kind title summary lastAt archivedAt }
+    ListAgentConversations(archived: $archived, query: $query) {
+      id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt
+    }
   }`
 
 const CONVERSATION = `
   query ($conversationId: String, $first: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first) {
-      conversation { id kind title summary lastAt archivedAt }
+      conversation { id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
       actingAs
+      goalTurnsToday
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
@@ -315,9 +340,12 @@ const START = `
     StartAgentConversation(title: $title) { id kind title summary lastAt archivedAt }
   }`
 
+// A variable left out is a field left alone: renaming sends no goal, and
+// setting a goal sends no title. An empty goal is not nothing — it is the
+// person saying there is no goal any more.
 const UPDATE = `
-  mutation ($conversationId: String!, $title: String) {
-    UpdateAgentConversation(conversationId: $conversationId, title: $title) { id }
+  mutation ($conversationId: String!, $title: String, $goal: String) {
+    UpdateAgentConversation(conversationId: $conversationId, title: $title, goal: $goal) { id }
   }`
 
 const DELETE = `
@@ -378,6 +406,17 @@ function dayLabel(at: string, today: string, yesterday: string): string {
   before.setDate(now.getDate() - 1)
   if (day === dayOf(before.toISOString())) return yesterday
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// clockTime is the hour and minute a moment falls on, in the reader's own
+// zone. Used where the day is already known -- the dividers say it, and a
+// goal's next look is always today or tomorrow -- so the date would be
+// noise on a line that is meant to be read past.
+function clockTime(at?: string): string {
+  if (!at) return ''
+  const moment = new Date(at)
+  if (Number.isNaN(moment.getTime())) return ''
+  return moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
 function draftKey(conversationId: string): string {
@@ -487,6 +526,12 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
     switch (message.role) {
       case 'user':
         closeTurn()
+        // A check-in is a user message only because that is the shape a
+        // turn starts in. Nobody typed it, so none of it is shown.
+        if (message.content.startsWith(GOAL_CHECK_IN_MARKER)) {
+          lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content })
+          break
+        }
         lines.push({
           kind: 'user',
           key: message.id,
@@ -529,10 +574,14 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         lines.push({ kind: 'note', key: message.id, text: '' })
         break
       case 'note':
+        // Timed, so that the day divider counts a note that opens a day
+        // -- "Goal set" is the first line of a fresh conversation -- and
+        // does not land under it.
         lines.push({
           kind: 'note',
           key: message.id,
           text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content,
+          at: message.createdAt,
         })
         break
       default:
@@ -827,6 +876,69 @@ function BudgetRing({
   )
 }
 
+// goalStateOf is the state to draw a conversation's goal in. A goal with
+// no state is one the server has not written a state for yet, and it is
+// working: that is what setting one does.
+function goalStateOf(conversation: Conversation): GoalState {
+  return conversation.goalState || 'working'
+}
+
+// goalStateKey is what a state is called, as a key of the catalogue.
+function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
+  return `agentDrawer.goal.${state}`
+}
+
+// The goal control in the drawer's head: a target to press when the
+// conversation is working toward nothing, and a chip carrying the state
+// when it has a goal. Either one opens the same dialog.
+//
+// Narrow, the chip is the mark alone in the state's colour and the state
+// word moves into the tooltip: there is no room beside a title on a phone
+// for "waiting for you · next look 10:42", and the mark's colour already
+// says which of the three it is to anyone who has seen it once.
+// CheckInLine is one turn of the agent's own toward the goal, as a line
+// rather than a bubble; pressing it shows the words the turn was given,
+// because a person watching a goal wants to know what the agent was
+// told as much as what it did.
+function CheckInLine({ at, text }: { at?: string; text: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="agent-line checkin muted">
+      <button
+        type="button"
+        className="agent-checkin-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((before) => !before)}
+      >
+        <TargetIcon size={12} />
+        {t('agentDrawer.goal.checkIn')}
+        {at ? ` · ${clockTime(at)}` : ''}
+      </button>
+      {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
+    </div>
+  )
+}
+
+function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen: () => void }) {
+  const { t } = useTranslation()
+  // One icon, whatever the state: the head has the conversation's name,
+  // the attached marks and the budget ring on it, and there is no room
+  // for words. With a goal the icon takes the state's colour and the
+  // tooltip says the state and the goal; the dialog behind it says the
+  // rest.
+  const goal = conversation.goal?.trim() ?? ''
+  const state = goal ? goalStateOf(conversation) : ''
+  const label = goal ? `${t(goalStateKey(state as GoalState))} · ${goal}` : t('agentDrawer.goal.set')
+  return (
+    <Tooltip label={label}>
+      <button type="button" className={`icon-button agent-drawer-goal ${state}`} aria-label={label} onClick={onOpen}>
+        <TargetIcon size={16} />
+      </button>
+    </Tooltip>
+  )
+}
+
 // standalone is the drawer as a page of its own, framed by the browser
 // extension into another site: always open, filling its frame, and its
 // close mark telling the framing page to hide it.
@@ -879,6 +991,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [runs, setRuns] = useState<string[]>([])
   const [showingList, setShowingList] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
+  // The goal being typed, or null while the dialog is shut. An empty
+  // string is a dialog open on a conversation that has no goal yet.
+  const [goalDraft, setGoalDraft] = useState<string | null>(null)
+  const [goalBusy, setGoalBusy] = useState(false)
+  const [goalTurnsToday, setGoalTurnsToday] = useState(0)
+  // Whether the bar saying what the agent is waiting for is still up. It
+  // comes down when the person sends, because the answer is on its way,
+  // and the next read puts it back if the agent is still waiting.
+  const [showingGoalNote, setShowingGoalNote] = useState(true)
   const [{ showTools, showUsage }] = useAgentPreferences()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // The bubbles whose time is shown: a tap on a phone, where there is no
@@ -955,6 +1076,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       ReadAgentConversation: {
         conversation: Conversation
         actingAs?: string | null
+        goalTurnsToday?: number
         messages: StoredMessage[]
         todos: { id: string; text: string; doneAt?: string | null }[]
       }
@@ -965,8 +1087,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setConversationId(response.ReadAgentConversation.conversation.id)
     setLoaded(response.ReadAgentConversation.conversation)
     setActingAs(response.ReadAgentConversation.actingAs ?? null)
+    setGoalTurnsToday(response.ReadAgentConversation.goalTurnsToday ?? 0)
     remember(CONVERSATION_KEY, response.ReadAgentConversation.conversation.id)
     setLines(linesOf(response.ReadAgentConversation.messages, t))
+    setShowingGoalNote(true)
     setTodos(response.ReadAgentConversation.todos ?? [])
     setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
     draftLoadedFor.current = response.ReadAgentConversation.conversation.id
@@ -1482,6 +1606,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const asked = (event: RunEvent) => {
     setRuns((previous) => (previous.includes(event.runId) ? previous : [...previous, event.runId]))
     if (sending.current > 0 && event.note === surface()) return
+    // A turn of the agent's own, arriving live: the line, not the bubble,
+    // and nothing here to have said it twice.
+    if ((event.text ?? '').startsWith(GOAL_CHECK_IN_MARKER)) {
+      setLines((previous) => [
+        ...previous,
+        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '' },
+      ])
+      return
+    }
     setLines((previous) => {
       let kept = previous
       for (let index = previous.length - 1; index >= 0; index--) {
@@ -1523,6 +1656,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // being read, it goes back to its end for the turn that follows.
     sticking.current = true
     setAtBottom(true)
+    // What the agent was waiting for has been answered, as far as this
+    // person is concerned; the bar asking for it has served.
+    setShowingGoalNote(false)
     const key = `user-${Date.now()}`
     setLines((previous) => [
       ...previous,
@@ -1685,6 +1821,26 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
+  // Save and Clear in the goal dialog are the same write: the sentence the
+  // person typed, or the empty string, which the server reads as "there is
+  // no goal any more" and which also stops the turn under way. The dialog
+  // keeps what was typed when the write fails, so nothing is retyped.
+  const saveGoal = async (goal: string) => {
+    if (!conversationId) return
+    setGoalBusy(true)
+    try {
+      await graphql(UPDATE, { conversationId, goal })
+      setGoalDraft(null)
+      await loadConversations()
+      await readConversation(conversationId)
+      toast.done(goal ? t('agentDrawer.goal.saved') : t('agentDrawer.goal.cleared'))
+    } catch (caught) {
+      toast.failure(caught, t('agentDrawer.goal.clearFailed'))
+    } finally {
+      setGoalBusy(false)
+    }
+  }
+
   const toggleTimed = (key: string) => {
     setTimed((previous) => {
       const next = new Set(previous)
@@ -1806,6 +1962,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         )
       case 'question':
         return <QuestionCard key={line.key} line={line} onAnswer={(text) => void answer(line, text)} />
+      case 'checkin':
+        return <CheckInLine key={line.key} at={line.at} text={line.text} />
       case 'note':
         return (
           <div key={line.key} className="agent-line note muted">
@@ -1838,6 +1996,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const isRun = current?.kind === 'run'
   const running = runs.length > 0
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
+  // What the agent said it needs, while it is still waiting for it and
+  // the person has not yet written back.
+  const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
 
   return (
     <>
@@ -1884,6 +2045,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <span className="agent-drawer-title">{title}</span>
               <ChevronDownIcon size={14} className="chevron" />
             </button>
+            {/* What this conversation is working toward, set and cleared
+                here. A run has no goal: nobody talks it into one, and it
+                is over by the time it is read. */}
+            {current && conversationId && !isRun && (
+              <GoalChip conversation={current} onOpen={() => setGoalDraft(current.goal ?? '')} />
+            )}
             {/* What of the person's own is attached, as a mark with the
                 details on hover: the transcript is for the conversation. */}
             {tab?.attached && (
@@ -2015,6 +2182,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                           onClick={() => void switchTo(conversation.id)}
                         >
                           <span className="agent-drawer-list-name">
+                            {/* A conversation working toward something is
+                              marked before its name, in the colour of
+                              where it stands: the accent while it works,
+                              the warning colour while it waits for the
+                              person, muted once it is met. */}
+                            {conversation.goal ? (
+                              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
+                            ) : null}
                             {conversation.kind === 'main' ? (
                               <>
                                 <StarIcon size={12} /> {t('agentDrawer.main')}
@@ -2023,9 +2198,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                               conversation.title || t('agentDrawer.untitled')
                             )}
                           </span>
-                          {/* When it was last spoken in, which is what
-                            tells one of these apart from the next; the
-                            summary is the row's tooltip. */}
+                          {/* When the conversation was last spoken in,
+                            which is what tells one of these apart from the
+                            next; a goal's note belongs in the dialog, not
+                            here in place of the time. The summary is the
+                            row's tooltip. */}
                           <span className="agent-drawer-list-summary muted">
                             <RelativeTime value={conversation.lastAt} />
                           </span>
@@ -2197,6 +2374,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </div>
           ) : null}
+          {/* What the agent needs before it can go on, said where the
+              person is about to type rather than somewhere up the
+              transcript they would have to scroll back to. */}
+          {waitingNote ? (
+            <div className="agent-drawer-goal-waiting">
+              <TargetIcon size={12} />
+              <span>{waitingNote}</span>
+            </div>
+          ) : null}
           <form
             className="agent-drawer-input"
             onSubmit={(event) => {
@@ -2278,6 +2464,58 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}
+      {goalDraft !== null && current ? (
+        <FormDialog
+          title={t('agentDrawer.goal.title')}
+          submitLabel={t('common.save')}
+          busy={goalBusy}
+          canSubmit={goalDraft.trim() !== '' && goalDraft.trim() !== (current.goal ?? '')}
+          otherAction={
+            current.goal ? (
+              <button type="button" className="danger" disabled={goalBusy} onClick={() => void saveGoal('')}>
+                {t('agentDrawer.goal.clear')}
+              </button>
+            ) : undefined
+          }
+          onClose={() => setGoalDraft(null)}
+          onSubmit={() => void saveGoal(goalDraft.trim())}
+        >
+          <p className="muted">{t('agentDrawer.goal.hint')}</p>
+          <label>
+            <span>{t('agentDrawer.goal.label')}</span>
+            <textarea rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} />
+          </label>
+          {/* Where the goal stands, as the row says it: the state, since
+              when, when the agent looks again, how many turns it has
+              taken today, and its last word. Read, not edited. */}
+          {current.goal ? (
+            <dl className="agent-drawer-goal-status">
+              <dt>{t('agentDrawer.goal.state')}</dt>
+              <dd>{t(goalStateKey(goalStateOf(current)))}</dd>
+              {current.goalSetAt ? (
+                <>
+                  <dt>{t('agentDrawer.goal.since')}</dt>
+                  <dd>{formatTime(current.goalSetAt)}</dd>
+                </>
+              ) : null}
+              {goalStateOf(current) === 'working' && current.goalNextAt ? (
+                <>
+                  <dt>{t('agentDrawer.goal.next')}</dt>
+                  <dd>{formatTime(current.goalNextAt)}</dd>
+                </>
+              ) : null}
+              <dt>{t('agentDrawer.goal.turnsToday')}</dt>
+              <dd>{goalTurnsToday}</dd>
+              {current.goalNote ? (
+                <>
+                  <dt>{t('agentDrawer.goal.lastNote')}</dt>
+                  <dd>{current.goalNote}</dd>
+                </>
+              ) : null}
+            </dl>
+          ) : null}
+        </FormDialog>
+      ) : null}
       {deleting ? (
         <ConfirmDialog
           title={t('agentDrawer.delete')}

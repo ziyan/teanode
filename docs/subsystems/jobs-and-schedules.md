@@ -148,9 +148,15 @@ what moves the time on, since only it knows what the turn decided.
 `runGoal` then, in order: reads the conversation and stops if the goal is no
 longer working; counts the goal jobs finished for this conversation since the
 person's own midnight and, at **forty-eight**, puts the next turn at tomorrow's
-midnight with a note saying so; checks the budget and, when it is spent, puts
-the next turn at the reset with the budget's reason as the note; and otherwise
-runs one headless turn in the conversation with the check-in as its message.
+midnight with a note saying so; counts them again since the later of the
+goal's setting and the person's last word and, at **twenty-four**, sets the
+goal `waiting` with the note "Goal stalled: …", writes that line into the
+transcript, and mails them under the same subject, so a goal nobody can meet
+stops rather than costing the day's cap every day and the person sees in the
+conversation that it did, with their three ways on -- write, clear, change; checks the
+budget and, when it is spent, puts the next turn at the reset with the
+budget's reason as the note; and otherwise runs one headless turn in the
+conversation with the check-in as its message.
 
 Afterwards it reads the row again. A turn that called the `goal` tool has
 already written what happens next. One that did not is silent, and the next

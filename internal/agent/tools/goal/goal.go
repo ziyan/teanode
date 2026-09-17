@@ -97,11 +97,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					return fmt.Errorf("a goal goes on a conversation with the person, not on the record of a run")
 				}
 				if text == "" {
-					conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = "", "", "", nil
+					conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
 					return nil
 				}
 				now := time.Now()
-				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = text, models.GoalWorking, "", &now
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = text, models.GoalWorking, "", &now, &now
 				return nil
 			case "note", "wait", "met":
 				if conversation.Goal == "" {
@@ -131,6 +131,13 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return err
 		}
 		after = updated
+		// Set and met are moments of the conversation, so they are
+		// written into it; a note or a wait is the chip's and the bar's.
+		if note := models.GoalChangeNote(here, updated); note != "" {
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: here.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		return nil, err

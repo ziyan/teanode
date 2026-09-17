@@ -11,6 +11,7 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -139,6 +140,10 @@ type AgentConversationView struct {
 	// caller's own: an operator reading it, and speaking into it, does so
 	// as that person, and the drawer says so.
 	ActingAs string `json:"actingAs,omitempty"`
+	// GoalTurnsToday is how many turns the agent has taken on its own
+	// toward the conversation's goal since the person's local midnight,
+	// counted from the job rows the way the goal job counts its cap.
+	GoalTurnsToday int `json:"goalTurnsToday"`
 }
 
 // ReadAgentRunArguments name a run and where to read from.
@@ -541,7 +546,23 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	if err != nil {
 		return nil, err
 	}
-	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs}, nil
+	turnsToday := 0
+	if conversation.Goal != "" {
+		local := time.Now().In(agenttools.Location(owner))
+		midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+		counted, err := tx.CountAgentJobs(&db.AgentJobFilter{
+			AgentID:   conversation.AgentID,
+			Kinds:     []models.AgentJobKind{models.AgentJobGoal},
+			Statuses:  []models.AgentJobStatus{models.AgentJobDone},
+			SubjectID: conversation.ID,
+			Since:     midnight,
+		})
+		if err != nil {
+			return nil, err
+		}
+		turnsToday = int(counted)
+	}
+	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs, GoalTurnsToday: turnsToday}, nil
 }
 
 func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
@@ -787,11 +808,16 @@ func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAg
 	starting := &models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()}
 	if goal := strings.TrimSpace(arguments.Goal); goal != "" {
 		now := time.Now()
-		starting.Goal, starting.GoalState, starting.GoalNextAt = goal, models.GoalWorking, &now
+		starting.Goal, starting.GoalState, starting.GoalNextAt, starting.GoalSetAt = goal, models.GoalWorking, &now, &now
 	}
 	conversation, err := tx.CreateAgentConversation(starting)
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if note := models.GoalChangeNote(nil, conversation); note != "" {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+			return nil, translateError(err)
+		}
 	}
 	return conversation, nil
 }
@@ -914,19 +940,26 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 			goal := strings.TrimSpace(*arguments.Goal)
 			cleared = goal == ""
 			if cleared {
-				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = "", "", "", nil
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
 			} else {
 				// A goal set again -- changed, or set on a conversation
 				// whose goal was met -- starts working from now, and the
 				// note from the goal before it goes with it.
 				now := time.Now()
-				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = goal, models.GoalWorking, "", &now
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = goal, models.GoalWorking, "", &now, &now
 			}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, translateError(err)
+	}
+	// The goal's beginning and end, in the transcript where they
+	// happened; the chip beside it shows only where it stands now.
+	if note := models.GoalChangeNote(conversation, updated); note != "" {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+			return nil, translateError(err)
+		}
 	}
 	// Clearing the goal stops the turn it was taking. Left running, the
 	// agent would go on working toward something the person has just said

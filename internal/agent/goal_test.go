@@ -331,8 +331,10 @@ func TestGoalThatIsMetEndsTheTurns(t *testing.T) {
 		subject = world.sender.sent[0].Subject
 	}
 	world.sender.mutex.Unlock()
-	if sent != 1 || !strings.HasPrefix(subject, "Goal met: ") {
-		t.Fatalf("a met goal tells the person: %d %q", sent, subject)
+	// Not mailed about: a goal that is met is read in the drawer when the
+	// person next looks, and the maintainer asked not to be written to.
+	if sent != 0 {
+		t.Fatalf("a met goal is not mailed about: %d %q", sent, subject)
 	}
 	if err := world.worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick: %s", err)
@@ -344,5 +346,84 @@ func TestGoalThatIsMetEndsTheTurns(t *testing.T) {
 	})
 	if len(jobs) != 1 {
 		t.Fatalf("a met goal is never queued again: %+v", jobs)
+	}
+}
+
+// A goal nobody can meet answers "look again" for ever; after a run of
+// turns with no word from the person it stops and waits for them, and
+// they are told, so the worst case is a bounded number of turns rather
+// than the day's cap every day.
+func TestGoalStopsAfterTurnsAlone(t *testing.T) {
+	world := startGoalWorld(t, []string{goalNoteRound, answerRound}, "watch the deploy")
+	defer world.close()
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for turn := 0; turn < 24; turn++ {
+			job, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: world.found.ID, Kind: models.AgentJobGoal, SubjectID: world.conversation.ID})
+			if err != nil {
+				t.Fatalf("EnqueueAgentJob: %s", err)
+			}
+			if err := tx.FinishAgentJob(job.ID, "", models.AgentJobDone, "", nil); err != nil {
+				t.Fatalf("FinishAgentJob: %s", err)
+			}
+		}
+	})
+	world.runGoalTurn(t, 25)
+
+	after := world.read(t)
+	if after.GoalState != models.GoalWaiting || after.GoalNextAt != nil {
+		t.Fatalf("the bound stops the goal and waits for the person: %+v", after)
+	}
+	if !strings.HasPrefix(after.GoalNote, "Goal stalled: 24 turns since you last wrote") {
+		t.Fatalf("the note should say why it stopped: %q", after.GoalNote)
+	}
+	// And the transcript says so where the person reads, since no turn
+	// ran to say it there.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, err := tx.ListAgentMessages(world.conversation.ID, nil)
+		if err != nil {
+			t.Fatalf("ListAgentMessages: %s", err)
+		}
+		last := messages[len(messages)-1]
+		if last.Role != models.AgentMessageNote || last.Content != after.GoalNote {
+			t.Fatalf("the stall should be the transcript's last line: %+v", last)
+		}
+	})
+	if len(*world.requests) != 0 {
+		t.Fatalf("a goal at the bound asks the model nothing: %d requests", len(*world.requests))
+	}
+	world.sender.mutex.Lock()
+	sent := len(world.sender.sent)
+	world.sender.mutex.Unlock()
+	if sent != 1 {
+		t.Fatalf("the person is told once that it waits: %d", sent)
+	}
+	world.sender.mutex.Lock()
+	subject := world.sender.sent[0].Subject
+	world.sender.mutex.Unlock()
+	if !strings.HasPrefix(subject, "Goal stalled: ") {
+		t.Fatalf("the mail says it stalled: %q", subject)
+	}
+
+	// Their own turn starts the count again: with a word from them after
+	// the twenty-four, the next turn of the agent's own runs.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: world.conversation.ID, Role: "user", Content: "keep going"}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+		due := time.Now().Add(-time.Minute)
+		if _, err := tx.UpdateAgentConversation(world.conversation.ID, func(conversation *models.AgentConversation) error {
+			conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, &due
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentConversation: %s", err)
+		}
+	})
+	world.runGoalTurn(t, 26)
+	if len(*world.requests) == 0 {
+		t.Fatalf("after the person wrote, the goal takes its turn again")
+	}
+	if after := world.read(t); after.GoalState != models.GoalWorking {
+		t.Fatalf("the turn after the person's word goes on working: %+v", after)
 	}
 }

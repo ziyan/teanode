@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // MailInsight is what the agent worked out about one message for one
 // mailbox: its category and priority, whether it needs an answer, a line
@@ -180,6 +183,9 @@ type AgentConversation struct {
 	GoalState  AgentGoalState `json:"goalState,omitempty"`
 	GoalNote   string         `json:"goalNote,omitempty"`
 	GoalNextAt *time.Time     `json:"goalNextAt,omitempty"`
+	// GoalSetAt is when the goal was set, for the panel that says since
+	// when the agent has been at it.
+	GoalSetAt *time.Time `json:"goalSetAt,omitempty"`
 }
 
 // AgentGoalState is where a conversation's goal stands.
@@ -204,6 +210,46 @@ const (
 // same transcript to the dashboard, and a marker only one side knows is a
 // marker that drifts.
 const GoalCheckInMarker = "[goal check-in]"
+
+// GoalChangeNote is the line the conversation gets when its goal changes
+// hands: set, changed, cleared, or met. Empty when nothing worth a line
+// happened -- a check-in that only moved the next time, or the same goal
+// saved again unchanged.
+//
+// A goal lives beside the conversation, in a dialog and a chip, and a
+// person reading the transcript later would not see it begin or end. The
+// note puts those moments in the flow where they happened, in the words
+// the goal was given in, the way a schedule's run says which schedule.
+func GoalChangeNote(before, after *AgentConversation) string {
+	var was, now string
+	var wasState AgentGoalState
+	if before != nil {
+		was, wasState = before.Goal, before.GoalState
+	}
+	if after != nil {
+		now = after.Goal
+	}
+	switch {
+	case now == "" && was == "":
+		return ""
+	case now == "":
+		return "Goal cleared: " + was
+	case was == "", now != was && wasState == GoalMet:
+		// A goal after one that was met is a new goal, not a change
+		// to the old one.
+		return "Goal set: " + now
+	case now != was:
+		return "Goal changed: " + now
+	case after.GoalState == GoalMet && wasState != GoalMet:
+		if note := strings.TrimSpace(after.GoalNote); note != "" {
+			return "Goal met: " + note
+		}
+		return "Goal met: " + now
+	case after.GoalState == GoalWorking && wasState == GoalMet:
+		return "Goal set again: " + now
+	}
+	return ""
+}
 
 // AgentMessage is one turn, tool call or result in a conversation.
 type AgentMessage struct {
