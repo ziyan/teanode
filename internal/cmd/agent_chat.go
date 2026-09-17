@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/urfave/cli/v3"
 
@@ -262,7 +263,7 @@ func askQuestion(command *cli.Command, question, choices string) (string, error)
 		}
 	}
 	_, _ = fmt.Fprint(command.Writer, "> ")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {
 		return "", nil
@@ -277,7 +278,7 @@ func askConfirmation(command *cli.Command, summary, risk string) (bool, error) {
 		_, _ = fmt.Fprintln(command.Writer, "This cannot be undone.")
 	}
 	_, _ = fmt.Fprint(command.Writer, "Allow it? [y/N] ")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {
 		return false, nil
@@ -300,7 +301,7 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 		conversationId = conversation.ID
 	}
 	_, _ = fmt.Fprintln(command.Writer, "Talk to your agent; an empty line or Ctrl-D leaves.")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	for {
 		_, _ = fmt.Fprint(command.Writer, "> ")
 		line, err := reader.ReadString('\n')
@@ -625,3 +626,25 @@ func toolLine(text string) string {
 	}
 	return text
 }
+
+// readerOf is one buffered reader per input for the life of the program.
+//
+// A buffered reader takes more than a line from what it is given, so one
+// made afresh for each confirmation card kept the rest of a piped stdin
+// and the next card read end-of-file, which declines: every card after the
+// first said no with the person's yes still in the buffer.
+func readerOf(input io.Reader) *bufio.Reader {
+	readersMutex.Lock()
+	defer readersMutex.Unlock()
+	if reader, ok := readers[input]; ok {
+		return reader
+	}
+	reader := bufio.NewReader(input)
+	readers[input] = reader
+	return reader
+}
+
+var (
+	readers      = map[io.Reader]*bufio.Reader{}
+	readersMutex sync.Mutex
+)

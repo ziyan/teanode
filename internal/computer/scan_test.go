@@ -674,3 +674,24 @@ func TestEveryJournalFileIsSentOnceAcrossPages(t *testing.T) {
 		}
 	}
 }
+
+// A pass over a source with nothing indexed yet carries an empty map, and
+// an empty map has to survive the wire: omitted, it arrived as no map, and
+// the daemon refused every first page of a new source.
+func TestAnEmptyKnownMapIsHeldForThePass(t *testing.T) {
+	encoded, err := json.Marshal(&ScanArguments{Root: "~/records", KnownID: "pass-1", Known: map[string]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ScanArguments
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if known, err := knownFor("/home/x/records", &decoded); err != nil || known == nil {
+		t.Fatalf("the first page's empty map should be held: %v, %v", known, err)
+	}
+	later := ScanArguments{Root: "~/records", KnownID: "pass-1"}
+	if _, err := knownFor("/home/x/records", &later); err != nil {
+		t.Fatalf("the next page names the pass and finds the map: %v", err)
+	}
+}

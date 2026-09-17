@@ -108,8 +108,11 @@ looking at it would. The screen is kept on the computer, so none of the
 redrawing crosses the network and reading it is one request however busy the
 program has been. `wait` watches the screen until it stops changing, so a
 model need not guess how long a program takes to answer. Opening a terminal
-asks the person, on a card; the keys after it do not, because the program they
-said yes to is what the keys go to.
+is judged the way `shell` judges a command line -- the program with its
+arguments, or the script a shell is handed with `-c` -- so a listing or a
+build opens without a card, and what the policy would ask about still asks.
+A bare shell asks, because the keys after it could type anything and the keys
+never ask: the program the person said yes to is what they go to.
 
 **A connected server that runs there.** A server declared with `location:
 computer` under `agent.mcp.servers` runs its command on the person's attached

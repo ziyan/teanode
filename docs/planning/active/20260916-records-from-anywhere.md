@@ -126,6 +126,24 @@ agent a question only those documents answer.
 
 ## Surprises & Discoveries
 
+- Observation (2026-09-17 22:20Z): the first pass of any new source failed
+  with "the known hashes of this pass are not held here". A source with
+  nothing indexed yet sends an empty known map on its first page, and the
+  map's JSON tag said omitempty, so the daemon received no map at all and
+  refused, and the server's retry with the map failed the same way. The
+  tag no longer omits it. Found adding the Confluence archive as the
+  second records source: the agent inspected the export, wrote the refresh
+  script itself (116,254 pages and their comments into 125,659 records in
+  2,166 files, one per space, in under a minute), and re-added the source;
+  the first page filed 256 documents.
+- Observation (2026-09-17 22:20Z): asked to index an export, the agent
+  chose journal and reported "ingestion has started" before any pass had
+  run. The knowledge tool's guidance now says to look inside a folder
+  first, that journal is only for a person's own notes, that an export
+  goes in through records with a script the agent writes, and that a
+  folder must be allowed on the computer; and its answer to add says
+  nothing is read yet.
+
 - Observation: the format list lives in two places that do not share code,
   `internal/models/knowledge.go` and `internal/computer/scan.go`, because
   the daemon is built into the same binary but must not import the server's

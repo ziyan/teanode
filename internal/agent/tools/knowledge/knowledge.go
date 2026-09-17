@@ -60,7 +60,7 @@ func init() {
 					"format":   tools.EnumProperty("for add: how to read it; records is a folder of JSON lines a script fills, which is how anything with no shape of its own gets in", models.FormatFiles, models.FormatJournal, models.FormatRecords),
 					"cron":     tools.StringProperty("for add: how often to read it, as five cron fields in their own zone; nightly if left out"),
 				}, "action"),
-				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves.",
+				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves. When they point you at a folder to index, look inside it first with the terminal or filesystem tool when a computer is attached. journal is only for a folder of their own notes; an export of anything -- a wiki, a chat, a drive, a tracker -- has a shape of its own, and the way in is records: ask `shape`, write the refresh script yourself in a records folder beside the export, run it on a subset, then add that folder as the source. A folder has to be allowed on that computer with `teanode computer allow` before a scan of it runs; say so if a pass is refused.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action   string `json:"action"`
 					Query    string `json:"query"`
@@ -501,7 +501,7 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 	}); err != nil {
 		return nil, err
 	}
-	result := tools.TextResult("indexing %s from now on, as %q. The first pass starts within the minute; ask again in a while to see how far it got.",
+	result := tools.TextResult("%s is added as %q; nothing is read yet. The first pass is queued and runs within the minute, and it is refused unless the folder is allowed on that computer with `teanode computer allow`; use `sources` in a while to see whether it ran and how far it got, and say so rather than assuming.",
 		written.Describe(), written.Name)
 	result.Note = "now indexing " + written.Describe()
 	return result, nil

@@ -90,7 +90,13 @@ type ScanArguments struct {
 	// Known is what the server already holds: external identifier to
 	// hash. Anything whose hash matches is reported and its text left
 	// out, which is what makes a second pass cheap.
-	Known map[string]string `json:"known,omitempty"`
+	//
+	// Never omitted when empty: a source with nothing indexed yet sends an
+	// empty map on its first page, and omitted it arrived as no map at all,
+	// which the daemon answers with ErrKnownMissing -- so a new source's
+	// first pass failed every time, and the retry with the map failed the
+	// same way.
+	Known map[string]string `json:"known"`
 
 	// KnownID names the pass Known belongs to. Sent with Known, the map
 	// is kept here under that name; sent without it, the map kept under
