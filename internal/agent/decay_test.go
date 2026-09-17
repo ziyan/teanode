@@ -119,6 +119,16 @@ func TestAStaleLinkIsSaidInThePastTense(t *testing.T) {
 	if got := ancient.Sentence("a", stale); got != "worked on Portal (b)" {
 		t.Fatalf("read in the past tense: %q", got)
 	}
+
+	// Reading about somebody's old project does not put them back on it.
+	// Use counted towards the age here until the night's co-activation
+	// pass started writing it, at which point a relation nobody had
+	// checked in three years came back sounding current.
+	read := *ancient
+	read.UsedAt = &now
+	if _, stale = decayOfEdge(&read, now); !stale {
+		t.Fatal("having been read lately does not make an old link current again")
+	}
 }
 
 // An edge is read from whichever end the reader is standing at, and

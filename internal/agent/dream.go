@@ -49,7 +49,10 @@ const (
 	// than half, more of it, more months written up, more pages divided,
 	// and a shorter wait after the person's last word.
 	dreamDigestBootstrap = 5000
-	dreamQuietBootstrap  = 5 * time.Minute
+	// dreamSilences is how many batches in a row the model may leave
+	// unanswered before the night's reading stops.
+	dreamSilences       = 3
+	dreamQuietBootstrap = 5 * time.Minute
 
 	// dreamLongest is how long one night may run. The reading takes
 	// half of it at most (see halfway), so the rest is never starved.
@@ -176,17 +179,16 @@ func (self *Agent) dreamDue(ctx context.Context, agent *models.Agent, owner *mod
 			return nil
 		}
 		// Not while they are talking. A run that rewrites a page the
-		// person is reading is a run that looks broken.
-		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{
-			models.AgentConversationMain, models.AgentConversationNamed,
-		}, &db.Options{Limit: 1})
+		// person is reading is a run that looks broken. Their own last
+		// word, not the conversation's last message: a goal takes turns
+		// of the agent's own every few minutes, and counted as talk those
+		// kept a night from ever starting while one ran.
+		spoke, err := tx.LastAgentPersonWordAt(agent.ID)
 		if err != nil {
 			return err
 		}
-		for _, conversation := range conversations {
-			if now.Sub(conversation.LastAt) < quiet {
-				busy = true
-			}
+		if spoke != nil && now.Sub(*spoke) < quiet {
+			busy = true
 		}
 		return nil
 	}); err != nil {
@@ -313,7 +315,7 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
 	self.dreamSplit(ctx, run, record, budget)
-	self.dreamQuietHalf(ctx, run, record)
+	self.dreamQuietHalf(ctx, run, record, time.Now())
 	self.dreamAssociate(ctx, run, record, budget)
 	// Vectors before rehearsal, because rehearsal asks the graph by
 	// meaning and everything filed tonight has no vector until this runs.
@@ -531,6 +533,13 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	var group sync.WaitGroup
 	slots := make(chan struct{}, concurrency)
 	stopped := false
+	// Batches the model has not answered, in a row. One is a slow answer
+	// on a long batch -- a stream that ran past the request timeout
+	// happened about once an hour on the local model -- and a night that
+	// stopped reading at the first of those read sixty documents of the
+	// two hundred and forty it had time for. Three in a row is a model
+	// that is not answering tonight.
+	silent := 0
 	for start := 0; start < len(waiting); {
 		mutex.Lock()
 		halt := stopped
@@ -553,12 +562,17 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 			mutex.Lock()
 			defer mutex.Unlock()
 			if !answered {
-				// The model is not answering tonight; what it did not
-				// read waits for a night when it does.
-				record.LastError = "the model did not answer; the reading stops here"
-				stopped = true
+				// What it did not read waits for a night when it
+				// answers: the batch is not marked read. The reading
+				// goes on past one silence and stops at the third.
+				silent++
+				if silent >= dreamSilences {
+					record.LastError = "the model did not answer; the reading stops here"
+					stopped = true
+				}
 				return
 			}
+			silent = 0
 			record.Digested += len(batch)
 			record.Filed += filed
 			ids := make([]string, 0, len(batch))
@@ -587,19 +601,26 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 
 	var builder strings.Builder
+	// What each document was shown as, kept by id so that a fact filed
+	// from this batch can be held against the words the model actually
+	// had. A coarse night shows a title and no body, and a quote from one
+	// of those came from nowhere.
+	shown := make(map[string]string, len(documents))
 	for _, document := range documents {
-		builder.WriteString("[" + document.ID + "] " + document.Cite())
+		heading := document.Cite()
 		if author := document.Author(); author != "" {
-			builder.WriteString(" — " + author)
+			heading += " — " + author
 		}
 		if document.HappenedAt != nil {
-			builder.WriteString(" — " + document.HappenedAt.Format("2 Jan 2006"))
+			heading += " — " + document.HappenedAt.Format("2 Jan 2006")
+		}
+		opening := self.openingOf(ctx, run, document, coarse)
+		builder.WriteString("[" + document.ID + "] " + heading + "\n")
+		if opening != "" {
+			builder.WriteString(unclosable(opening) + "\n")
 		}
 		builder.WriteString("\n")
-		if text := self.openingOf(ctx, run, document, coarse); text != "" {
-			builder.WriteString(unclosable(text) + "\n")
-		}
-		builder.WriteString("\n")
+		shown[document.ID] = heading + "\n" + opening
 	}
 
 	// Where this source's pages live. A batch is one source's documents,
@@ -666,11 +687,18 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown)
 	if err != nil {
 		log.Debugf("cannot file what a dream's digest found: %s", err)
 	}
-	return filed, true
+	// A reading that quoted words nobody wrote says so on its own row, so
+	// the night's runs show how often the model invents rather than only
+	// how much it filed.
+	if checked := filed.Describe(); checked != "" {
+		self.retitle(ctx, run, thinking.Conversation,
+			fmt.Sprintf("Read %d documents, filed %d, %s", len(documents), filed.Filed, checked))
+	}
+	return filed.Filed, true
 }
 
 // digestObjectFromWords asks once more, with no tools, for the object a

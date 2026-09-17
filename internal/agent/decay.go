@@ -132,13 +132,17 @@ func decayOfNode(node *models.AgentNode, now time.Time) float64 {
 // Somebody who left a project two years ago did work on it. The link is
 // true and saying "works on" is not, so a stale link is kept, ranked
 // lower, and read as "worked on".
+//
+// Aged from when it happened or was written, and deliberately not from
+// when it was last used. Being read about somebody's old project does not
+// put them back on it, and counting use here meant a relation the night's
+// co-activation pass touched came back sounding current: the tense is a
+// claim about the world, where use is a claim about the person's
+// attention and belongs in the ranking alone.
 func decayOfEdge(edge *models.AgentEdge, now time.Time) (float64, bool) {
 	when := edge.CreatedAt
 	if edge.HappenedAt != nil {
 		when = *edge.HappenedAt
-	}
-	if edge.UsedAt != nil && edge.UsedAt.After(when) {
-		when = *edge.UsedAt
 	}
 	weight := decayOf(now.Sub(when), eventHalfLife)
 	// Past the second half-life a link is old enough that stating it in

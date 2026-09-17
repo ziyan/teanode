@@ -133,6 +133,9 @@ type agentModel struct {
 	DreamUntil     string     `gorm:"column:dream_until"`
 	DreamedAt      *time.Time `gorm:"column:dreamed_at"`
 	DreamBootstrap bool       `gorm:"column:dream_bootstrap"`
+
+	// When the links were last faded. See migration 0084.
+	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
 
 func (agentModel) TableName() string { return "agent" }
@@ -191,6 +194,10 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		at := model.DreamedAt.In(time.Local)
 		agent.DreamedAt = &at
 	}
+	if model.DecayedAt != nil {
+		at := model.DecayedAt.In(time.Local)
+		agent.DecayedAt = &at
+	}
 	if model.OperatorDisabledAt != nil {
 		at := model.OperatorDisabledAt.In(time.Local)
 		agent.OperatorDisabledAt = &at
@@ -234,6 +241,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		DreamUntil:         agent.DreamUntil,
 		DreamedAt:          agent.DreamedAt,
 		DreamBootstrap:     agent.DreamBootstrap,
+		DecayedAt:          agent.DecayedAt,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -400,6 +408,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
 			"dreamed_at":      model.DreamedAt,
 			"dream_bootstrap": model.DreamBootstrap,
+			"decayed_at":      model.DecayedAt,
 		}).Error
 	}); err != nil {
 		return nil, err

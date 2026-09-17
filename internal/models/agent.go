@@ -77,6 +77,14 @@ type Agent struct {
 	// DreamedAt is when the nightly run last finished.
 	DreamedAt *time.Time `json:"dreamedAt,omitempty" graphapi:"nullable"`
 
+	// DecayedAt is when the arithmetic half of a night last faded this
+	// agent's links, and so what the next fade is accounting for. A link
+	// loses weight by elapsed time, not by how often the night ran:
+	// bootstrapping dreams every few minutes, and a fade per pass put
+	// every untouched link on the floor within a day. Empty until the
+	// first pass, which fades nothing and only writes this down.
+	DecayedAt *time.Time `json:"decayedAt,omitempty" graphapi:"nullable"`
+
 	// DreamBootstrap says the night runs again as soon as it can, with
 	// wider limits, until nothing waits to be read: what a first ingest
 	// needs. The night clears it itself.

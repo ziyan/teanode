@@ -917,6 +917,9 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			{dream.Moved, "filed away"}, {dream.Dormant, "retired"}, {dream.Embedded, "embedded"},
 			{dream.Strengthened, "links reweighted"}, {dream.Associated, "connections noticed"},
 			{dream.Rehearsed, "questions rehearsed"},
+			// Beside the count, because "12 rehearsed" alone reads as
+			// twelve questions memory answered.
+			{dream.Gaps, "it could not answer"}, {dream.Unknown, "it could not try"},
 			{dream.Revised, "lines an older version left"},
 			{dream.Merged, "said twice, merged"},
 		} {

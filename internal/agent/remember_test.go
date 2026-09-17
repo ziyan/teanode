@@ -508,7 +508,7 @@ func TestANegationIsNeverFolded(t *testing.T) {
 				continue
 			}
 			return fmt.Sprintf(
-				`{"facts": [{"path": "people/dana", "nodeKind": "person", "nodeName": "Dana", "kind": "fact", "text": %q, "messageId": %q, "quote": %q}]}`,
+				`{"facts": [{"path": "people/dana", "node_kind": "person", "node_name": "Dana", "kind": "fact", "text": %q, "message_id": %q, "quote": %q}]}`,
 				said[2], said[1], said[2])
 		}
 		return `{"facts": []}`

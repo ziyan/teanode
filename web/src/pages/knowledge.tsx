@@ -1238,11 +1238,17 @@ function cut(text: string, length = 200): string {
 function Provenance({ fact }: { fact: Fact }) {
   const { t } = useTranslation()
   const first = fact.evidence[0]
+  // A citation with no quote on an inferred fact is the write-time check
+  // having found the words somewhere other than the message they were
+  // said to come from. Saying so is the point: an empty quote looks like
+  // a fact nobody bothered to source, and this one was checked.
+  const quoteNotFound = Boolean(first) && !first.quote && fact.inferred
   return (
     <>
       {first?.quote ? <span className="knowledge-quote">&ldquo;{first.quote}&rdquo;</span> : null}
       <span className="muted">
         {first ? t(`knowledge.from.${first.kind}` as 'knowledge.from.conversation') : t('knowledge.fromNowhere')}
+        {quoteNotFound ? `, ${t('knowledge.quoteNotFound')}` : ''}
         {fact.happenedAt ? ` · ${new Date(fact.happenedAt).toLocaleDateString()}` : ''}
       </span>
     </>

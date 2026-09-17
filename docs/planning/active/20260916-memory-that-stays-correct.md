@@ -63,20 +63,54 @@ evaluate` prints a table of hits and misses over the question set.
   Remember reads the oldest unread segment and advances only through it;
   recall marks used only what it carried; pages in the index still get their
   facts expanded.
-- [ ] Milestone 3: decay by elapsed time, with a watermark, and
-  reinforcement over the real interval.
-- [ ] Milestone 4: evidence checked at the write boundary: a quote must
-  occur in the message it cites, and the message must exist.
+- [x] (2026-09-17 13:10Z) Milestone 3: decay by elapsed time, with a
+  watermark on the agent, and reinforcement over the same real interval.
+  The first pass writes the watermark and fades nothing; `hebbianDecay` is
+  gone; a link's tense no longer counts having been read.
+- [x] (2026-09-17 13:55Z) Milestone 4: evidence checked at the write
+  boundary. A quote that is not in what the run showed the model is
+  dropped and the fact marked inferred at half confidence; a citation of
+  something that was never shown loses its evidence altogether; both runs
+  count the outcomes on their own row. The knowledge page says "quote not
+  found" beside such a fact.
 - [ ] Milestone 5: provisional links. Edges gain a status and an origin;
   walks write proposed edges; the prompt says so; a dream stage looks for
   support and promotes.
-- [ ] Milestone 6: rehearsal with three outcomes, and the dream log counting
-  them.
+- [x] (2026-09-17 14:40Z) Milestone 6: rehearsal with three outcomes.
+  Every failure path is unknown, a supported answer has to name a fact it
+  was shown, the dream row counts the third number through migration 0086,
+  and the dashboard's dream line and the command line's log read "12
+  rehearsed, 3 gaps, 4 unknown".
+- [x] (2026-09-17 13:35Z) Milestones 3, 4 and 6 deployed to the
+  maintainer's server: `agent`, `agent_dream` and `agent_edge` backed up to
+  `/root/teanode-backups/before-memory-m346-20260917.sql.gz`, migrations
+  0084 and 0086 applied on restart. The dream running since 13:32Z is the
+  first under them; its rehearsal line and any "quote not found" fact are
+  still to be seen, since the first dreams of the day were each cut short
+  by a deploy restart and the facts filed so far cite documents without
+  quoting them.
 - [ ] Milestone 7: the question set and `teanode agent memory evaluate`,
   with a snapshot and per-stage switches.
 - [ ] Milestone 8: docs and retrospective.
 
+- [x] (2026-09-17 12:55Z) Chrome check of Milestone 1's one visible change:
+  on the dev server a near-duplicate fact written from the Facts card was
+  folded at write time and appeared under "Folded in" as "#2 … folded into
+  #1", muted, with #1 unchanged. Milestones 1 and 2 are deployed on the
+  maintainer's server with the goals work (image built from the merged
+  tree at 12:33Z).
+
 ## Surprises & Discoveries
+
+- Observation (2026-09-17 15:00Z): a night's reading stopped at the
+  first batch the model did not answer, and on the local model a stream
+  runs past the request timeout about once an hour -- seven times in the
+  last day. Four of the last five productive dreams read sixty to a
+  hundred documents of the two hundred and forty they had time for, with
+  a backlog of ninety-five thousand. The reading now goes on past one
+  silence and stops at the third in a row (`dreamSilences` in
+  `internal/agent/dream.go`); an unanswered batch is still not marked
+  read.
 
 - Observation: the reviewer's claim that reading an old relationship makes
   it sound current again is true of `decayOfEdge` in
@@ -137,6 +171,48 @@ evaluate` prints a table of hits and misses over the question set.
   time. Indexed and expanded are now distinguished as the plan asks, and
   the distinction has a use: an indexed page gives up its facts and not
   its opening, which the index line already carries the gist of.
+- Observation (2026-09-17 13:10Z): the watermark cannot be read from
+  `run.Agent`. The dream holds a snapshot of the agent taken when the job
+  was claimed, and the quiet half is the only writer of `DecayedAt`, so
+  reading the snapshot and writing the row would let two nights that
+  overlapped account for the same interval twice. The read and the write
+  are one `UpdateAgent` inside the pass's own transaction instead, with
+  the interval taken from the closure's argument, and `run.Agent` updated
+  after it so the rest of the night sees what was written.
+- Observation (2026-09-17 14:40Z): migration 0085 is skipped, not used.
+  Milestone 5 is not built, and its `agent_edge.status` is what 0085 is
+  for; the rehearsal column is 0086 as the plan numbered it. The runner
+  applies what it finds in order and does not mind a hole, and the
+  forward file says why the hole is there so nobody fills it by accident.
+- Observation (2026-09-17 14:40Z): the facts a rehearsal judge is shown
+  had no numbers to name. They are listed by their position in the five
+  shown -- "1." to "5." -- rather than by their number on their page,
+  because two pages can each have a fact #3 and the model is being asked
+  to point at a line in front of it, not to cite the graph.
+- Observation (2026-09-17 14:40Z): an object that parses and does not say
+  `answered` stays a gap rather than becoming unknown. A parse failure is
+  the model not answering; an object that answers something else is the
+  model saying no in its own words, which is the plan's reading.
+- Observation (2026-09-17 14:40Z): `TestDreamingRunsEveryPhase` had to be
+  given a watermark. It asserts that the quiet half strengthens one link
+  and fades another, and after Milestone 3 an agent's first pass does
+  neither; the test now says the agent had a night six hours ago, which
+  is what the assertion was always about.
+- Observation (2026-09-17 13:55Z): the existing test
+  `TestAPreferenceHasToComeFromTheirOwnWords` files a fact whose quote is
+  cited to the wrong message, so the evidence check now also marks it
+  inferred. That is the right answer -- the words are not in the message
+  named -- and the test still passes, because what it asserts is that the
+  fact stopped being a preference.
+- Observation (2026-09-17 13:55Z): the "inferred" tag beside a fact's
+  number was already on the knowledge page and in the agent page's
+  learned-facts list, from the work that gave facts a confidence. Only
+  the evidence line was missing, so the User experience section's first
+  half was a check and its second half a change.
+- Observation (2026-09-17 13:10Z): `dreamQuietHalf` had to take the
+  moment rather than call `time.Now()`. What the milestone is about is an
+  interval of thirty days, and no test can sit through one; the caller in
+  `dream.go` passes `time.Now()`, so nothing changed but the seam.
 - Observation: the extraction cursor loses history. `runRemember`
   (`internal/agent/remember.go:190-191`) keeps the last sixty unread
   messages, and `markRemembered` then advances `RememberedThrough` to the
@@ -200,6 +276,34 @@ evaluate` prints a table of hits and misses over the question set.
   whether a string occurs is not a judgement call. Semantic support
   checking is reserved for promotions in Milestone 5.
   Date/Author: 2026-09-17, the agent.
+- Decision (2026-09-17 13:55Z): a citation is checked against what the
+  run put in front of the model, handed to `fileWhatWasLearned` as a map
+  of id to the text shown, rather than against the document looked up
+  through the transaction as the plan first said.
+  Rationale: the model can only quote what it saw. A digest shows a
+  document's citation line and its opening passage, so holding a quote
+  against the whole document would pass words that were never in the
+  prompt, and a coarse night, which shows a title and no body at all,
+  would have every quote it offers pass against text it never read. The
+  map also makes the conversation and the document paths one rule instead
+  of two.
+  Date/Author: 2026-09-17, the agent.
+- Decision (2026-09-17 13:55Z): a citation the run did show but with no
+  text to check against keeps its quote. Nothing was shown, so a check
+  that cannot be made is not a check that failed. In practice this is
+  only a document whose opening was empty.
+  Rationale: marking a fact as the agent's guesswork is a claim about the
+  model, and a claim nothing supports is the fault this milestone exists
+  to fix.
+  Date/Author: 2026-09-17, the agent.
+- Decision (2026-09-17 13:55Z): the check drops a failed quote and does
+  not look for the closest sentence of the message to put in its place,
+  which the Decision Log's earlier entry allowed for.
+  Rationale: the maintainer's simplification. A sentence chosen by word
+  overlap is the program's guess at what the model meant, stored where a
+  reader expects the person's words; the fact already says it was worked
+  out, and a reader who wants the message can open it.
+  Date/Author: 2026-09-17, the agent, simplified with the maintainer.
 - Decision: edges gain one column, `status` (stated or proposed); a walk
   writes `proposed`; only `stated` edges are carried in the prompt index;
   `proposed` edges appear on a page as "perhaps" lines and are drawn
@@ -226,6 +330,32 @@ evaluate` prints a table of hits and misses over the question set.
 ## Outcomes & Retrospective
 
 To be written at the end of each milestone and at completion.
+
+Milestones 3, 4 and 6 (2026-09-17 14:55Z). The three are independent and
+landed as three commits on one branch; what is written above under
+Progress, Surprises and the Decision Log is the record of them. What is
+worth saying beyond that:
+
+- The fade was the cheapest of the three to build and is the one whose
+  effect on a real graph will be largest. Bootstrapping was taking every
+  untouched link to the floor within a day, which means the weights on
+  the maintainer's server say very little at the moment; they will climb
+  back only as the pages are used. The first night after the deploy fades
+  nothing at all, by design, so the change shows from the second.
+- The evidence check has one number nobody can predict from here: how
+  many facts a night files whose quote is not in what the model read. The
+  count is on each run's row now, so the first night after the deploy
+  answers it. If it is large the constant to loosen is
+  `evidenceInferredConfidence` and the rule to soften is the substring
+  test, both in one place.
+- Rehearsal's third outcome cost a column and a prompt change and made
+  the phase honest, but it also raises the bar for "answered", so the
+  gaps and unknowns a night reports will both go up before they go down.
+  A night on a server whose embedding model is not configured now reports
+  every question as unknown, which is the truth and used to read as a
+  night that found nothing missing.
+- What is not done here: Milestones 5, 7 and 8. Milestone 5's migration
+  number, 0085, is left free for it.
 
 ## Context and Orientation
 

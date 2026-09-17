@@ -87,7 +87,7 @@ type DreamOperation interface {
 	// The deterministic half of a night: links strengthened by being used
 	// together and weakened by not being, a threshold that rises as the
 	// graph grows, and the pages that fall under it.
-	StrengthenAgentEdges(agentId string, since time.Time, rise, decay float64) (int64, error)
+	StrengthenAgentEdges(agentId string, since time.Time, rise, factor float64) (int64, error)
 	AgentImportanceThreshold(agentId string, target int) (float64, error)
 	RetireAgentNodes(agentId string, threshold float64, before time.Time) (int, error)
 
@@ -127,6 +127,7 @@ type agentDreamModel struct {
 	Associated   int `gorm:"column:associated"`
 	Rehearsed    int `gorm:"column:rehearsed"`
 	Gaps         int `gorm:"column:gaps"`
+	Unknown      int `gorm:"column:unknown"`
 
 	Proposals []byte `gorm:"column:proposals;type:jsonb"`
 	Tokens    int64  `gorm:"column:tokens"`
@@ -182,7 +183,7 @@ func (self *transaction) FinishAgentDream(dream *models.AgentDream) error {
 		"dormant": dream.Dormant, "embedded": dream.Embedded, "backlog": dream.Backlog,
 		"coarse": dream.Coarse, "proposals": encoded, "tokens": dream.Tokens,
 		"strengthened": dream.Strengthened, "associated": dream.Associated, "revised": dream.Revised,
-		"rehearsed": dream.Rehearsed, "gaps": dream.Gaps,
+		"rehearsed": dream.Rehearsed, "gaps": dream.Gaps, "unknown": dream.Unknown,
 		"notes": dream.Notes, "last_error": dream.LastError,
 	}).Error
 }
@@ -205,7 +206,7 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 			Moved: row.Moved, Dormant: row.Dormant, Embedded: row.Embedded, Backlog: row.Backlog,
 			Coarse: row.Coarse, Tokens: row.Tokens, Notes: row.Notes, LastError: row.LastError,
 			Strengthened: row.Strengthened, Associated: row.Associated, Revised: row.Revised,
-			Rehearsed: row.Rehearsed, Gaps: row.Gaps,
+			Rehearsed: row.Rehearsed, Gaps: row.Gaps, Unknown: row.Unknown,
 			Proposals: []models.DreamProposal{},
 		}
 		if len(row.Proposals) > 0 {
@@ -388,7 +389,7 @@ func (self *transaction) RetireAgentFacts(agentId string, before time.Time) (int
 // --- the deterministic half of a night ---------------------------------
 
 // StrengthenAgentEdges raises the weight of every link whose two ends were
-// both wanted today, and lowers every link a little.
+// both wanted since a moment, and lowers every link by a factor.
 //
 // This is synaptic homeostasis, and it is the difference between an edge
 // weight meaning "somebody once made this link" and "this link is worth
@@ -396,16 +397,21 @@ func (self *transaction) RetireAgentFacts(agentId string, before time.Time) (int
 // way nobody wrote down; a link nothing has touched in months is not
 // wrong, it is just no longer the first thing to say.
 //
+// The factor and the window are two readings of one interval, the stretch
+// since this last ran, and both are the caller's. A constant instead made
+// the fade depend on how often the night ran rather than on how long it
+// had been, which is not what anybody meant by it.
+//
 // Deterministic and one statement each, so it costs nothing and can run
 // every night. Nothing is deleted: a link decays towards a floor and
 // stays readable.
-func (self *transaction) StrengthenAgentEdges(agentId string, since time.Time, rise, decay float64) (int64, error) {
+func (self *transaction) StrengthenAgentEdges(agentId string, since time.Time, rise, factor float64) (int64, error) {
 	// Down first, then up: an edge used today should end the night above
 	// where it started, and doing it the other way round would shave the
 	// rise off again.
 	if err := self.tx.Exec(
 		`UPDATE "agent_edge" SET "weight" = GREATEST(0.05, "weight" * ?) WHERE "agent_id" = ?`,
-		decay, agentId).Error; err != nil {
+		factor, agentId).Error; err != nil {
 		return 0, err
 	}
 	result := self.tx.Exec(`

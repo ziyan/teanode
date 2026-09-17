@@ -69,9 +69,12 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 		case strings.Contains(prompt, "Do these notes answer the question"):
 			// The judge: the notes nearest "what is the portal?" are about
 			// the portal and answer it; nothing near the boiler does.
-			answer = `{"answered": false}`
+			answer = `{"answered": false, "facts": []}`
 			if strings.Contains(prompt, "what is the portal?") {
-				answer = `{"answered": true}`
+				// Naming the note it answered from, which is what a
+				// supported answer has to do: a yes that can point at
+				// nothing liked the subject rather than found the answer.
+				answer = `{"answered": true, "facts": [1]}`
 			}
 		}
 		encoded, _ := json.Marshal(answer)
@@ -156,6 +159,17 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 		if err := tx.TouchAgentNodes([]string{alice.ID, portal.ID}, time.Now()); err != nil {
 			t.Fatalf("TouchAgentNodes: %s", err)
 		}
+		// And a night behind it. The fade and the rise are both over the
+		// stretch since the last pass, so an agent that has never had one
+		// leaves every weight where it is and writes the watermark down;
+		// this test is about the pass that follows.
+		lastNight := time.Now().Add(-6 * time.Hour)
+		if _, err := tx.UpdateAgent(found.ID, func(agent *models.Agent) error {
+			agent.DecayedAt = &lastNight
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgent: %s", err)
+		}
 		if _, err := tx.AddAgentFact(&models.AgentFact{
 			AgentID: found.ID, NodeID: portal.ID, Kind: models.FactPlain,
 			Text: "the portal is the site customers log in to",
@@ -233,6 +247,9 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 	}
 	if dream.Gaps != 1 {
 		t.Fatalf("one of them unanswerable, not %d", dream.Gaps)
+	}
+	if dream.Unknown != 0 {
+		t.Fatalf("and both were really tried, not %d unknown", dream.Unknown)
 	}
 	gap := ""
 	for _, proposal := range dream.Proposals {

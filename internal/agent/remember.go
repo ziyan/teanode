@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -205,12 +206,16 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		return err
 	}
 	theirWords := make(map[string]bool, len(unread))
+	// What the run put in front of the model, which is the only thing a
+	// fact from it may cite and the only words it may quote.
+	shown := make(map[string]string, len(unread))
 	for _, message := range unread {
 		if message.Role == string(llm.RoleUser) {
 			theirWords[message.ID] = true
 		}
+		shown[message.ID] = message.Content
 	}
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown)
 	if err != nil {
 		return err
 	}
@@ -221,8 +226,14 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	// to say what the run turned out to be.
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		note := "Filed nothing from this conversation"
-		if filed > 0 {
-			note = fmt.Sprintf("Filed %d thing(s) from %q", filed, conversation.Title)
+		if filed.Filed > 0 {
+			note = fmt.Sprintf("Filed %d thing(s) from %q", filed.Filed, conversation.Title)
+		}
+		// How much of what it filed could not be shown to have been said.
+		// On the row rather than in a log line, because the person
+		// reading the runs is the one who would want to know.
+		if checked := filed.Describe(); checked != "" {
+			note += ", " + checked
 		}
 		if transcript != nil {
 			if _, err := tx.UpdateAgentConversation(transcript.ID, func(found *models.AgentConversation) error {
@@ -239,8 +250,8 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
-	if filed > 0 {
-		log.Debugf("filed %d fact(s) from conversation %s", filed, conversation.ID)
+	if filed.Filed > 0 {
+		log.Debugf("filed %d fact(s) from conversation %s", filed.Filed, conversation.ID)
 	}
 	if backlog > 0 {
 		// Straight back into the queue rather than waiting for the sweep
@@ -415,13 +426,90 @@ func transcriptFor(messages []*models.AgentMessage) string {
 	return strings.TrimSpace(builder.String())
 }
 
+// whatWasFiled is what a filing run kept, and what the evidence check
+// took off it on the way.
+//
+// The two counts are the measure of how often the model quotes something
+// nobody said. They go in the run's own row rather than a log line,
+// because the person reading the dream log is the one who would want to
+// know that a night filed forty facts and could find the words for six.
+type whatWasFiled struct {
+	Filed           int
+	WithoutQuote    int
+	WithoutEvidence int
+}
+
+// Describe is what the check did, for the end of a run's title. Empty
+// when every quote was where it was said to be, which is the usual case
+// and does not need saying.
+func (self *whatWasFiled) Describe() string {
+	var parts []string
+	if self.WithoutQuote > 0 {
+		parts = append(parts, fmt.Sprintf("%d without their quote", self.WithoutQuote))
+	}
+	if self.WithoutEvidence > 0 {
+		parts = append(parts, fmt.Sprintf("%d without evidence", self.WithoutEvidence))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// evidenceSpace is every run of whitespace, which a quote and the text it
+// came from may break differently without either being wrong.
+var evidenceSpace = regexp.MustCompile(`\s+`)
+
+// evidenceLikeness is the quote and the text it cites reduced to what
+// they have to share for the quote to be that text's.
+//
+// Case, the width of the whitespace, and which of the several characters
+// somebody used for a quotation mark or a dash are not the model
+// inventing anything: a transcript is typed by people and rendered by
+// programs, and a model asked to copy a line out of one will normalize it
+// on the way. What it may not do is write words that are not there.
+func evidenceLikeness(text string) string {
+	text = strings.Map(func(letter rune) rune {
+		switch letter {
+		case '‘', '’', '‛', '`', '´':
+			return '\''
+		case '“', '”', '„':
+			return '"'
+		case '‐', '‑', '‒', '–', '—', '―':
+			return '-'
+		case ' ', ' ', ' ':
+			return ' '
+		}
+		return letter
+	}, text)
+	return strings.TrimSpace(evidenceSpace.ReplaceAllString(strings.ToLower(text), " "))
+}
+
+// quoteOccursIn is the whole of the evidence check: did these words
+// actually appear in what was read.
+//
+// A string test and not a model call. Whether a sentence occurs in a
+// message is not a judgement, it is a fact, and the failure this is
+// guarding against -- a quote the model composed out of the gist, stored
+// at full confidence as though the person had said it -- is exactly the
+// kind a judgement call would wave through at scale.
+func quoteOccursIn(quote, text string) bool {
+	quote = evidenceLikeness(quote)
+	if quote == "" {
+		return true
+	}
+	return strings.Contains(evidenceLikeness(text), quote)
+}
+
 // fileWhatWasLearned writes the run's answer onto the graph and says how
 // much it kept.
-func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind) (int, error) {
+//
+// What the model was shown is handed in by id -- the batch's messages, or
+// the documents as the reading rendered them -- because a fact may only
+// cite something that was in front of it, and its quote may only be words
+// that were there.
+func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string) (whatWasFiled, error) {
+	tally := whatWasFiled{}
 	if answer == nil {
-		return 0, nil
+		return tally, nil
 	}
-	filed := 0
 	agentId := run.Agent.ID
 	// The person's own page, for telling a page about them from one about
 	// somebody else: its aliases carry every name they have been found
@@ -431,7 +519,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		selfPage, err = tx.GetAgentNode(agentId, models.PathSelf)
 		return err
 	}); err != nil {
-		return 0, err
+		return tally, err
 	}
 
 	for index, wanted := range answer.Facts {
@@ -463,6 +551,11 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		if models.IsThePerson(path, run.Owner, selfPage) {
 			path = models.PathSelf
 		}
+		// What the check made of this one, counted only if the row is
+		// written: a fact the page already said was never filed, and a
+		// tally that counted it would overstate how much the model made
+		// up.
+		outcome := evidenceHolds
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorRemember)
 			// The page this belongs on, which is the one already there
@@ -506,6 +599,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 				}},
 				Audiences: []models.AgentAudience{models.AudienceAsk},
 			}
+			outcome = checkTheEvidence(fact, shown)
 			written, err := tx.AddAgentFact(fact)
 			if err != nil {
 				return err
@@ -516,7 +610,13 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			log.Warningf("cannot file %q: %s", text, err)
 			continue
 		}
-		filed++
+		tally.Filed++
+		switch outcome {
+		case evidenceQuoteNotFound:
+			tally.WithoutQuote++
+		case evidenceCitesNothing:
+			tally.WithoutEvidence++
+		}
 	}
 
 	for _, link := range answer.Links {
@@ -569,8 +669,65 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			log.Debugf("cannot supersede %s#%d: %s", path, superseded.Number, err)
 		}
 	}
-	return filed, nil
+	return tally, nil
 }
+
+// evidenceOutcome is what the check made of one fact's citation.
+type evidenceOutcome int
+
+const (
+	// evidenceHolds is the quote occurring in what was read, or no quote
+	// offered at all, which is nothing to check rather than something to
+	// doubt.
+	evidenceHolds evidenceOutcome = iota
+
+	// evidenceQuoteNotFound is words that are not in the thing they are
+	// said to be from. The citation stays -- the fact did come out of
+	// reading that message -- and the invented words do not.
+	evidenceQuoteNotFound
+
+	// evidenceCitesNothing is a citation of something the run never put
+	// in front of the model, so there is nothing behind the fact at all.
+	evidenceCitesNothing
+)
+
+// checkTheEvidence holds a fact's citation against what the run actually
+// showed the model, and takes off it whatever cannot be supported.
+//
+// A fact that fails is kept and marked: it may well be true, and the
+// model did read something. What it loses is the claim to have been told.
+// Half confidence and Inferred put it under anything somebody said, in
+// the ranking and on the page, which is where a paraphrase belongs.
+//
+// A citation known to the run but shown without its text -- a document a
+// coarse night read by its title alone -- has its quote left alone.
+// Nothing was shown to check against, and a check that cannot be made is
+// not a check that failed.
+func checkTheEvidence(fact *models.AgentFact, shown map[string]string) evidenceOutcome {
+	if len(fact.Evidence) == 0 {
+		return evidenceHolds
+	}
+	source, known := shown[fact.Evidence[0].ID]
+	if !known {
+		fact.Evidence = nil
+		fact.Inferred = true
+		fact.Confidence = evidenceInferredConfidence
+		return evidenceCitesNothing
+	}
+	if source == "" || quoteOccursIn(fact.Evidence[0].Quote, source) {
+		return evidenceHolds
+	}
+	fact.Evidence[0].Quote = ""
+	fact.Inferred = true
+	fact.Confidence = evidenceInferredConfidence
+	return evidenceQuoteNotFound
+}
+
+// evidenceInferredConfidence is what a fact is worth once the check has
+// taken its evidence off it: the agent's own reading of something, which
+// is worth having and worth ranking under what somebody said. One
+// constant, so that a guard found too strict is loosened in one place.
+const evidenceInferredConfidence = 0.5
 
 // FoldIntoWhatThePageSays merges a fact just written into the one already
 // on the page that says the same thing, and reports which it became.

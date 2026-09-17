@@ -74,7 +74,7 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 		answer := `{"facts": []}`
 		if said := theirSentence.FindStringSubmatch(prompt); len(said) > 2 {
 			answer = fmt.Sprintf(
-				`{"facts": [{"path": "things/kittiwake", "nodeKind": "thing", "nodeName": "Kittiwake", "kind": "fact", "text": %q, "messageId": %q, "quote": %q}]}`,
+				`{"facts": [{"path": "things/kittiwake", "node_kind": "thing", "node_name": "Kittiwake", "kind": "fact", "text": %q, "message_id": %q, "quote": %q}]}`,
 				said[2], said[1], said[2])
 		}
 		content, _ := json.Marshal(answer)

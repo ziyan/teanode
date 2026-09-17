@@ -356,12 +356,19 @@ type AgentDream struct {
 	Strengthened int `json:"strengthened"`
 	Associated   int `json:"associated"`
 
-	// Rehearsed is how many questions it asked itself, and Gaps how many
-	// of those memory could not answer. The gaps are in Proposals, as
-	// questions, because filling one means deciding what the answer is
-	// and a run with nobody present must not do that.
+	// Rehearsed is how many questions it asked itself, Gaps how many of
+	// those memory could not answer, and Unknown how many it could not
+	// try -- no embedding model, no budget left, or a model that did not
+	// answer. The gaps are in Proposals, as questions, because filling
+	// one means deciding what the answer is and a run with nobody present
+	// must not do that.
+	//
+	// Three numbers rather than two because every failure used to count
+	// as answered, so a night whose model was unreachable read as a night
+	// with nothing missing.
 	Rehearsed int `json:"rehearsed"`
 	Gaps      int `json:"gaps"`
+	Unknown   int `json:"unknown"`
 
 	// Revised is what an older build of this program wrote that this one
 	// went back over and struck. A graph outlives its code, and this is
@@ -423,6 +430,9 @@ func (self *AgentDream) Describe() string {
 	}
 	if self.Gaps > 0 {
 		parts = append(parts, plural(self.Gaps, "question", "questions")+" it could not answer")
+	}
+	if self.Unknown > 0 {
+		parts = append(parts, plural(self.Unknown, "question", "questions")+" it could not try")
 	}
 	if self.Revised > 0 {
 		parts = append(parts, plural(self.Revised, "line", "lines")+" an older version left")

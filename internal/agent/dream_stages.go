@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -40,15 +42,26 @@ import (
 
 // The bounds.
 const (
-	// hebbianRise is what a link gains by having both its ends wanted on
-	// the same day, and hebbianDecay what every link keeps overnight.
+	// hebbianRise is what a link gains by having both its ends wanted
+	// within the interval the pass is accounting for.
+	hebbianRise = 0.25
+
+	// edgeHalfLife is how long an untouched link takes to be worth half
+	// what it was, and edgeDecayFloor the least one pass may leave it.
 	//
-	// A fifth off a night sounds severe and is not: a link used twice a
-	// week sits in equilibrium well above the floor, and one nothing has
-	// touched in two months is down near it. That is the intended
-	// difference, and a gentler number does not produce it.
-	hebbianRise  = 0.25
-	hebbianDecay = 0.8
+	// This used to be a constant a pass -- four fifths kept each time the
+	// quiet half ran -- which meant what it said only while the quiet
+	// half ran once a night. Bootstrapping runs a night every few
+	// minutes, and a day of catching up left every link nothing had
+	// touched at the floor, so the weights said nothing about what
+	// mattered. Thirty days is about the old fifth a night said in the
+	// units it meant: time.
+	//
+	// The floor is per pass and the SQL has the same one on the stored
+	// weight, so a night that was down for a year fades a link once by
+	// this much rather than to nothing.
+	edgeHalfLife   = 30 * 24 * time.Hour
+	edgeDecayFloor = 0.05
 
 	// indexTarget is how many pages the index is meant to hold. The bar
 	// to stay in it rises as the graph grows past this.
@@ -83,23 +96,56 @@ const (
 	emptyPageGrace = 48 * time.Hour
 )
 
+// edgeDecayFactor is what a link keeps over an interval nothing touched
+// it: half after edgeHalfLife, a quarter after twice that, never less
+// than edgeDecayFloor in one pass.
+func edgeDecayFactor(elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 1
+	}
+	factor := math.Pow(0.5, elapsed.Seconds()/edgeHalfLife.Seconds())
+	if factor < edgeDecayFloor {
+		return edgeDecayFloor
+	}
+	if factor > 1 {
+		return 1
+	}
+	return factor
+}
+
 // dreamQuietHalf is the arithmetic half: links strengthened by use,
 // weakened by disuse, and the least useful pages taken out of the index.
 //
 // No model runs here at all, which is why it can be thorough.
-func (self *Agent) dreamQuietHalf(ctx context.Context, run *Run, record *models.AgentDream) {
-	now := time.Now()
+func (self *Agent) dreamQuietHalf(ctx context.Context, run *Run, record *models.AgentDream, now time.Time) {
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		tx.AsActor(models.ActorDream)
-		// What was used together since the last night is related in a way
-		// nobody wrote down; what nothing has touched loses a little of
-		// its claim. Since the last night rather than since midnight,
-		// because that is the stretch this run is accounting for.
-		strengthened, err := tx.StrengthenAgentEdges(run.Agent.ID, now.Add(-dreamApart), hebbianRise, hebbianDecay)
-		if err != nil {
+		// What the fade and the rise are accounting for is the stretch
+		// since the last pass, read and written in the same transaction
+		// so two nights cannot account for it twice.
+		var since time.Time
+		if _, err := tx.UpdateAgent(run.Agent.ID, func(agent *models.Agent) error {
+			if agent.DecayedAt != nil {
+				since = *agent.DecayedAt
+			}
+			agent.DecayedAt = &now
+			return nil
+		}); err != nil {
 			return err
 		}
-		record.Strengthened = int(strengthened)
+		run.Agent.DecayedAt = &now
+		// What was used together since the last pass is related in a way
+		// nobody wrote down; what nothing has touched loses a little of
+		// its claim, by how long it has been rather than by how often
+		// this ran. The first pass has no interval to account for, so it
+		// writes the watermark and fades nothing.
+		if !since.IsZero() {
+			strengthened, err := tx.StrengthenAgentEdges(run.Agent.ID, since, hebbianRise, edgeDecayFactor(now.Sub(since)))
+			if err != nil {
+				return err
+			}
+			record.Strengthened = int(strengthened)
+		}
 
 		if _, err := tx.RecomputeAgentImportance(run.Agent.ID, now); err != nil {
 			return err
@@ -314,7 +360,9 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 	}
 
 	// Each question is asked of the graph the way a turn would ask it. A
-	// question nothing comes back for is the gap.
+	// question nothing comes back for is the gap; one that could not be
+	// tried at all is neither, and saying so is the point of the third
+	// outcome.
 	var gaps, asked []string
 	for index, question := range answer.Questions {
 		if index >= rehearsalQuestions || ctx.Err() != nil {
@@ -325,12 +373,19 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 			continue
 		}
 		record.Rehearsed++
-		if self.canAnswerFromMemory(ctx, run, budget, question) {
+		switch self.canAnswerFromMemory(ctx, run, budget, question) {
+		case rehearsalAnswered:
 			asked = append(asked, "answered: "+question)
-			continue
+		case rehearsalGap:
+			asked = append(asked, "gap: "+question)
+			gaps = append(gaps, question)
+		default:
+			// Not a gap: nothing was learned about this question, and
+			// writing it down as one would have the person chasing an
+			// answer their agent already has.
+			record.Unknown++
+			asked = append(asked, "could not tell: "+question)
 		}
-		asked = append(asked, "gap: "+question)
-		gaps = append(gaps, question)
 	}
 	record.Gaps = len(gaps)
 	// The questions themselves are kept with the night, so the person
@@ -350,6 +405,30 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 	log.Debugf("rehearsal found %d question(s) the graph cannot answer", len(gaps))
 }
 
+// rehearsalOutcome is what a night made of one question it asked itself.
+//
+// Three and not two. The phase used to answer yes or no, and every way of
+// failing -- no budget left, no embedding model, a model that did not
+// answer, an answer that did not parse -- came back as yes, because
+// reporting every question as a gap would be worse than reporting none.
+// That made a night whose model was unreachable read as a night with
+// nothing missing, which is the opposite of what rehearsal is for.
+type rehearsalOutcome int
+
+const (
+	// rehearsalUnknown is a question that could not be tried. The zero
+	// value, so a path that forgets to say what happened says this.
+	rehearsalUnknown rehearsalOutcome = iota
+
+	// rehearsalAnswered is memory having the answer, said by the model
+	// naming the facts it answered from.
+	rehearsalAnswered
+
+	// rehearsalGap is the graph having been asked and having nothing:
+	// what the person will hear as "I don't know" tomorrow.
+	rehearsalGap
+)
+
 // canAnswerFromMemory says whether the graph has anything for a question.
 //
 // By meaning, and deliberately not by words. The word search joins a
@@ -364,7 +443,7 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 // being asked: is anything in this graph about this. An identifier the
 // person would type verbatim is in the embedded text too, so asking by
 // meaning does not lose the exact-match case.
-func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, budget *dreamBudget, question string) bool {
+func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, budget *dreamBudget, question string) rehearsalOutcome {
 	// A fact answers a question; a page only says the subject exists.
 	// Counting a page as an answer made every question answerable --
 	// "what did I promise the Osaka team" matched the Osaka project at
@@ -377,25 +456,31 @@ func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, budget *dr
 	if len(facts) > 0 {
 		return self.factsAnswer(ctx, run, budget, question, facts)
 	}
-	// No embedding model, or it failed: then there is no way to tell, and
-	// reporting every question as a gap would be worse than reporting
-	// none.
+	// No embedding model, or it failed: then the graph was never really
+	// asked, and neither answer would be true of it.
 	if _, _, _, _, ok := self.embedderFor(); !ok {
-		return true
+		return rehearsalUnknown
 	}
-	return false
+	return rehearsalGap
 }
 
 // factsAnswer asks the model whether these facts answer the question.
-// When it cannot be asked, near is taken as answered: a night that
-// reports every question as a gap is worse than one that reports none.
-func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudget, question string, facts []*models.AgentFact) bool {
+//
+// Every way of not getting an answer is unknown rather than either
+// verdict: what a night could not try it does not get to report on.
+//
+// And a yes has to say which of the facts it answered from. A model asked
+// "do these notes answer this" agrees more readily than it should, and
+// the numbers make it point at the line it means -- an answer that can
+// name nothing is one that liked the subject rather than found the
+// answer, and those are the gaps worth knowing about.
+func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudget, question string, facts []*models.AgentFact) rehearsalOutcome {
 	if !budget.left() {
-		return true
+		return rehearsalUnknown
 	}
 	lines := make([]string, 0, len(facts))
-	for _, fact := range facts {
-		lines = append(lines, "- "+cutRunes(fact.Text, 400))
+	for number, fact := range facts {
+		lines = append(lines, fmt.Sprintf("%d. %s", number+1, cutRunes(fact.Text, 400)))
 	}
 	prompt, err := render("rehearse_check.txt", map[string]any{
 		"PersonName": personName(run.Owner),
@@ -403,23 +488,43 @@ func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudge
 		"Facts":      lines,
 	})
 	if err != nil {
-		return true
+		return rehearsalUnknown
 	}
 	said, err := self.dreamThink(ctx, run, budget, "Judged whether memory answers: "+cutRunes(question, 80), prompt, false)
 	if err != nil {
-		return true
+		return rehearsalUnknown
 	}
+	return rehearsalVerdict(said, len(lines))
+}
+
+// rehearsalVerdict is what the judge's answer says, given how many facts
+// it was shown.
+//
+// Apart from the call so the rules can be read and tested without a
+// model: an answer that is not an object says nothing, a no is a gap,
+// and a yes counts only when it points at one of the facts in front of
+// it by number.
+func rehearsalVerdict(said string, shown int) rehearsalOutcome {
 	extracted, err := llm.ExtractJSON(said)
 	if err != nil {
-		return true
+		return rehearsalUnknown
 	}
 	var answer struct {
-		Answered bool `json:"answered"`
+		Answered bool  `json:"answered"`
+		Facts    []int `json:"facts"`
 	}
 	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
-		return true
+		return rehearsalUnknown
 	}
-	return answer.Answered
+	if !answer.Answered {
+		return rehearsalGap
+	}
+	for _, number := range answer.Facts {
+		if number >= 1 && number <= shown {
+			return rehearsalAnswered
+		}
+	}
+	return rehearsalUnknown
 }
 
 // dreamRevise goes back over what an older build of this program filed

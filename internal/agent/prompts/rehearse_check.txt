@@ -17,6 +17,10 @@ it? "Where is gogcli checked out" is answered by a note giving the path.
 one saying the project is written in Go; it needs a note that says what
 the next step was.
 
+If they do, say which ones by their numbers. Answering yes and naming
+nothing means the notes are about the subject and do not answer the
+question, which is a no.
+
 Answer with this object and nothing else:
 
-{"answered": false}
+{"answered": false, "facts": []}

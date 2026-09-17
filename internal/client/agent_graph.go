@@ -128,6 +128,7 @@ type AgentDream struct {
 	Associated   int `json:"associated"`
 	Rehearsed    int `json:"rehearsed"`
 	Gaps         int `json:"gaps"`
+	Unknown      int `json:"unknown"`
 
 	Tokens    int64  `json:"tokens"`
 	LastError string `json:"lastError"`
@@ -143,7 +144,7 @@ const nodeFields = `{ id path kind name aliases summary contactId pinned importa
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
-const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps revised tokens lastError proposals { kind path to reason } }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised tokens lastError proposals { kind path to reason } }`
 
 // The documents.
 const (

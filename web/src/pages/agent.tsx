@@ -722,7 +722,7 @@ const DREAMS = `
   query ($first: Int) {
     ListAgentDreams(first: $first) {
       id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
-      strengthened associated rehearsed gaps revised notes lastError
+      strengthened associated rehearsed gaps unknown revised notes lastError
       proposals { kind path to reason }
     }
   }`
@@ -771,6 +771,7 @@ type Dream = {
   associated: number
   rehearsed: number
   gaps: number
+  unknown: number
   revised: number
   // What the night wrote down about the questions it asked itself, one
   // line each. Prose rather than counts: "answered: ..." and "gap: ..."
@@ -1799,7 +1800,12 @@ function DreamCard({
           dream.embedded > 0 ? t('agent.dreamEmbedded', { count: dream.embedded }) : '',
           dream.strengthened > 0 ? t('agent.dreamStrengthened', { count: dream.strengthened }) : '',
           dream.associated > 0 ? t('agent.dreamAssociated', { count: dream.associated }) : '',
+          // All three, because "12 rehearsed" on its own reads as twelve
+          // questions memory answered, and a night whose model was
+          // unreachable would look like a night with nothing missing.
           dream.rehearsed > 0 ? t('agent.dreamRehearsed', { count: dream.rehearsed }) : '',
+          dream.rehearsed > 0 ? t('agent.dreamGaps', { count: dream.gaps }) : '',
+          dream.rehearsed > 0 ? t('agent.dreamUnknown', { count: dream.unknown }) : '',
           dream.revised > 0 ? t('agent.dreamRevised', { count: dream.revised }) : '',
         ].filter(Boolean)
         return (
