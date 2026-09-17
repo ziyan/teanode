@@ -84,9 +84,14 @@ agent a question only those documents answer.
 - [ ] Milestone 4: the agent can write a `refresh` script from the guidance
   alone; a Confluence source and a Google Drive source on the maintainer's
   machine, tested on a subset, then the whole.
-- [ ] Milestone 6: the chat export reader retires: the archive becomes a
-  records source through a conversion script, shown to re-file nothing,
-  then `scan_chat.go` and the `mattermost` format go.
+- [ ] Milestone 6 (in progress 2026-09-17 02:00Z): the conversion script
+  `~/chat-records/refresh` is written and converts the whole export in
+  under a minute (1.3 GB of records); the comparison and the accepted churn
+  are in Surprises; the source was switched to the records folder and
+  format at 01:57Z and its first pass is running; a full pass deleting the
+  documents it did not see is being built. Remaining: the pass to finish
+  clean, then `scan_chat.go`, its tests and the vendor format constant go
+  from the daemon, the models, the tool, the command line and the docs.
 - [ ] Milestone 5: docs (`docs/subsystems/memory.md`, `docs/reference/command-line.md`,
   `docs/configuration.md` if a setting appears) and the retrospective.
 
@@ -129,6 +134,29 @@ agent a question only those documents answer.
   `TestEveryChannelIsSentOnceAcrossPages` walk every page of each reader.
   Evidence: `internal/computer/scan.go` (`scanFiles`, `scanJournal`),
   `internal/computer/scan_chat.go` (`scanMattermost`).
+- Observation: the conversion of the maintainer's chat export cannot be
+  churn-free, and the reason is a fault in the reader being retired. The
+  export's `reply_count` is zero on every post, so the old reader never
+  saw a thread's root as a root: the root sat in a window beside its
+  neighbours while its replies became a unit under the root's id, and
+  when the root opened its window two units carried one id and the
+  second overwrote the first on the server. The records reader takes a
+  root from the replies that name it, so it reads a thread whole; every
+  thread and every window that held a root changes. The comparison over
+  all 3,228 channel files on 2026-09-17, both readers over the same
+  posts:
+
+      export units 393537, records units 395756,
+      missing 16483, changed 193961, extra 18702
+
+  Two things were fixed first to get there: the export reader rendered
+  each post's hour in the daemon's local zone, so the script writes `at`
+  with the local offset; and a root whose replies are in another file
+  has no way to say so in a record, so a record naming itself as its
+  thread is a root. The churn was accepted: the bootstrap had digested
+  under five percent of the archive, re-embedding the changed units is
+  a few dollars, and the 16,483 units that no longer exist are removed
+  by the new rule that a full pass deletes what it did not see.
 - Observation: the owner check the refresh script needs cannot be written
   in one file. `syscall.Stat_t` does not exist on Windows and this package
   is built there (`process_windows.go`, `internal/cmd/computer_windows.go`),
@@ -600,7 +628,7 @@ full refresh by hand once (Drive may take an hour), sync, and let the
 dream read it. Watch the monitors already armed on the dream (facts and
 documents read per fifteen minutes) for the days it takes.
 
-## Milestone 6: the chat export reader retires without re-indexing
+## Milestone 6: the chat export reader retires, its archive read as records
 
 At the end of this milestone the maintainer's archive is a `records` source
 and `internal/computer/scan_chat.go` is gone, with nothing re-embedded and

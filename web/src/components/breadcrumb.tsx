@@ -27,14 +27,14 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
   { prefix: '/access', trail: [{ label: 'nav.access', to: '/access' }] },
   { prefix: '/agent', trail: [{ label: 'nav.agentAdmin', to: '/agent' }] },
-  // Every /settings/* page gets its own crumb from SETTINGS_SURFACES below,
-  // so there is one entry here rather than one per page.
-  //
-  // Only the account's pages are under it. What configures the server —
-  // /server, with its tabs — is at the top level and has no parent above it:
-  // it names itself from the same list, and a trail reading
-  // "Settings > Server" named a page that does not exist.
-  { prefix: '/settings', trail: [{ label: 'nav.settings', to: '/settings' }] },
+  // No entry for /settings: every page under it names itself from
+  // SETTINGS_SURFACES below, and there is no page above them to go back
+  // to. /settings is a redirect to the first of them, so a "Settings"
+  // crumb linked to Preferences from every other settings page, and on a
+  // wide screen it sat alone above the heading, a trail of one word
+  // leading somewhere it did not name. The rail beside the page is the
+  // menu of these pages; the trail only needs to carry a page's own
+  // ancestors, which a knowledge page has and the others do not.
   { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
   { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
   { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },
