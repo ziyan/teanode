@@ -162,13 +162,6 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		return nil
 	}
 
-	if computer := source.Specification.Computer; source.Kind == models.SourceComputer && computer != "" {
-		if other, free := self.claimComputer(computer, source.ID); !free {
-			return &Deferral{Until: time.Now().Add(ingestTurn), Reason: fmt.Sprintf("%s is reading %s first", computer, other)}
-		}
-		defer self.releaseComputer(computer, source.ID)
-	}
-
 	counts := db.SourceCounts{
 		Documents: source.DocumentCount,
 		Chunks:    source.ChunkCount,
@@ -494,6 +487,36 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		wait = ingestRefreshWait
 	}
 
+	// One request to a computer at a time, across the sources that read
+	// it, and only for as long as the request: the claim used to be held
+	// for the whole job, and a job describing a checkout held it through
+	// a model call of minutes, so a pass over another source on the same
+	// computer moved only in the gaps between those calls.
+	if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
+		waited := time.Now()
+		for {
+			other, free := self.claimComputer(name, source.ID)
+			if free {
+				break
+			}
+			if time.Since(waited) > ingestTurn {
+				return "", counts, &waitingForDevice{name: name + " (it is reading " + other + ")"}
+			}
+			select {
+			case <-ctx.Done():
+				return "", counts, ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}
+	// Released as soon as the answer is in, before anything is filed:
+	// filing a checkout asks a model, and that is the wait the claim
+	// must not cover.
+	release := func() {
+		if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
+			self.releaseComputer(name, source.ID)
+		}
+	}
 	ask := func(known map[string]string) (json.RawMessage, error) {
 		return device.Ask(ctx, "scan", &computer.ScanArguments{
 			Root:    source.Specification.Path,
@@ -520,6 +543,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		carry = true
 		answer, err = ask(known)
 	}
+	release()
 	if err == nil {
 		cursor[cursorKnownID] = knownId
 		if carry {
