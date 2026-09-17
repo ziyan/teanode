@@ -49,7 +49,7 @@ func init() {
 					"signal":    tools.StringProperty("signal: int, term, kill or hup"),
 				}, "action"),
 
-				Guidance: "terminal: read the screen after each step and answer what it asks; wait rather than guessing how long a program takes; close the session when you are done. attached is the terminal the person is sitting in, when they attached one: they see what you type.",
+				Guidance: "terminal: for a program that keeps running or asks questions -- a build you watch, a REPL, an installer, a program with prompts; a command that runs and ends belongs in shell, which shows all of its output rather than a screen and asks nobody. Read the screen after each step and answer what it asks; wait rather than guessing how long a program takes; close the session when you are done. attached is the terminal the person is sitting in, when they attached one: they see what you type.",
 				// The terminal the person is sitting in, when they attached one: said
 				// every round, because it changes what typing means.
 				Overlay: func(ctx context.Context) string {
