@@ -273,6 +273,11 @@ type AgentDocument struct {
 	Metadata map[string]any `json:"metadata,omitempty"`
 	Private  bool           `json:"private"`
 
+	// SeenAt is when the source last said it still had this. A pass that
+	// walks the whole tree deletes what it did not see, so this is what
+	// tells a thing that is gone from one that has merely not changed.
+	SeenAt *time.Time `json:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 }
 

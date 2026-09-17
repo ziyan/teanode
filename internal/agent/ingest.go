@@ -90,6 +90,14 @@ const (
 	// ordinary time.
 	ingestRefreshWait = 35 * time.Minute
 
+	// cursorPassStarted is where a pass writes down when it began, and
+	// cursorPassSeen how many things it has been shown since. Both live
+	// in the source's cursor because a pass over a large tree is many
+	// jobs long and the cursor is the one thing written down after every
+	// page; both go when the pass reaches the end of the tree.
+	cursorPassStarted = "passStartedAt"
+	cursorPassSeen    = "passSeen"
+
 	// unknownAuthorsKept is how many unplaced commit addresses a source
 	// remembers. Enough to recognise yourself in the list, not a census
 	// of everybody who ever committed to a mirrored upstream.
@@ -178,10 +186,17 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			more = true
 			break
 		}
+		// Written down before the page is asked for, so that the time the
+		// sweep at the end compares against is older than anything the
+		// pass can possibly have been shown.
+		startedPass := markPassStart(source, cursor, time.Now())
 		next, passCounts, err := self.readOnePass(ctx, run, source, cursor)
 		counts.Documents += passCounts.Documents
 		counts.Chunks += passCounts.Chunks
 		counts.Refused += passCounts.Refused
+		if !startedPass.IsZero() {
+			cursor[cursorPassSeen] = countInCursor(cursor, cursorPassSeen) + passCounts.Seen
+		}
 		if err != nil {
 			var waiting *waitingForDevice
 			if errorsAs(err, &waiting) {
@@ -221,6 +236,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			// carries the names and none of the text.
 			delete(cursor, "after")
 			delete(cursor, "before")
+			self.sweepUnseen(ctx, source, cursor, startedPass, &counts)
 			break
 		}
 		// A files source pages by path and a sent source by date; both
@@ -287,6 +303,112 @@ func errorsAs(err error, target **waitingForDevice) bool {
 		*target = waiting
 	}
 	return ok
+}
+
+// walksAWholeTree says whether a source's pass ends by having seen
+// everything the source holds.
+//
+// Only a computer or an archive does: its pages walk a tree from one end
+// to the other, so what it did not name it no longer has. Sent mail
+// walks backwards through time and stops when the run is over, and a
+// source read that way must never have anything taken from it.
+func walksAWholeTree(source *models.AgentKnowledgeSource) bool {
+	return source.Kind == models.SourceComputer || source.Kind == models.SourceArchive
+}
+
+// markPassStart notes when this pass over the tree began, and answers
+// it; the zero time means this pass may not delete anything.
+//
+// A pass is many jobs long, so the time is kept in the cursor, which is
+// written down after every page. Only a pass that starts at the top of
+// the tree gets one: one that resumes mid-tree keeps what its first page
+// wrote, and one that was already mid-tree when this was built -- or on
+// the upgrade that added it -- gets none, and leaves the sweeping to the
+// next pass, which will start at the top.
+func markPassStart(source *models.AgentKnowledgeSource, cursor map[string]any, now time.Time) time.Time {
+	if !walksAWholeTree(source) {
+		return time.Time{}
+	}
+	if said, ok := cursor[cursorPassStarted].(string); ok && said != "" {
+		started, err := time.Parse(time.RFC3339, said)
+		if err != nil {
+			log.Warningf("source %q says its pass began at %q, which is not a time", source.ID, said)
+			return time.Time{}
+		}
+		return started
+	}
+	if after, _ := cursor["after"].(string); after != "" {
+		return time.Time{}
+	}
+	// To the second, and so a little earlier than the pass really began:
+	// what that costs is that a document last seen within the same second
+	// survives one more pass, and what it buys is that nothing filed in
+	// that second is mistaken for something the pass did not see.
+	started := now.Truncate(time.Second)
+	cursor[cursorPassStarted] = started.Format(time.RFC3339)
+	cursor[cursorPassSeen] = 0
+	return started
+}
+
+// sweepUnseen removes what the source no longer has, now that a pass has
+// walked its tree to the end.
+//
+// Until this, nothing ever took a document away. A file deleted from a
+// checkout, a page deleted from a wiki, a chat export converted to
+// records under new names: the row stayed, its passages stayed, and both
+// went on being searched and dreamed over. Every entry a pass is shown
+// -- filed, unchanged, or refused, because a thing the source holds and
+// cannot read is still a thing it holds -- has its seen time written; so
+// what is still older than the time this pass began is what the source
+// stopped reporting.
+func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledgeSource, cursor map[string]any, startedPass time.Time, counts *db.SourceCounts) {
+	// However this ends, the next pass over this source starts its own.
+	defer func() {
+		delete(cursor, cursorPassStarted)
+		delete(cursor, cursorPassSeen)
+	}()
+	if startedPass.IsZero() {
+		return
+	}
+	// A pass shown nothing at all is not somebody deleting everything
+	// they own. It is a folder nothing mounted, or a checkout moved, and
+	// the answer to either is to wait for the next pass rather than to
+	// empty the source.
+	if seen := countInCursor(cursor, cursorPassSeen); seen <= 0 {
+		log.Debugf("source %q reached the end of its tree having been shown nothing; leaving what it holds alone", source.ID)
+		return
+	}
+	removed := 0
+	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) (err error) {
+		removed, err = tx.DeleteAgentDocumentsUnseen(source.ID, startedPass)
+		return err
+	}); err != nil {
+		log.Warningf("cannot remove what source %q no longer holds: %s", source.ID, err)
+		return
+	}
+	if removed == 0 {
+		return
+	}
+	// Off the source's own count, which is what the person is shown, the
+	// same way the documents this pass filed went on to it.
+	counts.Documents -= removed
+	if counts.Documents < 0 {
+		counts.Documents = 0
+	}
+	log.Infof("source %q no longer has %d document(s); removed them with their passages", source.ID, removed)
+}
+
+// countInCursor is a number the cursor is keeping. It comes back from
+// the database as JSON, so what was written as an int is read as a
+// float.
+func countInCursor(cursor map[string]any, key string) int {
+	switch value := cursor[key].(type) {
+	case int:
+		return value
+	case float64:
+		return int(value)
+	}
+	return 0
 }
 
 // readOnePass asks the source for one page and files it.
@@ -364,12 +486,19 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		self.notedSensitive(ctx, source, result.Sensitive)
 	}
 
+	// What the source named but this pass did not file: the unchanged,
+	// the refused, and the ones nothing could be made of. Their documents
+	// need their seen time written by hand, where a document that is
+	// filed has it written by the filing.
+	named := make([]string, 0, len(result.Entries))
 	for _, entry := range result.Entries {
 		if ctx.Err() != nil {
 			return "", counts, ctx.Err()
 		}
+		counts.Seen++
 		if entry.Refused != "" {
 			counts.Refused++
+			named = append(named, entry.ExternalID)
 			continue
 		}
 		// A repository's profile before the unchanged check, not after.
@@ -384,18 +513,31 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			self.fileRepository(ctx, run, source, entry)
 		}
 		if entry.Unchanged {
+			named = append(named, entry.ExternalID)
 			continue
 		}
 		if strings.TrimSpace(entry.Text) == "" {
+			named = append(named, entry.ExternalID)
 			continue
 		}
 		chunks, err := self.fileDocument(ctx, run, source, entry)
 		if err != nil {
 			log.Warningf("cannot keep %q of source %q: %s", entry.ExternalID, source.ID, err)
+			named = append(named, entry.ExternalID)
 			continue
 		}
 		counts.Documents++
 		counts.Chunks += chunks
+	}
+	// Before the page is called done, and its failure fails the pass: a
+	// pass that forgot a page of names and then reached the end of the
+	// tree would take that page's documents for gone.
+	if len(named) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.MarkAgentDocumentsSeen(source.ID, named, time.Now())
+		}); err != nil {
+			return "", counts, fmt.Errorf("recording what %s still has of %s: %w", source.Specification.Computer, source.Specification.Path, err)
+		}
 	}
 	return result.Next, counts, nil
 }

@@ -1,0 +1,27 @@
+-- When a source last said it still had this document.
+--
+-- A document is filed under the name its source gave it, and until now
+-- nothing ever took one away. A file deleted from a checkout, a page
+-- deleted from a wiki, a chat export converted to records under new
+-- names: the row stayed, its passages stayed, and both kept being
+-- searched and dreamed over. The conversion of the maintainer's chat
+-- archive left about sixteen thousand of three hundred and ninety-three
+-- thousand units orphaned that way, and the only way to see it was to
+-- count.
+--
+-- So every pass writes down that it saw a thing -- filed, unchanged or
+-- refused, because a thing the source holds but cannot read is still a
+-- thing it holds -- and a pass that walks the tree to the end deletes
+-- what it did not see, together with its passages and its symbols, which
+-- cascade from the document.
+--
+-- Existing rows get the time of the upgrade rather than nothing, so the
+-- first pass after it deletes nothing: only a pass that started after
+-- this ran can know what it failed to see.
+--
+-- No index on it. The delete at the end of a pass is narrowed by the
+-- unique index on ("source_id", "external_id") already, and it runs once
+-- a pass; an index on this column would instead be maintained on every
+-- one of a source's documents on every page of every pass, and would
+-- stop those updates being made in place.
+ALTER TABLE "agent_document" ADD COLUMN "seen_at" timestamp with time zone NOT NULL DEFAULT now();

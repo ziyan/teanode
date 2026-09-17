@@ -49,6 +49,17 @@ type KnowledgeOperation interface {
 	// either.
 	ListAgentDocumentHashes(sourceId string) (map[string]string, error)
 
+	// MarkAgentDocumentsSeen says the source still has these, named the
+	// way the source names them. One statement for a whole page of a
+	// scan, because a page of an archive is two thousand names.
+	MarkAgentDocumentsSeen(sourceId string, externalIds []string, at time.Time) error
+
+	// DeleteAgentDocumentsUnseen removes what a source no longer has:
+	// the documents it did not name in a pass that began at the given
+	// time and reached the end of the tree, with their passages and
+	// their symbols. It answers how many went.
+	DeleteAgentDocumentsUnseen(sourceId string, before time.Time) (int, error)
+
 	// ListAgentDocumentsBetween is what happened in a stretch of time:
 	// what a period page is written from.
 	ListAgentDocumentsBetween(agentId string, kinds []models.AgentDocumentKind, from, until time.Time, limit int) ([]*models.AgentDocument, error)
@@ -86,6 +97,13 @@ type SourceCounts struct {
 	Documents int
 	Chunks    int
 	Refused   int
+
+	// Seen is how many things the source named, changed or not. Unlike
+	// the three above it is not kept on the source's row: it is only
+	// what tells the end of a pass that it really read the tree, rather
+	// than having been handed an empty answer by a folder nothing had
+	// mounted.
+	Seen int
 }
 
 // --- rows -------------------------------------------------------------
@@ -132,6 +150,7 @@ type agentDocumentModel struct {
 	StorageKey string     `gorm:"column:storage_key"`
 	Metadata   []byte     `gorm:"column:metadata;type:jsonb"`
 	Private    bool       `gorm:"column:private"`
+	SeenAt     *time.Time `gorm:"column:seen_at"`
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 }
 
@@ -359,13 +378,18 @@ func (self *transaction) PutAgentDocument(document *models.AgentDocument) (*mode
 		written.ID = newID()
 		written.CreatedAt = now
 	}
+	// Writing a document is the source saying it still has it, so the
+	// pass that files one never has to say so a second time.
+	seen := now
+	written.SeenAt = &seen
 	row := &agentDocumentModel{
 		ID: written.ID, AgentID: written.AgentID, SourceID: written.SourceID,
 		ExternalID: truncateRunes(written.ExternalID, 500), Kind: string(written.Kind),
 		Title: truncateRunes(written.Title, 500), URL: written.URL,
 		HappenedAt: written.HappenedAt, ModifiedAt: written.ModifiedAt,
 		Hash: written.Hash, Bytes: written.Bytes, StorageKey: written.StorageKey,
-		Metadata: metadata, Private: written.Private, CreatedAt: written.CreatedAt,
+		Metadata: metadata, Private: written.Private, SeenAt: &seen,
+		CreatedAt: written.CreatedAt,
 	}
 	if existing != nil {
 		if err := self.tx.Save(row).Error; err != nil {
@@ -383,7 +407,7 @@ func (self *agentDocumentModel) toModel() (*models.AgentDocument, error) {
 		Kind: models.AgentDocumentKind(self.Kind), Title: self.Title, URL: self.URL,
 		HappenedAt: self.HappenedAt, ModifiedAt: self.ModifiedAt, Hash: self.Hash,
 		Bytes: self.Bytes, StorageKey: self.StorageKey, Private: self.Private,
-		CreatedAt: self.CreatedAt, Metadata: map[string]any{},
+		SeenAt: self.SeenAt, CreatedAt: self.CreatedAt, Metadata: map[string]any{},
 	}
 	if len(self.Metadata) > 0 {
 		if err := json.Unmarshal(self.Metadata, &document.Metadata); err != nil {
@@ -449,6 +473,52 @@ func (self *transaction) ListAgentDocumentHashes(sourceId string) (map[string]st
 		hashes[row.ExternalID] = row.Hash
 	}
 	return hashes, nil
+}
+
+// MarkAgentDocumentsSeen says the source still has these things.
+//
+// One statement for a whole page of a scan rather than one for each
+// name: a page of an archive is two thousand of them, and almost all of
+// them are unchanged, which is the case this has to be cheap in.
+func (self *transaction) MarkAgentDocumentsSeen(sourceId string, externalIds []string, at time.Time) error {
+	if sourceId == "" || len(externalIds) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(externalIds))
+	for _, externalId := range externalIds {
+		if externalId == "" {
+			continue
+		}
+		// Cut the same way they were written, or a long name would not
+		// match the row it named.
+		names = append(names, truncateRunes(externalId, 500))
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return self.tx.Exec(
+		`UPDATE "agent_document" SET "seen_at" = ? WHERE "source_id" = ? AND "external_id" = ANY(?)`,
+		at, sourceId, pq.Array(names)).Error
+}
+
+// DeleteAgentDocumentsUnseen removes the documents a pass did not see.
+//
+// The passages, their vectors and the symbols go with each document:
+// every one of those tables references it ON DELETE CASCADE, so this is
+// one statement and not four.
+//
+// Only ever called with the time a pass over the whole tree began, so
+// that a document the source no longer reports is the only kind of
+// document it can take.
+func (self *transaction) DeleteAgentDocumentsUnseen(sourceId string, before time.Time) (int, error) {
+	if sourceId == "" || before.IsZero() {
+		return 0, nil
+	}
+	result := self.tx.Exec(`DELETE FROM "agent_document" WHERE "source_id" = ? AND "seen_at" < ?`, sourceId, before)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
 }
 
 func (self *transaction) ListAgentDocumentsBetween(agentId string, kinds []models.AgentDocumentKind, from, until time.Time, limit int) ([]*models.AgentDocument, error) {

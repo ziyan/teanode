@@ -98,7 +98,9 @@ reads the same exchange twice and never misses one.
 
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
-dream turns them into facts.
+dream turns them into facts. A document a full pass no longer reports is
+removed with its passages; a document the source still holds but could
+not read is kept.
 
 ## Not making the same page twice
 

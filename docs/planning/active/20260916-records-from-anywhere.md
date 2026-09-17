@@ -92,6 +92,21 @@ agent a question only those documents answer.
   documents it did not see is being built. Remaining: the pass to finish
   clean, then `scan_chat.go`, its tests and the vendor format constant go
   from the daemon, the models, the tool, the command line and the docs.
+  - [x] (2026-09-16) The pass that walks a computer or archive source to
+    the end now removes the documents it was not shown, with their
+    passages and their symbols. Every entry a page brings back -- filed,
+    unchanged, or refused, because a thing the source holds and cannot
+    read is still a thing it holds -- has its `agent_document.seen_at`
+    written (migration `0081_agent_document_seen_at`, defaulting existing
+    rows to the time of the upgrade); the pass keeps the time it began in
+    the source's cursor under `passStartedAt`, with `passSeen` beside it;
+    and the page that reaches `Next == ""` deletes what is older than that
+    time, takes the count off the source's row and logs it. It takes
+    nothing when the pass was shown nothing at all, nothing from a source
+    whose pass does not walk a whole tree, and nothing on a pass that was
+    already mid-tree when the upgrade landed. This is what keeps the
+    16,000 of 393,000 units whose external ids changed in the conversion
+    from staying searchable and dreamed over for ever.
 - [ ] Milestone 5: docs (`docs/subsystems/memory.md`, `docs/reference/command-line.md`,
   `docs/configuration.md` if a setting appears) and the retrospective.
 
