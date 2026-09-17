@@ -56,6 +56,38 @@ Three rules shape it:
 The describer runs off the worker's tick in a goroutine, one at a time, because
 twenty model calls would otherwise stop the tick claiming jobs.
 
+## A goal
+
+A conversation can carry a **goal**: a sentence the person sets, or asks the
+agent to set, that stays on it until it is met or cleared. While a goal is
+set the agent takes turns in that conversation **on its own**, in the same
+transcript the person reads, so every turn sees the ones before it — which is
+the whole difference from a schedule, whose run is a fresh transcript on a
+clock with no memory of the one before and no way to say it is done.
+
+Four columns on the row (migration 0083): the goal, its state, the agent's
+last note, and when the next turn is due. The three states are
+`working` (turns are running), `waiting` (it needs the person, and their next
+turn in the conversation puts it back to working a minute later) and `met`.
+An empty goal means there is none.
+
+Every turn of the agent's own ends with one call to the `goal` tool: `note`
+with where it is and the minutes until the next turn, `wait` with what it
+needs from the person, or `met`. `set` puts a goal on the conversation when
+the person asks the agent to keep at something, and is refused in a turn of
+the agent's own — a goal spends their budget with nobody watching, so
+starting one is theirs. The note is a sentence or two: it is read beside the
+conversation and, while the goal waits, above the box the person types in.
+
+The check-in a turn arrives as opens with `models.GoalCheckInMarker`
+(`[goal check-in]`), exactly, so a reader can tell it from the person's own
+words, and says in the same breath that nobody is speaking.
+
+How the turns are queued, bounded and delivered is in
+`jobs-and-schedules.md`. Setting and clearing a goal is
+`UpdateAgentConversation(goal:)`, or `teanode agent conversation goal`;
+clearing also stops the turn under way.
+
 ## Searching
 
 Searching matches the title, the summary, and what was said in user and
@@ -97,6 +129,10 @@ their beginning into a note.
 - **A search query is not escaped**, so `%` and `_` in what a person types act
   as wildcards.
 - **Archived conversations are still readable by the tool**; it does not check.
+- **A goal is only as bounded as the budget, the floor and the day's cap.**
+  Nothing reads what the goal says before the turns start, so a goal that
+  cannot ever be met runs its forty-eight turns a day until somebody clears
+  it.
 - **Files attached to a run transcript outlive it.** The sweep removes the
   transcript and its messages, but attachments are not tied to a conversation
   by a foreign key and only unclaimed ones are collected, so artifacts made

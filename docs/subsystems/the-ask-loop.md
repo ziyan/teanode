@@ -87,10 +87,10 @@ may take`.
 - **Confirmation.** `NeedsConfirmation` is true when the risk for these
   arguments is `destructive` or `outward`, or when the operator's policy or
   the person's own `confirm` list names the tool or its family. A run with
-  nobody present — headless, or a surface of `mail`, `schedule` or `research`
-  — cannot confirm, and the tool answers `needs_confirmation: nobody is
-  present…` so the model says what it would have done. Otherwise the person
-  sees a card and the run waits up to ten minutes. A decline answers
+  nobody present — headless, or a surface of `mail`, `schedule`, `goal` or
+  `research` — cannot confirm, and the tool answers `needs_confirmation:
+  nobody is present…` so the model says what it would have done. Otherwise
+  the person sees a card and the run waits up to ten minutes. A decline answers
   `{"declined": true, …}`; an approval sets `Confirmed` on the call, which the
   tool itself can read.
 - **Run it**, then shape the answer: cut at `ResultCharacters` (24000), wrap in
@@ -126,6 +126,20 @@ Only the person whose agent it is may answer: the API resolves the caller's
 own agent and compares. When the run is on another instance, the answer
 travels as a command over PostgreSQL and is applied where the run lives
 (`streaming-and-instances.md`).
+
+## A turn nobody started
+
+Most headless turns run in a `run` conversation of their own. One does not:
+a turn toward a conversation's **goal** runs in the person's own
+conversation, with the surface `goal`, so that it reads everything said
+before it and they read it where they read everything else. It arrives as a
+user message opening with `models.GoalCheckInMarker`, and being headless it
+can confirm nothing — a goal that needs something sent says so and waits.
+See `jobs-and-schedules.md`.
+
+The loop's one part in this: after a person's own turn ends, a goal on that
+conversation that was `waiting` for them goes back to working, a minute out.
+The agent's own turns never resume anything.
 
 ## Ending
 
