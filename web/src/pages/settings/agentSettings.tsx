@@ -205,13 +205,8 @@ function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
 
 type Props = { settings: Agent; onSaved: () => Promise<unknown> | unknown }
 
-// AgentPart is one tab's worth of the operator's agent settings: what
-// agents are allowed at all, the providers and models, what they may do
-// and how much, the tools and servers they reach, the installed skills.
-// One long form was every one of these under each other.
-export type AgentPart = 'general' | 'models' | 'features' | 'tools' | 'skills'
-
-export const AGENT_PARTS: AgentPart[] = ['general', 'models', 'features', 'tools', 'skills']
+import { AgentPart } from './agentParts'
+export type { AgentPart } from './agentParts'
 
 export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPart }) {
   const [known, setKnown] = useState<string[]>([])

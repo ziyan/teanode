@@ -6,9 +6,10 @@ import { Tag } from '../../components/common'
 import { Select } from '../../components/select'
 import { Tooltip } from '../../components/tooltip'
 import { TrashIcon } from '../../components/icons'
-import { ConfirmDialog } from '../../components/dialog'
+import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
+import { UPDATE } from './integrations'
 
 // Skills: tools that arrive without a release. The operator installs one
 // from the registry and everybody's agent is offered what it declares,
@@ -46,6 +47,11 @@ const INSTALLED = `query {
 
 const OFFERED = `query { SearchAgentSkills { name description version tags installed newer } }`
 
+// Which of the keys the installed skills ask the operator for are filled
+// in, without the values: the settings say, and the row says so beside
+// the button that fills one.
+const FILLED = `query { GetSettings { agent { skillSecrets { skill key hasValue } } } }`
+
 const INSTALL = `mutation ($name: String!) {
   InstallAgentSkill(name: $name) { name version }
 }`
@@ -75,27 +81,66 @@ export function SkillsSection() {
   // refused install looked like a button that did nothing.
   const toast = useToast()
   const [removing, setRemoving] = useState<Skill | null>(null)
-  const [browsing, setBrowsing] = useState(false)
+  // The registry, narrowed by what is typed: name, description or a tag.
+  const [filter, setFilter] = useState('')
+  // The operator's keys that are filled in, as "skill/key".
+  const [filled, setFilled] = useState<Set<string>>(new Set())
+  // A key being filled in: the skill and key, and the value typed.
+  const [filling, setFilling] = useState<{ skill: string; key: string } | null>(null)
+  const [value, setValue] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
 
   const read = useCallback(async () => {
     const answer = await graphql<{ ListAgentSkills: Skill[] }>(INSTALLED)
     setInstalled(answer.ListAgentSkills)
+    try {
+      const settings = await graphql<{
+        GetSettings: { agent: { skillSecrets: { skill: string; key: string; hasValue: boolean }[] } }
+      }>(FILLED)
+      setFilled(
+        new Set(
+          settings.GetSettings.agent.skillSecrets
+            .filter((secret) => secret.hasValue)
+            .map((secret) => `${secret.skill}/${secret.key}`),
+        ),
+      )
+    } catch {
+      // Somebody who installs skills but does not manage the server sees
+      // the keys without whether they are filled.
+    }
   }, [])
 
   useEffect(() => {
     void read().catch(() => setInstalled([]))
   }, [read])
 
-  // The registry is only asked when somebody opens the list, because it is
-  // a fetch out of this server.
-  const browse = async () => {
-    setBrowsing(true)
+  // The registry is read once the section opens: what it offers is the
+  // way to find a skill, and a button to ask for it was a step between
+  // the person and the list.
+  useEffect(() => {
+    graphql<{ SearchAgentSkills: Offer[] }>(OFFERED)
+      .then((answer) => setOffers(answer.SearchAgentSkills))
+      .catch((reason) => {
+        toast.failure(reason, t('agentSettings.skillRegistryFailed'))
+        setOffers([])
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const keep = async () => {
+    if (!filling) return
+    setBusy(filling.skill)
+    setProblem(null)
     try {
-      const answer = await graphql<{ SearchAgentSkills: Offer[] }>(OFFERED)
-      setOffers(answer.SearchAgentSkills)
+      await graphql(UPDATE, { agent: { skillSecrets: [{ skill: filling.skill, key: filling.key, value }] } })
+      toast.done(t('agentSettings.skillSecretKept', { key: filling.key, skill: filling.skill }))
+      setFilling(null)
+      setValue('')
+      await read()
     } catch (reason) {
-      toast.failure(reason, t('agentSettings.skillRegistryFailed'))
-      setBrowsing(false)
+      setProblem(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy('')
     }
   }
 
@@ -120,21 +165,7 @@ export function SkillsSection() {
 
   return (
     <>
-      <SettingsSection
-        card
-        title={t('agentSettings.skills')}
-        description={t('agentSettings.skillsDescription')}
-        action={
-          <button
-            type="button"
-            className="primary"
-            onClick={() => void browse()}
-            disabled={browsing && offers === null}
-          >
-            {t('agentSettings.browseSkills')}
-          </button>
-        }
-      >
+      <SettingsSection card title={t('agentSettings.skills')} description={t('agentSettings.skillsDescription')}>
         {installed !== null && installed.length === 0 ? (
           <SettingsEmpty>{t('agentSettings.noSkills')}</SettingsEmpty>
         ) : null}
@@ -163,6 +194,25 @@ export function SkillsSection() {
               subtitle={detail.filter(Boolean).join(' · ')}
               actions={
                 <>
+                  {/* A key the skill asks the operator for, filled in here
+                      rather than in a configuration file nobody can reach
+                      on a running server. */}
+                  {skill.secrets.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={busy === skill.name}
+                      onClick={() => {
+                        setValue('')
+                        setProblem(null)
+                        setFilling({ skill: skill.name, key })
+                      }}
+                    >
+                      {filled.has(`${skill.name}/${key}`)
+                        ? t('agentSettings.skillSecretReplace', { key })
+                        : t('agentSettings.skillSecretSet', { key })}
+                    </button>
+                  ))}
                   {skill.secrets.length + skill.personalSecrets.length > 0 ? (
                     <Select
                       value={skill.scope}
@@ -214,14 +264,29 @@ export function SkillsSection() {
         {behind ? <p className="muted">{t('agentSettings.skillsBehind')}</p> : null}
       </SettingsSection>
 
-      {offers !== null && (
-        <SettingsSection
-          card
-          title={t('agentSettings.skillRegistry')}
-          description={t('agentSettings.skillRegistryDescription')}
-        >
-          {offers.length === 0 ? <SettingsEmpty>{t('agentSettings.noOffers')}</SettingsEmpty> : null}
-          {offers.map((offer) => (
+      <SettingsSection
+        card
+        title={t('agentSettings.skillRegistry')}
+        description={t('agentSettings.skillRegistryDescription')}
+        action={
+          <input
+            type="search"
+            value={filter}
+            placeholder={t('agentSettings.skillRegistryFilter')}
+            aria-label={t('agentSettings.skillRegistryFilter')}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        }
+      >
+        {offers === null ? <p className="muted">{t('agentSettings.skillRegistryLoading')}</p> : null}
+        {offers !== null && offers.length === 0 ? <SettingsEmpty>{t('agentSettings.noOffers')}</SettingsEmpty> : null}
+        {(offers ?? [])
+          .filter((offer) => {
+            const words = filter.trim().toLowerCase()
+            if (!words) return true
+            return [offer.name, offer.description, ...offer.tags].some((text) => text.toLowerCase().includes(words))
+          })
+          .map((offer) => (
             <Fragment key={offer.name}>
               <SettingsRow
                 title={offer.name}
@@ -257,8 +322,30 @@ export function SkillsSection() {
               />
             </Fragment>
           ))}
-        </SettingsSection>
-      )}
+      </SettingsSection>
+
+      {filling !== null ? (
+        <FormDialog
+          title={t('agentSettings.skillSecretTitle', { key: filling.key, skill: filling.skill })}
+          submitLabel={t('common.save')}
+          busy={busy === filling.skill}
+          error={problem}
+          onClose={() => setFilling(null)}
+          onSubmit={() => void keep()}
+        >
+          <p className="muted">{t('agentSettings.skillSecretHint')}</p>
+          <label>
+            <span>{filling.key}</span>
+            <input
+              autoFocus
+              type="password"
+              autoComplete="off"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+        </FormDialog>
+      ) : null}
 
       {removing !== null ? (
         <ConfirmDialog

@@ -1421,10 +1421,9 @@ export const en = {
   'agentSettings.skills': 'Skills',
   'agentSettings.skillsDescription':
     'Tools that arrive without a release. A skill is a file of declarations, fetched from a registry that signs what it publishes; what it declares becomes tools for everybody here, under the same tool policy as the rest. A skill that runs commands runs them on a computer the person attached, never on this server.',
-  'agentSettings.browseSkills': 'Browse the registry',
   'agentSettings.noSkills': 'No skills are installed.',
   'agentSettings.skillBrings': 'brings {tools}',
-  'agentSettings.skillNeeds': 'needs {keys} filled in under agent.skillSecrets',
+  'agentSettings.skillNeeds': 'needs {keys}',
   'agentSettings.skillNeedsPersonal': 'needs {keys} from each person, set on their own agent page',
   'agentSettings.skillScope': 'Who fills its values in',
   'agentSettings.skillScopeDeclared': 'As the skill says',
@@ -1435,6 +1434,14 @@ export const en = {
   'agentSettings.skillUnreadable': 'cannot be read',
   'agentSettings.skillEnable': 'Offer it',
   'agentSettings.skillDisable': 'Stop offering',
+  'agentSettings.skillSecretSet': 'Set {key}',
+  'agentSettings.skillSecretReplace': 'Replace {key}',
+  'agentSettings.skillSecretTitle': '{key} for {skill}, one value for everybody',
+  'agentSettings.skillSecretHint':
+    "Kept on this server for every person's agent. It is written and never shown again; Replace it to change it.",
+  'agentSettings.skillSecretKept': 'Kept {key} for {skill}',
+  'agentSettings.skillRegistryFilter': 'Filter the registry',
+  'agentSettings.skillRegistryLoading': 'Asking the registry…',
   'agentSettings.skillsBehind': 'The registry has a newer version of something installed.',
   'agentSettings.skillRegistry': 'What the registry offers',
   'agentSettings.skillRegistryDescription':

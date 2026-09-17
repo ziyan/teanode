@@ -5,7 +5,8 @@ import { ErrorMessage, Loading, SaveRow, Tag, useSaySaved } from '../../componen
 import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
-import { AGENT_SELECTION, Agent, AgentForm, AgentPart } from './agentSettings'
+import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
+import type { AgentPart } from './agentParts'
 import {
   GeoIPForm,
   IdentityForm,

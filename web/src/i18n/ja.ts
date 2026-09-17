@@ -1414,10 +1414,9 @@ export const ja: Catalog = {
   'agentSettings.skills': 'スキル',
   'agentSettings.skillsDescription':
     'リリースを待たずに増えるツールです。スキルは宣言を書いたファイルで、公開するものに署名するレジストリから取得します。宣言されたものはここの全員のツールになり、ほかと同じツール方針に従います。コマンドを実行するスキルは、本人が接続したコンピューターで実行され、このサーバーでは実行されません。',
-  'agentSettings.browseSkills': 'レジストリを見る',
   'agentSettings.noSkills': 'スキルはインストールされていません。',
   'agentSettings.skillBrings': '{tools} を追加します',
-  'agentSettings.skillNeeds': 'agent.skillSecrets に {keys} の入力が必要です',
+  'agentSettings.skillNeeds': '{keys} が必要',
   'agentSettings.skillNeedsPersonal': '各自が自分のエージェントページで {keys} を設定する必要があります',
   'agentSettings.skillScope': '値を入力するのは誰か',
   'agentSettings.skillScopeDeclared': 'スキルの宣言どおり',
@@ -1428,6 +1427,14 @@ export const ja: Catalog = {
   'agentSettings.skillUnreadable': '読み取れません',
   'agentSettings.skillEnable': '提供する',
   'agentSettings.skillDisable': '提供をやめる',
+  'agentSettings.skillSecretSet': '{key} を設定',
+  'agentSettings.skillSecretReplace': '{key} を置き換える',
+  'agentSettings.skillSecretTitle': '{skill} の {key}、全員でひとつの値',
+  'agentSettings.skillSecretHint':
+    'このサーバーに保存され、全員のエージェントが使います。書き込まれると二度と表示されません。変えるには置き換えてください。',
+  'agentSettings.skillSecretKept': '{skill} の {key} を保存しました',
+  'agentSettings.skillRegistryFilter': 'レジストリを絞り込む',
+  'agentSettings.skillRegistryLoading': 'レジストリに問い合わせています…',
   'agentSettings.skillsBehind': 'インストール済みのスキルに、レジストリでは新しい版があります。',
   'agentSettings.skillRegistry': 'レジストリにあるスキル',
   'agentSettings.skillRegistryDescription':
