@@ -50,9 +50,12 @@ by `settings.MaxRounds`. Each round:
    run made by `think`: a dream reading a batch, an ingest describing a
    checkout) is never compacted: a compaction note would stand in for the
    very documents it was given, and the run would file nothing. Such a run
-   is told to answer now instead, the way the last round is, and each of
-   its lookups is cut at `ResultCharacters` (6000) rather than the usual
-   24000 so one long page cannot fill the window.
+   is told to answer now instead, the way the last round is, once its
+   history passes `askReadThenAnswerTokens` (24000, lower than the
+   compaction line because the prompt and the tool definitions ride
+   beside the history), and each of its lookups is cut at
+   `ResultCharacters` (6000) rather than the usual 24000 so one long page
+   cannot fill the window.
 3. **Short or long.** A second, lower gate at `askHistoryTokens/2` (15000)
    sets `compact`, which switches the prompt to its short variant *and* forces
    tool deferral.

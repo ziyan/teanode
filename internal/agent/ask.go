@@ -210,6 +210,13 @@ const (
 	// leaves room for the prompt, the tools and the answer.
 	askHistoryTokens = 30000
 
+	// askReadThenAnswerTokens is the history at which a read-then-answer
+	// run is told to answer. Lower than the compaction line, because the
+	// history is not the whole request: the prompt and the tool
+	// definitions ride beside it, and a run that answered at thirty
+	// thousand sent thirty-three to a window of thirty-two.
+	askReadThenAnswerTokens = 24000
+
 	// askTailMessages is how many recent messages stay verbatim through a
 	// compaction.
 	askTailMessages = 12
@@ -734,7 +741,10 @@ func (self *AskRun) turn() error {
 		// A run that reads and then answers is told to answer once its
 		// history fills; anything else has its older turns compacted.
 		answerNow := false
-		if llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
+		historyTokens := llm.EstimateTokens(renderHistory(history))
+		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
+			answerNow = true
+		} else if historyTokens > askHistoryTokens {
 			if settings.ReadThenAnswer {
 				answerNow = true
 			} else if !compactFailed {
