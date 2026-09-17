@@ -281,6 +281,53 @@ when a pass last ran, so the next pass knows the interval. *Snapshot*: a
 copy of one agent's graph tables at a moment, restored into a test
 database for the evaluation.
 
+## User experience
+
+What the person sees of each milestone, in the knowledge explorer, the
+conversation and the command line. Every dashboard change is checked in
+Chrome at 1600 and 420 wide before it is deployed.
+
+Folded and struck facts (Milestone 1). On a page in the explorer, a fact
+that was folded into another no longer vanishes: it sits under the fact
+that absorbed it, indented and muted, with the tag "folded into #12", and
+a struck fact sits in the same place with the tag "struck". Both are
+collapsed by default behind a line "3 folded" at the foot of the facts
+card, so a page with many merges reads as its live facts; the line opens
+them. Nothing in the conversation changes. The page's history shows
+"folded #14 into #12" and "struck #9" as it shows every other change.
+
+Inferred facts (Milestone 4). A fact whose quote did not occur in the
+message it cites carries the tag "inferred" beside its number, and its
+evidence line reads "from a conversation, quote not found" instead of a
+quote. In the conversation, nothing changes; the agent's answers already
+cite pages, not confidence.
+
+Proposed links (Milestone 5). In the explorer's drawing, a link the dream
+guessed is a dashed line, and the dialog that opens on it says "proposed
+by the agent" under the relation. The page's Connections card lists it
+with the word "proposed" in muted type. Confirming it is making the same
+link from the Link dialog, which turns it solid; dropping it is the
+existing unlink. In a conversation, a proposed link is spoken of as a
+guess: "perhaps related to the Portal project".
+
+Rehearsal (Milestone 6). The dream's row on the agents page's Runs tab,
+and the dream log the operator reads, show three numbers where two were:
+"12 rehearsed, 3 gaps, 4 unknown", so a night whose model was
+unreachable no longer reads as a night with nothing missing.
+
+Decay and evidence (Milestones 3 and 4). No new controls. What the person
+notices is that a page they have not touched in a month reads the same
+whether the dream ran once or a hundred times, and that fewer facts cite
+words that were never said.
+
+The evaluation (Milestone 7). A command, not a page:
+
+    teanode agent memory evaluate docs/evaluation/memory-questions.json
+
+prints one row a question, "direct 03 hit", "changed 12 miss: carried the
+old address", and totals per kind at the foot. `--json` for scripts. A
+page for it can come when the numbers are worth watching over time.
+
 ## Milestone 1: reversible writes
 
 At the end of this milestone the dream deletes nothing: a fact folded into

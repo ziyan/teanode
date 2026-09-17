@@ -219,6 +219,67 @@ headless turn in their conversation live through the feed.
 Docs to update: `docs/subsystems/conversations.md`, `docs/subsystems/the-ask-loop.md`,
 `docs/subsystems/jobs-and-schedules.md`, `docs/reference/command-line.md`.
 
+## User experience
+
+What the person sees and does, before any file is named. Everything below
+is checked in Chrome at 1600 and 420 wide before it is deployed.
+
+Setting a goal. In the drawer's header, beside the conversation's name, a
+target icon. Pressing it opens a dialog titled "Goal for this
+conversation" with one text box and the hint "What the agent should keep
+working toward, in a sentence. It will take turns on its own until this
+is met or you clear it." Save puts the goal on the conversation and shows
+the toast "Goal set". The same happens when the person writes "keep
+working on this until the deploy is green" and the agent calls the tool:
+the goal appears in the header and the agent's answer says so. On the
+phone the icon is the same and the dialog is full width.
+
+Seeing it. With a goal set, the icon becomes a chip carrying the state:
+"working · next look 10:42", "waiting for you", or "met". The chip's
+tooltip is the goal's text. Pressing the chip opens the same dialog, now
+with the text filled in, the agent's last note under it in muted type,
+and two actions: Save, and Clear at the far end. In the conversation
+list, a conversation with a goal shows a small target mark before its
+title, in the accent colour while working, the warning colour while
+waiting, muted when met, and the agent's note as the row's second line
+where the summary would be. On the phone the chip shrinks to the icon in
+the state's colour, and the state word is in its tooltip and in the
+dialog.
+
+The agent's own turns. They arrive in the transcript live when the
+drawer is open, through the feed every turn already uses. The check-in
+that opens each of them is not the person's words and must not look like
+them: a user message beginning with the marker `[goal check-in]` is drawn
+as a single muted line, "Goal check-in · 10:42", where a person's bubble
+would be, and the agent's answer under it looks like any answer. Nothing
+else in the transcript changes.
+
+Needing the person. When the agent calls `wait`, the chip turns to
+"waiting for you" and the note it left, say "two drafts are ready: send,
+edit, or drop?", appears in a muted bar directly above the composer, so
+the person sees what is wanted where they are about to type. Their next
+message clears the bar and the goal goes back to working. With the drawer
+shut, the same note is the first line of a mail to the notification
+address, subject "Goal: two drafts are ready", when the account has one.
+
+Met. The chip says "met", the note is the agent's closing word, the mark
+in the list goes muted. The goal text stays until the person clears it,
+so they can read what was done and set the next one from the same dialog.
+
+Stopping. Clear in the dialog removes the goal, stops a turn under way,
+and shows "Goal cleared". The existing stop button on a running turn
+still works and does not clear the goal.
+
+Errors. A goal that cannot run, because the day's budget is spent or the
+cap of forty-eight turns is reached, is not an error the person is shown
+as one: the chip stays "working", the note says why it is waiting and
+until when, and the next look time on the chip says when.
+
+Command line. `teanode agent conversation goal <id> "…"` prints "goal set
+on <title>"; `--clear` prints "goal cleared"; `goal` alone prints a
+table of conversations, states, next look times and notes; `conversation
+show` prints the goal line first.
+
 ## Milestone 1: the goal on the conversation
 
 At the end of this milestone a conversation can carry a goal, set and
@@ -369,6 +430,14 @@ a `met` conversation starts it again.
 In the picker rows (2032-2058), a target mark before the title for a
 conversation with a goal, coloured by state, with the note as the row's
 second line when there is one.
+
+In the transcript, a user message that begins with the `[goal check-in]`
+marker (the exact string `goalCheckInMarker` the handler writes, exported
+by the API as a constant the dashboard imports from its generated
+schema, or simply matched by prefix) is drawn as one muted line, "Goal
+check-in · time", not as a bubble. While the goal is `waiting`, the note
+is shown in a muted bar above the composer; it goes when the person
+sends.
 
 i18n keys under `agentDrawer.goal.*` in en, zh and ja; `make
 check-catalogs`. CSS for the chip and the mark in `web/src/style.css`
