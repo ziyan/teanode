@@ -310,6 +310,13 @@ type AgentGraphPageResult struct {
 	Edges    []*models.AgentEdge `json:"edges"`
 	Children []*models.AgentNode `json:"children"`
 
+	// Folded is what the page used to say and no longer states: a fact
+	// the agent decided repeated another, standing behind the one that
+	// absorbed it. Kept out of Facts so the page reads as what it says
+	// now, and shown all the same, because a merge nobody can see is a
+	// merge nobody can disagree with.
+	Folded []*AgentFoldedFact `json:"folded"`
+
 	// Contact is the address book entry this page is about, for a person.
 	Contact *models.Contact `json:"contact" graphapi:"nullable"`
 }
@@ -318,6 +325,14 @@ type AgentGraphPageResult struct {
 type AgentGraphSearchResult struct {
 	Nodes []*models.AgentNode `json:"nodes"`
 	Facts []*AgentLearnedFact `json:"facts"`
+}
+
+// AgentFoldedFact is a fact that stands behind another, with the number
+// of the one it was folded into -- which is how a page cites a fact and
+// what the identifier it actually carries cannot be shown as.
+type AgentFoldedFact struct {
+	Fact *models.AgentFact `json:"fact"`
+	Into int               `json:"into"`
 }
 
 // AgentLearnedFact is a fact with the path of the page it is on, which is
@@ -373,6 +388,9 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageA
 	if result.Facts, err = tx.ListAgentFacts(found.ID, node.ID, false, 500); err != nil {
 		return nil, err
 	}
+	if result.Folded, err = self.foldedOn(tx, found.ID, node.ID); err != nil {
+		return nil, err
+	}
 	if result.Edges, err = tx.ListAgentEdges(found.ID, node.ID); err != nil {
 		return nil, err
 	}
@@ -399,6 +417,36 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageA
 		}
 	}
 	return result, nil
+}
+
+// foldedOn is the page's facts that stand behind another fact, each with
+// the number of the one that absorbed it.
+//
+// The number and not the identifier, because a page cites #3 and nothing
+// in the dashboard shows a row identifier. A pointer at a fact that has
+// since gone is dropped rather than shown as #0: there is nothing left
+// to send the reader to.
+func (self *graph) foldedOn(tx db.Transaction, agentId, nodeId string) ([]*AgentFoldedFact, error) {
+	facts, err := tx.ListAgentFacts(agentId, nodeId, true, 500)
+	if err != nil {
+		return nil, err
+	}
+	numbers := map[string]int{}
+	for _, fact := range facts {
+		numbers[fact.ID] = fact.Number
+	}
+	folded := []*AgentFoldedFact{}
+	for _, fact := range facts {
+		if fact.SupersededBy == "" {
+			continue
+		}
+		into, known := numbers[fact.SupersededBy]
+		if !known {
+			continue
+		}
+		folded = append(folded, &AgentFoldedFact{Fact: fact, Into: into})
+	}
+	return folded, nil
 }
 
 // contactOfUser finds one of the person's contacts across their books.

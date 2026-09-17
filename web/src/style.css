@@ -8152,6 +8152,23 @@ button.with-icon {
   margin-top: var(--space-2);
 }
 
+/* A fact the agent folded into another. Greyed rather than hidden: it is
+   still there, and the number beside it is where its words went. */
+.knowledge-folded {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.knowledge-folded-into {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* One column at a time on a phone. The way back is a real navigation --
    it changes the URL -- so the browser's Back does the same thing. */
 .knowledge-phone .knowledge-list {

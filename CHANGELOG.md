@@ -40,7 +40,13 @@ Notable changes to TeaNode. The format follows
   links between pages you used together, lets what nothing has wanted sink out
   of the way, and walks the graph looking for connections nobody wrote down.
   Then it asks itself the questions you are likely to ask tomorrow and writes
-  down the ones it could not answer. It never deletes anything.
+  down the ones it could not answer. It never deletes anything: a line it
+  decides repeats another goes dormant behind that one instead, and the page
+  lists what was folded under its facts, greyed, each saying which number
+  absorbed it. A correction is not a repetition — where one of two sentences
+  says "no longer" or "never" and the other does not, both are kept and the
+  page states the later one. Only your own "forget this" removes a row, and
+  what it removes is written into the page's history first.
 
 - A project's page is an orientation, not a history: where the checkout
   is and on which computer, its remote, what it calls itself, what it is
