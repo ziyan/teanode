@@ -255,7 +255,6 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   { id: 'spam', label: 'integrations.tabSpam' },
   { id: 'sessions', label: 'serverSettings.tabSessions' },
   { id: 'sso', label: 'integrations.tabSso' },
-  { id: 'agent', label: 'server.tabAgents' },
 ]
 
 // IntegrationsSection edits one group of the optional services: how outgoing

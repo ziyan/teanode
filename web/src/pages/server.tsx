@@ -62,10 +62,14 @@ export function ServerPage() {
     return <Navigate to="/access" replace />
   }
 
-  // The people's agents were a tab here, and then a long one; they are a
-  // row of the rail with tabs of their own now.
-  if (tab === 'agents' || tab === 'agent') {
+  // The people's agents were a tab here, and then a long one, and the
+  // agent's own settings another; they are a row of the rail with tabs of
+  // their own now, the settings among them.
+  if (tab === 'agents') {
     return <Navigate to="/agent" replace />
+  }
+  if (tab === 'agent') {
+    return <Navigate to="/agent/settings" replace />
   }
 
   // The certificates tab was called "dns" while the only DNS on this page was
