@@ -51,6 +51,10 @@ evaluate` prints a table of hits and misses over the question set.
 - [x] (2026-09-17 01:40Z) Research: two outside reviews checked claim by
   claim against the code; findings and line references are in Context and
   Orientation.
+- [x] (2026-09-17 12:45Z) Reviewed for simplicity at the maintainer's ask:
+  the evidence check drops a bad quote rather than rewriting it; edges get
+  one status column and no promotion stage, origin or expiry; the
+  evaluation has no per-stage switches. Recorded in the Decision Log.
 - [ ] Milestone 1: reversible writes. Folded, struck and repeated facts go
   dormant with a pointer, never deleted; the docs' promise becomes true.
 - [ ] Milestone 2: honest cursors and bookkeeping. Remember reads the oldest
@@ -149,23 +153,28 @@ evaluate` prints a table of hits and misses over the question set.
   whether a string occurs is not a judgement call. Semantic support
   checking is reserved for promotions in Milestone 5.
   Date/Author: 2026-09-17, the agent.
-- Decision: edges gain `status` (stated, proposed, supported) and `origin`
-  (person, source, derived, dream), in a migration; a walk writes
-  `proposed`; only `stated` and `supported` edges are carried in the prompt
-  index; `proposed` edges appear on a page as "perhaps" lines and are
-  promoted by a dream stage that finds a document mentioning both ends.
+- Decision: edges gain one column, `status` (stated or proposed); a walk
+  writes `proposed`; only `stated` edges are carried in the prompt index;
+  `proposed` edges appear on a page as "perhaps" lines and are drawn
+  dashed. No origin column, no promotion stage, no time-to-live.
   Rationale: the reviewer's separation of confidence from retrieval weight,
-  done with the two fields that matter. Weight stays what co-activation
-  tunes; status says whether the agent may assert it.
-  Date/Author: 2026-09-17, the agent.
+  done with the one field that changes what the agent may assert. An
+  origin, a support stage and an expiry were in the first draft and came
+  out when the maintainer asked whether the plan was overcomplicated: a
+  dashed guess that nobody confirms is exactly what it is, and promotion
+  from documents can wait until the evaluation says walks are worth it.
+  Date/Author: 2026-09-17, the agent, simplified with the maintainer.
 - Decision: the evaluation runs recall only, not the answer model, in its
   first form: for each question, did the memories the turn would carry
   include the facts the question is about. A second form that asks the
-  model and grades the answer is written down but not built here.
+  model and grades the answer is written down but not built here. No
+  per-stage switches: a stage's worth is measured by running the set
+  before and after a night, or on a restored snapshot.
   Rationale: recall is deterministic and free, so it can run in CI and on
-  every snapshot; grading answers costs model calls and a grader. The
-  reviewer's fifty questions are the same set for both.
-  Date/Author: 2026-09-17, the agent.
+  every snapshot; grading answers costs model calls and a grader. Switches
+  were a setting, a docs entry and a branch in every stage for an
+  experiment that snapshots already allow.
+  Date/Author: 2026-09-17, the agent, simplified with the maintainer.
 
 ## Outcomes & Retrospective
 
@@ -360,7 +369,7 @@ its weight whether the dream ran once or a thousand times in between, and
 reinforcement counts use over the real interval since the last pass.
 
 Add `DecayedAt *time.Time` to `models.Agent` and a migration
-`0081_agent_decayed_at.sql` adding the column. In the quiet half
+`0084_agent_decayed_at.sql` adding the column. In the quiet half
 (`dream_stages.go` around line 98), compute `elapsed = now -
 agent.DecayedAt` (or zero on the first pass, which then only sets the
 watermark), `factor = 0.5^(elapsed / edgeHalfLife)` with `edgeHalfLife =
@@ -380,28 +389,24 @@ month later and checks the weights: unchanged, unchanged, halved.
 ## Milestone 4: evidence checked at the write boundary
 
 At the end of this milestone a fact whose quote is not in the message it
-cites is filed as inferred at half confidence, and a fact citing a message
-that does not exist has its evidence dropped.
+cites is filed as inferred at half confidence with no quote, and a fact
+citing a message that does not exist has its evidence dropped.
 
 In `fileWhatWasLearned`, before building the fact at line 471, look the
-cited message up in the batch (the `unread` messages are at hand; for a
-document evidence kind, the document by id through the transaction). If
-the id names nothing, log it and file with `Evidence: nil`, `Inferred:
-true`, `Confidence: 0.5`. If it exists, normalize both the quote and the
-message content (lowercase, whitespace collapsed, quotes and dashes
-unified) and require the quote to occur as a substring; when it does not,
-find the sentence of the message with the most words in common with the
-quote (a helper `closestSentence(text, quote) string` in
-`internal/agent/vacuous.go` beside `splitSentences`), and when that sentence
-shares at least half the quote's words, use it as the quote; otherwise
-drop the quote, and in both cases mark `Inferred: true` and `Confidence:
-0.5`. The existing downgrade at line 429 (a preference cited to a message
-the person did not write) stays. Count the outcomes in the run's note row
-("filed 7 facts, 2 with evidence rewritten, 1 without") so the dream log
-shows how often the model invents.
+cited message up among the batch's messages (for a document evidence
+kind, the document by id through the transaction). If the id names
+nothing, file with `Evidence: nil`, `Inferred: true`, `Confidence: 0.5`.
+If it exists, normalize both the quote and the message content
+(lowercase, whitespace collapsed, quotes and dashes unified) and require
+the quote to occur as a substring; when it does not, keep the evidence id
+without the quote and mark `Inferred: true`, `Confidence: 0.5`. The
+existing downgrade at line 429 (a preference cited to a message the person
+did not write) stays. The run's note row counts the outcomes ("filed 7
+facts, 2 without their quote, 1 without evidence") so the dream log shows
+how often the model invents.
 
 Proof: `TestAQuoteMustOccurInItsMessage` files a fact whose quote is a
-paraphrase and expects the closest sentence as its quote and `Inferred`;
+paraphrase and expects no quote and `Inferred`;
 `TestAFactCitingNothingHasNoEvidence` expects nil evidence and 0.5. On the
 server, after a day, `select count(*) filter (where inferred) from
 agent_fact where created_at > now() - interval '1 day'` says how much the
@@ -410,45 +415,37 @@ guard catches.
 ## Milestone 5: provisional links
 
 At the end of this milestone a link the dream inferred is stored as
-proposed, rendered as "perhaps", kept out of the prompt index, and promoted
-to supported when a document mentions both ends.
+proposed, rendered as "perhaps", and kept out of the prompt index; a link
+the person states is stated.
 
-Migration `0082_agent_edge_status.sql`: `status text not null default
-'stated'` and `origin text not null default 'person'` on `agent_edge`.
-`models.AgentEdge` gains `Status AgentEdgeStatus` (`EdgeStated`,
-`EdgeProposed`, `EdgeSupported`) and `Origin AgentEdgeOrigin` (`OriginPerson`,
-`OriginSource`, `OriginDerived`, `OriginDream`); `PutAgentEdge` stores them;
-`askAboutAWalk` writes `Status: EdgeProposed, Origin: OriginDream` and its
-evidence becomes `{Kind: EvidenceDream, Quote: path}` so no reader mistakes
-it for a document. The memory tool's `link` writes `EdgeStated, OriginPerson`
-when the person is present and `OriginSource` from an ingest; the ingest's
-derived links (`works_on` from commits, `related_to` from a checkout's
-description) write `OriginDerived`.
+Migration `0085_agent_edge_status.sql`: `status text not null default
+'stated'` on `agent_edge`. `models.AgentEdge` gains `Status
+AgentEdgeStatus` (`EdgeStated`, `EdgeProposed`); `PutAgentEdge` stores it;
+`askAboutAWalk` writes `Status: EdgeProposed` and its evidence becomes
+`{Kind: EvidenceDream, Quote: path}` so no reader mistakes it for a
+document. Every other writer, the memory tool's `link`, the ingest's
+derived links, the dashboard's Link dialog, writes `EdgeStated`, which is
+the default.
 
 Rendering: wherever an edge becomes prompt text (the index line in
 `carryIndex`, the page block in `writeRecalled`, `AgentEdge.Sentence`), a
 proposed edge is omitted from the index and written on the page as
-"perhaps related to X (the agent's guess, unconfirmed)". The explorer
-shows proposed edges dashed (`web/src/pages/knowledgeExplore.tsx`, the
-edge style) with a badge, and a person may confirm one (a new mutation
-`ConfirmAgentEdge` setting `EdgeStated`) or drop it.
+"perhaps related to X (the agent's guess)". The explorer draws a proposed
+edge dashed (`web/src/pages/knowledgeExplore.tsx` and the card's
+`graphExplorer.tsx`, the edge style) with the word "proposed" in the
+dialog. A person confirms a proposed link by making the same link from
+the Link dialog, which `PutAgentEdge` treats as an update to stated; a
+person drops one with the existing unlink.
 
-Promotion: a new dream stage `dreamSupport`, after associate, takes up to
-`supportBatch = 8` proposed edges, and for each searches the indexed
-documents (`SearchAgentChunks` by the two page names) for a chunk that
-mentions both; with one found, the edge becomes `EdgeSupported` with
-evidence `{Kind: EvidenceDocument, ID: document id, Quote: the chunk's
-matching sentence}`. No model call. A proposed edge older than
-`proposedTTL = 90 days` with no support goes dormant (edges have no
-dormant flag; give them `weight = 0` and exclude zero-weight edges from
-rendering, or add `dormant` in the same migration; choose `dormant` for
-symmetry with facts). Counts go on `agent_dream` as `supported` and
-`dropped`.
+No promotion stage, no origin column, no time-to-live in this plan: a
+proposed link that nobody confirms stays a dashed guess, which is what it
+is. Promotion from documents is written down under Outcomes as the next
+step once the evaluation in Milestone 7 says walks are worth keeping.
 
-Proof: `go test ./internal/agent/ -run 'Proposed|Support'`, and on the
-server, `select status, origin, count(*) from agent_edge group by 1,2`
-after a dream; a proposed edge in the explorer dashed; a confirmed one
-solid; a page's prompt block containing "perhaps".
+Proof: `go test ./internal/agent/ -run 'Proposed'`, and on the server,
+`select status, count(*) from agent_edge group by 1` after a dream; a
+proposed edge in the explorer dashed; a page's prompt block containing
+"perhaps".
 
 ## Milestone 6: rehearsal with three outcomes
 
@@ -462,7 +459,7 @@ error, model error, JSON extraction or parse error) `rehearsalUnknown`;
 supported answer must name at least one fact number from the facts it was
 shown, or it is `unknown` too. `dreamRehearse` counts them into the dream
 row (`rehearsed`, `gaps`, and a new `unknown` column via migration
-`0083_agent_dream_unknown.sql`) and writes a gap only for `gap`. The dream
+`0086_agent_dream_unknown.sql`) and writes a gap only for `gap`. The dream
 log line in the dashboard shows "12 rehearsed, 3 gaps, 4 unknown".
 
 Proof: a test that makes the model call fail expects `unknown` and no gap
@@ -472,10 +469,8 @@ the three numbers.
 ## Milestone 7: the question set and the evaluation command
 
 At the end of this milestone `teanode agent memory evaluate questions.json`
-replays fifty questions through recall against the live graph or a
-snapshot and prints, per question, whether the facts it needs were carried,
-and a total; and the same run with a dream stage switched off says what
-that stage was worth.
+replays fifty questions through recall against the live graph and prints,
+per question, whether the facts it needs were carried, and a total.
 
 The set lives in `docs/evaluation/memory-questions.json` (the maintainer
 writes the questions; the plan writes the shape): a list of `{id,
@@ -494,15 +489,10 @@ what would have been carried, and grades locally. Output is a table with
 kind, id, hit or miss, and which expectation failed, then totals per kind.
 `--json` for machines.
 
-Stage switches: `limits.dreamStages` in the operator's agent settings, a
-list of stage names to run (`digest, remember, consolidate, organize,
-revise, associate, support, rehearse`), all by default; the dream skips
-what is not listed. Documented in `docs/configuration.md`
-(`make check-config-docs` enforces it). The experiment the reviewer asked
-for is then: snapshot the graph (`pg_dump -t 'agent_node' -t 'agent_fact'
--t 'agent_edge' ...` for one agent, restored into the dev database), run
-the evaluation, restore again with a stage removed and a dream run, and
-compare. The plan records the first numbers in Artifacts.
+Measuring a stage's worth is done by running the set before and after a
+night, and by restoring a snapshot of the graph tables into the dev
+database and running it there; no per-stage switches are added. The plan
+records the first numbers in Artifacts.
 
 Proof: `teanode agent memory evaluate docs/evaluation/memory-questions.json`
 prints fifty rows and a total on the maintainer's server; a deliberately
@@ -512,11 +502,10 @@ wrong expectation shows as a miss.
 
 `docs/subsystems/memory.md` gains: the fold's dormant row, the honest
 cursor, elapsed-time decay and the watermark, checked evidence and the
-inferred marking, the three edge statuses and how a proposed link is
-promoted, rehearsal's three outcomes, and the evaluation command and its
+inferred marking, the two edge statuses and what a proposed link looks
+like, rehearsal's three outcomes, and the evaluation command and its
 question file. `docs/reference/command-line.md` lists `agent memory
-evaluate`. `docs/configuration.md` documents `limits.dreamStages`. The
-retrospective compares the numbers before and after.
+evaluate`. The retrospective compares the numbers before and after.
 
 ## Concrete Steps
 
@@ -531,7 +520,7 @@ The agent package's tests want PostgreSQL; `make test` starts a container,
 or the existing `teanode-test-db` container can be pointed at with the
 environment the Makefile sets (see `docs/reference/local-development.md`).
 Migrations are added as numbered files under `internal/db/migrations/`
-(`docs/coding/database-migrations.md`); the next free number is 0081. The
+(`docs/coding/database-migrations.md`); the next free number is 0084; 0083 belongs to the goals plan. The
 dev server for dashboard checks is `make build` then `./build/teanode-server
 run` with `dev/.env` in the environment; the dashboard is
 `http://127.0.0.1:10081`. Every dashboard change is looked at in Chrome
@@ -637,20 +626,16 @@ and the two plans named at the top.
 ## Interfaces and Dependencies
 
 In `internal/models/graph.go`: `RevisionFactFolded`, `RevisionFactStruck`;
-`AgentEdgeStatus` with `EdgeStated`, `EdgeProposed`, `EdgeSupported`;
-`AgentEdgeOrigin` with `OriginPerson`, `OriginSource`, `OriginDerived`,
-`OriginDream`; `AgentEdge.Status`, `AgentEdge.Origin`, `AgentEdge.Dormant`;
+`AgentEdgeStatus` with `EdgeStated`, `EdgeProposed`; `AgentEdge.Status`;
 `EvidenceDream`. In `internal/models/agent.go`: `Agent.DecayedAt`. In
 `internal/agent/graph.go`: `func negates(left, right string) bool`; the
 reordered `writeRecalled`. In `internal/agent/remember.go`: the head cut
-and requeue in `runRemember`; the evidence check in `fileWhatWasLearned`
-with `func closestSentence(text, quote string) string` in `vacuous.go`. In
+and requeue in `runRemember`; the evidence check in `fileWhatWasLearned`. In
 `internal/agent/dream_stages.go`: `edgeHalfLife`, the watermark decay,
-`dreamSupport`, `type rehearsalOutcome` with `rehearsalAnswered`,
-`rehearsalGap`, `rehearsalUnknown`. In `internal/db`: migrations 0081
-(`agent.decayed_at`), 0082 (`agent_edge.status`, `origin`, `dormant`),
-0083 (`agent_dream.unknown`, `supported`, `dropped`); `StrengthenAgentEdges`
-taking a factor; `ConfirmAgentEdge`. In `internal/api/v1api/apigraph`:
-`RecallAgentMemory` query, `ConfirmAgentEdge` mutation. In `internal/cmd`:
-`agent memory evaluate`. In `internal/config`: `limits.dreamStages`. No new
+`type rehearsalOutcome` with `rehearsalAnswered`,
+`rehearsalGap`, `rehearsalUnknown`. In `internal/db`: migrations 0084
+(`agent.decayed_at`), 0085 (`agent_edge.status`), 0086
+(`agent_dream.unknown`); `StrengthenAgentEdges` taking a factor. In
+`internal/api/v1api/apigraph`: `RecallAgentMemory` query. In
+`internal/cmd`: `agent memory evaluate`. No new settings, no new
 libraries.
