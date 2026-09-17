@@ -1260,6 +1260,8 @@ not fail to load.
 **`requestTimeout`** — How long one call to a provider may take.
 
 **`concurrency`** — How many runs a worker executes at once, per instance.
+Read when the instance starts; a change takes effect on the next restart,
+which the status line says is owed.
 Read when the worker is built, so a change needs a restart of that instance.
 
 ### `agent.retention`
