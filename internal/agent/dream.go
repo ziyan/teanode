@@ -237,6 +237,36 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		return fmt.Errorf("no model registry")
 	}
 
+	// One dream at a time, at the moment of running as well as of
+	// queueing: a restart hands every job back to the queue, and two
+	// dream jobs queued before it -- one either side of midnight -- were
+	// both claimed again and both ran, taking every worker slot between
+	// them. The one that finds another running ends here; the queue
+	// brings the next night when the running one is over.
+	var another bool
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		open, err := tx.ListAgentJobs(&db.AgentJobFilter{
+			AgentID:  run.Agent.ID,
+			Kinds:    []models.AgentJobKind{models.AgentJobDream},
+			Statuses: []models.AgentJobStatus{models.AgentJobRunning},
+		}, &db.Options{Limit: 5})
+		if err != nil {
+			return err
+		}
+		for _, job := range open {
+			if job.ID != run.Job.ID {
+				another = true
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if another {
+		log.Infof("agent %q is already dreaming under another job; this one ends", run.Agent.ID)
+		return nil
+	}
+
 	record := &models.AgentDream{AgentID: run.Agent.ID, StartedAt: time.Now(), JobID: run.Job.ID}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		record, err = tx.StartAgentDream(record)
