@@ -91,7 +91,12 @@ evaluate` prints a table of hits and misses over the question set.
   quoting them.
 - [ ] Milestone 7: the question set and `teanode agent memory evaluate`,
   with a snapshot and per-stage switches.
-- [ ] Milestone 8: docs and retrospective.
+- [ ] Milestone 8: docs and retrospective (completed 2026-09-17 22:50Z:
+  `memory.md` describes elapsed-time decay and the watermark, the
+  evidence check and the inferred marking, and rehearsal's three
+  outcomes; remaining: the two edge statuses and the evaluation command
+  once Milestones 5 and 7 land, `command-line.md`, and the
+  retrospective's numbers).
 
 - [x] (2026-09-17 12:55Z) Chrome check of Milestone 1's one visible change:
   on the dev server a near-duplicate fact written from the Facts card was

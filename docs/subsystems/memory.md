@@ -45,6 +45,15 @@ from — a conversation, a message, a document. A sentence with a quote
 behind it can be checked; one without cannot, and the dashboard says
 which is which.
 
+The evidence is checked where the fact is written, against what the run
+actually showed the model. A quote that does not occur in the shown text
+is dropped and the fact is marked inferred at half confidence, and the
+Knowledge page says "quote not found" beside it; a citation of something
+the run never showed loses its evidence altogether. Both the dream's
+reading and the after-conversation writer count how often this happened
+on their own rows, so a model that paraphrases where it should quote is
+visible as a number rather than as a graph full of confident fiction.
+
 **An edge** joins two pages and says how. Not "related": `works_on`,
 `member_of`, `knows`, `owns`, `uses`, `located_in`, `decided_in`,
 `about`, `part_of`. Each relation knows how to say itself in both
@@ -149,6 +158,16 @@ starts at 0.85 of a stated one.
 
 Pages and edges decay the same way, with periods and pinned pages exempt:
 a page about September 2026 does not become less true in October.
+
+A link's weight fades by elapsed time, not by how often the night ran. The
+agent keeps a watermark, `decayed_at`, of when the fade was last
+accounted for; each pass fades what nothing touched by how long it has
+been since then (half after thirty days, never below a floor in one pass)
+and strengthens what was used together over the same real interval. The
+first pass writes the watermark and fades nothing. This used to be a
+fixed fifth a night, which was right only while a night ran once a day:
+bootstrapping runs one every few minutes, and a day of it left every
+untouched link at the floor.
 
 ## What happens in a dream
 
@@ -278,8 +297,16 @@ whole reason to keep a graph rather than a list.
 the graph by meaning and everything filed in this dream has no vector until
 then. The agent writes down the questions the person is
 most likely to ask tomorrow, tries each against its own memory, and
-records the ones it cannot answer. Nobody reads the answers; the failures
-are the point. A gap found at three in the morning costs one model call,
+records the ones it cannot answer. Each question ends one of three ways:
+*answered*, when the model names a fact it was shown that answers it;
+*gap*, when the graph was asked and had nothing, which is what the person
+would hear as "I don't know" tomorrow; or *unknown*, when the question
+could not be tried at all — a model that did not answer, an answer with no
+fact behind it. Every failure path is unknown rather than either of the
+others, because a gap that was really a timeout would send the person
+chasing an answer their agent already has. The dream row counts all three,
+and the Dreams tab reads "12 rehearsed, 3 gaps, 4 unknown". Nobody reads
+the answers; the failures are the point. A gap found at three in the morning costs one model call,
 and the same gap found mid-conversation is the person watching their
 agent say it does not know. Gaps are written down, never filled: a run
 with nobody present inventing answers to its own questions is how a graph

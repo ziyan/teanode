@@ -291,6 +291,22 @@ and the mark goes.
 
 ## Outcomes & Retrospective
 
+**The stall, on the maintainer's server (2026-09-17 22:48Z).** The
+unmeetable goal was run a second time under the stall wording. Twenty-four
+turns, none failed; the twenty-fifth job asked the model nothing, set the
+goal waiting, wrote "Goal stalled: 24 turns since you last wrote and it is
+not met. Write to keep going, or clear or change it." as the transcript's
+last line, and one mail went out under "Goal stalled: …". The goal was then
+cleared. Seen along the way, unasked: given a one-sentence request to
+index an export, the agent set a goal on that conversation by itself,
+"add and verify ingestion", which the tool's description tells it not to
+do; whether that is a wording problem or a judgment the person is glad of
+is for more real use to say.
+
+**Done.** Every milestone is in, tried on the dev server and the
+maintainer's, and documented; the plan moves to done with the pull
+request that carries it.
+
 **The bound on turns alone, on the maintainer's server (2026-09-17
 18:50Z).** A conversation was given a goal that says it cannot be met and
 asks for a five-minute note every turn. Twenty-four turns ran from 16:39Z
