@@ -99,6 +99,16 @@ type GraphOperation interface {
 	// UpdateAgentFact changes one, by identifier.
 	UpdateAgentFact(agentId, factId string, modify func(*models.AgentFact) error) (*models.AgentFact, error)
 
+	// FoldAgentFact marks a fact as standing behind another one: dormant,
+	// pointing at the row the page now states, kept. StrikeAgentFact
+	// marks one dormant with nothing in its place. Both are what the
+	// agent does on its own, and neither deletes -- only the person's own
+	// forgetting reaches DeleteAgentFact. The reason is what the page's
+	// history shows, since the same two columns move for several quite
+	// different decisions.
+	FoldAgentFact(agentId, factId, intoFactId, reason string) (*models.AgentFact, error)
+	StrikeAgentFact(agentId, factId, reason string) (*models.AgentFact, error)
+
 	// GetAgentFact is one fact by node and number -- how a person and a
 	// model name one -- and GetAgentFacts several by identifier.
 	GetAgentFact(agentId, nodeId string, number int) (*models.AgentFact, error)
@@ -795,7 +805,68 @@ func (self *transaction) indexFact(fact *models.AgentFact) error {
 	return self.tx.Exec(`UPDATE "agent_fact" SET "search" = to_tsvector('simple', ?) WHERE "id" = ?`, fact.Text, fact.ID).Error
 }
 
+// factJournal is what a write to a fact leaves in the page's history
+// when it takes the row out of what the page states.
+//
+// Two ways out and they are not the same change: superseded points at
+// the row that stands in its place, dormant points at nothing. A kind
+// left empty files nothing, which is what an ordinary edit that happens
+// to set dormant wants -- the nightly pass that retires facts nobody has
+// wanted in half a year would otherwise write a line per fact per night.
+type factJournal struct {
+	superseded models.RevisionKind
+	dormant    models.RevisionKind
+	reason     string
+}
+
 func (self *transaction) UpdateAgentFact(agentId, factId string, modify func(*models.AgentFact) error) (*models.AgentFact, error) {
+	return self.writeAgentFact(agentId, factId, modify, factJournal{
+		superseded: models.RevisionFactMerged,
+		reason:     "it said what another fact already said",
+	})
+}
+
+// FoldAgentFact marks a fact as standing behind another one on the same
+// page: dormant, pointing at the row the page now states, still readable.
+//
+// Nothing is deleted. A fold is a judgement -- two sentences a cosine
+// called near enough, or a later statement of the same thing -- and a
+// judgement the person disagrees with has to be visible before it can be
+// undone. The history entry carries both identifiers so the pair can be
+// found again from the journal alone.
+func (self *transaction) FoldAgentFact(agentId, factId, intoFactId, reason string) (*models.AgentFact, error) {
+	if intoFactId == "" || intoFactId == factId {
+		return nil, fmt.Errorf("db: folding a fact needs another fact to fold it into")
+	}
+	return self.writeAgentFact(agentId, factId, func(fact *models.AgentFact) error {
+		fact.SupersededBy = intoFactId
+		fact.Dormant = true
+		return nil
+	}, factJournal{superseded: models.RevisionFactFolded, reason: reason})
+}
+
+// StrikeAgentFact marks a fact dormant with nothing standing in its
+// place: a line that says nothing, found by the rules as they are now.
+//
+// Dormant rather than gone for the same reason as a fold, and because
+// the rule that struck it may itself be wrong: what was struck can be
+// read back and put right.
+func (self *transaction) StrikeAgentFact(agentId, factId, reason string) (*models.AgentFact, error) {
+	return self.writeAgentFact(agentId, factId, func(fact *models.AgentFact) error {
+		fact.Dormant = true
+		return nil
+	}, factJournal{dormant: models.RevisionFactStruck, reason: reason})
+}
+
+// writeAgentFact is the one writer behind all three: it locks the row,
+// applies the change, reindexes when the words moved, and files one
+// history entry.
+//
+// The journal comes from the caller because the columns that move are
+// the same for a merge, a write-time fold and a striking, and only the
+// caller knows which of them it just did. A page's history that calls
+// all three "merged two facts" is a history nobody can act on.
+func (self *transaction) writeAgentFact(agentId, factId string, modify func(*models.AgentFact) error, journal factJournal) (*models.AgentFact, error) {
 	var rows []agentFactModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&rows).Error; err != nil {
@@ -810,6 +881,7 @@ func (self *transaction) UpdateAgentFact(agentId, factId string, modify func(*mo
 	}
 	wasSaying := fact.Text
 	wasSuperseded := fact.SupersededBy
+	wasDormant := fact.Dormant
 	if err := modify(fact); err != nil {
 		return nil, err
 	}
@@ -825,7 +897,8 @@ func (self *transaction) UpdateAgentFact(agentId, factId string, modify func(*mo
 	if err := self.tx.Save(row).Error; err != nil {
 		return nil, err
 	}
-	if fact.Text != wasSaying {
+	switch {
+	case fact.Text != wasSaying:
 		if err := self.indexFact(fact); err != nil {
 			return nil, err
 		}
@@ -835,10 +908,14 @@ func (self *transaction) UpdateAgentFact(agentId, factId string, modify func(*mo
 		self.note(fact.AgentID, fact.NodeID, models.RevisionFactEdited,
 			map[string]any{"number": fact.Number, "text": wasSaying},
 			map[string]any{"number": fact.Number, "text": fact.Text}, "")
-	} else if fact.SupersededBy != "" && wasSuperseded == "" {
-		self.note(fact.AgentID, fact.NodeID, models.RevisionFactMerged,
-			map[string]any{"number": fact.Number, "text": fact.Text},
-			map[string]any{"supersededBy": fact.SupersededBy}, "it said what another fact already said")
+	case fact.SupersededBy != "" && wasSuperseded == "" && journal.superseded != "":
+		self.note(fact.AgentID, fact.NodeID, journal.superseded,
+			map[string]any{"number": fact.Number, "text": fact.Text, "id": fact.ID},
+			map[string]any{"supersededBy": fact.SupersededBy}, journal.reason)
+	case fact.Dormant && !wasDormant && journal.dormant != "":
+		self.note(fact.AgentID, fact.NodeID, journal.dormant,
+			map[string]any{"number": fact.Number, "text": fact.Text, "id": fact.ID},
+			map[string]any{"dormant": true}, journal.reason)
 	}
 	return fact, nil
 }
@@ -920,10 +997,34 @@ func (self *transaction) DeleteAgentFact(agentId, factId string) error {
 		return err
 	}
 	if len(facts) > 0 {
-		self.note(agentId, facts[0].NodeID, models.RevisionFactGone,
-			map[string]any{"number": facts[0].Number, "text": facts[0].Text}, nil, "")
+		self.note(agentId, facts[0].NodeID, models.RevisionFactGone, wholeFact(facts[0]), nil, "")
 	}
 	return nil
+}
+
+// wholeFact is a fact as a history entry has to carry it when the row
+// itself is going away.
+//
+// Everything else that leaves a page leaves the row behind, so the entry
+// only has to say what changed. A deletion is the person's own forgetting
+// and the row goes, so the number and the words are not enough to put it
+// back: what it was, how sure of it the agent was, when it was true, who
+// reads it and what it was read from all have to be in the journal or
+// they are gone with it.
+func wholeFact(fact *models.AgentFact) map[string]any {
+	whole := map[string]any{
+		"number":     fact.Number,
+		"text":       fact.Text,
+		"kind":       string(fact.Kind),
+		"confidence": fact.Confidence,
+		"inferred":   fact.Inferred,
+		"evidence":   fact.Evidence,
+		"audiences":  fact.Audiences,
+	}
+	if fact.HappenedAt != nil {
+		whole["happenedAt"] = fact.HappenedAt.Format(time.RFC3339)
+	}
+	return whole
 }
 
 // --- search -----------------------------------------------------------

@@ -693,6 +693,11 @@ type RevisionKind string
 
 // The kinds. A page's own words, its name and where it sits; a fact put
 // on it, changed or taken off; a link made or broken.
+//
+// Folded and struck are not removed, and the difference is the whole
+// point: a fact the agent decided against on its own stays on the page
+// as a dormant row, so the decision can be read and undone. Only the
+// person's own forgetting leaves a RevisionFactGone.
 const (
 	RevisionPage       RevisionKind = "page"
 	RevisionRenamed    RevisionKind = "renamed"
@@ -701,6 +706,8 @@ const (
 	RevisionFactEdited RevisionKind = "fact_edited"
 	RevisionFactGone   RevisionKind = "fact_removed"
 	RevisionFactMerged RevisionKind = "fact_merged"
+	RevisionFactFolded RevisionKind = "fact_folded"
+	RevisionFactStruck RevisionKind = "fact_struck"
 	RevisionLinked     RevisionKind = "linked"
 	RevisionUnlinked   RevisionKind = "unlinked"
 	RevisionCreated    RevisionKind = "created"
@@ -783,6 +790,8 @@ func (self *AgentRevision) Change() string {
 		RevisionFactEdited: "changed a fact",
 		RevisionFactGone:   "took a fact off",
 		RevisionFactMerged: "merged two facts that said the same thing",
+		RevisionFactFolded: "folded a fact into another",
+		RevisionFactStruck: "struck a fact that said nothing",
 		RevisionLinked:     "linked it to something",
 		RevisionUnlinked:   "removed a link",
 	}[self.Kind]
