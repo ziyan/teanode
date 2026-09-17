@@ -26,7 +26,7 @@ func TestAFormatThatIsNotAFormatIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatalf("%q was accepted as a format", source.Specification.Format)
 	}
-	want := `"recrods" is not a format: files, mattermost, journal or records`
+	want := `"recrods" is not a format: files, journal or records`
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("the message does not say what the formats are: %s", err)
 	}

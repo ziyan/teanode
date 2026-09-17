@@ -24,7 +24,7 @@ being asked**: a short run after each turn reads what was said and files it.
 It is **read without the model being asked**: each turn's words find the pages
 and facts they touch, by words and by meaning, and put them in front of the
 model. It grows from more than conversations: the person points it at a
-repository on their computer, a Confluence space, a Mattermost channel, a web
+repository on their computer, a Confluence space, a chat archive, a web
 site, their own sent mail, and an ingestion job keeps a copy the agent can
 search and cite. And while nobody is talking to it, it **dreams**: it works
 through what arrived, folds it into the pages, merges what it has twice,
@@ -1342,7 +1342,7 @@ tens of thousands of chunks.
 a specification —
 
     computer   {computer: "gen7", path: "~/projects/teanode", include: ["**/*.go", "**/*.md"], exclude: [...]}
-    archive    {computer: "gen7", path: "~/chat-archive", format: "mattermost"}   a chat export the scan understands
+    archive    {computer: "gen7", path: "~/chat-archive", format: "mattermost"}   a chat export the scan understood; retired for "records" on 2026-09-17
     skill      {tool: "skill__confluence__confluence_search", arguments: {...}, cursor_field: "start", item_path: "results", id_field: "id", text_field: "body.storage.value", title_field: "title", url_field: "_links.webui"}
     web        {start: "https://wiki.example.com/", allow: ["https://wiki.example.com/"], depth: 2, respect_robots: true}
     sent       {mailbox_id: "..."}   the person's own sent messages, for milestone 6
@@ -2122,7 +2122,9 @@ Node kinds gain `period`; `internal/agent/digest.go` exposes
 `Digest(ctx, agentId string, from, until time.Time) (string, error)` and
 `internal/agent/digest_noise.go` the subject patterns; `prompts/dream_timeline.txt`
 is the narrative prompt. Source formats for the `computer` kind: `files`
-(default), `mattermost`, `journal`.
+(default), `mattermost`, `journal`. (`mattermost` was retired on
+2026-09-17 by `docs/planning/active/20260916-records-from-anywhere.md`,
+which reads a chat export through a `records` folder instead.)
 
 Tools: `internal/agent/tools/memory/` rewritten; `internal/agent/tools/knowledge/`
 new. Both `Family: FamilyGeneral`, `Core: true`.

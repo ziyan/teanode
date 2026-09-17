@@ -12,14 +12,15 @@ plan needs from either is repeated here.
 
 ## Purpose / Big Picture
 
-Today the agent can index three shapes of thing on the person's computer: a
-tree of files, a folder of dated notes, and a chat export. Each shape
-is a reader written in Go inside the `teanode computer` daemon (the program a
-person runs on their own machine so the agent can reach it), and adding a
-fourth shape means adding a fourth reader. The person's knowledge is not in
-three shapes. It is in Google Drive and Gmail, reachable through the `gog`
-command line tool; in Confluence, reachable through the `confluence` command
-line tool; in Slack and Discord exports; in whatever the next tool exports.
+When this plan was written the agent could index three shapes of thing on
+the person's computer: a tree of files, a folder of dated notes, and a chat
+export. Each shape was a reader written in Go inside the `teanode computer`
+daemon (the program a person runs on their own machine so the agent can
+reach it), and adding a fourth shape meant adding a fourth reader. The
+person's knowledge is not in three shapes. It is in Google Drive and
+Gmail, reachable through the `gog` command line tool; in Confluence,
+reachable through the `confluence` command line tool; in Slack and Discord
+exports; in whatever the next tool exports.
 Every one of those is "run a command, get JSON, turn it into documents".
 
 After this plan there is a fourth shape, `records`, and it is the last one
@@ -28,9 +29,12 @@ of JSON lines, one record a line, in one common shape this plan defines:
 what it is, when it happened, who wrote it, what it says. The daemon reads
 that folder the way it reads the others, pages it to the server, and the
 server files documents from it exactly as it files documents from a file
-tree. Chat-shaped records are grouped into threads and windows by the same
-code that groups the chat export, so an export from one chat app and an
-export from another produce the same kind of document.
+tree. Chat-shaped records are grouped into threads and windows by the
+grouping the chat export reader used to call, so an export from one chat
+app and an export from another produce the same kind of document. The
+chat export reader itself is gone: Milestone 6 converted its archive and
+retired it, and `records` is now the only shape beside files and a
+journal.
 
 Who fills the folder is the point. A folder may hold an executable named
 `refresh`; the daemon runs it at the start of every scan, and it is that
@@ -84,14 +88,24 @@ agent a question only those documents answer.
 - [ ] Milestone 4: the agent can write a `refresh` script from the guidance
   alone; a Confluence source and a Google Drive source on the maintainer's
   machine, tested on a subset, then the whole.
-- [ ] Milestone 6 (in progress 2026-09-17 02:00Z): the conversion script
+- [x] (2026-09-17 06:35Z) Milestone 6: the conversion script
   `~/chat-records/refresh` is written and converts the whole export in
   under a minute (1.3 GB of records); the comparison and the accepted churn
   are in Surprises; the source was switched to the records folder and
-  format at 01:57Z and its first pass is running; a full pass deleting the
-  documents it did not see is being built. Remaining: the pass to finish
-  clean, then `scan_chat.go`, its tests and the vendor format constant go
-  from the daemon, the models, the tool, the command line and the docs.
+  format at 01:57Z. The full pass swept at 2026-09-17 06:30Z, removing
+  9,908 stale documents, and the source now holds 395,756 rows -- exactly
+  the number of units the records reader makes of the archive, which is
+  the proof the conversion is whole. With that in hand the reader and the
+  format are gone in this change: `internal/computer/scan_chat.go` and the
+  tests that only exercised it, `FormatMattermost` in the daemon and in
+  the models, the format in `AgentKnowledgeFormats` and in the `Validate()`
+  message, the page-size branch in the ingest, the knowledge tool's enum
+  and its archive message, the `--format` usage string and the command
+  line reference, and the dashboard's shape with its three catalogue keys.
+  `chat_units.go` stays -- it is the part that belongs to no chat app --
+  and what the removed tests proved about it is now
+  `internal/computer/chat_units_test.go`, written against `[]chatPost`
+  rather than against anybody's export.
   - [x] (2026-09-16) The pass that walks a computer or archive source to
     the end now removes the documents it was not shown, with their
     passages and their symbols. Every entry a page brings back -- filed,
@@ -147,8 +161,9 @@ agent a question only those documents answer.
   hold their hashes. `TestEveryFileIsSentOnceAcrossPages`,
   `TestEveryJournalFileIsSentOnceAcrossPages` and
   `TestEveryChannelIsSentOnceAcrossPages` walk every page of each reader.
-  Evidence: `internal/computer/scan.go` (`scanFiles`, `scanJournal`),
-  `internal/computer/scan_chat.go` (`scanMattermost`).
+  Evidence: `internal/computer/scan.go` (`scanFiles`, `scanJournal`), and
+  `scanMattermost` in `internal/computer/scan_chat.go`, which has since
+  been deleted with the rest of that reader.
 - Observation: the conversion of the maintainer's chat export cannot be
   churn-free, and the reason is a fault in the reader being retired. The
   export's `reply_count` is zero on every post, so the old reader never
@@ -221,7 +236,9 @@ agent a question only those documents answer.
   Date/Author: 2026-09-17, the agent.
 - Decision: the chat export reader is retired by this plan, in Milestone 6,
   after the records reader has taken over its archive without re-indexing
-  it. Until then it stays, calling the shared grouping.
+  it. Done on 2026-09-17: the archive was converted, the full pass swept
+  the 9,908 documents the conversion left behind, and the reader, its
+  tests and the `mattermost` format went with it.
   Rationale: with records in place it is the only vendor-specific reader
   left, and everything it knows fits in a short conversion script. It is
   also the last thing in the product that ties ingestion to one chat app,
@@ -230,8 +247,9 @@ agent a question only those documents answer.
   by external id and hash; the switch must be shown to leave every one of
   them unchanged before a line of the reader goes. The maintainer asked
   for the retirement on 2026-09-16 after the plan first chose to keep it.
-  Until the conversion runs, the reader's identifiers and its `mattermost`
-  format string stay as they are; only the prose changes.
+  Until the conversion ran, the reader's identifiers and its `mattermost`
+  format string stayed as they were and only the prose changed; they are
+  gone now.
   Date/Author: 2026-09-17, the agent, with the maintainer.
 - Decision: the agent learns the record shape from the knowledge tool's
   guidance, not from a skill.
@@ -259,7 +277,8 @@ A *knowledge source* is somewhere the agent indexes. The model is
 (the same, for an export), `skill`, `web`, `sent`. Its `Specification`
 (line 71) is one JSON blob with, among other fields, `Computer` (which
 attached computer), `Path` (the folder), `Format` (how to read it: `files`,
-`mattermost`, `journal`; constants at line 56), `Include` and `Exclude`
+`journal`, and since this plan `records`; `mattermost` was a fourth until
+Milestone 6 removed it; constants at line 56), `Include` and `Exclude`
 (globs). Because the specification is a blob, a new field needs no
 database migration. `Validate()` (line 153) checks the kind and the
 required fields but never the format.
@@ -273,7 +292,7 @@ A source is created three ways, and all three must learn a new format:
   `internal/cmd/agent_graph.go` (line 147; the flag's usage string at 151-157
   lists the formats).
 - The dashboard's add dialog in `web/src/pages/agent.tsx` (line 1598), whose
-  format `<select>` at line 1644 lists `['files','mattermost','journal']`
+  format `<select>` at line 1644 listed `['files','mattermost','journal']`
   with labels under the i18n keys `agent.knowledgeFormat.*` in
   `web/src/i18n/en.ts` (about line 2479), `ja.ts` and `zh.ts`.
 - The agent's own knowledge tool in
@@ -295,10 +314,10 @@ root against the allowed roots (`allowedRoot`, line 263), which are in
 `~/.config/teanode/scan-roots.json` on the daemon's machine and are added
 with `teanode computer allow <path>`; a root outside them is refused. Then
 it dispatches on the format (line 236): `scanFiles`, `scanJournal` (line
-1020, the simplest reader and the template to copy), `scanMattermost` in
-`internal/computer/scan_chat.go`.
+1020, the simplest reader and the template to copy), and, until Milestone
+6 removed it, `scanMattermost` in `internal/computer/scan_chat.go`.
 
-The chat export reader is the one to generalize. It reads `users.json`,
+The chat export reader was the one to generalize. It read `users.json`,
 `channels.json` and `posts/<team>/<channel>.jsonl`, and cuts each channel
 into *units*: a thread (a root post and everything that replied to it), else
 a *window* of consecutive posts with no silence over thirty minutes, at most
@@ -320,7 +339,7 @@ hashes, sends `device.Ask(ctx, "scan", &computer.ScanArguments{...})` (line
 321), and files each entry with `fileDocument` (line 469), which maps the
 entry's kind to a document kind with `documentKindOf` (line 510): `commit`,
 `chat`, `journal`, `page` map to themselves and everything else becomes
-`file`. The one format-specific line on the server is 317: a chat export
+`file`. The one format-specific line on the server is 317: a `records`
 source's page holds 2048 entries rather than 256, because chat units are
 small. Documents are rows of `agent_document` with `external_id` unique per
 source; `PutAgentDocument` in `internal/db/database_knowledge.go` (line 341)
@@ -647,7 +666,8 @@ documents read per fifteen minutes) for the days it takes.
 
 At the end of this milestone the maintainer's archive is a `records` source
 and `internal/computer/scan_chat.go` is gone, with nothing re-embedded and
-nothing re-read by the dream.
+nothing re-read by the dream. Done on 2026-09-17; what the conversion cost
+and what the sweep removed are in Progress and in Surprises.
 
 The document identity is what makes this safe or not. A document is keyed
 by its source and an external id, and its hash is the rendered text. The
@@ -684,6 +704,20 @@ in both constant lists, the `mattermost` option in the dashboard, the CLI
 usage string, the knowledge tool's enum, and the docs' mentions; the
 digest's `theirThreads` and `byChannel` read metadata the records carry the
 same way, so they do not change.
+
+There is no migration, and none is wanted. The format is a string in the
+source's `jsonb` specification, so nothing in the database refers to a
+column or a type that has gone. What changes is what the two ends will
+accept: `Validate()` now refuses `"mattermost" is not a format: files,
+journal or records`, so a source still saying it cannot be saved from the
+dashboard, the command line, the GraphQL mutation or the agent's own tool;
+and if one were saved before this release, the daemon answers its scan with
+`"mattermost" is not a shape this program can read` and the source's row
+shows that as its last error. Nothing is deleted behind the person's back --
+the documents such a source already filed stay searchable, and pointing it
+at a records folder brings it back. The maintainer's is the only such source
+there was, and it was switched to `~/chat-records` and `format: records` at
+01:57Z, before any of this was removed.
 
 ## Milestone 5: documentation
 
@@ -763,8 +797,9 @@ reader" and "the export's post files" throughout, and the folders in
 Milestone 6 are `~/chat-archive` and `~/chat-records`.
 
 The reader's own identifiers, the `mattermost` format string and the files
-under `internal/computer/` keep their names for now: they are the accepted
-value of a saved source, and renaming them would re-file the archive the
-milestone exists to leave untouched. They go with the reader, in Milestone
-6, once the archive has been converted. Naming the chat app as a skill the
-agent talks to is a different thing and stays.
+under `internal/computer/` kept their names while the archive was still
+read through them: they were the accepted value of a saved source, and
+renaming them would have re-filed the archive the milestone existed to
+leave untouched. They went with the reader on 2026-09-17, and nothing in
+the product names the chat vendor for ingestion any more. Naming the chat
+app as a skill the agent talks to is a different thing and stays.

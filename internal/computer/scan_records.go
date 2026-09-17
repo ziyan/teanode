@@ -20,14 +20,15 @@ import (
 
 // Reading a folder somebody else filled.
 //
-// The three readers beside this one each know a shape on disk: a tree of
-// files, a folder of dated notes, an export written by one chat program.
-// Adding a fourth source of knowledge meant adding a fourth reader, in
-// Go, in this binary, released and installed before the person could
-// index the thing they wanted. Most of what a person knows is behind a
-// command line tool that already prints JSON -- a Drive, a mailbox, a
-// wiki -- and the part that differs between them is which command to run
-// and how to read its answer, which is a script, not a program.
+// The two readers beside this one each know a shape on disk: a tree of
+// files, a folder of dated notes. There was a third, which knew one chat
+// program's export, and this reader has taken its archive over. Adding a
+// source of knowledge meant adding a reader, in Go, in this binary,
+// released and installed before the person could index the thing they
+// wanted. Most of what a person knows is behind a command line tool that
+// already prints JSON -- a Drive, a mailbox, a wiki -- and the part that
+// differs between them is which command to run and how to read its
+// answer, which is a script, not a program.
 //
 // So this reader knows one shape and does not care who wrote it: a
 // folder of JSON lines, one record a line, each saying what it is, when
@@ -275,13 +276,14 @@ func chatUnitsOf(relative, channel string, posts []chatPost, private bool) []Sca
 	// A record carries no reply count, the way an exported post does, so
 	// a post is a thread's root when another post in the file names it
 	// as its thread, or when it names itself, which is how a script says
-	// its replies are elsewhere. The chat export reader took roots from
-	// the export's reply count alone, and an export whose counts were
-	// all zero had every root sit in a window beside its neighbours
-	// while its replies made a unit of their own under the root's id --
-	// two units with one id when the root opened its window. Reading
-	// the thread whole is the point of a thread, so this reader does,
-	// and the units of such an export change once when it is converted.
+	// its replies are elsewhere. The chat export reader this one
+	// replaced took roots from the export's reply count alone, and an
+	// export whose counts were all zero had every root sit in a window
+	// beside its neighbours while its replies made a unit of their own
+	// under the root's id -- two units with one id when the root opened
+	// its window. Reading the thread whole is the point of a thread, so
+	// this reader does, and the units of such an export changed once
+	// when it was converted.
 	replied := map[string]bool{}
 	for _, post := range posts {
 		if post.Thread != "" && post.Thread != post.ID {

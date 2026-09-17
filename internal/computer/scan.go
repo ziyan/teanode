@@ -79,8 +79,7 @@ type ScanArguments struct {
 	// this machine; anything else is refused here.
 	Root string `json:"root"`
 
-	// Format is how to read it: files (the default), mattermost,
-	// journal, records.
+	// Format is how to read it: files (the default), journal, records.
 	Format string `json:"format,omitempty"`
 
 	Include []string `json:"include,omitempty"`
@@ -239,8 +238,6 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 		return scanFiles(ctx, root, arguments, most)
 	case FormatJournal:
 		return scanJournal(root, arguments, most)
-	case FormatMattermost:
-		return scanMattermost(root, arguments, most)
 	case FormatRecords:
 		return scanRecords(root, arguments, most)
 	}
@@ -250,14 +247,13 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 // The formats this program understands, which are the formats the server
 // may ask for.
 const (
-	FormatFiles      = "files"
-	FormatJournal    = "journal"
-	FormatMattermost = "mattermost"
+	FormatFiles   = "files"
+	FormatJournal = "journal"
 
 	// FormatRecords is a folder of JSON lines somebody's script wrote,
 	// which is how a source this program has no reader for -- a Drive, a
-	// wiki, a mailbox behind a command line tool -- is indexed without a
-	// fourth reader being written and released.
+	// wiki, a mailbox behind a command line tool -- is indexed without
+	// another reader being written and released.
 	FormatRecords = "records"
 )
 

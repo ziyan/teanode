@@ -10,13 +10,15 @@ import (
 
 // Cutting a conversation into units, for whoever read it.
 //
-// This was written against a chat export and is the part of it that is
-// not about any one chat app: a chat is posts, and a post is not worth
-// a document of its own. The reader that knows the shape on disk hands
-// its posts over as chatPost and gets back the units, so one app's
-// export written as records and another's read from its own files
-// produce the same kind of document rather than two that only look
-// alike.
+// This was written against one chat app's export and is the part of it
+// that is not about any chat app at all: a chat is posts, and a post is
+// not worth a document of its own. An archive of a company's chat holds
+// two million of them, and most are "ok" and "thanks"; embedding each
+// would cost two million vectors that find nothing. The reader that
+// knows the shape on disk hands its posts over as chatPost and gets
+// back the units, so one app's export and another's, both written as
+// records, produce the same kind of document rather than two that only
+// look alike.
 
 // The bounds of one unit.
 const (
@@ -31,9 +33,9 @@ const (
 	chatWindowCharacters = 3000
 )
 
-// chatPost is one post of any chat, as the readers hand it to the
-// grouping: the chat export reader from its export, the records reader
-// from a record.
+// chatPost is one post of any chat, as a reader hands it to the
+// grouping: the records reader from a record, and whatever reads a chat
+// next.
 type chatPost struct {
 	ID       string
 	Thread   string // the root this replies to, or empty
@@ -48,7 +50,7 @@ type chatPost struct {
 // each as one entry. relative is the file the posts came from, channel
 // its name; private marks every unit.
 //
-// The posts are expected in time order, which is how both readers hand
+// The posts are expected in time order, which is how a reader hands
 // them over: a window is consecutive posts, and consecutive means
 // nothing in a file somebody shuffled.
 func chatUnits(relative, channel string, posts []chatPost, private bool) []ScanEntry {
@@ -147,6 +149,9 @@ func chatUnits(relative, channel string, posts []chatPost, private bool) []ScanE
 	})
 	return entries
 }
+
+// pointerTo is a time in a field that is empty when there is no time.
+func pointerTo(when time.Time) *time.Time { return &when }
 
 // renderChat is a unit as it is read and embedded, and who was in it.
 func renderChat(posts []chatPost) (string, []string) {

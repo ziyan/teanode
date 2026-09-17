@@ -2385,7 +2385,6 @@ export const zh: Catalog = {
   'agent.knowledgeComputer': '哪台电脑',
   'agent.knowledgePath': '在哪个位置',
   'agent.knowledgeShape.files': '文件和代码',
-  'agent.knowledgeShape.mattermost': '聊天记录导出',
   'agent.knowledgeShape.journal': '按日期的笔记',
   'agent.knowledgeShape.records': '脚本写入的记录',
   'agent.knowledgeShape.sent': '你自己发出的邮件',

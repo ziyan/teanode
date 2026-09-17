@@ -1409,27 +1409,27 @@ interface Schedule {
 
 // A shape is what a source is to the person, and what that means to the
 // server (the kind) and to the daemon (the format).
-type KnowledgeShape = 'files' | 'mattermost' | 'journal' | 'records' | 'sent'
+type KnowledgeShape = 'files' | 'journal' | 'records' | 'sent'
 
 const KNOWLEDGE_SHAPES: Record<KnowledgeShape, { kind: string; format: string }> = {
   files: { kind: 'computer', format: 'files' },
-  mattermost: { kind: 'archive', format: 'mattermost' },
   journal: { kind: 'archive', format: 'journal' },
   records: { kind: 'archive', format: 'records' },
   sent: { kind: 'sent', format: '' },
 }
 
 // shapeOf is the shape a stored source has: sent mail by its kind, anything
-// on a computer by the format it is read with.
+// on a computer by the format it is read with. A format this dashboard does
+// not know is shown as files, which is what the daemon reads when a source
+// says nothing; a source left saying a format that has been retired cannot
+// be saved or scanned any more, so it is shown rather than dressed up.
 function shapeOf(source: { kind: string; specification: { format: string } }): KnowledgeShape {
   if (source.kind === 'sent') return 'sent'
   const format = source.specification.format
-  return format === 'mattermost' || format === 'journal' || format === 'records' ? format : 'files'
+  return format === 'journal' || format === 'records' ? format : 'files'
 }
 
-// OFFERED_SHAPES is what a person may add. A chat export is read from a
-// records folder a script fills, so the older vendor-shaped reader is not
-// offered; sources made with it before still show their shape.
+// OFFERED_SHAPES is what a person may add, which is every shape there is.
 const OFFERED_SHAPES: KnowledgeShape[] = ['files', 'journal', 'records', 'sent']
 
 // KnowledgeSourcesCard is the places the person has pointed their agent

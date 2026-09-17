@@ -118,8 +118,9 @@ func TestRecordsAreDocumentsAndKnownOnesAreNotSentAgain(t *testing.T) {
 }
 
 // Chat records are not documents; they are posts, and a post is grouped
-// with the posts around it by the same code that cuts a Mattermost
-// export, so that a Slack export written as records reads the same way.
+// with the posts around it by the shared grouping in chat_units.go, so
+// that one chat app's export written as records and another's read the
+// same way.
 func TestChatRecordsAreGroupedTheWayAnExportIs(t *testing.T) {
 	lines := []string{
 		// One thread: a question and two answers.

@@ -57,11 +57,6 @@ const (
 	// FormatFiles is the default: a tree of files, git-aware.
 	FormatFiles = "files"
 
-	// FormatMattermost is a chat export in the shape the reader
-	// understands: channels.json, users.json, state.json and
-	// posts/<team>/<channel>.jsonl.
-	FormatMattermost = "mattermost"
-
 	// FormatJournal is a folder of dated notes: a file per day or per
 	// month, or one file with date headings.
 	FormatJournal = "journal"
@@ -74,7 +69,7 @@ const (
 )
 
 // AgentKnowledgeFormats is every format a source may be read in.
-var AgentKnowledgeFormats = []string{FormatFiles, FormatMattermost, FormatJournal, FormatRecords}
+var AgentKnowledgeFormats = []string{FormatFiles, FormatJournal, FormatRecords}
 
 // IsAgentKnowledgeFormat says whether a word names a format.
 func IsAgentKnowledgeFormat(format string) bool {
@@ -93,8 +88,7 @@ type AgentKnowledgeSpecification struct {
 	Computer string `json:"computer,omitempty"`
 	Path     string `json:"path,omitempty"`
 
-	// Format is how to read what is there: files, mattermost, journal,
-	// records.
+	// Format is how to read what is there: files, journal, records.
 	Format string `json:"format,omitempty"`
 
 	// Include and Exclude are globs, for a files source.
@@ -202,8 +196,8 @@ func (self *AgentKnowledgeSource) Validate() error {
 	// more. A typo is refused here, where the person is still looking at
 	// what they typed.
 	if format := self.Specification.Format; format != "" && !IsAgentKnowledgeFormat(format) {
-		errors.add("specification.format", "%q is not a format: %s, %s, %s or %s",
-			format, FormatFiles, FormatMattermost, FormatJournal, FormatRecords)
+		errors.add("specification.format", "%q is not a format: %s, %s or %s",
+			format, FormatFiles, FormatJournal, FormatRecords)
 	}
 	if self.RootPath != "" {
 		if err := ValidPath(self.RootPath); err != nil {

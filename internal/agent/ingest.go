@@ -31,13 +31,13 @@ import (
 // The bounds.
 const (
 	// ingestEntries is how many things one pass asks a device for, and
-	// ingestChatEntries how many units of a chat archive. A page is
+	// ingestRecordEntries how many units of a records folder. A page is
 	// bounded by bytes as well, and a chat unit is a few hundred bytes:
 	// 256 of them was a page of 150 kilobytes against a bound of three
 	// megabytes, and an archive of four hundred thousand units read at a
 	// twentieth of what the socket allowed.
-	ingestEntries     = 256
-	ingestChatEntries = 2048
+	ingestEntries       = 256
+	ingestRecordEntries = 2048
 
 	// ingestPasses is how many pages one job reads before handing the
 	// queue back, so that one source cannot hold a slot for ever. The
@@ -237,6 +237,21 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			delete(cursor, "after")
 			delete(cursor, "before")
 			self.sweepUnseen(ctx, source, cursor, startedPass, &counts)
+			// What the source holds now, counted. The running total
+			// added every document a pass filed, and a document filed
+			// again under the same name was counted twice: a converted
+			// archive of four hundred thousand units showed seven
+			// hundred thousand.
+			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+				documents, chunks, err := tx.CountAgentSourceDocuments(source.ID)
+				if err != nil {
+					return err
+				}
+				counts.Documents, counts.Chunks = documents, chunks
+				return nil
+			}); err != nil {
+				log.Warningf("cannot count what source %q holds: %s", source.ID, err)
+			}
 			break
 		}
 		// A files source pages by path and a sent source by date; both
@@ -446,8 +461,8 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	after, _ := cursor["after"].(string)
 	most := ingestEntries
 	format := source.Specification.Format
-	if format == computer.FormatMattermost || format == computer.FormatRecords {
-		most = ingestChatEntries
+	if format == computer.FormatRecords {
+		most = ingestRecordEntries
 	}
 	// The first page of a records pass is the one that runs the folder's
 	// refresh script, and that is the only page allowed to be slow.

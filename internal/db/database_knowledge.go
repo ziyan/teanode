@@ -54,6 +54,11 @@ type KnowledgeOperation interface {
 	// scan, because a page of an archive is two thousand names.
 	MarkAgentDocumentsSeen(sourceId string, externalIds []string, at time.Time) error
 
+	// CountAgentSourceDocuments is how many documents and passages a
+	// source holds, counted rather than kept: a pass adds what it files,
+	// and a document filed again under the same name was added twice.
+	CountAgentSourceDocuments(sourceId string) (documents, chunks int, err error)
+
 	// DeleteAgentDocumentsUnseen removes what a source no longer has:
 	// the documents it did not name in a pass that began at the given
 	// time and reached the end of the tree, with their passages and
@@ -353,6 +358,19 @@ func (self *transaction) MarkAgentSourceRun(sourceId string, cursor map[string]a
 		"document_count": counts.Documents, "chunk_count": counts.Chunks,
 		"refused_count": counts.Refused,
 	}).Error
+}
+
+func (self *transaction) CountAgentSourceDocuments(sourceId string) (documents, chunks int, err error) {
+	var documentCount, chunkCount int64
+	if err := self.tx.Model(&agentDocumentModel{}).Where(`"source_id" = ?`, sourceId).Count(&documentCount).Error; err != nil {
+		return 0, 0, err
+	}
+	if err := self.tx.Table(`"agent_chunk"`).
+		Where(`"document_id" IN (SELECT "id" FROM "agent_document" WHERE "source_id" = ?)`, sourceId).
+		Count(&chunkCount).Error; err != nil {
+		return 0, 0, err
+	}
+	return int(documentCount), int(chunkCount), nil
 }
 
 // --- documents --------------------------------------------------------

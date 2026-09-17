@@ -263,97 +263,6 @@ func TestWhatLooksLikeASymbol(t *testing.T) {
 	}
 }
 
-// A chat export is cut into threads and windows, not posts: two million
-// posts would be two million vectors of "ok" and "thanks".
-func TestChatIsCutIntoThreadsAndWindows(t *testing.T) {
-	users := `[{"id":"u1","username":"alice"},{"id":"u2","username":"bob"}]`
-	channels := `[{"id":"c1","name":"backend","type":"O","purpose":"the backend team"}]`
-	// A thread (a root with two replies), then two posts an hour apart,
-	// which are two windows.
-	posts := strings.Join([]string{
-		`{"id":"p1","create_at":"1700000000000","user_id":"u1","channel_id":"c1","root_id":"","message":"Why is the queue backing up?","reply_count":"2"}`,
-		`{"id":"p2","create_at":"1700000060000","user_id":"u2","channel_id":"c1","root_id":"p1","message":"The consumer died."}`,
-		`{"id":"p3","create_at":"1700000120000","user_id":"u1","channel_id":"c1","root_id":"p1","message":"Restarted it."}`,
-		`{"id":"p4","create_at":"1700100000000","user_id":"u1","channel_id":"c1","root_id":"","message":"Standalone one."}`,
-		`{"id":"p5","create_at":"1700200000000","user_id":"u2","channel_id":"c1","root_id":"","message":"Much later one."}`,
-		`{"id":"p6","create_at":"1700200060000","user_id":"u1","channel_id":"c1","root_id":"","message":"","type":"system_join_channel"}`,
-	}, "\n")
-
-	result := scanIn(t, map[string]string{
-		"users.json":                      users,
-		"channels.json":                   channels,
-		"posts/engineering/backend.jsonl": posts,
-	}, &ScanArguments{Format: FormatMattermost})
-
-	if len(result.Entries) != 3 {
-		t.Fatalf("a thread and two windows: %d entries %+v", len(result.Entries), result.Entries)
-	}
-	var thread ScanEntry
-	for _, entry := range result.Entries {
-		if strings.Contains(entry.Text, "queue backing up") {
-			thread = entry
-		}
-	}
-	if !strings.Contains(thread.Text, "The consumer died.") || !strings.Contains(thread.Text, "Restarted it.") {
-		t.Fatalf("a thread is its root and its replies: %q", thread.Text)
-	}
-	if !strings.Contains(thread.Text, "alice:") || !strings.Contains(thread.Text, "bob:") {
-		t.Fatalf("with who said what: %q", thread.Text)
-	}
-	participants, _ := thread.Metadata["participants"].([]string)
-	if len(participants) != 2 {
-		t.Fatalf("and who was in it: %+v", thread.Metadata)
-	}
-	if thread.HappenedAt == nil {
-		t.Fatalf("and when it was")
-	}
-	for _, entry := range result.Entries {
-		if strings.Contains(entry.Text, "system_join") {
-			t.Fatalf("a system post is not knowledge")
-		}
-	}
-}
-
-// A channel that is mostly an integration talking to itself is named and
-// not read: a build server posting every commit is not knowledge.
-func TestABotChannelIsNamedAndNotRead(t *testing.T) {
-	var lines []string
-	for index := 0; index < 20; index++ {
-		lines = append(lines, `{"id":"b`+string(rune('a'+index))+`","create_at":"1700000000000","user_id":"u1","channel_id":"c1","message":"build passed","type":"slack_attachment"}`)
-	}
-	lines = append(lines, `{"id":"p1","create_at":"1700000000000","user_id":"u1","channel_id":"c1","message":"anyone looking at this?"}`)
-
-	result := scanIn(t, map[string]string{
-		"users.json":                       `[{"id":"u1","username":"teamcity"}]`,
-		"channels.json":                    `[{"id":"c1","name":"teamcity","type":"O"}]`,
-		"posts/engineering/teamcity.jsonl": strings.Join(lines, "\n"),
-	}, &ScanArguments{Format: FormatMattermost})
-
-	if len(result.Entries) != 1 || result.Entries[0].Refused == "" {
-		t.Fatalf("the channel is named and not read: %+v", result.Entries)
-	}
-}
-
-// A private channel is read -- it is the person's own export on their own
-// machine -- and marked, so a citation can say where it came from.
-func TestAPrivateChannelIsMarked(t *testing.T) {
-	result := scanIn(t, map[string]string{
-		"users.json":                `[{"id":"u1","username":"alice"}]`,
-		"channels.json":             `[{"id":"c1","name":"founders","type":"P"}]`,
-		"posts/team/founders.jsonl": `{"id":"p1","create_at":"1700000000000","user_id":"u1","channel_id":"c1","message":"We are raising in March."}`,
-	}, &ScanArguments{Format: FormatMattermost})
-
-	if len(result.Entries) != 1 {
-		t.Fatalf("it is read: %+v", result.Entries)
-	}
-	if !result.Entries[0].Private {
-		t.Fatalf("and marked private: %+v", result.Entries[0])
-	}
-	if result.Entries[0].Text == "" {
-		t.Fatalf("with its words: %+v", result.Entries[0])
-	}
-}
-
 // A journal's entries carry the day they are about, which is what puts a
 // note written three years ago on the page for that month.
 func TestAJournalCarriesTheDayItIsAbout(t *testing.T) {
@@ -686,57 +595,6 @@ func pem(kind, body string) string {
 	return dashes + "BEGIN " + kind + dashes + "\n" + body + "\n" + dashes + "END " + kind + dashes + "\n"
 }
 
-// A channel file bigger than a page is sent over several pages, the
-// cursor naming the last unit sent, and nothing is sent twice or lost.
-func TestAChannelFileIsPagedWithinItself(t *testing.T) {
-	var lines []string
-	for index := 0; index < 7; index++ {
-		// Posts a day apart, so each is its own window.
-		at := 1700000000000 + int64(index)*86400000
-		lines = append(lines, fmt.Sprintf(`{"id":"p%d","create_at":"%d","user_id":"u1","channel_id":"c1","root_id":"","message":"note number %d"}`, index, at, index))
-	}
-	files := map[string]string{
-		"users.json":                 `[{"id":"u1","username":"alice"}]`,
-		"channels.json":              `[{"id":"c1","name":"support","type":"O"}]`,
-		"posts/team/support.jsonl":   strings.Join(lines, "\n"),
-		"posts/team/zzz-after.jsonl": `{"id":"q1","create_at":"1700000000000","user_id":"u1","channel_id":"c1","root_id":"","message":"in the next file"}`,
-	}
-	seen := map[string]int{}
-	after := ""
-	for page := 0; page < 10; page++ {
-		result := scanIn(t, files, &ScanArguments{Format: FormatMattermost, After: after, Most: 3})
-		if len(result.Entries) > 3 {
-			t.Fatalf("page %d carried %d entries, more than asked", page, len(result.Entries))
-		}
-		for _, entry := range result.Entries {
-			seen[entry.ExternalID]++
-		}
-		if result.Next == "" {
-			break
-		}
-		after = result.Next
-	}
-	if len(seen) != 8 {
-		t.Fatalf("seven windows and one more file: %d seen %v", len(seen), seen)
-	}
-	for id, count := range seen {
-		if count != 1 {
-			t.Fatalf("%s sent %d times", id, count)
-		}
-	}
-	// A unit the server already holds is named and not sent again, on a
-	// page served from the cache as much as on the first.
-	first := scanIn(t, files, &ScanArguments{Format: FormatMattermost, Most: 3})
-	known := map[string]string{first.Entries[0].ExternalID: first.Entries[0].Hash}
-	again := scanIn(t, files, &ScanArguments{Format: FormatMattermost, Most: 3, Known: known})
-	if !again.Entries[0].Unchanged || again.Entries[0].Text != "" {
-		t.Fatalf("a known unit is marked unchanged and carries no text: %+v", again.Entries[0])
-	}
-	if again.Entries[1].Unchanged {
-		t.Fatalf("an unknown unit is sent")
-	}
-}
-
 // pagesOf walks every page of a scan and returns how often each entry
 // was seen, which is what the cursor is for: every file once.
 func pagesOf(t *testing.T, files map[string]string, arguments ScanArguments) map[string]int {
@@ -781,28 +639,5 @@ func TestEveryJournalFileIsSentOnceAcrossPages(t *testing.T) {
 		if seen[name] != 1 {
 			t.Fatalf("%s was sent %d times across the pages, not once: %v", name, seen[name], seen)
 		}
-	}
-}
-
-func TestEveryChannelIsSentOnceAcrossPages(t *testing.T) {
-	// The first channel fills a page exactly, so the page ends at the
-	// file boundary; the second channel must still be sent.
-	var lines []string
-	for index := 0; index < 3; index++ {
-		at := 1700000000000 + int64(index)*86400000
-		lines = append(lines, fmt.Sprintf(`{"id":"p%d","create_at":"%d","user_id":"u1","channel_id":"c1","root_id":"","message":"note number %d"}`, index, at, index))
-	}
-	files := map[string]string{
-		"users.json":               `[{"id":"u1","username":"alice"}]`,
-		"channels.json":            `[{"id":"c1","name":"support","type":"O"},{"id":"c2","name":"zzz","type":"O"}]`,
-		"posts/team/support.jsonl": strings.Join(lines, "\n"),
-		"posts/team/zzz.jsonl":     `{"id":"q1","create_at":"1700000000000","user_id":"u1","channel_id":"c2","root_id":"","message":"in the next file"}`,
-	}
-	seen := pagesOf(t, files, ScanArguments{Format: FormatMattermost, Most: 3})
-	if seen["posts/team/zzz.jsonl#q1"] != 1 {
-		t.Fatalf("the second channel was sent %d times, not once: %v", seen["posts/team/zzz.jsonl#q1"], seen)
-	}
-	if len(seen) != 4 {
-		t.Fatalf("expected 4 units once each, got %v", seen)
 	}
 }

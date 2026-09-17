@@ -57,7 +57,7 @@ func init() {
 					"name":     tools.StringProperty("for add: what to call it"),
 					"computer": tools.StringProperty("for add: which of their computers it is on"),
 					"path":     tools.StringProperty("for add: where on that computer"),
-					"format":   tools.EnumProperty("for add: how to read it; mattermost is a chat export in the shape the reader understands", models.FormatFiles, models.FormatMattermost, models.FormatJournal, models.FormatRecords),
+					"format":   tools.EnumProperty("for add: how to read it; records is a folder of JSON lines a script fills, which is how anything with no shape of its own gets in", models.FormatFiles, models.FormatJournal, models.FormatRecords),
 					"cron":     tools.StringProperty("for add: how often to read it, as five cron fields in their own zone; nightly if left out"),
 				}, "action"),
 				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves.",
@@ -484,7 +484,7 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 		},
 	}
 	if kind == models.SourceArchive && format == models.FormatFiles {
-		return nil, fmt.Errorf("an archive needs a format: %s, %s or %s", models.FormatMattermost, models.FormatJournal, models.FormatRecords)
+		return nil, fmt.Errorf("an archive needs a format: %s or %s", models.FormatJournal, models.FormatRecords)
 	}
 	var written *models.AgentKnowledgeSource
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
