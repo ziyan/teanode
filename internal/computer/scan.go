@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -89,6 +91,15 @@ type ScanArguments struct {
 	// hash. Anything whose hash matches is reported and its text left
 	// out, which is what makes a second pass cheap.
 	Known map[string]string `json:"known,omitempty"`
+
+	// KnownID names the pass Known belongs to. Sent with Known, the map
+	// is kept here under that name; sent without it, the map kept under
+	// that name is used, and an unknown name is refused with
+	// ErrKnownMissing so the server sends the map again. A source of
+	// four hundred thousand documents has a map of fifty megabytes, and
+	// carrying it on every page of two hundred and fifty entries was
+	// most of what a page cost.
+	KnownID string `json:"knownId,omitempty"`
 
 	// Allowed is the sensitive directories the person has let in by name.
 	Allowed []string `json:"allowed,omitempty"`
@@ -222,6 +233,43 @@ type allowedRoots struct {
 	Roots []string `json:"roots"`
 }
 
+// ErrKnownMissing is the answer to a page that names a pass whose known
+// hashes this program does not hold: the server sends them with the next
+// request.
+var ErrKnownMissing = errors.New("the known hashes of this pass are not held here; send them again")
+
+// knownCache is the known hashes of the passes in progress, by root and
+// pass name. One entry a root: a new pass over the same root replaces the
+// last, and a daemon restarted mid-pass holds nothing and says so.
+var knownCache = struct {
+	mutex sync.Mutex
+	held  map[string]knownEntry
+}{held: map[string]knownEntry{}}
+
+type knownEntry struct {
+	id    string
+	known map[string]string
+}
+
+// knownFor is the known map a page runs with: the one it carries, kept
+// for the pages after it, or the one kept under its pass name.
+func knownFor(root string, arguments *ScanArguments) (map[string]string, error) {
+	if arguments.KnownID == "" {
+		return arguments.Known, nil
+	}
+	knownCache.mutex.Lock()
+	defer knownCache.mutex.Unlock()
+	if arguments.Known != nil {
+		knownCache.held[root] = knownEntry{id: arguments.KnownID, known: arguments.Known}
+		return arguments.Known, nil
+	}
+	entry, found := knownCache.held[root]
+	if !found || entry.id != arguments.KnownID {
+		return nil, ErrKnownMissing
+	}
+	return entry.known, nil
+}
+
 // RunScan reads a tree and answers with a page of what it found.
 func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*ScanResult, error) {
 	options = withDefaults(options)
@@ -229,6 +277,11 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 	if err != nil {
 		return nil, err
 	}
+	known, err := knownFor(root, arguments)
+	if err != nil {
+		return nil, err
+	}
+	arguments.Known = known
 	most := arguments.Most
 	if most <= 0 || most > scanPage {
 		most = scanPage

@@ -236,6 +236,8 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			// carries the names and none of the text.
 			delete(cursor, "after")
 			delete(cursor, "before")
+			delete(cursor, cursorKnownID)
+			delete(cursor, cursorKnownSent)
 			self.sweepUnseen(ctx, source, cursor, startedPass, &counts)
 			// What the source holds now, counted. The running total
 			// added every document a pass filed, and a document filed
@@ -319,6 +321,13 @@ func errorsAs(err error, target **waitingForDevice) bool {
 	}
 	return ok
 }
+
+// The cursor keys under which a pass remembers the name of its known
+// map and whether the daemon has been sent it.
+const (
+	cursorKnownID   = "knownId"
+	cursorKnownSent = "knownSent"
+)
 
 // walksAWholeTree says whether a source's pass ends by having seen
 // everything the source holds.
@@ -451,14 +460,28 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		return "", counts, &waitingForDevice{name: source.Specification.Computer}
 	}
 
-	var known map[string]string
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		known, err = tx.ListAgentDocumentHashes(source.ID)
-		return err
-	}); err != nil {
-		return "", counts, err
-	}
 	after, _ := cursor["after"].(string)
+	// The known hashes go to the daemon once a pass, under the pass's
+	// name, and every later page names the pass instead of carrying the
+	// map: fifty megabytes a page for a big source, which was most of
+	// what a page cost. The name changes when a pass starts at the top,
+	// and a daemon that no longer holds the map says so and is sent it
+	// again.
+	knownId, _ := cursor[cursorKnownID].(string)
+	if after == "" || knownId == "" {
+		knownId = source.ID + "@" + time.Now().Format(time.RFC3339)
+	}
+	sent, _ := cursor[cursorKnownSent].(string)
+	carry := sent != knownId
+	var known map[string]string
+	if carry {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			known, err = tx.ListAgentDocumentHashes(source.ID)
+			return err
+		}); err != nil {
+			return "", counts, err
+		}
+	}
 	most := ingestEntries
 	format := source.Specification.Format
 	if format == computer.FormatRecords {
@@ -471,16 +494,38 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		wait = ingestRefreshWait
 	}
 
-	answer, err := device.Ask(ctx, "scan", &computer.ScanArguments{
-		Root:    source.Specification.Path,
-		Format:  source.Specification.Format,
-		Include: source.Specification.Include,
-		Exclude: source.Specification.Exclude,
-		Allowed: source.Allowed,
-		Known:   known,
-		After:   after,
-		Most:    most,
-	}, wait)
+	ask := func(known map[string]string) (json.RawMessage, error) {
+		return device.Ask(ctx, "scan", &computer.ScanArguments{
+			Root:    source.Specification.Path,
+			Format:  source.Specification.Format,
+			Include: source.Specification.Include,
+			Exclude: source.Specification.Exclude,
+			Allowed: source.Allowed,
+			Known:   known,
+			KnownID: knownId,
+			After:   after,
+			Most:    most,
+		}, wait)
+	}
+	answer, err := ask(known)
+	if err != nil && !carry && strings.Contains(err.Error(), computer.ErrKnownMissing.Error()) {
+		// The daemon was restarted mid-pass, or is an older build that
+		// does not keep the map: send it, this once.
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			known, err = tx.ListAgentDocumentHashes(source.ID)
+			return err
+		}); err != nil {
+			return "", counts, err
+		}
+		carry = true
+		answer, err = ask(known)
+	}
+	if err == nil {
+		cursor[cursorKnownID] = knownId
+		if carry {
+			cursor[cursorKnownSent] = knownId
+		}
+	}
 	if err != nil {
 		// Leaving mid-answer is the same as not being there: the daemon
 		// reconnects within the second, and a pass put down for its next

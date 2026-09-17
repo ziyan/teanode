@@ -2,6 +2,7 @@ package computer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -370,5 +371,55 @@ JSON
 	}
 	if strings.Count(strings.TrimSpace(string(runs)), "\n")+1 != 1 {
 		t.Fatalf("the script ran once for the pass: %q", string(runs))
+	}
+}
+
+func TestTheKnownHashesAreKeptUnderThePassName(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	content := `{"id":"one","kind":"page","title":"One","text":"the first page"}` + "\n" +
+		`{"id":"two","kind":"page","title":"Two","text":"the second page"}`
+	if err := os.WriteFile(filepath.Join(root, "a.jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatal(err)
+	}
+	scan := func(arguments *ScanArguments) (*ScanResult, error) {
+		arguments.Root = root
+		return RunScan(context.Background(), options, arguments)
+	}
+	first, err := scan(&ScanArguments{Format: FormatRecords})
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]string{}
+	for _, entry := range first.Entries {
+		known[entry.ExternalID] = entry.Hash
+	}
+	// The map arrives with the pass's name, and is kept.
+	carried, err := scan(&ScanArguments{Format: FormatRecords, Known: known, KnownID: "pass-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range carried.Entries {
+		if !entry.Unchanged {
+			t.Fatalf("%s should be unchanged with its hash known", entry.ExternalID)
+		}
+	}
+	// The next page names the pass and carries nothing; the kept map serves.
+	named, err := scan(&ScanArguments{Format: FormatRecords, KnownID: "pass-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range named.Entries {
+		if !entry.Unchanged {
+			t.Fatalf("%s should be unchanged from the kept map", entry.ExternalID)
+		}
+	}
+	// A pass the program does not hold is refused, so the server sends
+	// the map again.
+	if _, err := scan(&ScanArguments{Format: FormatRecords, KnownID: "pass-2"}); !errors.Is(err, ErrKnownMissing) {
+		t.Fatalf("a pass not held should be refused with ErrKnownMissing, got %v", err)
 	}
 }
