@@ -165,7 +165,45 @@ type AgentConversation struct {
 	// stands in for; the verbatim transcript resumes after it. The note
 	// itself is a later message with the compaction role.
 	CompactedThrough string `json:"compactedThrough,omitempty"`
+
+	// Goal is the standing instruction on this conversation, in the
+	// person's words: what the agent keeps working toward across turns of
+	// its own until it is met or they clear it. Empty means there is
+	// none, and GoalState is empty with it.
+	//
+	// GoalNote is the agent's last word on where it is -- a sentence or
+	// two, shown beside the conversation and, while it waits, above the
+	// composer. GoalNextAt is when the agent takes its next turn on its
+	// own; nothing is scheduled while it waits for the person or once the
+	// goal is met.
+	Goal       string         `json:"goal,omitempty"`
+	GoalState  AgentGoalState `json:"goalState,omitempty"`
+	GoalNote   string         `json:"goalNote,omitempty"`
+	GoalNextAt *time.Time     `json:"goalNextAt,omitempty"`
 }
+
+// AgentGoalState is where a conversation's goal stands.
+type AgentGoalState string
+
+// The three states a goal is in. A goal that is working takes turns of the
+// agent's own; one that is waiting takes none until the person writes
+// again, and their next turn puts it back to working; one that is met is
+// done, and its text stays on the conversation until they clear it.
+const (
+	GoalWorking AgentGoalState = "working"
+	GoalWaiting AgentGoalState = "waiting"
+	GoalMet     AgentGoalState = "met"
+)
+
+// GoalCheckInMarker begins the message a goal turn is given, so that
+// everything reading the transcript can tell the agent's own check-in from
+// the person's words: the dashboard draws such a message as a muted line
+// rather than as a person's bubble.
+//
+// Named here rather than in the agent package because the API hands the
+// same transcript to the dashboard, and a marker only one side knows is a
+// marker that drifts.
+const GoalCheckInMarker = "[goal check-in]"
 
 // AgentMessage is one turn, tool call or result in a conversation.
 type AgentMessage struct {

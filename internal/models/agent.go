@@ -425,6 +425,12 @@ const (
 	// Its subject is the day, so a night runs once.
 	AgentJobDream AgentJobKind = "dream"
 
+	// AgentJobGoal is one turn of the agent's own toward the goal on a
+	// conversation. Its subject is the conversation, so the queue's rule
+	// of one open job per agent, kind and subject is also the rule that a
+	// conversation takes one goal turn at a time.
+	AgentJobGoal AgentJobKind = "goal"
+
 	// AgentJobBackfill queues triage for what was already in a mailbox when
 	// it was granted.
 	AgentJobBackfill AgentJobKind = "backfill"

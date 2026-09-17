@@ -198,6 +198,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobSend, self.runSend)
 	self.Register(models.AgentJobEmbed, self.runEmbed)
 	self.Register(models.AgentJobSchedule, self.runSchedule)
+	self.Register(models.AgentJobGoal, self.runGoal)
 	self.Register(models.AgentJobResearch, self.runResearch)
 	self.Register(models.AgentJobExtract, self.runExtract)
 	self.Register(models.AgentJobRemember, self.runRemember)
@@ -376,6 +377,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	// decides the order; a full queue is not a reason to stop looking.
 	if err := self.dueSchedules(ctx, now); err != nil {
 		log.Warningf("cannot queue the schedules that are due: %s", err)
+	}
+	if err := self.dueGoals(ctx, now); err != nil {
+		log.Warningf("cannot queue the goals that are due: %s", err)
 	}
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)

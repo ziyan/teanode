@@ -65,12 +65,13 @@ type AgentAskMutation interface {
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
-	// Start a named conversation, kept apart from the main one. Needs
-	// agent:use.
+	// Start a named conversation, kept apart from the main one, with a
+	// goal on it if one is given. Needs agent:use.
 	StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error)
 
-	// Rename a conversation, or archive and unarchive it. The main
-	// conversation is never archived. Needs agent:use.
+	// Rename a conversation, archive and unarchive it, or set the goal it
+	// works toward — an empty goal clears it and stops the turn it was
+	// taking. The main conversation is never archived. Needs agent:use.
 	UpdateAgentConversation(ctx context.Context, arguments UpdateAgentConversationArguments) (*models.AgentConversation, error)
 	DeleteAgentConversation(ctx context.Context, arguments DeleteAgentConversationArguments) (bool, error)
 
@@ -205,15 +206,23 @@ type StopAgentRunArguments struct {
 }
 
 // StartAgentConversationArguments may name it; the model does otherwise.
+// A goal set here starts the conversation already working toward it.
 type StartAgentConversationArguments struct {
 	Title string `json:"title" graphapi:"nullable"`
+	Goal  string `json:"goal" graphapi:"nullable"`
 }
 
-// UpdateAgentConversationArguments rename or archive.
+// UpdateAgentConversationArguments rename, archive, or set the goal.
 type UpdateAgentConversationArguments struct {
 	ConversationID string `json:"conversationId"`
 	Title          string `json:"title" graphapi:"nullable"`
 	Archived       *bool  `json:"archived" graphapi:"nullable"`
+
+	// Goal is the standing instruction to work toward; the empty string
+	// clears it. A pointer, because "leave the goal alone" and "there is
+	// no goal any more" are different answers and a plain string cannot
+	// tell them apart.
+	Goal *string `json:"goal" graphapi:"nullable"`
 }
 
 // asJSONValues is what a map of variables looks like once it has been through
@@ -775,7 +784,12 @@ func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAg
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()})
+	starting := &models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()}
+	if goal := strings.TrimSpace(arguments.Goal); goal != "" {
+		now := time.Now()
+		starting.Goal, starting.GoalState, starting.GoalNextAt = goal, models.GoalWorking, &now
+	}
+	conversation, err := tx.CreateAgentConversation(starting)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -878,6 +892,7 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	if err != nil {
 		return nil, err
 	}
+	cleared := false
 	updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
 		if title := strings.TrimSpace(arguments.Title); title != "" {
 			// Named by the person: the model stops renaming it.
@@ -895,10 +910,31 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 				conversation.ArchivedAt = nil
 			}
 		}
+		if arguments.Goal != nil {
+			goal := strings.TrimSpace(*arguments.Goal)
+			cleared = goal == ""
+			if cleared {
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = "", "", "", nil
+			} else {
+				// A goal set again -- changed, or set on a conversation
+				// whose goal was met -- starts working from now, and the
+				// note from the goal before it goes with it.
+				now := time.Now()
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = goal, models.GoalWorking, "", &now
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, translateError(err)
+	}
+	// Clearing the goal stops the turn it was taking. Left running, the
+	// agent would go on working toward something the person has just said
+	// they no longer want, and say so in their conversation.
+	if cleared {
+		if worker := self.agentWorker(); worker != nil {
+			worker.StopConversation(conversation.ID)
+		}
 	}
 	return updated, nil
 }

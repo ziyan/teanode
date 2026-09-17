@@ -52,14 +52,27 @@ and the mark goes.
   three states rather than four, no new setting, no daily allowance
   column, no special rendering of the check-in. Recorded in the Decision
   Log.
-- [ ] Milestone 1: the goal on the conversation: columns, model, API,
-  command line.
-- [ ] Milestone 2: the goal tool and the goal job: the agent's own turns,
-  their cadence, their bounds, and how the person is told.
+- [x] (2026-09-17 12:05Z) Milestone 1: the goal on the conversation:
+  migration 0083 and its reverse, the four fields and `AgentGoalState` on
+  the model, the row columns and `ListDueAgentGoals`, the `goal` argument
+  on `UpdateAgentConversation` and `StartAgentConversation`, the client
+  fields, and `teanode agent conversation goal`. A store test covers
+  setting, reading, listing as due and clearing.
+- [x] (2026-09-17 12:11Z) Milestone 2: the `goal` tool with its four
+  actions, the `goal` job kind and handler, `dueGoals` in the tick, the
+  check-in with its marker, the day's cap, the budget deferral, the
+  silent-turn doubling, the resume on the person's turn, the mail when it
+  stops, and the goal in the prompt's situation. Five tests with a
+  scripted provider and a unit test for the doubling.
 - [ ] Milestone 3: the drawer: set, see, change, clear, and the list mark;
   checked in Chrome at desktop and phone width.
-- [ ] Milestone 4: tried on the dev server with a small goal, then on the
-  maintainer's server with a real one; docs and retrospective.
+- [x] (2026-09-17 12:11Z) Milestone 4, the documents:
+  `conversations.md` gains "A goal", `jobs-and-schedules.md` the `goal`
+  kind and the table of how it differs from a schedule, `the-ask-loop.md`
+  the one headless turn that runs in a person's own conversation, and
+  `command-line.md` the `conversation goal` command. Trying it on the dev
+  server and the maintainer's server, and the retrospective, wait for
+  Milestone 3.
 
 ## Surprises & Discoveries
 
@@ -90,6 +103,21 @@ and the mark goes.
   keyed by the conversation id exactly one run in flight per conversation
   with no extra code, and the finished rows the queue keeps until it
   scavenges them are a count of today's goal turns without a column.
+- Observation (2026-09-17 12:05Z): `db.AgentJobFilter` could not say what
+  a job was about, nor from when. Counting today's goal turns from the job
+  rows -- which is what stands in for a column -- wanted both, so the
+  filter gained `SubjectID` and `Since`; every existing caller passes
+  neither and is unaffected.
+- Observation (2026-09-17 12:11Z): the interval a goal is running at is
+  not kept anywhere, so a turn that says nothing has nothing obvious to
+  double. It is recoverable from the row: the turn before wrote its next
+  time when it ended, so the gap between the row's `modified_at` and its
+  `goal_next_at` is the interval that turn asked for. A goal just set has
+  the same moment in both, and the default stands in. No column for it.
+- Observation (2026-09-17 12:11Z): the schedule's mail delivery was the
+  only way this program tells a person anything, and it was written inside
+  `deliverSchedule`. It is now `mailToPerson`, which the goal uses too;
+  nothing about the schedule's behaviour changed.
 
 ## Decision Log
 
@@ -145,9 +173,50 @@ and the mark goes.
   Rationale: a goal spends the person's budget without them present.
   Date/Author: 2026-09-17, the agent.
 
+- Decision (2026-09-17 12:11Z): the marker that opens a check-in is
+  `models.GoalCheckInMarker`, `[goal check-in]`, exactly, and the rest of
+  the framing follows it.
+  Rationale: the maintainer asked that the dashboard be able to draw the
+  agent's own turn as a muted "Goal check-in" line rather than as the
+  person's bubble, which needs a marker both sides agree on. It is in
+  `models` rather than in `internal/agent` because the API hands the same
+  transcript to the dashboard; Go will not export a lowercase name, so it
+  is `GoalCheckInMarker` rather than the `goalCheckInMarker` the ask
+  named.
+  Date/Author: 2026-09-17, the agent, from the maintainer's ask.
+- Decision (2026-09-17 12:11Z): the bounds on the cadence live in
+  `internal/agent/tools/goal`, where they are enforced, and
+  `internal/agent/goal.go` names them as the plan does.
+  Rationale: the tool clamps what the model asks for, and the handler
+  doubles a silent turn's wait against the same numbers. A tool package
+  cannot import the agent package, so one of the two had to hold them;
+  holding them where the clamp happens keeps the check and the number in
+  one file.
+  Date/Author: 2026-09-17, the agent.
+- Decision (2026-09-17 12:11Z): a goal turn whose budget is spent, or
+  whose day's cap is reached, finishes the job and writes the next time on
+  the conversation rather than returning a `Deferral`.
+  Rationale: what the plan says, and the reason it is right here is that
+  attempts are counted at claim time and never reset, so a goal deferred
+  five times over a month's budget would dead-letter on its first real
+  failure. The cost is that such a job counts toward the day's cap; it is
+  written down in the caveats.
+  Date/Author: 2026-09-17, the agent.
+
 ## Outcomes & Retrospective
 
-To be written at the end of each milestone and at completion.
+**Milestones 1 and 2 (2026-09-17 12:11Z).** The row, the API, the command
+line, the tool, the job and the documents are in. What the plan expected
+held: the per-conversation run queue serializes a goal turn behind one the
+person is typing with no new code, the dedupe on the subject makes the
+five-second sweep idempotent, and the finished job rows are a usable count
+of the day's turns. Three things the plan did not say are written down
+under Surprises: the job filter needed a subject and a since, the running
+interval is recoverable from the row rather than needing a column, and the
+schedule's mail path is now shared. Nothing is proved on a server yet: the
+dev-server run and the maintainer's real goal belong with the drawer, in
+Milestones 3 and 4, since a goal nobody can see or clear from the
+dashboard is not something to point at a real mailbox.
 
 ## Context and Orientation
 
