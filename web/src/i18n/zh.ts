@@ -1166,12 +1166,10 @@ export const zh: Catalog = {
   'agent.forgetConfirm':
     '这会删除你的代理及其学到的一切：记忆、对话、运行记录，以及每个邮箱的洞察和摘要。你的邮件不受影响。',
   'agent.forgotten': '已忘记。',
-  'agentAdmin.tabAgents': '助手',
   'agentAdmin.tabUsage': '用量与费用',
   'agentAdmin.tabRuns': '运行记录',
   'agentAdmin.tabGeneral': '常规',
-  'agentAdmin.tabModels': '提供方与模型',
-  'agentAdmin.tabFeatures': '功能与限额',
+  'agentAdmin.tabModels': '模型、功能与限额',
   'agentAdmin.tabTools': '工具与服务器',
   'agentAdmin.tabSkills': '技能',
   'agentAdmin.openConversation': '打开对话',

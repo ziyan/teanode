@@ -1126,9 +1126,13 @@ and its own backfill on. Mail vectors from the old model are left where they
 are; they match nothing, so that mailbox falls back to searching by words.
 
 **`triage`**, **`research`**, **`summarize`**, **`reply`**, **`ask`**,
-**`schedule`**, **`compact`** — Overrides per kind of work. Resolution is
-the override, else `fast` for triage, summarize and compact, else
-`default`.
+**`schedule`** — Overrides per kind of work. Resolution is the override,
+else `fast` for triage and summarize, else `default`.
+
+**`compact`** — The model that folds a long history into a note and names
+a conversation. Empty means the model the conversation itself is held
+with: a chat compacts on the chat's model, a dream on the scan model. Set
+it to fold every conversation with one model instead.
 
 **`choices`** — Models a person may pick for their own conversations. Empty
 means no choice: everyone uses the `ask` model. Processing never takes a

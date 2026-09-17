@@ -6,6 +6,6 @@
 // In a module of its own, with nothing imported, because the settings form
 // and the integrations page import each other, and a page importing a
 // constant from inside that cycle read it before it existed.
-export type AgentPart = 'general' | 'models' | 'features' | 'tools' | 'skills'
+export type AgentPart = 'general' | 'models' | 'tools' | 'skills'
 
-export const AGENT_PARTS: AgentPart[] = ['general', 'models', 'features', 'tools', 'skills']
+export const AGENT_PARTS: AgentPart[] = ['general', 'models', 'tools', 'skills']

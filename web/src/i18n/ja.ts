@@ -1207,12 +1207,10 @@ export const ja: Catalog = {
   'agent.forgetConfirm':
     'エージェントと学んだことすべて — 記憶、会話、実行記録、各メールボックスの分析と要約 — を削除します。メールはそのままです。',
   'agent.forgotten': '忘れました。',
-  'agentAdmin.tabAgents': 'エージェント',
   'agentAdmin.tabUsage': '使用量と費用',
   'agentAdmin.tabRuns': '実行記録',
   'agentAdmin.tabGeneral': '一般',
-  'agentAdmin.tabModels': 'プロバイダーとモデル',
-  'agentAdmin.tabFeatures': '機能と上限',
+  'agentAdmin.tabModels': 'モデル・機能・上限',
   'agentAdmin.tabTools': 'ツールとサーバー',
   'agentAdmin.tabSkills': 'スキル',
   'agentAdmin.openConversation': '会話を開く',

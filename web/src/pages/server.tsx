@@ -66,7 +66,7 @@ export function ServerPage() {
   // agent's own settings another; they are a row of the rail with tabs of
   // their own now, the settings among them.
   if (tab === 'agents') {
-    return <Navigate to="/agent" replace />
+    return <Navigate to="/agent/general" replace />
   }
   if (tab === 'agent') {
     return <Navigate to="/agent/general" replace />

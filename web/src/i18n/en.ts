@@ -1214,12 +1214,10 @@ export const en = {
   'agent.forgetConfirm':
     "This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox's insights and summaries. Your mail is untouched.",
   'agent.forgotten': 'Forgotten.',
-  'agentAdmin.tabAgents': 'Agents',
   'agentAdmin.tabUsage': 'Use and cost',
   'agentAdmin.tabRuns': 'Runs',
   'agentAdmin.tabGeneral': 'General',
-  'agentAdmin.tabModels': 'Providers and models',
-  'agentAdmin.tabFeatures': 'Features and limits',
+  'agentAdmin.tabModels': 'Models, features and limits',
   'agentAdmin.tabTools': 'Tools and servers',
   'agentAdmin.tabSkills': 'Skills',
   'agentAdmin.openConversation': 'Open the conversation',

@@ -92,12 +92,10 @@ function total(totals: UsageRow['totals']): number {
 // every run any of them made, and the jobs given up on: four subjects that
 // were one long page under the server's tabs.
 const AGENT_TABS: { id: string; label: Key }[] = [
-  { id: 'agents', label: 'agentAdmin.tabAgents' },
+  { id: 'general', label: 'agentAdmin.tabGeneral' },
   { id: 'usage', label: 'agentAdmin.tabUsage' },
   { id: 'runs', label: 'agentAdmin.tabRuns' },
-  { id: 'general', label: 'agentAdmin.tabGeneral' },
   { id: 'models', label: 'agentAdmin.tabModels' },
-  { id: 'features', label: 'agentAdmin.tabFeatures' },
   { id: 'tools', label: 'agentAdmin.tabTools' },
   { id: 'skills', label: 'agentAdmin.tabSkills' },
 ]
@@ -302,7 +300,8 @@ export function AgentAdminPage() {
           </SettingsSection>
         </>
       ) : null}
-      {tab === 'agents' ? (
+      {AGENT_PARTS.includes(tab as AgentPart) ? <IntegrationsSection section="agent" part={tab as AgentPart} /> : null}
+      {tab === 'general' ? (
         <>
           <SettingsSection card title={t('agentAdmin.agents')} description={t('agentAdmin.agentsHint')}>
             {agents.length === 0 ? (
@@ -357,7 +356,6 @@ export function AgentAdminPage() {
           </SettingsSection>
         </>
       ) : null}
-      {AGENT_PARTS.includes(tab as AgentPart) ? <IntegrationsSection section="agent" part={tab as AgentPart} /> : null}
       {tab === 'runs' ? (
         <>
           <SettingsSection card title={t('agentAdmin.deadLetters')}>
@@ -382,22 +380,20 @@ export function AgentAdminPage() {
                   }
                   actions={
                     <div className="row-actions">
-                      {/* What the job worked on, and what it tried: a
-                          remember job's subject is a conversation, which
-                          opens; any job's runs show in the Runs tab. */}
-                      {job.kind === 'remember' && job.subjectId ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!openAgentConversation(job.subjectId)) window.scrollTo(0, 0)
-                          }}
-                        >
-                          {t('agentAdmin.openConversation')}
-                        </button>
-                      ) : null}
-                      {tab === 'runs' ? (
-                        <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} />
-                      ) : null}
+                      {/* What the job tried: its latest run is a
+                          conversation of its own, which opens; when the
+                          job never got as far as a run, a remember job's
+                          subject conversation opens instead. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void openJobConversation(job).then((opened) => {
+                            if (!opened) window.scrollTo(0, 0)
+                          })
+                        }}
+                      >
+                        {t('agentAdmin.openConversation')}
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -419,6 +415,7 @@ export function AgentAdminPage() {
               ))
             )}
           </SettingsSection>
+          <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} />
         </>
       ) : null}
 
@@ -491,6 +488,17 @@ const ALL_RUNS = `
       runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
     }
   }`
+
+// openJobConversation opens the conversation of the job's latest run, the
+// one that shows what it tried and where it failed, rather than the
+// conversation the job was about.
+async function openJobConversation(job: Job): Promise<boolean> {
+  const answer = await graphql<{ ListAllAgentRuns: { runs: Run[] } }>(ALL_RUNS, { first: 1, jobId: job.id })
+  const run = answer.ListAllAgentRuns.runs[0]
+  if (run) return openAgentConversation(run.id)
+  if (job.kind === 'remember' && job.subjectId) return openAgentConversation(job.subjectId)
+  return false
+}
 
 type Run = {
   id: string

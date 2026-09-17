@@ -239,18 +239,14 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
             onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
           />
           <ModelsForm settings={settings} onSaved={onSaved} known={known} />
-        </>
-      ) : null}
-      {shows('features') ? (
-        <>
           <FeaturesForm settings={settings} onSaved={onSaved} />
           <LimitsForm settings={settings} onSaved={onSaved} />
-          <SearchForm settings={settings} onSaved={onSaved} />
         </>
       ) : null}
       {shows('tools') ? (
         <>
           <ToolsForm settings={settings} onSaved={onSaved} />
+          <SearchForm settings={settings} onSaved={onSaved} />
           <BrowserForm settings={settings} onSaved={onSaved} />
           <ServersSection settings={settings} onSaved={onSaved} />
         </>

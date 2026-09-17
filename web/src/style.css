@@ -8788,3 +8788,14 @@ a.knowledge-chip {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* A search box as a section's action keeps to its own width and the head
+   wraps under it on a phone, rather than the box taking the row and the
+   title breaking into one word per line beside it. */
+.settings-section-head {
+  flex-wrap: wrap;
+}
+.settings-section-head > input[type='search'] {
+  flex: 0 1 16rem;
+  min-width: 10rem;
+}

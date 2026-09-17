@@ -161,7 +161,9 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		return mark("", "")
 	}
 	prompt := "This is the recent part of a conversation between a person and their assistant. Answer with JSON only: {\"title\": a name for the conversation of at most five words, no quotes and no full stop; \"summary\": one sentence on what it is about now}. Write both in the language the person writes in — English when they write English.\n\n" + transcript
-	thinking, err := self.oneShot(ctx, self.runFor(agent, owner, nil, conversation.ID), "Named a conversation", prompt, models.AgentJobDescribe, config.AgentWorkCompact)
+	// Titled by the compact model when one is set, else by the model the
+	// conversation itself is held with.
+	thinking, err := self.oneShot(ctx, self.runFor(agent, owner, nil, conversation.ID), "Named a conversation", prompt, models.AgentJobDescribe, compactWork(self.settings.Configuration(), config.AgentWorkAsk))
 	if err != nil {
 		// The provider was not there: nothing is marked, and the next
 		// look tries again.
