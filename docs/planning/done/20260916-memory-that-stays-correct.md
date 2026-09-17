@@ -105,12 +105,12 @@ evaluate` prints a table of hits and misses over the question set.
   shape of the file and a starter set of ten examples are in
   `docs/evaluation/`. No snapshot switches: a stage is measured by
   running the set either side of a night, as the Decision Log says.
-- [ ] Milestone 8: docs and retrospective (completed 2026-09-17 22:50Z:
-  `memory.md` describes elapsed-time decay and the watermark, the
-  evidence check and the inferred marking, and rehearsal's three
-  outcomes; remaining: the two edge statuses and the evaluation command
-  once Milestones 5 and 7 land, `command-line.md`, and the
-  retrospective's numbers).
+- [x] (2026-09-17 23:25Z) Milestone 8: docs and retrospective. `memory.md`
+  describes elapsed-time decay and the watermark, the evidence check and
+  the inferred marking, rehearsal's three outcomes, the two edge statuses
+  and what a proposed link looks like; `command-line.md` lists `agent
+  memory evaluate`; the first numbers are under Artifacts; the
+  retrospective is written.
 
 - [x] (2026-09-17 12:55Z) Chrome check of Milestone 1's one visible change:
   on the dev server a near-duplicate fact written from the Facts card was
@@ -405,7 +405,28 @@ evaluate` prints a table of hits and misses over the question set.
 
 ## Outcomes & Retrospective
 
-To be written at the end of each milestone and at completion.
+**Completion (2026-09-17 23:25Z).** All eight milestones are in, deployed
+on the maintainer's server behind migrations 0084 to 0086, and pushed to
+the pull request; the plan moves to done with it. Milestones 5 and 7 were
+built by two subagents in worktrees from this plan alone and merged
+without a conflict in code, which says the plan was specific enough. Two
+places its letter did not match the tree are under Surprises: no edge
+ever reached the prompt index, so "kept out of the index" was true by
+construction and the hedge went where a link actually becomes prompt
+text; and neither explorer has a dialog that opens on a link, so
+"proposed" sits beside the relation instead.
+
+What the day's runs taught, beyond the milestones: a night's reading was
+stopped by one unanswered batch and now rides through two; a goal's own
+turns counted as the person talking and kept nights from starting; and
+the first evaluation, fourteen of twenty, puts numbers on the two things
+the plan left for later -- the fold's choice of which duplicate survives,
+and recall that does not hop. Still to be seen on the server: a night
+under Milestone 5 writing proposed edges, and the Chrome check of a
+dashed one at 1600 and 420 wide, which the extension's disconnect this
+evening put off; the dev-server run of the explorer with a proposed edge
+written by hand is the way to see it before then.
+
 
 Milestones 3, 4 and 6 (2026-09-17 14:55Z). The three are independent and
 landed as three commits on one branch; what is written above under
@@ -857,9 +878,36 @@ database that already has the column.
 
 ## Artifacts and Notes
 
-To be filled: the count of `fact_gone` revisions by actor before and after
-Milestone 1; the first evaluation table; the associate-off and associate-on
-totals.
+The first evaluation (2026-09-17 23:20Z), twenty questions written from
+the maintainer's own graph, four of each kind, kept outside the repository
+because they name their work; run against the maintainer's server the
+minute the evaluation command was deployed, before any night had run under
+Milestones 5 and 7:
+
+| kind | hit |
+| --- | --- |
+| direct | 3 of 4 |
+| paraphrase | 4 of 4 |
+| changed | 1 of 4 |
+| multihop | 2 of 4 |
+| abstain | 4 of 4 |
+| all | 14 of 20 |
+
+What the misses say. The three `changed` misses are all folds of
+near-duplicate facts where the surviving wording was not carried and the
+dormant one was not either: the fold kept the older row, and the question
+was written for the newer wording, so the set is telling on the fold's
+choice of survivor as much as on recall. The two `multihop` misses are
+the plan's expectation: recall does not hop along links today, and a
+question that needs the second page misses it. The one `direct` miss is
+a fact of two hundred words that the recall budget cut. The associate-off
+and associate-on comparison waits for a night that writes proposed links:
+at deployment every one of the 773 edges is stated.
+
+The `fact_gone` count by actor before and after Milestone 1 was not
+taken: the dream's `fact_gone` revisions stopped the day the fold landed,
+which the Surprises under Milestone 1 record, and a count of zero after
+is the number.
 
 ## Sources
 
