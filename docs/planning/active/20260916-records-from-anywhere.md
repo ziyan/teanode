@@ -187,6 +187,22 @@ agent a question only those documents answer.
   under five percent of the archive, re-embedding the changed units is
   a few dollars, and the 16,483 units that no longer exist are removed
   by the new rule that a full pass deletes what it did not see.
+- Observation: a verification pass over the converted archive ran at a few
+  hundred units a minute, and three things stood in its way, none of them
+  the reader. The server sent the daemon the hashes of everything the
+  source holds with every page, fifty megabytes a page of two hundred and
+  fifty entries; the map now travels once a pass under the pass's name
+  (`KnownID`), and the daemon keeps it. The claim that serializes a
+  computer's readers was held for a whole ingest job, and a job describing
+  a checkout held it through a model call of minutes; the claim now covers
+  one request. And the worker had two slots, one taken by the dream and
+  the other by the projects source waiting on the station, so the chat
+  job sat queued; `limits.concurrency` went to three, which needs a
+  restart the status line did not mention until it was listed as read at
+  startup. With all three: 110,592 units seen in seven minutes.
+  Evidence: goroutine profiles from `docker kill -s QUIT` on 2026-09-17,
+  05:20Z to 05:40Z, showing `describeCheckout` → `think` under
+  `readFromComputer`; commits e090dd5, aebcf8a, 2acdcc8.
 - Observation: the owner check the refresh script needs cannot be written
   in one file. `syscall.Stat_t` does not exist on Windows and this package
   is built there (`process_windows.go`, `internal/cmd/computer_windows.go`),
