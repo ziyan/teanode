@@ -138,6 +138,38 @@ func TestAPageOverTheBudgetIsPassedOver(t *testing.T) {
 	}
 }
 
+// Asking what a turn would be carried carries it, and leaves the graph
+// exactly as it was.
+//
+// The evaluation replays a question set through this, so a run of it that
+// moved `used_at` would feed importance and decay and change the thing it
+// is measuring: the second run of the same set would be graded against a
+// graph the first run had already rearranged.
+func TestRecallingForAQuestionMarksNothingAsUsed(t *testing.T) {
+	world := newRecallWorld(t)
+
+	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.",
+		"Runs on the Frankfurt cluster.")
+
+	pages, err := world.run.agent.RecallForQuestion(context.Background(),
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on?")
+	if err != nil {
+		t.Fatalf("RecallForQuestion: %s", err)
+	}
+	carried := ""
+	for _, page := range pages {
+		for _, fact := range page.Facts {
+			carried += page.Path + " " + fact.Text + "\n"
+		}
+	}
+	if !strings.Contains(carried, "projects/portal") || !strings.Contains(carried, "Frankfurt") {
+		t.Fatalf("the page the question is about is carried:\n%s", carried)
+	}
+	if count := world.wanted(t, node); count != 0 {
+		t.Fatalf("an evaluation marks nothing as used, and %d fact was", count)
+	}
+}
+
 // A page the prompt's own index already names still has its facts
 // expanded when the turn's words hit it.
 //

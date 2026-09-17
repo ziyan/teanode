@@ -75,6 +75,25 @@ type AgentGraphSearch struct {
 	Facts []*AgentLearnedFact `json:"facts"`
 }
 
+// AgentRecall is what a turn asking a question would have been carried
+// from the graph: the pages, each with the facts recall would have put in
+// front of the model.
+type AgentRecall struct {
+	Pages []*AgentRecalledPage `json:"pages"`
+}
+
+// AgentRecalledPage is one of those pages.
+type AgentRecalledPage struct {
+	Path  string               `json:"path"`
+	Facts []*AgentRecalledFact `json:"facts"`
+}
+
+// AgentRecalledFact is a fact as the page cites it.
+type AgentRecalledFact struct {
+	Number int    `json:"number"`
+	Text   string `json:"text"`
+}
+
 // AgentKnowledgeSource is a place the agent reads.
 type AgentKnowledgeSource struct {
 	ID             string                      `json:"id"`
@@ -166,6 +185,11 @@ const (
 			facts { fact ` + factFields + ` path name }
 		}
 	}`
+	DocumentRecallAgentMemory = `query ($question: String!) {
+		RecallAgentMemory(question: $question) {
+			pages { path facts { number text } }
+		}
+	}`
 	DocumentListAgentLearned = `query ($days: Int, $first: Int) {
 		ListAgentLearned(days: $days, first: $first) { fact ` + factFields + ` path name }
 	}`
@@ -235,6 +259,18 @@ func SearchAgentGraph(ctx context.Context, connection *Client, query string, fir
 		return nil, err
 	}
 	return result.SearchAgentGraph, nil
+}
+
+// RecallAgentMemory is what a turn asking this question would have been
+// carried from the graph. It asks nothing of a model and changes nothing.
+func RecallAgentMemory(ctx context.Context, connection *Client, question string) (*AgentRecall, error) {
+	var result struct {
+		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
+	}
+	if err := connection.Execute(ctx, DocumentRecallAgentMemory, map[string]any{"question": question}, &result); err != nil {
+		return nil, err
+	}
+	return result.RecallAgentMemory, nil
 }
 
 // ListAgentLearned is what has been filed lately.

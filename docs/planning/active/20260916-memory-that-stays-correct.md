@@ -89,8 +89,16 @@ evaluate` prints a table of hits and misses over the question set.
   still to be seen, since the first dreams of the day were each cut short
   by a deploy restart and the facts filed so far cite documents without
   quoting them.
-- [ ] Milestone 7: the question set and `teanode agent memory evaluate`,
-  with a snapshot and per-stage switches.
+- [x] (2026-09-17 22:54Z) Milestone 7: the question set and `teanode agent
+  memory evaluate`. A question is replayed through the turn's own recall
+  over a new query, `RecallAgentMemory`, which answers with the pages and
+  facts a turn would have been carried and asks no model and marks
+  nothing as used; the command grades each question against what came
+  back and prints hits, misses with the expectation that failed, totals
+  per kind, and `--json`, exiting non-zero when anything missed. The
+  shape of the file and a starter set of ten examples are in
+  `docs/evaluation/`. No snapshot switches: a stage is measured by
+  running the set either side of a night, as the Decision Log says.
 - [ ] Milestone 8: docs and retrospective (completed 2026-09-17 22:50Z:
   `memory.md` describes elapsed-time decay and the watermark, the
   evidence check and the inferred marking, and rehearsal's three
@@ -106,6 +114,28 @@ evaluate` prints a table of hits and misses over the question set.
   tree at 12:33Z).
 
 ## Surprises & Discoveries
+
+- Observation (2026-09-17 22:54Z): `writeRecalled` could not be reused as
+  it stood. It chose what fit the budget, wrote it into the overlay and
+  moved `used_at` over it in one pass, and an evaluation wants the first
+  of those three and none of the others: a run of the set that marked
+  every carried fact as used would feed importance and decay, so the
+  second run of the same set would be graded against a graph the first
+  had rearranged. The choosing is now `chooseRecalled`, which returns the
+  blocks and touches nothing, and `writeRecalled` is what writes them and
+  marks them. `RecallForQuestion` calls the search and the choosing and
+  stops there, which is what makes the evaluation free and repeatable.
+- Observation (2026-09-17 22:54Z): a fact can be carried both ways. A
+  page is expanded with its first five facts, and a sixth fact of the
+  same page can still come back as a loose hit, so the recall result is
+  gathered by path rather than listed block by block -- otherwise a
+  question would see two entries for one page and a claim graded against
+  whichever came first.
+- Observation (2026-09-17 22:54Z): an abstain question that lists
+  `expects` is a mistake in the file, not a graph that forgot something.
+  The grading says so in the row rather than grading it, because a set
+  that quietly passes the question it contradicts is worse than one that
+  fails loudly.
 
 - Observation (2026-09-17 15:00Z): a night's reading stopped at the
   first batch the model did not answer, and on the local model a stream

@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -119,6 +121,13 @@ func newAgentGraphCommands() []*cli.Command {
 				&cli.IntFlag{Name: "first", Usage: "how many", Value: 50},
 			},
 			Action: runAgentGraphHistory,
+		},
+		{
+			Name:      "evaluate",
+			Usage:     "replay a set of questions through recall and say which ones got the facts they needed",
+			ArgsUsage: "<file>",
+			Flags:     []cli.Flag{JSONFlag()},
+			Action:    runAgentGraphEvaluate,
 		},
 		{
 			Name:  "learned",
@@ -963,6 +972,312 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 		}
 	}
 	return nil
+}
+
+// --- the evaluation ---------------------------------------------------
+
+// A question set is replayed through recall alone: for each question, the
+// pages and facts a turn would have been carried, graded against what the
+// question says it needs. No model is asked anything, so the whole set
+// runs in seconds, costs nothing, and gives the same answer twice over
+// the same graph -- which is what makes it worth running before and after
+// a night to see what the night was worth.
+//
+// What it does not measure is the answer. Whether the model then used the
+// facts it was given is a second evaluation, with a grader and a bill;
+// this one says whether it had them at all, which is the failure the
+// memory work of this plan is about.
+
+// The kinds of question a set holds, spelled out because the totals are
+// per kind and a typo would otherwise become a kind of its own.
+const (
+	questionDirect     = "direct"     // the words of the fact itself
+	questionParaphrase = "paraphrase" // the same thing said another way
+	questionChanged    = "changed"    // a fact that was corrected; the old one must not come back
+	questionMultihop   = "multihop"   // needs two pages
+	questionAbstain    = "abstain"    // there is nothing to carry, and nothing should be
+)
+
+// questionKinds is the same list in the order the totals are printed.
+var questionKinds = []string{questionDirect, questionParaphrase, questionChanged, questionMultihop, questionAbstain}
+
+// evaluationQuestion is one question of the set as the file holds it.
+// docs/evaluation/README.md describes the shape.
+type evaluationQuestion struct {
+	ID       string            `json:"id"`
+	Question string            `json:"question"`
+	Kind     string            `json:"kind"`
+	Expects  []evaluationClaim `json:"expects"`
+	Forbids  []evaluationClaim `json:"forbids"`
+}
+
+// evaluationClaim is a fact the question needs recall to carry, or must
+// not carry: the page it sits on and the words it says. A claim with no
+// words is about the page alone -- anything carried from it answers it --
+// which is how an abstain question says "nothing from here".
+type evaluationClaim struct {
+	Path  string   `json:"path"`
+	Words []string `json:"words"`
+}
+
+// evaluationOutcome is how one question did, and why when it missed.
+type evaluationOutcome struct {
+	Hit bool `json:"hit"`
+
+	// Failed names the first expectation that was not met, in the words a
+	// person would use to look for it themselves.
+	Failed string `json:"failed,omitempty"`
+}
+
+// evaluationResult is one row of the table and of the JSON.
+type evaluationResult struct {
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Question string `json:"question"`
+	Hit      bool   `json:"hit"`
+	Failed   string `json:"failed,omitempty"`
+
+	// Carried is every fact recall would have put in front of the model,
+	// as the page cites it, so a miss can be read without running the
+	// question again by hand.
+	Carried []string `json:"carried"`
+}
+
+// evaluationTotal is how one kind of question did.
+type evaluationTotal struct {
+	Kind  string `json:"kind"`
+	Hits  int    `json:"hits"`
+	Asked int    `json:"asked"`
+}
+
+// evaluationReport is the whole run, for --json.
+type evaluationReport struct {
+	Questions []*evaluationResult `json:"questions"`
+	Totals    []*evaluationTotal  `json:"totals"`
+	Hits      int                 `json:"hits"`
+	Asked     int                 `json:"asked"`
+}
+
+// gradeRecall says whether what recall carried holds the facts a question
+// needs, and names the first expectation that was not met.
+//
+// Given the carried set rather than a connection, so that the grading --
+// which is the part with rules in it -- is tested without a server.
+func gradeRecall(question evaluationQuestion, carried []*client.AgentRecalledPage) evaluationOutcome {
+	// An abstain question is the one kind whose expectations are only
+	// negative: it exists to catch memory that answers anyway. One that
+	// lists expects is a mistake in the file rather than a graph that
+	// forgot something, and saying so is more use than grading it.
+	if question.Kind == questionAbstain && len(question.Expects) > 0 {
+		return evaluationOutcome{Failed: "an abstain question expects nothing; drop its expects or change its kind"}
+	}
+	for _, claim := range question.Expects {
+		if !carriesClaim(carried, claim) {
+			return evaluationOutcome{Failed: "did not carry " + describeClaim(claim)}
+		}
+	}
+	for _, claim := range question.Forbids {
+		if carriesClaim(carried, claim) {
+			return evaluationOutcome{Failed: "carried " + describeClaim(claim)}
+		}
+	}
+	return evaluationOutcome{Hit: true}
+}
+
+// carriesClaim says whether the carried pages hold a fact on the claim's
+// page containing every one of its words, compared without case.
+func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bool {
+	path := strings.TrimSpace(claim.Path)
+	for _, page := range carried {
+		if page == nil || !strings.EqualFold(strings.TrimSpace(page.Path), path) {
+			continue
+		}
+		for _, fact := range page.Facts {
+			if fact == nil {
+				continue
+			}
+			if factSays(fact.Text, claim.Words) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// factSays is whether one fact contains every word of a claim.
+func factSays(text string, words []string) bool {
+	lowered := strings.ToLower(text)
+	for _, word := range words {
+		if !strings.Contains(lowered, strings.ToLower(strings.TrimSpace(word))) {
+			return false
+		}
+	}
+	return true
+}
+
+// describeClaim is a claim as a person would say it out loud.
+func describeClaim(claim evaluationClaim) string {
+	if len(claim.Words) == 0 {
+		return "anything on " + claim.Path
+	}
+	return claim.Path + " saying \"" + strings.Join(claim.Words, " ") + "\""
+}
+
+// readQuestionSet reads the file and refuses anything the grading could
+// only misreport: a question of no kind, one that asks nothing, two with
+// the same identifier.
+func readQuestionSet(path string) ([]evaluationQuestion, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var questions []evaluationQuestion
+	if err := json.Unmarshal(content, &questions); err != nil {
+		return nil, fmt.Errorf("%s is not a list of questions: %w", path, err)
+	}
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("%s holds no questions", path)
+	}
+	seen := map[string]bool{}
+	for index, question := range questions {
+		where := question.ID
+		if where == "" {
+			where = "question " + strconv.Itoa(index+1)
+		}
+		if strings.TrimSpace(question.ID) == "" {
+			return nil, fmt.Errorf("%s has no id; the table and the totals are read by it", where)
+		}
+		if strings.TrimSpace(question.Question) == "" {
+			return nil, fmt.Errorf("%s asks nothing", where)
+		}
+		if !knownQuestionKind(question.Kind) {
+			return nil, fmt.Errorf("%s is of kind %q; it has to be one of %s", where, question.Kind, strings.Join(questionKinds, ", "))
+		}
+		if seen[question.ID] {
+			return nil, fmt.Errorf("two questions are called %q", question.ID)
+		}
+		seen[question.ID] = true
+	}
+	return questions, nil
+}
+
+func knownQuestionKind(kind string) bool {
+	for _, known := range questionKinds {
+		if kind == known {
+			return true
+		}
+	}
+	return false
+}
+
+func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which question set? teanode agent memory evaluate docs/evaluation/memory-questions.json")
+	}
+	questions, err := readQuestionSet(command.Args().First())
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	report := &evaluationReport{Questions: make([]*evaluationResult, 0, len(questions)), Asked: len(questions)}
+	for _, question := range questions {
+		recalled, err := client.RecallAgentMemory(ctx, connection, question.Question)
+		if err != nil {
+			return describeError(command, err)
+		}
+		var carried []*client.AgentRecalledPage
+		if recalled != nil {
+			carried = recalled.Pages
+		}
+		outcome := gradeRecall(question, carried)
+		if outcome.Hit {
+			report.Hits++
+		}
+		report.Questions = append(report.Questions, &evaluationResult{
+			ID:       question.ID,
+			Kind:     question.Kind,
+			Question: question.Question,
+			Hit:      outcome.Hit,
+			Failed:   outcome.Failed,
+			Carried:  citeCarried(carried),
+		})
+	}
+	report.Totals = totalsByKind(report.Questions)
+
+	if command.Bool("json") {
+		if err := PrintJSON(report); err != nil {
+			return err
+		}
+		return missedQuestions(report)
+	}
+	rows := make([][]string, 0, len(report.Questions))
+	for _, result := range report.Questions {
+		outcome := "hit"
+		if !result.Hit {
+			outcome = "miss"
+		}
+		rows = append(rows, []string{result.Kind, result.ID, outcome, result.Failed})
+	}
+	if err := printTable([]string{"kind", "id", "", "what it missed"}, rows); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(command.Writer)
+	for _, total := range report.Totals {
+		_, _ = fmt.Fprintf(command.Writer, "%s: %d of %d\n", total.Kind, total.Hits, total.Asked)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "all: %d of %d\n", report.Hits, report.Asked)
+	return missedQuestions(report)
+}
+
+// missedQuestions is the error a set with a miss in it ends on, so that a
+// script running the set before and after a night fails on the set and
+// not on the reading of it.
+func missedQuestions(report *evaluationReport) error {
+	if report.Hits == report.Asked {
+		return nil
+	}
+	return fmt.Errorf("%d of %d questions did not get the facts they needed", report.Asked-report.Hits, report.Asked)
+}
+
+// citeCarried is everything recall carried, as the page cites it.
+func citeCarried(carried []*client.AgentRecalledPage) []string {
+	cited := []string{}
+	for _, page := range carried {
+		if page == nil {
+			continue
+		}
+		for _, fact := range page.Facts {
+			if fact == nil {
+				continue
+			}
+			cited = append(cited, page.Path+"#"+strconv.Itoa(fact.Number))
+		}
+	}
+	return cited
+}
+
+// totalsByKind counts the hits of each kind that was asked about, in the
+// order the kinds are declared.
+func totalsByKind(results []*evaluationResult) []*evaluationTotal {
+	hits := map[string]int{}
+	asked := map[string]int{}
+	for _, result := range results {
+		asked[result.Kind]++
+		if result.Hit {
+			hits[result.Kind]++
+		}
+	}
+	totals := make([]*evaluationTotal, 0, len(questionKinds))
+	for _, kind := range questionKinds {
+		if asked[kind] == 0 {
+			continue
+		}
+		totals = append(totals, &evaluationTotal{Kind: kind, Hits: hits[kind], Asked: asked[kind]})
+	}
+	return totals
 }
 
 // --- small helpers ----------------------------------------------------
