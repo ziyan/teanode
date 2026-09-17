@@ -248,7 +248,7 @@ interface RunEvent {
 type Line =
   | { kind: 'user'; key: string; text: string; at?: string; attachments?: Attachment[]; references?: AgentReference[] }
   | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
-  | { kind: 'tool'; key: string; tool: string; note: string; done: boolean; arguments?: string; result?: string }
+  | { kind: 'tool'; key: string; tool: string; note: string; done: boolean; arguments?: string; result?: string; at?: string }
   | {
       kind: 'confirmation'
       key: string
@@ -567,6 +567,9 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
             done: true,
             arguments: call.arguments,
             result: results.get(call.id),
+            // Timed like every other line, so the day divider does not
+            // land under the tool calls that open a day.
+            at: message.createdAt,
           })
         }
         break
@@ -1544,6 +1547,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             note: '',
             done: false,
             arguments: event.arguments,
+            at: event.at,
           })
           return next
         case 'tool_result': {
