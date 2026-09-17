@@ -9,6 +9,7 @@ import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs } from '../components/tabs'
+import { AGENT_PARTS, AgentPart } from './settings/agentSettings'
 import { IntegrationsSection } from './settings/integrations'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -95,7 +96,11 @@ const AGENT_TABS: { id: string; label: Key }[] = [
   { id: 'usage', label: 'agentAdmin.tabUsage' },
   { id: 'runs', label: 'agentAdmin.tabRuns' },
   { id: 'jobs', label: 'agentAdmin.tabJobs' },
-  { id: 'settings', label: 'agentAdmin.tabSettings' },
+  { id: 'general', label: 'agentAdmin.tabGeneral' },
+  { id: 'models', label: 'agentAdmin.tabModels' },
+  { id: 'features', label: 'agentAdmin.tabFeatures' },
+  { id: 'tools', label: 'agentAdmin.tabTools' },
+  { id: 'skills', label: 'agentAdmin.tabSkills' },
 ]
 
 export function AgentAdminPage() {
@@ -111,7 +116,7 @@ export function AgentAdminPage() {
   const tabs = AGENT_TABS.filter(
     (candidate) =>
       (candidate.id !== 'runs' || hasPermission(session.permissions, 'agent:act')) &&
-      (candidate.id !== 'settings' || hasPermission(session.permissions, 'server:manage')),
+      (!AGENT_PARTS.includes(candidate.id as AgentPart) || hasPermission(session.permissions, 'server:manage')),
   )
   // The job whose runs the Runs tab is narrowed to, from a job given up
   // on: what it tried is the way to see why it failed.
@@ -354,7 +359,7 @@ export function AgentAdminPage() {
         </>
       ) : null}
       {tab === 'runs' ? <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} /> : null}
-      {tab === 'settings' ? <IntegrationsSection section="agent" /> : null}
+      {AGENT_PARTS.includes(tab as AgentPart) ? <IntegrationsSection section="agent" part={tab as AgentPart} /> : null}
       {tab === 'jobs' ? (
         <>
           <SettingsSection card title={t('agentAdmin.deadLetters')}>

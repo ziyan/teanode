@@ -205,7 +205,15 @@ function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
 
 type Props = { settings: Agent; onSaved: () => Promise<unknown> | unknown }
 
-export function AgentForm({ settings, onSaved }: Props) {
+// AgentPart is one tab's worth of the operator's agent settings: what
+// agents are allowed at all, the providers and models, what they may do
+// and how much, the tools and servers they reach, the installed skills.
+// One long form was every one of these under each other.
+export type AgentPart = 'general' | 'models' | 'features' | 'tools' | 'skills'
+
+export const AGENT_PARTS: AgentPart[] = ['general', 'models', 'features', 'tools', 'skills']
+
+export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPart }) {
   const [known, setKnown] = useState<string[]>([])
 
   // The model pickers are fed by what the enabled providers offer, read
@@ -224,22 +232,35 @@ export function AgentForm({ settings, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(settings.providers)])
 
+  const shows = (candidate: AgentPart) => !part || part === candidate
   return (
     <>
-      <GeneralForm settings={settings} onSaved={onSaved} />
-      <ProvidersSection
-        settings={settings}
-        onSaved={onSaved}
-        onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
-      />
-      <ModelsForm settings={settings} onSaved={onSaved} known={known} />
-      <FeaturesForm settings={settings} onSaved={onSaved} />
-      <LimitsForm settings={settings} onSaved={onSaved} />
-      <ToolsForm settings={settings} onSaved={onSaved} />
-      <SearchForm settings={settings} onSaved={onSaved} />
-      <BrowserForm settings={settings} onSaved={onSaved} />
-      <ServersSection settings={settings} onSaved={onSaved} />
-      <SkillsSection />
+      {shows('general') ? <GeneralForm settings={settings} onSaved={onSaved} /> : null}
+      {shows('models') ? (
+        <>
+          <ProvidersSection
+            settings={settings}
+            onSaved={onSaved}
+            onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
+          />
+          <ModelsForm settings={settings} onSaved={onSaved} known={known} />
+        </>
+      ) : null}
+      {shows('features') ? (
+        <>
+          <FeaturesForm settings={settings} onSaved={onSaved} />
+          <LimitsForm settings={settings} onSaved={onSaved} />
+          <SearchForm settings={settings} onSaved={onSaved} />
+        </>
+      ) : null}
+      {shows('tools') ? (
+        <>
+          <ToolsForm settings={settings} onSaved={onSaved} />
+          <BrowserForm settings={settings} onSaved={onSaved} />
+          <ServersSection settings={settings} onSaved={onSaved} />
+        </>
+      ) : null}
+      {shows('skills') ? <SkillsSection /> : null}
     </>
   )
 }

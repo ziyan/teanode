@@ -69,7 +69,7 @@ export function ServerPage() {
     return <Navigate to="/agent" replace />
   }
   if (tab === 'agent') {
-    return <Navigate to="/agent/settings" replace />
+    return <Navigate to="/agent/general" replace />
   }
 
   // The certificates tab was called "dns" while the only DNS on this page was

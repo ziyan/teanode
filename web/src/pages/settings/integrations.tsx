@@ -5,7 +5,7 @@ import { ErrorMessage, Loading, SaveRow, Tag, useSaySaved } from '../../componen
 import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
-import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
+import { AGENT_SELECTION, Agent, AgentForm, AgentPart } from './agentSettings'
 import {
   GeoIPForm,
   IdentityForm,
@@ -269,7 +269,7 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
 // of the Server page now rather than a page of their own, because what a
 // server sends mail through and where it keeps messages are the same subject
 // as which version it is running.
-export function IntegrationsSection({ section }: { section: Section }) {
+export function IntegrationsSection({ section, part }: { section: Section; part?: AgentPart }) {
   const { t } = useTranslation()
   const { data, error, loading, reload } = useQuery(() => graphql<{ GetSettings: Settings }>(SETTINGS), [])
 
@@ -328,7 +328,7 @@ export function IntegrationsSection({ section }: { section: Section }) {
         </>
       )}
       {section === 'spam' && <AntispamForm settings={settings.antispam} onSaved={reload} />}
-      {section === 'agent' && <AgentForm settings={settings.agent} onSaved={reload} />}
+      {section === 'agent' && <AgentForm settings={settings.agent} onSaved={reload} part={part} />}
     </>
   )
 }
