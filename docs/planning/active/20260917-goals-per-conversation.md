@@ -64,8 +64,14 @@ and the mark goes.
   silent-turn doubling, the resume on the person's turn, the mail when it
   stops, and the goal in the prompt's situation. Five tests with a
   scripted provider and a unit test for the doubling.
-- [ ] Milestone 3: the drawer: set, see, change, clear, and the list mark;
-  checked in Chrome at desktop and phone width.
+- [ ] (2026-09-17 12:23Z) Milestone 3: the drawer: the four fields on the
+  conversation documents and `goal` on `UPDATE`, `TargetIcon`, the target
+  button and the state chip in the head with the goal as its tooltip, the
+  `FormDialog` with the note read-only and Clear as its other action, the
+  two toasts, the coloured mark and the note in the picker rows, the
+  check-in drawn as one muted line, and the waiting note above the
+  composer. Not yet checked in Chrome at 1600 and 420 wide; that and the
+  dev-server run are the last of it.
 - [x] (2026-09-17 12:11Z) Milestone 4, the documents:
   `conversations.md` gains "A goal", `jobs-and-schedules.md` the `goal`
   kind and the table of how it differs from a schedule, `the-ask-loop.md`

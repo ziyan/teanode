@@ -216,6 +216,18 @@ export function StarIcon(props: IconProps) {
   )
 }
 
+// TargetIcon marks what a conversation is being aimed at: the goal the
+// agent keeps working toward until it is met or the person clears it.
+export function TargetIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </Icon>
+  )
+}
+
 // PriorityIcon marks the view of what the agent said matters today.
 export function PriorityIcon(props: IconProps) {
   return (

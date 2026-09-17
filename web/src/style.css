@@ -5136,6 +5136,117 @@ label.check-list-item {
   flex: 0 0 auto;
 }
 
+/* What this conversation is working toward, beside its name: a target to
+   press when there is no goal, and a chip carrying the state when there
+   is one.
+
+   The colour is the state and nothing else says it -- the accent while
+   the agent works, the warning colour while it waits for the person,
+   muted once the goal is met -- so that on a phone, where the words are
+   taken away and the mark is all that is left, the chip still says where
+   things stand. */
+.agent-drawer-goal-add {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.agent-drawer-goal-add:hover {
+  color: var(--text);
+}
+
+.agent-drawer-goal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Never wider than half the head: the conversation's own name is what
+     the person came to the drawer for. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.agent-drawer-goal:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.agent-drawer-goal > svg {
+  flex: 0 0 auto;
+}
+
+.agent-drawer-goal.working {
+  color: var(--accent);
+}
+
+.agent-drawer-goal.waiting {
+  color: var(--warn);
+}
+
+.agent-drawer-goal.met {
+  color: var(--muted);
+}
+
+.agent-drawer-goal-state {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* On a phone the head has room for the conversation's name and little
+   else, so the chip is the mark alone in the state's colour. The words
+   are not lost: GoalChip puts the state in the tooltip below this same
+   width, and the dialog says it too. */
+@media (max-width: 600px) {
+  .agent-drawer-goal {
+    padding: 4px;
+    border-radius: 50%;
+  }
+
+  .agent-drawer-goal-state {
+    display: none;
+  }
+}
+
+/* The state's mark before a conversation's name in the picker, in the
+   same three colours. */
+.agent-drawer-list-goal {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* The main conversation's name is a flex row with a gap of its own, and
+   the margin on top of it read as a gap twice as wide as the others. */
+.agent-drawer-list-row.main .agent-drawer-list-goal {
+  margin-right: 0;
+}
+
+.agent-drawer-list-goal.working {
+  color: var(--accent);
+}
+
+.agent-drawer-list-goal.waiting {
+  color: var(--warn);
+}
+
+.agent-drawer-list-goal.met {
+  color: var(--muted);
+}
+
+/* Where the agent has got to, under the goal in the dialog: read, not
+   edited, so it is prose rather than a field. */
+.agent-drawer-goal-said {
+  margin-top: var(--space-2);
+  font-size: 12px;
+}
+
 /* The conversations, hanging from the title like a menu: a row each, the
    open one marked, its actions appearing under the pointer, and a first
    row for starting another. */
@@ -5336,6 +5447,18 @@ label.check-list-item {
   color: var(--muted);
 }
 
+/* A turn the agent took toward the goal on its own. The message that
+   opens it is framing written for the model, not a person's words, so it
+   is one quiet line where their bubble would be. */
+.agent-line.checkin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .agent-line.confirmation {
   border: 1px solid var(--warn);
   background: var(--field);
@@ -5356,12 +5479,39 @@ label.check-list-item {
   font-size: 12px;
 }
 
+/* What the agent is waiting for, directly above the box: what it needs
+   is read where the person is about to give it, rather than somewhere up
+   the transcript they would have to scroll back for. It goes as soon as
+   they send. */
+.agent-drawer-goal-waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--field);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-drawer-goal-waiting > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--warn);
+}
+
 .agent-drawer-input {
   display: flex;
   gap: 8px;
   align-items: flex-end;
   padding: 10px;
   border-top: 1px solid var(--border);
+}
+
+/* The bar and the box read as one composer, so the rule between them
+   goes the way it does for the files waiting to be sent. */
+.agent-drawer-goal-waiting ~ .agent-drawer-input {
+  border-top: 0;
 }
 
 /* One row, everything in it 36px tall: the paperclip, the box on one
