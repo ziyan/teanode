@@ -355,7 +355,7 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 			for _, fact := range facts {
 				lines = append(lines, fact.Text)
 			}
-			t.Fatalf("the two that say nothing are gone and the one that says something stays:\n%s",
+			t.Fatalf("the two that say nothing are off the page and the one that says something stays:\n%s",
 				strings.Join(lines, "\n"))
 		}
 		if !strings.Contains(facts[0].Text, "fails the build") {
@@ -365,6 +365,16 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 		if facts[0].Version == "0.0.1-old" || facts[0].Version == "" {
 			t.Fatalf("what was looked at carries the build that looked, not %q", facts[0].Version)
 		}
+		// Struck, not deleted: both rows are still there, out of what the
+		// page states and readable by anybody who wants to know what the
+		// dream decided.
+		all, err := tx.ListAgentFacts(found.ID, page.ID, true, 50)
+		if err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+		if len(all) != 3 {
+			t.Fatalf("nothing was deleted, so the page still holds three rows, not %d", len(all))
+		}
 		// And the striking is in the page's history, so it can be undone.
 		revisions, err := tx.ListAgentRevisions(found.ID, page.ID, 50)
 		if err != nil {
@@ -372,7 +382,13 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 		}
 		struck := 0
 		for _, revision := range revisions {
-			if revision.Kind == models.RevisionFactGone && revision.Actor == models.ActorDream {
+			if revision.Actor != models.ActorDream {
+				continue
+			}
+			if revision.Kind == models.RevisionFactGone {
+				t.Fatalf("a dream deletes nothing, so it leaves no %q", models.RevisionFactGone)
+			}
+			if revision.Kind == models.RevisionFactStruck {
 				struck++
 				if revision.TextBefore() == "" {
 					t.Fatalf("with what the line used to say")

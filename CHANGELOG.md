@@ -27,7 +27,10 @@ Notable changes to TeaNode. The format follows
 - It writes what it learns without being asked. A job runs after a conversation
   goes quiet and files what the conversation taught, so what you told it on
   Tuesday is there on Wednesday. Before this the model had to decide to write
-  during a turn, and given a task and a memory tool it did the task.
+  during a turn, and given a task and a memory tool it did the task. A
+  conversation with more in it than one run can read is read oldest first,
+  sixty messages at a time, over as many runs as it takes, so a long thread
+  you left running has nothing in it quietly skipped.
 
 - You can point it at what you already have: a checkout on one of your
   computers, a chat archive, your notes. It reads them on the machine they are
@@ -40,7 +43,13 @@ Notable changes to TeaNode. The format follows
   links between pages you used together, lets what nothing has wanted sink out
   of the way, and walks the graph looking for connections nobody wrote down.
   Then it asks itself the questions you are likely to ask tomorrow and writes
-  down the ones it could not answer. It never deletes anything.
+  down the ones it could not answer. It never deletes anything: a line it
+  decides repeats another goes dormant behind that one instead, and the page
+  lists what was folded under its facts, greyed, each saying which number
+  absorbed it. A correction is not a repetition — where one of two sentences
+  says "no longer" or "never" and the other does not, both are kept and the
+  page states the later one. Only your own "forget this" removes a row, and
+  what it removes is written into the page's history first.
 
 - A project's page is an orientation, not a history: where the checkout
   is and on which computer, its remote, what it calls itself, what it is

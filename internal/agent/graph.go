@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/lib/pq"
 
@@ -492,11 +493,19 @@ func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limi
 }
 
 // writeRecalled expands what was found into the overlay the next round
-// sees, under a token budget, skipping whatever the index already carries.
+// sees, under a token budget.
+//
+// A page is built, measured, and only then written and counted as used.
+// It used to be counted as it was built, so a block that turned out not
+// to fit still marked every fact in it as wanted: `used_at` moved on
+// facts the model never saw, which feeds importance, decay and what the
+// index carries tomorrow. Recall is supposed to record what the prompt
+// carried, not what it considered.
 func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact) {
 	agentId := self.settings.Agent.ID
 	spent := 0
 	shown := map[string]bool{}
+	expanded := map[string]bool{}
 	var usedNodes, usedFacts []string
 
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -506,7 +515,7 @@ func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode
 		}
 		pages := 0
 		for _, node := range nodes {
-			if pages >= recallPages || self.inPrompt(node.ID) {
+			if pages >= recallPages || expanded[node.ID] {
 				continue
 			}
 			pageFactsFound, err := tx.ListAgentFacts(agentId, node.ID, false, pageFacts)
@@ -517,21 +526,39 @@ func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode
 			if node.Name != "" {
 				block += " — " + node.Name
 			}
-			if summary := strings.TrimSpace(node.Summary); summary != "" {
+			// Indexed is not expanded. A page the prompt's own index
+			// names is carried there as a line about what the page is,
+			// which is not what it knows -- so the facts go in all the
+			// same when the turn's words hit the page, and only the
+			// opening, which the index line already has the gist of, is
+			// left out.
+			if summary := strings.TrimSpace(node.Summary); summary != "" && !self.inPrompt(node.ID) {
 				block += "\n  " + cutRunes(summary, 600)
 			}
+			factIds := make([]string, 0, len(pageFactsFound))
 			for _, fact := range pageFactsFound {
 				block += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
-				shown[fact.ID] = true
-				usedFacts = append(usedFacts, fact.ID)
+				factIds = append(factIds, fact.ID)
 			}
 			cost := llm.EstimateTokens(block)
 			if spent+cost > recallTokens {
-				break
+				// A smaller page further down may still fit, so this one
+				// is passed over rather than ending the loop -- but once
+				// what is left could not hold a page at all there is no
+				// sense reading the rest of them out of the store.
+				if recallTokens-spent < recallTokens/8 {
+					break
+				}
+				continue
 			}
 			spent += cost
 			self.Recall(block)
+			for _, id := range factIds {
+				shown[id] = true
+				usedFacts = append(usedFacts, id)
+			}
 			usedNodes = append(usedNodes, node.ID)
+			expanded[node.ID] = true
 			pages++
 		}
 		// Then the loose facts: ones whose page did not make the cut but
@@ -894,6 +921,56 @@ func sharesAName(left, right string, itsOwn ...string) bool {
 	}
 	for name := range leftNames {
 		if rightNames[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// negationTokens are the words that turn a sentence into its opposite,
+// written as they appear once punctuation has become spaces: a whole
+// word, the pair "no longer", or the contraction's own ending.
+//
+// Short and English-only on purpose. It is not a grammar; it is the list
+// of ways the sentences a graph actually holds say "not any more".
+var negationTokens = []string{
+	" not ", " no longer ", " never ", " stopped ", " former ", " formerly ", "n't", "n’t",
+}
+
+// negates says whether exactly one of two sentences carries a negation.
+//
+// This is the guard in front of every fold. Similarity is a candidate
+// generator and nothing more: "she prefers tea" and "she no longer
+// prefers tea" share every proper noun, embed within a hair of each
+// other, and are the two statements it matters most not to lose one of.
+// A cosine cannot tell them apart and neither can the name check, so
+// before two facts are folded into one they are asked this, and when the
+// answer is yes both rows stay and the newer one supersedes the older.
+//
+// Both negated, or neither, is not the case this catches: "she never
+// drinks tea" and "she has never drunk tea" are the same statement, and
+// folding them is right.
+func negates(left, right string) bool {
+	return negated(left) != negated(right)
+}
+
+// negated says whether one sentence carries a negation token.
+func negated(text string) bool {
+	// Punctuation becomes space and the whole is padded, so that a token
+	// written with its spaces reaches the first and last words too: "They
+	// stopped." ends with the word this is looking for.
+	var words strings.Builder
+	words.WriteByte(' ')
+	for _, letter := range strings.ToLower(text) {
+		if unicode.IsLetter(letter) || unicode.IsDigit(letter) || letter == '\'' || letter == '’' {
+			words.WriteRune(letter)
+			continue
+		}
+		words.WriteByte(' ')
+	}
+	words.WriteByte(' ')
+	for _, token := range negationTokens {
+		if strings.Contains(words.String(), token) {
 			return true
 		}
 	}

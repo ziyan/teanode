@@ -950,6 +950,13 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// a key that one line now carries. After the loop above, previous
 		// holds exactly the keys nothing wanted this time, and kept the
 		// one fact chosen for each key that was.
+		//
+		// Deleted rather than made dormant, which everything else the
+		// agent takes off a page now is. These rows are not learned;
+		// they are derived from the checkout's own profile and written
+		// again from it on every describe, so keeping the old copies
+		// would leave a page carrying one line of the readme once per
+		// pass with nothing to say which is current.
 		for _, fact := range existing {
 			var repository *models.Evidence
 			for index := range fact.Evidence {
@@ -1011,6 +1018,10 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 				name, own.Commits,
 				own.First.Format("January 2006"), own.Last.Format("January 2006"))
 			// One event per project, rewritten rather than repeated.
+			// Deleted for the same reason as the profile's facts above:
+			// the span is counted again from git on every describe, and
+			// a dormant copy of every count this checkout has ever had
+			// is a work page nobody can read.
 			events, err := tx.ListAgentFacts(source.AgentID, workPage.ID, true, 500)
 			if err != nil {
 				return err

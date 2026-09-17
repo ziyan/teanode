@@ -45,13 +45,33 @@ type rememberWorld struct {
 var theirMessage = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] them:`)
 var agentMessage = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] you:`)
 
+// newRememberWorld is a world with no embedding model, which is what
+// most of these want: nothing is compared by meaning, so every fact a
+// run files stands as its own row.
 func newRememberWorld(t *testing.T, answer func(prompt string) string) *rememberWorld {
+	t.Helper()
+	return rememberWorldFor(t, false, answer)
+}
+
+// newRememberWorldThatEmbeds is the same world with an embedding model,
+// for the checks that only happen at the write boundary: the fold into a
+// twin, and the negation guard in front of it.
+func newRememberWorldThatEmbeds(t *testing.T, answer func(prompt string) string) *rememberWorld {
+	t.Helper()
+	return rememberWorldFor(t, true, answer)
+}
+
+func rememberWorldFor(t *testing.T, embedding bool, answer func(prompt string) string) *rememberWorld {
 	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	t.Cleanup(closeDatabase)
 
 	world := &rememberWorld{database: database}
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.Contains(request.URL.Path, "embeddings") {
+			writeMeaning(writer, request)
+			return
+		}
 		var body struct {
 			Stream   bool `json:"stream"`
 			Messages []struct {
@@ -95,6 +115,9 @@ func newRememberWorld(t *testing.T, answer func(prompt string) string) *remember
 	configuration.Agent.Features.Dreaming = &dreamingOff
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: provider.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:writer"
+	if embedding {
+		configuration.Agent.Models.Embedding = "fake:meaning"
+	}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		t.Fatalf("llm.Open: %s", err)
@@ -170,6 +193,37 @@ func (self *rememberWorld) filingPrompts() int {
 		}
 	}
 	return count
+}
+
+// say appends a line to the conversation, as the person or as the agent.
+func (self *rememberWorld) say(t *testing.T, role, content string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{
+			ConversationID: self.conversation.ID, Role: role, Content: content,
+		}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
+}
+
+// rememberAgain queues the filing of the conversation and runs it at a
+// moment of the test's choosing.
+//
+// The sweep queues at most once a minute and a test that files twice
+// runs in rather less than that, so a second round asks for the job
+// rather than waiting to be offered one.
+func (self *rememberWorld) rememberAgain(t *testing.T, at time.Time) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		if _, err := self.worker.Enqueue(tx, models.AgentJobRemember, self.agent.ID, "", self.conversation.ID); err != nil {
+			t.Fatalf("Enqueue: %s", err)
+		}
+	})
+	if err := self.worker.TickAt(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	self.worker.Wait()
 }
 
 // remember runs the sweep and the job, as the worker does on its own.
@@ -351,6 +405,170 @@ func TestAnAnswerThatIsNotAnObjectIsSurvived(t *testing.T) {
 		}
 		if conversation.RememberedThrough == "" {
 			t.Fatalf("the mark moved all the same")
+		}
+	})
+}
+
+// A long backlog is read oldest first, sixty messages at a time, over as
+// many runs as it takes, and the mark never stands past a message nobody
+// read.
+//
+// It used to keep the *last* sixty and then move the mark to the end of
+// the whole list, so a conversation with two hundred unread messages had
+// its first hundred and forty marked filed without being read, and
+// nothing ever came back for them. The mark is a promise that everything
+// behind it has been read.
+func TestABacklogIsReadOldestFirstAndNothingIsSkipped(t *testing.T) {
+	world := newRememberWorld(t, func(string) string { return `{"facts": []}` })
+
+	// A hundred and fifty worth reading, the two the world seeds
+	// included, so the cursor lands inside the conversation twice before
+	// it reaches the end.
+	for said := 0; said < 74; said++ {
+		world.say(t, "user", fmt.Sprintf("Message %d, about the move.", said))
+		world.say(t, "assistant", fmt.Sprintf("Noted, %d.", said))
+	}
+
+	var messages []*models.AgentMessage
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if messages, err = tx.ListAgentMessages(world.conversation.ID, nil); err != nil {
+			t.Fatalf("ListAgentMessages: %s", err)
+		}
+	})
+	if len(messages) != 150 {
+		t.Fatalf("a hundred and fifty to read, not %d", len(messages))
+	}
+
+	markIs := func(t *testing.T, wanted *models.AgentMessage) {
+		t.Helper()
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			conversation, err := tx.GetAgentConversation(world.conversation.ID)
+			if err != nil || conversation == nil {
+				t.Fatalf("GetAgentConversation: %v %s", conversation, err)
+			}
+			if conversation.RememberedThrough != wanted.ID {
+				t.Fatalf("the mark is at %q, not at %q (%q)",
+					conversation.RememberedThrough, wanted.ID, wanted.Content)
+			}
+		})
+	}
+	queued := func(t *testing.T) int {
+		t.Helper()
+		count := 0
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{
+				AgentID:  world.agent.ID,
+				Kinds:    []models.AgentJobKind{models.AgentJobRemember},
+				Statuses: []models.AgentJobStatus{models.AgentJobQueued},
+			}, nil)
+			if err != nil {
+				t.Fatalf("ListAgentJobs: %s", err)
+			}
+			count = len(jobs)
+		})
+		return count
+	}
+
+	world.remember(t)
+	markIs(t, messages[59])
+	if queued(t) != 1 {
+		t.Fatalf("the rest of the backlog is queued rather than waiting to be noticed")
+	}
+
+	world.rememberAgain(t, time.Now().Add(2*time.Hour))
+	markIs(t, messages[119])
+
+	world.rememberAgain(t, time.Now().Add(3*time.Hour))
+	markIs(t, messages[149])
+	if queued(t) != 0 {
+		t.Fatalf("and with nothing left unread, nothing is queued")
+	}
+}
+
+// The tea sentences. Long enough that the fake embedder, which reads a
+// sentence as the words of five letters or more in it, puts the two above
+// the twin floor: eight words in common, one word apart.
+const (
+	preferredTea = "They prefer drinking green tea throughout the working morning, before anything difficult."
+	stoppedTea   = "They no longer prefer drinking green tea throughout the working morning, before anything difficult."
+)
+
+// A correction is not a duplicate. "They prefer tea" and "they no longer
+// prefer tea" name the same things and sit on top of each other in the
+// vector space, so the twin check offers them to each other and the name
+// check has nothing to object to; folding them would throw away whichever
+// of the two the run happened to see second.
+//
+// Both rows stay, and the page states the later one.
+func TestANegationIsNeverFolded(t *testing.T) {
+	world := newRememberWorldThatEmbeds(t, func(prompt string) string {
+		for _, said := range theirSentence.FindAllStringSubmatch(prompt, -1) {
+			if !strings.Contains(said[2], "green tea") {
+				continue
+			}
+			return fmt.Sprintf(
+				`{"facts": [{"path": "people/dana", "nodeKind": "person", "nodeName": "Dana", "kind": "fact", "text": %q, "messageId": %q, "quote": %q}]}`,
+				said[2], said[1], said[2])
+		}
+		return `{"facts": []}`
+	})
+
+	world.say(t, "user", preferredTea)
+	world.say(t, "assistant", "Noted.")
+	world.remember(t)
+
+	world.say(t, "user", stoppedTea)
+	world.say(t, "assistant", "Noted, that has changed.")
+	world.rememberAgain(t, time.Now().Add(2*time.Hour))
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		node, err := tx.GetAgentNode(world.agent.ID, "people/dana")
+		if err != nil || node == nil {
+			t.Fatalf("Dana has a page: %v %s", node, err)
+		}
+		all, err := tx.ListAgentFacts(world.agent.ID, node.ID, true, 50)
+		if err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+		if len(all) != 2 {
+			lines := make([]string, 0, len(all))
+			for _, fact := range all {
+				lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, fact.Text))
+			}
+			t.Fatalf("both statements are kept, not %d:\n%s", len(all), strings.Join(lines, "\n"))
+		}
+		var older, newer *models.AgentFact
+		for _, fact := range all {
+			if strings.Contains(fact.Text, "no longer") {
+				newer = fact
+			} else {
+				older = fact
+			}
+		}
+		if older == nil || newer == nil {
+			t.Fatalf("one statement of each: %v", all)
+		}
+		if newer.SupersededBy != "" || newer.Dormant {
+			t.Fatalf("the later statement is what the page says: %+v", newer)
+		}
+		if older.SupersededBy != newer.ID {
+			t.Fatalf("the older stands behind the newer, not %q", older.SupersededBy)
+		}
+		if !older.Dormant {
+			t.Fatalf("and is off the page")
+		}
+		// Kept means kept: the words and the evidence are still there for
+		// a person who wants to know what changed and when.
+		if older.Text == "" || len(older.Evidence) == 0 {
+			t.Fatalf("the superseded row keeps what it said: %+v", older)
+		}
+		live, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 50)
+		if err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+		if len(live) != 1 || live[0].ID != newer.ID {
+			t.Fatalf("the page states one of the two: %v", live)
 		}
 	})
 }

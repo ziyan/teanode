@@ -501,15 +501,21 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 			if saysSomethingNew(fact.Text, node, run.Owner) {
 				return nil
 			}
-			if err := tx.DeleteAgentFact(run.Agent.ID, fact.ID); err != nil {
+			// Dormant, not gone. The rule that struck this is code, and
+			// code the graph outlives: a line struck by a rule that
+			// turns out to be too eager has to be readable afterwards,
+			// or the only record of what the agent decided is that
+			// something used to be here.
+			if _, err := tx.StrikeAgentFact(run.Agent.ID, fact.ID,
+				"it only said what the page already says"); err != nil {
 				return err
 			}
 			record.Revised++
 			// A page's opening is written from its facts. With the last
-			// of them gone there is nothing left for it to have come
-			// from, and what is up there was written about lines that no
-			// longer exist -- so it goes too, in the page's history like
-			// any other change.
+			// of them off the page there is nothing left for it to have
+			// come from, and what is up there was written about lines
+			// the page no longer states -- so it goes too, in the page's
+			// history like any other change.
 			left, err := tx.ListAgentFacts(run.Agent.ID, node.ID, false, 1)
 			if err != nil {
 				return err
@@ -622,12 +628,16 @@ func (self *Agent) dreamClearPaddedOpenings(ctx context.Context, run *Run, recor
 	}
 }
 
-// dreamForgetSaidTwice strikes a fact whose page already says the same
-// words on an earlier number. No judgement is involved -- the words are
-// identical -- so no model is asked. Twelve pages carried "wrote 16 of
-// the commits" twice, from a pass that keyed its lines by evidence and
-// a pass before it that did not; the pass that merges near-duplicates
-// would have got to them a page a night.
+// dreamForgetSaidTwice folds a fact whose page already says the same
+// words on an earlier number into that earlier one. No judgement is
+// involved -- the words are identical -- so no model is asked. Twelve
+// pages carried "wrote 16 of the commits" twice, from a pass that keyed
+// its lines by evidence and a pass before it that did not; the pass that
+// merges near-duplicates would have got to them a page a night.
+//
+// A fold and not a deletion, the same as the write-time one: the second
+// copy stays behind the first, so the pair reads as one decision the
+// person can look at rather than as a row that vanished.
 func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *models.AgentDream) {
 	var twice []*models.AgentFact
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -643,13 +653,40 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 		}
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
-			return tx.DeleteAgentFact(run.Agent.ID, fact.ID)
+			kept, err := firstSayingIt(tx, run.Agent.ID, fact)
+			if err != nil || kept == nil {
+				// Gone, or folded by another pass between the listing
+				// and here. Nothing to stand behind, so nothing to do.
+				return err
+			}
+			_, err = tx.FoldAgentFact(run.Agent.ID, fact.ID, kept.ID,
+				"the page already said it in the same words")
+			return err
 		}); err != nil {
-			log.Warningf("cannot strike the second copy of %s: %s", fact.ID, err)
+			log.Warningf("cannot fold the second copy of %s: %s", fact.ID, err)
 			continue
 		}
 		record.Merged++
 	}
+}
+
+// firstSayingIt is the fact the page already states in the same words,
+// on a lower number than the one given.
+func firstSayingIt(tx db.Transaction, agentId string, fact *models.AgentFact) (*models.AgentFact, error) {
+	facts, err := tx.ListAgentFacts(agentId, fact.NodeID, false, 500)
+	if err != nil {
+		return nil, err
+	}
+	saying := strings.ToLower(strings.TrimSpace(fact.Text))
+	for _, candidate := range facts {
+		if candidate.ID == fact.ID || candidate.Number >= fact.Number {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(candidate.Text)) == saying {
+			return candidate, nil
+		}
+	}
+	return nil, nil
 }
 
 // dreamForgetEmptyPages removes the pages that say nothing at all.

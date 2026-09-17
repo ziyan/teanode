@@ -42,6 +42,7 @@ const PAGE = `query ($path: String!) {
   AgentGraphPage(path: $path) {
     node { id path kind name aliases summary contactId pinned dormant usedAt modifiedAt }
     facts { id number kind text happenedAt inferred evidence { kind id quote } audiences createdAt }
+    folded { into fact { id number text } }
     children { id path kind name summary }
     contact { id name emails organization }
   }
@@ -144,9 +145,14 @@ type Revision = {
   createdAt: string
 }
 
+// FoldedFact is a fact the page no longer states, with the number of the
+// one that absorbed it.
+type FoldedFact = { into: number; fact: { id: string; number: number; text: string } }
+
 type Page = {
   node: Node
   facts: Fact[]
+  folded: FoldedFact[]
   children: Node[]
   contact?: { id: string; name: string; emails: string[]; organization: string } | null
 }
@@ -1007,6 +1013,24 @@ function PageView({
           <button type="button" className="knowledge-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
             {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, page.facts.length - factsShown) })}
           </button>
+        ) : null}
+        {/* What the page used to say and no longer states. Shown because
+            a fold is the agent's own judgement about two sentences, and a
+            judgement nobody can see is one nobody can disagree with. */}
+        {page.folded.length > 0 ? (
+          <>
+            <p className="knowledge-list-heading">{t('knowledge.foldedFacts')}</p>
+            <ul className="knowledge-rows">
+              {page.folded.map((row) => (
+                <li key={row.fact.id} className="knowledge-folded">
+                  <span>
+                    #{row.fact.number} {row.fact.text}
+                  </span>
+                  <span className="knowledge-folded-into">{t('knowledge.foldedInto', { number: row.into })}</span>
+                </li>
+              ))}
+            </ul>
+          </>
         ) : null}
       </SettingsSection>
 

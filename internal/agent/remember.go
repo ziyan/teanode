@@ -187,8 +187,17 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		// minute for ever.
 		return self.markRemembered(ctx, conversation, messages)
 	}
+	// The oldest sixty, not the newest sixty. Cutting from the end and
+	// then moving the mark to the last message of the whole list said
+	// that everything in between had been filed, and nothing ever came
+	// back for it: a conversation with two hundred unread messages had
+	// its first hundred and forty marked read without being read. A
+	// backlog is worked through oldest first, sixty at a time, over as
+	// many runs as it takes.
+	backlog := 0
 	if len(unread) > rememberMessages {
-		unread = unread[len(unread)-rememberMessages:]
+		backlog = len(unread) - rememberMessages
+		unread = unread[:rememberMessages]
 	}
 
 	answer, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
@@ -223,13 +232,28 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 				return err
 			}
 		}
-		last := messages[len(messages)-1]
-		return tx.MarkAgentConversationRemembered(conversation.ID, last.ID, time.Now())
+		// The last message this run was actually given, so the mark never
+		// stands past something nobody read.
+		read := unread[len(unread)-1]
+		return tx.MarkAgentConversationRemembered(conversation.ID, read.ID, time.Now())
 	}); err != nil {
 		return err
 	}
 	if filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed, conversation.ID)
+	}
+	if backlog > 0 {
+		// Straight back into the queue rather than waiting for the sweep
+		// to offer the conversation again, which it does once a minute.
+		//
+		// A deferral and not another Enqueue: one job per agent, kind and
+		// subject is open at a time, and this job is the open one, so an
+		// Enqueue from inside it hands back the row it is already running
+		// and queues nothing at all.
+		return &Deferral{
+			Until:  time.Now(),
+			Reason: fmt.Sprintf("%d more message(s) of this conversation are unread", backlog),
+		}
 	}
 	return nil
 }
@@ -560,14 +584,31 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 // because every answer drawn from it is a little different.
 //
 // The older one stays: its number is what anything else cites. It gains
-// whatever evidence the new one brought, and the new one goes. What
-// happened is in the page's history either way.
+// whatever evidence the new one brought, and the new one goes dormant
+// behind it -- kept, searchable, out of the page -- so a fold the person
+// disagrees with is there to be undone. What happened is in the page's
+// history either way.
 func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transaction, written *models.AgentFact, node *models.AgentNode) (*models.AgentFact, error) {
 	if written == nil || node == nil {
 		return written, nil
 	}
 	twin := self.twinOf(ctx, tx, written, node)
 	if twin == nil {
+		return written, nil
+	}
+	// "She prefers tea" and "she no longer prefers tea" share every name
+	// and sit on top of each other in the vector space, so neither the
+	// cosine nor the name check can keep them apart -- and they are the
+	// pair it matters most not to lose one of. Both rows stay, and the
+	// newer statement is the one the page states.
+	if negates(written.Text, twin.Text) {
+		if !laterThan(written, twin) {
+			return written, nil
+		}
+		if _, err := tx.FoldAgentFact(written.AgentID, twin.ID, written.ID,
+			"a later statement of the same thing replaced it"); err != nil {
+			return written, err
+		}
 		return written, nil
 	}
 	older, err := tx.UpdateAgentFact(written.AgentID, twin.ID, func(older *models.AgentFact) error {
@@ -580,10 +621,24 @@ func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transactio
 	if err != nil {
 		return written, err
 	}
-	if err := tx.DeleteAgentFact(written.AgentID, written.ID); err != nil {
+	if _, err := tx.FoldAgentFact(written.AgentID, written.ID, older.ID,
+		"it says what another fact on the page already says"); err != nil {
 		return written, err
 	}
 	return older, nil
+}
+
+// laterThan says whether one fact is the later statement of the two: by
+// when it was true where both say, and by when it was filed otherwise.
+//
+// When it was true is asked first because a fact learned today about
+// 2019 is a 2019 fact, and a conversation that corrects an old record
+// after the fact would otherwise make the correction the older one.
+func laterThan(fact, than *models.AgentFact) bool {
+	if fact.HappenedAt != nil && than.HappenedAt != nil {
+		return fact.HappenedAt.After(*than.HappenedAt)
+	}
+	return fact.CreatedAt.After(than.CreatedAt)
 }
 
 // twinOf is the fact already on this page that says what a new one says,

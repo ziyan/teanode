@@ -469,3 +469,104 @@ func TestGraphAGuessedMonthIsOwedAgain(t *testing.T) {
 		}
 	})
 }
+
+// What the agent takes off a page it takes off; it does not delete it.
+// A fold leaves the row pointing at the one that absorbed it, a striking
+// leaves it pointing at nothing, and both say in the page's history which
+// of the two happened and why. Only the person's own forgetting removes a
+// row, and the entry it leaves carries the whole of what it removed,
+// because after that the journal is the only copy.
+func TestGraphAFoldAndAStrikingKeepTheRow(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		node, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: agent.ID, Path: "people/alice-chen", Kind: models.NodePerson, Name: "Alice Chen"})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		happened := time.Date(2019, 4, 1, 0, 0, 0, 0, time.UTC)
+		add := func(text string) *models.AgentFact {
+			t.Helper()
+			fact, err := tx.AddAgentFact(&models.AgentFact{
+				AgentID: agent.ID, NodeID: node.ID, Kind: models.FactEvent, Text: text,
+				HappenedAt: &happened, Confidence: 0.8, Inferred: true,
+				Evidence:  []models.Evidence{{Kind: models.EvidencePerson, Quote: text}},
+				Audiences: []models.AgentAudience{models.AudienceAsk},
+			})
+			if err != nil {
+				t.Fatalf("AddAgentFact(%q): %s", text, err)
+			}
+			return fact
+		}
+		kept := add("Moved to Osaka in 2019.")
+		repeated := add("In 2019 she moved to Osaka.")
+		vacuous := add("Alice Chen is a person.")
+
+		folded, err := tx.FoldAgentFact(agent.ID, repeated.ID, kept.ID, "it says what #1 already says")
+		if err != nil {
+			t.Fatalf("FoldAgentFact: %s", err)
+		}
+		if folded.SupersededBy != kept.ID || !folded.Dormant {
+			t.Fatalf("a folded fact stands behind the one that absorbed it: %+v", folded)
+		}
+		struck, err := tx.StrikeAgentFact(agent.ID, vacuous.ID, "it only said what the page already says")
+		if err != nil {
+			t.Fatalf("StrikeAgentFact: %s", err)
+		}
+		if struck.SupersededBy != "" || !struck.Dormant {
+			t.Fatalf("a struck fact stands behind nothing: %+v", struck)
+		}
+
+		// Both rows are still there, and the page states neither.
+		all, err := tx.ListAgentFacts(agent.ID, node.ID, true, 50)
+		if err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+		if len(all) != 3 {
+			t.Fatalf("nothing was deleted, so there are three rows, not %d", len(all))
+		}
+		live, err := tx.ListAgentFacts(agent.ID, node.ID, false, 50)
+		if err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+		if len(live) != 1 || live[0].ID != kept.ID {
+			t.Fatalf("the page says one thing: %v", live)
+		}
+
+		// The person forgets the one that is left.
+		if err := tx.DeleteAgentFact(agent.ID, kept.ID); err != nil {
+			t.Fatalf("DeleteAgentFact: %s", err)
+		}
+
+		revisions, err := tx.ListAgentRevisions(agent.ID, node.ID, 50)
+		if err != nil {
+			t.Fatalf("ListAgentRevisions: %s", err)
+		}
+		byKind := map[models.RevisionKind]*models.AgentRevision{}
+		for _, revision := range revisions {
+			if _, seen := byKind[revision.Kind]; !seen {
+				byKind[revision.Kind] = revision
+			}
+		}
+		fold := byKind[models.RevisionFactFolded]
+		if fold == nil || fold.After["supersededBy"] != kept.ID || fold.Reason == "" {
+			t.Fatalf("the fold is in the history, with both ends and a reason: %+v", fold)
+		}
+		if byKind[models.RevisionFactStruck] == nil {
+			t.Fatalf("and so is the striking, under its own kind: %v", byKind)
+		}
+		gone := byKind[models.RevisionFactGone]
+		if gone == nil {
+			t.Fatalf("and so is the deletion")
+		}
+		// Enough to put it back: the words are not the half of it.
+		for _, wanted := range []string{"number", "text", "kind", "confidence", "inferred", "evidence", "audiences", "happenedAt"} {
+			if _, carried := gone.Before[wanted]; !carried {
+				t.Fatalf("a deletion carries the whole fact, and not %q: %v", wanted, gone.Before)
+			}
+		}
+	})
+}

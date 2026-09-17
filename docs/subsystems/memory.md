@@ -94,7 +94,15 @@ So writing is not in the turn. A job (`remember.go`) runs after a
 conversation goes quiet, reads what was said, and files what it taught:
 pages made or found, facts added with their quotes, links drawn. It knows
 where it got to (`agent_conversation.remembered_through`), so it never
-reads the same exchange twice and never misses one.
+reads the same exchange twice and never misses one. A run reads sixty
+messages, the oldest sixty, and moves the mark to the last one it was
+actually given; where more are waiting it puts itself straight back in
+the queue rather than waiting to be noticed again, so a conversation
+somebody left running for a week drains sixty at a time. The mark is a
+promise that everything behind it has been read, and it was not one: the
+run kept the *newest* sixty and moved the mark to the end of the whole
+list, so a backlog of two hundred had its first hundred and forty marked
+filed unread, and nothing ever came back for them.
 
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
@@ -147,7 +155,10 @@ a page about September 2026 does not become less true in October.
 A dream is one run of the agent over its own graph, and not only at
 night: it runs when the person has been quiet for half an hour, inside
 the hours they set for it, at most once every six hours. It has its own share of
-the day's tokens (30% by default), and it never deletes anything.
+the day's tokens (30% by default), and nothing it learned is deleted: a
+fact it decides against goes dormant, behind the one that replaced it
+where there is one, and a page it retires leaves the index and stays. The
+only thing it removes is a page that never said anything at all.
 
 Every call a dream makes to a model is a turn of the conversation loop
 (`docs/subsystems/the-ask-loop.md`), in a run conversation of its own,
@@ -207,7 +218,19 @@ that says what a count implies is not a diary.
 whose opening no longer says what it is about. The same pass merges the
 facts that say the same thing — the older keeps its number, the newer
 goes dormant carrying a pointer to it. Never deleted: a merge the person
-disagrees with can be undone.
+disagrees with can be undone. The fold at the write boundary does the
+same, so a conversation filed today and one filed a week ago end as one
+statement with both days' evidence and a dormant row behind it; and a
+line the nightly pass finds says nothing, or finds the page already says
+in the same words, goes the same way rather than away. The knowledge page
+lists them under the facts, greyed, each saying which number absorbed it.
+
+Nothing is folded across a negation. "She prefers tea" and "she no longer
+prefers tea" name the same things and sit on top of each other in the
+vector space, so neither the similarity nor the name check can tell them
+apart — and they are the pair it matters most not to lose one of. Where
+exactly one of two sentences carries a negation both rows stay, and the
+later statement is the one the page states.
 
 **Fold the person into self.** A page under `people` that names the person
 themselves — by username, by a word of their name, by its slug — is
@@ -296,6 +319,14 @@ Without the "before", a history can be read but not undone, which is the
 half somebody wants at the moment they go looking. Without the actor, a
 page a dream wrote and a page the person wrote look identical.
 
+A fold and a striking each have their own kind, because a page whose
+history says "merged two facts" for three quite different decisions is a
+history nobody can act on, and each says why beside it. The one write
+that really removes a row is the person's own "forget this", and its
+entry carries the whole fact — its kind, its evidence, how sure of it the
+agent was, when it was true, who read it — since after that the journal
+is all there is.
+
 Every page and every fact also carries the **build that last wrote it**,
 which is what lets a newer version of the program go back over what an
 older one filed. A graph outlives its code: the rule above did not exist
@@ -359,6 +390,21 @@ one ranked list out. Decay multiplies the score, so a stale fact sinks
 without disappearing. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
+
+What counts as used is what was carried. A page's block is built,
+measured against the budget, and only then written and its facts marked —
+the other way round, a page that turned out not to fit still moved
+`used_at` on every fact in it, and `used_at` is what feeds importance,
+decay and tomorrow's index. A page over the budget is passed over and the
+next one down is still tried, since a shorter page may fit where a long
+one did not; the scan stops only when what is left of the budget could
+not hold a page at all.
+
+Being in the index is not being expanded. The index line says what a page
+is about, which is not what the page knows, so a page the prompt already
+names still gives up its facts when the turn's words hit it — only its
+opening is left out, since the index line carries the first sentence of
+it already.
 
 ## Bootstrapping
 

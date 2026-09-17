@@ -55,11 +55,14 @@ evaluate` prints a table of hits and misses over the question set.
   the evidence check drops a bad quote rather than rewriting it; edges get
   one status column and no promotion stage, origin or expiry; the
   evaluation has no per-stage switches. Recorded in the Decision Log.
-- [ ] Milestone 1: reversible writes. Folded, struck and repeated facts go
-  dormant with a pointer, never deleted; the docs' promise becomes true.
-- [ ] Milestone 2: honest cursors and bookkeeping. Remember reads the oldest
-  unread segment and advances only through it; recall marks used only what
-  it carried; pages in the index still get their facts expanded.
+- [x] (2026-09-17 08:14Z) Milestone 1: reversible writes. Folded, struck and
+  repeated facts go dormant with a pointer, never deleted; the docs' promise
+  becomes true. The knowledge page lists what was folded under the facts,
+  greyed, each saying which number absorbed it.
+- [x] (2026-09-17 08:17Z) Milestone 2: honest cursors and bookkeeping.
+  Remember reads the oldest unread segment and advances only through it;
+  recall marks used only what it carried; pages in the index still get their
+  facts expanded.
 - [ ] Milestone 3: decay by elapsed time, with a watermark, and
   reinforcement over the real interval.
 - [ ] Milestone 4: evidence checked at the write boundary: a quote must
@@ -100,6 +103,40 @@ evaluate` prints a table of hits and misses over the question set.
   "about" facts and "Worked on" spans on every describe), the memory tool's
   `forget`, and the API's delete. The ingest's two are re-derived rows and
   are exempt below; the person's own `forget` stays a delete.
+- Observation (2026-09-17 08:14Z): there is no `tx.PutAgentFact`, which
+  Milestone 1 was written against; `AddAgentFact` and `UpdateAgentFact`
+  are the whole of the fact writer. Worse, `UpdateAgentFact` already
+  journals a newly set `SupersededBy` as `RevisionFactMerged`, so an
+  agent-side revision entry would have been the second one for the same
+  change. The fold and the striking became two transaction methods,
+  `FoldAgentFact` and `StrikeAgentFact`, over one private writer that
+  takes the kind and the reason from the caller — the columns that move
+  are the same for a merge, a write-time fold and a striking, and only
+  the caller knows which it did.
+- Observation (2026-09-17 08:14Z): nothing rendered `supersededBy`
+  anywhere. `AgentGraphPage` listed a page's facts with
+  `includeDormant = false`, so a folded fact reached neither the
+  dashboard nor the command line, and the explorer's dialog shows only
+  live facts. The plan's "check that it shows folded into #N" was
+  therefore a change and not a check: the page result gained a `folded`
+  list, each entry carrying the *number* of the fact that absorbed it
+  because an identifier is not something a page can cite.
+- Observation (2026-09-17 08:17Z): the requeue Milestone 2 asks for
+  cannot be an `Enqueue`. `EnqueueAgentJob` keeps one open job per agent,
+  kind and subject, counting *running* as open, and the job doing the
+  asking is that open job — so an Enqueue from inside `runRemember` hands
+  back the row it is already running and writes nothing. The run returns
+  a `Deferral` with `Until: now` instead, which is the worker's own way
+  of saying "put me back in the queue": `FinishAgentJob` sets the row to
+  queued, clears the claim, and the next tick claims it again. The test
+  asserts the queued job and the log line says how many messages are
+  still unread.
+- Observation (2026-09-17 08:17Z): dropping the `inPrompt` skip outright
+  would have left that method with no caller, and a page already in the
+  index would have had its opening written into the overlay a second
+  time. Indexed and expanded are now distinguished as the plan asks, and
+  the distinction has a use: an indexed page gives up its facts and not
+  its opening, which the index line already carries the gist of.
 - Observation: the extraction cursor loses history. `runRemember`
   (`internal/agent/remember.go:190-191`) keeps the last sixty unread
   messages, and `markRemembered` then advances `RememberedThrough` to the
@@ -135,6 +172,16 @@ evaluate` prints a table of hits and misses over the question set.
   (hundreds of facts an hour on the station model). A string guard catches
   the one class of loss that is certain, negation, at no model cost, and
   keeps both rows so a later classifier has something to classify.
+  Date/Author: 2026-09-17, the agent.
+- Decision: the striking of a vacuous fact keeps the row and files no
+  pointer, and only the fold files one. The dashboard shows the folded
+  rows and not the struck ones.
+  Rationale: a struck line stands behind nothing, so "folded into #N" has
+  nothing to say about it, and the nightly pass that retires facts nobody
+  has wanted in half a year would put a page's whole history under its
+  own facts. What the striking leaves is its history entry, under its own
+  kind and with the words it used to say, which is what somebody
+  disagreeing with it needs.
   Date/Author: 2026-09-17, the agent.
 - Decision: decay is a function of elapsed time since the last decay pass,
   stored as a watermark on the agent, with a half-life of thirty days for
