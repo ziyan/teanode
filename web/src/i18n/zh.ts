@@ -2331,6 +2331,7 @@ export const zh: Catalog = {
   'knowledge.unlinkFrom': '取消与 {name} 的链接',
   'knowledge.unlinkBody': '撤回这条链接：{from} {relation} {to}。两页上其余的内容都不会被忘记。',
   'knowledge.unlinked': '已取消链接',
+  'knowledge.proposedRelation': '{relation}（推测）',
   'knowledge.under': '下属页面',
   'knowledge.underHint': '归档在其中。',
   'knowledge.fromNowhere': '未记录来源',

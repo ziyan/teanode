@@ -215,6 +215,11 @@ const (
 	EvidenceRepository   EvidenceKind = "repository"
 	EvidenceMemory       EvidenceKind = "memory"
 	EvidencePerson       EvidenceKind = "person"
+
+	// EvidenceDream is the agent's own reasoning rather than anything it
+	// read: the path a nightly walk took to reach a page. It has its own
+	// kind so that no reader mistakes the walk for a document.
+	EvidenceDream EvidenceKind = "dream"
 )
 
 // Evidence is one place a fact came from, with the words it was read in.
@@ -308,15 +313,35 @@ func IsAgentEdgeRelation(relation AgentEdgeRelation) bool {
 	return false
 }
 
+// AgentEdgeStatus is how far a link may be asserted: something somebody
+// stated, or something the agent worked out for itself.
+type AgentEdgeStatus string
+
+// The statuses. Stated is the default and what every writer but the
+// nightly walk produces, so an empty status read out of an older row
+// means stated.
+const (
+	EdgeStated   AgentEdgeStatus = "stated"
+	EdgeProposed AgentEdgeStatus = "proposed"
+)
+
 // AgentEdge joins two pages.
 type AgentEdge struct {
-	AgentID   string            `json:"agentId"`
-	FromID    string            `json:"fromId"`
-	ToID      string            `json:"toId"`
-	Relation  AgentEdgeRelation `json:"relation"`
-	Weight    float32           `json:"weight"`
-	Evidence  []Evidence        `json:"evidence"`
-	CreatedAt time.Time         `json:"createdAt"`
+	AgentID  string            `json:"agentId"`
+	FromID   string            `json:"fromId"`
+	ToID     string            `json:"toId"`
+	Relation AgentEdgeRelation `json:"relation"`
+	Weight   float32           `json:"weight"`
+
+	// Status separates what the agent may assert from what it may only
+	// wonder about. The nightly walk guesses a link from two pages being
+	// two steps apart, which is a hypothesis; the person drawing one in
+	// the dashboard is not. Without the distinction the agent said both
+	// in the same voice.
+	Status AgentEdgeStatus `json:"status"`
+
+	Evidence  []Evidence `json:"evidence"`
+	CreatedAt time.Time  `json:"createdAt"`
 
 	// Note is what this particular link is about, in the person's own
 	// terms: "wrote the payload angle check", "since 2019", "her
@@ -398,11 +423,21 @@ func (self *AgentEdge) Phrase(outward, stale bool) string {
 	return string(self.Relation)
 }
 
+// Proposed says whether this link is the agent's own guess rather than
+// something somebody stated.
+func (self *AgentEdge) Proposed() bool {
+	return self.Status == EdgeProposed
+}
+
 // Sentence is the edge as something to read, from the end given.
 //
 // "Alice Chen works on Portal — led the API rewrite". The names rather
 // than the paths, because the sentence is for a reader; the path is
 // carried beside it for whoever wants to follow the link.
+//
+// A proposed link is hedged in both directions: "perhaps" in front so the
+// claim is never made flat, and who guessed it at the end so a reader
+// knows whom to disagree with.
 func (self *AgentEdge) Sentence(fromPath string, stale bool) string {
 	outward := self.FromPath == fromPath
 	other, otherPath := self.ToName, self.ToPath
@@ -415,12 +450,22 @@ func (self *AgentEdge) Sentence(fromPath string, stale bool) string {
 		other = otherPath
 	}
 	_ = subject
-	sentence := self.Phrase(outward, stale) + " " + other
+	phrase := self.Phrase(outward, stale)
+	if self.Proposed() {
+		// "perhaps related to Portal", not "perhaps is related to
+		// Portal": the phrases are written to follow a subject, and
+		// "perhaps" stands where the subject would.
+		phrase = "perhaps " + strings.TrimPrefix(phrase, "is ")
+	}
+	sentence := phrase + " " + other
 	if otherPath != "" && otherPath != other {
 		sentence += " (" + otherPath + ")"
 	}
 	if note := strings.TrimSpace(self.Note); note != "" {
 		sentence += " — " + note
+	}
+	if self.Proposed() {
+		sentence += " (the agent's guess)"
 	}
 	return sentence
 }

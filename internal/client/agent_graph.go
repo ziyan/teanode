@@ -46,9 +46,11 @@ type AgentEvidence struct {
 	Quote string `json:"quote"`
 }
 
-// AgentEdge joins two pages.
+// AgentEdge joins two pages. Status is "stated" or "proposed": a link
+// the nightly walk guessed is read as a guess and not as a fact.
 type AgentEdge struct {
 	Relation string `json:"relation"`
+	Status   string `json:"status"`
 	FromPath string `json:"fromPath"`
 	ToPath   string `json:"toPath"`
 }
@@ -174,7 +176,7 @@ const (
 		AgentGraphPage(path: $path) {
 			node ` + nodeFields + `
 			facts ` + factFields + `
-			edges { relation fromPath toPath }
+			edges { relation status fromPath toPath }
 			children ` + nodeFields + `
 			contact { id name emails phones organization }
 		}

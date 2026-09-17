@@ -265,6 +265,65 @@ func TestGraphEdgesCarryPaths(t *testing.T) {
 	})
 }
 
+// A link the night guessed is stored as a guess, and stating the same
+// link is how a person confirms it.
+//
+// There is no promotion stage and no expiry: a guess nobody confirms
+// stays a guess, and the only thing that turns it into a statement is
+// somebody making the same link themselves, which is the same call the
+// Link dialog already made.
+func TestGraphAProposedLinkIsConfirmedByStatingIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		alice, err := tx.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: "people/alice-chen", Kind: models.NodePerson, Name: "Alice Chen"})
+		if err != nil {
+			t.Fatalf("alice: %s", err)
+		}
+		gripper, err := tx.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: "things/gripper", Kind: models.NodeThing, Name: "Gripper"})
+		if err != nil {
+			t.Fatalf("gripper: %s", err)
+		}
+		if err := tx.PutAgentEdge(&models.AgentEdge{
+			AgentID: agent.ID, FromID: alice.ID, ToID: gripper.ID, Relation: models.EdgeWorksOn,
+			Weight: 0.5, Status: models.EdgeProposed, Note: "she wrote the payload angle check",
+		}); err != nil {
+			t.Fatalf("PutAgentEdge: %s", err)
+		}
+		onlyEdge := func(where string) *models.AgentEdge {
+			edges, err := tx.ListAgentEdges(agent.ID, gripper.ID)
+			if err != nil {
+				t.Fatalf("ListAgentEdges %s: %s", where, err)
+			}
+			if len(edges) != 1 {
+				t.Fatalf("one link %s: %v", where, edges)
+			}
+			return edges[0]
+		}
+		if status := onlyEdge("as written").Status; status != models.EdgeProposed {
+			t.Fatalf("a proposed link comes back proposed, not %q", status)
+		}
+
+		// The person draws the same link from the dashboard, which says
+		// nothing about status and so means stated.
+		if err := tx.PutAgentEdge(&models.AgentEdge{
+			AgentID: agent.ID, FromID: alice.ID, ToID: gripper.ID, Relation: models.EdgeWorksOn,
+			Note: "she wrote the payload angle check",
+		}); err != nil {
+			t.Fatalf("PutAgentEdge stating it: %s", err)
+		}
+		confirmed := onlyEdge("after confirming")
+		if confirmed.Status != models.EdgeStated {
+			t.Fatalf("stating a guess confirms it, not %q", confirmed.Status)
+		}
+		if confirmed.Note != "she wrote the payload angle check" {
+			t.Fatalf("and keeps what the link is about: %q", confirmed.Note)
+		}
+	})
+}
+
 // The index is ordered by importance and never by use, because a prompt
 // whose order moves every turn cannot be cached. Dormant pages are not in
 // it at all.

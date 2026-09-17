@@ -36,7 +36,7 @@ const NEIGHBOURS = `query ($path: String!) {
   AgentGraphNeighbours(path: $path) {
     node { id path kind name summary }
     parent { id path kind name }
-    neighbours { node { id path kind name summary } relation outward note weight }
+    neighbours { node { id path kind name summary } relation outward note weight status }
     children
   }
 }`
@@ -55,7 +55,14 @@ const SEARCH = `query ($query: String!, $first: Int) {
 
 type GraphNode = { id: string; path: string; kind: string; name: string; summary?: string }
 
-type Neighbour = { node: GraphNode; relation: string; outward: boolean; note: string; weight: number }
+type Neighbour = {
+  node: GraphNode
+  relation: string
+  outward: boolean
+  note: string
+  weight: number
+  status: string
+}
 
 type Neighbourhood = {
   node: GraphNode
@@ -101,6 +108,19 @@ type Joined = {
   note: string
   weight: number
   containment: boolean
+  // A link the night guessed from a walk rather than one anybody stated.
+  // Drawn dashed, and said as a guess wherever it is named: nothing
+  // promotes it but the person making the same link themselves.
+  proposed: boolean
+}
+
+// edgeClasses is how a line is drawn: where a page is filed, a link
+// somebody stated, or one the night proposed and nobody has confirmed.
+function edgeClasses(edge: Joined): string {
+  if (edge.containment) {
+    return 'graph-explore-edge under'
+  }
+  return edge.proposed ? 'graph-explore-edge proposed' : 'graph-explore-edge'
 }
 
 // The kinds, in the order the legend reads them: the person, then who and
@@ -606,6 +626,7 @@ export function KnowledgeExplorePage() {
         note: '',
         weight: 1,
         containment: true,
+        proposed: false,
       })
     },
     [join],
@@ -667,6 +688,7 @@ export function KnowledgeExplorePage() {
             note: neighbour.note,
             weight: neighbour.weight,
             containment: false,
+            proposed: neighbour.status === 'proposed',
           })
         }
         recount()
@@ -1026,6 +1048,18 @@ export function KnowledgeExplorePage() {
     [t],
   )
 
+  // relationLabel is what a line is called wherever it is named: on the
+  // line itself and in its tooltip. A link the night guessed carries the
+  // word beside the relation, because a dashed line says a guess only to
+  // somebody who already knows the drawing.
+  const relationLabel = useCallback(
+    (edge: Joined): string =>
+      edge.proposed
+        ? t('knowledge.proposedRelation', { relation: relationWords(edge.relation) })
+        : relationWords(edge.relation),
+    [relationWords, t],
+  )
+
   const legend = useMemo(() => KINDS.map((kind) => ({ kind, label: kindWord(kind) })), [kindWord])
 
   const empty = !loading && nodes.current.length === 0
@@ -1063,7 +1097,7 @@ export function KnowledgeExplorePage() {
         </defs>
         <g ref={zoomLayer}>
           {edges.current.map((edge) => (
-            <g key={edge.key} className={edge.containment ? 'graph-explore-edge under' : 'graph-explore-edge'}>
+            <g key={edge.key} className={edgeClasses(edge)}>
               <line
                 ref={(element) => {
                   if (element) {
@@ -1083,8 +1117,8 @@ export function KnowledgeExplorePage() {
               >
                 <title>
                   {edge.note
-                    ? `${relationWords(edge.relation)} — ${edge.note}`
-                    : `${edge.from} ${relationWords(edge.relation)} ${edge.to}`}
+                    ? `${relationLabel(edge)} — ${edge.note}`
+                    : `${edge.from} ${relationLabel(edge)} ${edge.to}`}
                 </title>
               </line>
               {edge.containment ? null : (
@@ -1100,7 +1134,7 @@ export function KnowledgeExplorePage() {
                     }
                   }}
                 >
-                  {relationWords(edge.relation)}
+                  {relationLabel(edge)}
                 </text>
               )}
             </g>

@@ -63,6 +63,15 @@ sentence of its own ("led the controls work until 2025"). An edge nothing
 has touched in a long time is said in the past tense, which is the
 smallest honest way to show that it may no longer be true.
 
+An edge is also either **stated** or **proposed**. Stated is everything
+somebody said — the person in the Link dialog, the model through its
+memory tool, the ingest reading a checkout's README — and is the default.
+Proposed is the one thing nobody said: a link the generative half of the
+night guessed from a walk across the graph. A proposed edge reads as
+"perhaps related to X (the agent's guess)" wherever it is written out and
+is drawn dashed in the explorers. Nothing promotes it on its own: making
+the same link yourself states it, and unlinking drops it.
+
 Which commits are **yours** is decided by matching the commit author
 against the addresses on the card you marked as yourself, so that card is
 what makes a career timeline possible at all. A source that finds commits
@@ -288,7 +297,9 @@ asks whether there is a real relation between them. "No" is the ordinary
 answer and the right one: almost everything in a person's life is
 reachable from almost everything else in five steps. When the answer is
 yes, a typed link is written with the sentence that justifies it, at half
-the weight of one somebody stated — it earns the rest by being useful.
+the weight of one somebody stated — it earns the rest by being useful —
+and marked proposed, so the agent speaks of it as a guess until somebody
+makes the same link themselves.
 
 This is the only phase that adds a relation nobody typed, which is the
 whole reason to keep a graph rather than a list.
@@ -474,10 +485,12 @@ the agent, bootstrap or not.
   and counting it made every question answerable. The questions and
   their verdicts are kept in the dream's notes. Where there is no
   embedding model there are no gaps rather than all of them.
-- **The generative half can be wrong.** A link it writes is a link the
-  agent will state as though it were told. It starts at half weight and
-  carries the walk that suggested it as its evidence, which is what a
-  person needs to disagree with it.
+- **The generative half can be wrong.** So a link it writes is stored as
+  proposed rather than stated, at half weight, carrying the walk that
+  suggested it as its evidence — which is what a person needs to disagree
+  with it. A weight is not doubt: nothing downstream reads one, and until
+  the status existed the agent repeated a guess it had made at three in
+  the morning in the same voice it used for something it had been told.
 - **"Which passages still need a vector" is a filter on one table**, not
   a join against the vectors. The model that embedded a passage is
   written on the passage, and the query has no ORDER BY — asking for

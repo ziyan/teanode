@@ -12,9 +12,9 @@
 -- having been asked, and it is counted rather than hidden in either of
 -- the other two.
 --
--- 0085 is deliberately skipped: it is reserved for the edge status of
--- Milestone 5 of docs/planning/active/20260916-memory-that-stays-correct.md,
--- which is not built yet. A hole in the numbering costs nothing -- the
--- runner applies what it finds, in order -- and renumbering a migration
--- somebody's database has already applied costs a great deal.
+-- This was written before 0085, which was left free for the edge status
+-- of Milestone 5 of the same plan and has since been filled. A hole in
+-- the numbering costs nothing -- the runner applies what it finds, in
+-- order -- and renumbering a migration somebody's database has already
+-- applied costs a great deal, so one was left rather than taken.
 ALTER TABLE "agent_dream" ADD COLUMN "unknown" integer NOT NULL DEFAULT 0;

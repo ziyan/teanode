@@ -25,7 +25,7 @@ const NEIGHBOURS = `query ($path: String!) {
   AgentGraphNeighbours(path: $path) {
     node { id path kind name }
     parent { id path kind name }
-    neighbours { node { id path kind name } relation outward note }
+    neighbours { node { id path kind name } relation outward note status }
     children
   }
 }`
@@ -36,7 +36,7 @@ const UNLINK = `mutation ($path: String!, $to: String!, $relation: String!) {
 
 type GraphNode = { id: string; path: string; kind: string; name: string }
 
-type Neighbour = { node: GraphNode; relation: string; outward: boolean; note: string }
+type Neighbour = { node: GraphNode; relation: string; outward: boolean; note: string; status: string }
 
 type Neighbourhood = {
   node: GraphNode
@@ -94,13 +94,18 @@ type Placed = {
   // that is not a thing the server has a word for.
   relations: string[]
   direction: 'out' | 'in' | 'none'
+  // Every relation to this page is one the night guessed from a walk, so
+  // the line is drawn dashed and the word beside it says so. A page
+  // joined by one stated relation and one guessed one is drawn solid: the
+  // pages are joined, and only one of the reasons is a guess.
+  proposed: boolean
 }
 
 // A link somebody has just walked along, kept so it can be taken back
 // again. The pair of paths rather than the drawing's own nodes, because
 // by the time the button is pressed the drawing has moved on to the far
 // end of it.
-type Walked = { from: string; fromName: string; to: string; relations: string[] }
+type Walked = { from: string; fromName: string; to: string; relations: string[]; proposed: boolean }
 
 // messageOf is what went wrong, in words a person can act on.
 function messageOf(caught: unknown): string {
@@ -251,7 +256,7 @@ export function GraphExplorer({
       const takeable = step.role === 'link' ? step.relations.filter((relation) => relation !== 'part_of') : []
       setWalked(
         here && takeable.length > 0
-          ? { from: here.path, fromName: nameOf(here, me), to: next.path, relations: takeable }
+          ? { from: here.path, fromName: nameOf(here, me), to: next.path, relations: takeable, proposed: step.proposed }
           : null,
       )
       setCentre(next.path)
@@ -267,6 +272,16 @@ export function GraphExplorer({
       const words: string | undefined = t(`knowledge.relation.${relation}` as 'knowledge.relation.works_on')
       return words || relation.replace(/_/g, ' ')
     },
+    [t],
+  )
+
+  // proposedWords marks a link the agent guessed rather than one somebody
+  // stated. The word goes beside the relation rather than replacing it:
+  // what the guess is still matters, and only how much to believe it
+  // changes.
+  const proposedWords = useCallback(
+    (relation: string, proposed: boolean): string =>
+      proposed ? t('knowledge.proposedRelation', { relation }) : relation,
     [t],
   )
 
@@ -318,7 +333,10 @@ export function GraphExplorer({
     // One entry per page rather than per edge: two relations to the same
     // page are two words on one line, because two lines between the same
     // two circles are drawn on top of each other.
-    const links = new Map<string, { node: GraphNode; relations: string[]; outward: boolean[]; note: string }>()
+    const links = new Map<
+      string,
+      { node: GraphNode; relations: string[]; outward: boolean[]; proposed: boolean[]; note: string }
+    >()
     for (const neighbour of neighbourhood.neighbours) {
       // Pages filed under this one come back in the same list with no
       // relation. They are one node of their own below: a folder of forty
@@ -338,6 +356,7 @@ export function GraphExplorer({
           node: neighbour.node,
           relations: [neighbour.relation],
           outward: [neighbour.outward],
+          proposed: [neighbour.status === 'proposed'],
           note: neighbour.note,
         })
         continue
@@ -346,6 +365,7 @@ export function GraphExplorer({
         already.relations.push(neighbour.relation)
       }
       already.outward.push(neighbour.outward)
+      already.proposed.push(neighbour.status === 'proposed')
       already.note = already.note || neighbour.note
     }
 
@@ -393,6 +413,7 @@ export function GraphExplorer({
         relation: '',
         relations: [],
         direction: 'none',
+        proposed: false,
       },
     ]
 
@@ -410,6 +431,7 @@ export function GraphExplorer({
         relation: relationWords('part_of'),
         relations: ['part_of'],
         direction: 'out',
+        proposed: false,
       })
     }
 
@@ -430,11 +452,13 @@ export function GraphExplorer({
         relation: relationWords('part_of'),
         relations: ['part_of'],
         direction: 'in',
+        proposed: false,
       })
     }
 
     linked.forEach((link, index) => {
       const outward = link.outward.every(Boolean) ? 'out' : link.outward.some(Boolean) ? 'none' : 'in'
+      const proposed = link.proposed.every(Boolean)
       placed.push({
         key: link.node.id,
         role: 'link',
@@ -444,9 +468,10 @@ export function GraphExplorer({
         title: link.note ? `${link.node.path} — ${link.note}` : link.node.path,
         ...at(index),
         radius,
-        relation: link.relations.map(relationWords).join(', '),
+        relation: proposedWords(link.relations.map(relationWords).join(', '), proposed),
         relations: link.relations,
         direction: outward,
+        proposed,
       })
     })
 
@@ -463,11 +488,12 @@ export function GraphExplorer({
         relation: '',
         relations: [],
         direction: 'none',
+        proposed: false,
       })
     })
 
     return placed
-  }, [height, me, neighbourhood, phone, relationWords, seen, t, width])
+  }, [height, me, neighbourhood, phone, proposedWords, relationWords, seen, t, width])
 
   const middleX = width / 2
   const middleY = height / 2
@@ -534,7 +560,7 @@ export function GraphExplorer({
             return (
               <g key={`edge-${node.key}`}>
                 <line
-                  className="graph-explorer-edge"
+                  className={node.proposed ? 'graph-explorer-edge proposed' : 'graph-explorer-edge'}
                   x1={edge.x1}
                   y1={edge.y1}
                   x2={edge.x2}
@@ -634,7 +660,7 @@ export function GraphExplorer({
           body={t('knowledge.unlinkBody', {
             from: unlinking.from,
             to: unlinking.to,
-            relation: unlinking.relations.map(relationWords).join(', '),
+            relation: proposedWords(unlinking.relations.map(relationWords).join(', '), unlinking.proposed),
           })}
           confirmLabel={t('knowledge.unlink')}
           busy={busy}
