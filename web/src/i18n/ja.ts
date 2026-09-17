@@ -1210,7 +1210,6 @@ export const ja: Catalog = {
   'agentAdmin.tabAgents': 'エージェント',
   'agentAdmin.tabUsage': '使用量と費用',
   'agentAdmin.tabRuns': '実行記録',
-  'agentAdmin.tabJobs': '断念したもの',
   'agentAdmin.tabGeneral': '一般',
   'agentAdmin.tabModels': 'プロバイダーとモデル',
   'agentAdmin.tabFeatures': '機能と上限',

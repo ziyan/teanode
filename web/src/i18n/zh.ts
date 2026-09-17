@@ -1169,7 +1169,6 @@ export const zh: Catalog = {
   'agentAdmin.tabAgents': '助手',
   'agentAdmin.tabUsage': '用量与费用',
   'agentAdmin.tabRuns': '运行记录',
-  'agentAdmin.tabJobs': '已放弃',
   'agentAdmin.tabGeneral': '常规',
   'agentAdmin.tabModels': '提供方与模型',
   'agentAdmin.tabFeatures': '功能与限额',

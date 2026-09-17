@@ -1217,7 +1217,6 @@ export const en = {
   'agentAdmin.tabAgents': 'Agents',
   'agentAdmin.tabUsage': 'Use and cost',
   'agentAdmin.tabRuns': 'Runs',
-  'agentAdmin.tabJobs': 'Given up',
   'agentAdmin.tabGeneral': 'General',
   'agentAdmin.tabModels': 'Providers and models',
   'agentAdmin.tabFeatures': 'Features and limits',

@@ -95,7 +95,6 @@ const AGENT_TABS: { id: string; label: Key }[] = [
   { id: 'agents', label: 'agentAdmin.tabAgents' },
   { id: 'usage', label: 'agentAdmin.tabUsage' },
   { id: 'runs', label: 'agentAdmin.tabRuns' },
-  { id: 'jobs', label: 'agentAdmin.tabJobs' },
   { id: 'general', label: 'agentAdmin.tabGeneral' },
   { id: 'models', label: 'agentAdmin.tabModels' },
   { id: 'features', label: 'agentAdmin.tabFeatures' },
@@ -358,9 +357,8 @@ export function AgentAdminPage() {
           </SettingsSection>
         </>
       ) : null}
-      {tab === 'runs' ? <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} /> : null}
       {AGENT_PARTS.includes(tab as AgentPart) ? <IntegrationsSection section="agent" part={tab as AgentPart} /> : null}
-      {tab === 'jobs' ? (
+      {tab === 'runs' ? (
         <>
           <SettingsSection card title={t('agentAdmin.deadLetters')}>
             {dead.length === 0 ? (
@@ -396,6 +394,9 @@ export function AgentAdminPage() {
                         >
                           {t('agentAdmin.openConversation')}
                         </button>
+                      ) : null}
+                      {tab === 'runs' ? (
+                        <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} />
                       ) : null}
                       <button
                         type="button"
