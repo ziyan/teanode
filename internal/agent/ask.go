@@ -557,6 +557,9 @@ func (self *AskRun) loop() {
 			self.emit(Event{Kind: EventError, Error: err.Error()})
 		}
 	}
+	// A goal that was waiting for the person has had its answer: it goes
+	// back to work a minute from now, whether the turn ended well or not.
+	self.resumeGoalAfterPerson()
 	self.emit(Event{Kind: EventDone})
 }
 
@@ -1276,7 +1279,34 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	if settings.Surface != "" {
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
+	// The goal on this conversation, where there is one. Rebuilt each
+	// round from the row rather than from the conversation the turn
+	// started with, because the goal tool writes that row mid-turn and a
+	// prompt still saying "working" after the model said it was done
+	// invites it to say so again.
+	lines = append(lines, self.goalLines(ctx)...)
 	return strings.Join(lines, "\n")
+}
+
+// goalLines are what the prompt says about the goal on this conversation:
+// the words of it, where it stands, and the agent's own last note.
+func (self *AskRun) goalLines(ctx context.Context) []string {
+	var conversation *models.AgentConversation
+	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.GetAgentConversation(self.settings.Conversation.ID)
+		return err
+	}); err != nil {
+		log.Debugf("cannot read the goal of conversation %q for the prompt: %s", self.settings.Conversation.ID, err)
+		return nil
+	}
+	if conversation == nil || conversation.Goal == "" {
+		return nil
+	}
+	lines := []string{fmt.Sprintf("This conversation has a goal on it, which you work toward across turns of your own: %q. It is %s.", conversation.Goal, conversation.GoalState)}
+	if note := strings.TrimSpace(conversation.GoalNote); note != "" {
+		lines = append(lines, "Your last word on it: "+note)
+	}
+	return lines
 }
 
 // collections is the calendars and address books the agent may read, said in

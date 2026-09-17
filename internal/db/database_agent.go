@@ -91,6 +91,13 @@ type AgentJobFilter struct {
 	AgentID  string
 	Statuses []models.AgentJobStatus
 	Kinds    []models.AgentJobKind
+
+	// SubjectID is what the jobs are about: one message, one schedule,
+	// one conversation. Since counts only the jobs made from that moment
+	// on, which is how a goal knows how many turns it has taken today
+	// without a column of its own.
+	SubjectID string
+	Since     time.Time
 }
 
 // AgentUsage is one addition to the usage rows.
@@ -598,6 +605,12 @@ func (self *transaction) agentJobQuery(filter *AgentJobFilter) *gorm.DB {
 			kinds = append(kinds, string(kind))
 		}
 		query = query.Where("\"kind\" IN ?", kinds)
+	}
+	if filter.SubjectID != "" {
+		query = query.Where("\"subject_id\" = ?", filter.SubjectID)
+	}
+	if !filter.Since.IsZero() {
+		query = query.Where("\"created_at\" >= ?", filter.Since)
 	}
 	return query
 }
