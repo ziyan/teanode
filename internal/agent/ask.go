@@ -71,6 +71,16 @@ type AskSettings struct {
 	// what a turn somebody typed gets.
 	Work config.AgentWork
 
+	// ReadThenAnswer is a run that looks things up and then answers once:
+	// a dream reading a batch, an ingest describing a checkout. Its
+	// history is never compacted, because a compaction note would stand
+	// in for the very documents it was given to read; when the history
+	// fills, the run is told to answer now instead. ResultCharacters
+	// bounds each lookup's answer for such a run, so a long page does not
+	// fill the window by itself; zero means the usual bound.
+	ReadThenAnswer   bool
+	ResultCharacters int
+
 	// confirmVia is the turn a subagent's confirmation cards are shown in,
 	// which is the turn that started it. A subagent has the tools its
 	// parent has, and some of those ask before they act -- so the card has
@@ -368,7 +378,15 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
-func (self *AskRun) ReadOnly() bool                       { return self.settings.ReadOnly }
+
+// resultCharacters is how much of a tool's answer the history keeps.
+func (self *AskRun) resultCharacters() int {
+	if self.settings.ResultCharacters > 0 {
+		return self.settings.ResultCharacters
+	}
+	return askResultCharacters
+}
+func (self *AskRun) ReadOnly() bool { return self.settings.ReadOnly }
 
 // Usage is what the turn has spent so far, every round added up.
 func (self *AskRun) Usage() llm.Usage         { return self.usage }
@@ -713,13 +731,20 @@ func (self *AskRun) turn() error {
 				return nil
 			}
 		}
-		if !compactFailed && llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
-			compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
-			if err != nil {
-				log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
-				compactFailed = true
-			} else {
-				history = compacted
+		// A run that reads and then answers is told to answer once its
+		// history fills; anything else has its older turns compacted.
+		answerNow := false
+		if llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
+			if settings.ReadThenAnswer {
+				answerNow = true
+			} else if !compactFailed {
+				compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
+				if err != nil {
+					log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
+					compactFailed = true
+				} else {
+					history = compacted
+				}
 			}
 		}
 		compact := settings.Short || llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
@@ -753,7 +778,7 @@ func (self *AskRun) turn() error {
 		// writes the call out as words, which the server then mangles,
 		// and the answer is neither a call nor an answer.
 		toolChoice := ""
-		if round == maximumRounds-1 && len(definitions) > 0 {
+		if (round == maximumRounds-1 || answerNow) && len(definitions) > 0 {
 			messages = append(messages, llm.ChatMessage{Role: llm.RoleUser, Content: lastRoundNotice})
 			toolChoice = "none"
 		}
@@ -764,7 +789,7 @@ func (self *AskRun) turn() error {
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
 		}
 		if err != nil {
-			if llm.IsContextLengthError(err) && !overflowed {
+			if llm.IsContextLengthError(err) && !overflowed && !settings.ReadThenAnswer {
 				overflowed = true
 				compacted, compactErr := self.compact(ctx, provider, model, modelName, history, compactOverflowTail)
 				if compactErr != nil {
@@ -1031,14 +1056,14 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		// and unmarked, a hostile endpoint could answer with instructions
 		// and have them read as the tool's own words.
 		said := err.Error()
-		if len(said) > askResultCharacters {
-			said = said[:askResultCharacters] + "\n[cut here: it went on]"
+		if len(said) > self.resultCharacters() {
+			said = said[:self.resultCharacters()] + "\n[cut here: it went on]"
 		}
 		return self.toolAnswer(toolCall, fenced(fmt.Sprintf(`{"error": %q}`, said)))
 	}
 	content := result.Content
-	if len(content) > askResultCharacters {
-		content = content[:askResultCharacters] + "\n[cut here: the result goes on]"
+	if len(content) > self.resultCharacters() {
+		content = content[:self.resultCharacters()] + "\n[cut here: the result goes on]"
 	}
 	if result.Untrusted {
 		content = fenced(content)

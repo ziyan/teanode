@@ -189,13 +189,17 @@ type memoryItem struct {
 	To        string   `json:"to"`
 	Relation  string   `json:"relation"`
 	Number    int      `json:"number"`
+	// What search and index take. They live on the item, not only on the
+	// call, so that a batch of searches keeps its words: for a while they
+	// were on the call alone, and every search inside a batch was asked
+	// "search what?".
+	Query string `json:"query"`
+	Depth int    `json:"depth"`
+	Limit int    `json:"limit"`
 }
 
 type memoryArguments struct {
 	memoryItem
-	Query string       `json:"query"`
-	Depth int          `json:"depth"`
-	Limit int          `json:"limit"`
 	Items []memoryItem `json:"items"`
 }
 

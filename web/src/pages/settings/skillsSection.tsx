@@ -85,9 +85,10 @@ export function SkillsSection() {
   const [filter, setFilter] = useState('')
   // The operator's keys that are filled in, as "skill/key".
   const [filled, setFilled] = useState<Set<string>>(new Set())
-  // A key being filled in: the skill and key, and the value typed.
-  const [filling, setFilling] = useState<{ skill: string; key: string } | null>(null)
-  const [value, setValue] = useState('')
+  // A skill whose keys are being filled in, and the values typed so far,
+  // by key. A skill may ask for several, and they are filled in together.
+  const [filling, setFilling] = useState<Skill | null>(null)
+  const [values, setValues] = useState<Record<string, string>>({})
   const [problem, setProblem] = useState<string | null>(null)
 
   const read = useCallback(async () => {
@@ -129,13 +130,26 @@ export function SkillsSection() {
 
   const keep = async () => {
     if (!filling) return
-    setBusy(filling.skill)
+    // Only what was typed is sent: a key left blank keeps its value.
+    const typed = filling.secrets
+      .filter((key) => (values[key] ?? '') !== '')
+      .map((key) => ({ skill: filling.name, key, value: values[key] }))
+    if (typed.length === 0) {
+      setFilling(null)
+      return
+    }
+    setBusy(filling.name)
     setProblem(null)
     try {
-      await graphql(UPDATE, { agent: { skillSecrets: [{ skill: filling.skill, key: filling.key, value }] } })
-      toast.done(t('agentSettings.skillSecretKept', { key: filling.key, skill: filling.skill }))
+      await graphql(UPDATE, { agent: { skillSecrets: typed } })
+      toast.done(
+        t('agentSettings.skillSecretsKept', {
+          keys: typed.map((secret) => secret.key).join(', '),
+          skill: filling.name,
+        }),
+      )
       setFilling(null)
-      setValue('')
+      setValues({})
       await read()
     } catch (reason) {
       setProblem(reason instanceof Error ? reason.message : String(reason))
@@ -197,22 +211,22 @@ export function SkillsSection() {
                   {/* A key the skill asks the operator for, filled in here
                       rather than in a configuration file nobody can reach
                       on a running server. */}
-                  {skill.secrets.map((key) => (
+                  {skill.secrets.length > 0 ? (
                     <button
-                      key={key}
                       type="button"
                       disabled={busy === skill.name}
                       onClick={() => {
-                        setValue('')
+                        setValues({})
                         setProblem(null)
-                        setFilling({ skill: skill.name, key })
+                        setFilling(skill)
                       }}
                     >
-                      {filled.has(`${skill.name}/${key}`)
-                        ? t('agentSettings.skillSecretReplace', { key })
-                        : t('agentSettings.skillSecretSet', { key })}
+                      {t('agentSettings.skillKeys', {
+                        filled: String(skill.secrets.filter((key) => filled.has(`${skill.name}/${key}`)).length),
+                        total: String(skill.secrets.length),
+                      })}
                     </button>
-                  ))}
+                  ) : null}
                   {skill.secrets.length + skill.personalSecrets.length > 0 ? (
                     <Select
                       value={skill.scope}
@@ -326,24 +340,32 @@ export function SkillsSection() {
 
       {filling !== null ? (
         <FormDialog
-          title={t('agentSettings.skillSecretTitle', { key: filling.key, skill: filling.skill })}
+          title={t('agentSettings.skillSecretTitle', { skill: filling.name })}
           submitLabel={t('common.save')}
-          busy={busy === filling.skill}
+          busy={busy === filling.name}
           error={problem}
           onClose={() => setFilling(null)}
           onSubmit={() => void keep()}
         >
           <p className="muted">{t('agentSettings.skillSecretHint')}</p>
-          <label>
-            <span>{filling.key}</span>
-            <input
-              autoFocus
-              type="password"
-              autoComplete="off"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-          </label>
+          {filling.secrets.map((key, index) => {
+            const has = filled.has(`${filling.name}/${key}`)
+            return (
+              <label key={key}>
+                <span>
+                  {key} · {has ? t('agentSettings.skillKeyFilled') : t('agentSettings.skillKeyEmpty')}
+                </span>
+                <input
+                  autoFocus={index === 0}
+                  type="password"
+                  autoComplete="off"
+                  placeholder={has ? t('agentSettings.skillKeyKeep') : ''}
+                  value={values[key] ?? ''}
+                  onChange={(event) => setValues({ ...values, [key]: event.target.value })}
+                />
+              </label>
+            )
+          })}
         </FormDialog>
       ) : null}
 

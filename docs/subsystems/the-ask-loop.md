@@ -46,7 +46,13 @@ by `settings.MaxRounds`. Each round:
    error event instead. Two shapes for one condition; see the caveats.)
 2. **Compaction**, if the rendered history is over `askHistoryTokens` (30000
    estimated tokens) and no compaction has already failed this turn. See
-   `context.md`.
+   `context.md`. A run whose settings say `ReadThenAnswer` (every headless
+   run made by `think`: a dream reading a batch, an ingest describing a
+   checkout) is never compacted: a compaction note would stand in for the
+   very documents it was given, and the run would file nothing. Such a run
+   is told to answer now instead, the way the last round is, and each of
+   its lookups is cut at `ResultCharacters` (6000) rather than the usual
+   24000 so one long page cannot fill the window.
 3. **Short or long.** A second, lower gate at `askHistoryTokens/2` (15000)
    sets `compact`, which switches the prompt to its short variant *and* forces
    tool deferral.
@@ -170,7 +176,9 @@ deliberately absent.
 - **`self.offered` is computed once per turn.** A computer or a tab attached
   mid-turn is not reachable until the next one.
 - **The overflow retry does not count a round**, by design: the round that was
-  refused for its size is tried once more after compacting hard.
+  refused for its size is tried once more after compacting hard. A
+  `ReadThenAnswer` run is not retried: its caller (the dream) marks the batch
+  too long and goes on.
 - **A turn has no wall clock of its own.** The request timeout bounds each
   model call; a job-driven turn is bounded by its job's ten minutes, and a
   person's turn only by the rounds.

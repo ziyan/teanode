@@ -78,6 +78,14 @@ var replyTools = map[string]bool{
 // model and sorting on the triage one. The ask feature, which is the
 // person's own chat, does not gate this: the feature that owns the work
 // does, and the caller has checked it.
+// thinkResultCharacters bounds what one lookup brings back into a
+// headless run. A page of a hundred facts is twenty thousand characters,
+// and a run given twenty documents to read that fetched three such pages
+// overflowed a small model's window and lost the documents to the
+// compaction; a lookup is for checking what is known, and this much of a
+// page says it.
+const thinkResultCharacters = 6000
+
 func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
@@ -112,6 +120,7 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: prompt, Surface: string(kind), ReadOnly: true, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
+		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
 	})
 	if err != nil {
 		return nil, err
