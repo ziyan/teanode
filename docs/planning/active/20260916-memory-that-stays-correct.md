@@ -572,6 +572,68 @@ To be filled: the count of `fact_gone` revisions by actor before and after
 Milestone 1; the first evaluation table; the associate-off and associate-on
 totals.
 
+## Sources
+
+What this plan draws on, beyond the code. The two reviews were written by
+an outside reader of commit 0d325449 on 2026-09-16 and handed to the
+maintainer; every claim they made about the code was checked against the
+tree (the results are in Context and Orientation and in the Surprises).
+The papers and articles below are the ones those reviews cited, with what
+each was taken for; the addresses are as the reviews gave them.
+
+- Letta, "Sleep-time compute": moving memory work into background agents
+  that run between conversations, which is the shape the dream already
+  has. https://www.letta.com/blog/sleep-time-compute/
+- Letta, "Towards agents that learn" (June 2026): memory models trained to
+  write memories that help later tasks; taken as a direction, not a
+  dependency, and as the reason to log what a retrieved memory did for an
+  answer (Milestone 7). https://www.letta.com/blog/towards-agents-that-learn/
+- Zep, Graphiti: temporal validity on facts and relationships, `valid_from`
+  and `valid_to` beside the time a thing was learned, and replacement links
+  between statements; the pattern behind supersession and, later, temporal
+  windows. https://github.com/getzep/graphiti
+- Hindsight, retrieval architecture: candidates from meaning, words, graph
+  neighbours and time, then reranking; the reference for the retrieval work
+  this plan defers to a later one.
+  https://hindsight.vectorize.io/developer/retrieval
+- Hindsight Memory-PRM (August 2026): citations and removal-and-reanswer
+  tests to measure what a memory was worth; the audit trail and the
+  offline removal test in Milestone 7 come from it, the trained controller
+  does not. https://arxiv.org/html/2608.29605v1
+- Mem0 (Chhikara et al., 2025), "Building production-ready AI agents with
+  scalable long-term memory": extraction, consolidation and a graph
+  variant; the simpler baseline the evaluation should beat.
+  https://arxiv.org/abs/2504.19413
+- Mastra, observational memory: a background observer and reflector
+  keeping a compressed log; a comparison for conversation continuity and
+  context cost. https://mastra.ai/docs/memory/observational-memory
+- LongMemEval (Wu et al., 2024): a benchmark of extraction, multi-session
+  reasoning, temporal reasoning, knowledge updates and abstention; the
+  external half of the question set in Milestone 7.
+  https://arxiv.org/abs/2410.10813
+- SimpleMem (January 2026): compact, self-contained records that resolve
+  names and dates while keeping source references; the shape a filed fact
+  already has, and the reason the evidence check keeps the quote.
+  https://arxiv.org/html/2601.02553v3
+- LycheeMemory V2 (August 2026): consolidating coherent conversation
+  segments rather than every turn, at lower construction cost; behind the
+  honest cursor in Milestone 2 reading one segment at a time.
+  https://arxiv.org/abs/2608.12990
+- "Sleep-time Compute" (April 2025): preparing for related future queries
+  pays when the queries are predictable; the reason association should
+  favour active projects and recurring questions, and the caution about
+  arbitrary walks. https://arxiv.org/abs/2504.13171
+- Memora (April 2026): tests of evolving preferences and repeated updates
+  that penalise reliance on obsolete memories; the "changed" kind of
+  question in Milestone 7. https://arxiv.org/html/2604.20006v1
+- "Total Recall at What Cost?" (August 2026): the financial break-even of
+  memory systems depends on the whole pipeline; the reason Milestone 7
+  counts ingestion, dreaming and answering together.
+  https://arxiv.org/html/2608.11879v1
+
+Internal: `docs/subsystems/memory.md`, `docs/subsystems/the-ask-loop.md`,
+and the two plans named at the top.
+
 ## Interfaces and Dependencies
 
 In `internal/models/graph.go`: `RevisionFactFolded`, `RevisionFactStruck`;

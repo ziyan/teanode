@@ -117,6 +117,12 @@ readonly ALLOWED_HOSTS=(
   generativelanguage.googleapis.com
   api.search.brave.com
 
+  # Papers and articles the memory plans cite, published work of others
+  # that a reader is meant to follow; arxiv.org and mastra.ai pass the
+  # check on their own.
+  .letta.com
+  hindsight.vectorize.io
+
   # Where the project lives, and what it is written in. The raw host is where
   # the deployment guide fetches the compose file from.
   .github.com
