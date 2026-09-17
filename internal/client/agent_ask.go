@@ -25,6 +25,14 @@ type AgentConversation struct {
 	LastAt           time.Time  `json:"lastAt"`
 	ArchivedAt       *time.Time `json:"archivedAt"`
 	CompactedThrough string     `json:"compactedThrough"`
+
+	// The goal the agent works toward in this conversation, where it
+	// stands (working, waiting, met), its last word on it, and when it
+	// takes its next turn.
+	Goal       string     `json:"goal"`
+	GoalState  string     `json:"goalState"`
+	GoalNote   string     `json:"goalNote"`
+	GoalNextAt *time.Time `json:"goalNextAt"`
 }
 
 // AgentRunSummary is one run as a list shows it, with what it cost.
@@ -145,7 +153,7 @@ type AgentTool struct {
 	Core        bool   `json:"core"`
 }
 
-const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough }`
+const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt }`
 
 // The documents.
 const (
@@ -170,9 +178,9 @@ const (
 			total
 		}
 	}`
-	DocumentStartAgentConversation  = `mutation ($title: String) { StartAgentConversation(title: $title) ` + conversationFields + ` }`
-	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean) {
-		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived) ` + conversationFields + `
+	DocumentStartAgentConversation  = `mutation ($title: String, $goal: String) { StartAgentConversation(title: $title, goal: $goal) ` + conversationFields + ` }`
+	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean, $goal: String) {
+		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived, goal: $goal) ` + conversationFields + `
 	}`
 	DocumentSetAgentMainConversation = `mutation ($conversationId: String) {
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
@@ -340,14 +348,18 @@ func ReadAgentConversation(ctx context.Context, connection *Client, conversation
 	return result.ReadAgentConversation, nil
 }
 
-// StartAgentConversation begins a named conversation.
-func StartAgentConversation(ctx context.Context, connection *Client, title string) (*AgentConversation, error) {
+// StartAgentConversation begins a named conversation, with a goal on it
+// when one is given.
+func StartAgentConversation(ctx context.Context, connection *Client, title, goal string) (*AgentConversation, error) {
 	var result struct {
 		StartAgentConversation *AgentConversation `json:"StartAgentConversation"`
 	}
 	variables := map[string]any{}
 	if title != "" {
 		variables["title"] = title
+	}
+	if goal != "" {
+		variables["goal"] = goal
 	}
 	if err := connection.Execute(ctx, DocumentStartAgentConversation, variables, &result); err != nil {
 		return nil, err
@@ -380,7 +392,10 @@ func SetAgentMainConversation(ctx context.Context, connection *Client, conversat
 	return result.SetAgentMainConversation, nil
 }
 
-func UpdateAgentConversation(ctx context.Context, connection *Client, conversationId, title string, archived *bool) (*AgentConversation, error) {
+// UpdateAgentConversation renames a conversation, archives it, or sets the
+// goal it works toward; a goal of "" clears the goal, and a nil goal
+// leaves it alone.
+func UpdateAgentConversation(ctx context.Context, connection *Client, conversationId, title string, archived *bool, goal *string) (*AgentConversation, error) {
 	var result struct {
 		UpdateAgentConversation *AgentConversation `json:"UpdateAgentConversation"`
 	}
@@ -390,6 +405,9 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 	}
 	if archived != nil {
 		variables["archived"] = *archived
+	}
+	if goal != nil {
+		variables["goal"] = *goal
 	}
 	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, variables, &result); err != nil {
 		return nil, err

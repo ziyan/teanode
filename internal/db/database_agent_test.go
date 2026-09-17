@@ -234,3 +234,113 @@ func TestAgentTheDreamIsSaved(t *testing.T) {
 		}
 	})
 }
+
+// A goal on a conversation is stored with its state, its note and the time
+// of the next turn; a working goal whose time has come is listed as due,
+// and one that waits, one that is met and one that is cleared are not.
+//
+// The update statement lists its columns by name, which is how the night's
+// hours were silently dropped above; the same mistake here would leave a
+// goal that never advances and an agent that never stops taking turns.
+func TestAgentConversationGoalIsStoredAndListedWhenDue(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		due := now.Add(-time.Minute)
+		working, err := tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: now,
+			Goal: "count the unread mails", GoalState: models.GoalWorking, GoalNextAt: &due,
+		})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		read, err := tx.GetAgentConversation(working.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if read.Goal != "count the unread mails" || read.GoalState != models.GoalWorking || read.GoalNextAt == nil {
+			t.Fatalf("the goal should come back as it went in: %+v", read)
+		}
+
+		// A conversation whose goal is set later, through the modify
+		// closure, which is the path the API and the tool both take.
+		later, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		soon := now.Add(time.Hour)
+		if _, err := tx.UpdateAgentConversation(later.ID, func(conversation *models.AgentConversation) error {
+			conversation.Goal = "watch the deploy"
+			conversation.GoalState = models.GoalWorking
+			conversation.GoalNote = "waiting for the build"
+			conversation.GoalNextAt = &soon
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentConversation: %s", err)
+		}
+
+		goals, err := tx.ListDueAgentGoals(now, 0)
+		if err != nil {
+			t.Fatalf("ListDueAgentGoals: %s", err)
+		}
+		if len(goals) != 1 || goals[0].ID != working.ID {
+			t.Fatalf("only the goal whose time has come is due: %+v", goals)
+		}
+		if goals[0].GoalNote != "" {
+			t.Fatalf("this one has no note yet: %q", goals[0].GoalNote)
+		}
+
+		// One that waits for the person is not due, whatever its time
+		// says, and neither is one that is met.
+		if _, err := tx.UpdateAgentConversation(working.ID, func(conversation *models.AgentConversation) error {
+			conversation.GoalState = models.GoalWaiting
+			conversation.GoalNote = "two drafts are ready; say send or edit"
+			conversation.GoalNextAt = nil
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if goals, err = tx.ListDueAgentGoals(now, 0); err != nil || len(goals) != 0 {
+			t.Fatalf("a goal that waits is not due: %v %+v", err, goals)
+		}
+		waiting, err := tx.GetAgentConversation(working.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting.GoalState != models.GoalWaiting || waiting.GoalNote == "" || waiting.GoalNextAt != nil {
+			t.Fatalf("the waiting state, its note and its cleared time should be stored: %+v", waiting)
+		}
+
+		// Cleared: the four columns go back to empty together.
+		if _, err := tx.UpdateAgentConversation(working.ID, func(conversation *models.AgentConversation) error {
+			conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt = "", "", "", nil
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		cleared, err := tx.GetAgentConversation(working.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cleared.Goal != "" || cleared.GoalState != "" || cleared.GoalNote != "" || cleared.GoalNextAt != nil {
+			t.Fatalf("clearing leaves nothing behind: %+v", cleared)
+		}
+
+		// The one an hour out comes due when the clock passes it.
+		if goals, err = tx.ListDueAgentGoals(now.Add(2*time.Hour), 0); err != nil || len(goals) != 1 || goals[0].ID != later.ID {
+			t.Fatalf("the later goal should be due two hours on: %v %+v", err, goals)
+		}
+		if goals[0].GoalNote != "waiting for the build" {
+			t.Fatalf("the note should come back with it: %q", goals[0].GoalNote)
+		}
+	})
+}

@@ -79,6 +79,10 @@ type InsightOperation interface {
 	// the given time with something said since it was last described.
 	ListAgentConversationsToDescribe(quietSince time.Time, limit int) ([]*models.AgentConversation, error)
 
+	// ListDueAgentGoals is every conversation whose goal is working and
+	// whose next turn is due.
+	ListDueAgentGoals(now time.Time, limit int) ([]*models.AgentConversation, error)
+
 	// ScavengeAgentConversations removes run transcripts older than the
 	// given time.
 	ScavengeAgentConversations(kind models.AgentConversationKind, before time.Time) (int64, error)
@@ -130,6 +134,13 @@ type agentConversationModel struct {
 	// How far a remember run has read. See migration 0067.
 	RememberedThrough string     `gorm:"column:remembered_through"`
 	RememberedAt      *time.Time `gorm:"column:remembered_at"`
+
+	// The goal the agent keeps working toward in this conversation. See
+	// migration 0083.
+	Goal       string     `gorm:"column:goal"`
+	GoalState  string     `gorm:"column:goal_state"`
+	GoalNote   string     `gorm:"column:goal_note"`
+	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -361,6 +372,13 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		LastAt:            model.LastAt.In(time.Local),
 		CompactedThrough:  model.CompactedThrough,
 		RememberedThrough: model.RememberedThrough,
+		Goal:              model.Goal,
+		GoalState:         models.AgentGoalState(model.GoalState),
+		GoalNote:          model.GoalNote,
+	}
+	if model.GoalNextAt != nil {
+		at := model.GoalNextAt.In(time.Local)
+		conversation.GoalNextAt = &at
 	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
@@ -395,6 +413,10 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		SubjectID:  conversation.SubjectID,
 		Surface:    conversation.Surface,
 		LastAt:     now,
+		Goal:       conversation.Goal,
+		GoalState:  string(conversation.GoalState),
+		GoalNote:   conversation.GoalNote,
+		GoalNextAt: conversation.GoalNextAt,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -432,6 +454,7 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
+		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -579,6 +602,29 @@ func (self *transaction) ListAgentConversationsToDescribe(quietSince time.Time, 
 	if err := self.tx.Where("\"kind\" IN ? AND \"last_at\" < ? AND (\"described_at\" IS NULL OR \"described_at\" < \"last_at\")",
 		[]string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, quietSince,
 	).Order("\"last_at\" ASC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for index := range found {
+		conversations = append(conversations, conversationFromModel(&found[index]))
+	}
+	return conversations, nil
+}
+
+// ListDueAgentGoals is the conversations the agent owes a turn of its own:
+// a goal that is working, with its next time passed.
+//
+// A goal that is waiting for the person or already met has no next time,
+// so this is the whole of the sweep's question; the partial index of
+// migration 0083 answers it out of the few rows that have a goal running.
+func (self *transaction) ListDueAgentGoals(now time.Time, limit int) ([]*models.AgentConversation, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var found []agentConversationModel
+	if err := self.tx.Where("\"goal_state\" = ? AND \"goal_next_at\" IS NOT NULL AND \"goal_next_at\" <= ?",
+		string(models.GoalWorking), now,
+	).Order("\"goal_next_at\" ASC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	conversations := make([]*models.AgentConversation, 0, len(found))
