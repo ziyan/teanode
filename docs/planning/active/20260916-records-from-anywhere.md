@@ -319,10 +319,10 @@ A source is created three ways, and all three must learn a new format:
 The daemon's reading is `RunScan` in `internal/computer/scan.go` (line 226).
 It takes `ScanArguments` (line 77): `Root`, `Format`, `Include`, `Exclude`,
 `Known` (a map from a document's external id to the hash the server already
-holds, so unchanged things are named but not sent again), `Allowed`, `After`
-(the cursor: where the last page stopped), `Most` (page size, at most 256).
+holds, so unchanged things are named but not sent again), `After` (the
+cursor: where the last page stopped), `Most` (page size, at most 256).
 It answers a `ScanResult` (line 152): `Entries`, `Next` (the cursor for the
-next page, empty when done), `Sensitive`, `Refused`. Each `ScanEntry` (line
+next page, empty when done), `Refused`. Each `ScanEntry` (line
 105) has `ExternalID` (what the server files it under; JSON name `id`),
 `Kind`, `Title`, `URL`, `Size`, `Hash`, `ModifiedAt`, `HappenedAt`, `Text`,
 `Unchanged`, `Refused`, `Metadata`, `Private`. `RunScan` first resolves the

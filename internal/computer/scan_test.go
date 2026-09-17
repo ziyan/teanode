@@ -121,10 +121,12 @@ func TestSecretsDoNotLeaveTheMachine(t *testing.T) {
 	}
 }
 
-// A personal agent is for the person's own life, so their tax, legal,
-// medical and financial papers are read. What pauses is the other thing a
-// disk holds: records about named colleagues.
-func TestTheirOwnPapersAreReadAndOtherPeoplesAreNot(t *testing.T) {
+// A personal agent is for the person's own life, and every directory of
+// it is read alike. What a directory is called says nothing about what
+// may be read: a tax return, a lease and a folder of evaluations all
+// come back the same way, and the only thing that holds a file back is
+// the secret filter or the source's own globs.
+func TestEveryDirectoryIsReadAlike(t *testing.T) {
 	result := scanIn(t, map[string]string{
 		"tax/2024-return.md":        "Paid 4,200 in January.\n",
 		"legal/lease.md":            "The lease ends in March 2027.\n",
@@ -132,32 +134,63 @@ func TestTheirOwnPapersAreReadAndOtherPeoplesAreNot(t *testing.T) {
 		"finance/mortgage.md":       "Fixed until 2029.\n",
 		"evaluations/alice-2024.md": "Alice exceeded expectations this year.\n",
 		"recruiting/candidate.md":   "The candidate asked about equity.\n",
+		"hr/handbook.md":            "Thirty days of leave a year.\n",
 	}, nil)
 
 	byId := map[string]ScanEntry{}
 	for _, entry := range result.Entries {
 		byId[entry.ExternalID] = entry
 	}
-	for _, theirs := range []string{"tax/2024-return.md", "legal/lease.md", "medical/consultant.md", "finance/mortgage.md"} {
-		if entry := byId[theirs]; entry.Text == "" {
-			t.Fatalf("%s is theirs and should be read: %+v", theirs, entry)
+	for name := range map[string]bool{
+		"tax/2024-return.md": true, "legal/lease.md": true,
+		"medical/consultant.md": true, "finance/mortgage.md": true,
+		"evaluations/alice-2024.md": true, "recruiting/candidate.md": true,
+		"hr/handbook.md": true,
+	} {
+		if entry := byId[name]; entry.Text == "" {
+			t.Fatalf("%s should be read like any other file: %+v", name, entry)
 		}
 	}
-	for _, other := range []string{"evaluations/alice-2024.md", "recruiting/candidate.md"} {
-		if entry, found := byId[other]; found && entry.Text != "" {
-			t.Fatalf("%s is about somebody else and waits to be let in: %+v", other, entry)
+}
+
+// A source's globs are the one thing that narrows a manifest: include
+// says what is worth reading, exclude says what is not, and "**" means
+// any number of segments.
+func TestTheSourcesGlobsNarrowTheManifest(t *testing.T) {
+	files := map[string]string{
+		"notes/roof.md":          "The roof leaks again.\n",
+		"notes/2024/lease.md":    "The lease ends in March 2027.\n",
+		"notes/scratch/draft.md": "Half a sentence.\n",
+		"build/output.md":        "Generated, and of no use to anybody.\n",
+		"README.txt":             "Not markdown at all.\n",
+	}
+
+	included := scanIn(t, files, &ScanArguments{Include: []string{"notes/**"}})
+	kept := map[string]bool{}
+	for _, entry := range included.Entries {
+		kept[entry.ExternalID] = true
+	}
+	for _, wanted := range []string{"notes/roof.md", "notes/2024/lease.md", "notes/scratch/draft.md"} {
+		if !kept[wanted] {
+			t.Fatalf("%s matches the include glob and should be read: %v", wanted, kept)
 		}
 	}
-	names := strings.Join(result.Sensitive, ",")
-	if !strings.Contains(names, "evaluations") || !strings.Contains(names, "recruiting") {
-		t.Fatalf("both should be named so the person can let them in: %v", result.Sensitive)
+	for _, unwanted := range []string{"build/output.md", "README.txt"} {
+		if kept[unwanted] {
+			t.Fatalf("%s matches nothing included and should be left out: %v", unwanted, kept)
+		}
 	}
-	// And letting one in reads it.
-	result = scanIn(t, map[string]string{
-		"evaluations/alice-2024.md": "Alice exceeded expectations this year.\n",
-	}, &ScanArguments{Allowed: []string{"evaluations"}})
-	if len(result.Entries) != 1 || result.Entries[0].Text == "" {
-		t.Fatalf("a directory the person let in is read: %+v", result.Entries)
+
+	excluded := scanIn(t, files, &ScanArguments{Exclude: []string{"notes/scratch/**", "build/**"}})
+	kept = map[string]bool{}
+	for _, entry := range excluded.Entries {
+		kept[entry.ExternalID] = true
+	}
+	if kept["notes/scratch/draft.md"] || kept["build/output.md"] {
+		t.Fatalf("an excluded path should be left out: %v", kept)
+	}
+	if !kept["notes/roof.md"] || !kept["README.txt"] {
+		t.Fatalf("what the excludes do not name is still read: %v", kept)
 	}
 }
 

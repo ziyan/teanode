@@ -101,9 +101,6 @@ type ScanArguments struct {
 	// most of what a page cost.
 	KnownID string `json:"knownId,omitempty"`
 
-	// Allowed is the sensitive directories the person has let in by name.
-	Allowed []string `json:"allowed,omitempty"`
-
 	// After is where the last pass stopped, so this one goes on from
 	// there: a path, a commit, a channel and a timestamp.
 	After string `json:"after,omitempty"`
@@ -133,8 +130,8 @@ type ScanEntry struct {
 	// Unchanged says the server's copy is still current.
 	Unchanged bool `json:"unchanged,omitempty"`
 
-	// Refused says why nothing was sent: a secret, a sensitive directory,
-	// a file too large, a kind nothing here can read.
+	// Refused says why nothing was sent: a secret, a file too large, a
+	// kind nothing here can read.
 	Refused string `json:"refused,omitempty"`
 
 	// Metadata is what the kind carries beside its text: an author, a
@@ -166,11 +163,6 @@ type ScanResult struct {
 	// Next is where the following page starts; empty when there is no
 	// more.
 	Next string `json:"next,omitempty"`
-
-	// Sensitive is every directory name the scan passed over because it
-	// looked like it was about named people. Reported so the person can
-	// let one in, never read without them saying so.
-	Sensitive []string `json:"sensitive,omitempty"`
 
 	// Refused is how many entries carried something that must not leave
 	// this machine.
@@ -460,13 +452,7 @@ func ListScanRoots(options *Options) ([]string, error) {
 // repositories whose sources are a few hundred megabytes.
 func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most int) (*ScanResult, error) {
 	result := &ScanResult{Extractors: availableExtractors()}
-	sensitive := map[string]bool{}
-	allowed := map[string]bool{}
-	for _, name := range arguments.Allowed {
-		allowed[strings.ToLower(name)] = true
-	}
-
-	paths, profiles, err := listTree(ctx, root, arguments, sensitive, allowed)
+	paths, profiles, err := listTree(ctx, root, arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -526,10 +512,6 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 			Repository: profiles[relative],
 		})
 	}
-	for name := range sensitive {
-		result.Sensitive = append(result.Sensitive, name)
-	}
-	sort.Strings(result.Sensitive)
 
 	// Commits, after the files, so a first pass shows something quickly.
 	if result.Next == "" && len(result.Entries) < most {
@@ -543,13 +525,13 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 
 // listTree is every file worth offering, relative to the root, and the
 // profile of each repository found on the way.
-func listTree(ctx context.Context, root string, arguments *ScanArguments, sensitive, allowed map[string]bool) ([]string, map[string]*RepositoryProfile, error) {
+func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]string, map[string]*RepositoryProfile, error) {
 	profiles := map[string]*RepositoryProfile{}
 	if isRepository(root) {
 		profiles[""] = repositoryProfile(ctx, root)
 		tracked, err := trackedFiles(ctx, root)
 		if err == nil {
-			return keepWanted(tracked, arguments, sensitive, allowed), profiles, nil
+			return keepWanted(tracked, arguments), profiles, nil
 		}
 		// A repository git cannot read is walked like any other tree,
 		// which is the right answer rather than an error: the files are
@@ -569,10 +551,6 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments, sensit
 				return filepath.SkipDir
 			}
 			if strings.HasPrefix(name, ".") && path != root {
-				return filepath.SkipDir
-			}
-			if SensitiveDirectory(name) && !allowed[strings.ToLower(name)] {
-				sensitive[name] = true
 				return filepath.SkipDir
 			}
 			// A repository inside the tree is read as a repository.
@@ -599,23 +577,14 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments, sensit
 	if err != nil {
 		return nil, nil, err
 	}
-	return keepWanted(paths, arguments, sensitive, allowed), profiles, nil
+	return keepWanted(paths, arguments), profiles, nil
 }
 
-// keepWanted narrows a manifest by the source's globs and the sensitive
-// names the person has not let in.
-func keepWanted(paths []string, arguments *ScanArguments, sensitive, allowed map[string]bool) []string {
+// keepWanted narrows a manifest by the source's globs.
+func keepWanted(paths []string, arguments *ScanArguments) []string {
 	kept := make([]string, 0, len(paths))
 	for _, path := range paths {
-		skip := false
-		for _, segment := range strings.Split(path, "/") {
-			if SensitiveDirectory(segment) && !allowed[strings.ToLower(segment)] {
-				sensitive[segment] = true
-				skip = true
-				break
-			}
-		}
-		if skip || matchesAny(path, arguments.Exclude) {
+		if matchesAny(path, arguments.Exclude) {
 			continue
 		}
 		if len(arguments.Include) > 0 && !matchesAny(path, arguments.Include) {

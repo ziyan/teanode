@@ -133,9 +133,7 @@ type agentSourceModel struct {
 	ChunkCount     int        `gorm:"column:chunk_count"`
 	RefusedCount   int        `gorm:"column:refused_count"`
 	More           bool       `gorm:"column:more"`
-	Sensitive      []byte     `gorm:"column:sensitive;type:jsonb"`
 	UnknownAuthors []byte     `gorm:"column:unknown_authors;type:jsonb"`
-	Allowed        []byte     `gorm:"column:allowed;type:jsonb"`
 }
 
 func (agentSourceModel) TableName() string { return "agent_source" }
@@ -206,14 +204,6 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 	if err != nil {
 		return nil, err
 	}
-	sensitive, err := json.Marshal(orEmptyStrings(source.Sensitive))
-	if err != nil {
-		return nil, err
-	}
-	allowed, err := json.Marshal(orEmptyStrings(source.Allowed))
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().Truncate(time.Microsecond)
 	written := *source
 	written.ModifiedAt = now
@@ -230,7 +220,7 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, LastError: written.LastError,
 		DocumentCount: written.DocumentCount, ChunkCount: written.ChunkCount,
 		RefusedCount: written.RefusedCount, More: written.More,
-		Sensitive: sensitive, Allowed: allowed, UnknownAuthors: unknownAuthors,
+		UnknownAuthors: unknownAuthors,
 	}
 	if create {
 		if err := self.tx.Create(row).Error; err != nil {
@@ -264,8 +254,7 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, LastError: self.LastError,
 		DocumentCount: self.DocumentCount, ChunkCount: self.ChunkCount,
 		RefusedCount: self.RefusedCount, More: self.More,
-		Cursor: map[string]any{}, Sensitive: []string{}, Allowed: []string{},
-		UnknownAuthors: []string{},
+		Cursor: map[string]any{}, UnknownAuthors: []string{},
 	}
 	if len(self.Specification) > 0 {
 		if err := json.Unmarshal(self.Specification, &source.Specification); err != nil {
@@ -277,9 +266,7 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 		value any
 	}{
 		{self.Cursor, &source.Cursor},
-		{self.Sensitive, &source.Sensitive},
 		{self.UnknownAuthors, &source.UnknownAuthors},
-		{self.Allowed, &source.Allowed},
 	} {
 		if len(pair.raw) > 0 {
 			if err := json.Unmarshal(pair.raw, pair.value); err != nil {

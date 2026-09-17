@@ -151,11 +151,6 @@ type AgentKnowledgeSource struct {
 	// More says the last pass left work behind and wants another.
 	More bool `json:"more"`
 
-	// Sensitive is the directories the scan flagged as looking private,
-	// and Allowed the ones the person has let in since.
-	Sensitive []string `json:"sensitive"`
-	Allowed   []string `json:"allowed"`
-
 	// UnknownAuthors are the commit addresses this source found that are
 	// not on the card the person marked as themselves. Whether a checkout
 	// is their own work is decided by that match, and when nothing

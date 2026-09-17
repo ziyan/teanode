@@ -537,7 +537,6 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			Format:  source.Specification.Format,
 			Include: source.Specification.Include,
 			Exclude: source.Specification.Exclude,
-			Allowed: source.Allowed,
 			Known:   known,
 			KnownID: knownId,
 			After:   after,
@@ -576,12 +575,6 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	var result computer.ScanResult
 	if err := json.Unmarshal(answer, &result); err != nil {
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
-	}
-
-	// Whatever it flagged as being about other people is remembered so
-	// the person can let it in; nothing under one is read until they do.
-	if len(result.Sensitive) > 0 {
-		self.notedSensitive(ctx, source, result.Sensitive)
 	}
 
 	// What the source named but this pass did not file: the unchanged,
@@ -653,35 +646,6 @@ func (self *Agent) computerNamed(agentId, name string) *attachedComputer {
 		return computers[0]
 	}
 	return nil
-}
-
-// notedSensitive remembers the directories the scan passed over.
-func (self *Agent) notedSensitive(ctx context.Context, source *models.AgentKnowledgeSource, names []string) {
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.GetAgentSource(source.AgentID, source.ID)
-		if err != nil || found == nil {
-			return err
-		}
-		seen := map[string]bool{}
-		for _, name := range found.Sensitive {
-			seen[name] = true
-		}
-		changed := false
-		for _, name := range names {
-			if !seen[name] {
-				found.Sensitive = append(found.Sensitive, name)
-				seen[name] = true
-				changed = true
-			}
-		}
-		if !changed {
-			return nil
-		}
-		_, err = tx.PutAgentSource(found)
-		return err
-	}); err != nil {
-		log.Warningf("cannot note what source %q passed over: %s", source.ID, err)
-	}
 }
 
 // notedUnknownAuthors keeps the commit addresses a source found that are

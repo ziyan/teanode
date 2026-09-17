@@ -178,12 +178,6 @@ func newAgentKnowledgeCommand() *cli.Command {
 				Action:    runKnowledgeSync,
 			},
 			{
-				Name:      "allow",
-				Usage:     "let in a directory the scan held back because it looked like it was about other people",
-				ArgsUsage: "<source-id-or-name> <directory>",
-				Action:    runKnowledgeAllow,
-			},
-			{
 				Name:      "remove",
 				Usage:     "stop reading a source, and forget what it found",
 				ArgsUsage: "<source-id-or-name>",
@@ -727,9 +721,6 @@ func runKnowledgeList(ctx context.Context, command *cli.Command) error {
 			note = "commits by " + strings.Join(source.UnknownAuthors, ", ") +
 				"; none of them is you — teanode contact me <id>"
 		}
-		if note == "" && len(source.Sensitive) > 0 {
-			note = "held back: " + strings.Join(source.Sensitive, ", ")
-		}
 		rows = append(rows, []string{
 			source.ID, source.Name, source.Kind, where, state,
 			strconv.Itoa(source.DocumentCount), strconv.Itoa(source.ChunkCount), note,
@@ -817,23 +808,6 @@ func setKnowledgeEnabled(ctx context.Context, command *cli.Command, enabled bool
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, said, source.Name)
-	return nil
-}
-
-func runKnowledgeAllow(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
-		return fmt.Errorf("give the source and the directory: teanode agent knowledge allow work evaluations")
-	}
-	connection, source, err := knowledgeSourceNamed(ctx, command)
-	if err != nil {
-		return err
-	}
-	updated, err := client.AllowAgentKnowledgeDirectory(ctx, connection, source.ID, command.Args().Get(1))
-	if err != nil {
-		return describeError(command, err)
-	}
-	_, _ = fmt.Fprintf(command.Writer, "%s will be read from now on. Allowed: %s\n",
-		command.Args().Get(1), strings.Join(updated.Allowed, ", "))
 	return nil
 }
 

@@ -107,10 +107,6 @@ type AgentGraphMutation interface {
 	// agent:use.
 	LinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error)
 	UnlinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error)
-
-	// Let a directory the scan flagged as being about other people in.
-	// Needs agent:use.
-	AllowAgentKnowledgeDirectory(ctx context.Context, arguments AllowAgentKnowledgeDirectoryArguments) (*models.AgentKnowledgeSource, error)
 }
 
 // The arguments.
@@ -275,11 +271,6 @@ type SaveAgentKnowledgeSourceArguments struct {
 
 type DeleteAgentKnowledgeSourceArguments struct {
 	SourceID string `json:"sourceId"`
-}
-
-type AllowAgentKnowledgeDirectoryArguments struct {
-	SourceID string `json:"sourceId"`
-	Name     string `json:"name"`
 }
 
 // AgentPageRevision is one change to a page, as somebody reads it.
@@ -1080,32 +1071,6 @@ func (self *graph) SyncAgentKnowledgeSource(ctx context.Context, arguments Delet
 	source.Enabled = true
 	_, err = tx.PutAgentSource(source)
 	return err == nil, err
-}
-
-func (self *graph) AllowAgentKnowledgeDirectory(ctx context.Context, arguments AllowAgentKnowledgeDirectoryArguments) (*models.AgentKnowledgeSource, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tx := self.writing(ctx)
-	source, err := tx.GetAgentSource(found.ID, arguments.SourceID)
-	if err != nil {
-		return nil, err
-	}
-	if source == nil {
-		return nil, fmt.Errorf("there is no source %q", arguments.SourceID)
-	}
-	name := strings.TrimSpace(arguments.Name)
-	for _, allowed := range source.Allowed {
-		if strings.EqualFold(allowed, name) {
-			return source, nil
-		}
-	}
-	source.Allowed = append(source.Allowed, name)
-	// Read it again now, so the person sees the effect of saying yes.
-	now := time.Now()
-	source.NextRunAt = &now
-	return tx.PutAgentSource(source)
 }
 
 func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error) {

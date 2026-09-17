@@ -91,9 +91,7 @@ type AgentKnowledgeSource struct {
 	ChunkCount     int                         `json:"chunkCount"`
 	RefusedCount   int                         `json:"refusedCount"`
 	More           bool                        `json:"more"`
-	Sensitive      []string                    `json:"sensitive"`
 	UnknownAuthors []string                    `json:"unknownAuthors"`
-	Allowed        []string                    `json:"allowed"`
 }
 
 // AgentKnowledgeSpecification says what a source reads.
@@ -143,7 +141,7 @@ type AgentDream struct {
 
 const nodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt }`
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
-const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more sensitive allowed unknownAuthors }`
+const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps revised tokens lastError proposals { kind path to reason } }`
 
@@ -191,17 +189,14 @@ const (
 	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String) {
 		SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId) ` + sourceFields + `
 	}`
-	DocumentDeleteAgentKnowledgeSource   = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
-	DocumentSyncAgentKnowledgeSource     = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
-	DocumentDreamAgentNow                = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
-	DocumentRereadAgentDocuments         = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
-	DocumentLinkAgentNodes               = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
-	DocumentUnlinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
-	DocumentAllowAgentKnowledgeDirectory = `mutation ($sourceId: String!, $name: String!) {
-		AllowAgentKnowledgeDirectory(sourceId: $sourceId, name: $name) ` + sourceFields + `
-	}`
-	DocumentListAgentDreams      = `query ($first: Int) { ListAgentDreams(first: $first) ` + dreamFields + ` }`
-	DocumentListAgentPageHistory = `query ($path: String!, $first: Int) { ListAgentPageHistory(path: $path, first: $first) ` + revisionFields + ` }`
+	DocumentDeleteAgentKnowledgeSource = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
+	DocumentSyncAgentKnowledgeSource   = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
+	DocumentDreamAgentNow              = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
+	DocumentRereadAgentDocuments       = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
+	DocumentLinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
+	DocumentUnlinkAgentNodes           = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
+	DocumentListAgentDreams            = `query ($first: Int) { ListAgentDreams(first: $first) ` + dreamFields + ` }`
+	DocumentListAgentPageHistory       = `query ($path: String!, $first: Int) { ListAgentPageHistory(path: $path, first: $first) ` + revisionFields + ` }`
 )
 
 // AgentGraphIndex is the pages, under a path or the whole graph.
@@ -361,17 +356,6 @@ func SyncAgentKnowledgeSource(ctx context.Context, connection *Client, sourceId 
 		SyncAgentKnowledgeSource bool `json:"SyncAgentKnowledgeSource"`
 	}
 	return connection.Execute(ctx, DocumentSyncAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, &result)
-}
-
-// AllowAgentKnowledgeDirectory lets a flagged directory in.
-func AllowAgentKnowledgeDirectory(ctx context.Context, connection *Client, sourceId, name string) (*AgentKnowledgeSource, error) {
-	var result struct {
-		AllowAgentKnowledgeDirectory *AgentKnowledgeSource `json:"AllowAgentKnowledgeDirectory"`
-	}
-	if err := connection.Execute(ctx, DocumentAllowAgentKnowledgeDirectory, map[string]any{"sourceId": sourceId, "name": name}, &result); err != nil {
-		return nil, err
-	}
-	return result.AllowAgentKnowledgeDirectory, nil
 }
 
 // AgentPageRevision is one change to a page.

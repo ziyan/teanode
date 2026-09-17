@@ -103,38 +103,6 @@ func isPlaceholder(value string) bool {
 	return plain
 }
 
-// sensitiveDirectories are names that suggest what is inside is about
-// *other people* rather than about the person whose agent this is.
-//
-// The distinction matters and it is easy to get backwards. This is a
-// personal agent: its whole purpose is to know the person's own life, so
-// their tax returns, their contracts, their medical letters, their bank
-// statements and their will are exactly what it should read. Holding
-// those back would make it useless for the questions people most want
-// answered -- what did I pay last year, when does the lease end, what did
-// the consultant say.
-//
-// What is held back is the other thing a person's disk holds: records
-// they keep in a work capacity about named colleagues and candidates. An
-// evaluation of somebody else is that person's business, they did not
-// consent to it being embedded, and it is the one category where the
-// person reading this file would not want the default to be yes.
-//
-// Nothing here is a refusal, only a pause: the directory is named on the
-// source's page with a switch beside it.
-var sensitiveDirectories = []*regexp.Regexp{
-	// Judgments of named people.
-	regexp.MustCompile(`(?i)^(perf|performance|peer|self)?[-_]?(eval|evals|evaluation|evaluations|review|reviews|appraisal|appraisals|feedback)s?$`),
-	// People who applied for something.
-	regexp.MustCompile(`(?i)^(recruit|recruiting|recruitment|candidates?|applicants?|interviews?|hiring|resumes?|cvs?)$`),
-	// What other people are paid, and the files that say so.
-	regexp.MustCompile(`(?i)^(salary|salaries|compensation|payroll|headcount)$`),
-	// The department whose filing cabinet is other people's records.
-	regexp.MustCompile(`(?i)^(hr|people[-_]?ops|personnel|employee[-_]?records?)$`),
-	// Discipline and complaints, which are about somebody by name.
-	regexp.MustCompile(`(?i)^(disciplinary|grievances?|investigations?|incidents?[-_]?hr)$`),
-}
-
 // SecretName says whether a path is a secret by its name alone.
 func SecretName(path string) bool {
 	cleaned := filepath.ToSlash(path)
@@ -161,17 +129,6 @@ func SecretContent(text string) (bool, string) {
 		return true, "a high-entropy value (" + line + ")"
 	}
 	return false, ""
-}
-
-// SensitiveDirectory says whether a directory's name suggests it is about
-// named people.
-func SensitiveDirectory(name string) bool {
-	for _, pattern := range sensitiveDirectories {
-		if pattern.MatchString(name) {
-			return true
-		}
-	}
-	return false
 }
 
 // highEntropyRun is the shortest run of credential-looking characters

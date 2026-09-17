@@ -596,6 +596,21 @@ anticipated.
   Date/Author: 2026-09-15, decided by the maintainer; the plan's first
   draft had sources person-managed and the tool read-only.
 
+- Decision (**reversing the one above about sensitive folders**): the pause
+  is removed and **every directory is read like any other**.
+  Rationale: the maintainer's, on seeing it run — judging what is inside a
+  directory from its name is fragile, and fragile in both directions. A
+  folder called `reviews` is as often somebody's notes on books, on
+  restaurants or on a pull request as it is a file about a colleague, and a
+  folder that really does hold other people's records is as often called
+  `2024`. What it caught was mostly the person's own life; what it was for,
+  it mostly missed. The cost was not a stray read, it was a list of names on
+  the source's page that the agent could not explain and the person had to
+  clear by hand. The secret filter stays exactly as it was — it looks at
+  what a file is called and what is in it, not at what a directory is
+  called — and so does asking about unknown commit authors.
+  Date/Author: 2026-09-17, decided by the maintainer.
+
 ## Review: how this behaves in real life
 
 Written 2026-09-15 before any code, against measured numbers, at the
@@ -1530,6 +1545,17 @@ README matches `eval`, `review`, `salary`, `hr`, `recruiting`, `medical`,
 `legal`, `tax` and lists it on the source as "skipped: looks sensitive;
 include it?" with a switch; `mujin/recruiting` is the same. Nothing under a
 flagged directory crosses the socket until the switch is on.
+
+> **Reversed, 2026-09-17.** Built and lived with for two days, then removed
+> end to end: the daemon's `SensitiveDirectory`, the `sensitive` and
+> `allowed` columns (migration 0082), the `AllowAgentKnowledgeDirectory`
+> mutation, `teanode agent knowledge allow` and the "Let it in" links.
+> Name-based judgement is fragile — a directory's name does not say whose
+> records are in it, so this stopped the person's own papers and missed the
+> colleague's — and it left a list of held-back names on the source's page
+> that nothing could justify. Every directory is read like any other now.
+> The secret filter is untouched, and so is asking about unknown commit
+> authors.
 
 **Vectors at two widths.** A chunk's vector is 512 wide
 (`text-embedding-3-small` accepts a `dimensions` argument and is trained so

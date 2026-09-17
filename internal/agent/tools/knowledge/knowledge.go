@@ -439,9 +439,6 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		if source.LastError != "" {
 			builder.WriteString("\n  " + source.LastError)
 		}
-		if len(source.Sensitive) > 0 {
-			builder.WriteString("\n  waiting to be let in: " + strings.Join(source.Sensitive, ", "))
-		}
 		builder.WriteString("\n")
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
