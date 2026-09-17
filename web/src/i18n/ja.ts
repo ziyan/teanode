@@ -2464,17 +2464,14 @@ export const ja: Catalog = {
   'agent.knowledgeSaved': '保存しました',
   'agent.knowledgeName': '呼び名',
   'agent.knowledgeKind': 'どのような場所か',
-  'agent.knowledgeKind.computer': 'あなたのコンピューター上のディレクトリ',
-  'agent.knowledgeKind.archive': 'あなたのコンピューター上の書き出しデータ',
-  'agent.knowledgeKind.sent': 'あなた自身の送信メール',
   'agent.knowledgeComputer': 'どのコンピューター',
   'agent.knowledgePath': 'その中のどこ',
-  'agent.knowledgeFormat': '読み方',
-  'agent.knowledgeFormat.files': 'ファイルとコード',
-  'agent.knowledgeFormat.mattermost': 'Mattermost の書き出し',
-  'agent.knowledgeFormat.journal': '日付の付いたメモ',
-  'agent.knowledgeFormat.records': 'スクリプトが書き出すレコード',
-  'agent.knowledgeFormat.recordsHint':
+  'agent.knowledgeShape.files': 'ファイルとコード',
+  'agent.knowledgeShape.mattermost': 'Mattermost エクスポート',
+  'agent.knowledgeShape.journal': '日付付きメモ',
+  'agent.knowledgeShape.records': 'スクリプトが書くレコード',
+  'agent.knowledgeShape.sent': 'あなた自身の送信済みメール',
+  'agent.knowledgeShape.recordsHint':
     'JSON Lines のレコードを収めたフォルダーで、リフレッシュスクリプトが中身を満たします。エージェントに書いてもらえます。',
   'agent.knowledgeMailbox': 'どのメールボックス',
   'agent.knowledgeAllowFirst':

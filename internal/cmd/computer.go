@@ -104,7 +104,7 @@ func runComputerAllow(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s may be indexed by your agent.\n", allowed)
-	_, _ = fmt.Fprintln(command.Writer, "Reading only: nothing is written there and no command is run.")
+	_, _ = fmt.Fprintln(command.Writer, "Reading only: nothing is written there, and no command is run but a records folder's own refresh script.")
 	return nil
 }
 

@@ -2479,17 +2479,14 @@ export const en = {
   'agent.knowledgeSaved': 'Saved',
   'agent.knowledgeName': 'What to call it',
   'agent.knowledgeKind': 'What sort of place',
-  'agent.knowledgeKind.computer': 'A directory on one of your computers',
-  'agent.knowledgeKind.archive': 'An export, on one of your computers',
-  'agent.knowledgeKind.sent': 'Your own sent mail',
   'agent.knowledgeComputer': 'Which computer',
   'agent.knowledgePath': 'Where on it',
-  'agent.knowledgeFormat': 'How to read it',
-  'agent.knowledgeFormat.files': 'Files and code',
-  'agent.knowledgeFormat.mattermost': 'A Mattermost export',
-  'agent.knowledgeFormat.journal': 'Dated notes',
-  'agent.knowledgeFormat.records': 'Records a script writes',
-  'agent.knowledgeFormat.recordsHint':
+  'agent.knowledgeShape.files': 'Files and code',
+  'agent.knowledgeShape.mattermost': 'A Mattermost export',
+  'agent.knowledgeShape.journal': 'Dated notes',
+  'agent.knowledgeShape.records': 'Records a script writes',
+  'agent.knowledgeShape.sent': 'Your own sent mail',
+  'agent.knowledgeShape.recordsHint':
     'A folder of JSON-lines records, filled by a refresh script; ask the agent to write one.',
   'agent.knowledgeMailbox': 'Which mailbox',
   'agent.knowledgeAllowFirst':

@@ -1407,6 +1407,26 @@ interface Schedule {
   nextRunAt?: string | null
 }
 
+// A shape is what a source is to the person, and what that means to the
+// server (the kind) and to the daemon (the format).
+type KnowledgeShape = 'files' | 'mattermost' | 'journal' | 'records' | 'sent'
+
+const KNOWLEDGE_SHAPES: Record<KnowledgeShape, { kind: string; format: string }> = {
+  files: { kind: 'computer', format: 'files' },
+  mattermost: { kind: 'archive', format: 'mattermost' },
+  journal: { kind: 'archive', format: 'journal' },
+  records: { kind: 'archive', format: 'records' },
+  sent: { kind: 'sent', format: '' },
+}
+
+// shapeOf is the shape a stored source has: sent mail by its kind, anything
+// on a computer by the format it is read with.
+function shapeOf(source: { kind: string; specification: { format: string } }): KnowledgeShape {
+  if (source.kind === 'sent') return 'sent'
+  const format = source.specification.format
+  return format === 'mattermost' || format === 'journal' || format === 'records' ? format : 'files'
+}
+
 // KnowledgeSourcesCard is the places the person has pointed their agent
 // at, and how far each has got.
 //
@@ -1426,10 +1446,14 @@ function KnowledgeSourcesCard() {
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [name, setName] = useState('')
-  const [kind, setKind] = useState('computer')
+  // What the source is, in one choice: the kind the server files it under
+  // and the format the daemon reads it with are two fields, but to the
+  // person "a Mattermost export" is one thing, and asking for the kind
+  // and then the format made them say it twice.
+  const [shape, setShape] = useState<KnowledgeShape>('files')
+  const { kind, format } = KNOWLEDGE_SHAPES[shape]
   const [computer, setComputer] = useState('')
   const [path, setPath] = useState('')
-  const [format, setFormat] = useState('files')
 
   const sources = data?.ListAgentKnowledgeSources ?? []
 
@@ -1464,8 +1488,7 @@ function KnowledgeSourcesCard() {
               setName('')
               setPath('')
               setComputer('')
-              setKind('computer')
-              setFormat('files')
+              setShape('files')
               setProblem(null)
               setAdding(true)
             }}
@@ -1483,7 +1506,7 @@ function KnowledgeSourcesCard() {
             title={source.name}
             badge={
               <>
-                <Tag value={t(`agent.knowledgeKind.${source.kind}` as 'agent.knowledgeKind.computer')} />
+                <Tag value={t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')} />
                 {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
                 {!source.enabled ? <Tag value={t('agent.knowledgePausedBadge')} tone="warn" /> : null}
               </>
@@ -1621,16 +1644,19 @@ function KnowledgeSourcesCard() {
           </label>
           <label>
             <span>{t('agent.knowledgeKind')}</span>
-            <select value={kind} onChange={(event) => setKind(event.target.value)}>
-              {['computer', 'archive', 'sent'].map((value) => (
+            <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
+              {(Object.keys(KNOWLEDGE_SHAPES) as KnowledgeShape[]).map((value) => (
                 <option key={value} value={value}>
-                  {t(`agent.knowledgeKind.${value}` as 'agent.knowledgeKind.computer')}
+                  {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
                 </option>
               ))}
             </select>
           </label>
           {kind !== 'sent' ? (
             <>
+              {/* A records folder is empty until a script fills it, which is
+                  the one shape where choosing it is not the whole job. */}
+              {format === 'records' ? <p className="muted">{t('agent.knowledgeShape.recordsHint')}</p> : null}
               <label>
                 <span>{t('agent.knowledgeComputer')}</span>
                 <input value={computer} onChange={(event) => setComputer(event.target.value)} />
@@ -1639,19 +1665,6 @@ function KnowledgeSourcesCard() {
                 <span>{t('agent.knowledgePath')}</span>
                 <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
               </label>
-              <label>
-                <span>{t('agent.knowledgeFormat')}</span>
-                <select value={format} onChange={(event) => setFormat(event.target.value)}>
-                  {['files', 'mattermost', 'journal', 'records'].map((value) => (
-                    <option key={value} value={value}>
-                      {t(`agent.knowledgeFormat.${value}` as 'agent.knowledgeFormat.files')}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {/* A records folder is empty until a script fills it, which is
-                  the one format where choosing it is not the whole job. */}
-              {format === 'records' ? <p className="muted">{t('agent.knowledgeFormat.recordsHint')}</p> : null}
               <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
             </>
           ) : null}
