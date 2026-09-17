@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -516,22 +517,33 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	// A batch is one source's documents. The night's order puts chat
+	// before notes before code, and where that order crossed from one
+	// source into another inside a batch the model carried the page it
+	// had just filed to across the line: eleven facts about a checkout,
+	// then a chat's news filed to the checkout's page. Sorted by source
+	// behind the night's order, and cut where the source changes, a
+	// batch holds things that belong together.
+	sort.SliceStable(waiting, func(left, right int) bool {
+		return waiting[left].SourceID < waiting[right].SourceID
+	})
 	var mutex sync.Mutex
 	var group sync.WaitGroup
 	slots := make(chan struct{}, concurrency)
 	stopped := false
-	for start := 0; start < len(waiting); start += dreamBatch {
+	for start := 0; start < len(waiting); {
 		mutex.Lock()
 		halt := stopped
 		mutex.Unlock()
 		if halt || ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
 			break
 		}
-		end := start + dreamBatch
-		if end > len(waiting) {
-			end = len(waiting)
+		end := start + 1
+		for end < len(waiting) && end < start+dreamBatch && waiting[end].SourceID == waiting[start].SourceID {
+			end++
 		}
 		batch := waiting[start:end]
+		start = end
 		slots <- struct{}{}
 		group.Add(1)
 		go func() {

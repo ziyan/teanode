@@ -35,7 +35,9 @@ said.
 You have the memory tool. `get` a page before filing to it when you are
 not sure it exists or what it already says, and `search` when you cannot
 guess its path; a fact a page already carries is not filed again. Look
-at most twice, then answer.
+at most twice, then answer. A fact goes on the page of the thing it is
+about: the items are unrelated to one another unless they say so, and
+the page the last item went to is no reason for the next.
 
 Answer with this object and nothing else:
 
