@@ -98,6 +98,12 @@ const (
 	cursorPassStarted = "passStartedAt"
 	cursorPassSeen    = "passSeen"
 
+	// cursorPassRefused is how many things this pass refused, kept the
+	// same way, so that the count on the source's row is this pass's
+	// rather than every pass's added together: the row said thirty-two
+	// refused for a source whose reader no longer refused anything.
+	cursorPassRefused = "passRefused"
+
 	// unknownAuthorsKept is how many unplaced commit addresses a source
 	// remembers. Enough to recognise yourself in the list, not a census
 	// of everybody who ever committed to a mirrored upstream.
@@ -189,6 +195,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		counts.Refused += passCounts.Refused
 		if !startedPass.IsZero() {
 			cursor[cursorPassSeen] = countInCursor(cursor, cursorPassSeen) + passCounts.Seen
+			cursor[cursorPassRefused] = countInCursor(cursor, cursorPassRefused) + passCounts.Refused
 		}
 		if err != nil {
 			var waiting *waitingForDevice
@@ -364,6 +371,7 @@ func markPassStart(source *models.AgentKnowledgeSource, cursor map[string]any, n
 	started := now.Truncate(time.Second)
 	cursor[cursorPassStarted] = started.Format(time.RFC3339)
 	cursor[cursorPassSeen] = 0
+	cursor[cursorPassRefused] = 0
 	return started
 }
 
@@ -383,9 +391,15 @@ func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledg
 	defer func() {
 		delete(cursor, cursorPassStarted)
 		delete(cursor, cursorPassSeen)
+		delete(cursor, cursorPassRefused)
 	}()
 	if startedPass.IsZero() {
 		return
+	}
+	// What this pass refused is what the row says, not every pass added
+	// together.
+	if _, kept := cursor[cursorPassRefused]; kept {
+		counts.Refused = countInCursor(cursor, cursorPassRefused)
 	}
 	// A pass shown nothing at all is not somebody deleting everything
 	// they own. It is a folder nothing mounted, or a checkout moved, and
