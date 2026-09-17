@@ -24,7 +24,7 @@ func knowledgeSource(test *testing.T, tx db.Transaction) *models.AgentKnowledgeS
 	source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
 		AgentID: agent.ID, Kind: models.SourceArchive, Name: "chat records", Enabled: true,
 		Specification: models.AgentKnowledgeSpecification{
-			Computer: "gen7", Path: "/home/ziyan/chat-records", Format: models.FormatRecords,
+			Computer: "laptop", Path: "~/records", Format: models.FormatRecords,
 		},
 	})
 	if err != nil {
