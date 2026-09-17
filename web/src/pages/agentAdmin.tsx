@@ -9,6 +9,7 @@ import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs } from '../components/tabs'
+import { IntegrationsSection } from './settings/integrations'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -93,6 +94,7 @@ const AGENT_TABS: { id: string; label: Key }[] = [
   { id: 'usage', label: 'agentAdmin.tabUsage' },
   { id: 'runs', label: 'agentAdmin.tabRuns' },
   { id: 'jobs', label: 'agentAdmin.tabJobs' },
+  { id: 'settings', label: 'agentAdmin.tabSettings' },
 ]
 
 export function AgentAdminPage() {
@@ -103,8 +105,12 @@ export function AgentAdminPage() {
   const session = useSession()
   // Runs are content, and so are behind agent:act rather than the audit
   // permission the rest of the page needs.
+  // The settings are the operator's, behind server:manage as the rest
+  // of the server's are.
   const tabs = AGENT_TABS.filter(
-    (candidate) => candidate.id !== 'runs' || hasPermission(session.permissions, 'agent:act'),
+    (candidate) =>
+      (candidate.id !== 'runs' || hasPermission(session.permissions, 'agent:act')) &&
+      (candidate.id !== 'settings' || hasPermission(session.permissions, 'server:manage')),
   )
   const [by, setBy] = useState('day')
   // The range, as dates the person picks; thirty days back by default,
@@ -344,6 +350,7 @@ export function AgentAdminPage() {
         </>
       ) : null}
       {tab === 'runs' ? <RunsSection agents={agents} /> : null}
+      {tab === 'settings' ? <IntegrationsSection section="agent" /> : null}
       {tab === 'jobs' ? (
         <>
           <SettingsSection card title={t('agentAdmin.deadLetters')}>

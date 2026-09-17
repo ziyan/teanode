@@ -1218,6 +1218,7 @@ export const en = {
   'agentAdmin.tabUsage': 'Use and cost',
   'agentAdmin.tabRuns': 'Runs',
   'agentAdmin.tabJobs': 'Given up',
+  'agentAdmin.tabSettings': 'Settings',
   'agentAdmin.runs': 'Every run',
   'agentAdmin.runsHint':
     'Every call any agent on this server made to a model, newest first. Open one to read it; what you say there goes to that agent as its person, and is logged.',
