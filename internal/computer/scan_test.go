@@ -687,11 +687,31 @@ func TestAnEmptyKnownMapIsHeldForThePass(t *testing.T) {
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if known, err := knownFor("/home/x/records", &decoded); err != nil || known == nil {
+	if known, err := knownFor("~/records", &decoded); err != nil || known == nil {
 		t.Fatalf("the first page's empty map should be held: %v, %v", known, err)
 	}
 	later := ScanArguments{Root: "~/records", KnownID: "pass-1"}
-	if _, err := knownFor("/home/x/records", &later); err != nil {
+	if _, err := knownFor("~/records", &later); err != nil {
 		t.Fatalf("the next page names the pass and finds the map: %v", err)
+	}
+}
+
+// The probe answers whether a root may be scanned and reads nothing: an
+// allowed root gets an empty page, one not allowed the refusal to act on.
+func TestTheProbeAsksOnlyWhetherARootIsAllowed(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "records")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	if result, err := RunScan(t.Context(), options, &ScanArguments{Root: root, Format: FormatProbe}); err != nil || len(result.Entries) != 0 {
+		t.Fatalf("an allowed root probes to an empty page: %v, %v", result, err)
+	}
+	if _, err := RunScan(t.Context(), options, &ScanArguments{Root: t.TempDir(), Format: FormatProbe}); err == nil || !strings.Contains(err.Error(), "allowed for scanning") {
+		t.Fatalf("a root not allowed probes to the refusal: %v", err)
 	}
 }

@@ -285,6 +285,8 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 		most = scanPage
 	}
 	switch strings.ToLower(strings.TrimSpace(arguments.Format)) {
+	case FormatProbe:
+		return &ScanResult{}, nil
 	case "", FormatFiles:
 		return scanFiles(ctx, root, arguments, most)
 	case FormatJournal:
@@ -306,6 +308,12 @@ const (
 	// wiki, a mailbox behind a command line tool -- is indexed without
 	// another reader being written and released.
 	FormatRecords = "records"
+
+	// FormatProbe asks only whether the root may be scanned here: the
+	// answer is an empty page, or the refusal the person has to act on.
+	// Sent before a source is made, so that "allow it first" is said at
+	// once rather than found in the source's error a minute later.
+	FormatProbe = "probe"
 )
 
 // allowedRoot resolves what the server asked for and refuses anything the

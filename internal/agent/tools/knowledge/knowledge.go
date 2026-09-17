@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -483,6 +484,9 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 	if kind == models.SourceArchive && format == models.FormatFiles {
 		return nil, fmt.Errorf("an archive needs a format: %s or %s", models.FormatJournal, models.FormatRecords)
 	}
+	if err := lookBeforeAdding(ctx, run, source.Specification.Computer, source.Specification.Path, format); err != nil {
+		return nil, err
+	}
 	var written *models.AgentKnowledgeSource
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		existing, err := tx.GetAgentSourceByName(run.Agent().ID, name)
@@ -678,4 +682,79 @@ func indent(text string) string {
 		lines[index] = "  " + line
 	}
 	return strings.Join(lines, "\n")
+}
+
+// lookBeforeAdding asks the computer two things a source is no good
+// without, so that the answer to add is the next step rather than an
+// error the person finds on the source's row a minute later: whether the
+// folder is allowed for scanning there, and, for records, whether the
+// folder is a records folder at all.
+//
+// The second is what turns "add it as a source" into the work it takes.
+// Pointed at an export -- a wiki's pages, a chat's posts -- a model adds
+// the export itself as records, since the tool let it, and a records
+// scan of a folder with no script and no JSON lines reads nothing. Refused
+// here, with what the folder holds and what to do instead, the model
+// writes the script; told only in guidance, it did not.
+func lookBeforeAdding(ctx context.Context, run tools.Run, computerName, path, format string) error {
+	computing, ok := run.(tools.Computing)
+	if !ok {
+		return nil
+	}
+	var device tools.Computer
+	attached := computing.AttachedComputers()
+	for _, candidate := range attached {
+		if candidate.Name() == computerName {
+			device = candidate
+		}
+	}
+	if device == nil && computerName == "" && len(attached) == 1 {
+		device = attached[0]
+	}
+	if device == nil {
+		return nil
+	}
+	if _, err := device.Ask(ctx, "scan", &computer.ScanArguments{Root: path, Format: computer.FormatProbe, Most: 1}, 30*time.Second); err != nil {
+		if strings.Contains(err.Error(), "allowed for scanning") {
+			return fmt.Errorf("%s does not allow %s to be scanned: the person has to run `teanode computer allow %s` on %s themselves, and then ask again; nothing was added", device.Name(), path, path, device.Name())
+		}
+		// An older daemon that does not know the probe, or a folder that
+		// is not there: neither is this check's to decide.
+	}
+	if format != models.FormatRecords {
+		return nil
+	}
+	answer, err := device.Ask(ctx, "filesystem", &computer.FilesystemArguments{Action: "list", Path: path, Limit: 500}, 30*time.Second)
+	if err != nil {
+		return nil
+	}
+	var listing struct {
+		Entries []computer.Entry `json:"entries"`
+	}
+	if err := json.Unmarshal(answer, &listing); err != nil {
+		return nil
+	}
+	if recordsFolderLooksReady(listing.Entries) {
+		return nil
+	}
+	names := make([]string, 0, 6)
+	for _, entry := range listing.Entries {
+		if len(names) == 6 {
+			break
+		}
+		names = append(names, entry.Name)
+	}
+	return fmt.Errorf("%s is not a records folder: no refresh script and no .jsonl files, only %s. It is an export with a shape of its own. Ask `shape`, look at what the files hold, write a refresh script that turns them into records in a folder of its own beside it (for example %s-records), run it there with RECORDS_LIMIT on a subset, then add that folder as the source; nothing was added", path, strings.Join(names, ", "), strings.TrimRight(path, "/"))
+}
+
+// recordsFolderLooksReady says whether a listing is of a records folder:
+// a refresh script to fill it, or records already in it.
+func recordsFolderLooksReady(entries []computer.Entry) bool {
+	for _, entry := range entries {
+		name := strings.ToLower(entry.Name)
+		if name == "refresh" || strings.HasSuffix(name, ".jsonl") || strings.HasSuffix(name, ".ndjson") {
+			return true
+		}
+	}
+	return false
 }
