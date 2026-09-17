@@ -17,6 +17,7 @@ export function FormDialog({
   canSubmit = true,
   wide,
   otherAction,
+  closeLabel,
   onSubmit,
   onClose,
   children,
@@ -26,6 +27,10 @@ export function FormDialog({
   busy?: boolean
   error?: string | null
   canSubmit?: boolean
+  // What the way out is called. Cancel, unless the dialog changes nothing
+  // by being dismissed -- one that shows a page and offers to open it --
+  // where Cancel would name a thing that is not being cancelled.
+  closeLabel?: string
   // For a form that is a handful of rows rather than a field or two — a
   // mailbox rule, where a condition is three controls on one line.
   wide?: boolean
@@ -79,7 +84,7 @@ export function FormDialog({
         <div className="dialog-actions">
           {otherAction && <div className="dialog-actions-other">{otherAction}</div>}
           <button type="button" onClick={onClose}>
-            {t('common.cancel')}
+            {closeLabel ?? t('common.cancel')}
           </button>
           <button className="primary" type="submit" disabled={busy || !canSubmit}>
             {submitLabel}

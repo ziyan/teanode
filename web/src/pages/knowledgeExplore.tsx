@@ -1223,6 +1223,7 @@ export function KnowledgeExplorePage() {
         <FormDialog
           title={nameOf(chosen, me)}
           submitLabel={t('knowledge.explore.open')}
+          closeLabel={t('common.close')}
           wide
           onSubmit={() => navigate(`/settings/knowledge/${chosen.path}`)}
           onClose={() => setSelected('')}
