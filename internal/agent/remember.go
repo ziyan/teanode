@@ -187,8 +187,17 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		// minute for ever.
 		return self.markRemembered(ctx, conversation, messages)
 	}
+	// The oldest sixty, not the newest sixty. Cutting from the end and
+	// then moving the mark to the last message of the whole list said
+	// that everything in between had been filed, and nothing ever came
+	// back for it: a conversation with two hundred unread messages had
+	// its first hundred and forty marked read without being read. A
+	// backlog is worked through oldest first, sixty at a time, over as
+	// many runs as it takes.
+	backlog := 0
 	if len(unread) > rememberMessages {
-		unread = unread[len(unread)-rememberMessages:]
+		backlog = len(unread) - rememberMessages
+		unread = unread[:rememberMessages]
 	}
 
 	answer, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
@@ -223,13 +232,28 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 				return err
 			}
 		}
-		last := messages[len(messages)-1]
-		return tx.MarkAgentConversationRemembered(conversation.ID, last.ID, time.Now())
+		// The last message this run was actually given, so the mark never
+		// stands past something nobody read.
+		read := unread[len(unread)-1]
+		return tx.MarkAgentConversationRemembered(conversation.ID, read.ID, time.Now())
 	}); err != nil {
 		return err
 	}
 	if filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed, conversation.ID)
+	}
+	if backlog > 0 {
+		// Straight back into the queue rather than waiting for the sweep
+		// to offer the conversation again, which it does once a minute.
+		//
+		// A deferral and not another Enqueue: one job per agent, kind and
+		// subject is open at a time, and this job is the open one, so an
+		// Enqueue from inside it hands back the row it is already running
+		// and queues nothing at all.
+		return &Deferral{
+			Until:  time.Now(),
+			Reason: fmt.Sprintf("%d more message(s) of this conversation are unread", backlog),
+		}
 	}
 	return nil
 }

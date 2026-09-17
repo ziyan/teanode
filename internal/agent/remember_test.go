@@ -409,6 +409,83 @@ func TestAnAnswerThatIsNotAnObjectIsSurvived(t *testing.T) {
 	})
 }
 
+// A long backlog is read oldest first, sixty messages at a time, over as
+// many runs as it takes, and the mark never stands past a message nobody
+// read.
+//
+// It used to keep the *last* sixty and then move the mark to the end of
+// the whole list, so a conversation with two hundred unread messages had
+// its first hundred and forty marked filed without being read, and
+// nothing ever came back for them. The mark is a promise that everything
+// behind it has been read.
+func TestABacklogIsReadOldestFirstAndNothingIsSkipped(t *testing.T) {
+	world := newRememberWorld(t, func(string) string { return `{"facts": []}` })
+
+	// A hundred and fifty worth reading, the two the world seeds
+	// included, so the cursor lands inside the conversation twice before
+	// it reaches the end.
+	for said := 0; said < 74; said++ {
+		world.say(t, "user", fmt.Sprintf("Message %d, about the move.", said))
+		world.say(t, "assistant", fmt.Sprintf("Noted, %d.", said))
+	}
+
+	var messages []*models.AgentMessage
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if messages, err = tx.ListAgentMessages(world.conversation.ID, nil); err != nil {
+			t.Fatalf("ListAgentMessages: %s", err)
+		}
+	})
+	if len(messages) != 150 {
+		t.Fatalf("a hundred and fifty to read, not %d", len(messages))
+	}
+
+	markIs := func(t *testing.T, wanted *models.AgentMessage) {
+		t.Helper()
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			conversation, err := tx.GetAgentConversation(world.conversation.ID)
+			if err != nil || conversation == nil {
+				t.Fatalf("GetAgentConversation: %v %s", conversation, err)
+			}
+			if conversation.RememberedThrough != wanted.ID {
+				t.Fatalf("the mark is at %q, not at %q (%q)",
+					conversation.RememberedThrough, wanted.ID, wanted.Content)
+			}
+		})
+	}
+	queued := func(t *testing.T) int {
+		t.Helper()
+		count := 0
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{
+				AgentID:  world.agent.ID,
+				Kinds:    []models.AgentJobKind{models.AgentJobRemember},
+				Statuses: []models.AgentJobStatus{models.AgentJobQueued},
+			}, nil)
+			if err != nil {
+				t.Fatalf("ListAgentJobs: %s", err)
+			}
+			count = len(jobs)
+		})
+		return count
+	}
+
+	world.remember(t)
+	markIs(t, messages[59])
+	if queued(t) != 1 {
+		t.Fatalf("the rest of the backlog is queued rather than waiting to be noticed")
+	}
+
+	world.rememberAgain(t, time.Now().Add(2*time.Hour))
+	markIs(t, messages[119])
+
+	world.rememberAgain(t, time.Now().Add(3*time.Hour))
+	markIs(t, messages[149])
+	if queued(t) != 0 {
+		t.Fatalf("and with nothing left unread, nothing is queued")
+	}
+}
+
 // The tea sentences. Long enough that the fake embedder, which reads a
 // sentence as the words of five letters or more in it, puts the two above
 // the twin floor: eight words in common, one word apart.
