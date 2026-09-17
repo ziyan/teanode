@@ -49,7 +49,11 @@ Notable changes to TeaNode. The format follows
   absorbed it. A correction is not a repetition — where one of two sentences
   says "no longer" or "never" and the other does not, both are kept and the
   page states the later one. Only your own "forget this" removes a row, and
-  what it removes is written into the page's history first.
+  what it removes is written into the page's history first. A connection it
+  worked out for itself overnight is kept apart from one you stated: it is
+  drawn as a dashed line marked "proposed" in the drawings, and the agent
+  says "perhaps" about it rather than stating it. Making the same link
+  yourself is what confirms it; unlinking it is what drops it.
 
 - A project's page is an orientation, not a history: where the checkout
   is and on which computer, its remote, what it calls itself, what it is

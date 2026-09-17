@@ -229,8 +229,22 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 		if noticed.Weight >= 1 {
 			t.Fatalf("and below a stated link's weight, not %v", noticed.Weight)
 		}
+		if noticed.Status != models.EdgeProposed {
+			t.Fatalf("stored as a guess and not as something stated, not %q", noticed.Status)
+		}
 		if len(noticed.Evidence) == 0 {
 			t.Fatalf("and the walk that suggested it, so somebody can disagree")
+		}
+		if noticed.Evidence[0].Kind != models.EvidenceDream {
+			t.Fatalf("the walk under its own kind, not %q: nothing read a document here",
+				noticed.Evidence[0].Kind)
+		}
+
+		// The links the test itself stated are untouched by any of that.
+		for _, edge := range edges {
+			if edge.Status != models.EdgeStated {
+				t.Fatalf("a link somebody stated stays stated: %v", edge)
+			}
 		}
 	})
 

@@ -275,15 +275,7 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		tx.AsActor(models.ActorDream)
-		return tx.PutAgentEdge(&models.AgentEdge{
-			AgentID: run.Agent.ID, FromID: start.ID, ToID: end.ID, Relation: relation,
-			Note: answer.Note,
-			// Below one: a link the agent worked out overnight starts
-			// weaker than one somebody stated, and earns its weight by
-			// being useful.
-			Weight:   0.5,
-			Evidence: []models.Evidence{{Kind: models.EvidenceDocument, Quote: strings.Join(through, " → ")}},
-		})
+		return tx.PutAgentEdge(walkedLink(run.Agent.ID, start.ID, end.ID, relation, answer.Note, through))
 	}); err != nil {
 		log.Debugf("cannot keep a link the dream found: %s", err)
 		return false
@@ -292,6 +284,28 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 		Kind: "linked", Path: start.Path, To: end.Path, Reason: answer.Note,
 	})
 	return true
+}
+
+// walkedLink is the link a walk suggests.
+//
+// Proposed, not stated: two pages being two steps apart and a model
+// agreeing that they might be related is a hypothesis, and stored as a
+// plain link it was indistinguishable from one the person drew. It is
+// also worth less than a stated link from the start, and earns its weight
+// by being useful.
+//
+// Its evidence is the walk itself, under its own kind. It used to be
+// filed as a document, so anything that went looking for the document an
+// id named found nothing and a reader was told the agent had read
+// something it had not.
+func walkedLink(agentId, fromId, toId string, relation models.AgentEdgeRelation, note string, through []string) *models.AgentEdge {
+	return &models.AgentEdge{
+		AgentID: agentId, FromID: fromId, ToID: toId, Relation: relation,
+		Note:     strings.TrimSpace(note),
+		Weight:   0.5,
+		Status:   models.EdgeProposed,
+		Evidence: []models.Evidence{{Kind: models.EvidenceDream, Quote: strings.Join(through, " → ")}},
+	}
 }
 
 // dreamRehearse asks the questions tomorrow is likely to bring, tries to

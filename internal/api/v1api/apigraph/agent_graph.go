@@ -157,6 +157,10 @@ type AgentGraphNeighbour struct {
 	// the night proposed, more for one that keeps being used together;
 	// a child has none.
 	Weight float64 `json:"weight"`
+	// Status is "stated" or "proposed", so the drawing can say which
+	// lines are the agent's guesses. Empty for a page filed under
+	// another, which is not a link anybody made.
+	Status string `json:"status"`
 }
 
 // AgentGraphNeighboursResult is a page and the pages one step from it.
@@ -561,7 +565,7 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 			return nil, err
 		}
 	}
-	// Links first: they are the relations somebody stated, and the
+	// Links first: they are the relations, stated or proposed, and the
 	// explorer is for those. Children fill what room is left.
 	edges, err := tx.ListAgentEdges(found.ID, node.ID)
 	if err != nil {
@@ -591,7 +595,8 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 		}
 		if other := byId[id]; other != nil && !other.Dormant {
 			result.Neighbours = append(result.Neighbours, &AgentGraphNeighbour{
-				Node: other, Relation: string(edge.Relation), Outward: outward, Note: edge.Note, Weight: float64(edge.Weight),
+				Node: other, Relation: string(edge.Relation), Outward: outward, Note: edge.Note,
+				Weight: float64(edge.Weight), Status: string(edge.Status),
 			})
 		}
 	}

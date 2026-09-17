@@ -73,9 +73,15 @@ evaluate` prints a table of hits and misses over the question set.
   something that was never shown loses its evidence altogether; both runs
   count the outcomes on their own row. The knowledge page says "quote not
   found" beside such a fact.
-- [ ] Milestone 5: provisional links. Edges gain a status and an origin;
-  walks write proposed edges; the prompt says so; a dream stage looks for
-  support and promotes.
+- [x] (2026-09-17 22:55Z) Milestone 5: provisional links. A link the
+  nightly walk guesses is stored as proposed through migration 0085, with
+  the path it walked as evidence under a new `dream` kind; every other
+  writer states, which is the column's default. A proposed link reads as
+  "perhaps … (the agent's guess)" wherever the agent or a person meets it
+  — the page the model opens, `AgentEdge.Sentence`, the command line —
+  and is drawn dashed with the word "proposed" beside the relation in
+  both explorers. Confirming one is making the same link from the Link
+  dialog; there is no promotion stage, no origin and no expiry.
 - [x] (2026-09-17 14:40Z) Milestone 6: rehearsal with three outcomes.
   Every failure path is unknown, a supported answer has to name a fact it
   was shown, the dream row counts the third number through migration 0086,
@@ -218,6 +224,41 @@ evaluate` prints a table of hits and misses over the question set.
   messages, and `markRemembered` then advances `RememberedThrough` to the
   final message, so a conversation that had, say, two hundred unread
   messages has its first hundred and forty marked remembered unread.
+- Observation (2026-09-17 22:55Z): an edge never reaches the prompt index
+  or a recall block, so the two places Milestone 5 named for the
+  rendering had nothing in them to hide. `graphIndex` writes
+  `node.IndexLine` and no links, `writeRecalled` writes a page's opening
+  and its facts, and `grep -rn '\.Sentence(' internal` finds only tests.
+  The one place a link becomes prompt text is `renderPage` in the memory
+  tool -- the page the model gets back when it opens one -- so that is
+  where the hedge went, beside `AgentEdge.Sentence`, which is written for
+  the day something carries edges into a turn. "Kept out of the index" is
+  therefore true by construction rather than by a filter, and adding a
+  filter to a loop that has no edges in it would have been a comment
+  pretending to be code.
+- Observation (2026-09-17 22:55Z): neither explorer has a dialog that
+  opens on a link, so "the word proposed in the dialog" had nowhere to go
+  as written. The word is beside the relation on the line instead, in the
+  drawing and in the line's tooltip, and in the one dialog a link does
+  reach -- the unlink confirmation on the knowledge page's Connections
+  card, which now reads "works on (proposed)".
+- Observation (2026-09-17 22:55Z): the walk's evidence was filed as
+  `EvidenceDocument` with an empty id, which is a citation of a document
+  that does not exist; Milestone 4's check would have had nothing to hold
+  it against. It has its own kind now, `EvidenceDream`, so a reader can
+  tell the agent's reasoning from something it read. The dashboard has no
+  word for that kind because the explorer shows evidence for facts and
+  not for links, and no fact is ever filed under it.
+- Observation (2026-09-17 22:55Z): two pages can be joined by a stated
+  relation and a guessed one at once, and the explorers draw one line per
+  pair. The line is dashed only when every relation on it is a guess: the
+  pages really are joined, and only one of the reasons is unconfirmed.
+- Observation (2026-09-17 22:55Z): `PutAgentEdge`'s "the same link, said
+  again" short circuit compared notes alone, so confirming a guess with
+  the note the night wrote would have changed the row and left no entry
+  in the page's history. It compares the status as well now, which is
+  what makes a confirmation visible to somebody reading the history
+  later.
 
 ## Decision Log
 

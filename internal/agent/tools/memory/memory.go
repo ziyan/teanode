@@ -391,10 +391,19 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 			if edge.Relation == models.EdgePartOf {
 				continue
 			}
+			// "perhaps" in front and whose guess it was at the end. A link
+			// the nightly walk invented is a hypothesis, and read as a
+			// bare relation it was repeated to the person as fact.
+			relation := string(edge.Relation)
+			guess := ""
+			if edge.Proposed() {
+				relation = "perhaps " + relation
+				guess = " (the agent's guess)"
+			}
 			if edge.FromPath == node.Path {
-				builder.WriteString("\n→ " + string(edge.Relation) + " " + edge.ToPath)
+				builder.WriteString("\n→ " + relation + " " + edge.ToPath + guess)
 			} else {
-				builder.WriteString("\n← " + edge.FromPath + " " + string(edge.Relation) + " this")
+				builder.WriteString("\n← " + edge.FromPath + " " + relation + " this" + guess)
 			}
 		}
 	}

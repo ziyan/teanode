@@ -2411,6 +2411,7 @@ export const ja: Catalog = {
   'knowledge.unlinkBody':
     'このつながりを取り消します：{from} {relation} {to}。どちらのページも、ほかは何も忘れません。',
   'knowledge.unlinked': 'つながりを外しました',
+  'knowledge.proposedRelation': '{relation}（推測）',
   'knowledge.under': 'このページの下',
   'knowledge.underHint': 'この中に整理されています。',
   'knowledge.fromNowhere': '出どころの記録なし',

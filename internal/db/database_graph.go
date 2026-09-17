@@ -226,6 +226,7 @@ type agentEdgeModel struct {
 	ToID       string     `gorm:"column:to_id;primaryKey"`
 	Relation   string     `gorm:"column:relation;primaryKey"`
 	Weight     float32    `gorm:"column:weight"`
+	Status     string     `gorm:"column:status"`
 	Evidence   []byte     `gorm:"column:evidence;type:jsonb"`
 	Note       string     `gorm:"column:note"`
 	HappenedAt *time.Time `gorm:"column:happened_at"`
@@ -1135,6 +1136,16 @@ func (self *transaction) PutAgentEdge(edge *models.AgentEdge) error {
 	if weight == 0 {
 		weight = 1
 	}
+	// Stated unless the caller says otherwise: every writer but the
+	// nightly walk is somebody saying so, and a row written before the
+	// column existed was one too.
+	status := edge.Status
+	if status == "" {
+		status = models.EdgeStated
+	}
+	if status != models.EdgeStated && status != models.EdgeProposed {
+		return fmt.Errorf("db: %q is not a link status", status)
+	}
 	// What was there before, so the history records a link being made or
 	// its meaning changing and nothing else. Without this, the nightly
 	// reweighting -- which writes every edge every night -- would fill a
@@ -1148,17 +1159,20 @@ func (self *transaction) PutAgentEdge(edge *models.AgentEdge) error {
 
 	row := &agentEdgeModel{
 		AgentID: edge.AgentID, FromID: edge.FromID, ToID: edge.ToID,
-		Relation: string(edge.Relation), Weight: weight, Evidence: encoded,
-		Note: note, HappenedAt: edge.HappenedAt,
+		Relation: string(edge.Relation), Weight: weight, Status: string(status),
+		Evidence: encoded, Note: note, HappenedAt: edge.HappenedAt,
 		UsedAt: edge.UsedAt, CreatedAt: time.Now(),
 	}
+	// Status is written over on a conflict, which is how a person
+	// confirms a guess: making the same link from the Link dialog states
+	// what the night only proposed.
 	if err := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "from_id"}, {Name: "to_id"}, {Name: "relation"}},
-		DoUpdates: clause.AssignmentColumns([]string{"weight", "evidence", "note", "happened_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"weight", "status", "evidence", "note", "happened_at"}),
 	}).Create(row).Error; err != nil {
 		return err
 	}
-	if len(existing) > 0 && existing[0].Note == note {
+	if len(existing) > 0 && existing[0].Note == note && statusOfRow(existing[0]) == status {
 		return nil // the same link, said again
 	}
 	var before map[string]any
@@ -1175,6 +1189,15 @@ func (self *transaction) PutAgentEdge(edge *models.AgentEdge) error {
 	self.note(edge.AgentID, edge.ToID, models.RevisionLinked,
 		withOther(before, paths[edge.FromID]), withOther(after, paths[edge.FromID]), "")
 	return nil
+}
+
+// statusOfRow is a stored link's status, reading a row written before the
+// column existed as stated -- which is what every writer of the time was.
+func statusOfRow(row agentEdgeModel) models.AgentEdgeStatus {
+	if row.Status == "" {
+		return models.EdgeStated
+	}
+	return models.AgentEdgeStatus(row.Status)
 }
 
 // pathsOf is the path of each of a handful of pages, for a history that
@@ -1244,7 +1267,8 @@ func (self *transaction) ListAgentEdges(agentId, nodeId string) ([]*models.Agent
 		edge := &models.AgentEdge{
 			AgentID: row.AgentID, FromID: row.FromID, ToID: row.ToID,
 			Relation: models.AgentEdgeRelation(row.Relation), Weight: row.Weight,
-			Note: row.Note, HappenedAt: row.HappenedAt, UsedAt: row.UsedAt,
+			Status: statusOfRow(row),
+			Note:   row.Note, HappenedAt: row.HappenedAt, UsedAt: row.UsedAt,
 			CreatedAt: row.CreatedAt, Evidence: []models.Evidence{},
 		}
 		// Both ends by name as well as by path: an edge is read as a

@@ -2422,6 +2422,9 @@ export const en = {
   'knowledge.unlinkFrom': 'Unlink from {name}',
   'knowledge.unlinkBody': 'Take back the link: {from} {relation} {to}. Neither page forgets anything else.',
   'knowledge.unlinked': 'Unlinked',
+  // A link the nightly run guessed from a walk across the graph. Making
+  // the same link yourself is what confirms it; unlinking drops it.
+  'knowledge.proposedRelation': '{relation} (proposed)',
   'knowledge.under': 'Under this page',
   'knowledge.underHint': 'Filed inside it.',
   'knowledge.fromNowhere': 'no source recorded',

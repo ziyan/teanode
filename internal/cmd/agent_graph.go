@@ -383,10 +383,17 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 		if edge.Relation == "part_of" {
 			continue
 		}
+		// A link the night guessed from a walk reads as a guess here as
+		// well as in the agent's own words, so somebody reading a page
+		// knows which lines nobody has confirmed.
+		relation, guess := edge.Relation, ""
+		if edge.Status == string(models.EdgeProposed) {
+			relation, guess = "perhaps "+relation, " (the agent's guess)"
+		}
 		if edge.FromPath == node.Path {
-			_, _ = fmt.Fprintf(command.Writer, "→ %s %s\n", edge.Relation, edge.ToPath)
+			_, _ = fmt.Fprintf(command.Writer, "→ %s %s%s\n", relation, edge.ToPath, guess)
 		} else {
-			_, _ = fmt.Fprintf(command.Writer, "← %s %s this\n", edge.FromPath, edge.Relation)
+			_, _ = fmt.Fprintf(command.Writer, "← %s %s this%s\n", edge.FromPath, relation, guess)
 		}
 	}
 	if len(page.Children) > 0 {

@@ -8375,6 +8375,13 @@ button.with-icon {
   fill: none;
 }
 
+/* A link the nightly walk guessed rather than one somebody stated.
+   Dashed, so a guess is not drawn as a fact; the word "proposed" sits
+   beside the relation for anybody who does not read the dashes. */
+.graph-explorer-edge.proposed {
+  stroke-dasharray: 7 4;
+}
+
 .graph-explorer-arrow {
   fill: var(--border-strong);
   stroke: none;
@@ -8689,6 +8696,13 @@ a.knowledge-chip {
 .graph-explore-edge.under line {
   stroke: var(--border);
   stroke-dasharray: 3 4;
+}
+
+/* A link the nightly walk guessed. Dashed like the line above but with
+   longer dashes, so the two do not read as the same thing, and it keeps
+   its arrow: it is still a relation, only an unconfirmed one. */
+.graph-explore-edge.proposed line {
+  stroke-dasharray: 7 4;
 }
 
 .graph-explore-arrow {
