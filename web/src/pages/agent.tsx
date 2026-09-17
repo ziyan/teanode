@@ -1427,6 +1427,11 @@ function shapeOf(source: { kind: string; specification: { format: string } }): K
   return format === 'mattermost' || format === 'journal' || format === 'records' ? format : 'files'
 }
 
+// OFFERED_SHAPES is what a person may add. A chat export is read from a
+// records folder a script fills, so the older vendor-shaped reader is not
+// offered; sources made with it before still show their shape.
+const OFFERED_SHAPES: KnowledgeShape[] = ['files', 'journal', 'records', 'sent']
+
 // KnowledgeSourcesCard is the places the person has pointed their agent
 // at, and how far each has got.
 //
@@ -1448,7 +1453,7 @@ function KnowledgeSourcesCard() {
   const [name, setName] = useState('')
   // What the source is, in one choice: the kind the server files it under
   // and the format the daemon reads it with are two fields, but to the
-  // person "a Mattermost export" is one thing, and asking for the kind
+  // person "a chat export" is one thing, and asking for the kind
   // and then the format made them say it twice.
   const [shape, setShape] = useState<KnowledgeShape>('files')
   const { kind, format } = KNOWLEDGE_SHAPES[shape]
@@ -1645,7 +1650,7 @@ function KnowledgeSourcesCard() {
           <label>
             <span>{t('agent.knowledgeKind')}</span>
             <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
-              {(Object.keys(KNOWLEDGE_SHAPES) as KnowledgeShape[]).map((value) => (
+              {OFFERED_SHAPES.map((value) => (
                 <option key={value} value={value}>
                   {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
                 </option>

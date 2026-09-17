@@ -2467,7 +2467,7 @@ export const ja: Catalog = {
   'agent.knowledgeComputer': 'どのコンピューター',
   'agent.knowledgePath': 'その中のどこ',
   'agent.knowledgeShape.files': 'ファイルとコード',
-  'agent.knowledgeShape.mattermost': 'Mattermost エクスポート',
+  'agent.knowledgeShape.mattermost': 'チャットのエクスポート',
   'agent.knowledgeShape.journal': '日付付きメモ',
   'agent.knowledgeShape.records': 'スクリプトが書くレコード',
   'agent.knowledgeShape.sent': 'あなた自身の送信済みメール',

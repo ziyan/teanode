@@ -228,10 +228,18 @@ func readRecordsFile(root, relative string) ([]ScanEntry, error) {
 			if at := recordTime(one.At); at != nil {
 				when = *at
 			}
-			posts[one.Channel] = append(posts[one.Channel], chatPost{
+			// A post whose thread is itself is a thread's root whose
+			// replies are not in this file: a unit of its own rather
+			// than one more post in a window, which is what the export
+			// readers made of a root with a reply count.
+			post := chatPost{
 				ID: one.ID, Thread: one.Thread, At: when,
 				Author: one.Author, Text: one.Text, Metadata: one.Metadata,
-			})
+			}
+			if post.Thread == post.ID {
+				post.Thread, post.Replied = "", true
+			}
+			posts[one.Channel] = append(posts[one.Channel], post)
 			if one.Private {
 				private[one.Channel] = true
 			}
@@ -264,8 +272,16 @@ func chatUnitsOf(relative, channel string, posts []chatPost, private bool) []Sca
 	sort.SliceStable(posts, func(left, right int) bool {
 		return posts[left].At.Before(posts[right].At)
 	})
-	// A record carries no reply count, the way a Mattermost post does, so
-	// a post is a thread's root when another post in the file names it.
+	// A record carries no reply count, the way an exported post does, so
+	// a post is a thread's root when another post in the file names it
+	// as its thread, or when it names itself, which is how a script says
+	// its replies are elsewhere. The chat export reader took roots from
+	// the export's reply count alone, and an export whose counts were
+	// all zero had every root sit in a window beside its neighbours
+	// while its replies made a unit of their own under the root's id --
+	// two units with one id when the root opened its window. Reading
+	// the thread whole is the point of a thread, so this reader does,
+	// and the units of such an export change once when it is converted.
 	replied := map[string]bool{}
 	for _, post := range posts {
 		if post.Thread != "" && post.Thread != post.ID {
@@ -273,7 +289,7 @@ func chatUnitsOf(relative, channel string, posts []chatPost, private bool) []Sca
 		}
 	}
 	for index := range posts {
-		posts[index].Replied = replied[posts[index].ID]
+		posts[index].Replied = posts[index].Replied || replied[posts[index].ID]
 	}
 	units := chatUnits(relative, channel, posts, private)
 	// chatUnits walks a map to find its threads, so two units of the same

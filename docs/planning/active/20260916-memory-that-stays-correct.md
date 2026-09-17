@@ -1,0 +1,594 @@
+# Memory that stays correct as it learns: reversible writes, honest cursors, checked evidence, provisional inference, and a way to measure it
+
+This ExecPlan is a living document. The sections `Progress`, `Surprises &
+Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to
+date as work proceeds. `~/.claude/PLAN.md` describes the form this document
+takes; keep it in accordance with that file. It builds on
+`docs/planning/active/20260915-memory-that-learns-the-person.md`, which is
+checked in and describes the memory graph and the dream, and on
+`docs/planning/active/20260916-every-model-call-is-a-run.md`, which put every
+model call through the conversation loop. Everything this plan needs from
+either is repeated here.
+
+## Purpose / Big Picture
+
+The agent's memory is a graph of pages and facts that a nightly process, the
+dream, writes and tidies. It reads the person's documents and conversations,
+files what it learned, merges duplicates, rewrites page summaries, and draws
+links between pages. It has grown fast this week, and an outside review of
+the code (two written reviews, every concrete claim of which was checked
+against the tree on 2026-09-16) found the same thing operating it found:
+the graph learns quickly and forgets carefully in some places and
+carelessly in others. A merged fact is deleted rather than kept. A
+conversation with more than sixty unread messages has the oldest ones
+marked as read without being read. A fact the prompt never carried is
+marked as used. Every dream, however soon after the last, fades every link
+by a fifth. A quote the model invented is stored as evidence at full
+confidence. A link the dream guessed from walking the graph looks exactly
+like a link the person stated. And nothing measures whether any of this
+makes the next answer better.
+
+After this plan, every write the dream makes can be undone and traced:
+nothing the agent learned is deleted by a merge, a cursor never claims to
+have read what it skipped, and what the prompt carried is what counts as
+used. Links fade by elapsed time, not by how often the dream ran. A quote
+that does not occur in the message it cites is marked as the model's
+inference, not the person's word. A link the dream inferred is stored as
+proposed, shown with that doubt, and promoted only when a document supports
+it. Rehearsal says "supported", "gap" or "unknown" rather than "yes" when
+it could not ask. And a fixed set of fifty questions, replayed against a
+snapshot with each dream stage switched off in turn, says in numbers what
+each stage is worth.
+
+A person sees it working in three ways. On any page in the knowledge
+explorer, a folded fact still exists, dormant, pointing at the fact that
+absorbed it. In a conversation, the agent says "perhaps" about a proposed
+link and cites a document for a supported one. And `teanode agent memory
+evaluate` prints a table of hits and misses over the question set.
+
+## Progress
+
+- [x] (2026-09-17 01:40Z) Research: two outside reviews checked claim by
+  claim against the code; findings and line references are in Context and
+  Orientation.
+- [ ] Milestone 1: reversible writes. Folded, struck and repeated facts go
+  dormant with a pointer, never deleted; the docs' promise becomes true.
+- [ ] Milestone 2: honest cursors and bookkeeping. Remember reads the oldest
+  unread segment and advances only through it; recall marks used only what
+  it carried; pages in the index still get their facts expanded.
+- [ ] Milestone 3: decay by elapsed time, with a watermark, and
+  reinforcement over the real interval.
+- [ ] Milestone 4: evidence checked at the write boundary: a quote must
+  occur in the message it cites, and the message must exist.
+- [ ] Milestone 5: provisional links. Edges gain a status and an origin;
+  walks write proposed edges; the prompt says so; a dream stage looks for
+  support and promotes.
+- [ ] Milestone 6: rehearsal with three outcomes, and the dream log counting
+  them.
+- [ ] Milestone 7: the question set and `teanode agent memory evaluate`,
+  with a snapshot and per-stage switches.
+- [ ] Milestone 8: docs and retrospective.
+
+## Surprises & Discoveries
+
+- Observation: the reviewer's claim that reading an old relationship makes
+  it sound current again is true of `decayOfEdge` in
+  `internal/agent/decay.go:136-147`, but that function has no caller
+  outside its test, and an edge's `used_at` is written only by the nightly
+  co-activation pass. The bug is latent. It is fixed in Milestone 3 all the
+  same, because the function is what the prompt will use once edges are
+  rendered with their doubt.
+  Evidence: `grep -rn decayOfEdge internal` finds `decay.go` and
+  `decay_test.go` only; `internal/db/database_dream.go:412-416` is the one
+  writer of edge `used_at`.
+- Observation: changed numbers survive the twin merge more often than the
+  reviewer thought, because `properNouns` in `internal/agent/graph.go:928-937`
+  treats a digit-leading token as a name, so "40" and "60" make the two
+  facts share no name and the merge is refused. Negations have no such
+  protection: "she prefers tea" and "she no longer prefers tea" share every
+  name and embed alike.
+- Observation: the "never deletes" promise in `docs/subsystems/memory.md`
+  (lines 143, 201, 232, 400) is broken in more places than the review
+  found: `FoldIntoWhatThePageSays` (`internal/agent/remember.go:565-586`),
+  two dream stages (`internal/agent/dream_stages.go:504` striking a
+  vacuous fact and `:646` forgetting a fact said twice), the ingest
+  (`internal/agent/ingest.go:762,816`, which re-derives a checkout's
+  "about" facts and "Worked on" spans on every describe), the memory tool's
+  `forget`, and the API's delete. The ingest's two are re-derived rows and
+  are exempt below; the person's own `forget` stays a delete.
+- Observation: the extraction cursor loses history. `runRemember`
+  (`internal/agent/remember.go:190-191`) keeps the last sixty unread
+  messages, and `markRemembered` then advances `RememberedThrough` to the
+  final message, so a conversation that had, say, two hundred unread
+  messages has its first hundred and forty marked remembered unread.
+
+## Decision Log
+
+- Decision: a folded fact goes dormant with `SupersededBy` pointing at the
+  fact that absorbed it, reusing the field the dream's consolidate merge
+  already uses (`internal/agent/dream.go:913-915`), rather than a new
+  `merged_into` column.
+  Rationale: one mechanism for "this row stands behind that one", already
+  excluded from the index and from search by `superseded_by IS NULL`, and
+  already shown by the explorer. A second field would mean a second set of
+  filters.
+  Date/Author: 2026-09-17, the agent.
+- Decision: the person's own `forget`, through the memory tool or the API,
+  still deletes. The dream never does.
+  Rationale: "forget this" from the person is a request to remove, and
+  keeping it dormant would be keeping what they asked to lose. The promise
+  in the docs is about what the agent does on its own.
+  Date/Author: 2026-09-17, the agent.
+- Decision: similarity stays a candidate generator and the name check stays,
+  but a negation guard is added before any fold: two texts where exactly
+  one contains a negation word (`not`, `no longer`, `never`, `n't`, `stopped`,
+  `former`) are never folded, and both stay, the newer marked as
+  superseding the older only when it is the newer statement of the same
+  subject. Classification by a model (equivalent, extends, contradicts) is
+  left to a later plan.
+  Rationale: the reviewer is right that a threshold is not a justification,
+  and wrong that a verifier per write is affordable at bootstrap scale
+  (hundreds of facts an hour on the station model). A string guard catches
+  the one class of loss that is certain, negation, at no model cost, and
+  keeps both rows so a later classifier has something to classify.
+  Date/Author: 2026-09-17, the agent.
+- Decision: decay is a function of elapsed time since the last decay pass,
+  stored as a watermark on the agent, with a half-life of thirty days for
+  an untouched edge, and reinforcement looks back over the same interval.
+  Rationale: the current constant of 0.8 a pass was written for one pass a
+  night; bootstrap runs a pass every few minutes, and after a day of that
+  every untouched edge is at the floor. Time is what the constant meant.
+  Date/Author: 2026-09-17, the agent.
+- Decision: evidence is checked with strings, not a model. A quote must be
+  found in the cited message after whitespace and case are normalized, and
+  the cited message must be one of the conversation's; a fact that fails
+  either is kept, with `Inferred: true` and `Confidence: 0.5`, and its
+  evidence quote replaced by the closest sentence of the cited message when
+  one is found by word overlap, else dropped.
+  Rationale: fabricated quotes are the failure the reviewer named, and
+  whether a string occurs is not a judgement call. Semantic support
+  checking is reserved for promotions in Milestone 5.
+  Date/Author: 2026-09-17, the agent.
+- Decision: edges gain `status` (stated, proposed, supported) and `origin`
+  (person, source, derived, dream), in a migration; a walk writes
+  `proposed`; only `stated` and `supported` edges are carried in the prompt
+  index; `proposed` edges appear on a page as "perhaps" lines and are
+  promoted by a dream stage that finds a document mentioning both ends.
+  Rationale: the reviewer's separation of confidence from retrieval weight,
+  done with the two fields that matter. Weight stays what co-activation
+  tunes; status says whether the agent may assert it.
+  Date/Author: 2026-09-17, the agent.
+- Decision: the evaluation runs recall only, not the answer model, in its
+  first form: for each question, did the memories the turn would carry
+  include the facts the question is about. A second form that asks the
+  model and grades the answer is written down but not built here.
+  Rationale: recall is deterministic and free, so it can run in CI and on
+  every snapshot; grading answers costs model calls and a grader. The
+  reviewer's fifty questions are the same set for both.
+  Date/Author: 2026-09-17, the agent.
+
+## Outcomes & Retrospective
+
+To be written at the end of each milestone and at completion.
+
+## Context and Orientation
+
+TeaNode is a mail server with a personal agent, in Go under `internal/`,
+with a React dashboard under `web/` and PostgreSQL behind it. The memory
+subsystem is documented in `docs/subsystems/memory.md`; what follows is
+what this plan needs of it.
+
+The graph. A *page* is a row of `agent_node` (`models.AgentNode`,
+`internal/models/graph.go`), addressed by a path such as `people/alice-chen`
+or `projects/portal` or `self` (the person). A *fact* is a row of
+`agent_fact` (`models.AgentFact`, `internal/models/graph.go:240-300`): a
+sentence on a page with a `Kind`, a `Confidence` (a float, 1 for anything
+the extraction writes), `Inferred` (true when the agent worked it out
+rather than read it), `Evidence` (a list of `models.Evidence{Kind, ID,
+Quote, At}`, line 221: the message or document it came from and the line
+it was read in), `SupersededBy` (the id of a newer statement of the same
+thing, line 271) and `Dormant` (out of the index and still searchable,
+line 273). A fact is *live* when neither is set (`IsLive`, line 614). A
+*link* is a row of `agent_edge` (`models.AgentEdge`, line 312): `FromID`,
+`ToID`, `Relation`, `Weight` (a float the dream tunes), `Evidence`, `Note`,
+`HappenedAt`, `UsedAt`. It has no status: a link the person stated and one
+the dream guessed are the same row. Every write to the graph is also a row
+of `agent_revision` (a journal of who changed what; `models.RevisionFactGone`
+is the entry a deletion leaves, with only the fact's number and text).
+
+Writing. `fileWhatWasLearned` in `internal/agent/remember.go` (line 396)
+is the extraction writer: it takes the model's answer about a batch of
+conversation messages and files facts with `Confidence: 1` and the
+evidence the model named (line 471-482), checking only that the quote is
+not one of the prompt's own examples (line 418) and that the text is new
+(line 467). `runRemember` (line 141) chooses which messages: everything
+after the conversation's `RememberedThrough`, cut to the last sixty (line
+190-191), then `markRemembered` (line 238) moves `RememberedThrough` to the
+last message it was given, which is the last of the whole unread list, not
+of the sixty. Before a fact is stored, `twinOf` (line 600-620) looks for a
+near neighbour on the same page above `twinFloor = 0.92` cosine similarity
+(`internal/agent/graph.go:63`) that `sharesAName` with it (line 880-901);
+if one is found, `FoldIntoWhatThePageSays` (line 565-586) appends the new
+fact's evidence to the old one and deletes the new row with
+`tx.DeleteAgentFact`, which hard-deletes (`internal/db/database_graph.go:912-927`).
+The same twin check runs at ask time in `NoteFact` (`graph.go:826-846`).
+
+Reading. Once a turn, `recallForTurn` (`internal/agent/graph.go:353-381`)
+searches the graph by words and by vector (`searchGraph`, line 471-486,
+fused by reciprocal rank) and writes an overlay of pages and facts into
+the prompt with `writeRecalled` (line 496-560). That function expands the
+top pages' facts into blocks; it appends each fact to the block, marks it
+in `shown` and `usedFacts` (line 521-533), and only then measures the
+block against `recallTokens`, breaking out if it does not fit. Facts in
+`usedFacts` get `TouchAgentFacts` at line 554, which bumps `used_at`, which
+feeds importance and decay. Pages already carried by the compact index
+that every prompt holds are skipped for expansion (`self.inPrompt`, line
+509). There is no hop along edges and no date filter; time enters only as
+a rank multiplier (`decayOfNode`, line 462).
+
+Decay. `internal/agent/decay.go` has `decayOf(age, halfLife)` and
+`decayOfNode`, used in ranking, and `decayOfEdge` (line 136-147), which
+takes the latest of created, happened and used as the edge's age and says
+whether to speak of it in the past tense; nothing calls it yet. The dream's
+quiet half calls `tx.StrengthenAgentEdges(agentId, since, rise, decay)`
+(`internal/db/database_dream.go:402-420`): one `UPDATE agent_edge SET
+weight = GREATEST(0.05, weight * 0.8)` over every edge, then a rise for
+edges whose both ends were used since `since`, which the caller sets to
+six hours ago (`dream_stages.go:98`, `dreamApart` in `dream.go:40`). No
+watermark of when it last ran exists; `agent.DreamedAt`
+(`internal/models/agent.go:78`) is written when a dream finishes (`dream.go:285`)
+and read only to keep dreams six hours apart when not bootstrapping
+(`dream.go:147`).
+
+The dream. `internal/agent/dream.go` runs the stages in order: digest
+(read documents in batches through a run of the conversation loop with
+read-only lookups), remember, consolidate (rewrite a page's summary from
+its facts, `prompts/consolidate.txt`, whose lines 49-53 say to keep a
+sentence of the old summary that no fact repeats unless a fact contradicts
+it), organize, revise (`dreamRevise` in `dream_stages.go`, which at line
+504 deletes a fact found vacuous), forget-said-twice (line 646, deletes),
+associate (`dreamAssociate` and `askAboutAWalk`, line 137-260: walk the
+graph from a page, ask the model whether the two ends are related, and if
+so `PutAgentEdge` at weight 0.5 with evidence whose quote is the path
+walked and whose id is empty, line 232-239), and rehearse (`dreamRehearse`,
+line 263-330: generate questions the person might ask, and for each,
+`canAnswerFromMemory` → `factsAnswer`, line 392-422, which returns true
+when the budget is gone, the prompt cannot render, the model call fails,
+or the answer does not parse). Each dream is a row of `agent_dream` with
+counts per stage (`digested`, `filed`, `merged`, `revised`, `rewritten`,
+`strengthened`, `rehearsed`, `gaps`, ...). `newDreamBudget` in `dream.go`
+gives each dream a fresh allowance.
+
+The daemon and the station. The dream's model calls go to the operator's
+scan model, a local Qwen on a machine called station, free but slow, with
+`limits.scanConcurrency` runs at a time; the person's own conversations
+use a paid model. Every model call is a *run*, a conversation of kind
+`run` visible in the dashboard's Agents page under Runs.
+
+Terms. *Dormant*: kept, searchable, out of the prompt index. *Superseded*:
+dormant because a newer row says the same thing. *Proposed*: a link the
+dream inferred and nothing yet supports. *Watermark*: a stored time saying
+when a pass last ran, so the next pass knows the interval. *Snapshot*: a
+copy of one agent's graph tables at a moment, restored into a test
+database for the evaluation.
+
+## Milestone 1: reversible writes
+
+At the end of this milestone the dream deletes nothing: a fact folded into
+its twin, struck as vacuous, or found said twice goes dormant with
+`SupersededBy` set, its evidence intact, visible in the explorer under the
+fact that absorbed it. The docs' promise is true.
+
+In `internal/agent/remember.go`, `FoldIntoWhatThePageSays` stops calling
+`DeleteAgentFact`. It appends the new evidence to the older fact as now,
+then updates the newer row with `SupersededBy = older.ID` and `Dormant =
+true` through `tx.PutAgentFact`, and journals it with a new revision kind
+`models.RevisionFactFolded` carrying both ids. Before folding, the negation
+guard from the Decision Log runs: a new function `negates(left, right
+string) bool` in `internal/agent/graph.go` beside `sharesAName`, true when
+exactly one of the two texts contains a negation token; when it is true the
+new fact is stored as its own row, and `SupersededBy` on the *older* fact
+is set to the new one only when `sharesAName` is true and the new fact's
+`HappenedAt` (or filing time) is later, so the newer statement stands and
+the older is kept behind it. The test `TestANegationIsNeverFolded` in
+`remember_test.go` writes "prefers tea" then "no longer prefers tea" and
+expects two rows, the older superseded.
+
+In `internal/agent/dream_stages.go`, the delete at line 504 (a vacuous
+fact in `dreamRevise`) becomes `Dormant = true` with revision kind
+`RevisionFactStruck`, and the delete at line 646 (`dreamForgetSaidTwice`)
+becomes `SupersededBy` pointing at the kept twin, the same as a fold. The
+ingest's two deletes in `internal/agent/ingest.go:762,816` are left: they
+replace rows the ingest itself derived from a checkout's profile and
+commit spans, and re-derives on every describe; a comment says so.
+
+In `internal/db/database_graph.go`, `DeleteAgentFact` keeps its behaviour
+for the person's `forget`, and its revision entry grows to carry the whole
+fact as JSON (`kind`, `evidence`, `confidence`, `happened_at`, `audiences`)
+rather than number and text, so a deletion is at least reconstructible
+from the journal. The explorer already shows dormant facts greyed under
+their page; check that a superseded fact shows "folded into #N" by reading
+`web/src/pages/knowledgeExplore.tsx` where `supersededBy` is rendered, and
+add the line if it is not.
+
+`docs/subsystems/memory.md` line 143 and 201 are made true by the code; the
+paragraph at 201 gains one sentence saying the write-time fold does the
+same as the dream's merge.
+
+Proof: `go test ./internal/agent/ -run 'Fold|Negation|Struck|Twice'
+-count=1` (needs the test database; see Concrete Steps). Then on the dev
+server, note two facts that are twins through the memory tool and see both
+rows in the explorer, one dormant with the pointer.
+
+## Milestone 2: honest cursors and bookkeeping
+
+At the end of this milestone a long backlog is read oldest first, sixty at
+a time, across as many remember runs as it takes; and recall counts as used
+only what it carried.
+
+In `runRemember`, replace the tail cut at `remember.go:190-191` with a head
+cut: `unread = unread[:rememberMessages]` when longer, and pass that slice
+to `markRemembered` so `RememberedThrough` advances to the last message
+*read*. When more remained, the run ends by enqueueing another remember
+job for the same conversation (`Enqueue(models.AgentJobRemember, ...)` as
+the caller does) rather than waiting for the next trigger, so a backlog
+drains at sixty a run. Test: a conversation with 150 messages and
+`RememberedThrough` empty; after one run the cursor is at message 60 and a
+job is queued; after three runs it is at 150.
+
+In `writeRecalled`, build each page's block into a local slice of facts
+first, measure it, and only when it fits append to the overlay and then
+mark the facts in `shown` and `usedFacts`. When a block does not fit,
+`continue` to the next page rather than `break`, since a smaller page may
+still fit, but stop when the remaining budget is under a floor
+(`recallTokens/8`) to avoid scanning every page. Distinguish `indexed`
+from `expanded`: a page the compact index already names may still have its
+facts expanded when it is among the top hits, because the index line is a
+description and not the facts; keep the skip only for pages whose facts
+were already written in this overlay. Tests in `graph_test.go`: a page
+whose block is over budget leaves its facts unmarked and untouched; a page
+in the index gets its facts expanded when it is a hit.
+
+Proof: the two tests, and `TouchAgentFacts` observed (in a test with a fake
+transaction, or by reading `used_at` after a turn on the dev server) to
+touch only facts present in the rendered overlay.
+
+## Milestone 3: decay by elapsed time
+
+At the end of this milestone an edge untouched for thirty days has half
+its weight whether the dream ran once or a thousand times in between, and
+reinforcement counts use over the real interval since the last pass.
+
+Add `DecayedAt *time.Time` to `models.Agent` and a migration
+`0081_agent_decayed_at.sql` adding the column. In the quiet half
+(`dream_stages.go` around line 98), compute `elapsed = now -
+agent.DecayedAt` (or zero on the first pass, which then only sets the
+watermark), `factor = 0.5^(elapsed / edgeHalfLife)` with `edgeHalfLife =
+30 * 24h`, clamp `factor` to `[0.05, 1]`, and call
+`StrengthenAgentEdges(agentId, *agent.DecayedAt, hebbianRise, factor)`, so
+the rise window is the same interval; then store `DecayedAt = now`. Remove
+the constant `hebbianDecay`. `decayOfEdge` in `decay.go` stops taking
+`UsedAt` into its age: the tense of a relationship depends on when it
+happened or was created, and use affects ranking only; its test changes
+accordingly. Bootstrap, which runs dreams back to back, now decays nothing
+between them, which is the point.
+
+Proof: `TestDecayIsByElapsedTime` in `dream_stages_test.go` (or a database
+test in `internal/db`) runs the quiet half twice a minute apart and once a
+month later and checks the weights: unchanged, unchanged, halved.
+
+## Milestone 4: evidence checked at the write boundary
+
+At the end of this milestone a fact whose quote is not in the message it
+cites is filed as inferred at half confidence, and a fact citing a message
+that does not exist has its evidence dropped.
+
+In `fileWhatWasLearned`, before building the fact at line 471, look the
+cited message up in the batch (the `unread` messages are at hand; for a
+document evidence kind, the document by id through the transaction). If
+the id names nothing, log it and file with `Evidence: nil`, `Inferred:
+true`, `Confidence: 0.5`. If it exists, normalize both the quote and the
+message content (lowercase, whitespace collapsed, quotes and dashes
+unified) and require the quote to occur as a substring; when it does not,
+find the sentence of the message with the most words in common with the
+quote (a helper `closestSentence(text, quote) string` in
+`internal/agent/vacuous.go` beside `splitSentences`), and when that sentence
+shares at least half the quote's words, use it as the quote; otherwise
+drop the quote, and in both cases mark `Inferred: true` and `Confidence:
+0.5`. The existing downgrade at line 429 (a preference cited to a message
+the person did not write) stays. Count the outcomes in the run's note row
+("filed 7 facts, 2 with evidence rewritten, 1 without") so the dream log
+shows how often the model invents.
+
+Proof: `TestAQuoteMustOccurInItsMessage` files a fact whose quote is a
+paraphrase and expects the closest sentence as its quote and `Inferred`;
+`TestAFactCitingNothingHasNoEvidence` expects nil evidence and 0.5. On the
+server, after a day, `select count(*) filter (where inferred) from
+agent_fact where created_at > now() - interval '1 day'` says how much the
+guard catches.
+
+## Milestone 5: provisional links
+
+At the end of this milestone a link the dream inferred is stored as
+proposed, rendered as "perhaps", kept out of the prompt index, and promoted
+to supported when a document mentions both ends.
+
+Migration `0082_agent_edge_status.sql`: `status text not null default
+'stated'` and `origin text not null default 'person'` on `agent_edge`.
+`models.AgentEdge` gains `Status AgentEdgeStatus` (`EdgeStated`,
+`EdgeProposed`, `EdgeSupported`) and `Origin AgentEdgeOrigin` (`OriginPerson`,
+`OriginSource`, `OriginDerived`, `OriginDream`); `PutAgentEdge` stores them;
+`askAboutAWalk` writes `Status: EdgeProposed, Origin: OriginDream` and its
+evidence becomes `{Kind: EvidenceDream, Quote: path}` so no reader mistakes
+it for a document. The memory tool's `link` writes `EdgeStated, OriginPerson`
+when the person is present and `OriginSource` from an ingest; the ingest's
+derived links (`works_on` from commits, `related_to` from a checkout's
+description) write `OriginDerived`.
+
+Rendering: wherever an edge becomes prompt text (the index line in
+`carryIndex`, the page block in `writeRecalled`, `AgentEdge.Sentence`), a
+proposed edge is omitted from the index and written on the page as
+"perhaps related to X (the agent's guess, unconfirmed)". The explorer
+shows proposed edges dashed (`web/src/pages/knowledgeExplore.tsx`, the
+edge style) with a badge, and a person may confirm one (a new mutation
+`ConfirmAgentEdge` setting `EdgeStated`) or drop it.
+
+Promotion: a new dream stage `dreamSupport`, after associate, takes up to
+`supportBatch = 8` proposed edges, and for each searches the indexed
+documents (`SearchAgentChunks` by the two page names) for a chunk that
+mentions both; with one found, the edge becomes `EdgeSupported` with
+evidence `{Kind: EvidenceDocument, ID: document id, Quote: the chunk's
+matching sentence}`. No model call. A proposed edge older than
+`proposedTTL = 90 days` with no support goes dormant (edges have no
+dormant flag; give them `weight = 0` and exclude zero-weight edges from
+rendering, or add `dormant` in the same migration; choose `dormant` for
+symmetry with facts). Counts go on `agent_dream` as `supported` and
+`dropped`.
+
+Proof: `go test ./internal/agent/ -run 'Proposed|Support'`, and on the
+server, `select status, origin, count(*) from agent_edge group by 1,2`
+after a dream; a proposed edge in the explorer dashed; a confirmed one
+solid; a page's prompt block containing "perhaps".
+
+## Milestone 6: rehearsal with three outcomes
+
+At the end of this milestone `factsAnswer` returns one of `answered`,
+`gap`, `unknown`, and the dream row counts all three.
+
+Change `factsAnswer` (`dream_stages.go:392-422`) to return a
+`rehearsalOutcome` and make each failure path (`!budget.left()`, render
+error, model error, JSON extraction or parse error) `rehearsalUnknown`;
+`canAnswerFromMemory` returns `unknown` when there is no embedder. A
+supported answer must name at least one fact number from the facts it was
+shown, or it is `unknown` too. `dreamRehearse` counts them into the dream
+row (`rehearsed`, `gaps`, and a new `unknown` column via migration
+`0083_agent_dream_unknown.sql`) and writes a gap only for `gap`. The dream
+log line in the dashboard shows "12 rehearsed, 3 gaps, 4 unknown".
+
+Proof: a test that makes the model call fail expects `unknown` and no gap
+written; the dashboard's dream row after a dream on the dev server shows
+the three numbers.
+
+## Milestone 7: the question set and the evaluation command
+
+At the end of this milestone `teanode agent memory evaluate questions.json`
+replays fifty questions through recall against the live graph or a
+snapshot and prints, per question, whether the facts it needs were carried,
+and a total; and the same run with a dream stage switched off says what
+that stage was worth.
+
+The set lives in `docs/evaluation/memory-questions.json` (the maintainer
+writes the questions; the plan writes the shape): a list of `{id,
+question, kind: direct|paraphrase|changed|multihop|abstain, expects:
+[{path, words: [..]}], forbids: [{path, words}]}`. `expects` is satisfied
+when the overlay recall would carry contains a fact on `path` containing
+every word; `forbids` is what a changed fact must not carry (the obsolete
+statement). Fifty questions, ten of each kind, with the changed ones built
+from real corrections the maintainer made this week.
+
+The command, in `internal/cmd/agent_graph.go` under `agent memory`: it
+signs in as the person as every command does, calls a new GraphQL query
+`RecallAgentMemory(question) { pages { path facts { number text } } }`
+that runs `searchGraph` and `writeRecalled` without a turn and returns
+what would have been carried, and grades locally. Output is a table with
+kind, id, hit or miss, and which expectation failed, then totals per kind.
+`--json` for machines.
+
+Stage switches: `limits.dreamStages` in the operator's agent settings, a
+list of stage names to run (`digest, remember, consolidate, organize,
+revise, associate, support, rehearse`), all by default; the dream skips
+what is not listed. Documented in `docs/configuration.md`
+(`make check-config-docs` enforces it). The experiment the reviewer asked
+for is then: snapshot the graph (`pg_dump -t 'agent_node' -t 'agent_fact'
+-t 'agent_edge' ...` for one agent, restored into the dev database), run
+the evaluation, restore again with a stage removed and a dream run, and
+compare. The plan records the first numbers in Artifacts.
+
+Proof: `teanode agent memory evaluate docs/evaluation/memory-questions.json`
+prints fifty rows and a total on the maintainer's server; a deliberately
+wrong expectation shows as a miss.
+
+## Milestone 8: documentation
+
+`docs/subsystems/memory.md` gains: the fold's dormant row, the honest
+cursor, elapsed-time decay and the watermark, checked evidence and the
+inferred marking, the three edge statuses and how a proposed link is
+promoted, rehearsal's three outcomes, and the evaluation command and its
+question file. `docs/reference/command-line.md` lists `agent memory
+evaluate`. `docs/configuration.md` documents `limits.dreamStages`. The
+retrospective compares the numbers before and after.
+
+## Concrete Steps
+
+All commands run from the repository root.
+
+    go build ./... && go vet ./internal/agent/ ./internal/db/ ./internal/models/
+    make lint-ci
+    go test ./internal/agent/ -count=1        # needs the test database
+    cd web && npx tsc --noEmit -p . && npx prettier --check src
+
+The agent package's tests want PostgreSQL; `make test` starts a container,
+or the existing `teanode-test-db` container can be pointed at with the
+environment the Makefile sets (see `docs/reference/local-development.md`).
+Migrations are added as numbered files under `internal/db/migrations/`
+(`docs/coding/database-migrations.md`); the next free number is 0081. The
+dev server for dashboard checks is `make build` then `./build/teanode-server
+run` with `dev/.env` in the environment; the dashboard is
+`http://127.0.0.1:10081`. Every dashboard change is looked at in Chrome
+before it is deployed or committed. Deploy with `make docker
+DOCKER_TAG=teanode:memory`, `docker save teanode:memory | ssh root@server
+docker load`, `ssh root@server 'cd /opt/teanode && docker compose up -d
+--force-recreate teanode'`; a deploy ends the running dream, so batch them.
+
+## Validation and Acceptance
+
+After Milestone 1, `select count(*) from agent_revision where kind =
+'fact_gone' and actor = 'dream' and created_at > <deploy time>` stays at
+zero over a night of dreaming, and folded facts appear dormant with a
+pointer. After Milestone 2, no conversation has `RememberedThrough` past a
+message that was never in a remember batch (checked by a test), and
+`used_at` moves only on carried facts. After Milestone 3, two dreams a
+minute apart leave weights unchanged. After Milestone 4, the dream log's
+note rows count evidence rewritten and dropped. After Milestone 5, the
+explorer shows proposed links dashed and a supported one carries a
+document. After Milestone 6, the dream row shows unknowns. After Milestone
+7, the evaluation prints fifty rows, and the same set run with `associate`
+off and on gives two totals to compare.
+
+## Idempotence and Recovery
+
+Every milestone is additive: new columns with defaults, new revision
+kinds, a new stage, a new command. The fold change can be reverted by
+restoring the delete; nothing it wrote is lost since the rows stay. The
+decay watermark's first pass decays nothing and only stores the time. If
+the evidence check proves too strict (many facts marked inferred), the
+confidence it assigns is one constant. Migrations are forward-only, as the
+project's are; each is written to run once and to be harmless on a
+database that already has the column.
+
+## Artifacts and Notes
+
+To be filled: the count of `fact_gone` revisions by actor before and after
+Milestone 1; the first evaluation table; the associate-off and associate-on
+totals.
+
+## Interfaces and Dependencies
+
+In `internal/models/graph.go`: `RevisionFactFolded`, `RevisionFactStruck`;
+`AgentEdgeStatus` with `EdgeStated`, `EdgeProposed`, `EdgeSupported`;
+`AgentEdgeOrigin` with `OriginPerson`, `OriginSource`, `OriginDerived`,
+`OriginDream`; `AgentEdge.Status`, `AgentEdge.Origin`, `AgentEdge.Dormant`;
+`EvidenceDream`. In `internal/models/agent.go`: `Agent.DecayedAt`. In
+`internal/agent/graph.go`: `func negates(left, right string) bool`; the
+reordered `writeRecalled`. In `internal/agent/remember.go`: the head cut
+and requeue in `runRemember`; the evidence check in `fileWhatWasLearned`
+with `func closestSentence(text, quote string) string` in `vacuous.go`. In
+`internal/agent/dream_stages.go`: `edgeHalfLife`, the watermark decay,
+`dreamSupport`, `type rehearsalOutcome` with `rehearsalAnswered`,
+`rehearsalGap`, `rehearsalUnknown`. In `internal/db`: migrations 0081
+(`agent.decayed_at`), 0082 (`agent_edge.status`, `origin`, `dormant`),
+0083 (`agent_dream.unknown`, `supported`, `dropped`); `StrengthenAgentEdges`
+taking a factor; `ConfirmAgentEdge`. In `internal/api/v1api/apigraph`:
+`RecallAgentMemory` query, `ConfirmAgentEdge` mutation. In `internal/cmd`:
+`agent memory evaluate`. In `internal/config`: `limits.dreamStages`. No new
+libraries.

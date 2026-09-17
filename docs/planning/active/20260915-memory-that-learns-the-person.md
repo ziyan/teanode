@@ -68,10 +68,10 @@ anticipated.
       two dates on a fact, time-aware recall, `forge` and `journal`
       sources, bootstrapping from dated notes; and the scan-model tiering.
 - [x] (2026-09-15 19:00Z) Traced "who did the payload angle deviation
-      feature" through gen7 and the Mattermost export: the answer is
+      feature" through gen7 and the chat export: the answer is
       assembled from chat, a symbol and git, never read from a profile.
       Added commits as documents, the symbol index, learning at the point
-      of use, and the chat-unit design for `~/mattermost-archive`
+      of use, and the chat-unit design for `~/chat-archive`
       (1.96 M posts → ~250 k units). Milestone 4 carries it.
 - [x] (2026-09-15 18:20Z) Measured gen7's home directory and designed the
       computer source around it: git-aware scan on the machine, text
@@ -389,7 +389,7 @@ anticipated.
   passed.
 
 - Measured, on root@server, partway through the first full ingest of
-  ~/projects (9.6 GB), ~/mujin (85 GB), ~/mattermost-archive (8.3 GB) and
+  ~/projects (9.6 GB), ~/mujin (85 GB), ~/chat-archive (8.3 GB) and
   ~/Documents:
 
       20,037 documents, 53,589 passages, 32,258 vectors so far
@@ -553,9 +553,9 @@ anticipated.
   Date/Author: 2026-09-15, decided by the maintainer; consequence noted by
   the plan author.
 
-- Decision: private Mattermost channels and direct messages are ingested
-  like any other; `private` is kept on the document as metadata and
-  changes nothing.
+- Decision: private channels and direct messages in the chat export are
+  ingested like any other; `private` is kept on the document as metadata
+  and changes nothing.
   Rationale: the maintainer: "they are not really private". The flag
   costs nothing and lets a later rule use it if one is ever wanted.
   Date/Author: 2026-09-15, decided by the maintainer.
@@ -605,7 +605,7 @@ bound is hit. Each finding ends with what the plan now says.
 **The corpus, measured rather than estimated.** On gen7, applying the
 sniff rule to the 45,254 candidate files: 44,522 are text under 512 KiB,
 **327 MB, about 86 million tokens**; 53 are larger (first 64 KiB kept);
-498 are binary by the NUL test; 71 are secret-named. The Mattermost export,
+498 are binary by the NUL test; 71 are secret-named. The chat export,
 cut by the thread-or-window rule with bots and system posts dropped
 (364,140 of them): **128,993 threads and 140,021 windows, 269,014 units,
 218 MB, about 54 million tokens, 321,114 chunks**. Commits in the person's
@@ -844,8 +844,8 @@ The full ingest, started 2026-09-16 00:00, turned up four more:
   panic in a request instead of dying, and the server takes a larger
   answer from an older program until it is rebuilt.
 - **Pace.** `work` (17.9k documents) and `projects` (44.8k) completed a
-  full pass in about forty minutes each. `mattermost` finished its first
-  full pass at 07:18 on the 16th: 464,844 units from 890 of the 940
+  full pass in about forty minutes each. The chat export finished its
+  first full pass at 07:18 on the 16th: 464,844 units from 890 of the 940
   channel files; the 50 left out are the monitoring and bot channels
   (the largest 426 MB), refused by the bot-channel rule or made of
   system posts. Pages of 2,048 chat units, sixteen pages a run, twenty
@@ -1342,7 +1342,7 @@ tens of thousands of chunks.
 a specification —
 
     computer   {computer: "gen7", path: "~/projects/teanode", include: ["**/*.go", "**/*.md"], exclude: [...]}
-    archive    {computer: "gen7", path: "~/mattermost-archive", format: "mattermost"}   a chat export the scan understands
+    archive    {computer: "gen7", path: "~/chat-archive", format: "mattermost"}   a chat export the scan understands
     skill      {tool: "skill__confluence__confluence_search", arguments: {...}, cursor_field: "start", item_path: "results", id_field: "id", text_field: "body.storage.value", title_field: "title", url_field: "_links.webui"}
     web        {start: "https://wiki.example.com/", allow: ["https://wiki.example.com/"], depth: 2, respect_robots: true}
     sent       {mailbox_id: "..."}   the person's own sent messages, for milestone 6
@@ -1555,7 +1555,7 @@ places a profile reads:
 
     git log --grep=angle --grep=deviation across the quicktron repositories:   nothing
     code mentioning "payload angle":  vendored planning-client copies, and the vendor's own UI scripts
-    Mattermost posts mentioning "payload angle" or "angle deviation":          82
+    Chat posts mentioning "payload angle" or "angle deviation":                82
       by channel:  m-220100-pepsico-carlisle-pa-… 25, 230118-pg-amiens-acp-system 18,
                    240132-kans-ssi-marshalltown-rcp 14, truckbot-onsite-tst 5, product-development-private 5
       by person:   manuj.trehan 25, ziyan 13, akshaya.srinivasan 5, kshitij.kabeer 4, yupeng.yang 4, ross.diankov 3
@@ -1598,8 +1598,8 @@ discussed with manuj.trehan in the PepsiCo Carlisle channel" lands on
 time anybody asks, it is in the index. The graph grows where the person's
 attention went, which is the only order that scales.
 
-**Chat at scale: `~/mattermost-archive`.** The maintainer keeps an export
-of their company's Mattermost, made by a script of their own against the
+**Chat at scale: `~/chat-archive`.** The maintainer keeps an export of
+their company's chat, made by a script of their own against the chat app's
 API. Measured 2026-09-15:
 
     posts                       1,963,356    in 462 channels (342 public, 120 private), 7 teams
@@ -1789,7 +1789,7 @@ noise patterns dropped — "Update.", "WIP", "Bump version", "Fix typo" —
 merge request titles with labels, issues, reviews, Confluence; and
 `~/TODO.md`, a weekly journal 2017–2020, read by date heading with
 credential-looking lines dropped), `build_data.py` (aggregate TSVs) and
-`write_message_sections.py` (Mattermost message share per project into
+`write_message_sections.py` (chat message share per project into
 the month and year files, because "message share is the best measure of
 effort per project, and the share matters more than the total").
 

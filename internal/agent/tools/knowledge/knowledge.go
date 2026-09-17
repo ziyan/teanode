@@ -57,7 +57,7 @@ func init() {
 					"name":     tools.StringProperty("for add: what to call it"),
 					"computer": tools.StringProperty("for add: which of their computers it is on"),
 					"path":     tools.StringProperty("for add: where on that computer"),
-					"format":   tools.EnumProperty("for add: how to read it", models.FormatFiles, models.FormatMattermost, models.FormatJournal, models.FormatRecords),
+					"format":   tools.EnumProperty("for add: how to read it; mattermost is a chat export in the shape the reader understands", models.FormatFiles, models.FormatMattermost, models.FormatJournal, models.FormatRecords),
 					"cron":     tools.StringProperty("for add: how often to read it, as five cron fields in their own zone; nightly if left out"),
 				}, "action"),
 				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves.",
@@ -569,8 +569,9 @@ For chat records three more fields matter. channel names the conversation
 the post belongs to; posts are grouped within a channel and a file, in
 time order, so write one channel's posts together and in order. thread is
 the id of the post this one replies to, or of the thread's root; posts
-sharing a thread become one unit with the root. Posts with no thread are
-cut into windows by silence, count and size. author is the poster's name,
+sharing a thread become one unit with the root, and a root whose replies
+are in another file names itself as its thread so it stays a unit of its
+own. Posts with no thread are cut into windows by silence, count and size. author is the poster's name,
 which the unit's participants is built from, so a person's own name here
 is what the nightly write-up recognises as theirs; participants on a chat
 record is ignored.

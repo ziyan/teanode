@@ -10,11 +10,11 @@ import (
 
 // Cutting a conversation into units, for whoever read it.
 //
-// This was written against a Mattermost export and is the part of it
-// that is not about Mattermost: a chat is posts, and a post is not worth
+// This was written against a chat export and is the part of it that is
+// not about any one chat app: a chat is posts, and a post is not worth
 // a document of its own. The reader that knows the shape on disk hands
-// its posts over as chatPost and gets back the units, so a Slack export
-// written as records and a Mattermost export read from its own files
+// its posts over as chatPost and gets back the units, so one app's
+// export written as records and another's read from its own files
 // produce the same kind of document rather than two that only look
 // alike.
 
@@ -32,7 +32,7 @@ const (
 )
 
 // chatPost is one post of any chat, as the readers hand it to the
-// grouping: the Mattermost reader from its export, the records reader
+// grouping: the chat export reader from its export, the records reader
 // from a record.
 type chatPost struct {
 	ID       string

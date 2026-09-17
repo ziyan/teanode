@@ -23,7 +23,7 @@ const (
 	SourceComputer AgentKnowledgeKind = "computer"
 
 	// SourceArchive is an export of something, on the same machine, in a
-	// shape the scan understands: a Mattermost archive, a folder of dated
+	// shape the scan understands: a chat export, a folder of dated
 	// notes.
 	SourceArchive AgentKnowledgeKind = "archive"
 
@@ -57,8 +57,9 @@ const (
 	// FormatFiles is the default: a tree of files, git-aware.
 	FormatFiles = "files"
 
-	// FormatMattermost is a Mattermost export: channels.json, users.json,
-	// state.json and posts/<team>/<channel>.jsonl.
+	// FormatMattermost is a chat export in the shape the reader
+	// understands: channels.json, users.json, state.json and
+	// posts/<team>/<channel>.jsonl.
 	FormatMattermost = "mattermost"
 
 	// FormatJournal is a folder of dated notes: a file per day or per

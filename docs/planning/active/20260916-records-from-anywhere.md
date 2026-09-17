@@ -13,7 +13,7 @@ plan needs from either is repeated here.
 ## Purpose / Big Picture
 
 Today the agent can index three shapes of thing on the person's computer: a
-tree of files, a folder of dated notes, and a Mattermost export. Each shape
+tree of files, a folder of dated notes, and a chat export. Each shape
 is a reader written in Go inside the `teanode computer` daemon (the program a
 person runs on their own machine so the agent can reach it), and adding a
 fourth shape means adding a fourth reader. The person's knowledge is not in
@@ -29,8 +29,8 @@ what it is, when it happened, who wrote it, what it says. The daemon reads
 that folder the way it reads the others, pages it to the server, and the
 server files documents from it exactly as it files documents from a file
 tree. Chat-shaped records are grouped into threads and windows by the same
-code that groups the Mattermost export, so a Slack export and a Mattermost
-export produce the same kind of document.
+code that groups the chat export, so an export from one chat app and an
+export from another produce the same kind of document.
 
 Who fills the folder is the point. A folder may hold an executable named
 `refresh`; the daemon runs it at the start of every scan, and it is that
@@ -54,10 +54,10 @@ agent a question only those documents answer.
   and the two command line tools on the person's machine. Findings are in
   Context and Orientation.
 - [x] (2026-09-17 01:17Z) Milestone 1: the daemon reads a `records` folder
-  (`scan_records.go`), with the chat grouping shared with the Mattermost
+  (`scan_records.go`), with the chat grouping shared with the chat export
   reader (`chat_units.go`), and tests. `gofmt`, `go vet`, `golangci-lint`
-  and `go test ./internal/computer/ -count=1` are clean, and the
-  Mattermost tests passed unchanged, which is the proof the move lost
+  and `go test ./internal/computer/ -count=1` are clean, and the chat
+  export tests passed unchanged, which is the proof the move lost
   nothing.
 - [x] (2026-09-17 01:17Z) Milestone 2: the daemon runs `refresh` before a
   scan, with a timeout, and reports its failure as the scan's failure.
@@ -84,7 +84,7 @@ agent a question only those documents answer.
 - [ ] Milestone 4: the agent can write a `refresh` script from the guidance
   alone; a Confluence source and a Google Drive source on the maintainer's
   machine, tested on a subset, then the whole.
-- [ ] Milestone 6: the Mattermost reader retires: the archive becomes a
+- [ ] Milestone 6: the chat export reader retires: the archive becomes a
   records source through a conversion script, shown to re-file nothing,
   then `scan_chat.go` and the `mattermost` format go.
 - [ ] Milestone 5: docs (`docs/subsystems/memory.md`, `docs/reference/command-line.md`,
@@ -114,7 +114,7 @@ agent a question only those documents answer.
   `arguments.After`, `scanMattermost` because a cursor with no `#` in it
   means "on to the next". Probed on 2026-09-17: five files at `Most: 2`
   index four of them (`note2.txt` is never sent); four journal files at
-  `Most: 2` index three; a Mattermost export whose first channel holds
+  `Most: 2` index three; a chat export whose first channel holds
   exactly one page never sends the second channel. On a real tree that is
   a file lost every 256 entries or every three megabytes, and the same
   file is lost on every pass, because the cursor is deterministic.
@@ -137,7 +137,7 @@ agent a question only those documents answer.
   On Windows it answers "not known" and the script's other checks -- a
   regular file, executable, in a folder allowed by hand -- are what hold.
 - Observation: a chat record has no reply count to say that a post is a
-  thread's root, which is what the Mattermost grouping keys on. So the
+  thread's root, which is what the chat grouping keys on. So the
   records reader works it out: a post is a root when another post in the
   same file names it as its `thread`. A script that writes the root with
   `thread` set to its own id works too, because such a post falls in with
@@ -176,16 +176,19 @@ agent a question only those documents answer.
   Rationale: the point is a nightly refresh. The checks make sure the script
   is one the person (or their agent, with the person present) put there.
   Date/Author: 2026-09-17, the agent.
-- Decision: the Mattermost reader is retired by this plan, in Milestone 6,
+- Decision: the chat export reader is retired by this plan, in Milestone 6,
   after the records reader has taken over its archive without re-indexing
   it. Until then it stays, calling the shared grouping.
   Rationale: with records in place it is the only vendor-specific reader
-  left, and everything it knows fits in a short conversion script. But the
-  person's archive is 269 thousand units already indexed and partly
-  digested, keyed by external id and hash; the switch must be shown to
-  leave every one of them unchanged before a line of the reader goes. The
-  maintainer asked for the retirement on 2026-09-16 after the plan first
-  chose to keep it.
+  left, and everything it knows fits in a short conversion script. It is
+  also the last thing in the product that ties ingestion to one chat app,
+  which is what the maintainer asked us to stop naming. But the person's
+  archive is 269 thousand units already indexed and partly digested, keyed
+  by external id and hash; the switch must be shown to leave every one of
+  them unchanged before a line of the reader goes. The maintainer asked
+  for the retirement on 2026-09-16 after the plan first chose to keep it.
+  Until the conversion runs, the reader's identifiers and its `mattermost`
+  format string stay as they are; only the prose changes.
   Date/Author: 2026-09-17, the agent, with the maintainer.
 - Decision: the agent learns the record shape from the knowledge tool's
   guidance, not from a skill.
@@ -252,7 +255,7 @@ it dispatches on the format (line 236): `scanFiles`, `scanJournal` (line
 1020, the simplest reader and the template to copy), `scanMattermost` in
 `internal/computer/scan_chat.go`.
 
-The Mattermost reader is the one to generalize. It reads `users.json`,
+The chat export reader is the one to generalize. It reads `users.json`,
 `channels.json` and `posts/<team>/<channel>.jsonl`, and cuts each channel
 into *units*: a thread (a root post and everything that replied to it), else
 a *window* of consecutive posts with no silence over thirty minutes, at most
@@ -274,7 +277,7 @@ hashes, sends `device.Ask(ctx, "scan", &computer.ScanArguments{...})` (line
 321), and files each entry with `fileDocument` (line 469), which maps the
 entry's kind to a document kind with `documentKindOf` (line 510): `commit`,
 `chat`, `journal`, `page` map to themselves and everything else becomes
-`file`. The one format-specific line on the server is 317: a Mattermost
+`file`. The one format-specific line on the server is 317: a chat export
 source's page holds 2048 entries rather than 256, because chat units are
 small. Documents are rows of `agent_document` with `external_id` unique per
 source; `PutAgentDocument` in `internal/db/database_knowledge.go` (line 341)
@@ -350,12 +353,13 @@ For `chat` records three more fields matter. `channel` names the
 conversation the post belongs to; posts are grouped within a channel and a
 file, in time order, so a script writes one channel's posts together and in
 order. `thread` is the id of the post this one replies to, or of the
-thread's root; posts sharing a `thread` become one unit with the root. Posts
-with no `thread` are cut into windows by the same silence, count and size
-bounds as Mattermost. `author` is the poster's name, which the unit's
-`participants` is built from, so a person's own name here is what the
-digest recognizes as theirs; `participants` on a chat record is ignored.
-A unit's title is the channel and the day; its text is `HH:MM author: text`
+thread's root; posts sharing a `thread` become one unit with the root, and
+a root whose replies are in another file names itself as its `thread` so
+it stays a unit of its own. Posts with no `thread` are cut into windows by
+the same silence, count and size bounds as the chat export reader. `author` is the poster's name, which the
+unit's `participants` is built from, so a person's own name here is what the
+digest recognizes as theirs; `participants` on a chat record is ignored. A
+unit's title is the channel and the day; its text is `HH:MM author: text`
 lines; its `Metadata` carries `channel`, `participants`, `posts`, and any
 `metadata` of the first post.
 
@@ -368,8 +372,8 @@ so the source's page shows it rather than silently missing it.
 
 At the end of this milestone `teanode computer` answers a scan with
 `Format: "records"` over a folder of `.jsonl` files, paged and hashed like
-the other readers, with chat records grouped into the same units the
-Mattermost reader makes. Nothing on the server knows yet; the proof is the
+the other readers, with chat records grouped into the same units the chat
+export reader makes. Nothing on the server knows yet; the proof is the
 daemon's tests.
 
 First the shared grouping. In `internal/computer/scan_chat.go` the unit
@@ -378,8 +382,8 @@ cutting and rendering are written against `mattermostPost` and
 `internal/computer/chat_units.go`:
 
     // chatPost is one post of any chat, as the readers hand it to the
-    // grouping: the Mattermost reader from its export, the records reader
-    // from a record.
+    // grouping: the chat export reader from its export, the records
+    // reader from a record.
     type chatPost struct {
         ID       string
         Thread   string    // the root this replies to, or empty
@@ -402,7 +406,7 @@ channel refusal, and its sorting, then converts each `mattermostPost` into
 a `chatPost` (`Thread` from `RootID`, `Replied` when `ReplyCount > 0`,
 `Author` from the user's username or "somebody") and calls `chatUnits`,
 adding `team` and `purpose` to each entry's metadata afterwards. The tests
-in `internal/computer/scan_test.go` that cover Mattermost must pass
+in `internal/computer/scan_test.go` that cover the chat export must pass
 unchanged; that is the proof the move lost nothing.
 
 Then the reader, in a new file `internal/computer/scan_records.go`, shaped
@@ -430,24 +434,23 @@ on `scanJournal` and `scanMattermost`:
     }
 
 The walk collects every `.jsonl` and `.ndjson` under the root, skipping
-dot-names, sorted. The paging is the Mattermost paging: the cursor is the
-file, or `<file>#<last entry sent>` mid-file, and a page stops at `most`
-entries or `scanPageBytes` of text. `recordEntries(root, relative,
-arguments)` reads one file: it parses each line (a scanner with the same
-8 MiB line buffer as the chat reader), skips bad lines and counts them,
-then splits records by kind. Document-kind records become entries directly:
-`ExternalID: relative + "#" + id`, `Kind` as given (default `page`),
-`Title` as given or the id, `URL`, `HappenedAt` and `ModifiedAt` parsed
-from RFC 3339 (nil when absent or unparsable), `Text`, `Size`, `Hash`
-sha256 of the text, `Private`, `Metadata` as given plus `author` when
-given; a record whose text `SecretContent` flags is skipped. Chat-kind
-records are gathered per `channel` in file order, converted to `chatPost`,
-and handed to `chatUnits(relative, channel, posts, anyPrivate)`, whose
-entries get an id of `relative + "#" + firstPostID` from the function
-itself. The same cache the chat reader keeps for one file (`channelCache`)
-serves here; generalize its name to `fileCache` if that reads better, or
-leave it and use it. Known hashes mark entries `Unchanged` with their text
-dropped, as everywhere.
+dot-names, sorted. The paging is the chat export reader's paging: the cursor
+is the file, or `<file>#<last entry sent>` mid-file, and a page stops at
+`most` entries or `scanPageBytes` of text. `recordEntries(root, relative,
+arguments)` reads one file: it parses each line (a scanner with the same 8
+MiB line buffer as the chat reader), skips bad lines and counts them, then
+splits records by kind. Document-kind records become entries directly:
+`ExternalID: relative + "#" + id`, `Kind` as given (default `page`), `Title`
+as given or the id, `URL`, `HappenedAt` and `ModifiedAt` parsed from RFC
+3339 (nil when absent or unparsable), `Text`, `Size`, `Hash` sha256 of the
+text, `Private`, `Metadata` as given plus `author` when given; a record
+whose text `SecretContent` flags is skipped. Chat-kind records are gathered
+per `channel` in file order, converted to `chatPost`, and handed to
+`chatUnits(relative, channel, posts, anyPrivate)`, whose entries get an id
+of `relative + "#" + firstPostID` from the function itself. The same cache
+the chat reader keeps for one file (`channelCache`) serves here; generalize
+its name to `fileCache` if that reads better, or leave it and use it. Known
+hashes mark entries `Unchanged` with their text dropped, as everywhere.
 
 Add `FormatRecords = "records"` beside the other constants in
 `internal/computer/scan.go` and a `case FormatRecords:` in `RunScan`.
@@ -460,7 +463,7 @@ folder written by the test:
   `Known` set to those hashes returns them `Unchanged` with empty text.
 - A file of chat records in two channels, one with a thread of three posts
   and four loose posts with a two hour gap in the middle, produces the
-  units the Mattermost grouping would: one thread entry, two window
+  units the chat grouping would: one thread entry, two window
   entries per the gap, each with `participants`, `posts`, `channel`.
 - A page of `Most: 1` walks three records across two files with the cursor
   ending each page, and the union of pages is every record once.
@@ -472,7 +475,7 @@ Run from the repository root:
 
     go test ./internal/computer/ -run 'Records|Mattermost|Chat' -count=1
 
-and expect every test to pass; the Mattermost tests prove the shared
+and expect every test to pass; the chat export tests prove the shared
 grouping is unchanged.
 
 ## Milestone 2: the daemon runs `refresh` first
@@ -597,7 +600,7 @@ full refresh by hand once (Drive may take an hour), sync, and let the
 dream read it. Watch the monitors already armed on the dream (facts and
 documents read per fifteen minutes) for the days it takes.
 
-## Milestone 6: the Mattermost reader retires without re-indexing
+## Milestone 6: the chat export reader retires without re-indexing
 
 At the end of this milestone the maintainer's archive is a `records` source
 and `internal/computer/scan_chat.go` is gone, with nothing re-embedded and
@@ -605,7 +608,7 @@ nothing re-read by the dream.
 
 The document identity is what makes this safe or not. A document is keyed
 by its source and an external id, and its hash is the rendered text. The
-Mattermost reader files a unit as `posts/<team>/<channel>.jsonl#<first
+chat export reader files a unit as `posts/<team>/<channel>.jsonl#<first
 post id>`, and `chatUnits` in the records reader files a unit as
 `<file>#<first post id>` too, rendering the same `HH:MM author: text`
 lines. So if the records files keep the same relative paths as the export's
@@ -616,27 +619,28 @@ unchanged.
 The relative path must match, so the records must sit at
 `posts/<team>/<channel>.jsonl` under the source's root, and the archive's
 own post files are not records. The source's root therefore becomes a
-sibling folder, `~/mattermost-records`, holding `refresh` and a `posts/`
-tree the script writes from the archive: `refresh` reads the archive's
-`users.json` and `channels.json` and, for each `posts/<team>/<channel>.jsonl`
-there, writes the records file of the same relative path here. The
-source is switched to that root and to `format: records` in place (the
-GraphQL mutation `SaveAgentKnowledgeSource` takes `path` and `format` for
-an existing `sourceId`; `teanode agent knowledge` has no edit command yet,
-so add `--path` and `--format` to an `edit` subcommand, or do it through
-the dashboard's row). The script drops posts of a `system_` type, counts
-`slack_attachment` posts as bot posts, skips a channel where they are over
-eighty percent of the total the way the reader does, marks posts in
-channels of type P, D or G `private`, writes `channel` as the channel's
-name, `thread` from `root_id`, `author` as the username, `at` from
-`create_at`, and `metadata` with `team` and `purpose` on each post. Run it
-by hand once, `teanode agent knowledge sync` the source, and read the
-source's row: the pass must report zero new documents and zero changed
-ones. Only then delete `scan_chat.go`, its tests, `FormatMattermost` in
-both constant lists, the `mattermost` option in the dashboard, the CLI
+sibling folder of the export (`~/chat-archive`), `~/chat-records`, holding
+`refresh` and a `posts/` tree the script writes from the archive: `refresh`
+reads the archive's `users.json` and `channels.json` and, for each
+`posts/<team>/<channel>.jsonl` there, writes the records file of the same
+relative path here. The source is switched to that root and to
+`format: records` in place (the GraphQL mutation `SaveAgentKnowledgeSource`
+takes
+`path` and `format` for an existing `sourceId`; `teanode agent knowledge`
+has no edit command yet, so add `--path` and `--format` to an `edit`
+subcommand, or do it through the dashboard's row). The script drops posts of
+a `system_` type, counts `slack_attachment` posts as bot posts, skips a
+channel where they are over eighty percent of the total the way the reader
+does, marks posts in channels of type P, D or G `private`, writes `channel`
+as the channel's name, `thread` from `root_id`, `author` as the username,
+`at` from `create_at`, and `metadata` with `team` and `purpose` on each
+post. Run it by hand once, `teanode agent knowledge sync` the source, and
+read the source's row: the pass must report zero new documents and zero
+changed ones. Only then delete `scan_chat.go`, its tests, `FormatMattermost`
+in both constant lists, the `mattermost` option in the dashboard, the CLI
 usage string, the knowledge tool's enum, and the docs' mentions; the
-digest's `theirThreads` and `byChannel` read metadata the records carry
-the same way, so they do not change.
+digest's `theirThreads` and `byChannel` read metadata the records carry the
+same way, so they do not change.
 
 ## Milestone 5: documentation
 
@@ -705,3 +709,19 @@ In `internal/computer/scan.go`: `FormatRecords`. In
 `internal/agent/tools/knowledge/knowledge.go`: the `shape` action and the
 `records` format. No new libraries; `encoding/json`, `bufio`, `os/exec`
 from the standard library.
+
+## Note on naming, 2026-09-16
+
+The maintainer asked that nothing in the product name the chat vendor when
+it means ingesting an export. A person hands us a folder of posts; which
+app wrote it is not the agent's business, and the next folder will come
+from a different one. So this plan says "a chat export", "the chat export
+reader" and "the export's post files" throughout, and the folders in
+Milestone 6 are `~/chat-archive` and `~/chat-records`.
+
+The reader's own identifiers, the `mattermost` format string and the files
+under `internal/computer/` keep their names for now: they are the accepted
+value of a saved source, and renaming them would re-file the archive the
+milestone exists to leave untouched. They go with the reader, in Milestone
+6, once the archive has been converted. Naming the chat app as a skill the
+agent talks to is a different thing and stays.

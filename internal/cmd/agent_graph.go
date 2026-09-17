@@ -152,7 +152,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "computer", Usage: "which of your computers it is on"},
 					&cli.StringFlag{Name: "kind", Usage: "computer, archive or sent", Value: "computer"},
-					&cli.StringFlag{Name: "format", Usage: "files, mattermost, journal or records", Value: "files"},
+					&cli.StringFlag{Name: "format", Usage: "files, mattermost (a chat export), journal or records", Value: "files"},
 					&cli.StringFlag{Name: "under", Usage: "where in the graph what it finds is filed, such as projects"},
 					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},

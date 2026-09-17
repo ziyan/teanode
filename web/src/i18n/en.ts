@@ -2482,7 +2482,7 @@ export const en = {
   'agent.knowledgeComputer': 'Which computer',
   'agent.knowledgePath': 'Where on it',
   'agent.knowledgeShape.files': 'Files and code',
-  'agent.knowledgeShape.mattermost': 'A Mattermost export',
+  'agent.knowledgeShape.mattermost': 'A chat export',
   'agent.knowledgeShape.journal': 'Dated notes',
   'agent.knowledgeShape.records': 'Records a script writes',
   'agent.knowledgeShape.sent': 'Your own sent mail',
