@@ -2488,6 +2488,9 @@ export const en = {
   'agent.knowledgeFormat.files': 'Files and code',
   'agent.knowledgeFormat.mattermost': 'A Mattermost export',
   'agent.knowledgeFormat.journal': 'Dated notes',
+  'agent.knowledgeFormat.records': 'Records a script writes',
+  'agent.knowledgeFormat.recordsHint':
+    'A folder of JSON-lines records, filled by a refresh script; ask the agent to write one.',
   'agent.knowledgeMailbox': 'Which mailbox',
   'agent.knowledgeAllowFirst':
     'On that computer, allow it first: teanode computer allow {path}. Nothing is read until you do.',

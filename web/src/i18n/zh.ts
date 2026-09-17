@@ -2391,6 +2391,8 @@ export const zh: Catalog = {
   'agent.knowledgeFormat.files': '文件与代码',
   'agent.knowledgeFormat.mattermost': 'Mattermost 导出',
   'agent.knowledgeFormat.journal': '带日期的笔记',
+  'agent.knowledgeFormat.records': '脚本写出的记录',
+  'agent.knowledgeFormat.recordsHint': '一个装着 JSON 行记录的文件夹，由刷新脚本填充；可以让助理替你写一个。',
   'agent.knowledgeMailbox': '哪个邮箱',
   'agent.knowledgeAllowFirst': '先在那台电脑上允许：teanode computer allow {path}。在此之前不会读取任何内容。',
   'agent.knowledgeHeldBack': '等你决定：{names}',

@@ -81,6 +81,15 @@ const (
 	// pass over a large repository walks the whole tree.
 	ingestDeviceWait = 10 * time.Minute
 
+	// ingestRefreshWait is the same for the first page of a records
+	// source, which runs the folder's refresh script before it reads
+	// anything: a script asking a wiki or a drive for everything that
+	// changed can take half an hour, and the daemon gives it thirty
+	// minutes, so waiting ten here would abandon a scan that was working.
+	// Only the first page runs the script, so the pages after it wait the
+	// ordinary time.
+	ingestRefreshWait = 35 * time.Minute
+
 	// unknownAuthorsKept is how many unplaced commit addresses a source
 	// remembers. Enough to recognise yourself in the list, not a census
 	// of everybody who ever committed to a mirrored upstream.
@@ -314,8 +323,15 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	}
 	after, _ := cursor["after"].(string)
 	most := ingestEntries
-	if source.Specification.Format == computer.FormatMattermost {
+	format := source.Specification.Format
+	if format == computer.FormatMattermost || format == computer.FormatRecords {
 		most = ingestChatEntries
+	}
+	// The first page of a records pass is the one that runs the folder's
+	// refresh script, and that is the only page allowed to be slow.
+	wait := ingestDeviceWait
+	if format == computer.FormatRecords && after == "" {
+		wait = ingestRefreshWait
 	}
 
 	answer, err := device.Ask(ctx, "scan", &computer.ScanArguments{
@@ -327,7 +343,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		Known:   known,
 		After:   after,
 		Most:    most,
-	}, ingestDeviceWait)
+	}, wait)
 	if err != nil {
 		// Leaving mid-answer is the same as not being there: the daemon
 		// reconnects within the second, and a pass put down for its next
@@ -507,6 +523,12 @@ func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.Ag
 
 // documentKindOf maps what the device called a thing to what this end
 // calls it.
+//
+// A records script writes whatever it found -- a mail message, a forum
+// post -- and those used to fall through to `file`, which is the right
+// answer for a thing with no better name and the wrong one for a message.
+// The kinds that have a name of their own keep it; the default stands for
+// everything else.
 func documentKindOf(kind string) models.AgentDocumentKind {
 	switch kind {
 	case "commit":
@@ -517,6 +539,12 @@ func documentKindOf(kind string) models.AgentDocumentKind {
 		return models.DocumentJournal
 	case "page":
 		return models.DocumentPage
+	case "message":
+		return models.DocumentMessage
+	case "post":
+		return models.DocumentPost
+	case "file":
+		return models.DocumentFile
 	}
 	return models.DocumentFile
 }

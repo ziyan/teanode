@@ -2473,6 +2473,9 @@ export const ja: Catalog = {
   'agent.knowledgeFormat.files': 'ファイルとコード',
   'agent.knowledgeFormat.mattermost': 'Mattermost の書き出し',
   'agent.knowledgeFormat.journal': '日付の付いたメモ',
+  'agent.knowledgeFormat.records': 'スクリプトが書き出すレコード',
+  'agent.knowledgeFormat.recordsHint':
+    'JSON Lines のレコードを収めたフォルダーで、リフレッシュスクリプトが中身を満たします。エージェントに書いてもらえます。',
   'agent.knowledgeMailbox': 'どのメールボックス',
   'agent.knowledgeAllowFirst':
     'まずそのコンピューターで許可してください：teanode computer allow {path}。それまで何も読まれません。',

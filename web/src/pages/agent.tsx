@@ -1642,13 +1642,16 @@ function KnowledgeSourcesCard() {
               <label>
                 <span>{t('agent.knowledgeFormat')}</span>
                 <select value={format} onChange={(event) => setFormat(event.target.value)}>
-                  {['files', 'mattermost', 'journal'].map((value) => (
+                  {['files', 'mattermost', 'journal', 'records'].map((value) => (
                     <option key={value} value={value}>
                       {t(`agent.knowledgeFormat.${value}` as 'agent.knowledgeFormat.files')}
                     </option>
                   ))}
                 </select>
               </label>
+              {/* A records folder is empty until a script fills it, which is
+                  the one format where choosing it is not the whole job. */}
+              {format === 'records' ? <p className="muted">{t('agent.knowledgeFormat.recordsHint')}</p> : null}
               <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
             </>
           ) : null}

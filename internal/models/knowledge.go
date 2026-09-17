@@ -64,7 +64,26 @@ const (
 	// FormatJournal is a folder of dated notes: a file per day or per
 	// month, or one file with date headings.
 	FormatJournal = "journal"
+
+	// FormatRecords is a folder of JSON lines, one record a line, in the
+	// one shape any script can write: what it is, when it happened, who
+	// wrote it, what it says. It is how everything that is not one of the
+	// shapes above gets in without a reader being written for it.
+	FormatRecords = "records"
 )
+
+// AgentKnowledgeFormats is every format a source may be read in.
+var AgentKnowledgeFormats = []string{FormatFiles, FormatMattermost, FormatJournal, FormatRecords}
+
+// IsAgentKnowledgeFormat says whether a word names a format.
+func IsAgentKnowledgeFormat(format string) bool {
+	for _, known := range AgentKnowledgeFormats {
+		if known == format {
+			return true
+		}
+	}
+	return false
+}
 
 // AgentKnowledgeSpecification is what to read. Which fields mean anything
 // depends on the kind; the rest are empty.
@@ -73,7 +92,8 @@ type AgentKnowledgeSpecification struct {
 	Computer string `json:"computer,omitempty"`
 	Path     string `json:"path,omitempty"`
 
-	// Format is how to read what is there: files, mattermost, journal.
+	// Format is how to read what is there: files, mattermost, journal,
+	// records.
 	Format string `json:"format,omitempty"`
 
 	// Include and Exclude are globs, for a files source.
@@ -175,6 +195,14 @@ func (self *AgentKnowledgeSource) Validate() error {
 		if strings.TrimSpace(self.Specification.MailboxID) == "" {
 			errors.add("specification.mailboxId", "required: which mailbox")
 		}
+	}
+	// A format the daemon cannot read used to be found only by the daemon,
+	// hours later, as a scan that failed on a word nobody could see any
+	// more. A typo is refused here, where the person is still looking at
+	// what they typed.
+	if format := self.Specification.Format; format != "" && !IsAgentKnowledgeFormat(format) {
+		errors.add("specification.format", "%q is not a format: %s, %s, %s or %s",
+			format, FormatFiles, FormatMattermost, FormatJournal, FormatRecords)
 	}
 	if self.RootPath != "" {
 		if err := ValidPath(self.RootPath); err != nil {

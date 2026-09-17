@@ -53,15 +53,40 @@ agent a question only those documents answer.
   scan and its paging, the server's ingest, the digest's metadata contract,
   and the two command line tools on the person's machine. Findings are in
   Context and Orientation.
-- [ ] Milestone 1: the daemon reads a `records` folder (`scan_records.go`),
-  with the chat grouping shared with the Mattermost reader, and tests.
-- [ ] Milestone 2: the daemon runs `refresh` before a scan, with a timeout,
-  and reports its failure as the scan's failure.
-- [ ] Milestone 3: the server, the command line, the knowledge tool and the
-  dashboard know the format; `message` and `page` kinds survive filing.
+- [x] (2026-09-17 01:17Z) Milestone 1: the daemon reads a `records` folder
+  (`scan_records.go`), with the chat grouping shared with the Mattermost
+  reader (`chat_units.go`), and tests. `gofmt`, `go vet`, `golangci-lint`
+  and `go test ./internal/computer/ -count=1` are clean, and the
+  Mattermost tests passed unchanged, which is the proof the move lost
+  nothing.
+- [x] (2026-09-17 01:17Z) Milestone 2: the daemon runs `refresh` before a
+  scan, with a timeout, and reports its failure as the scan's failure.
+  The daemon's half: the script is found, checked, run with the folder as
+  its directory and thirty minutes to work in, its output goes to
+  `<root>/.refresh.log`, and a non-zero exit or a timeout fails the pass
+  with the last lines of its stderr in the error. The server's longer wait
+  for that first page (`ingestRefreshWait`, 35 minutes) landed with
+  Milestone 3, so the two numbers already sit either side of each other.
+- [x] (2026-09-17 01:11Z) Milestone 3: the server, the command line, the
+  knowledge tool and the dashboard know the format; `message` and `page`
+  kinds survive filing. `Validate()` now refuses a format that is not one of
+  the four, with a test; the 2048-entry page and `ingestRefreshWait` apply to
+  records; `documentKindOf` names `message`, `post` and `file`; the `--format`
+  flag and `docs/reference/command-line.md` list records and `knowledge add`
+  says what has to fill the folder; the knowledge tool gained a `shape`
+  action carrying the record shape and the refresh contract; the dashboard
+  offers Records with a hint, in all three catalogues. `computer.FormatRecords`
+  was not there yet when this was written, so the server compares against
+  `models.FormatRecords` instead -- the same string, and worth folding back to
+  the daemon's constant once Milestone 1 lands. (Milestone 1 has since
+  landed and `computer.FormatRecords` exists; the fold-back is still to
+  do.)
 - [ ] Milestone 4: the agent can write a `refresh` script from the guidance
   alone; a Confluence source and a Google Drive source on the maintainer's
   machine, tested on a subset, then the whole.
+- [ ] Milestone 6: the Mattermost reader retires: the archive becomes a
+  records source through a conversion script, shown to re-file nothing,
+  then `scan_chat.go` and the `mattermost` format go.
 - [ ] Milestone 5: docs (`docs/subsystems/memory.md`, `docs/reference/command-line.md`,
   `docs/configuration.md` if a setting appears) and the retrospective.
 
@@ -81,6 +106,42 @@ agent a question only those documents answer.
   confirmation card when the command looks risky. Running `refresh`
   unattended is therefore a new trust decision, resolved in the Decision Log.
   Evidence: `internal/computer/scan.go:30-35,263-281`, `internal/computer/policy.go:1-26`.
+- Observation: all three readers that were here before this plan lose one
+  whole file every time a page fills at a file boundary, and this is live
+  data loss rather than a theoretical one. Each sets `result.Next` to the
+  file it had no room for, and each then skips that same file when it
+  resumes on it: `scanFiles` and `scanJournal` because they start *after*
+  `arguments.After`, `scanMattermost` because a cursor with no `#` in it
+  means "on to the next". Probed on 2026-09-17: five files at `Most: 2`
+  index four of them (`note2.txt` is never sent); four journal files at
+  `Most: 2` index three; a Mattermost export whose first channel holds
+  exactly one page never sends the second channel. On a real tree that is
+  a file lost every 256 entries or every three megabytes, and the same
+  file is lost on every pass, because the cursor is deterministic.
+  The records reader does not do this -- its cursor means "the page
+  begins with this file", and `TestRecordsArePagedAcrossFiles` walks that
+  boundary on purpose. Fixed the same day in the other three: the cursor
+  now names the last file sent (`paths[index-1]`), which the next page
+  begins after, so the stored cursors keep their meaning and the files
+  lost until now are sent on the next pass, since the server does not
+  hold their hashes. `TestEveryFileIsSentOnceAcrossPages`,
+  `TestEveryJournalFileIsSentOnceAcrossPages` and
+  `TestEveryChannelIsSentOnceAcrossPages` walk every page of each reader.
+  Evidence: `internal/computer/scan.go` (`scanFiles`, `scanJournal`),
+  `internal/computer/scan_chat.go` (`scanMattermost`).
+- Observation: the owner check the refresh script needs cannot be written
+  in one file. `syscall.Stat_t` does not exist on Windows and this package
+  is built there (`process_windows.go`, `internal/cmd/computer_windows.go`),
+  so the check is a two-line `ownerOfFile` behind a build tag, in
+  `owner_unix.go` and `owner_windows.go`, the way `prepare` already is.
+  On Windows it answers "not known" and the script's other checks -- a
+  regular file, executable, in a folder allowed by hand -- are what hold.
+- Observation: a chat record has no reply count to say that a post is a
+  thread's root, which is what the Mattermost grouping keys on. So the
+  records reader works it out: a post is a root when another post in the
+  same file names it as its `thread`. A script that writes the root with
+  `thread` set to its own id works too, because such a post falls in with
+  its own replies.
 - Observation: the digest reads a fixed metadata vocabulary. A chat document
   without `participants` is dropped from the month's write-up entirely;
   `channel` and `posts` order the threads; a commit needs `address` and
@@ -115,14 +176,17 @@ agent a question only those documents answer.
   Rationale: the point is a nightly refresh. The checks make sure the script
   is one the person (or their agent, with the person present) put there.
   Date/Author: 2026-09-17, the agent.
-- Decision: the Mattermost reader stays, and the grouping it uses moves into
-  a shared function both readers call. It is not rewritten as a `refresh`
-  script in this plan.
-  Rationale: it works, it is tested, and the person's archive is what it
-  reads. The shared grouping is what generalizes; the Mattermost walk is a
-  hundred lines that cost nothing to keep. A later plan may retire it once
-  the archiver writes records itself.
-  Date/Author: 2026-09-17, the agent.
+- Decision: the Mattermost reader is retired by this plan, in Milestone 6,
+  after the records reader has taken over its archive without re-indexing
+  it. Until then it stays, calling the shared grouping.
+  Rationale: with records in place it is the only vendor-specific reader
+  left, and everything it knows fits in a short conversion script. But the
+  person's archive is 269 thousand units already indexed and partly
+  digested, keyed by external id and hash; the switch must be shown to
+  leave every one of them unchanged before a line of the reader goes. The
+  maintainer asked for the retirement on 2026-09-16 after the plan first
+  chose to keep it.
+  Date/Author: 2026-09-17, the agent, with the maintainer.
 - Decision: the agent learns the record shape from the knowledge tool's
   guidance, not from a skill.
   Rationale: skills are declarations of tools the agent calls in a
@@ -258,7 +322,7 @@ fields; only `id` and `text` are required:
       "id": "page:123456",
       "kind": "page",
       "title": "Deployment runbook",
-      "url": "https://example.atlassian.net/wiki/spaces/DEV/pages/123456",
+      "url": "https://wiki.example.com/wiki/spaces/DEV/pages/123456",
       "at": "2026-08-14T09:30:00Z",
       "modifiedAt": "2026-09-01T17:02:11Z",
       "author": "ziyan",
@@ -533,6 +597,47 @@ full refresh by hand once (Drive may take an hour), sync, and let the
 dream read it. Watch the monitors already armed on the dream (facts and
 documents read per fifteen minutes) for the days it takes.
 
+## Milestone 6: the Mattermost reader retires without re-indexing
+
+At the end of this milestone the maintainer's archive is a `records` source
+and `internal/computer/scan_chat.go` is gone, with nothing re-embedded and
+nothing re-read by the dream.
+
+The document identity is what makes this safe or not. A document is keyed
+by its source and an external id, and its hash is the rendered text. The
+Mattermost reader files a unit as `posts/<team>/<channel>.jsonl#<first
+post id>`, and `chatUnits` in the records reader files a unit as
+`<file>#<first post id>` too, rendering the same `HH:MM author: text`
+lines. So if the records files keep the same relative paths as the export's
+post files and the same posts go in, in the same order, every unit comes
+back with the same id and the same hash, and the server marks all of them
+unchanged.
+
+The relative path must match, so the records must sit at
+`posts/<team>/<channel>.jsonl` under the source's root, and the archive's
+own post files are not records. The source's root therefore becomes a
+sibling folder, `~/mattermost-records`, holding `refresh` and a `posts/`
+tree the script writes from the archive: `refresh` reads the archive's
+`users.json` and `channels.json` and, for each `posts/<team>/<channel>.jsonl`
+there, writes the records file of the same relative path here. The
+source is switched to that root and to `format: records` in place (the
+GraphQL mutation `SaveAgentKnowledgeSource` takes `path` and `format` for
+an existing `sourceId`; `teanode agent knowledge` has no edit command yet,
+so add `--path` and `--format` to an `edit` subcommand, or do it through
+the dashboard's row). The script drops posts of a `system_` type, counts
+`slack_attachment` posts as bot posts, skips a channel where they are over
+eighty percent of the total the way the reader does, marks posts in
+channels of type P, D or G `private`, writes `channel` as the channel's
+name, `thread` from `root_id`, `author` as the username, `at` from
+`create_at`, and `metadata` with `team` and `purpose` on each post. Run it
+by hand once, `teanode agent knowledge sync` the source, and read the
+source's row: the pass must report zero new documents and zero changed
+ones. Only then delete `scan_chat.go`, its tests, `FormatMattermost` in
+both constant lists, the `mattermost` option in the dashboard, the CLI
+usage string, the knowledge tool's enum, and the docs' mentions; the
+digest's `theirThreads` and `byChannel` read metadata the records carry
+the same way, so they do not change.
+
 ## Milestone 5: documentation
 
 `docs/subsystems/memory.md` gains a section "Sources that are scripts"
@@ -545,7 +650,7 @@ added (none is planned), `docs/configuration.md` documents it and
 
 ## Concrete Steps
 
-All commands run from the repository root, `/home/ziyan/projects/ziyan/teanode`.
+All commands run from the repository root.
 
     go build ./... && go vet ./internal/computer/ ./internal/agent/
     go test ./internal/computer/ -count=1

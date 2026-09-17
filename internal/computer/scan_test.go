@@ -736,3 +736,73 @@ func TestAChannelFileIsPagedWithinItself(t *testing.T) {
 		t.Fatalf("an unknown unit is sent")
 	}
 }
+
+// pagesOf walks every page of a scan and returns how often each entry
+// was seen, which is what the cursor is for: every file once.
+func pagesOf(t *testing.T, files map[string]string, arguments ScanArguments) map[string]int {
+	t.Helper()
+	seen := map[string]int{}
+	after := ""
+	for page := 0; page < 50; page++ {
+		arguments.After = after
+		result := scanIn(t, files, &arguments)
+		for _, entry := range result.Entries {
+			seen[entry.ExternalID]++
+		}
+		if result.Next == "" {
+			return seen
+		}
+		after = result.Next
+	}
+	t.Fatalf("the pages never ended")
+	return nil
+}
+
+func TestEveryFileIsSentOnceAcrossPages(t *testing.T) {
+	files := map[string]string{}
+	for index := 0; index < 5; index++ {
+		files[fmt.Sprintf("note%d.txt", index)] = fmt.Sprintf("note number %d", index)
+	}
+	seen := pagesOf(t, files, ScanArguments{Most: 2})
+	for name := range files {
+		if seen[name] != 1 {
+			t.Fatalf("%s was sent %d times across the pages, not once: %v", name, seen[name], seen)
+		}
+	}
+}
+
+func TestEveryJournalFileIsSentOnceAcrossPages(t *testing.T) {
+	files := map[string]string{}
+	for index := 0; index < 4; index++ {
+		files[fmt.Sprintf("2026-09-0%d.md", index+1)] = fmt.Sprintf("# day %d\n\nwrote things", index)
+	}
+	seen := pagesOf(t, files, ScanArguments{Format: FormatJournal, Most: 2})
+	for name := range files {
+		if seen[name] != 1 {
+			t.Fatalf("%s was sent %d times across the pages, not once: %v", name, seen[name], seen)
+		}
+	}
+}
+
+func TestEveryChannelIsSentOnceAcrossPages(t *testing.T) {
+	// The first channel fills a page exactly, so the page ends at the
+	// file boundary; the second channel must still be sent.
+	var lines []string
+	for index := 0; index < 3; index++ {
+		at := 1700000000000 + int64(index)*86400000
+		lines = append(lines, fmt.Sprintf(`{"id":"p%d","create_at":"%d","user_id":"u1","channel_id":"c1","root_id":"","message":"note number %d"}`, index, at, index))
+	}
+	files := map[string]string{
+		"users.json":               `[{"id":"u1","username":"alice"}]`,
+		"channels.json":            `[{"id":"c1","name":"support","type":"O"},{"id":"c2","name":"zzz","type":"O"}]`,
+		"posts/team/support.jsonl": strings.Join(lines, "\n"),
+		"posts/team/zzz.jsonl":     `{"id":"q1","create_at":"1700000000000","user_id":"u1","channel_id":"c2","root_id":"","message":"in the next file"}`,
+	}
+	seen := pagesOf(t, files, ScanArguments{Format: FormatMattermost, Most: 3})
+	if seen["posts/team/zzz.jsonl#q1"] != 1 {
+		t.Fatalf("the second channel was sent %d times, not once: %v", seen["posts/team/zzz.jsonl#q1"], seen)
+	}
+	if len(seen) != 4 {
+		t.Fatalf("expected 4 units once each, got %v", seen)
+	}
+}

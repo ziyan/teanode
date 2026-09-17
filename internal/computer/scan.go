@@ -79,7 +79,8 @@ type ScanArguments struct {
 	// this machine; anything else is refused here.
 	Root string `json:"root"`
 
-	// Format is how to read it: files (the default), mattermost, journal.
+	// Format is how to read it: files (the default), mattermost,
+	// journal, records.
 	Format string `json:"format,omitempty"`
 
 	Include []string `json:"include,omitempty"`
@@ -240,6 +241,8 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 		return scanJournal(root, arguments, most)
 	case FormatMattermost:
 		return scanMattermost(root, arguments, most)
+	case FormatRecords:
+		return scanRecords(root, arguments, most)
 	}
 	return nil, fmt.Errorf("%q is not a shape this program can read", arguments.Format)
 }
@@ -250,6 +253,12 @@ const (
 	FormatFiles      = "files"
 	FormatJournal    = "journal"
 	FormatMattermost = "mattermost"
+
+	// FormatRecords is a folder of JSON lines somebody's script wrote,
+	// which is how a source this program has no reader for -- a Drive, a
+	// wiki, a mailbox behind a command line tool -- is indexed without a
+	// fourth reader being written and released.
+	FormatRecords = "records"
 )
 
 // allowedRoot resolves what the server asked for and refuses anything the
@@ -419,7 +428,7 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// does go over -- a page is never empty, because a page that refused
 	// to carry the file in front of it would never get past it.
 	carried := 0
-	for _, relative := range paths {
+	for index, relative := range paths {
 		if !started {
 			if relative == arguments.After {
 				started = true
@@ -427,7 +436,11 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 			continue
 		}
 		if len(result.Entries) >= most || carried >= scanPageBytes {
-			result.Next = relative
+			// The cursor names the last file sent, not the one there was
+			// no room for: the next page begins after the cursor, and for
+			// a while it named the unsent file, which was then skipped --
+			// one file lost on every page boundary, on every pass.
+			result.Next = paths[index-1]
 			break
 		}
 		entry := readOneFile(ctx, root, relative, arguments.Known)
@@ -1044,7 +1057,7 @@ func scanJournal(root string, arguments *ScanArguments, most int) (*ScanResult, 
 
 	started := arguments.After == ""
 	carried := 0
-	for _, relative := range paths {
+	for index, relative := range paths {
 		if !started {
 			if relative == arguments.After {
 				started = true
@@ -1052,7 +1065,9 @@ func scanJournal(root string, arguments *ScanArguments, most int) (*ScanResult, 
 			continue
 		}
 		if len(result.Entries) >= most || carried >= scanPageBytes {
-			result.Next = relative
+			// The last file sent, which the next page begins after; see
+			// scanFiles.
+			result.Next = paths[index-1]
 			break
 		}
 		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))

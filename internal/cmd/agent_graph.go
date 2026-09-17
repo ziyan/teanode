@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // The graph from a terminal.
@@ -151,7 +152,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "computer", Usage: "which of your computers it is on"},
 					&cli.StringFlag{Name: "kind", Usage: "computer, archive or sent", Value: "computer"},
-					&cli.StringFlag{Name: "format", Usage: "files, mattermost or journal", Value: "files"},
+					&cli.StringFlag{Name: "format", Usage: "files, mattermost, journal or records", Value: "files"},
 					&cli.StringFlag{Name: "under", Usage: "where in the graph what it finds is filed, such as projects"},
 					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
@@ -770,6 +771,13 @@ func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
 	_, _ = fmt.Fprintf(command.Writer, "indexing %s as %q; the first pass starts within the minute\n", command.Args().Get(1), source.Name)
 	if source.Kind == "computer" || source.Kind == "archive" {
 		_, _ = fmt.Fprintf(command.Writer, "on that computer, allow it first: teanode computer allow %s\n", command.Args().Get(1))
+	}
+	// A records folder is empty until something fills it, and a person who
+	// adds one and waits for documents that never come has no way of
+	// knowing that from the source's page. Say here what has to happen
+	// next, and where the shape of a record is written down.
+	if source.Specification.Format == models.FormatRecords {
+		_, _ = fmt.Fprintln(command.Writer, "write records as JSON lines under that folder; a refresh script there runs before each scan (see docs/subsystems/memory.md)")
 	}
 	return nil
 }

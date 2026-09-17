@@ -2,8 +2,6 @@ package computer
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -30,24 +28,13 @@ import (
 // person's own archiver writes beside it: channels.json, users.json,
 // me.json, state.json, and posts/<team>/<channel>.jsonl.
 
-// The bounds of one unit.
-const (
-	// chatGap is how long a silence ends a window. Somebody answering
-	// twenty minutes later is still in the same exchange; an hour later
-	// is a new one.
-	chatGap = 30 * time.Minute
-
-	// chatWindowPosts and chatWindowCharacters bound a window, so that a
-	// busy channel does not make one unit of a whole afternoon.
-	chatWindowPosts      = 40
-	chatWindowCharacters = 3000
-
-	// chatBotShare is the share of a channel's posts that being written
-	// by an integration makes it a bot channel: searchable on request,
-	// never embedded. A build server posting every commit is not
-	// knowledge.
-	chatBotShare = 0.8
-)
+// chatBotShare is the share of a channel's posts that being written by
+// an integration makes it a bot channel: searchable on request, never
+// embedded. A build server posting every commit is not knowledge.
+//
+// The bounds of one unit are in chat_units.go, with the code that cuts
+// them.
+const chatBotShare = 0.8
 
 // mattermostPost is what one line of a channel's file holds. The archive
 // writes numbers as strings in places, which is why the times are read
@@ -122,7 +109,7 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 	// One channel file becomes many threads, so a page here fills by
 	// bytes long before it fills by count.
 	carried := 0
-	for _, relative := range files {
+	for index, relative := range files {
 		if !started {
 			if relative != afterFile {
 				continue
@@ -134,7 +121,9 @@ func scanMattermost(root string, arguments *ScanArguments, most int) (*ScanResul
 			}
 		}
 		if len(result.Entries) >= most || carried >= scanPageBytes {
-			result.Next = relative
+			// The last channel file sent in full, which the next page
+			// begins after; see scanFiles.
+			result.Next = files[index-1]
 			break
 		}
 		entries, err := channelEntries(root, relative, users, channels, arguments)
@@ -265,119 +254,28 @@ func readChannelFile(root, relative string, users map[string]mattermostUser, cha
 	}
 	private := channel.Type == "P" || channel.Type == "D" || channel.Type == "G"
 
-	var entries []ScanEntry
-	add := func(id string, group []mattermostPost) {
-		if len(group) == 0 {
-			return
-		}
-		text, participants := renderChat(group, users)
-		if strings.TrimSpace(text) == "" {
-			return
-		}
-		if secret, _ := SecretContent(text); secret {
-			return
-		}
-		sum := sha256.Sum256([]byte(text))
-		hash := hex.EncodeToString(sum[:])
-		external := relative + "#" + id
-		entry := ScanEntry{
-			ExternalID: external, Kind: "chat",
-			Title: channelName + " — " + whenOf(group[0]).Format("2 Jan 2006"),
-			Hash:  hash, Private: private,
-			HappenedAt: pointerTo(whenOf(group[0])),
-			Text:       text, Size: int64(len(text)),
-			Metadata: map[string]any{
-				"team": team, "channel": channelName, "participants": participants,
-				"posts": len(group), "purpose": channel.Purpose,
-			},
-		}
-		entries = append(entries, entry)
-	}
-
-	// Threads first: a root and everything that answered it.
-	replies := map[string][]mattermostPost{}
-	var loose []mattermostPost
-	roots := map[string]mattermostPost{}
+	// The cutting is the same for every chat, so it lives in
+	// chat_units.go and this reader only says what the export means: who
+	// a user id is, and that a post with replies is a thread's root.
+	group := make([]chatPost, 0, len(posts))
 	for _, post := range posts {
-		if post.RootID != "" {
-			replies[post.RootID] = append(replies[post.RootID], post)
-			continue
-		}
-		if millis(post.ReplyCount) > 0 {
-			roots[post.ID] = post
-			continue
-		}
-		loose = append(loose, post)
-	}
-	for id, group := range replies {
-		thread := group
-		if root, found := roots[id]; found {
-			thread = append([]mattermostPost{root}, group...)
-			delete(roots, id)
-		}
-		sort.SliceStable(thread, func(left, right int) bool {
-			return millis(thread[left].CreateAt) < millis(thread[right].CreateAt)
-		})
-		add(id, thread)
-	}
-	// A root whose replies are not in this file is still a post.
-	for id, root := range roots {
-		add(id, []mattermostPost{root})
-	}
-
-	// Then windows of what is left: consecutive posts with no long gap.
-	var window []mattermostPost
-	characters := 0
-	flush := func() {
-		if len(window) > 0 {
-			add(window[0].ID, window)
-			window, characters = nil, 0
-		}
-	}
-	var previous time.Time
-	for _, post := range loose {
-		when := whenOf(post)
-		if len(window) > 0 &&
-			(when.Sub(previous) > chatGap ||
-				len(window) >= chatWindowPosts ||
-				characters+len(post.Message) > chatWindowCharacters) {
-			flush()
-		}
-		window = append(window, post)
-		characters += len(post.Message)
-		previous = when
-	}
-	flush()
-
-	sort.SliceStable(entries, func(left, right int) bool {
-		if entries[left].HappenedAt == nil || entries[right].HappenedAt == nil {
-			return false
-		}
-		return entries[left].HappenedAt.Before(*entries[right].HappenedAt)
-	})
-	return entries, nil
-}
-
-// renderChat is a unit as it is read and embedded, and who was in it.
-func renderChat(posts []mattermostPost, users map[string]mattermostUser) (string, []string) {
-	var builder strings.Builder
-	seen := map[string]bool{}
-	var participants []string
-	for _, post := range posts {
-		user := users[post.UserID]
-		who := user.Username
+		who := users[post.UserID].Username
 		if who == "" {
 			who = "somebody"
 		}
-		if !seen[who] {
-			seen[who] = true
-			participants = append(participants, who)
-		}
-		builder.WriteString(whenOf(post).Format("15:04") + " " + who + ": ")
-		builder.WriteString(strings.TrimSpace(post.Message))
-		builder.WriteByte('\n')
+		group = append(group, chatPost{
+			ID: post.ID, Thread: post.RootID, Replied: millis(post.ReplyCount) > 0,
+			At: whenOf(post), Author: who, Text: post.Message,
+		})
 	}
-	return strings.TrimSpace(builder.String()), participants
+	entries := chatUnits(relative, channelName, group, private)
+	for index := range entries {
+		// The team and what the channel is for are Mattermost's own, and
+		// no other chat has them to give.
+		entries[index].Metadata["team"] = team
+		entries[index].Metadata["purpose"] = channel.Purpose
+	}
+	return entries, nil
 }
 
 // teamAndChannel reads the two names out of posts/<team>/<channel>.jsonl.
