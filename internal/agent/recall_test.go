@@ -77,6 +77,40 @@ func TestATwinHasToNameTheSameThing(t *testing.T) {
 	}
 }
 
+// A negation is the one pair of sentences a cosine and a name check
+// cannot keep apart: the same subject, the same names, the opposite
+// meaning. Nothing is folded across one, and neither the name check nor
+// the similarity is asked about it.
+func TestANegationIsSeen(t *testing.T) {
+	if !negates("She prefers tea.", "She no longer prefers tea.") {
+		t.Fatalf("one of the two says the opposite")
+	}
+	if !negates("They drink coffee.", "They don't drink coffee.") {
+		t.Fatalf("the contraction is a negation too")
+	}
+	// At either end of the sentence, where a token written with the
+	// spaces around it would otherwise miss it.
+	if !negates("Never took the job.", "Took the job in March.") {
+		t.Fatalf("the first word counts")
+	}
+	if !negates("The standing order stopped.", "The standing order runs monthly.") {
+		t.Fatalf("the last word counts, punctuation and all")
+	}
+	// Both negated is not the case this catches: those are two wordings
+	// of one statement, and folding them is right.
+	if negates("She never drinks tea.", "She has never drunk tea.") {
+		t.Fatalf("both say the same thing the same way round")
+	}
+	if negates("She prefers tea.", "Tea is what she prefers.") {
+		t.Fatalf("neither is a negation")
+	}
+	// A word that merely contains one of the tokens is not one: "another"
+	// and "nothing" are in half the sentences a graph holds.
+	if negates("Another invoice arrived.", "The invoice arrived on Tuesday.") {
+		t.Fatalf("a token has to be a word")
+	}
+}
+
 // A page's line in the index says where it is, what it is called, and
 // enough of what it says to be worth the tokens -- inside a width, so a
 // long summary cannot push the rest of the index out of the prompt.

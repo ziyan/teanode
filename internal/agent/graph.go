@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/lib/pq"
 
@@ -894,6 +895,56 @@ func sharesAName(left, right string, itsOwn ...string) bool {
 	}
 	for name := range leftNames {
 		if rightNames[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// negationTokens are the words that turn a sentence into its opposite,
+// written as they appear once punctuation has become spaces: a whole
+// word, the pair "no longer", or the contraction's own ending.
+//
+// Short and English-only on purpose. It is not a grammar; it is the list
+// of ways the sentences a graph actually holds say "not any more".
+var negationTokens = []string{
+	" not ", " no longer ", " never ", " stopped ", " former ", " formerly ", "n't", "n’t",
+}
+
+// negates says whether exactly one of two sentences carries a negation.
+//
+// This is the guard in front of every fold. Similarity is a candidate
+// generator and nothing more: "she prefers tea" and "she no longer
+// prefers tea" share every proper noun, embed within a hair of each
+// other, and are the two statements it matters most not to lose one of.
+// A cosine cannot tell them apart and neither can the name check, so
+// before two facts are folded into one they are asked this, and when the
+// answer is yes both rows stay and the newer one supersedes the older.
+//
+// Both negated, or neither, is not the case this catches: "she never
+// drinks tea" and "she has never drunk tea" are the same statement, and
+// folding them is right.
+func negates(left, right string) bool {
+	return negated(left) != negated(right)
+}
+
+// negated says whether one sentence carries a negation token.
+func negated(text string) bool {
+	// Punctuation becomes space and the whole is padded, so that a token
+	// written with its spaces reaches the first and last words too: "They
+	// stopped." ends with the word this is looking for.
+	var words strings.Builder
+	words.WriteByte(' ')
+	for _, letter := range strings.ToLower(text) {
+		if unicode.IsLetter(letter) || unicode.IsDigit(letter) || letter == '\'' || letter == '’' {
+			words.WriteRune(letter)
+			continue
+		}
+		words.WriteByte(' ')
+	}
+	words.WriteByte(' ')
+	for _, token := range negationTokens {
+		if strings.Contains(words.String(), token) {
 			return true
 		}
 	}
