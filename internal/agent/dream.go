@@ -154,10 +154,28 @@ func (self *Agent) dreamDue(ctx context.Context, agent *models.Agent, owner *mod
 	if agent.DreamBootstrap {
 		quiet = dreamQuietBootstrap
 	}
-	// Not while they are talking. A run that rewrites a page the person
-	// is reading is a run that looks broken.
+	// Not while a dream is already queued or running. The job is queued
+	// under the day's date, which kept one night from being queued twice
+	// until a night crossed midnight: the next tick queued the new day's
+	// dream beside the old day's, the two took every worker slot between
+	// them and starved the ingest, and the second marked the first cut
+	// short while it went on reading.
 	var busy bool
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		open, err := tx.CountAgentJobs(&db.AgentJobFilter{
+			AgentID:  agent.ID,
+			Kinds:    []models.AgentJobKind{models.AgentJobDream},
+			Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
+		})
+		if err != nil {
+			return err
+		}
+		if open > 0 {
+			busy = true
+			return nil
+		}
+		// Not while they are talking. A run that rewrites a page the
+		// person is reading is a run that looks broken.
 		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{
 			models.AgentConversationMain, models.AgentConversationNamed,
 		}, &db.Options{Limit: 1})

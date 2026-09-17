@@ -375,6 +375,13 @@ that would have been a dollar of a metered service is free. On a metered
 service bootstrapping is still bounded by the dream's share of the daily
 budget.
 
+One dream at a time. The job is queued under the day's date, and a dream
+that crosses midnight would otherwise be joined by the new day's at the
+next tick: two dreams took every worker slot between them, the ingest
+starved, and the second marked the first cut short while it went on
+reading. So a dream is not due while a dream job is queued or running for
+the agent, bootstrap or not.
+
 ## Caveats
 
 - **A dream is paced, not complete.** A large backlog takes several
