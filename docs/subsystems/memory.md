@@ -94,7 +94,15 @@ So writing is not in the turn. A job (`remember.go`) runs after a
 conversation goes quiet, reads what was said, and files what it taught:
 pages made or found, facts added with their quotes, links drawn. It knows
 where it got to (`agent_conversation.remembered_through`), so it never
-reads the same exchange twice and never misses one.
+reads the same exchange twice and never misses one. A run reads sixty
+messages, the oldest sixty, and moves the mark to the last one it was
+actually given; where more are waiting it puts itself straight back in
+the queue rather than waiting to be noticed again, so a conversation
+somebody left running for a week drains sixty at a time. The mark is a
+promise that everything behind it has been read, and it was not one: the
+run kept the *newest* sixty and moved the mark to the end of the whole
+list, so a backlog of two hundred had its first hundred and forty marked
+filed unread, and nothing ever came back for them.
 
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
@@ -382,6 +390,21 @@ one ranked list out. Decay multiplies the score, so a stale fact sinks
 without disappearing. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
+
+What counts as used is what was carried. A page's block is built,
+measured against the budget, and only then written and its facts marked —
+the other way round, a page that turned out not to fit still moved
+`used_at` on every fact in it, and `used_at` is what feeds importance,
+decay and tomorrow's index. A page over the budget is passed over and the
+next one down is still tried, since a shorter page may fit where a long
+one did not; the scan stops only when what is left of the budget could
+not hold a page at all.
+
+Being in the index is not being expanded. The index line says what a page
+is about, which is not what the page knows, so a page the prompt already
+names still gives up its facts when the turn's words hit it — only its
+opening is left out, since the index line carries the first sentence of
+it already.
 
 ## Bootstrapping
 

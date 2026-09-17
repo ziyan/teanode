@@ -59,9 +59,10 @@ evaluate` prints a table of hits and misses over the question set.
   repeated facts go dormant with a pointer, never deleted; the docs' promise
   becomes true. The knowledge page lists what was folded under the facts,
   greyed, each saying which number absorbed it.
-- [ ] Milestone 2: honest cursors and bookkeeping. Remember reads the oldest
-  unread segment and advances only through it; recall marks used only what
-  it carried; pages in the index still get their facts expanded.
+- [x] (2026-09-17 08:17Z) Milestone 2: honest cursors and bookkeeping.
+  Remember reads the oldest unread segment and advances only through it;
+  recall marks used only what it carried; pages in the index still get their
+  facts expanded.
 - [ ] Milestone 3: decay by elapsed time, with a watermark, and
   reinforcement over the real interval.
 - [ ] Milestone 4: evidence checked at the write boundary: a quote must
@@ -120,6 +121,22 @@ evaluate` prints a table of hits and misses over the question set.
   therefore a change and not a check: the page result gained a `folded`
   list, each entry carrying the *number* of the fact that absorbed it
   because an identifier is not something a page can cite.
+- Observation (2026-09-17 08:17Z): the requeue Milestone 2 asks for
+  cannot be an `Enqueue`. `EnqueueAgentJob` keeps one open job per agent,
+  kind and subject, counting *running* as open, and the job doing the
+  asking is that open job — so an Enqueue from inside `runRemember` hands
+  back the row it is already running and writes nothing. The run returns
+  a `Deferral` with `Until: now` instead, which is the worker's own way
+  of saying "put me back in the queue": `FinishAgentJob` sets the row to
+  queued, clears the claim, and the next tick claims it again. The test
+  asserts the queued job and the log line says how many messages are
+  still unread.
+- Observation (2026-09-17 08:17Z): dropping the `inPrompt` skip outright
+  would have left that method with no caller, and a page already in the
+  index would have had its opening written into the overlay a second
+  time. Indexed and expanded are now distinguished as the plan asks, and
+  the distinction has a use: an indexed page gives up its facts and not
+  its opening, which the index line already carries the gist of.
 - Observation: the extraction cursor loses history. `runRemember`
   (`internal/agent/remember.go:190-191`) keeps the last sixty unread
   messages, and `markRemembered` then advances `RememberedThrough` to the

@@ -27,7 +27,10 @@ Notable changes to TeaNode. The format follows
 - It writes what it learns without being asked. A job runs after a conversation
   goes quiet and files what the conversation taught, so what you told it on
   Tuesday is there on Wednesday. Before this the model had to decide to write
-  during a turn, and given a task and a memory tool it did the task.
+  during a turn, and given a task and a memory tool it did the task. A
+  conversation with more in it than one run can read is read oldest first,
+  sixty messages at a time, over as many runs as it takes, so a long thread
+  you left running has nothing in it quietly skipped.
 
 - You can point it at what you already have: a checkout on one of your
   computers, a chat archive, your notes. It reads them on the machine they are
