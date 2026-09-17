@@ -7,13 +7,13 @@ import "testing"
 // "Ziyan" alone still owns people/ziyan-zhou once self is called that.
 func TestIsThePersonKnowsEveryNameTheyGoBy(t *testing.T) {
 	owner := &User{Username: "ziyan", Name: "Ziyan"}
-	self := &AgentNode{Path: PathSelf, Name: "Who they are", Aliases: []string{"Ziyan Zhou", "zhou@ziyan.net"}}
+	self := &AgentNode{Path: PathSelf, Name: "Who they are", Aliases: []string{"Ziyan Zhou", "zhou@example.net"}}
 	for _, path := range []string{"people/ziyan", "people/ziyan-zhou", "people/Ziyan"} {
 		if !IsThePerson(path, owner, self) {
 			t.Errorf("%s should be the person", path)
 		}
 	}
-	for _, path := range []string{"people/alice-chen", "self", "projects/ziyan-zhou", "people/zhou-ziyan-net"} {
+	for _, path := range []string{"people/alice-chen", "self", "projects/ziyan-zhou", "people/zhou-example-net"} {
 		if IsThePerson(path, owner, self) {
 			t.Errorf("%s should not be the person", path)
 		}
