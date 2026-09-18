@@ -904,6 +904,7 @@ export const ja: Catalog = {
   'agent.tabMemory': '記憶',
   'agent.tabDreams': '夢',
   'agent.tabConnections': '接続',
+  'agent.tabSchedules': 'スケジュール',
   'agent.tabActivity': '活動',
   'agent.notOffered': '運用者がこのサーバーでエージェントを有効にしていません。',
   'agent.intro':

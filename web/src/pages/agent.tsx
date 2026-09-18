@@ -154,6 +154,7 @@ const AGENT_TABS: TabItem[] = [
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
   { id: 'dreams', label: 'agent.tabDreams' },
+  { id: 'schedules', label: 'agent.tabSchedules' },
   { id: 'connections', label: 'agent.tabConnections' },
   { id: 'activity', label: 'agent.tabActivity' },
 ]
@@ -335,13 +336,19 @@ export function AgentPage() {
           <KnowledgeSourcesCard />
         </>
       ) : null}
-      {tab === 'connections' ? (
+      {/* What it does at set times, of its own: the schedules and the
+          morning brief, which are timetables rather than connections. */}
+      {tab === 'schedules' ? (
         <>
           <SchedulesCard />
+          <BriefCard />
+        </>
+      ) : null}
+      {tab === 'connections' ? (
+        <>
           <ServersCard />
           <SkillSecretsCard />
           <ChatAppsCard />
-          <BriefCard />
         </>
       ) : null}
       {tab === 'activity' ? (

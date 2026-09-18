@@ -909,6 +909,7 @@ export const en = {
   'agent.tabMemory': 'Memory',
   'agent.tabDreams': 'Dreams',
   'agent.tabConnections': 'Connections',
+  'agent.tabSchedules': 'Schedules',
   'agent.tabActivity': 'Activity',
   'agent.notOffered': 'The operator has not enabled agents on this server.',
   'agent.intro':

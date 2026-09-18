@@ -871,6 +871,7 @@ export const zh: Catalog = {
   'agent.tabMemory': '记忆',
   'agent.tabDreams': '梦境',
   'agent.tabConnections': '连接',
+  'agent.tabSchedules': '日程',
   'agent.tabActivity': '活动',
   'agent.notOffered': '运维者尚未在此服务器上启用代理。',
   'agent.intro':

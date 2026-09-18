@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
@@ -625,6 +626,14 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		pagePath, pageKind, pageName := pageIdentity(path,
 			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
 			strings.TrimSpace(wanted.NodeName))
+		// What must not leave the person's machine must not be filed on
+		// their page either: a passphrase said in a chat is read by the
+		// night like any sentence, and a fact carrying it would be shown
+		// on the dashboard and put in every prompt about that page.
+		if secret, what := computer.SecretContent(text + "\n" + wanted.Quote); secret {
+			log.Warningf("not filing a fact that carries %s", what)
+			continue
+		}
 		prepared = append(prepared, &preparedFact{
 			Text: text, Kind: kind,
 			// The digest marks each item "[id]", and a model that copies

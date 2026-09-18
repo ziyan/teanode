@@ -53,7 +53,11 @@ var secretContent = []*regexp.Regexp{
 //
 // The quoted form above does not catch it, and a note to oneself is
 // exactly where a password gets written down.
-var assignment = regexp.MustCompile(`(?i)\b(api[_-]?keys?|secrets?|passwords?|passwd|tokens?|credentials?|passphrases?)\b\s*[:=]\s*(\S{10,})`)
+// The value may follow a colon, an equals sign, or the word "is", and may
+// be quoted or in backticks: "the PSK is `word-word-word`" is how a
+// passphrase is written in a chat, and one written that way for a WiFi
+// network was read into memory before this form was matched.
+var assignment = regexp.MustCompile("(?i)\\b(api[_-]?keys?|secrets?|passwords?|passwd|tokens?|credentials?|passphrases?|psk|pre-shared keys?)\\b\\s*(?:[:=]|\\bis\\b|\\bof\\b)?\\s*[`\"']?(\\S{10,})")
 
 // reference is a value that names where the secret is rather than being
 // it: an environment variable, a template, a field of a settings object.
