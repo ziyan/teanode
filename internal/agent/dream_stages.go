@@ -720,8 +720,12 @@ func (self *Agent) dreamClearPaddedOpenings(ctx context.Context, run *Run, recor
 	}
 	seen := make([]string, 0, len(nodes))
 	for _, node := range nodes {
+		// Out of the loop, not out of the phase: the pages gone over so
+		// far are still marked below, so a night that ran out of time
+		// starts from where this one stopped rather than from the same
+		// batch again, night after night.
 		if ctx.Err() != nil {
-			return
+			break
 		}
 		seen = append(seen, node.ID)
 		if !saysNothingOpening(node.Summary) {

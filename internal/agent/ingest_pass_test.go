@@ -123,3 +123,46 @@ func TestACountSurvivesTheCursor(t *testing.T) {
 		t.Fatalf("nothing written down at all: %d", count)
 	}
 }
+
+// An ingest job may run for as long as its slowest page waits.
+//
+// The first page of a records source runs the folder's refresh script and
+// waits thirty-five minutes for it, but the wait selects on the job's own
+// context and the job was given ten minutes: the scan was abandoned on
+// the deadline every time, and the source never got past its first page.
+func TestAnIngestJobOutlastsTheRefreshWait(t *testing.T) {
+	if jobTimeout(models.AgentJobIngest) <= ingestRefreshWait {
+		t.Fatalf("an ingest job (%s) outlasts the refresh it waits for (%s)",
+			jobTimeout(models.AgentJobIngest), ingestRefreshWait)
+	}
+	// And the ordinary wait for a device is well inside it, so a page
+	// that is merely slow is not cut short either.
+	if jobTimeout(models.AgentJobIngest) <= ingestDeviceWait {
+		t.Fatalf("and outlasts an ordinary scan (%s)", ingestDeviceWait)
+	}
+}
+
+// A cursor that has never been written is not mid-tree.
+//
+// It used to be compared against the empty string, and a map value that
+// nothing wrote is nil rather than "": every source whose computer was
+// detached was told it had a tree half read, kept "there is more" on its
+// row, and came round again every fifteen seconds until the computer was
+// back -- for a laptop that is closed for the weekend, for days.
+func TestACursorWithNothingInItIsNotMidTree(t *testing.T) {
+	if partWayThroughTree(map[string]any{}) {
+		t.Fatalf("a source that has read nothing is at the beginning, not the middle")
+	}
+	if partWayThroughTree(map[string]any{cursorPassSeen: 12}) {
+		t.Fatalf("what a pass counted says nothing about where it got to")
+	}
+	if partWayThroughTree(map[string]any{"after": ""}) {
+		t.Fatalf("a cursor cleared at the end of the tree is at the beginning again")
+	}
+	if !partWayThroughTree(map[string]any{"after": "posts/dev/general.jsonl"}) {
+		t.Fatalf("a files source that stopped part way down has more to read")
+	}
+	if !partWayThroughTree(map[string]any{"before": "2026-01-01T00:00:00Z"}) {
+		t.Fatalf("and so does a sent source paging back through the years")
+	}
+}

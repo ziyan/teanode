@@ -979,14 +979,10 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	if strings.EqualFold(summary, "null") {
 		summary = ""
 	}
-	byNumber := map[int]*models.AgentFact{}
-	for _, fact := range facts {
-		byNumber[fact.Number] = fact
-	}
 	// Counted, because nothing counted it: the number was in the model,
 	// the migration and the dashboard, and every night reported none.
 	merged := 0
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if _, err := tx.PutAgentNode(&models.AgentNode{
 			AgentID: page.AgentID, Path: page.Path, Kind: page.Kind, Name: page.Name,
 			Aliases: page.Aliases, ContactID: page.ContactID, Pinned: page.Pinned,
@@ -994,47 +990,8 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		}); err != nil {
 			return err
 		}
-		// A pair the model called the same thing: the older keeps its
-		// number, the newer goes dormant. Never deleted -- what it said
-		// is still readable, and a merge the person disagrees with can
-		// be undone.
-		for _, pair := range answer.Same {
-			if len(pair) != 2 {
-				continue
-			}
-			// The pair is given best first, because one fact can say
-			// everything another says and more.
-			best, other := byNumber[pair[0]], byNumber[pair[1]]
-			if best == nil || other == nil || best.ID == other.ID {
-				continue
-			}
-			// But the number that survives is the lower one, whichever
-			// wording wins: a conversation last month cited
-			// "things/kittiwake#3", and a citation that stops pointing at
-			// anything is worse than a clumsier sentence. So the better
-			// words move onto the older number and the newer row goes.
-			keep, gone := best, other
-			if other.Number < best.Number {
-				keep, gone = other, best
-			}
-			wording := best.Text
-			if _, err := tx.UpdateAgentFact(page.AgentID, gone.ID, func(fact *models.AgentFact) error {
-				fact.SupersededBy = keep.ID
-				return nil
-			}); err != nil {
-				return err
-			}
-			if _, err := tx.UpdateAgentFact(page.AgentID, keep.ID, func(fact *models.AgentFact) error {
-				fact.Text = wording
-				fact.Evidence = append(fact.Evidence, gone.Evidence...)
-				if len(fact.Evidence) > models.EvidenceCount {
-					fact.Evidence = fact.Evidence[:models.EvidenceCount]
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			merged++
+		if merged, err = mergeSaidTwice(tx, page.AgentID, facts, answer.Same); err != nil {
+			return err
 		}
 		return tx.MarkAgentNodeConsolidated(page.ID, time.Now())
 	}); err != nil {
@@ -1043,6 +1000,107 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	}
 	record.Merged += merged
 	return true
+}
+
+// mergeSaidTwice folds the pairs a rewrite called one statement, and says
+// how many it folded.
+//
+// A pair the model called the same thing: the older keeps its number, the
+// newer goes dormant behind it. Never deleted -- what it said is still
+// readable, and a merge the person disagrees with can be undone.
+//
+// Every pair is resolved against the page as the pairs before it left it,
+// not against the numbering the model was shown. The model answers with
+// overlapping pairs -- [[5,3],[5,7]] -- and with chains -- [[1,2],[2,3]]
+// -- and both are reasonable answers to "which of these say the same
+// thing". Applied from the snapshot, the second pair of each folded a
+// live fact behind a row the first pair had already retired, so the page
+// stated neither of them and the citation trail led to a dormant row.
+func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact, same [][]int) (int, error) {
+	byNumber := map[int]*models.AgentFact{}
+	for _, fact := range facts {
+		byNumber[fact.Number] = fact
+	}
+	merged := 0
+	for _, pair := range same {
+		if len(pair) != 2 {
+			continue
+		}
+		// The pair is given best first, because one fact can say
+		// everything another says and more.
+		best, other := byNumber[pair[0]], byNumber[pair[1]]
+		if best == nil || other == nil || best.ID == other.ID {
+			continue
+		}
+		bestNow, err := survivingFact(tx, agentId, best.ID)
+		if err != nil {
+			return merged, err
+		}
+		otherNow, err := survivingFact(tx, agentId, other.ID)
+		if err != nil {
+			return merged, err
+		}
+		// Both rows already gone, or already folded into one another:
+		// there is nothing left of this pair to merge.
+		if bestNow == nil || otherNow == nil || bestNow.ID == otherNow.ID {
+			continue
+		}
+		// The number that survives is the lower one, whichever wording
+		// wins: a conversation last month cited "things/kittiwake#3", and
+		// a citation that stops pointing at anything is worse than a
+		// clumsier sentence. So the better words move onto the older
+		// number and the newer row goes.
+		keep, gone := bestNow, otherNow
+		if otherNow.Number < bestNow.Number {
+			keep, gone = otherNow, bestNow
+		}
+		wording := bestNow.Text
+		if _, err := tx.UpdateAgentFact(agentId, gone.ID, func(fact *models.AgentFact) error {
+			fact.SupersededBy = keep.ID
+			return nil
+		}); err != nil {
+			return merged, err
+		}
+		if _, err := tx.UpdateAgentFact(agentId, keep.ID, func(fact *models.AgentFact) error {
+			fact.Text = wording
+			fact.Evidence = append(fact.Evidence, gone.Evidence...)
+			if len(fact.Evidence) > models.EvidenceCount {
+				fact.Evidence = fact.Evidence[:models.EvidenceCount]
+			}
+			return nil
+		}); err != nil {
+			return merged, err
+		}
+		merged++
+	}
+	return merged, nil
+}
+
+// survivingFact is the row a fact has become: itself, or whatever it was
+// folded into, following the chain. Nil where nothing of it is left --
+// struck, or deleted under us.
+//
+// Read back rather than taken from the caller's list, because the pair
+// before this one may have moved the wording onto the row this one is
+// about.
+func survivingFact(tx db.Transaction, agentId, factId string) (*models.AgentFact, error) {
+	// A page holds a few hundred facts and a fold chain is a few rows
+	// long; this is only here so that a cycle written by an older build
+	// cannot spin.
+	for hop := 0; hop < 32; hop++ {
+		found, err := tx.GetAgentFacts(agentId, []string{factId})
+		if err != nil || len(found) == 0 {
+			return nil, err
+		}
+		if found[0].SupersededBy == "" {
+			if found[0].Dormant {
+				return nil, nil
+			}
+			return found[0], nil
+		}
+		factId = found[0].SupersededBy
+	}
+	return nil, nil
 }
 
 // --- organize ---------------------------------------------------------

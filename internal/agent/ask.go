@@ -1523,7 +1523,9 @@ func (self *AskRun) Recall(line string) {
 		}
 	}
 	self.recalled = append(self.recalled, line)
-	if len(self.recalled) > 10 {
-		self.recalled = self.recalled[len(self.recalled)-10:]
+	// The same budget the chooser works to, so nothing it ranked and
+	// marked as wanted is dropped here on its way into the prompt.
+	if len(self.recalled) > recallBlocks {
+		self.recalled = self.recalled[len(self.recalled)-recallBlocks:]
 	}
 }

@@ -33,6 +33,10 @@ const (
 
 	goalSilentRound = `{"id":"g4","model":"m","choices":[{"delta":{"content":"Nothing to do yet."},"finish_reason":"stop"}]}
 {"id":"g4","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":5}}`
+
+	// The provider falling over in the middle of the round, which is the
+	// ordinary way a goal turn fails.
+	goalBrokenRound = `{"error":{"message":"the provider fell over"}}`
 )
 
 // goalWorld is a person with an agent, a mailbox to send from, and a
@@ -267,6 +271,53 @@ func TestGoalTurnThatSaysNothingWaitsTwiceAsLong(t *testing.T) {
 	if wait := after.GoalNextAt.Sub(before); wait < 55*time.Minute || wait > 65*time.Minute {
 		t.Fatalf("the next turn should be twice the default away, got %s", wait)
 	}
+}
+
+// A turn that failed moves the goal on and finishes the job.
+//
+// It used to return the failure, so the queue retried the job up to five
+// times and each retry was another whole model turn against whatever had
+// just gone wrong -- a provider having a bad minute cost five turns, and
+// a failed row counts towards neither the day's cap nor the turns-alone
+// bound, so neither of them could see it. Now the goal backs off as a
+// silent turn does and the note says what happened, which is what the
+// person sees in the drawer.
+func TestGoalTurnThatFailedIsNotRetried(t *testing.T) {
+	world := startGoalWorld(t, []string{goalBrokenRound}, "watch the deploy")
+	defer world.close()
+
+	before := time.Now()
+	world.runGoalTurn(t, 1)
+
+	after := world.read(t)
+	if after.GoalState != models.GoalWorking || after.GoalNextAt == nil {
+		t.Fatalf("a failed turn leaves the goal working: %+v", after)
+	}
+	if !strings.HasPrefix(after.GoalNote, "the last turn failed: ") {
+		t.Fatalf("the note should say what went wrong: %q", after.GoalNote)
+	}
+	if wait := after.GoalNextAt.Sub(before); wait < 55*time.Minute || wait > 65*time.Minute {
+		t.Fatalf("the next turn should be twice the default away, got %s", wait)
+	}
+	// The job finished rather than being queued again, so the run counts
+	// against the caps the same as any other.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{
+			AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal},
+		}, nil)
+		if err != nil {
+			t.Fatalf("ListAgentJobs: %s", err)
+		}
+		if len(jobs) != 1 {
+			t.Fatalf("one job, not one per retry: %d", len(jobs))
+		}
+		if jobs[0].Status != models.AgentJobDone {
+			t.Fatalf("the job is done, not left to be tried again: %q", jobs[0].Status)
+		}
+		if jobs[0].Attempts != 1 {
+			t.Fatalf("and was attempted once: %d", jobs[0].Attempts)
+		}
+	})
 }
 
 // The turns a conversation may take in a day are counted from the job

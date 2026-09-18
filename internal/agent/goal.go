@@ -257,7 +257,16 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	// again, so the next one is twice as far off: a goal waiting for a
 	// nightly build backs off to hours by itself, and one the model has
 	// lost interest in stops costing anything long before the day's cap.
-	if after.GoalState == models.GoalWorking && (after.GoalNextAt == nil || !after.GoalNextAt.After(now)) {
+	//
+	// A turn that failed is moved on the same way rather than failing the
+	// job. The queue retries a failed job five times and each retry is
+	// another whole model turn against whatever had just gone wrong --
+	// and a failed row counts towards neither the day's cap nor the
+	// turns-alone bound, so those five were spent where neither cap could
+	// see them. Backing off doubles the wait instead, and the note says
+	// what went wrong where the person reads it.
+	if after.GoalState == models.GoalWorking &&
+		(failure != "" || after.GoalNextAt == nil || !after.GoalNextAt.After(now)) {
 		next := goalDoubled(conversation)
 		note := after.GoalNote
 		if failure != "" {
@@ -274,7 +283,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		self.tellAboutGoal(ctx, run, after)
 	}
 	if failure != "" {
-		return fmt.Errorf("the goal turn failed: %s", failure)
+		log.Warningf("the goal turn on conversation %q failed: %s", conversation.ID, failure)
 	}
 	return nil
 }

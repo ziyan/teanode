@@ -213,7 +213,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		if message.Role == string(llm.RoleUser) {
 			theirWords[message.ID] = true
 		}
-		shown[message.ID] = message.Content
+		shown[message.ID] = shownText(message)
 	}
 	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown)
 	if err != nil {
@@ -420,10 +420,22 @@ func transcriptFor(messages []*models.AgentMessage) string {
 			who = "you"
 		}
 		builder.WriteString("[" + message.ID + "] " + who + ": ")
-		builder.WriteString(unclosable(cutRunes(message.Content, rememberMessageCharacters)))
+		builder.WriteString(shownText(message))
 		builder.WriteString("\n\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+// shownText is one message as the transcript shows it: cut to the bound,
+// with anything that could close the block said rather than left to close
+// it.
+//
+// One function because two callers need the same answer. What a fact may
+// quote is what the model was shown, and the check held the quote against
+// the whole message instead: words from past the cut, which the run never
+// put in front of the model, passed as something it had been told.
+func shownText(message *models.AgentMessage) string {
+	return unclosable(cutRunes(message.Content, rememberMessageCharacters))
 }
 
 // whatWasFiled is what a filing run kept, and what the evidence check
@@ -551,25 +563,28 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		if models.IsThePerson(path, run.Owner, selfPage) {
 			path = models.PathSelf
 		}
-		// What the check made of this one, counted only if the row is
-		// written: a fact the page already said was never filed, and a
-		// tally that counted it would overstate how much the model made
-		// up.
-		outcome := evidenceHolds
-		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// What the page would be called, and what that name means, worked
+		// out before anything is opened. The search for a page that
+		// already exists compares meanings, and an embedding is an HTTP
+		// call to another service: made inside the transaction that files
+		// the fact it held a database connection, and the rows that
+		// transaction had locked, for as long as the provider took to
+		// answer.
+		pagePath, pageKind, pageName := pageIdentity(path,
+			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
+			strings.TrimSpace(wanted.NodeName))
+		pageSense := self.meaningOf(ctx, agentId, "remember", pageName)
+
+		var node *models.AgentNode
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			tx.AsActor(models.ActorRemember)
 			// The page this belongs on, which is the one already there
 			// under any of its names rather than a second one beside it.
 			// Without this the graph fragments quietly: two half people
 			// called Alice, and answers from whichever is found first.
-			node, err := self.resolvePage(ctx, tx, agentId,
-				path, models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
-				strings.TrimSpace(wanted.NodeName))
-			if err != nil {
+			node, err = self.resolvePage(tx, agentId, pagePath, pageKind, pageName, pageSense)
+			if err != nil || node == nil {
 				return err
-			}
-			if node == nil {
-				return nil
 			}
 			// A page about a person is a person the address book should
 			// know: one list of people, not two.
@@ -578,13 +593,23 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 					log.Warningf("cannot keep a contact for %q: %s", node.Path, err)
 				}
 			}
-			// A line that only says what the page is says nothing: the
-			// page already says it, and a page whose one fact is "X is a
-			// project" reads like something was learned. See vacuous.go
-			// for how much of a real graph this was.
-			if !saysSomethingNew(text, node, run.Owner) {
-				return nil
-			}
+			return nil
+		}); err != nil {
+			log.Warningf("cannot file %q: %s", text, err)
+			continue
+		}
+
+		// What the check made of this one, counted only if the row is
+		// written: a fact the page already said was never filed, and a
+		// tally that counted it would overstate how much the model made
+		// up.
+		//
+		// A line that only says what the page is says nothing: the page
+		// already says it, and a page whose one fact is "X is a project"
+		// reads like something was learned. See vacuous.go for how much
+		// of a real graph this was.
+		outcome := evidenceHolds
+		if node != nil && saysSomethingNew(text, node, run.Owner) {
 			fact := &models.AgentFact{
 				AgentID: agentId, NodeID: node.ID, Kind: kind,
 				Text:       cutRunes(text, models.FactLength),
@@ -600,15 +625,22 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 				Audiences: []models.AgentAudience{models.AudienceAsk},
 			}
 			outcome = checkTheEvidence(fact, shown)
-			written, err := tx.AddAgentFact(fact)
-			if err != nil {
+			// And what the fact itself means, for the fold into whatever
+			// the page already says -- the second embedding this used to
+			// make with the transaction open.
+			factSense := self.meaningOf(ctx, agentId, "remember", factText(fact, node.Path, node.Name))
+			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+				tx.AsActor(models.ActorRemember)
+				written, err := tx.AddAgentFact(fact)
+				if err != nil {
+					return err
+				}
+				_, err = self.foldIntoWhatThePageSays(tx, written, node, factSense)
 				return err
+			}); err != nil {
+				log.Warningf("cannot file %q: %s", text, err)
+				continue
 			}
-			_, err = self.FoldIntoWhatThePageSays(ctx, tx, written, node)
-			return err
-		}); err != nil {
-			log.Warningf("cannot file %q: %s", text, err)
-			continue
 		}
 		tally.Filed++
 		switch outcome {
@@ -660,10 +692,14 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			}
 			// Marked, never deleted: what it said is still readable, and
 			// a page that was rewritten can be read back.
-			_, err = tx.UpdateAgentFact(agentId, fact.ID, func(fact *models.AgentFact) error {
-				fact.Dormant = true
-				return nil
-			})
+			//
+			// Struck rather than updated to dormant. An ordinary update
+			// that happens to set dormant files nothing in the page's
+			// history -- that is what the nightly retirement pass wants
+			// -- so a run that took a line off a page this way left no
+			// trace of having done it, and a judgement the person cannot
+			// see is one they cannot undo.
+			_, err = tx.StrikeAgentFact(agentId, fact.ID, "a later conversation replaced it")
 			return err
 		}); err != nil {
 			log.Debugf("cannot supersede %s#%d: %s", path, superseded.Number, err)
@@ -749,7 +785,17 @@ func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transactio
 	if written == nil || node == nil {
 		return written, nil
 	}
-	twin := self.twinOf(ctx, tx, written, node)
+	return self.foldIntoWhatThePageSays(tx, written, node,
+		self.meaningOf(ctx, written.AgentID, "remember", factText(written, node.Path, node.Name)))
+}
+
+// foldIntoWhatThePageSays is the same with the fact's meaning already
+// worked out, for a caller that did it before opening its transaction.
+func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.AgentFact, node *models.AgentNode, sense *meaning) (*models.AgentFact, error) {
+	if written == nil || node == nil {
+		return written, nil
+	}
+	twin := self.twinOf(tx, written, node, sense)
 	if twin == nil {
 		return written, nil
 	}
@@ -804,16 +850,15 @@ func laterThan(fact, than *models.AgentFact) bool {
 // Written after the fact rather than before it so that the vector is the
 // one the store holds, and so that a deployment with no embedding model
 // keeps everything rather than silently dropping what it cannot compare.
-func (self *Agent) twinOf(ctx context.Context, tx db.Transaction, fact *models.AgentFact, node *models.AgentNode) *models.AgentFact {
-	vectors, modelName, ok := self.embed(ctx, fact.AgentID, "remember", []string{factText(fact, node.Path, node.Name)})
-	if !ok {
+func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *models.AgentNode, sense *meaning) *models.AgentFact {
+	if sense == nil {
 		return nil
 	}
-	if err := tx.PutAgentFactVector(fact.AgentID, fact.ID, modelName, vectors[0]); err != nil {
+	if err := tx.PutAgentFactVector(fact.AgentID, fact.ID, sense.ModelName, sense.Vector); err != nil {
 		log.Debugf("cannot keep a fact's vector: %s", err)
 		return nil
 	}
-	scores, err := tx.Nearest(db.AgentFactTable, fact.AgentID, modelName, vectors[0], 6, db.VectorQuery{
+	scores, err := tx.Nearest(db.AgentFactTable, fact.AgentID, sense.ModelName, sense.Vector, 6, db.VectorQuery{
 		Where:     []string{`"fact_id" IN (SELECT "id" FROM "agent_fact" WHERE "node_id" = ? AND "id" <> ? AND NOT "dormant" AND "superseded_by" IS NULL)`},
 		Arguments: []any{fact.NodeID, fact.ID},
 		Floor:     twinFloor,

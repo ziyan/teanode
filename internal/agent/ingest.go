@@ -90,6 +90,17 @@ const (
 	// ordinary time.
 	ingestRefreshWait = 35 * time.Minute
 
+	// ingestLongest is how long one ingest job may run, which has to
+	// cover that wait and leave room to file what the scan came back
+	// with. The job's deadline is the context the device wait selects on,
+	// so a job bounded at ten minutes made the thirty-five above a number
+	// nothing could reach.
+	//
+	// It is the ceiling for a job that is waiting, not what one costs: a
+	// pass with pages to read writes down where it got to and comes back
+	// in twenty seconds.
+	ingestLongest = ingestRefreshWait + 5*time.Minute
+
 	// cursorPassStarted is where a pass writes down when it began, and
 	// cursorPassSeen how many things it has been shown since. Both live
 	// in the source's cursor because a pass over a large tree is many
@@ -214,7 +225,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// time: a source resumed by hand had More off from the
 				// pass before its pause, lost the computer on its first
 				// page, and sat until its hour with the cursor halfway.
-				midway := cursor["after"] != "" || cursor["before"] != ""
+				midway := partWayThroughTree(cursor)
 				when := self.nextRunOf(source, run.Owner)
 				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
@@ -294,7 +305,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	// minutes, not at the next scheduled hour: the page that failed is
 	// named in the error and the person can see it, and most such
 	// failures -- a deadline, a computer that blinked -- do not repeat.
-	if failure != "" && (cursor["after"] != nil || cursor["before"] != nil) {
+	if failure != "" && partWayThroughTree(cursor) {
 		nextRun = time.Now().Add(ingestRetry)
 		more = true
 	}
@@ -427,6 +438,20 @@ func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledg
 		counts.Documents = 0
 	}
 	log.Infof("source %q no longer has %d document(s); removed them with their passages", source.ID, removed)
+}
+
+// partWayThroughTree says whether the cursor stopped in the middle of a
+// tree: a pass with pages read and the end not reached yet.
+//
+// Type-asserted rather than compared against "". The cursor comes back
+// from the database as JSON, so a key no page ever wrote is nil, and nil
+// is not the empty string: every source looked mid-tree, so one whose
+// computer had gone away was made due again in fifteen seconds for ever,
+// whether or not it had anything to resume.
+func partWayThroughTree(cursor map[string]any) bool {
+	after, _ := cursor["after"].(string)
+	before, _ := cursor["before"].(string)
+	return after != "" || before != ""
 }
 
 // countInCursor is a number the cursor is keeping. It comes back from
@@ -1325,6 +1350,16 @@ func (self *Agent) embedChunks(ctx context.Context, agent *models.Agent, most in
 				ChunkID: chunk.ID, SourceID: chunk.SourceID, Model: modelName, Vector: vectors[index],
 			})
 		}
+		// A round that wrote nothing is a round that will write nothing
+		// next time either: the same passages come back from the same
+		// query, and the provider answered -- with empty vectors, which
+		// some do for text they refuse -- so there is no error to stop
+		// on. Without this the loop turned for as long as the job had,
+		// asking the provider for the same batch over and over.
+		if len(writing) == 0 {
+			log.Warningf("the embedding model answered with nothing for %d passage(s) of agent %s", len(chunks), agent.ID)
+			break
+		}
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			// In a fixed order, because two ingest runs happen at once and
 			// their batches overlap.
@@ -1643,5 +1678,18 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		}
 		links = append(links, link)
 	}
-	return cutRunes(strings.TrimSpace(answer.Opening), 600), about, links
+	opening := cutRunes(strings.TrimSpace(answer.Opening), 600)
+	// An opening and no facts is an answer, not a failure: a checkout
+	// whose readme says what it is in one line has nothing else to file.
+	// Kept as the one about- line all the same, because those lines are
+	// what says this head has been described -- without it the same
+	// checkout was described again on every pass, a model call per
+	// checkout per night for as long as its head did not move.
+	//
+	// An answer with nothing in it at all leaves no mark and is asked
+	// again, which is what should happen: nothing was learned.
+	if len(about) == 0 && opening != "" {
+		about = []string{opening}
+	}
+	return opening, about, links
 }
