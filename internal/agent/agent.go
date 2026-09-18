@@ -67,7 +67,16 @@ type Agent struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	waitGroup sync.WaitGroup
-	worker    periodic.Periodic
+
+	// describedHeads is which checkout heads this process has already
+	// asked a model to describe, by source id and head. A describe whose
+	// answer files nothing leaves no mark on the page, and the profile
+	// entry rides on every page of a pass, so one such answer was asked
+	// again on every page of the pass: a hundred calls in ten minutes
+	// with a model that answered empty. Asked once a head per process;
+	// a restart asks again, which is the retry.
+	describedHeads sync.Map
+	worker         periodic.Periodic
 
 	handlersMutex sync.RWMutex
 	handlers      map[models.AgentJobKind]Handler
