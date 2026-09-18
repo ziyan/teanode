@@ -63,6 +63,8 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		// list a conversation keeps.
 		"ListAgentKnowledgeSources": client.DocumentListAgentKnowledgeSources,
 		"SaveAgentKnowledgeSource":  client.DocumentSaveAgentKnowledgeSource,
+		"SearchAgentDocuments":      client.DocumentSearchAgentDocuments,
+		"ReadAgentDocument":         client.DocumentReadAgentDocument,
 		"RecallAgentMemory":         client.DocumentRecallAgentMemory,
 		"ReadAgentConversation":     client.DocumentReadAgentConversation,
 		"AddAgentTodo":              client.DocumentAddAgentTodo,

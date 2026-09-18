@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/urfave/cli/v3"
+	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/client"
 	"strings"
 	"testing"
@@ -226,5 +227,54 @@ func TestKnowledgeSetOffersEveryFieldAndNamesASource(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "knowledge list") {
 		t.Errorf("and the refusal says where the sources are listed: %s", err)
+	}
+}
+
+// Looking through what was indexed, from a terminal.
+//
+// The passages a source produced could be searched and read by the
+// agent's knowledge tool and by nothing else, so a person who wanted to
+// find their own commit message had to ask their agent to find it for
+// them, and pay for the turn. Both commands read their arguments before
+// they open a connection, which is what lets this run without a server.
+func TestKnowledgeSearchAndReadAreWired(test *testing.T) {
+	test.Parallel()
+
+	knowledge := commandNamed(test, NewAgentCommand(), "knowledge")
+
+	search := commandNamed(test, knowledge, "search")
+	for _, name := range []string{"json", "first", "source"} {
+		if flagNamed(search, name) == nil {
+			test.Errorf("knowledge search offers --%s", name)
+		}
+	}
+	// The same number of passages the agent's tool gets, so that what a
+	// person sees and what the model saw are the same rows.
+	if first, ok := flagNamed(search, "first").(*cli.IntFlag); !ok || first.Value != indexed.SearchLimit {
+		test.Errorf("knowledge search answers with indexed.SearchLimit passages by default: %v", flagNamed(search, "first"))
+	}
+	err := search.Run(test.Context(), []string{"search"})
+	if err == nil {
+		test.Fatalf("knowledge search with no words is refused")
+	}
+	if !strings.Contains(err.Error(), "knowledge search") {
+		test.Errorf("and the refusal shows how to search: %s", err)
+	}
+
+	read := commandNamed(test, knowledge, "read")
+	for _, name := range []string{"json", "from", "first"} {
+		if flagNamed(read, name) == nil {
+			test.Errorf("knowledge read offers --%s", name)
+		}
+	}
+	if first, ok := flagNamed(read, "first").(*cli.IntFlag); !ok || first.Value != indexed.ReadLimit {
+		test.Errorf("knowledge read returns indexed.ReadLimit characters by default: %v", flagNamed(read, "first"))
+	}
+	err = read.Run(test.Context(), []string{"read"})
+	if err == nil {
+		test.Fatalf("knowledge read with no document is refused")
+	}
+	if !strings.Contains(err.Error(), "knowledge read") {
+		test.Errorf("and the refusal says where the identifier comes from: %s", err)
 	}
 }

@@ -7,11 +7,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/lib/pq"
 
+	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -1587,35 +1589,8 @@ func cutRunes(text string, characters int) string {
 // words found: reading half a million vectors into memory to sort them is
 // not a search.
 func (self *AskRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
-	if !self.agent.settings.Database.VectorIndexing() {
-		return nil, false
-	}
-	question := self.meaningOfQuestion(ctx, "search", words)
-	if question == nil {
-		return nil, false
-	}
-	narrow := db.VectorQuery{Floor: meaningFloorGraph}
-	if len(sourceIds) > 0 {
-		narrow.Where = append(narrow.Where, `"source_id" = ANY(?)`)
-		narrow.Arguments = append(narrow.Arguments, pq.Array(sourceIds))
-	}
-	var chunks []*models.AgentChunk
-	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, question.ModelName, question.Vector, limit, narrow)
-		if err != nil {
-			return err
-		}
-		found, err := tx.GetAgentChunks(self.settings.Agent.ID, idsOf(scores))
-		if err != nil {
-			return err
-		}
-		chunks = orderChunks(found, idsOf(scores))
-		return nil
-	}); err != nil {
-		log.Warningf("cannot rank what %q indexed by meaning: %s", self.settings.Owner.Username, err)
-		return nil, false
-	}
-	return chunks, true
+	return self.agent.searchChunksByMeaning(ctx, self.settings.Agent.ID,
+		self.meaningOfQuestion(ctx, "search", words), sourceIds, limit)
 }
 
 // RankChunksByMeaning puts a set the words found into the order the
@@ -1626,7 +1601,98 @@ func (self *AskRun) RankChunksByMeaning(ctx context.Context, words string, chunk
 	if len(chunks) <= 1 {
 		return chunks
 	}
-	question := self.meaningOfQuestion(ctx, "search", words)
+	return self.agent.rankChunksByMeaning(ctx, self.settings.Agent.ID,
+		self.meaningOfQuestion(ctx, "search", words), chunks, limit)
+}
+
+// KnowledgeMeaning is the meaning half of a search of what was indexed,
+// for a caller that is not in a turn: the API, and the command line and
+// the dashboard through it.
+//
+// The person searching their own documents is ranked the same way their
+// agent's tool is, which is the whole point of one search shared between
+// the surfaces. It embeds the question, which a turn does once and keeps;
+// there is nothing to keep here, so each search pays for its own.
+func (self *Agent) KnowledgeMeaning(agentId string) indexed.Meaning {
+	if self == nil || agentId == "" {
+		return nil
+	}
+	return &knowledgeMeaning{agent: self, agentId: agentId}
+}
+
+type knowledgeMeaning struct {
+	agent   *Agent
+	agentId string
+
+	// asked is the question already embedded, kept because a search that
+	// finds no vector index falls back to re-ranking and asks for the
+	// same words again. One of these is one search, so one answer is all
+	// there is to keep; a turn keeps its own for the whole turn.
+	mutex sync.Mutex
+	words string
+	asked *meaning
+	tried bool
+}
+
+func (self *knowledgeMeaning) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+	return self.agent.searchChunksByMeaning(ctx, self.agentId, self.questionOf(ctx, words), sourceIds, limit)
+}
+
+func (self *knowledgeMeaning) RankChunksByMeaning(ctx context.Context, words string, chunks []*models.AgentChunk, limit int) []*models.AgentChunk {
+	if len(chunks) <= 1 {
+		return chunks
+	}
+	return self.agent.rankChunksByMeaning(ctx, self.agentId, self.questionOf(ctx, words), chunks, limit)
+}
+
+func (self *knowledgeMeaning) questionOf(ctx context.Context, words string) *meaning {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.tried && self.words == words {
+		// Including a nil: a deployment with no embedder, or a call that
+		// failed, is not worth asking twice for one search.
+		return self.asked
+	}
+	self.words = words
+	self.asked = self.agent.meaningOf(ctx, self.agentId, "search", words)
+	self.tried = true
+	return self.asked
+}
+
+// searchChunksByMeaning is the vector search itself, given a question
+// already embedded, so that a turn (which embeds once and keeps it) and a
+// search from outside one (which does not) run the same query.
+func (self *Agent) searchChunksByMeaning(ctx context.Context, agentId string, question *meaning, sourceIds []string, limit int) ([]*models.AgentChunk, bool) {
+	if question == nil || !self.settings.Database.VectorIndexing() {
+		return nil, false
+	}
+	narrow := db.VectorQuery{Floor: meaningFloorGraph}
+	if len(sourceIds) > 0 {
+		narrow.Where = append(narrow.Where, `"source_id" = ANY(?)`)
+		narrow.Arguments = append(narrow.Arguments, pq.Array(sourceIds))
+	}
+	var chunks []*models.AgentChunk
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		scores, err := tx.Nearest(db.AgentChunkTable, agentId, question.ModelName, question.Vector, limit, narrow)
+		if err != nil {
+			return err
+		}
+		found, err := tx.GetAgentChunks(agentId, idsOf(scores))
+		if err != nil {
+			return err
+		}
+		chunks = orderChunks(found, idsOf(scores))
+		return nil
+	}); err != nil {
+		log.Warningf("cannot rank what agent %s indexed by meaning: %s", agentId, err)
+		return nil, false
+	}
+	return chunks, true
+}
+
+// rankChunksByMeaning puts what the words found into the order an
+// embedded question wants.
+func (self *Agent) rankChunksByMeaning(ctx context.Context, agentId string, question *meaning, chunks []*models.AgentChunk, limit int) []*models.AgentChunk {
 	if question == nil {
 		return chunks
 	}
@@ -1635,8 +1701,8 @@ func (self *AskRun) RankChunksByMeaning(ctx context.Context, words string, chunk
 		ids = append(ids, chunk.ID)
 	}
 	var ordered []*models.AgentChunk
-	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, question.ModelName, question.Vector, limit, db.VectorQuery{
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		scores, err := tx.Nearest(db.AgentChunkTable, agentId, question.ModelName, question.Vector, limit, db.VectorQuery{
 			Where:     []string{`"chunk_id" = ANY(?)`},
 			Arguments: []any{pq.Array(ids)},
 			Floor:     meaningFloorGraph,

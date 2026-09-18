@@ -530,6 +530,24 @@ names still gives up its facts when the turn's words hit it — only its
 opening is left out, since the index line carries the first sentence of
 it already.
 
+### The same search, from anywhere
+
+Searching and reading what the sources indexed is
+`internal/agent/indexed`, and every surface calls it: the agent's
+`knowledge` tool, the API's `SearchAgentDocuments` and
+`ReadAgentDocument`, and `teanode agent knowledge search` and `read`
+through those. It is one package rather than three copies because the
+tool cannot import the agent and the API cannot import the tool, and
+because a second implementation of a ranked search drifts from the first
+without anybody noticing which one is wrong.
+
+The half that knows what a question *means* is the agent's, since it
+takes an embedding call: in a turn it is the run, which embeds the
+question once and keeps it; from the API it is `Agent.KnowledgeMeaning`,
+which embeds per search. Where a deployment has no embedding model both
+fall back to the words, and the answer says so rather than letting a
+reader assume the meaning was searched.
+
 ## Bootstrapping
 
 A first ingest brings years of record at once, and a dream that reads two

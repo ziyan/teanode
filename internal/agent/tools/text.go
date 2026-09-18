@@ -83,25 +83,3 @@ func FirstWords(text string, count int) string {
 	}
 	return strings.Join(words[:count], " ") + "…"
 }
-
-// LooksLikeSymbol says whether a word from a question is an identifier
-// rather than an ordinary word: CamelCase, snake_case, a dotted name.
-//
-// Asked of every word of a knowledge search, so that a name pasted out of
-// a log is looked up exactly before anything is ranked. Cheap and strict:
-// a false positive costs one lookup that finds nothing.
-func LooksLikeSymbol(word string) bool {
-	if len(word) < 4 {
-		return false
-	}
-	if strings.ContainsAny(word, "_.") && !strings.HasPrefix(word, ".") {
-		return true
-	}
-	for index := 1; index < len(word); index++ {
-		previous, current := word[index-1], word[index]
-		if previous >= 'a' && previous <= 'z' && current >= 'A' && current <= 'Z' {
-			return true
-		}
-	}
-	return false
-}
