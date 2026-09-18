@@ -35,18 +35,38 @@ import (
 // it happened, who wrote it and what it says. A file named `refresh` in
 // the folder is what fills it, run at the start of a pass, and the
 // person or their agent writes that.
+//
+// A folder may say the same thing without writing any of it down. The
+// person's archives are already on their disk -- an export of a chat of
+// tens of gigabytes, an export of a wiki -- and a `refresh` that turns
+// one into records leaves a second copy of it there: 1.3 GB and 639 MB
+// of the owner's disk went that way before they said they would rather
+// have a script that reads the files they already have. So a folder may
+// instead hold an executable named `records`, which the daemon asks
+// twice: with no argument for the names of its files, one a line, and
+// with a name for that file's records on standard output. Those names
+// are files that do not exist, read on demand, and everything past the
+// parser -- the ids, the hashes, the grouping, the order -- cannot tell
+// them from files that do.
 
-// The bounds of a refresh.
+// The bounds of a script.
 const (
-	// refreshTimeout is how long a folder's script may take. Long
-	// enough for a tool to page through a year of somebody's Drive, and
-	// short enough that a script waiting on something that will never
-	// answer does not hold the night's pass open.
+	// refreshTimeout is how long a folder's script may take, whether it
+	// is the refresh filling the folder or the records script printing
+	// one of its files. Long enough for a tool to page through a year of
+	// somebody's Drive, and short enough that a script waiting on
+	// something that will never answer does not hold the night's pass
+	// open.
 	//
 	// The server waits longer than this for the first page of a records
 	// source (ingestRefreshWait), because that page is the one the
 	// script runs in.
 	refreshTimeout = 30 * time.Minute
+
+	// refreshScript fills the folder; recordsScript is the folder,
+	// printing what it would have written.
+	refreshScript = "refresh"
+	recordsScript = "records"
 
 	// refreshLog is where the script's output goes, beside the records
 	// it wrote, so the person can read what happened without the daemon
@@ -91,12 +111,23 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 	// pass still being read, and a script run again under them would
 	// move the ground the cursor stands on.
 	if arguments.After == "" {
+		// A file the cache holds is checked against its modification
+		// time, and what a records script prints has none: nothing on
+		// disk changes when the archive behind it does. The start of a
+		// pass is the one moment the answer is certainly wanted fresh,
+		// so it is where the cache is dropped.
+		forgetRecords()
 		if err := refreshRecords(root); err != nil {
 			return nil, err
 		}
 	}
 
 	result := &ScanResult{}
+	// The files on disk, and the names the folder's records script says
+	// it has. A name is one or the other: where both hold it, the file
+	// on disk is what is read, so a folder converting from copies to a
+	// script keeps reading the copies until they are taken away.
+	onDisk := map[string]bool{}
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -116,12 +147,33 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 		switch strings.ToLower(filepath.Ext(path)) {
 		case ".jsonl", ".ndjson":
 			relative, _ := filepath.Rel(root, path)
-			files = append(files, filepath.ToSlash(relative))
+			relative = filepath.ToSlash(relative)
+			onDisk[relative] = true
+			files = append(files, relative)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	named, err := recordsScriptFiles(root)
+	if err != nil {
+		// The listing is the folder, the way a refresh is what fills it,
+		// so a script that cannot say what it holds fails the pass and
+		// the source's page says why, rather than the pass reporting an
+		// empty archive and the sweep removing everything in it.
+		return nil, err
+	}
+	// A name twice is a name once. The cursor is a name, so a folder
+	// holding the same one twice would send its entries twice and resume
+	// on whichever of them sorted first.
+	listed := map[string]bool{}
+	for _, relative := range named {
+		if onDisk[relative] || listed[relative] {
+			continue
+		}
+		listed[relative] = true
+		files = append(files, relative)
 	}
 	sort.Strings(files)
 
@@ -144,7 +196,7 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 			result.Next = relative
 			break
 		}
-		entries, err := recordEntries(root, relative, arguments)
+		entries, err := recordEntries(root, relative, !onDisk[relative])
 		if err != nil {
 			// A file this program cannot read is reported as one entry
 			// saying so, rather than silently missing from the folder
@@ -190,7 +242,20 @@ func readRecordsFile(root, relative string) ([]ScanEntry, error) {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
+	return readRecords(relative, file)
+}
 
+// readRecords is the parser itself, over anything that reads: a file on
+// disk, or the standard output of the folder's records script.
+//
+// One parser and not two is the whole point of the second shape. A
+// folder that stops copying its archive and starts printing it must file
+// the same documents under the same identifiers with the same hashes, or
+// switching to it re-files an archive of hundreds of thousands of
+// documents and re-embeds every one. Everything that decides identity --
+// the external id, the hash, the chat grouping, the order -- is below
+// this line and sees only lines.
+func readRecords(relative string, source io.Reader) ([]ScanEntry, error) {
 	var entries []ScanEntry
 	// Chat records are not units on their own, so they are held back and
 	// grouped once the file has been read: per channel, in the order the
@@ -201,7 +266,7 @@ func readRecordsFile(root, relative string) ([]ScanEntry, error) {
 	private := map[string]bool{}
 	read, skipped := 0, 0
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(source)
 	scanner.Buffer(make([]byte, 1<<20), 8<<20)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -370,28 +435,62 @@ func recordTime(value string) *time.Time {
 // The chat reader keeps the same cache for the same reason. A page
 // mid-file would otherwise read and cut the whole file again, and a
 // folder holding one large file would be read once per page of it.
-func recordEntries(root, relative string, arguments *ScanArguments) ([]ScanEntry, error) {
-	path := filepath.Join(root, filepath.FromSlash(relative))
-	information, err := os.Stat(path)
-	if err != nil {
-		return nil, err
+// fromScript says the name is one the folder's records script listed
+// rather than a file on disk, and is read by running the script again.
+func recordEntries(root, relative string, fromScript bool) ([]ScanEntry, error) {
+	// A file is held against its modification time and its size, so a
+	// script rewriting the folder mid-pass is noticed. What the records
+	// script prints has neither: nothing on disk moves when the archive
+	// behind it does, and the pass boundary in scanRecords is what
+	// drops it instead.
+	var modified time.Time
+	var size int64
+	if !fromScript {
+		information, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			return nil, err
+		}
+		modified, size = information.ModTime(), information.Size()
 	}
 	recordsCache.mutex.Lock()
 	defer recordsCache.mutex.Unlock()
-	if recordsCache.path == path && recordsCache.modified.Equal(information.ModTime()) && recordsCache.size == information.Size() {
+	if recordsCache.root == root && recordsCache.name == relative && recordsCache.script == fromScript &&
+		recordsCache.modified.Equal(modified) && recordsCache.size == size {
 		return recordsCache.entries, nil
 	}
-	entries, err := readRecordsFile(root, relative)
+	entries, err := readRecordsAnywhere(root, relative, fromScript)
 	if err != nil {
 		return nil, err
 	}
-	recordsCache.path, recordsCache.modified, recordsCache.size, recordsCache.entries = path, information.ModTime(), information.Size(), entries
+	recordsCache.root, recordsCache.name, recordsCache.script = root, relative, fromScript
+	recordsCache.modified, recordsCache.size, recordsCache.entries = modified, size, entries
 	return entries, nil
 }
 
+// readRecordsAnywhere is the one file, wherever it is kept.
+func readRecordsAnywhere(root, relative string, fromScript bool) ([]ScanEntry, error) {
+	if fromScript {
+		return readRecordsScript(root, relative)
+	}
+	return readRecordsFile(root, relative)
+}
+
+// forgetRecords drops the one-file cache, which a new pass does because
+// the records script's answer carries nothing to compare it against.
+func forgetRecords() {
+	recordsCache.mutex.Lock()
+	defer recordsCache.mutex.Unlock()
+	recordsCache.root, recordsCache.name, recordsCache.script = "", "", false
+	recordsCache.modified, recordsCache.size, recordsCache.entries = time.Time{}, 0, nil
+}
+
 var recordsCache struct {
-	mutex    sync.Mutex
-	path     string
+	mutex sync.Mutex
+	root  string
+	name  string
+	// script tells a file of that name from a name the script listed,
+	// which may be the same string in a folder holding both.
+	script   bool
 	modified time.Time
 	size     int64
 	entries  []ScanEntry
@@ -409,27 +508,14 @@ var recordsCache struct {
 // what they allowed and not something another account, or a link out of
 // the folder, put in its place.
 func refreshRecords(root string) error {
-	path := filepath.Join(root, "refresh")
-	// Lstat, not Stat: a symlink is refused rather than followed, so a
-	// link dropped in the folder cannot make this run a program from
-	// somewhere the person never allowed.
-	information, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		// A folder somebody fills by hand, or from their own cron.
-		// Nothing to run is not a failure.
-		return nil
-	}
+	path, err := runnableScript(root, refreshScript)
 	if err != nil {
 		return err
 	}
-	if !information.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file, so it was not run", path)
-	}
-	if information.Mode().Perm()&0o100 == 0 {
-		return fmt.Errorf("%s is not executable by its owner, so it was not run", path)
-	}
-	if owner, known := ownerOfFile(information); known && owner != os.Getuid() {
-		return fmt.Errorf("%s is owned by another user, so it was not run", path)
+	if path == "" {
+		// A folder somebody fills by hand, from their own cron, or one
+		// that holds a records script instead and is never copied.
+		return nil
 	}
 
 	log, err := os.Create(filepath.Join(root, refreshLog))
@@ -463,6 +549,164 @@ func refreshRecords(root string) error {
 		return fmt.Errorf("%s could not be run: %w", path, err)
 	}
 	return nil
+}
+
+// runnableScript is the folder's script of that name, "" where the
+// folder has none, and an error where something is there that this
+// program will not run.
+//
+// The checks are the consent. The person allowed the folder by hand with
+// `teanode computer allow`, and a scan is the one thing this program
+// does with nobody watching, so what runs has to be what they put there:
+// Lstat rather than Stat, because a symlink is refused rather than
+// followed and a link dropped in the folder cannot make this run a
+// program from somewhere they never allowed; a regular file, executable
+// by its owner, and owned by this account.
+func runnableScript(root, name string) (string, error) {
+	path := filepath.Join(root, name)
+	information, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !information.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file, so it was not run", path)
+	}
+	if information.Mode().Perm()&0o100 == 0 {
+		return "", fmt.Errorf("%s is not executable by its owner, so it was not run", path)
+	}
+	if owner, known := ownerOfFile(information); known && owner != os.Getuid() {
+		return "", fmt.Errorf("%s is owned by another user, so it was not run", path)
+	}
+	return path, nil
+}
+
+// recordsScriptFiles is the names the folder's records script says it
+// has, one a line, and nothing at all where the folder has no such
+// script. They are sorted with the real files by the caller, so a script
+// need not sort them itself.
+func recordsScriptFiles(root string) ([]string, error) {
+	var names []string
+	err := runRecordsScript(root, nil, func(output io.Reader) error {
+		scanner := bufio.NewScanner(output)
+		scanner.Buffer(make([]byte, 1<<20), 8<<20)
+		for scanner.Scan() {
+			name := recordsName(scanner.Text())
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+		return scanner.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
+// readRecordsScript is one of those names, read by asking the script for
+// it. Nothing is written down: the archive it reads from is the
+// person's own, wherever they already keep it.
+func readRecordsScript(root, relative string) ([]ScanEntry, error) {
+	path, err := runnableScript(root, recordsScript)
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		// It listed this name a moment ago. Saying so beats answering
+		// with no entries, which a full pass reads as "the archive no
+		// longer holds any of this" and sweeps away.
+		return nil, fmt.Errorf("%s is no longer there", filepath.Join(root, recordsScript))
+	}
+	var entries []ScanEntry
+	err = runRecordsScript(root, []string{relative}, func(output io.Reader) error {
+		read, err := readRecords(relative, output)
+		entries = read
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// recordsName is one line of the script's listing as a name this reader
+// will use, and "" for anything it will not.
+//
+// A name becomes half of every document's external id and may one day
+// meet a real file of the same name, so it is a relative path in the
+// style the walk produces and nothing else: no absolute path, no parent
+// step, no backslashes. A script that prints something else has that
+// line passed over rather than the folder refused, because one odd line
+// should not cost the archive its pass.
+func recordsName(line string) string {
+	name := filepath.ToSlash(strings.TrimSpace(line))
+	name = strings.TrimPrefix(name, "./")
+	if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") {
+		return ""
+	}
+	for _, step := range strings.Split(name, "/") {
+		if step == "" || step == "." || step == ".." {
+			return ""
+		}
+	}
+	return name
+}
+
+// runRecordsScript runs the folder's records script and hands its
+// standard output to read, which is a reader over the script while it is
+// still running: a virtual file is as large as a real one and there is
+// no reason to hold it in memory twice.
+//
+// It runs the way the refresh does -- as the person, with the folder as
+// its working directory, in the person's own environment, under the same
+// timeout -- because it is the same trust and the same kind of work. Its
+// output is not logged the way a refresh's is: a refresh's output is
+// commentary, and this script's output is the records themselves.
+func runRecordsScript(root string, arguments []string, read func(output io.Reader) error) error {
+	path, err := runnableScript(root, recordsScript)
+	if err != nil || path == "" {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, path, arguments...)
+	command.Dir = root
+	command.Env = os.Environ()
+	command.WaitDelay = 2 * time.Second
+	prepare(command)
+	tail := &refreshTail{limit: refreshTailBytes}
+	command.Stderr = tail
+	output, err := command.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("%s could not be run: %w", path, err)
+	}
+	readError := read(output)
+	// Whatever the reader did not take is taken here, so that a script
+	// printing more than was read ends on its own rather than on a
+	// broken pipe, and Wait has the exit code it really had.
+	_, _ = io.Copy(io.Discard, output)
+
+	err = command.Wait()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%s did not finish within %s%s", path, refreshTimeout, tail.ending())
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		// Before the reader's own complaint: a script that failed
+		// half-way through printing says why on its standard error, and
+		// that is more use than "none of its 12 lines is a record".
+		return fmt.Errorf("%s failed (exit %d)%s", path, exit.ExitCode(), tail.ending())
+	}
+	if err != nil {
+		return fmt.Errorf("%s could not be run: %w", path, err)
+	}
+	return readError
 }
 
 // refreshTail keeps the last of what a script printed, which is where a
