@@ -6,6 +6,33 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-18
+
+### Added
+
+- A source your agent reads can be changed where it stands. `teanode agent
+  knowledge set work --cron "0 4 * * *" --under projects` renames it, moves the
+  directory it reads, files what it finds somewhere else in the graph, changes
+  the format or the mailbox, or reads it at another hour — and leaves alone
+  everything you did not mention, so correcting the hour cannot quietly reset
+  where its pages go. Until now the only way to change any of that was to
+  remove the source and add it again, which forgets every document it ever
+  read and charges you the first pass a second time. (#111)
+- You can ask what a question would carry into a turn before asking it.
+  `teanode agent memory recall "when does the portal ship?"` prints the pages
+  your agent's memory would open for that question and the facts on each,
+  numbered as the page numbers them — the same recall a real turn does, so it
+  answers "why did it not know that?" without asking it again. Nothing is said
+  to a model, and nothing is marked as used, so the same graph answers the same
+  twice and asking changes nothing. `--json` prints it for a script. (#111)
+- The task list your agent keeps in a conversation is yours to change too.
+  `teanode agent conversation todo list <conversation-id>` shows it with each
+  item's id; `todo add`, `todo done`, `todo reopen` and `todo remove` put one
+  on, tick one off, open it again, or take it away, and each prints the list as
+  it stands afterwards. The agent writes that list as it works through
+  something in several steps and reads it back every round, so an item you had
+  already done yourself used to sit there open with no way to say so. (#111)
+
 ## [0.29.0] - 2026-09-18
 
 ### Added
