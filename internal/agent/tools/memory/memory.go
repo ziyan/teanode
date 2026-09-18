@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -587,9 +586,6 @@ func mergeFacts(first, second []*models.AgentFact, limit int) []*models.AgentFac
 
 // noteAction puts a fact on a page, making the page if it is missing.
 func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
-	if secret, what := computer.SecretContent(arguments.Text); secret {
-		return nil, fmt.Errorf("that carries %s; memory keeps no credentials, so note where it is kept instead of what it is", what)
-	}
 	path := ownPath(run, arguments.Path)
 	text := strings.TrimSpace(arguments.Text)
 	if text == "" {
