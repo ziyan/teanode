@@ -29,23 +29,67 @@ var theirSentence = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] them: (.+)`)
 // The same thing said twice on different days ends up as one fact.
 //
 // This is the failure a graph actually has: not forgetting, but keeping
-// "Kittiwake is the neighbour's boat" nine times in nine wordings, so
-// that the page is long, says one thing, and every answer drawn from it
-// is a little different. Tuesday's run knows nothing of Wednesday's and
-// both are doing their job, so the check has to be at the write.
+// "Kittiwake is the neighbour's boat" nine times over, so that the page
+// is long, says one thing, and every answer drawn from it is a little
+// different. Tuesday's run knows nothing of Wednesday's and both are
+// doing their job, so the check has to be at the write.
 func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
+	// The same sentence, twice over. A fold nobody watches is only safe
+	// where there is provably nothing to lose, and that is this: a
+	// rewording may be the same statement or may be the next thing the
+	// page has to say, and the nightly pass that asks a model decides.
+	facts := rememberOnTwoDays(t, []string{
+		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
+		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
+	})
+	if len(facts) != 1 {
+		t.Fatalf("the page says it once, not %d times:\n%s", len(facts), linesOf(facts))
+	}
+	// The one that stayed is the first, because its number is what
+	// anything else cites — and it carries both days' evidence.
+	if facts[0].Number != 1 {
+		t.Fatalf("the older keeps its number, not #%d", facts[0].Number)
+	}
+	if len(facts[0].Evidence) < 2 {
+		t.Fatalf("and gains what the second day brought: %v", facts[0].Evidence)
+	}
+}
+
+// A figure that changed is not the same thing said twice.
+//
+// The cost went down, neither sentence carries a negation, and the two
+// sit on top of each other in the vector space. The fold used to put the
+// newer row behind the older, so the page went on saying 4200, normal
+// recall never carried 3100, and nothing anywhere said that a decision
+// had been made. Both stand now.
+func TestRememberingAChangedAmountKeepsBoth(t *testing.T) {
+	facts := rememberOnTwoDays(t, []string{
+		"Kittiwake costs the neighbours 4200 a year to keep afloat.",
+		"Kittiwake costs the neighbours 3100 a year to keep afloat.",
+	})
+	if len(facts) != 2 {
+		t.Fatalf("the page keeps both figures, not %d:\n%s", len(facts), linesOf(facts))
+	}
+}
+
+// linesOf is a page as a failing test should print it.
+func linesOf(facts []*models.AgentFact) string {
+	lines := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, fact.Text))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// rememberOnTwoDays files one sentence a day through the whole path a
+// conversation takes -- a filing run, the evidence check, the page
+// resolver and the fold -- and hands back what the boat's page ends up
+// saying.
+func rememberOnTwoDays(t *testing.T, said []string) []*models.AgentFact {
+	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
-	// The second is the first said the other way round. It has to be a
-	// rewording the fake embedder below can see through: it reads a
-	// sentence as the words in it, so a paraphrase that swaps a word for
-	// its cousin lands further apart than the twin check's floor, which
-	// says nothing about the check and everything about the fake.
-	said := []string{
-		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
-		"Every spring they repaint Kittiwake, the neighbour's boat.",
-	}
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if strings.Contains(request.URL.Path, "embeddings") {
 			writeMeaning(writer, request)
@@ -168,31 +212,17 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 		worker.Wait()
 	}
 
+	var facts []*models.AgentFact
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		node, err := tx.GetAgentNode(found.ID, "things/kittiwake")
 		if err != nil || node == nil {
 			t.Fatalf("the boat has a page: %v %s", node, err)
 		}
-		facts, err := tx.ListAgentFacts(found.ID, node.ID, false, 50)
-		if err != nil {
+		if facts, err = tx.ListAgentFacts(found.ID, node.ID, false, 50); err != nil {
 			t.Fatalf("ListAgentFacts: %s", err)
 		}
-		if len(facts) != 1 {
-			lines := make([]string, 0, len(facts))
-			for _, fact := range facts {
-				lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, fact.Text))
-			}
-			t.Fatalf("the page says it once, not %d times:\n%s", len(facts), strings.Join(lines, "\n"))
-		}
-		// The one that stayed is the first, because its number is what
-		// anything else cites — and it carries both days' evidence.
-		if facts[0].Number != 1 {
-			t.Fatalf("the older keeps its number, not #%d", facts[0].Number)
-		}
-		if len(facts[0].Evidence) < 2 {
-			t.Fatalf("and gains what the second day brought: %v", facts[0].Evidence)
-		}
 	})
+	return facts
 }
 
 // writeMeaning answers an embedding request with a vector that depends

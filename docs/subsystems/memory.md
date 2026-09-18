@@ -122,6 +122,20 @@ run kept the *newest* sixty and moved the mark to the end of the whole
 list, so a backlog of two hundred had its first hundred and forty marked
 filed unread, and nothing ever came back for them.
 
+A window lands whole or not at all. The reading and the embeddings happen
+first — they are calls to another service and have no business holding a
+database connection — and then the facts, the links, the strikes that
+supersede what they replace, and the mark itself are one transaction.
+That was the second way the mark lied. A fact whose write failed was
+logged and stepped over while the run reported success, so the mark moved
+past the whole window and those messages were never read again; and the
+strikes ran afterwards, in transactions of their own, so a page could end
+up with its old line struck and nothing standing in its place. Now a
+failure leaves the graph and the mark exactly as they were and the job
+comes round again. The one thing that can outlive a failed window is a
+page opened with no facts on it, which the nightly pass takes away after
+two days.
+
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
 dream turns them into facts. A document a full pass no longer reports is
@@ -246,19 +260,43 @@ that says what a count implies is not a diary.
 whose opening no longer says what it is about. The same pass merges the
 facts that say the same thing — the older keeps its number, the newer
 goes dormant carrying a pointer to it. Never deleted: a merge the person
-disagrees with can be undone. The fold at the write boundary does the
-same, so a conversation filed today and one filed a week ago end as one
-statement with both days' evidence and a dormant row behind it; and a
-line the nightly pass finds says nothing, or finds the page already says
-in the same words, goes the same way rather than away. The knowledge page
-lists them under the facts, greyed, each saying which number absorbed it.
+disagrees with can be undone. That pass asks a model, which is what lets
+it merge two wordings of one statement. A line the nightly pass finds
+says nothing, or finds the page already says in the same words, goes the
+same way rather than away. The knowledge page lists them under the facts,
+greyed, each saying which number absorbed it.
 
-Nothing is folded across a negation. "She prefers tea" and "she no longer
-prefers tea" name the same things and sit on top of each other in the
-vector space, so neither the similarity nor the name check can tell them
-apart — and they are the pair it matters most not to lose one of. Where
-exactly one of two sentences carries a negation both rows stay, and the
-later statement is the one the page states.
+The fold at the write boundary is the same idea with nobody watching, and
+it is deliberately much narrower. A new fact is folded behind an older one
+only where the two are the same sentence written twice — identical once
+case, spacing and the punctuation words are written with have been taken
+off — so a conversation filed today and one filed a week ago end as one
+statement with both days' evidence and a dormant row behind it.
+Everything else stands, and both rows are recalled.
+
+That is narrow because the search behind it is a vector floor and a name
+check, and neither can see the difference between "the rent is 4200 a
+month from March" and "the rent is 3100 a month from March". They share
+March, they sit on top of each other in the vector space, and one of them
+is this year's. A change of amount, date, frequency or who is responsible
+carries no negation and reads as a rewording, so the newer row went
+dormant behind the older: the page kept last year's figure, normal recall
+never carried this year's, and nothing in the conversation said so. Two
+candidates that disagree about any number, date or quantity word are now
+not twins at all.
+
+The one thing that does put an older fact behind a newer one is a
+negation. "She prefers tea" and "she no longer prefers tea" name the same
+things and sit on top of each other in the vector space, so neither the
+similarity nor the name check can tell them apart — and they are the pair
+it matters most not to lose one of. Where exactly one of two sentences
+carries a negation both rows stay and the later statement is the one the
+page states — but only where the later one is evidenced at least as well
+as the earlier. A fact whose quote was nowhere in what the run was shown
+is inferred at half confidence because the model may have composed it,
+and letting that supersede something the person said is the agent's own
+paraphrase winning an argument with its source. The inferred
+contradiction stays as a row of its own instead.
 
 **Fold the person into self.** A page under `people` that names the person
 themselves — by username, by a word of their name, by its slug — is
@@ -312,10 +350,19 @@ records the ones it cannot answer. Each question ends one of three ways:
 *answered*, when the model names a fact it was shown that answers it;
 *gap*, when the graph was asked and had nothing, which is what the person
 would hear as "I don't know" tomorrow; or *unknown*, when the question
-could not be tried at all — a model that did not answer, an answer with no
-fact behind it. Every failure path is unknown rather than either of the
-others, because a gap that was really a timeout would send the person
-chasing an answer their agent already has. The dream row counts all three,
+could not be tried at all — no embedding model, one that did not answer, a
+database that did not, a model that did not answer, an answer with no fact
+behind it. Every failure path is unknown rather than either of the others,
+because a gap that was really a timeout would send the person chasing an
+answer their agent already has. Only a search that ran and came back
+empty is a gap: the search says so itself now, rather than the phase
+asking afterwards whether an embedding model was configured — a provider
+that timed out was configured, so an outage read as a graph full of holes.
+The judge has to say so too: its answer must carry the field that says
+whether the question was answered, or the verdict is unknown. Read as a
+plain yes-or-no, an absent field was a no, so any object at all that was
+not the one asked for passed for the model having looked and found
+nothing. The dream row counts all three,
 and the Dreams tab reads "12 rehearsed, 3 gaps, 4 unknown". Nobody reads
 the answers; the failures are the point. A gap found at three in the morning costs one model call,
 and the same gap found mid-conversation is the person watching their
@@ -483,8 +530,9 @@ the agent, bootstrap or not.
   And only a fact counts as an answer: a page matching at a quarter's
   similarity says the subject exists, not that the question is answered,
   and counting it made every question answerable. The questions and
-  their verdicts are kept in the dream's notes. Where there is no
-  embedding model there are no gaps rather than all of them.
+  their verdicts are kept in the dream's notes. Where the search cannot
+  be made at all — no embedding model, or one that did not answer —
+  there are no gaps rather than all of them.
 - **The generative half can be wrong.** So a link it writes is stored as
   proposed rather than stated, at half weight, carrying the walk that
   suggested it as its evidence — which is what a person needs to disagree

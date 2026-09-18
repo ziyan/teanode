@@ -24,7 +24,14 @@ func TestAFailedRehearsalIsUnknownAndNotAGap(t *testing.T) {
 	}{
 		{"an answer that is not an object", "I had a look and they mostly do", 5, rehearsalUnknown},
 		{"a no is the graph having been asked and having nothing", `{"answered": false}`, 5, rehearsalGap},
-		{"and an object that does not claim an answer is a no", `{"result": "not really"}`, 5, rehearsalGap},
+		// Read into a plain bool this was false when absent, so any
+		// object that was not the one asked for -- a tool call written
+		// out, an object of the model's own design, an error the
+		// provider wrapped in JSON -- passed for the model having
+		// looked and found nothing, and a gap the graph never had went
+		// in front of the person.
+		{"an object that never says whether it answered", `{"result": "not really"}`, 5, rehearsalUnknown},
+		{"and neither does the tool call a model writes instead", `{"name": "memory", "input": {"op": "search"}}`, 5, rehearsalUnknown},
 		{"a yes naming the note it came from", `{"answered": true, "facts": [2]}`, 5, rehearsalAnswered},
 		{"a yes that can point at nothing", `{"answered": true, "facts": []}`, 5, rehearsalUnknown},
 		{"a yes naming a note it was not shown", `{"answered": true, "facts": [9]}`, 5, rehearsalUnknown},

@@ -466,16 +466,21 @@ func (self *Agent) canAnswerFromMemory(ctx context.Context, run *Run, budget *dr
 	// my next step for gogcli" is near "the checkout is at ~/gogcli",
 	// which does not say. So the nearest facts are shown to the model
 	// with the question, and it says whether they answer it.
-	_, facts := self.nearestInGraph(ctx, run.Agent, question, 5)
-	if len(facts) > 0 {
-		return self.factsAnswer(ctx, run, budget, question, facts)
-	}
-	// No embedding model, or it failed: then the graph was never really
-	// asked, and neither answer would be true of it.
-	if _, _, _, _, ok := self.embedderFor(); !ok {
+	_, facts, err := self.nearestInGraph(ctx, run.Agent, question, 5)
+	// No embedding model, or one that did not answer, or a database that
+	// did not: the graph was never really asked, and neither verdict
+	// would be true of it. This used to ask instead whether an embedder
+	// was configured, which answers a different question -- a provider
+	// that timed out was configured, so an outage read as a graph full of
+	// gaps and sent the person chasing answers their agent already had.
+	if err != nil {
+		log.Debugf("rehearsal could not ask the graph: %s", err)
 		return rehearsalUnknown
 	}
-	return rehearsalGap
+	if len(facts) == 0 {
+		return rehearsalGap
+	}
+	return self.factsAnswer(ctx, run, budget, question, facts)
 }
 
 // factsAnswer asks the model whether these facts answer the question.
@@ -518,19 +523,30 @@ func (self *Agent) factsAnswer(ctx context.Context, run *Run, budget *dreamBudge
 // model: an answer that is not an object says nothing, a no is a gap,
 // and a yes counts only when it points at one of the facts in front of
 // it by number.
+//
+// The field has to be there. Read into a plain bool it was false when
+// absent, so any object at all that was not the one asked for -- the
+// tool call a model sometimes writes instead, an object of its own
+// design, an error the provider wrapped in JSON -- was counted as the
+// model having looked and found nothing. That is a gap the graph never
+// had, written down and put in front of the person as something their
+// agent cannot answer.
 func rehearsalVerdict(said string, shown int) rehearsalOutcome {
 	extracted, err := llm.ExtractJSON(said)
 	if err != nil {
 		return rehearsalUnknown
 	}
 	var answer struct {
-		Answered bool  `json:"answered"`
+		Answered *bool `json:"answered"`
 		Facts    []int `json:"facts"`
 	}
 	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
 		return rehearsalUnknown
 	}
-	if !answer.Answered {
+	if answer.Answered == nil {
+		return rehearsalUnknown
+	}
+	if !*answer.Answered {
 		return rehearsalGap
 	}
 	for _, number := range answer.Facts {

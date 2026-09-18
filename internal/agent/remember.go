@@ -215,39 +215,43 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		}
 		shown[message.ID] = shownText(message)
 	}
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown)
-	if err != nil {
-		return err
-	}
-
-	// The mark and the run's title in one transaction with nothing else:
-	// a crash before this point re-reads, a crash after it does not
-	// re-file. The loop wrote the transcript as it went; what is left is
-	// to say what the run turned out to be.
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		note := "Filed nothing from this conversation"
-		if filed.Filed > 0 {
-			note = fmt.Sprintf("Filed %d thing(s) from %q", filed.Filed, conversation.Title)
-		}
-		// How much of what it filed could not be shown to have been said.
-		// On the row rather than in a log line, because the person
-		// reading the runs is the one who would want to know.
-		if checked := filed.Describe(); checked != "" {
-			note += ", " + checked
-		}
-		if transcript != nil {
-			if _, err := tx.UpdateAgentConversation(transcript.ID, func(found *models.AgentConversation) error {
-				found.Title = note
-				return nil
-			}); err != nil {
-				return err
+	// The last message this run was actually given, so the mark never
+	// stands past something nobody read.
+	read := unread[len(unread)-1]
+	// The mark moves in the same transaction as the writes it is a
+	// promise about. It says that everything behind it has been filed,
+	// and it was moved separately and unconditionally: a fact whose write
+	// failed was logged and stepped over, the run reported success, and
+	// the mark went past the whole window. Those messages were never read
+	// again. A window now lands whole or not at all, and a run that
+	// cannot write leaves the mark where it was for the next one -- the
+	// job is queued again, and the deferral below drains what is left.
+	//
+	// The loop wrote the transcript as it went; what is left is to say
+	// what the run turned out to be.
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown,
+		func(tx db.Transaction, filed whatWasFiled) error {
+			note := "Filed nothing from this conversation"
+			if filed.Filed > 0 {
+				note = fmt.Sprintf("Filed %d thing(s) from %q", filed.Filed, conversation.Title)
 			}
-		}
-		// The last message this run was actually given, so the mark never
-		// stands past something nobody read.
-		read := unread[len(unread)-1]
-		return tx.MarkAgentConversationRemembered(conversation.ID, read.ID, time.Now())
-	}); err != nil {
+			// How much of what it filed could not be shown to have been
+			// said. On the row rather than in a log line, because the
+			// person reading the runs is the one who would want to know.
+			if checked := filed.Describe(); checked != "" {
+				note += ", " + checked
+			}
+			if transcript != nil {
+				if _, err := tx.UpdateAgentConversation(transcript.ID, func(found *models.AgentConversation) error {
+					found.Title = note
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
+			return tx.MarkAgentConversationRemembered(conversation.ID, read.ID, time.Now())
+		})
+	if err != nil {
 		return err
 	}
 	if filed.Filed > 0 {
@@ -510,6 +514,44 @@ func quoteOccursIn(quote, text string) bool {
 	return strings.Contains(evidenceLikeness(text), quote)
 }
 
+// preparedFact is one fact of an answer on its way to a page: worked out
+// as far as it can be before anything at all is written.
+//
+// It exists so that everything slow happens first. An embedding is an
+// HTTP call to another service, and both the page's meaning and the
+// fact's are needed before either can be filed; made with the writing
+// transaction open they would hold a database connection, and every row
+// that transaction had locked, for as long as the provider took.
+type preparedFact struct {
+	// Text is what the model said, trimmed, and MessageID and Quote what
+	// it cited for it.
+	Text      string
+	Kind      models.AgentFactKind
+	MessageID string
+	Quote     string
+	Happened  *time.Time
+
+	// The page this belongs on, as it would be called, and what that name
+	// means -- which is how a page already there under another name is
+	// found rather than a second one made beside it.
+	PagePath  string
+	PageKind  models.AgentNodeKind
+	PageName  string
+	PageSense *meaning
+
+	// Node is that page once it has been opened.
+	Node *models.AgentNode
+
+	// Fact is the row to write, or nil where the page already said this
+	// and there is nothing to write. Such an item still counts as filed:
+	// the run did its job with it, and it turned out to be nothing new.
+	Fact  *models.AgentFact
+	Sense *meaning
+
+	// Outcome is what the evidence check made of the citation.
+	Outcome evidenceOutcome
+}
+
 // fileWhatWasLearned writes the run's answer onto the graph and says how
 // much it kept.
 //
@@ -517,10 +559,25 @@ func quoteOccursIn(quote, text string) bool {
 // the documents as the reading rendered them -- because a fact may only
 // cite something that was in front of it, and its quote may only be words
 // that were there.
-func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string) (whatWasFiled, error) {
+//
+// Everything a window learned is written in one transaction, and finish
+// is whatever the caller wants done in that same transaction once it has
+// been: for a conversation, the mark saying how far it has been read.
+// That is the point of the shape. Each fact used to be written on its
+// own, a failure logged and stepped over, and the run reported success
+// anyway -- so the caller moved its mark past the whole window and the
+// messages behind it were marked read without ever having been read.
+// Nothing came back for them, because the mark is a promise that
+// everything behind it has been filed. The supersessions ran later still,
+// in transactions of their own, so a replacement that failed left the
+// page with the old line struck and nothing standing in its place.
+//
+// Now a window is all or none: a failure leaves the graph and the mark
+// exactly as they were, and the job is queued again.
+func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
 	tally := whatWasFiled{}
 	if answer == nil {
-		return tally, nil
+		answer = &RememberAnswer{}
 	}
 	agentId := run.Agent.ID
 	// The person's own page, for telling a page about them from one about
@@ -534,6 +591,8 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		return tally, err
 	}
 
+	// What each fact would say, and what its page would be called.
+	prepared := make([]*preparedFact, 0, len(answer.Facts))
 	for index, wanted := range answer.Facts {
 		if index >= rememberFacts {
 			break
@@ -563,29 +622,43 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		if models.IsThePerson(path, run.Owner, selfPage) {
 			path = models.PathSelf
 		}
-		// What the page would be called, and what that name means, worked
-		// out before anything is opened. The search for a page that
-		// already exists compares meanings, and an embedding is an HTTP
-		// call to another service: made inside the transaction that files
-		// the fact it held a database connection, and the rows that
-		// transaction had locked, for as long as the provider took to
-		// answer.
 		pagePath, pageKind, pageName := pageIdentity(path,
 			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
 			strings.TrimSpace(wanted.NodeName))
-		pageSense := self.meaningOf(ctx, agentId, "remember", pageName)
+		prepared = append(prepared, &preparedFact{
+			Text: text, Kind: kind,
+			// The digest marks each item "[id]", and a model that copies
+			// the marker whole is answering as asked.
+			MessageID: strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
+			Quote:     strings.TrimSpace(wanted.Quote),
+			Happened:  whenHappened(run, wanted.Happened),
+			PagePath:  pagePath, PageKind: pageKind, PageName: pageName,
+			PageSense: self.meaningOf(ctx, agentId, "remember", pageName),
+		})
+	}
 
-		var node *models.AgentNode
-		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			tx.AsActor(models.ActorRemember)
+	// The pages, before the facts, because a fact needs one to point at
+	// and because what a page is called is part of what its facts mean.
+	// A page opened for a window that then fails to write is an empty
+	// page, which the nightly pass takes away after two days; a fact
+	// written without the strike that was supposed to replace it is a
+	// page saying two contradictory things, which is what must not
+	// happen.
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		tx.AsActor(models.ActorRemember)
+		for _, ready := range prepared {
 			// The page this belongs on, which is the one already there
 			// under any of its names rather than a second one beside it.
 			// Without this the graph fragments quietly: two half people
 			// called Alice, and answers from whichever is found first.
-			node, err = self.resolvePage(tx, agentId, pagePath, pageKind, pageName, pageSense)
-			if err != nil || node == nil {
-				return err
+			node, err := self.resolvePage(tx, agentId, ready.PagePath, ready.PageKind, ready.PageName, ready.PageSense)
+			if err != nil {
+				return fmt.Errorf("opening the page for %q: %w", ready.Text, err)
 			}
+			if node == nil {
+				continue
+			}
+			ready.Node = node
 			// A page about a person is a person the address book should
 			// know: one list of people, not two.
 			if node.Kind == models.NodePerson && node.ContactID == "" {
@@ -593,57 +666,43 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 					log.Warningf("cannot keep a contact for %q: %s", node.Path, err)
 				}
 			}
-			return nil
-		}); err != nil {
-			log.Warningf("cannot file %q: %s", text, err)
+		}
+		return nil
+	}); err != nil {
+		return tally, err
+	}
+
+	// The rows themselves, with their evidence checked and their meaning
+	// worked out. A line that only says what the page is says nothing:
+	// the page already says it, and a page whose one fact is "X is a
+	// project" reads like something was learned. See vacuous.go for how
+	// much of a real graph this was.
+	for _, ready := range prepared {
+		if ready.Node == nil || !saysSomethingNew(ready.Text, ready.Node, run.Owner) {
 			continue
 		}
-
-		// What the check made of this one, counted only if the row is
-		// written: a fact the page already said was never filed, and a
-		// tally that counted it would overstate how much the model made
-		// up.
-		//
-		// A line that only says what the page is says nothing: the page
-		// already says it, and a page whose one fact is "X is a project"
-		// reads like something was learned. See vacuous.go for how much
-		// of a real graph this was.
-		outcome := evidenceHolds
-		if node != nil && saysSomethingNew(text, node, run.Owner) {
-			fact := &models.AgentFact{
-				AgentID: agentId, NodeID: node.ID, Kind: kind,
-				Text:       cutRunes(text, models.FactLength),
-				HappenedAt: whenHappened(run, wanted.Happened),
-				Confidence: 1,
-				Evidence: []models.Evidence{{
-					Kind: evidenceKind,
-					// The digest marks each item "[id]", and a model that
-					// copies the marker whole is answering as asked.
-					ID:    strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
-					Quote: cutRunes(strings.TrimSpace(wanted.Quote), models.QuoteLength),
-				}},
-				Audiences: []models.AgentAudience{models.AudienceAsk},
-			}
-			outcome = checkTheEvidence(fact, shown)
-			// And what the fact itself means, for the fold into whatever
-			// the page already says -- the second embedding this used to
-			// make with the transaction open.
-			factSense := self.meaningOf(ctx, agentId, "remember", factText(fact, node.Path, node.Name))
-			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-				tx.AsActor(models.ActorRemember)
-				written, err := tx.AddAgentFact(fact)
-				if err != nil {
-					return err
-				}
-				_, err = self.foldIntoWhatThePageSays(tx, written, node, factSense)
-				return err
-			}); err != nil {
-				log.Warningf("cannot file %q: %s", text, err)
-				continue
-			}
+		ready.Fact = &models.AgentFact{
+			AgentID: agentId, NodeID: ready.Node.ID, Kind: ready.Kind,
+			Text:       cutRunes(ready.Text, models.FactLength),
+			HappenedAt: ready.Happened,
+			Confidence: 1,
+			Evidence: []models.Evidence{{
+				Kind:  evidenceKind,
+				ID:    ready.MessageID,
+				Quote: cutRunes(ready.Quote, models.QuoteLength),
+			}},
+			Audiences: []models.AgentAudience{models.AudienceAsk},
 		}
+		ready.Outcome = checkTheEvidence(ready.Fact, shown)
+		ready.Sense = self.meaningOf(ctx, agentId, "remember", factText(ready.Fact, ready.Node.Path, ready.Node.Name))
+	}
+
+	// What the run kept, counted before the write so that the caller's
+	// own work in the transaction -- the run's title, the conversation's
+	// mark -- can say it.
+	for _, ready := range prepared {
 		tally.Filed++
-		switch outcome {
+		switch ready.Outcome {
 		case evidenceQuoteNotFound:
 			tally.WithoutQuote++
 		case evidenceCitesNothing:
@@ -651,61 +710,109 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		}
 	}
 
-	for _, link := range answer.Links {
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		tx.AsActor(models.ActorRemember)
+		for _, ready := range prepared {
+			if ready.Fact == nil {
+				continue
+			}
+			written, err := tx.AddAgentFact(ready.Fact)
+			if err != nil {
+				return fmt.Errorf("filing %q: %w", ready.Text, err)
+			}
+			if _, err := self.foldIntoWhatThePageSays(tx, written, ready.Node, ready.Sense); err != nil {
+				return fmt.Errorf("folding %q into the page: %w", ready.Text, err)
+			}
+		}
+		if err := linkWhatWasLearned(tx, agentId, answer.Links); err != nil {
+			return err
+		}
+		if err := supersedeWhatWasReplaced(tx, agentId, answer.Supersedes); err != nil {
+			return err
+		}
+		if finish == nil {
+			return nil
+		}
+		return finish(tx, tally)
+	}); err != nil {
+		return whatWasFiled{}, err
+	}
+	return tally, nil
+}
+
+// linkWhatWasLearned draws the links an answer asked for. A link whose
+// either end is not a page the agent has is not a failure: the model
+// named something it did not file, and there is nothing to join.
+func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLink) error {
+	for _, link := range links {
 		from := models.NormalizePath(link.From)
 		to := models.NormalizePath(link.To)
 		relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(link.Relation)))
 		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) || isPromptExample(link.Note) {
 			continue
 		}
-		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			fromNode, err := tx.GetAgentNode(agentId, from)
-			if err != nil || fromNode == nil {
-				return err
-			}
-			toNode, err := tx.GetAgentNode(agentId, to)
-			if err != nil || toNode == nil {
-				return err
-			}
-			return tx.PutAgentEdge(&models.AgentEdge{
-				AgentID: agentId, FromID: fromNode.ID, ToID: toNode.ID, Relation: relation,
-				Note: strings.TrimSpace(link.Note),
-			})
+		fromNode, err := tx.GetAgentNode(agentId, from)
+		if err != nil {
+			return fmt.Errorf("reading %q: %w", from, err)
+		}
+		toNode, err := tx.GetAgentNode(agentId, to)
+		if err != nil {
+			return fmt.Errorf("reading %q: %w", to, err)
+		}
+		if fromNode == nil || toNode == nil {
+			continue
+		}
+		if err := tx.PutAgentEdge(&models.AgentEdge{
+			AgentID: agentId, FromID: fromNode.ID, ToID: toNode.ID, Relation: relation,
+			Note: strings.TrimSpace(link.Note),
 		}); err != nil {
-			log.Debugf("cannot link %s to %s: %s", from, to, err)
+			return fmt.Errorf("linking %s to %s: %w", from, to, err)
 		}
 	}
+	return nil
+}
 
-	for _, superseded := range answer.Supersedes {
+// supersedeWhatWasReplaced strikes the facts an answer says it has
+// replaced.
+//
+// In the same transaction as the facts that replace them, because a
+// strike that lands without its replacement is the one shape of this
+// that loses something: the page stops saying the old thing and never
+// starts saying the new one.
+func supersedeWhatWasReplaced(tx db.Transaction, agentId string, supersedes []SupersededFact) error {
+	for _, superseded := range supersedes {
 		path := models.NormalizePath(superseded.Path)
 		if path == "" || superseded.Number <= 0 {
 			continue
 		}
-		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			node, err := tx.GetAgentNode(agentId, path)
-			if err != nil || node == nil {
-				return err
-			}
-			fact, err := tx.GetAgentFact(agentId, node.ID, superseded.Number)
-			if err != nil || fact == nil {
-				return err
-			}
-			// Marked, never deleted: what it said is still readable, and
-			// a page that was rewritten can be read back.
-			//
-			// Struck rather than updated to dormant. An ordinary update
-			// that happens to set dormant files nothing in the page's
-			// history -- that is what the nightly retirement pass wants
-			// -- so a run that took a line off a page this way left no
-			// trace of having done it, and a judgement the person cannot
-			// see is one they cannot undo.
-			_, err = tx.StrikeAgentFact(agentId, fact.ID, "a later conversation replaced it")
-			return err
-		}); err != nil {
-			log.Debugf("cannot supersede %s#%d: %s", path, superseded.Number, err)
+		node, err := tx.GetAgentNode(agentId, path)
+		if err != nil {
+			return fmt.Errorf("reading %q: %w", path, err)
+		}
+		if node == nil {
+			continue
+		}
+		fact, err := tx.GetAgentFact(agentId, node.ID, superseded.Number)
+		if err != nil {
+			return fmt.Errorf("reading %s#%d: %w", path, superseded.Number, err)
+		}
+		if fact == nil {
+			continue
+		}
+		// Marked, never deleted: what it said is still readable, and
+		// a page that was rewritten can be read back.
+		//
+		// Struck rather than updated to dormant. An ordinary update
+		// that happens to set dormant files nothing in the page's
+		// history -- that is what the nightly retirement pass wants
+		// -- so a run that took a line off a page this way left no
+		// trace of having done it, and a judgement the person cannot
+		// see is one they cannot undo.
+		if _, err := tx.StrikeAgentFact(agentId, fact.ID, "a later conversation replaced it"); err != nil {
+			return fmt.Errorf("superseding %s#%d: %w", path, superseded.Number, err)
 		}
 	}
-	return tally, nil
+	return nil
 }
 
 // evidenceOutcome is what the check made of one fact's citation.
@@ -781,6 +888,11 @@ const evidenceInferredConfidence = 0.5
 // behind it -- kept, searchable, out of the page -- so a fold the person
 // disagrees with is there to be undone. What happened is in the page's
 // history either way.
+//
+// What it will not do is guess. Folding with nobody watching is only
+// safe where the two are the same sentence twice; anything that reads
+// alike but says something different is left standing beside its twin,
+// so that the newer is recalled as well as the older. See whatToFold.
 func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transaction, written *models.AgentFact, node *models.AgentNode) (*models.AgentFact, error) {
 	if written == nil || node == nil {
 		return written, nil
@@ -808,25 +920,33 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 	if twin == nil {
 		return written, nil
 	}
-	// "She prefers tea" and "she no longer prefers tea" share every name
-	// and sit on top of each other in the vector space, so neither the
-	// cosine nor the name check can keep them apart -- and they are the
-	// pair it matters most not to lose one of. Both rows stay, and the
-	// newer statement is the one the page states.
-	if negates(written.Text, twin.Text) {
-		if !laterThan(written, twin) {
-			return written, nil
-		}
+	switch whatToFold(written, twin) {
+	case foldKeepBoth:
+		return written, nil
+
+	case foldTheOlderBehindTheNewer:
 		if _, err := tx.FoldAgentFact(written.AgentID, twin.ID, written.ID,
 			"a later statement of the same thing replaced it"); err != nil {
 			return written, err
 		}
 		return written, nil
 	}
+
 	older, err := tx.UpdateAgentFact(written.AgentID, twin.ID, func(older *models.AgentFact) error {
 		older.Evidence = append(older.Evidence, written.Evidence...)
 		if len(older.Evidence) > models.EvidenceCount {
 			older.Evidence = older.Evidence[:models.EvidenceCount]
+		}
+		// The row that survives is the older one, so where the newer
+		// saying of the same words stood on firmer ground the older
+		// takes that with it. Otherwise re-filing a sentence the person
+		// stated, behind a copy the agent had inferred, would leave the
+		// page saying at half confidence something it had been told.
+		if atLeastAsWellEvidenced(written, older) {
+			older.Inferred = written.Inferred
+			if written.Confidence > older.Confidence {
+				older.Confidence = written.Confidence
+			}
 		}
 		return nil
 	})
@@ -838,6 +958,83 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 		return written, err
 	}
 	return older, nil
+}
+
+// foldChoice is what the write boundary does with a new fact and the one
+// already on the page that came back as its twin.
+type foldChoice int
+
+const (
+	// foldKeepBoth leaves both rows on the page, which is the answer
+	// whenever the two are not provably the same statement. It is the
+	// zero value, so a path that does not decide keeps what it has.
+	foldKeepBoth foldChoice = iota
+
+	// foldTheNewerBehindTheOlder is the ordinary fold: the same sentence
+	// filed twice. The older keeps its number, because that is what
+	// anything else cites, and gains the newer's evidence.
+	foldTheNewerBehindTheOlder
+
+	// foldTheOlderBehindTheNewer is a negation: "she prefers tea" and
+	// "she no longer prefers tea". The later statement is what the page
+	// says and the earlier one stays behind it.
+	foldTheOlderBehindTheNewer
+)
+
+// whatToFold decides between a new fact and its twin, and its whole job
+// is to refuse.
+//
+// The twin search is a vector floor and a name check, and it was trusted
+// to mean "these two say the same thing". It does not. "The rent is 4200
+// a month from March" and "the rent is 3100 a month from March" clear
+// both, carry no negation, and before this the newer one went dormant
+// behind the older: the page kept last year's figure, normal recall
+// never carried this year's, and nothing in the conversation said so. A
+// change of amount, date, frequency or who is responsible is exactly the
+// kind of thing a person tells their agent, and exactly the kind the
+// fold was quietly dropping.
+//
+// So an automatic fold now needs the two to be the same sentence written
+// twice -- see saysItInTheSameWords -- where there is provably nothing
+// to lose. A paraphrase is left standing beside its twin; the nightly
+// pass that puts a page to a model (consolidatePage) is where a judgment
+// like that belongs, and until it runs the person hears both rather than
+// only the older.
+func whatToFold(written, twin *models.AgentFact) foldChoice {
+	// "She prefers tea" and "she no longer prefers tea" share every name
+	// and sit on top of each other in the vector space, so neither the
+	// cosine nor the name check can keep them apart -- and they are the
+	// pair it matters most not to lose one of. Both rows stay, and the
+	// newer statement is the one the page states.
+	if negates(written.Text, twin.Text) {
+		if !laterThan(written, twin) {
+			return foldKeepBoth
+		}
+		// And only where the newer one stands on ground at least as firm.
+		// A fact whose quote could not be found in what the run was shown
+		// is marked inferred at half confidence precisely because the
+		// model may have composed it; letting that supersede something
+		// the person said would have the agent's own paraphrase win an
+		// argument with its source, with no one present to object.
+		if !atLeastAsWellEvidenced(written, twin) {
+			return foldKeepBoth
+		}
+		return foldTheOlderBehindTheNewer
+	}
+	if saysItInTheSameWords(written.Text, twin.Text) {
+		return foldTheNewerBehindTheOlder
+	}
+	return foldKeepBoth
+}
+
+// atLeastAsWellEvidenced says whether one fact stands on ground at least
+// as firm as another's: stated where the other is stated, and no less
+// sure of itself.
+func atLeastAsWellEvidenced(fact, than *models.AgentFact) bool {
+	if fact.Inferred && !than.Inferred {
+		return false
+	}
+	return fact.Confidence >= than.Confidence
 }
 
 // laterThan says whether one fact is the later statement of the two: by
@@ -853,8 +1050,12 @@ func laterThan(fact, than *models.AgentFact) bool {
 	return fact.CreatedAt.After(than.CreatedAt)
 }
 
-// twinOf is the fact already on this page that says what a new one says,
-// or nil.
+// twinOf is the fact already on this page that a new one may be a second
+// saying of, or nil.
+//
+// A candidate and not a verdict: whether the two are really one
+// statement is whatToFold's to decide, and this only narrows the page
+// down to what is worth asking about.
 //
 // Written after the fact rather than before it so that the vector is the
 // one the store holds, and so that a deployment with no embedding model
@@ -883,9 +1084,19 @@ func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *model
 	// The page's own name is not evidence either way; see sharesAName.
 	itsOwn := append([]string{node.Name}, node.Aliases...)
 	for _, candidate := range orderFacts(candidates, idsOf(scores)) {
-		if sharesAName(fact.Text, candidate.Text, itsOwn...) {
-			return candidate
+		if !sharesAName(fact.Text, candidate.Text, itsOwn...) {
+			continue
 		}
+		// A line that says a different amount, a different date or a
+		// different how-often is not this one said twice, however near
+		// the two sit: it is the next thing the page has to say, and the
+		// reason the person was talking to their agent at all. Not this
+		// fact's twin, and the search goes on to the next candidate
+		// rather than stopping at it.
+		if differsInQuantity(fact.Text, candidate.Text) {
+			continue
+		}
+		return candidate
 	}
 	return nil
 }

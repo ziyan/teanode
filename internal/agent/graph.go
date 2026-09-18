@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -494,7 +496,14 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	}); err != nil {
 		log.Warningf("cannot search the graph of %q: %s", self.settings.Owner.Username, err)
 	}
-	meaningNodes, meaningFacts := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	// A turn goes on with whatever it has: the words found what they
+	// found, and half a search is better than none in front of somebody
+	// waiting. Rehearsal is the caller that cannot do this; see
+	// canAnswerFromMemory.
+	meaningNodes, meaningFacts, err := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	if err != nil {
+		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
+	}
 
 	return fuseNodes(limit, meaningNodes, wordNodes), fuseFacts(limit, meaningFacts, wordFacts)
 }
@@ -502,7 +511,11 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 // SearchGraphByMeaning is what the memory tool's search adds to its own
 // word search. Part of tools.GraphSearching.
 func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
-	return self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	nodes, facts, err := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	if err != nil {
+		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
+	}
+	return nodes, facts
 }
 
 // recalledBlock is one piece of the overlay: the text the next round
@@ -874,11 +887,22 @@ func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []stri
 	return vectors, modelName, len(vectors) > 0
 }
 
-// nearestInGraph is the pages and facts nearest in meaning to some words.
-func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
+// errNotAskedByMeaning is a search by meaning that did not happen: no
+// embedding model is configured, or the one there is did not answer.
+//
+// It matters that this is not an empty result. Recall can treat the two
+// the same -- a turn with nothing to add carries nothing either way --
+// but rehearsal cannot, because there "the graph was asked and had
+// nothing" is a gap it writes down and "the graph was never asked" is
+// not. Reported as an error so that a caller has to decide which it is.
+var errNotAskedByMeaning = errors.New("the graph could not be asked by meaning")
+
+// nearestInGraph is the pages and facts nearest in meaning to some words,
+// or why it could not look.
+func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, words string, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
 	vectors, modelName, ok := self.embed(ctx, agent.ID, "recall", []string{cutRunes(words, graphEmbedCharacters)})
 	if !ok {
-		return nil, nil
+		return nil, nil, errNotAskedByMeaning
 	}
 	query := vectors[0]
 	var nodes []*models.AgentNode
@@ -905,10 +929,9 @@ func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, word
 		facts = orderFacts(facts, idsOf(factScores))
 		return nil
 	}); err != nil {
-		log.Warningf("cannot rank the graph by meaning: %s", err)
-		return nil, nil
+		return nil, nil, fmt.Errorf("ranking the graph by meaning: %w", err)
 	}
-	return nodes, facts
+	return nodes, facts, nil
 }
 
 func idsOf(scores []db.Scored) []string {
@@ -1116,9 +1139,149 @@ func negates(left, right string) bool {
 
 // negated says whether one sentence carries a negation token.
 func negated(text string) bool {
-	// Punctuation becomes space and the whole is padded, so that a token
-	// written with its spaces reaches the first and last words too: "They
-	// stopped." ends with the word this is looking for.
+	// Punctuation has become space and the whole is padded, so that a
+	// token written with its spaces reaches the first and last words
+	// too: "They stopped." ends with the word this is looking for.
+	words := wordsOf(text)
+	for _, token := range negationTokens {
+		if strings.Contains(words, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// saysItInTheSameWords says whether two sentences are one statement
+// written out twice: the same once case, the width of the whitespace and
+// the punctuation words are written with have been taken off.
+//
+// This, and not the cosine, is what lets a fold happen with nobody
+// watching. Two sentences near each other in the vector space and
+// sharing a name may be the same thing said twice, or they may be this
+// month's figure and last month's; the vectors cannot tell, and the one
+// that goes dormant is the one the person never hears again. So the
+// automatic fold is held to the case where there is provably nothing to
+// lose, and everything else is left for the pass that asks a model (see
+// consolidatePage) or for the person.
+func saysItInTheSameWords(left, right string) bool {
+	return statementLikeness(left) == statementLikeness(right)
+}
+
+// statementLikeness is a sentence reduced to what two writings of it have
+// to share to be the same writing: its words, lowercased, in order,
+// without the punctuation a sentence is written with.
+func statementLikeness(text string) string {
+	words := strings.Fields(evidenceLikeness(text))
+	kept := make([]string, 0, len(words))
+	for _, word := range words {
+		if trimmed := strings.Trim(word, ".,;:!?()[]{}\"'"); trimmed != "" {
+			kept = append(kept, trimmed)
+		}
+	}
+	return strings.Join(kept, " ")
+}
+
+// quantityWords are the words that say how much, how often, or when.
+//
+// Not a vocabulary of English, and English only, the same as the
+// negation tokens beside it. It is the list of ways the sentences a
+// graph actually holds change what they claim without changing any of
+// the names in them.
+var quantityWords = map[string]bool{
+	"hourly": true, "daily": true, "nightly": true, "weekly": true,
+	"fortnightly": true, "monthly": true, "quarterly": true, "yearly": true,
+	"annually": true, "biweekly": true, "monthy": true,
+	"second": true, "seconds": true, "minute": true, "minutes": true,
+	"hour": true, "hours": true, "day": true, "days": true,
+	"week": true, "weeks": true, "fortnight": true, "month": true, "months": true,
+	"quarter": true, "quarters": true, "year": true, "years": true,
+	"decade": true, "decades": true,
+	"once": true, "twice": true, "thrice": true,
+	"half": true, "double": true, "triple": true, "both": true,
+	"one": true, "two": true, "three": true, "four": true, "five": true,
+	"six": true, "seven": true, "eight": true, "nine": true, "ten": true,
+	"eleven": true, "twelve": true, "twenty": true, "thirty": true,
+	"forty": true, "fifty": true, "sixty": true, "seventy": true,
+	"eighty": true, "ninety": true, "hundred": true, "thousand": true,
+	"million": true, "billion": true,
+	"january": true, "february": true, "march": true, "april": true,
+	"may": true, "june": true, "july": true, "august": true,
+	"september": true, "october": true, "november": true, "december": true,
+	"monday": true, "tuesday": true, "wednesday": true, "thursday": true,
+	"friday": true, "saturday": true, "sunday": true,
+	"spring": true, "summer": true, "autumn": true, "winter": true,
+	"morning": true, "afternoon": true, "evening": true,
+	"today": true, "yesterday": true, "tomorrow": true,
+}
+
+// differsInQuantity says whether two sentences disagree about any
+// number, date or quantity word.
+//
+// The pair this exists for is "the rent is 4200 a month from March" and
+// "the rent is 3100 a month from March". They share March, they sit on
+// top of each other in the vector space, one of them is this year's, and
+// neither carries a negation — so before this the newer went dormant
+// behind the older and the agent answered with last year's rent for
+// ever. The same shape catches a date that moved, a frequency that
+// changed, and a term that was extended.
+//
+// Compared as multisets, and it errs towards saying they differ: a false
+// difference costs a page one extra line, and a false sameness costs the
+// person something they told their agent.
+func differsInQuantity(left, right string) bool {
+	leftCounts, rightCounts := quantitiesIn(left), quantitiesIn(right)
+	if len(leftCounts) != len(rightCounts) {
+		return true
+	}
+	for word, count := range leftCounts {
+		if rightCounts[word] != count {
+			return true
+		}
+	}
+	return false
+}
+
+// quantitiesIn is how often a sentence says each number and each word of
+// amount, date or frequency.
+func quantitiesIn(text string) map[string]int {
+	counts := map[string]int{}
+	for _, word := range strings.Fields(wordsOf(text)) {
+		if digits := plainNumber(word); digits != "" {
+			counts[digits]++
+			continue
+		}
+		if quantityWords[word] {
+			counts[word]++
+		}
+	}
+	return counts
+}
+
+// plainNumber is a word that is nothing but digits, with the leading
+// zeros off so that "09" and "9" are one number, or empty for a word
+// that is not one.
+func plainNumber(word string) string {
+	for _, letter := range word {
+		if !unicode.IsDigit(letter) {
+			return ""
+		}
+	}
+	if word == "" {
+		return ""
+	}
+	trimmed := strings.TrimLeft(word, "0")
+	if trimmed == "" {
+		return "0"
+	}
+	return trimmed
+}
+
+// wordsOf is a sentence with everything that is not a letter, a digit or
+// an apostrophe turned into a space, and the whole lowercased. One
+// function because the negation check and the quantity check have to cut
+// a sentence into words the same way or they disagree about what a word
+// is.
+func wordsOf(text string) string {
 	var words strings.Builder
 	words.WriteByte(' ')
 	for _, letter := range strings.ToLower(text) {
@@ -1129,12 +1292,7 @@ func negated(text string) bool {
 		words.WriteByte(' ')
 	}
 	words.WriteByte(' ')
-	for _, token := range negationTokens {
-		if strings.Contains(words.String(), token) {
-			return true
-		}
-	}
-	return false
+	return words.String()
 }
 
 // namesIn is the words of some names, lowercased.
