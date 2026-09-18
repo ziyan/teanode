@@ -586,6 +586,20 @@ the person pressing return and the model being asked anything. The
 night's embedding stage does it, two hundred at a time, with nobody
 waiting.
 
+An expanded page shows the facts the question hit, not the facts that
+happen to be oldest. The store hands a page's facts over by number, which
+was the whole page while a page held a handful; on a page of fifty to
+ninety it meant the five oldest sentences whatever had been asked, and
+the matched sentence was left to the loose-fact loop, which by then had
+neither a block nor a token to spare. So sixty are read and five are
+shown: the ones the search matched first, in the order it ranked them,
+then the rest by number. What is shown is laid out by number all the
+same, so the block still reads as a page and its `#n` references climb.
+A fact keeps its vector when it is struck, folded away or superseded, so
+that what a page used to say can still be found; recall is the side that
+leaves those out, since a sentence the page has taken back is not one to
+put back in its mouth.
+
 What counts as used is what was carried. A page's block is built,
 measured against the budget, and only then written and its facts marked —
 the other way round, a page that turned out not to fit still moved

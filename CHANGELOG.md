@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-09-18
+
+### Fixed
+
+- Your agent can answer questions about a busy page again. When it recalled a page with many things written on it, it showed the five oldest, whatever you had asked about, so it would pull up the right project and then not know the one detail you wanted. It now shows the sentences that match your question, and a long one no longer crowds out the better answers behind it. (#119)
+- Something your agent has been told is wrong, or has replaced with a newer statement, is no longer quoted back to you as though the page still said it. (#119)
+
 ## [0.35.0] - 2026-09-18
 
 ### Added
