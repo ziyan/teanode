@@ -41,6 +41,7 @@ const (
 // near in meaning. A person and the project they run are talked about in
 // the same words and are not each other, and merging them is the one
 // mistake here that cannot be undone by hand.
+//
 // The meaning of the name is handed in rather than worked out here: it
 // is an HTTP call to another service, and this runs inside the
 // transaction that writes the fact.
@@ -98,7 +99,16 @@ func (self *Agent) findExistingPage(tx db.Transaction, agentId, path string, kin
 		// A page that means the same and is called something else gains
 		// the other name as an alias, so the next writer's spelling
 		// lands on it by name rather than by another embedding call.
-		if !strings.EqualFold(strings.TrimSpace(candidate.Name), name) && !hasAlias(candidate, name) {
+		//
+		// Up to the bound and no further. A page may answer to
+		// models.AliasCount names and PutAgentNode refuses one that
+		// answers to more, so appending past it did not add a name: it
+		// made every write of that page fail validation, from here and
+		// from everywhere else, leaving the page unwritable for good. The
+		// match still stands -- it is the page, it is simply not learning
+		// another name for itself.
+		if !strings.EqualFold(strings.TrimSpace(candidate.Name), name) && !hasAlias(candidate, name) &&
+			len(candidate.Aliases) < models.AliasCount {
 			candidate.Aliases = append(candidate.Aliases, name)
 			if _, err := tx.PutAgentNode(candidate); err != nil {
 				return nil, err
