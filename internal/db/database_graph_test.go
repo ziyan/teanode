@@ -629,3 +629,74 @@ func TestGraphAFoldAndAStrikingKeepTheRow(t *testing.T) {
 		}
 	})
 }
+
+// Moving a page moves what is under it, and search has to follow.
+//
+// A path is one word to this index, deliberately, so that "notes/kittiwake"
+// finds the page and nothing else. The move rewrote the path of every row
+// in the subtree but rebuilt the search column of only the one page that
+// was named, so everything under it went on being findable by where it
+// used to be and was findable by where it is through nothing at all: the
+// pages were there, the parent had moved, and searching the path a person
+// could see in front of them returned nothing.
+func TestGraphMovingAPageReindexesWhatIsUnderIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agentId, nestlingId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agentId = graphAgent(t, tx).ID
+		if _, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: agentId, Path: "burrow/kittiwake", Kind: models.NodeTopic, Name: "Kittiwake",
+		}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		nestling, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: agentId, Path: "burrow/kittiwake/nestling", Kind: models.NodeTopic, Name: "Nestling",
+		})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		nestlingId = nestling.ID
+
+		// Before the move it is found where it is, which is what makes
+		// the assertions after the move mean something.
+		if !graphSearchFinds(t, tx, agentId, "burrow/kittiwake/nestling", nestlingId) {
+			t.Fatalf("a page is found by its own path")
+		}
+	})
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.MoveAgentNode(agentId, "burrow/kittiwake", "warren"); err != nil {
+			t.Fatalf("MoveAgentNode: %s", err)
+		}
+	})
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		moved, err := tx.GetAgentNode(agentId, "warren/kittiwake/nestling")
+		if err != nil || moved == nil || moved.ID != nestlingId {
+			t.Fatalf("the page under the moved one has the new path: %v %s", moved, err)
+		}
+		if !graphSearchFinds(t, tx, agentId, "warren/kittiwake/nestling", nestlingId) {
+			t.Errorf("and is found by it")
+		}
+		if graphSearchFinds(t, tx, agentId, "burrow/kittiwake/nestling", nestlingId) {
+			t.Errorf("and is no longer found by the path it left")
+		}
+	})
+}
+
+// graphSearchFinds says whether searching for some words returns a page.
+func graphSearchFinds(t *testing.T, tx db.Transaction, agentId, query, nodeId string) bool {
+	t.Helper()
+	nodes, _, err := tx.SearchAgentGraph(agentId, query, 20)
+	if err != nil {
+		t.Fatalf("SearchAgentGraph(%q): %s", query, err)
+	}
+	for _, node := range nodes {
+		if node.ID == nodeId {
+			return true
+		}
+	}
+	return false
+}

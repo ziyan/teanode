@@ -597,8 +597,29 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 // indexNode writes the page's full-text column. Written on the way in
 // rather than by a trigger, which is how mail does it.
 func (self *transaction) indexNode(node *models.AgentNode) error {
-	text := node.Path + " " + node.Name + " " + strings.Join(node.Aliases, " ") + " " + node.Summary
-	return self.tx.Exec(`UPDATE "agent_node" SET "search" = to_tsvector('simple', ?) WHERE "id" = ?`, text, node.ID).Error
+	return self.indexNodesWhere(`"id" = ?`, node.ID)
+}
+
+// indexNodesUnder rewrites the column for a page and everything filed
+// under it, which is what a move needs: moving a page rewrites the path
+// of every row beneath it, and the path is part of what the column is
+// built from, so a descendant left alone goes on being found by where it
+// used to be and never by where it is.
+func (self *transaction) indexNodesUnder(agentId, path string) error {
+	return self.indexNodesWhere(`"agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`,
+		agentId, path, likeEscaped(path)+"/%")
+}
+
+// indexNodesWhere is the one definition of what a page is searchable by.
+// It builds the text from the stored row rather than from a struct, so
+// that a whole subtree is one statement rather than a statement each, and
+// so that a caller holding a stale copy cannot index words the page does
+// not have.
+func (self *transaction) indexNodesWhere(where string, arguments ...any) error {
+	return self.tx.Exec(`UPDATE "agent_node" SET "search" = to_tsvector('simple',
+		"path" || ' ' || "name" || ' ' ||
+		COALESCE((SELECT string_agg("alias", ' ') FROM jsonb_array_elements_text("aliases") AS "alias"), '') ||
+		' ' || "summary") WHERE `+where, arguments...).Error
 }
 
 func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*models.AgentNode, error) {
@@ -656,7 +677,7 @@ func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*mo
 	if err != nil || moved == nil {
 		return nil, err
 	}
-	if err := self.indexNode(moved); err != nil {
+	if err := self.indexNodesUnder(agentId, target); err != nil {
 		return nil, err
 	}
 	self.note(agentId, moved.ID, models.RevisionMoved,
