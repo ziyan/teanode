@@ -56,17 +56,19 @@ func newAgentConversationCommand() *cli.Command {
 		Usage: "your conversations with the agent",
 		Commands: []*cli.Command{
 			{
-				Name:   "list",
-				Usage:  "the main conversation and the named ones",
-				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "query", Usage: "find conversations by words in the title or in what was said"}},
+				Name:  "list",
+				Usage: "the main conversation and the named ones",
+				Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "query", Usage: "find conversations by words in the title or in what was said"},
+					&cli.BoolFlag{Name: "archived", Usage: "the archived ones instead of the open ones"}},
 				Action: runAgentConversationList,
 			},
 			{
 				Name:      "show",
 				Usage:     "the newest messages of a conversation",
 				ArgsUsage: "[conversation-id]",
-				Flags:     []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 40}},
-				Action:    runAgentConversationShow,
+				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 40},
+					&cli.IntFlag{Name: "offset", Usage: "how many of the newest to skip, for the page before"}},
+				Action: runAgentConversationShow,
 			},
 			{
 				Name:      "new",
@@ -97,6 +99,20 @@ func newAgentConversationCommand() *cli.Command {
 				Action:    runAgentConversationMain,
 			},
 			{
+				Name:      "archive",
+				Usage:     "put a conversation away: it keeps everything in it and leaves the list",
+				ArgsUsage: "<conversation-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentConversationArchive,
+			},
+			{
+				Name:      "unarchive",
+				Usage:     "bring an archived conversation back into the list",
+				ArgsUsage: "<conversation-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentConversationUnarchive,
+			},
+			{
 				Name:      "delete",
 				Usage:     "delete a conversation and everything in it; asks first",
 				ArgsUsage: "<conversation-id>",
@@ -117,7 +133,9 @@ func newAgentRunCommand() *cli.Command {
 				Usage: "recent runs, newest first",
 				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}, &cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
 					&cli.BoolFlag{Name: "all", Usage: "every person's runs, for an operator with agent:act"},
-					&cli.StringFlag{Name: "agent", Usage: "one person's runs by their agent id, for an operator with agent:act"}},
+					&cli.StringFlag{Name: "agent", Usage: "one person's runs by their agent id, for an operator with agent:act"},
+					&cli.StringSliceFlag{Name: "kind", Usage: "one kind of run, such as triage, reply, dream or schedule; repeatable, or comma-separated"},
+					&cli.StringFlag{Name: "query", Usage: "find runs by words in what they were about"}},
 				Action: runAgentRunList,
 			},
 			{
@@ -126,6 +144,12 @@ func newAgentRunCommand() *cli.Command {
 				ArgsUsage: "<run-id>",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentRunShow,
+			},
+			{
+				Name:      "stop",
+				Usage:     "stop a run where it is; what it has already done stands",
+				ArgsUsage: "<run-id>",
+				Action:    runAgentRunStop,
 			},
 		},
 	}
@@ -330,7 +354,7 @@ func runAgentConversationList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversations, err := client.SearchAgentConversations(ctx, connection, false, command.String("query"))
+	conversations, err := client.SearchAgentConversations(ctx, connection, command.Bool("archived"), command.String("query"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -353,7 +377,7 @@ func runAgentConversationShow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	view, err := client.ReadAgentConversation(ctx, connection, command.Args().First(), int(command.Int("first")), 0)
+	view, err := client.ReadAgentConversation(ctx, connection, command.Args().First(), int(command.Int("first")), int(command.Int("offset")))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -397,6 +421,20 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 			_, _ = fmt.Fprintf(command.Writer, "[%s] (the earlier conversation was compacted)\n", when)
 		default:
 			_, _ = fmt.Fprintf(command.Writer, "[%s] %s: %s\n", when, message.Role, message.Content)
+		}
+	}
+	// The task list under the transcript, where the drawer shows it: the
+	// agent's own plan for a long piece of work, and the thing a person
+	// wants to see when they ask how far it has got.
+	if len(view.Todos) > 0 {
+		_, _ = fmt.Fprintln(command.Writer)
+		_, _ = fmt.Fprintln(command.Writer, "the task list:")
+		for _, todo := range view.Todos {
+			mark := "☐"
+			if todo.DoneAt != nil {
+				mark = "☑"
+			}
+			_, _ = fmt.Fprintf(command.Writer, "  %s %s\n", mark, todo.Text)
 		}
 	}
 	return nil
@@ -504,6 +542,41 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 	return nil
 }
 
+func runAgentConversationArchive(ctx context.Context, command *cli.Command) error {
+	return setAgentConversationArchived(ctx, command, true)
+}
+
+func runAgentConversationUnarchive(ctx context.Context, command *cli.Command) error {
+	return setAgentConversationArchived(ctx, command, false)
+}
+
+// setAgentConversationArchived puts a conversation away or brings it back.
+// Nothing is thrown away either way, so neither asks first; the main
+// conversation is never archived, and the server says so.
+func setAgentConversationArchived(ctx context.Context, command *cli.Command, archived bool) error {
+	conversationId := command.Args().First()
+	if conversationId == "" {
+		return fmt.Errorf("which conversation? give its id")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", &archived, nil)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(conversation)
+	}
+	if archived {
+		_, _ = fmt.Fprintf(command.Writer, "%s: archived\n", conversation.ID)
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: back in the list\n", conversation.ID)
+	return nil
+}
+
 func runAgentConversationMain(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
@@ -547,12 +620,13 @@ func runAgentRunList(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	first, offset := int(command.Int("first")), int(command.Int("offset"))
+	filter := &client.AgentRunFilter{Kinds: flagList(command, "kind"), Query: command.String("query")}
 	var runs []*client.AgentRunSummary
 	var total int64
 	if command.Bool("all") || command.String("agent") != "" {
-		runs, total, err = client.ListAllAgentRuns(ctx, connection, first, offset, command.String("agent"))
+		runs, total, err = client.SearchAllAgentRuns(ctx, connection, first, offset, command.String("agent"), filter)
 	} else {
-		runs, total, err = client.ListAgentRuns(ctx, connection, first, offset, "")
+		runs, total, err = client.SearchAgentRuns(ctx, connection, first, offset, filter)
 	}
 	if err != nil {
 		return describeError(command, err)
@@ -591,6 +665,26 @@ func runAgentRunShow(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(view)
 	}
 	return printTranscript(command, view)
+}
+
+// runAgentRunStop stops a turn under way. It asks nothing first: a run
+// that is stopped keeps what it has already done, and the thing a person
+// reaches for this command for is a run that is off doing something they
+// no longer want.
+func runAgentRunStop(ctx context.Context, command *cli.Command) error {
+	runId := command.Args().First()
+	if runId == "" {
+		return fmt.Errorf("which run? give its id, as `teanode agent run list` shows it")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.StopAgentRun(ctx, connection, runId); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: stopping\n", runId)
+	return nil
 }
 
 func runAgentTools(ctx context.Context, command *cli.Command) error {

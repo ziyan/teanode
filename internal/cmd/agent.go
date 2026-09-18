@@ -496,6 +496,18 @@ func commaList(value string) []string {
 	return items
 }
 
+// flagList reads a repeatable flag whose values may themselves be
+// comma-separated, so that --kind triage --kind reply and --kind
+// triage,reply mean the same thing: a person types the second, a script
+// that builds its arguments one at a time writes the first.
+func flagList(command *cli.Command, name string) []string {
+	var items []string
+	for _, value := range command.StringSlice(name) {
+		items = append(items, commaList(value)...)
+	}
+	return items
+}
+
 func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if command.Bool("json") {
 		return PrintJSON(view)

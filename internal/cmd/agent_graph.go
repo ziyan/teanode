@@ -69,6 +69,7 @@ func newAgentGraphCommands() []*cli.Command {
 				JSONFlag(),
 				&cli.StringFlag{Name: "kind", Usage: "person, project, organization, place, thing, topic, folder or period"},
 				&cli.StringFlag{Name: "name", Usage: "what it is called"},
+				&cli.StringSliceFlag{Name: "alias", Usage: "another name the page is known by, so that words find it; repeatable, and what you give replaces the aliases that are there"},
 				&cli.BoolFlag{Name: "pin", Usage: "always in the agent's prompt"},
 				&cli.BoolFlag{Name: "unpin", Usage: "not always in the prompt"},
 			},
@@ -517,6 +518,13 @@ func runAgentGraphPage(ctx context.Context, command *cli.Command) error {
 	}
 	if name := command.String("name"); name != "" {
 		fields["name"] = name
+	}
+	// Aliases are sent only when the flag was given: the server replaces
+	// them with whatever arrives and leaves them alone when nothing does,
+	// so sending an empty list on every write would drop the names a
+	// merge folded into the page.
+	if command.IsSet("alias") {
+		fields["aliases"] = command.StringSlice("alias")
 	}
 	if command.Bool("pin") {
 		fields["pinned"] = true

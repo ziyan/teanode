@@ -268,3 +268,21 @@ func flagNamed(command *cli.Command, name string) cli.Flag {
 	}
 	return nil
 }
+
+// A page's aliases are the other names words may find it by, and a merge
+// folds the page it swallowed into one. They could be read from here but
+// not written, so a name the agent had wrong stayed wrong.
+func TestAPageTakesItsAliases(test *testing.T) {
+	test.Parallel()
+
+	page := commandNamed(test, commandNamed(test, NewAgentCommand(), "memory"), "page")
+	alias := flagNamed(page, "alias")
+	if alias == nil {
+		test.Fatal("memory page takes --alias")
+	}
+	// Repeatable, because the names a page goes by are a list and a
+	// person gives them one at a time.
+	if _, repeatable := alias.(*cli.StringSliceFlag); !repeatable {
+		test.Errorf("--alias is a list flag, so that it can be given more than once")
+	}
+}
