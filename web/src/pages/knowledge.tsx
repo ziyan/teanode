@@ -234,11 +234,9 @@ export function KnowledgePage() {
   // How many columns there is room for, measured on the page itself
   // rather than the window: the sidebar takes a third of a laptop, and a
   // window that fits two columns with it closed does not with it open.
-  const frameRef = useRef<HTMLDivElement | null>(null)
-  const onePaneBefore = useRef<boolean | null>(null)
-  const width = useContainerWidth(frameRef, onePaneBefore.current)
+  const [frameElement, setFrameElement] = useState<HTMLDivElement | null>(null)
+  const width = useContainerWidth(frameElement)
   const onePane = (width === null ? (desktop ? 2 : 1) : width >= 760 ? 2 : 1) === 1
-  onePaneBefore.current = onePane
   const [filter, setFilter] = useState('')
   const search = filter.trim()
   // The page the navigator is showing the inside of, when the URL alone
@@ -417,7 +415,7 @@ export function KnowledgePage() {
     // One column at a time. Which one is in the URL, so Back is Back,
     // and the breadcrumb on the bar is the way up out of the navigator.
     return (
-      <div ref={frameRef} className="knowledge-phone">
+      <div ref={setFrameElement} className="knowledge-phone">
         {showingDetail ? detail : lookup}
         {showingDetail ? null : <div className="card knowledge-list">{list}</div>}
       </div>
@@ -425,7 +423,7 @@ export function KnowledgePage() {
   }
 
   return (
-    <div ref={frameRef} className="knowledge-columns">
+    <div ref={setFrameElement} className="knowledge-columns">
       <div className="knowledge-column knowledge-column-navigator">
         {lookup}
         <div className="card knowledge-list">{list}</div>
@@ -438,15 +436,14 @@ export function KnowledgePage() {
 // useContainerWidth is how wide an element is, kept up to date as it
 // changes, and null before it has been measured.
 //
-// Watched again whenever the layout the element belongs to changes: the
-// one-pane and two-column layouts are different elements under the same
-// ref, and an observer left on the old one stopped reporting the moment
-// the page switched, so a window widened after that never went back to
-// two columns.
-function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>, layout: unknown): number | null {
+// The element is state rather than a ref: the one-pane and two-column
+// layouts are different elements, and an observer left on the first
+// stopped reporting the moment the page switched, so a window widened
+// after that never went back to two columns. A callback ref sets the
+// state, and the observer follows whichever element is there.
+function useContainerWidth(element: HTMLDivElement | null): number | null {
   const [width, setWidth] = useState<number | null>(null)
   useEffect(() => {
-    const element = ref.current
     if (!element) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) setWidth(entry.contentRect.width)
@@ -454,7 +451,7 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>, layout: 
     observer.observe(element)
     setWidth(element.getBoundingClientRect().width)
     return () => observer.disconnect()
-  }, [ref, layout])
+  }, [element])
   return width
 }
 
