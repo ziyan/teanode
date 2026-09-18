@@ -140,7 +140,7 @@ func (self *Budget) NearlySpent() string {
 func CheckBudget(tx db.Transaction, configuration *config.Configuration, agent *models.Agent, owner *models.User, now time.Time) (*Budget, error) {
 	location := Location(owner)
 	local := now.In(location)
-	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
+	dayStart := DayStart(owner, now)
 	budget := &Budget{
 		Limit:           configuration.Agent.Limits.DailyTokensPerAgent,
 		ResetsAt:        dayStart.Add(24 * time.Hour),
@@ -205,6 +205,35 @@ func serverSpend(tx db.Transaction, configuration *config.Configuration, monthSt
 	}
 	serverMonth.at, serverMonth.from, serverMonth.tokens, serverMonth.cost = time.Now(), monthStart, tokens, cost
 	return tokens, cost, nil
+}
+
+// DayStart is midnight in the person's own zone, which is when the panel
+// says their budget resets and so when every share of a day turns over.
+func DayStart(owner *models.User, now time.Time) time.Time {
+	location := Location(owner)
+	local := now.In(location)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
+}
+
+// SumSpendOfKind is what one kind of run has spent since a time, in
+// tokens.
+//
+// SumSpend prices everything an agent did, by model, because a budget
+// has to say what it cost. This answers the narrower question a run asks
+// about its own share -- how much of today has already gone on this kind
+// of work -- and the usage rows carry the kind, so it is the same one
+// grouped query with a different key.
+func SumSpendOfKind(tx db.Transaction, agentId, kind string, since time.Time) (int64, error) {
+	rows, err := tx.QueryAgentUsage(agentId, since, time.Time{}, "kind")
+	if err != nil {
+		return 0, err
+	}
+	for _, row := range rows {
+		if row.Key == kind {
+			return row.Totals.Total(), nil
+		}
+	}
+	return 0, nil
 }
 
 // SumSpend is what a period came to, in tokens and in money. Usage is

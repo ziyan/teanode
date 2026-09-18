@@ -72,6 +72,15 @@ night guessed from a walk across the graph. A proposed edge reads as
 is drawn dashed in the explorers. Nothing promotes it on its own: making
 the same link yourself states it, and unlinking drops it.
 
+The guesses made before the distinction existed were not lost with it.
+Migration 0088 finds them from what a walk leaves behind — its own
+evidence, a `linked` revision in the page's history whose actor is the
+dream, and the `linked` proposal the night wrote on its own row — and
+marks those proposed. A link any other actor also made stays stated, and
+so does one none of the three recognizes: a guess left stated reads as it
+always did, while a stated link called a guess drops out of the index and
+starts hedging, which is the expensive way to be wrong.
+
 Which commits are **yours** is decided by matching the commit author
 against the addresses on the card you marked as yourself, so that card is
 what makes a career timeline possible at all. A source that finds commits
@@ -197,7 +206,13 @@ untouched link at the floor.
 A dream is one run of the agent over its own graph, and not only at
 night: it runs when the person has been quiet for half an hour, inside
 the hours they set for it, at most once every six hours. It has its own share of
-the day's tokens (30% by default), and nothing it learned is deleted: a
+the day's tokens (30% by default) — the day's share and not each night's, so
+what today's earlier nights spent comes off it, read back from the usage rows,
+and four nights in a day cannot spend four shares between them. A call claims
+an estimate against the allowance before it is made and corrects it with what
+it really cost afterwards, because the reading runs several batches at once and
+a check with nothing claimed answers all of them the same. Nothing it
+learned is deleted: a
 fact it decides against goes dormant, behind the one that replaced it
 where there is one, and a page it retires leaves the index and stays. The
 only thing it removes is a page that never said anything at all.
@@ -475,6 +490,15 @@ one ranked list out. Decay multiplies the score, so a stale fact sinks
 without disappearing. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
+
+The question is embedded once for the turn and the vector is kept by the
+words it came from, so the graph and the documents rank against the same
+call and a tool that searches for the same thing later in the turn pays
+nothing. Nothing is backfilled here either: giving twenty vectorless rows
+their vectors, for rows this turn was not going to read, stood between
+the person pressing return and the model being asked anything. The
+night's embedding stage does it, two hundred at a time, with nobody
+waiting.
 
 What counts as used is what was carried. A page's block is built,
 measured against the budget, and only then written and its facts marked —
