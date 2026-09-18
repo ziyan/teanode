@@ -32,9 +32,9 @@ was indexed from anywhere but the agent's own tool, is the last milestone.
 
 ## Progress
 
-- [ ] Milestone 1: the command line (gaps 3, 8, 10, 11, 14, N2, N3)
-- [ ] Milestone 2: the agent's tools (gaps 5, 6, 12, N4)
-- [ ] Milestone 3: the dashboard (gaps 2, 4, 5, 7, 13, N3, and the archived list of 3)
+- [x] Milestone 1: the command line (gaps 3, 8, 10, 11, 14, N2, N3) — PR #107
+- [x] Milestone 2: the agent's tools (gaps 5, 6, 12, N4) — PR #108
+- [x] Milestone 3: the dashboard (gaps 2, 4, 5, 7, 13, N3, and the archived list of 3) — PRs #109 and #110, checked in Chrome on root@server
 - [ ] Milestone 4: a source can be edited, and a question's recall shown (N1, 9)
 - [ ] Milestone 5: what was indexed can be searched and read from the API, the command line and the dashboard (1)
 - [ ] Milestone 6: todos can be changed by the person (8, N5)
@@ -93,6 +93,15 @@ the implementation copies them.
 - The audit that first found these gaps was written on 2026-09-17 in a
   session whose record was compacted away; only the gap names survived, and
   the list above was re-derived from the code on 2026-09-18.
+- The API's `SaveAgentFact` and the memory tool's edit both read a missing
+  kind as "fact" and a missing date as "now". On the API that is what every
+  caller sends; in the tool a correction is nearly always to the words
+  alone, so the tool keeps both unless the call gives new ones.
+- `npm run lint` fails before reading a file: eslint 10 refuses the old
+  `.eslintrc.json`. CI never runs it (the Dashboard job is install and
+  typecheck), so nothing noticed. Migrating the config is its own change.
+- The CI lint refuses `/home/<name>/…` in tests and the local one does not;
+  the tool batch failed once on it.
 
 ## Decision Log
 
