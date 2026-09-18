@@ -6,6 +6,8 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-18
+
 ### Added
 
 - Your agent keeps what it knows as pages rather than as a list. A page is a
