@@ -54,13 +54,16 @@ itself what to read.
       them as documents with their bytes in object storage — PR #122
 - [x] Milestone 2: a document's bytes can be fetched back from storage, and a
       document nobody can read yet says so on the source's page — PR #122
-- [ ] Milestone 3: the night decides whether an attachment is worth reading,
-      from what it knows for free
-- [ ] Milestone 4: the night reads a picture with a vision model and files what
-      it saw
-- [ ] Milestone 5: local preparation — the records script extracts what it can
-      without a model, and says what it could not
-- [ ] Milestone 6: the dashboard shows an attachment on the page it belongs to
+- [x] Milestone 3: the night decides whether an attachment is worth reading,
+      from what it knows for free — PR #123
+- [x] Milestone 4: the night reads a picture with a vision model and files what
+      it saw — PR #123
+- [x] Milestone 5: local preparation — a record may give a file's text, and the
+      daemon reads what it can here — PR #125
+- [x] Milestone 6: the dashboard shows an attachment on the page it belongs to
+      — PR #126
+- [ ] Milestone 7: a file reaches the conversation — the agent can look at one
+      again, and a person can see the one an answer rests on
 
 ## What exists today, and where
 
@@ -302,6 +305,33 @@ many were read, and how many the agent declined and why.
 Follow `docs/coding/frontend-design.md`, keep every string in the three
 catalogues, and check it in Chrome at both a desktop width and a phone width
 before opening the pull request.
+
+## Milestone 7: a file reaches the conversation
+
+The first six milestones put a picture in the graph and on the Knowledge page.
+They leave it out of the one place a person spends their time: the
+conversation. Two things are missing, and they are worth naming apart because
+they fail for different reasons.
+
+The agent cannot look at a picture again. Recall carries text into a turn, so a
+fact read out of a screenshot arrives as the sentence the night wrote about it.
+That answers "what did that error say" and nothing the night did not happen to
+write down. The plumbing for the fix already exists: Milestone 4 gave a turn a
+way to carry pictures, for the night's own use. A `look` on the memory tool,
+given a fact or a file, would fetch the bytes and put them in the turn the same
+way, and the agent could answer from the picture rather than from a description
+of it. It costs what a night's look costs, and it is the person asking, which
+is the right moment to spend.
+
+A person cannot see the picture an answer rests on. An assistant's line in the
+drawer carries text and nothing else; only a person's own message may carry a
+file. The fix that fits this codebase is not to teach the model to attach
+things. The agent already cites what it used, as `work/mcx#3`, and has done
+since the graph was built. The drawer should read those citations and, where
+the fact behind one was read from a file that is still kept, show it: a
+thumbnail under the message, the file's name where it is not a picture. Nothing
+the model does has to change, it works for every citation already written, and
+a person sees the evidence rather than being asked to take it on trust.
 
 ## Surprises & Discoveries
 
