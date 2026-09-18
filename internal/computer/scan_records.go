@@ -96,10 +96,19 @@ const (
 // machine, relative to the records folder unless it is absolute; Name is
 // what to call it; ContentType is optional and guessed from the name
 // when a script did not say.
+//
+// Text is what the file says, where the script already knows: a
+// transcript it had beside a recording, a page it converted on the way
+// past, a sheet it printed as comma-separated text. A file that arrives
+// with text is a document like any other -- chunked, embedded, searched
+// the same night -- and never waits for a night to open it with a model.
+// Its bytes are fetched all the same, because the original is what
+// somebody asks for later.
 type recordAttachment struct {
 	Path        string `json:"path"`
 	Name        string `json:"name"`
 	ContentType string `json:"contentType,omitempty"`
+	Text        string `json:"text,omitempty"`
 }
 
 // record is one line of a records file.
@@ -117,10 +126,12 @@ type record struct {
 	Thread     string         `json:"thread"`
 	Metadata   map[string]any `json:"metadata"`
 
-	// Attachments are the files this record came with. They are not
-	// read here -- nothing in this program can read a picture -- but
-	// they are hashed, measured and named, and their bytes are fetched
-	// afterwards with the blob action.
+	// Attachments are the files this record came with. A picture is not
+	// read here -- nothing in this program can read one -- but it is
+	// hashed, measured and named, and its bytes are fetched afterwards
+	// with the blob action. A PDF, an office document or a file that is
+	// simply text is read here, by whatever the record said or whatever
+	// extractor is already installed.
 	Attachments []recordAttachment `json:"attachments,omitempty"`
 }
 
@@ -144,7 +155,7 @@ type recordsFolder struct {
 // The cursor is a file, meaning the page begins with it, or a file and
 // the last entry sent -- "pages.jsonl" or "pages.jsonl#page:12" -- when a
 // page stopped inside one.
-func scanRecords(options *Options, root string, arguments *ScanArguments, most int) (*ScanResult, error) {
+func scanRecords(ctx context.Context, options *Options, root string, arguments *ScanArguments, most int) (*ScanResult, error) {
 	folder := &recordsFolder{
 		options: options, root: root,
 		maxAttachmentBytes: maxAttachmentBytes(arguments.MaxAttachmentBytes),
@@ -238,7 +249,7 @@ func scanRecords(options *Options, root string, arguments *ScanArguments, most i
 			result.Next = relative
 			break
 		}
-		entries, err := recordEntries(folder, relative, !onDisk[relative])
+		entries, err := recordEntries(ctx, folder, relative, !onDisk[relative])
 		if err != nil {
 			// A file this program cannot read is reported as one entry
 			// saying so, rather than silently missing from the folder
@@ -286,13 +297,13 @@ func scanRecords(options *Options, root string, arguments *ScanArguments, most i
 }
 
 // readRecordsFile turns one file into the entries the server files.
-func readRecordsFile(folder *recordsFolder, relative string) ([]ScanEntry, error) {
+func readRecordsFile(ctx context.Context, folder *recordsFolder, relative string) ([]ScanEntry, error) {
 	file, err := os.Open(filepath.Join(folder.root, filepath.FromSlash(relative)))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
-	return readRecords(folder, relative, file)
+	return readRecords(ctx, folder, relative, file)
 }
 
 // readRecords is the parser itself, over anything that reads: a file on
@@ -305,7 +316,7 @@ func readRecordsFile(folder *recordsFolder, relative string) ([]ScanEntry, error
 // documents and re-embeds every one. Everything that decides identity --
 // the external id, the hash, the chat grouping, the order -- is below
 // this line and sees only lines.
-func readRecords(folder *recordsFolder, relative string, source io.Reader) ([]ScanEntry, error) {
+func readRecords(ctx context.Context, folder *recordsFolder, relative string, source io.Reader) ([]ScanEntry, error) {
 	var entries []ScanEntry
 	// A file named twice is a file once. The identity of an attachment
 	// is the hash of its bytes, which is what makes the same screenshot
@@ -353,7 +364,7 @@ func readRecords(folder *recordsFolder, relative string, source io.Reader) ([]Sc
 		// filed by exactly the same rule. The entry the record itself
 		// produces is made below, or by the grouping at the end for a
 		// chat post; these ride beside it.
-		entries = append(entries, folder.attachmentsOf(relative, &one, attached)...)
+		entries = append(entries, folder.attachmentsOf(ctx, relative, &one, attached)...)
 		if strings.EqualFold(strings.TrimSpace(one.Kind), "chat") {
 			if _, seen := posts[one.Channel]; !seen {
 				channels = append(channels, one.Channel)
@@ -505,7 +516,7 @@ func recordTime(value string) *time.Time {
 // folder holding one large file would be read once per page of it.
 // fromScript says the name is one the folder's records script listed
 // rather than a file on disk, and is read by running the script again.
-func recordEntries(folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
+func recordEntries(ctx context.Context, folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
 	// A file is held against its modification time and its size, so a
 	// script rewriting the folder mid-pass is noticed. What the records
 	// script prints has neither: nothing on disk moves when the archive
@@ -530,7 +541,7 @@ func recordEntries(folder *recordsFolder, relative string, fromScript bool) ([]S
 		recordsCache.maxAttachmentBytes == folder.maxAttachmentBytes {
 		return recordsCache.entries, nil
 	}
-	entries, err := readRecordsAnywhere(folder, relative, fromScript)
+	entries, err := readRecordsAnywhere(ctx, folder, relative, fromScript)
 	if err != nil {
 		return nil, err
 	}
@@ -541,11 +552,11 @@ func recordEntries(folder *recordsFolder, relative string, fromScript bool) ([]S
 }
 
 // readRecordsAnywhere is the one file, wherever it is kept.
-func readRecordsAnywhere(folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
+func readRecordsAnywhere(ctx context.Context, folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
 	if fromScript {
-		return readRecordsScript(folder, relative)
+		return readRecordsScript(ctx, folder, relative)
 	}
-	return readRecordsFile(folder, relative)
+	return readRecordsFile(ctx, folder, relative)
 }
 
 // forgetRecords drops the one-file cache, which a new pass does because
@@ -686,7 +697,7 @@ func recordsScriptFiles(root string) ([]string, error) {
 // readRecordsScript is one of those names, read by asking the script for
 // it. Nothing is written down: the archive it reads from is the
 // person's own, wherever they already keep it.
-func readRecordsScript(folder *recordsFolder, relative string) ([]ScanEntry, error) {
+func readRecordsScript(ctx context.Context, folder *recordsFolder, relative string) ([]ScanEntry, error) {
 	path, err := runnableScript(folder.root, recordsScript)
 	if err != nil {
 		return nil, err
@@ -699,7 +710,7 @@ func readRecordsScript(folder *recordsFolder, relative string) ([]ScanEntry, err
 	}
 	var entries []ScanEntry
 	err = runRecordsScript(folder.root, []string{relative}, func(output io.Reader) error {
-		read, err := readRecords(folder, relative, output)
+		read, err := readRecords(ctx, folder, relative, output)
 		entries = read
 		return err
 	})
@@ -819,20 +830,19 @@ func (self *refreshTail) ending() string {
 // --- what a record came with -----------------------------------------
 
 // attachmentsOf is the files one record named, one entry each: hashed,
-// measured and named, with nothing read.
+// measured, named, and read where anything here can read it.
 //
 // The identity is the hash of the bytes and not the path, so the same
 // screenshot pasted into four threads is one document rather than four,
 // which on the archive this was written for is most of fifty thousand
-// files. The entry carries no text at all -- nothing in this program can
-// read a picture -- and what it carries instead is everything a later
-// decision needs without opening the file: what kind of thing it is, how
-// large, where it came from, and what was said when it arrived.
+// files. Beside the text the entry carries what a later decision needs
+// without opening the file: what kind of thing it is, how large, where it
+// came from, and what was said when it arrived.
 //
 // seen is the names already given out for this file, so that a record
 // naming the same picture twice, or two records in one file naming it,
 // produce one entry.
-func (self *recordsFolder) attachmentsOf(relative string, one *record, seen map[string]bool) []ScanEntry {
+func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, one *record, seen map[string]bool) []ScanEntry {
 	var entries []ScanEntry
 	for index := range one.Attachments {
 		attachment := &one.Attachments[index]
@@ -879,9 +889,114 @@ func (self *recordsFolder) attachmentsOf(relative string, one *record, seen map[
 		seen[entry.ExternalID] = true
 		entry.Hash, entry.Size = hash, read
 		entry.Metadata = self.attachmentMetadata(path, name, attachment.ContentType, one)
+		if text := self.attachmentText(ctx, attachment, path); text != "" {
+			if len(text) > scanTextBytes {
+				// The opening of it, the way a large file in a tree is
+				// sent: enough for a search to find the thing, and the
+				// bytes are kept anyway for whatever wants the rest. Cut
+				// on a character, because a byte offset landing inside one
+				// makes a string PostgreSQL refuses.
+				text = string(trimPartialRune([]byte(text[:scanHeadBytes])))
+				entry.Metadata["truncated"] = true
+			}
+			entry.Text = text
+		}
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// attachmentText is what a file says, where saying it costs nothing: the
+// text the record gave, or what a reader already on this machine makes of
+// a PDF, an office document, or a file that is simply text.
+//
+// Opening a file with a vision model in the night is the right answer for
+// a screenshot and the wrong one for everything else. The archive this
+// was written for holds logs, spreadsheets and PDFs beside its pictures,
+// every one of them readable here for nothing by tools the person already
+// has, and each of them went up empty, was judged "not a picture",
+// declined, and lost what it said. What nothing here understands still
+// has no text, and the night still decides about it.
+//
+// A reader that fails is not the pass failing and not the file being
+// passed over: the entry is reported and its bytes are kept exactly as
+// before, and only the text is missing.
+func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recordAttachment, path string) string {
+	text := attachment.Text
+	if strings.TrimSpace(text) == "" {
+		if neverText(attachment, path) {
+			// A picture, a video or a sound is not going to be text,
+			// and reading one to find that out costs what reading it
+			// costs. The archive this was written for is twenty-four
+			// gigabytes of which nine in ten are screenshots: sniffing
+			// each one would read the whole archive a second time on
+			// every pass, to learn every time what its name said at
+			// the start.
+			return ""
+		}
+		// The bound that decides whether the file is reported at all
+		// decides how much of it is read. It has been measured twice
+		// already, and this is a third moment at which it could have
+		// grown.
+		content, err := contentOfFile(path, self.maxAttachmentBytes)
+		if err != nil {
+			return ""
+		}
+		read, _, err := textOf(ctx, path, content)
+		if err != nil {
+			return ""
+		}
+		text = read
+	}
+	if secret, _ := SecretContent(text); secret {
+		// Every other text this program sends is checked, and a
+		// configuration file dropped into a thread is exactly where a
+		// credential sits. The bytes go as they always did; what is held
+		// back is the text, which is the part that would be chunked,
+		// embedded and quoted back in an answer.
+		return ""
+	}
+	return text
+}
+
+// neverText says whether a file is one of the kinds no reader here turns
+// into words, judged by what it is called rather than by opening it.
+//
+// Wrong in one direction only, and cheaply: a picture misnamed .txt is
+// read and found to be nothing, which costs one file; a log misnamed
+// .png keeps its bytes and waits for the night, which is where it would
+// have waited anyway.
+func neverText(attachment *recordAttachment, path string) bool {
+	kind := strings.ToLower(strings.TrimSpace(attachment.ContentType))
+	if kind == "" {
+		kind = mime.TypeByExtension(filepath.Ext(path))
+	}
+	for _, family := range []string{"image/", "video/", "audio/"} {
+		if strings.HasPrefix(kind, family) {
+			return true
+		}
+	}
+	return false
+}
+
+// contentOfFile is a file's bytes where it is no larger than the bound,
+// and an error where it is not: a reader is handed what a scan may carry
+// and never more.
+func contentOfFile(path string, most int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	content, err := io.ReadAll(io.LimitReader(file, most+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > most {
+		return nil, fmt.Errorf("%s is larger than the %s a file that came with a record may be",
+			path, describeSize(most))
+	}
+	return content, nil
 }
 
 // tooLarge is the refusal for a file this source will not carry, said so

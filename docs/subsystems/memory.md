@@ -186,18 +186,32 @@ external id is `<file path>#<record id>`, which is why a script that
 keeps its ids keeps its documents.
 
 A record may also name the files it came with, in an `attachments` list of
-`{"path", "name", "contentType"}` — a picture pasted into a thread, a
-document sent with a message. The path is relative to the records folder
-unless it is absolute, and is refused if it leads outside the directories
-allowed on that computer. Each attachment becomes a document of its own,
-of kind `attachment`, identified by the hash of its bytes rather than by
-where it sits, so the same screenshot pasted into four threads is one
-document. It has no text: the daemon hashes and measures it, the server
-asks for its bytes with the `blob` action and keeps them in object storage
-under that hash, and reading it is something a later night does. A file
-larger than the limit the source runs under — `agent.limits.maxScannedAttachmentBytes`,
-25 MB by default, or the source's own — is named on the source's page as
-passed over and never uploaded.
+`{"path", "name", "contentType", "text"}` — a picture pasted into a
+thread, a document sent with a message. The path is relative to the
+records folder unless it is absolute, and is refused if it leads outside
+the directories allowed on that computer. Each attachment becomes a
+document of its own, of kind `attachment`, identified by the hash of its
+bytes rather than by where it sits, so the same screenshot pasted into
+four threads is one document. The daemon hashes and measures it, the
+server asks for its bytes with the `blob` action and keeps them in object
+storage under that hash. A file larger than the limit the source runs
+under — `agent.limits.maxScannedAttachmentBytes`, 25 MB by default, or
+the source's own — is named on the source's page as passed over and never
+uploaded.
+
+`text` is what the file says, where the script already knows. A file that
+arrives with text is a document like any other — chunked, embedded,
+searchable the same night — and is never offered to a night to be read by
+a model; its bytes are still fetched and kept, because the original is
+what somebody opens later. Where the script says nothing, the daemon
+reads the file itself if anything on that machine can: a PDF through
+`pdftotext`, an office document or a spreadsheet through `soffice`, and a
+file that is simply UTF-8 text as itself. Text longer than 512 kB is sent
+as its first 64 kB, marked `truncated` in the document's metadata, the
+same as a large file in a tree; text carrying something that looks like a
+credential is not sent at all, though the bytes still are. Only what
+nothing there can read — a picture, a video, a sound file — arrives with
+no text, and that is what a later night opens with a model.
 
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
@@ -238,7 +252,12 @@ for what is in it.
 The agent writes these scripts. The knowledge tool's `shape` action is
 the record shape and both contracts in words, and asked to index an
 archive that is already on the computer it is told to write a `records`
-script over the files rather than a `refresh` that copies them.
+script over the files rather than a `refresh` that copies them. It is
+also told to do on that machine whatever the machine can already do — a
+frame out of a video, a picture shrunk to what a reader needs, a text
+recogniser over a scan, a sheet converted to comma-separated text — and
+to put the result in `text`, because anything the computer can read for
+nothing is better read there than paid for later.
 
 ## Not making the same page twice
 
