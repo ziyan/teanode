@@ -1054,6 +1054,7 @@ export const ja: Catalog = {
   'agentDrawer.decline': 'やめる',
   'agentDrawer.approved': '承認しました。',
   'agentDrawer.declined': '却下しました。',
+  'agentDrawer.earlier': 'それ以前のメッセージ {count} 件',
   'agentDrawer.compacted': 'それまでの会話はメモにまとめられました。',
   'cli.lifetime': '有効期間',
   'compose.locale': '言語',

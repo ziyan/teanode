@@ -1059,6 +1059,7 @@ export const en = {
   'agentDrawer.decline': 'Don’t',
   'agentDrawer.approved': 'Approved.',
   'agentDrawer.declined': 'Declined.',
+  'agentDrawer.earlier': '{count} earlier messages',
   'agentDrawer.compacted': 'The earlier conversation was folded into a note.',
   'cli.lifetime': 'Lifetime',
   'compose.locale': 'Language',

@@ -294,8 +294,8 @@ const CONVERSATIONS = `
   }`
 
 const CONVERSATION = `
-  query ($conversationId: String, $first: Int) {
-    ReadAgentConversation(conversationId: $conversationId, first: $first) {
+  query ($conversationId: String, $first: Int, $offset: Int) {
+    ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
       conversation { id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
       actingAs
       goalTurnsToday
@@ -983,6 +983,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // must be told so every time the drawer is open on it.
   const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  // The messages behind the lines, oldest first, and how many the
+  // conversation holds: a drawer opens on the newest hundred, and the
+  // difference is what "earlier messages" fetches.
+  const messages = useRef<StoredMessage[]>([])
+  const [total, setTotal] = useState(0)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
   const [todos, setTodos] = useState<{ id: string; text: string; doneAt?: string | null }[]>([])
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
@@ -1081,6 +1087,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         actingAs?: string | null
         goalTurnsToday?: number
         messages: StoredMessage[]
+        total?: number
         todos: { id: string; text: string; doneAt?: string | null }[]
       }
     }>(CONVERSATION, {
@@ -1092,6 +1099,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setActingAs(response.ReadAgentConversation.actingAs ?? null)
     setGoalTurnsToday(response.ReadAgentConversation.goalTurnsToday ?? 0)
     remember(CONVERSATION_KEY, response.ReadAgentConversation.conversation.id)
+    messages.current = response.ReadAgentConversation.messages
+    setTotal(response.ReadAgentConversation.total ?? response.ReadAgentConversation.messages.length)
     setLines(linesOf(response.ReadAgentConversation.messages, t))
     setShowingGoalNote(true)
     setTodos(response.ReadAgentConversation.todos ?? [])
@@ -1845,6 +1854,33 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
+  // The hundred before the oldest loaded, put in front of what is shown,
+  // with the transcript held where the person was reading: the new
+  // lines add height above, so the scroll moves down by exactly that.
+  const loadEarlier = async () => {
+    if (!conversationId || loadingEarlier) return
+    setLoadingEarlier(true)
+    const element = transcript.current
+    const heightBefore = element?.scrollHeight ?? 0
+    try {
+      const response = await graphql<{
+        ReadAgentConversation: { messages: StoredMessage[]; total?: number }
+      }>(CONVERSATION, { conversationId, first: 100, offset: messages.current.length })
+      const earlier = response.ReadAgentConversation.messages
+      messages.current = [...earlier, ...messages.current]
+      setTotal(response.ReadAgentConversation.total ?? messages.current.length)
+      sticking.current = false
+      setLines(linesOf(messages.current, t))
+      requestAnimationFrame(() => {
+        if (element) element.scrollTop += element.scrollHeight - heightBefore
+      })
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }
+
   const toggleTimed = (key: string) => {
     setTimed((previous) => {
       const next = new Set(previous)
@@ -2270,6 +2306,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             }}
           >
             {lines.length === 0 && <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>}
+            {total > messages.current.length && (
+              <button type="button" className="agent-drawer-earlier muted" onClick={() => void loadEarlier()} disabled={loadingEarlier}>
+                {t('agentDrawer.earlier', { count: total - messages.current.length })}
+              </button>
+            )}
             {lines.map((line, index) => {
               // A divider where the day changes.
               const at = 'at' in line ? line.at : undefined

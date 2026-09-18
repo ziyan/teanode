@@ -1018,6 +1018,7 @@ export const zh: Catalog = {
   'agentDrawer.decline': '不要',
   'agentDrawer.approved': '已批准。',
   'agentDrawer.declined': '已拒绝。',
+  'agentDrawer.earlier': '还有 {count} 条更早的消息',
   'agentDrawer.compacted': '之前的对话已折叠成一份笔记。',
   'cli.lifetime': '有效期',
   'compose.locale': '语言',
