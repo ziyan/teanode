@@ -301,6 +301,11 @@ type SaveAgentKnowledgeSourceArguments struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId" graphapi:"nullable"`
+
+	// MaxAttachmentBytes is the largest file this source carries off the
+	// person's machine. Not given leaves it alone; zero puts it back to
+	// the server's own limit, which is what nearly every source wants.
+	MaxAttachmentBytes *int64 `json:"maxAttachmentBytes" graphapi:"nullable"`
 }
 
 type DeleteAgentKnowledgeSourceArguments struct {
@@ -1285,6 +1290,12 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			return nil, err
 		}
 		source.Specification.MailboxID = arguments.MailboxID
+	}
+	if arguments.MaxAttachmentBytes != nil {
+		if *arguments.MaxAttachmentBytes < 0 {
+			return nil, fmt.Errorf("the largest file this source may carry cannot be negative; zero is the server's own limit")
+		}
+		source.Specification.MaxAttachmentBytes = *arguments.MaxAttachmentBytes
 	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)

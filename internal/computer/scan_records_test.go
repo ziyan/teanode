@@ -2,6 +2,8 @@ package computer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -622,5 +624,232 @@ esac
 	}
 	if _, err := os.Stat(filepath.Join(root, "pages")); err == nil {
 		t.Fatalf("and nothing was written down")
+	}
+}
+
+// --- what a record came with -----------------------------------------
+
+// entriesOfKind is the entries of one kind, by their identifier, so a
+// test says what it means rather than counting positions in a page.
+func entriesOfKind(entries []ScanEntry, kind string) map[string]ScanEntry {
+	found := map[string]ScanEntry{}
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			found[entry.ExternalID] = entry
+		}
+	}
+	return found
+}
+
+// countOfKind is how many entries of a kind a page carried, which is not
+// the size of the map above when two of them share an identifier.
+func countOfKind(entries []ScanEntry, kind string) int {
+	count := 0
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+// hashOfBytes is what the daemon will have called a file.
+func hashOfBytes(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
+}
+
+// A record may say what came with it, and each file becomes an entry of
+// its own: named by the hash of its bytes, carrying no text, and carrying
+// instead everything a later decision needs without opening it -- what it
+// is, where its bytes are, and what was said when it arrived. Both kinds
+// of record do it, the wiki page and the chat post, and a folder that
+// prints its records rather than writing them does it too.
+func TestARecordCarriesTheFilesItCameWith(t *testing.T) {
+	picture := []byte("\x89PNG\r\n\x1a\nthis is a screenshot of a failing cell")
+	diagram := []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>")
+	root, scan := recordsIn(t, map[string]string{
+		"files/shot.png":    string(picture),
+		"files/diagram.svg": string(diagram),
+	})
+	writeRecordsScript(t, root, `#!/bin/sh
+if [ -z "$1" ]; then echo posts.jsonl; exit 0; fi
+cat <<'RECORDS'
+{"id":"post:1","kind":"chat","channel":"ops","thread":"post:0","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"look at this, the cell stopped again","attachments":[{"path":"files/shot.png","name":"shot.png","contentType":"image/png"}]}
+{"id":"post:2","kind":"chat","channel":"ops","thread":"post:0","at":"2026-08-14T09:31:00Z","author":"maria","text":"the same picture again","attachments":[{"path":"files/shot.png","name":"shot.png","contentType":"image/png"}]}
+{"id":"page:7","kind":"page","title":"Runbook","at":"2026-08-01T09:00:00Z","author":"ziyan","text":"Restart the consumer.","attachments":[{"path":"files/diagram.svg","name":"diagram.svg"}]}
+RECORDS
+`)
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	// Two files, three mentions of them: the identity is the hash of the
+	// bytes, so the picture two posts name is one document.
+	if count := countOfKind(result.Entries, KindAttachment); count != 2 {
+		t.Fatalf("two files, however often they are named: %d", count)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	shot, found := attachments["posts.jsonl#"+hashOfBytes(picture)]
+	if !found {
+		t.Fatalf("the picture is named by the hash of its bytes: %+v", attachments)
+	}
+	if shot.Title != "shot.png" || shot.Text != "" || shot.Hash != hashOfBytes(picture) {
+		t.Fatalf("named, hashed, and read by nothing: %+v", shot)
+	}
+	if shot.Size != int64(len(picture)) {
+		t.Fatalf("measured %d bytes, not %d", shot.Size, len(picture))
+	}
+	if shot.HappenedAt == nil || shot.HappenedAt.UTC().Format(time.RFC3339) != "2026-08-14T09:30:00Z" {
+		t.Fatalf("when it arrived: %+v", shot.HappenedAt)
+	}
+	path, _ := shot.Metadata["path"].(string)
+	if !filepath.IsAbs(path) || !strings.HasSuffix(path, filepath.FromSlash("files/shot.png")) {
+		t.Fatalf("the server has to be able to ask for the bytes: %q", path)
+	}
+	for key, want := range map[string]string{
+		"contentType": "image/png",
+		"author":      "ziyan",
+		"thread":      "post:0",
+		"channel":     "ops",
+		"id":          "post:1",
+		"said":        "look at this, the cell stopped again",
+	} {
+		if got, _ := shot.Metadata[key].(string); got != want {
+			t.Fatalf("metadata %q is %q, not %q", key, got, want)
+		}
+	}
+
+	// The document path as well as the chat path, with the type guessed
+	// from the name where the script did not say one.
+	drawing, found := attachments["posts.jsonl#"+hashOfBytes(diagram)]
+	if !found {
+		t.Fatalf("a file that came with a page: %+v", attachments)
+	}
+	if got, _ := drawing.Metadata["contentType"].(string); !strings.HasPrefix(got, "image/svg") {
+		t.Fatalf("the type is guessed from the name: %q", got)
+	}
+	if got, _ := drawing.Metadata["channel"].(string); got != "" {
+		t.Fatalf("a page is in no channel: %q", got)
+	}
+	if got, _ := drawing.Metadata["id"].(string); got != "page:7" {
+		t.Fatalf("the record it came with: %q", got)
+	}
+
+	// And the whole folder pages the same way twice, which is what a
+	// cursor standing in the middle of it depends on.
+	first := pagesEverySo(t, scan, 2)
+	second := pagesEverySo(t, scan, 2)
+	if len(first) == 0 || strings.Join(first, "\n") != strings.Join(second, "\n") {
+		t.Fatalf("the same folder paged differently:\n%s\n---\n%s",
+			strings.Join(first, "\n"), strings.Join(second, "\n"))
+	}
+}
+
+// A file larger than this source carries is named, counted and passed
+// over: the person sees what was left behind rather than wondering, and
+// nothing of it is sent. The bound is the server's to set, and a request
+// that says nothing falls back to the twenty-five megabytes this program
+// was written with rather than to no bound at all.
+func TestAnAttachmentTooLargeIsRefusedWithAReason(t *testing.T) {
+	small := []byte("small enough")
+	large := strings.Repeat("x", 4096)
+	root, scan := recordsIn(t, map[string]string{
+		"files/video.mp4": large,
+		"files/note.txt":  string(small),
+	})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here","attachments":[`+
+			`{"path":"files/video.mp4","name":"video.mp4"},{"path":"files/note.txt","name":"note.txt"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(&ScanArguments{MaxAttachmentBytes: 1024})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	if _, found := attachments["posts.jsonl#"+hashOfBytes([]byte(large))]; found {
+		t.Fatalf("the large file was reported: %+v", attachments)
+	}
+	if _, found := attachments["posts.jsonl#"+hashOfBytes(small)]; !found {
+		t.Fatalf("the small one beside it was not: %+v", attachments)
+	}
+	refused, found := attachments["posts.jsonl#post:1#video.mp4"]
+	if !found {
+		t.Fatalf("nothing said the large file had been passed over: %+v", attachments)
+	}
+	if !strings.Contains(refused.Refused, "4 kB") || !strings.Contains(refused.Refused, "1 kB") {
+		t.Fatalf("the reason says neither size: %q", refused.Refused)
+	}
+	if refused.Hash != "" || refused.Text != "" {
+		t.Fatalf("something of the refused file was sent: %+v", refused)
+	}
+	if result.Refused != 1 {
+		t.Fatalf("the page refused %d", result.Refused)
+	}
+
+	// The same folder, with no bound said, keeps both.
+	again, err := scan(&ScanArguments{})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if again.Refused != 0 {
+		t.Fatalf("with no bound said, the page refused %d", again.Refused)
+	}
+	if count := countOfKind(again.Entries, KindAttachment); count != 2 {
+		t.Fatalf("both files: %d", count)
+	}
+}
+
+// A path out of the folder is refused rather than followed, whether a
+// script wrote it or a link in the folder leads there. The folder is what
+// the person allowed; the rest of their disk is not, and a script that
+// read somebody else's archive does not get to decide otherwise.
+func TestAnAttachmentOutsideTheAllowedRootsIsRefused(t *testing.T) {
+	elsewhere := t.TempDir()
+	secret := filepath.Join(elsewhere, "id_rsa")
+	if err := os.WriteFile(secret, []byte("somewhere nobody allowed"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	root, scan := recordsIn(t, nil)
+	names := []string{"absolute", "climbed"}
+	links := ""
+	if runtime.GOOS != "windows" {
+		if err := os.Symlink(secret, filepath.Join(root, "linked")); err != nil {
+			t.Fatalf("Symlink: %s", err)
+		}
+		links = `,{"path":"linked","name":"linked"}`
+		names = append(names, "linked")
+	}
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here","attachments":[`+
+			`{"path":"`+filepath.ToSlash(secret)+`","name":"absolute"},`+
+			`{"path":"../elsewhere/id_rsa","name":"climbed"}`+links+`]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	for _, name := range names {
+		entry, found := attachments["posts.jsonl#post:1#"+name]
+		if !found {
+			t.Fatalf("%s was not reported at all: %+v", name, attachments)
+		}
+		if entry.Refused == "" || entry.Hash != "" {
+			t.Fatalf("%s was not refused: %+v", name, entry)
+		}
+	}
+	for _, entry := range attachments {
+		if entry.Refused == "" {
+			t.Fatalf("something outside the folder was carried: %+v", entry)
+		}
+	}
+	if result.Refused != len(names) {
+		t.Fatalf("%d refusals, not %d", result.Refused, len(names))
 	}
 }

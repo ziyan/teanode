@@ -308,6 +308,16 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunScan(ctx, options, &arguments)
+	case "blob":
+		// Beside the scan rather than part of it: a page of a scan is
+		// bounded at a few megabytes and one file may be twenty-five, so
+		// the bytes are asked for one file at a time, after the server
+		// has decided it does not already hold them.
+		var arguments BlobArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = RunBlob(options, &arguments)
 	case "session_start":
 		var arguments SessionStartArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

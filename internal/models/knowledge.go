@@ -114,6 +114,13 @@ type AgentKnowledgeSpecification struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId,omitempty"`
+
+	// MaxAttachmentBytes is the largest file this source carries off the
+	// person's machine, in bytes. Zero means the server's own limit,
+	// agent.limits.maxScannedAttachmentBytes, which is what nearly every
+	// source wants; it is here for the one archive whose pictures are
+	// bigger than everybody else's.
+	MaxAttachmentBytes int64 `json:"maxAttachmentBytes,omitempty"`
 }
 
 // AgentKnowledgeSource is one standing grant of reach.
@@ -231,14 +238,20 @@ type AgentDocumentKind string
 
 // The kinds of document.
 const (
-	DocumentFile    AgentDocumentKind = "file"
-	DocumentPage    AgentDocumentKind = "page"
-	DocumentPost    AgentDocumentKind = "post"
-	DocumentMessage AgentDocumentKind = "message"
-	DocumentCommit  AgentDocumentKind = "commit"
-	DocumentChat    AgentDocumentKind = "chat"
-	DocumentRequest AgentDocumentKind = "request"
-	DocumentJournal AgentDocumentKind = "journal"
+	DocumentFile AgentDocumentKind = "file"
+
+	// DocumentAttachment is a picture or a file a record came with: a
+	// document whose meaning is in its bytes rather than in its text,
+	// kept in object storage under its hash and read, if anything here
+	// can read it, later.
+	DocumentAttachment AgentDocumentKind = "attachment"
+	DocumentPage       AgentDocumentKind = "page"
+	DocumentPost       AgentDocumentKind = "post"
+	DocumentMessage    AgentDocumentKind = "message"
+	DocumentCommit     AgentDocumentKind = "commit"
+	DocumentChat       AgentDocumentKind = "chat"
+	DocumentRequest    AgentDocumentKind = "request"
+	DocumentJournal    AgentDocumentKind = "journal"
 )
 
 // AgentDocument is one thing read from a source.

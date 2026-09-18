@@ -27,10 +27,18 @@ type DreamOperation interface {
 	ListAgentDreams(agentId string, limit int) ([]*models.AgentDream, error)
 
 	// CountAgentDocumentsReading is how many documents the night has still
-	// to read and how many it has read, by the same rule that decides what
-	// a night reads: every document but a chat unit, and a chat unit only
-	// when the person was in it and it was a conversation.
-	CountAgentDocumentsReading(agentId string, names []string) (waiting, read int64, err error)
+	// to read, how many it has read, and how many nothing here can read
+	// yet, by the same rule that decides what a night reads: every
+	// document but a chat unit, and a chat unit only when the person was
+	// in it and it was a conversation.
+	//
+	// The third count is apart from the other two because it is neither.
+	// An attachment with no text -- a picture whose bytes are kept and
+	// which nothing has described -- is not waiting for a night that
+	// could do nothing with it, and calling it read would be a lie: a
+	// source of fifty thousand screenshots would say it was all read and
+	// nothing would have been.
+	CountAgentDocumentsReading(agentId string, names []string) (waiting, read, unreadable int64, err error)
 
 	// ListAgentDocumentsToDigest is what has been indexed and not yet
 	// read, in the order a night should read it, and how much is waiting
@@ -248,10 +256,19 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 	// them -- is searched when a question needs it and never read on its
 	// own; reading it at four hundred a night would take years and file
 	// other people's business.
+	//
+	// A file with no passages is not offered either. An attachment is
+	// filed before anything can read it -- that is the point of keeping
+	// its bytes -- and a night handed one would show the model a heading
+	// and silence, learn nothing, and mark it read, which is the one
+	// state it must not reach: read means read. It becomes eligible the
+	// moment something gives it passages.
 	const eligible = `"agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')
 		AND ("kind" <> 'chat' OR (
 			jsonb_exists_any("metadata"->'participants', ?::text[])
-			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))`
+			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))
+		AND ("kind" <> 'attachment' OR EXISTS (
+			SELECT 1 FROM "agent_chunk" WHERE "document_id" = "agent_document"."id"))`
 	var total []int64
 	if err := self.tx.Raw(`SELECT count(*) FROM "agent_document" WHERE `+eligible,
 		agentId, pq.Array(names)).Scan(&total).Error; err != nil {
@@ -273,29 +290,40 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 	return documents, backlog, err
 }
 
-func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (int64, int64, error) {
+func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (int64, int64, int64, error) {
 	if len(names) == 0 {
 		names = []string{""}
 	}
 	var counts []struct {
-		Waiting int64 `gorm:"column:waiting"`
-		Read    int64 `gorm:"column:read"`
+		Waiting    int64 `gorm:"column:waiting"`
+		Read       int64 `gorm:"column:read"`
+		Unreadable int64 `gorm:"column:unreadable"`
 	}
+	// "Nothing can read it yet" is an attachment that has no passages:
+	// its bytes are kept and no text has been made of them. The text of
+	// a document lives in its chunks, so having none is the question, and
+	// asking it of every kind would count the entries a reader refused as
+	// well -- which are refusals, not files waiting for a reader.
 	if err := self.tx.Raw(`SELECT
-			count(*) FILTER (WHERE NOT jsonb_exists("metadata", 'digested')) AS waiting,
-			count(*) FILTER (WHERE jsonb_exists("metadata", 'digested')) AS read
-		FROM "agent_document"
-		WHERE "agent_id" = ?
-		AND ("kind" <> 'chat' OR (
-			jsonb_exists_any("metadata"->'participants', ?::text[])
-			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))`,
-		agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
-		return 0, 0, err
+			count(*) FILTER (WHERE NOT "unread" AND NOT jsonb_exists("metadata", 'digested')) AS waiting,
+			count(*) FILTER (WHERE NOT "unread" AND jsonb_exists("metadata", 'digested')) AS read,
+			count(*) FILTER (WHERE "unread") AS unreadable
+		FROM (
+			SELECT d."metadata" AS "metadata",
+				(d."kind" = ? AND NOT EXISTS (
+					SELECT 1 FROM "agent_chunk" WHERE "document_id" = d."id")) AS "unread"
+			FROM "agent_document" d
+			WHERE d."agent_id" = ?
+			AND (d."kind" <> 'chat' OR (
+				jsonb_exists_any(d."metadata"->'participants', ?::text[])
+				AND coalesce((d."metadata"->>'posts')::int, 0) >= 3))) AS "documents"`,
+		string(models.DocumentAttachment), agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
+		return 0, 0, 0, err
 	}
 	if len(counts) == 0 {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
-	return counts[0].Waiting, counts[0].Read, nil
+	return counts[0].Waiting, counts[0].Read, counts[0].Unreadable, nil
 }
 
 // proseFile is a file somebody wrote to be read: a readme, a note, a
