@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-18
+
+### Added
+
+- And the dashboard can search it too, not just what your agent made of it.
+  Beside the lookup on the Knowledge page, "Search what it read" asks the
+  same question the command line asks: some words, and a source to narrow
+  it to if you want one. Back come the passages themselves, each under the
+  document it came from, with that document's title, who wrote it and when.
+  Read opens that document in the dialog at its first line, "Read on" adds
+  the next stretch of it, and the way back to the results sits beside it.
+  An identifier pasted out of a log is looked up exactly here as well, and
+  whatever defines it is listed above the passages. (#115)
+
 ## [0.33.0] - 2026-09-18
 
 ### Added
