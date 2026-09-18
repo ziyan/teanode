@@ -279,12 +279,26 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		return err
 	}
 
-	// A night spends its own share of the day, so it never eats the day.
+	// A night spends the day's share of the day, so it never eats the
+	// day. What today's earlier nights spent comes off it: the share is
+	// what is kept from the person's conversation, and a night that
+	// starts from the whole share again keeps nothing when nights run
+	// every six hours. Read from the usage rows, which the loop writes as
+	// it goes, so a night that was killed still counts.
 	share := configuration.Agent.Limits.DreamShare
 	if share <= 0 {
 		share = dreamShareDefault
 	}
-	budget := newDreamBudget(configuration, run.Agent, share)
+	var spentDreaming int64
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		spentDreaming, err = SumSpendOfKind(tx, run.Agent.ID, string(models.AgentJobDream), DayStart(run.Owner, time.Now()))
+		return err
+	}); err != nil {
+		// The night goes ahead on its own share alone, which is what it
+		// had before this was read at all.
+		log.Warningf("cannot read what today's nights have spent for agent %q: %s", run.Agent.ID, err)
+	}
+	budget := newDreamBudget(configuration, run.Agent, share, spentDreaming)
 
 	// A night in order. Read what arrived, write it up, tidy the pages it
 	// touched, then the two halves proper: the arithmetic one that
@@ -392,14 +406,35 @@ func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudg
 		tools, rounds = dreamTools, roundsFor(run.Configuration(), models.AgentJobDream)
 		prompt = dreamFrame + "\n\n" + prompt
 	}
-	thinking, err := self.think(ctx, run, title, prompt, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
-	if thinking != nil {
-		budget.note(thinking.Usage)
+	// Claimed before the call and settled after. A check that stands on
+	// its own is a promise made to every batch in flight at once: three
+	// of them asked whether there was room before any had spent
+	// anything, and all three were told yes.
+	if !budget.reserve() {
+		return nil, errNothingLeftToSpend
 	}
+	thinking, err := self.think(ctx, run, title, prompt, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
+	usage := llm.Usage{}
+	if thinking != nil {
+		usage = thinking.Usage
+	}
+	budget.settle(usage)
 	return thinking, err
 }
 
+// errNothingLeftToSpend is a call the night's allowance cannot pay for.
+// Every caller already stops on an error from a call, which is what
+// should happen here too; it is named so that the reading can tell it
+// from a model that went quiet.
+var errNothingLeftToSpend = errors.New("the night has spent its share of the day")
+
 // dreamBudget is what a night may spend.
+//
+// The allowance is the day's share less what today's earlier nights have
+// already spent of it, not a fresh fraction each time. The share exists
+// to leave the rest of the day to the person, and a night runs as often
+// as every six hours: taken fresh, four nights spent four shares and the
+// conversation they were protecting paid for it.
 type dreamBudget struct {
 	// Read and written from several batches at once when the reading
 	// runs concurrently.
@@ -407,10 +442,30 @@ type dreamBudget struct {
 	allowed int64
 	spent   int64
 
+	// reserved is what the calls in flight are assumed to cost until they
+	// come back and say what they really cost.
+	reserved int64
+
+	// exhausted is a night whose share of the day was gone before it
+	// began. Its own field because an allowance of zero has always meant
+	// "nothing caps this", and today's earlier nights leaving nothing is
+	// the opposite of that.
+	exhausted bool
+
 	// digestUntil is when the reading has to stop so the rest of the
 	// night gets its turn; zero means the night has no deadline.
 	digestUntil time.Time
 }
+
+// dreamCallEstimate is what one call of a night is held against the
+// allowance while it is in flight.
+//
+// It only has to be the right order of magnitude: the real cost replaces
+// it the moment the call returns, and its job is to stop three batches
+// reading at once from each being told the whole remainder is free. A
+// batch of documents is the largest prompt a night sends and the answer
+// is capped at four thousand tokens, so this is about one of those.
+const dreamCallEstimate = 10000
 
 // partway is the moment a share of the night's remaining time is gone,
 // or zero when the night has no deadline.
@@ -432,7 +487,9 @@ func (self *dreamBudget) readingTimeLeft() bool {
 	return self.digestUntil.IsZero() || time.Now().Before(self.digestUntil)
 }
 
-func newDreamBudget(configuration *config.Configuration, agent *models.Agent, share float64) *dreamBudget {
+// newDreamBudget is the share of the day this night may have, given what
+// the day's earlier nights have already spent of it.
+func newDreamBudget(configuration *config.Configuration, agent *models.Agent, share float64, spentDreaming int64) *dreamBudget {
 	daily := agent.DailyTokens
 	if daily <= 0 {
 		daily = configuration.Agent.Limits.DailyTokensPerAgent
@@ -440,19 +497,47 @@ func newDreamBudget(configuration *config.Configuration, agent *models.Agent, sh
 	if daily <= 0 {
 		return &dreamBudget{allowed: 0} // no cap
 	}
-	return &dreamBudget{allowed: int64(float64(daily) * share)}
+	allowed := int64(float64(daily)*share) - spentDreaming
+	if allowed <= 0 {
+		return &dreamBudget{exhausted: true}
+	}
+	return &dreamBudget{allowed: allowed}
 }
 
-// left says whether there is budget for another call.
+// left says whether there is budget for another call, counting what the
+// calls in flight have claimed.
 func (self *dreamBudget) left() bool {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	return self.allowed == 0 || self.spent < self.allowed
+	return self.room()
 }
 
-func (self *dreamBudget) note(usage llm.Usage) {
+// room is left without the lock, for a caller that already holds it.
+func (self *dreamBudget) room() bool {
+	if self.exhausted {
+		return false
+	}
+	return self.allowed == 0 || self.spent+self.reserved < self.allowed
+}
+
+// reserve claims the estimate for a call about to be made and says
+// whether there was room for it. Asking and claiming happen under the one
+// lock, which is the whole point of it.
+func (self *dreamBudget) reserve() bool {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	if !self.room() {
+		return false
+	}
+	self.reserved += dreamCallEstimate
+	return true
+}
+
+// settle gives back the estimate and books what the call really cost.
+func (self *dreamBudget) settle(usage llm.Usage) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.reserved = max(self.reserved-dreamCallEstimate, 0)
 	self.spent += int64(usage.PromptTokens + usage.CompletionTokens)
 }
 
@@ -566,6 +651,13 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 				// What it did not read waits for a night when it
 				// answers: the batch is not marked read. The reading
 				// goes on past one silence and stops at the third.
+				if !budget.left() {
+					// Except that a batch the allowance could not pay
+					// for is not a silence, and blaming the model for
+					// the night running out of tokens reads as a fault
+					// on the dream's row.
+					return
+				}
 				silent++
 				if silent >= dreamSilences {
 					record.LastError = "the model did not answer; the reading stops here"

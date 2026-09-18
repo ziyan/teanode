@@ -192,7 +192,13 @@ untouched link at the floor.
 A dream is one run of the agent over its own graph, and not only at
 night: it runs when the person has been quiet for half an hour, inside
 the hours they set for it, at most once every six hours. It has its own share of
-the day's tokens (30% by default), and nothing it learned is deleted: a
+the day's tokens (30% by default) — the day's share and not each night's, so
+what today's earlier nights spent comes off it, read back from the usage rows,
+and four nights in a day cannot spend four shares between them. A call claims
+an estimate against the allowance before it is made and corrects it with what
+it really cost afterwards, because the reading runs several batches at once and
+a check with nothing claimed answers all of them the same. Nothing it
+learned is deleted: a
 fact it decides against goes dormant, behind the one that replaced it
 where there is one, and a page it retires leaves the index and stays. The
 only thing it removes is a page that never said anything at all.
