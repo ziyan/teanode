@@ -1102,6 +1102,12 @@ export const en = {
   'agentDrawer.uploading': 'Uploading…',
   'agentDrawer.dropHere': 'Drop files here',
   'agentDrawer.filesOnly': '(files)',
+  'agentDrawer.todoAdd': 'Add to the list',
+  'agentDrawer.todoPlaceholder': 'Something to do…',
+  'agentDrawer.todoRemove': 'Take off the list',
+  'agentDrawer.todoAdded': 'On the list.',
+  'agentDrawer.todoRemoved': 'Taken off the list.',
+  'agentDrawer.todoFailed': 'The list could not be changed.',
   'agentDrawer.goal.set': 'Set a goal',
   'agentDrawer.goal.hint':
     'What the agent should keep working toward, in a sentence. It takes turns on its own until this is met or you clear it; you can also just ask it in the conversation.',

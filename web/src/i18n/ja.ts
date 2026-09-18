@@ -1097,6 +1097,12 @@ export const ja: Catalog = {
   'agentDrawer.uploading': 'アップロード中…',
   'agentDrawer.dropHere': 'ここにファイルをドロップ',
   'agentDrawer.filesOnly': '（ファイル）',
+  'agentDrawer.todoAdd': 'リストに追加',
+  'agentDrawer.todoPlaceholder': 'やること…',
+  'agentDrawer.todoRemove': 'リストから外す',
+  'agentDrawer.todoAdded': 'リストに追加しました。',
+  'agentDrawer.todoRemoved': 'リストから外しました。',
+  'agentDrawer.todoFailed': 'リストを変更できませんでした。',
   'agentDrawer.goal.set': '目標を設定',
   'agentDrawer.goal.hint':
     'エージェントが取り組み続けることを一文で。達成するか消すまで自分でターンを重ねます。会話で頼むこともできます。',
