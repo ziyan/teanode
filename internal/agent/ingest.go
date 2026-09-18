@@ -90,6 +90,17 @@ const (
 	// ordinary time.
 	ingestRefreshWait = 35 * time.Minute
 
+	// ingestLongest is how long one ingest job may run, which has to
+	// cover that wait and leave room to file what the scan came back
+	// with. The job's deadline is the context the device wait selects on,
+	// so a job bounded at ten minutes made the thirty-five above a number
+	// nothing could reach.
+	//
+	// It is the ceiling for a job that is waiting, not what one costs: a
+	// pass with pages to read writes down where it got to and comes back
+	// in twenty seconds.
+	ingestLongest = ingestRefreshWait + 5*time.Minute
+
 	// cursorPassStarted is where a pass writes down when it began, and
 	// cursorPassSeen how many things it has been shown since. Both live
 	// in the source's cursor because a pass over a large tree is many

@@ -442,9 +442,18 @@ func (self *Deferral) Error() string {
 // answers somebody; the night is a job too, and ten minutes of reading
 // four hundred chat days left nothing for the phases after it -- the
 // night finished on the deadline every time with its tidying undone.
+//
+// An ingest job gets longer again. The first page of a records source
+// runs the folder's refresh script on the person's machine and waits
+// ingestRefreshWait for it, and ten minutes here made that wait
+// unreachable: the scan was abandoned on the deadline every time, so a
+// source whose refresh takes half an hour never got past its first page.
 func jobTimeout(kind models.AgentJobKind) time.Duration {
-	if kind == models.AgentJobDream {
+	switch kind {
+	case models.AgentJobDream:
 		return dreamLongest
+	case models.AgentJobIngest:
+		return ingestLongest
 	}
 	return 10 * time.Minute
 }

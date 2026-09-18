@@ -124,6 +124,24 @@ func TestACountSurvivesTheCursor(t *testing.T) {
 	}
 }
 
+// An ingest job may run for as long as its slowest page waits.
+//
+// The first page of a records source runs the folder's refresh script and
+// waits thirty-five minutes for it, but the wait selects on the job's own
+// context and the job was given ten minutes: the scan was abandoned on
+// the deadline every time, and the source never got past its first page.
+func TestAnIngestJobOutlastsTheRefreshWait(t *testing.T) {
+	if jobTimeout(models.AgentJobIngest) <= ingestRefreshWait {
+		t.Fatalf("an ingest job (%s) outlasts the refresh it waits for (%s)",
+			jobTimeout(models.AgentJobIngest), ingestRefreshWait)
+	}
+	// And the ordinary wait for a device is well inside it, so a page
+	// that is merely slow is not cut short either.
+	if jobTimeout(models.AgentJobIngest) <= ingestDeviceWait {
+		t.Fatalf("and outlasts an ordinary scan (%s)", ingestDeviceWait)
+	}
+}
+
 // A cursor that has never been written is not mid-tree.
 //
 // It used to be compared against the empty string, and a map value that
