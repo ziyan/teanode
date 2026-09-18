@@ -85,8 +85,10 @@ const (
 )
 
 // KindAttachment is what an entry for a file a record came with is
-// called. Its text is empty and its bytes are fetched afterwards with the
-// blob action, which is why it is a kind of its own rather than a file.
+// called. Its bytes are fetched afterwards with the blob action, which is
+// why it is a kind of its own rather than a file. Its text is what the
+// record said it says, or what a reader on this machine made of it, and
+// is empty for a picture, which is a later night's work.
 const KindAttachment = "attachment"
 
 // ScanArguments is what the server asks for.
@@ -322,7 +324,7 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 	case FormatJournal:
 		return scanJournal(root, arguments, most)
 	case FormatRecords:
-		return scanRecords(options, root, arguments, most)
+		return scanRecords(ctx, options, root, arguments, most)
 	}
 	return nil, fmt.Errorf("%q is not a shape this program can read", arguments.Format)
 }
