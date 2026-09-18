@@ -72,6 +72,15 @@ night guessed from a walk across the graph. A proposed edge reads as
 is drawn dashed in the explorers. Nothing promotes it on its own: making
 the same link yourself states it, and unlinking drops it.
 
+The guesses made before the distinction existed were not lost with it.
+Migration 0088 finds them from what a walk leaves behind — its own
+evidence, a `linked` revision in the page's history whose actor is the
+dream, and the `linked` proposal the night wrote on its own row — and
+marks those proposed. A link any other actor also made stays stated, and
+so does one none of the three recognizes: a guess left stated reads as it
+always did, while a stated link called a guess drops out of the index and
+starts hedging, which is the expensive way to be wrong.
+
 Which commits are **yours** is decided by matching the commit author
 against the addresses on the card you marked as yourself, so that card is
 what makes a career timeline possible at all. A source that finds commits

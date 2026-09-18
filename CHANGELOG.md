@@ -55,7 +55,10 @@ Notable changes to TeaNode. The format follows
   worked out for itself overnight is kept apart from one you stated: it is
   drawn as a dashed line marked "proposed" in the drawings, and the agent
   says "perhaps" about it rather than stating it. Making the same link
-  yourself is what confirms it; unlinking it is what drops it.
+  yourself is what confirms it; unlinking it is what drops it. Connections
+  earlier nights guessed are found on upgrade, from what was written down at
+  the time, and marked as guesses too — except where you have since made the
+  same link yourself, or where nothing says where the link came from.
 
 - A project's page is an orientation, not a history: where the checkout
   is and on which computer, its remote, what it calls itself, what it is
