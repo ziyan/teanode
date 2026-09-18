@@ -235,8 +235,10 @@ export function KnowledgePage() {
   // rather than the window: the sidebar takes a third of a laptop, and a
   // window that fits two columns with it closed does not with it open.
   const frameRef = useRef<HTMLDivElement | null>(null)
-  const width = useContainerWidth(frameRef)
+  const onePaneBefore = useRef<boolean | null>(null)
+  const width = useContainerWidth(frameRef, onePaneBefore.current)
   const onePane = (width === null ? (desktop ? 2 : 1) : width >= 760 ? 2 : 1) === 1
+  onePaneBefore.current = onePane
   const [filter, setFilter] = useState('')
   const search = filter.trim()
   // The page the navigator is showing the inside of, when the URL alone
@@ -306,12 +308,21 @@ export function KnowledgePage() {
   // things once it is open.
   const goTo = useCallback(
     (next: string, into: boolean) => {
-      setWalkedInto(into ? next : '')
+      // Only ever set here, never cleared: clearing it in the same
+      // breath as the address change landed one render early, and for
+      // that render the navigator thought the page in hand had not been
+      // walked into, slid back to its parent, and slid forward again
+      // when the new address arrived. It is cleared below, once the
+      // address has moved on from it.
+      if (into) setWalkedInto(next)
       setFilter('')
       navigate('/settings/knowledge' + (next ? '/' + next : ''))
     },
     [navigate],
   )
+  useEffect(() => {
+    if (walkedInto && walkedInto !== at) setWalkedInto('')
+  }, [at, walkedInto])
   const goPage = useCallback((next: string) => goTo(next, false), [goTo])
   // Up is the folder this one is filed in, walked into rather than read:
   // it may be a page with children itself.
@@ -426,7 +437,13 @@ export function KnowledgePage() {
 
 // useContainerWidth is how wide an element is, kept up to date as it
 // changes, and null before it has been measured.
-function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>): number | null {
+//
+// Watched again whenever the layout the element belongs to changes: the
+// one-pane and two-column layouts are different elements under the same
+// ref, and an observer left on the old one stopped reporting the moment
+// the page switched, so a window widened after that never went back to
+// two columns.
+function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>, layout: unknown): number | null {
   const [width, setWidth] = useState<number | null>(null)
   useEffect(() => {
     const element = ref.current
@@ -437,7 +454,7 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>): number 
     observer.observe(element)
     setWidth(element.getBoundingClientRect().width)
     return () => observer.disconnect()
-  }, [ref])
+  }, [ref, layout])
   return width
 }
 
