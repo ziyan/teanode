@@ -51,12 +51,37 @@ const (
 	// the fusion below.
 	recallCandidates = 20
 
+	// recallFactBlocks and recallFactTokens are what the overlay holds
+	// back for the facts the question matched outright, so that the
+	// pages cannot spend it all first.
+	//
+	// A page block is the fuzzy half of the answer and a matched fact is
+	// the precise half, and the fuzzy half was served first out of one
+	// budget. That was invisible while the graph was small. Once the
+	// timeline filled in, a question put to a hundred month pages --
+	// long, prose, and holding every ordinary word a question is made of
+	// -- ranked five of them above every real page, and those five spent
+	// all twelve hundred tokens. The sentence that answered the question
+	// was sitting at the top of the fact search the whole time and never
+	// reached the prompt.
+	recallFactBlocks = 3
+	recallFactTokens = 400
+
 	// recallPages is how many pages the overlay expands, recallFacts how
 	// many loose facts it carries beside them, and pageFacts how many
 	// facts of an expanded page are shown.
-	recallPages = 5
-	recallFacts = 10
-	pageFacts   = 5
+	//
+	// pageFactsConsidered is how many of a page's facts are read in order
+	// to choose those from. Read and shown had to part company once the
+	// pages grew: the store hands facts over oldest first, so reading
+	// five meant showing the five oldest, whatever had been asked. Sixty
+	// is wide enough to hold the matched sentence on the pages this graph
+	// actually has -- fifty to ninety live facts -- without reading the
+	// whole of a large page to print five lines of it.
+	recallPages         = 5
+	recallFacts         = 10
+	pageFacts           = 5
+	pageFactsConsidered = 60
 
 	// recallBlocks is how many lines the overlay carries in all, and
 	// recallGraphBlocks how many of them the graph may fill: the
@@ -546,6 +571,13 @@ type recalledBlock struct {
 	Facts []*models.AgentFact
 }
 
+// stillStands says whether a fact the search found is one the page still
+// says: not folded away behind another, not struck, and not superseded by
+// a later statement of the same thing.
+func stillStands(fact *models.AgentFact) bool {
+	return fact != nil && !fact.Dormant && fact.SupersededBy == ""
+}
+
 // chooseRecalled picks what the overlay carries under the token budget:
 // the top pages expanded, then the loose facts the words hit directly.
 //
@@ -555,12 +587,42 @@ type recalledBlock struct {
 // which feeds importance, decay and what the index carries tomorrow.
 // Recall is supposed to record what the prompt carried, not what it
 // considered.
+//
+// Which facts a page gives up is decided by the question and not by age;
+// see factsToShow for what that cost before.
 func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode, facts []*models.AgentFact) ([]*recalledBlock, error) {
 	agentId := self.settings.Agent.ID
 	paths, err := pathsOfFacts(tx, agentId, facts)
 	if err != nil {
 		return nil, err
 	}
+	// Which of the search's facts sit on which page, in the order the
+	// search put them. That order is the ranking, and nothing here ranks
+	// it again.
+	// What the search found, by the page it is on, in the order it
+	// found it. A vector is not taken away when a fact is folded into
+	// another, struck, or superseded by a later statement -- the row
+	// stays searchable on purpose, so that "what did it used to say"
+	// can be answered -- so the search hands back sentences the page no
+	// longer says, and only this side knows to leave them out. Carrying
+	// one inside a page block would put words in the page's mouth that
+	// a person reading the page would not find there.
+	hitOnPage := map[string][]*models.AgentFact{}
+	for _, fact := range facts {
+		if stillStands(fact) {
+			hitOnPage[fact.NodeID] = append(hitOnPage[fact.NodeID], fact)
+		}
+	}
+	// Held back for the facts below, but only where there are facts to
+	// hold it for: a question the fact search answered with nothing
+	// leaves the pages the whole of it, as they had before.
+	reservedBlocks, reservedTokens := 0, 0
+	if len(facts) > 0 {
+		reservedBlocks, reservedTokens = recallFactBlocks, recallFactTokens
+	}
+	pageBlocks := recallGraphBlocks - reservedBlocks
+	pageTokens := recallTokens - reservedTokens
+
 	spent := 0
 	shown := map[string]bool{}
 	expanded := map[string]bool{}
@@ -570,16 +632,17 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		// The overlay's budget as well as the page count: a block the
 		// overlay would drop is a block whose facts must not be marked
 		// as wanted.
-		if pages >= recallPages || len(blocks) >= recallGraphBlocks {
+		if pages >= recallPages || len(blocks) >= pageBlocks {
 			break
 		}
 		if expanded[node.ID] {
 			continue
 		}
-		pageFactsFound, err := tx.ListAgentFacts(agentId, node.ID, false, pageFacts)
+		considered, err := tx.ListAgentFacts(agentId, node.ID, false, pageFactsConsidered)
 		if err != nil {
 			return nil, err
 		}
+		pageFactsFound := factsToShow(considered, hitOnPage[node.ID])
 		text := node.Path
 		if node.Name != "" {
 			text += " — " + node.Name
@@ -597,12 +660,12 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			text += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
 		}
 		cost := llm.EstimateTokens(text)
-		if spent+cost > recallTokens {
+		if spent+cost > pageTokens {
 			// A smaller page further down may still fit, so this one
 			// is passed over rather than ending the loop -- but once
 			// what is left could not hold a page at all there is no
 			// sense reading the rest of them out of the store.
-			if recallTokens-spent < recallTokens/8 {
+			if pageTokens-spent < recallTokens/8 {
 				break
 			}
 			continue
@@ -622,19 +685,79 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		if kept >= recallFacts || len(blocks) >= recallGraphBlocks {
 			break
 		}
-		if shown[fact.ID] {
+		if shown[fact.ID] || !stillStands(fact) {
 			continue
 		}
 		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
 		cost := llm.EstimateTokens(line)
 		if spent+cost > recallTokens {
-			break
+			// Passed over, not the end of the loop, for the reason the
+			// pages above are: one long sentence ended the whole of
+			// this and took every shorter fact behind it with it, and
+			// the facts here are in the order the search ranked them,
+			// so what was lost was the best of what it found.
+			continue
 		}
 		spent += cost
 		blocks = append(blocks, &recalledBlock{Path: paths[fact.NodeID], Text: line, Facts: []*models.AgentFact{fact}})
 		kept++
 	}
 	return blocks, nil
+}
+
+// factsToShow picks which of a page's facts the overlay shows: the ones
+// the question hit, in the order the search ranked them, and then the
+// rest in the order the store gave them, until pageFacts are chosen. The
+// chosen are laid out by number, because selection is about relevance
+// and presentation is about reading as a page -- a block whose `#n`
+// references jump about is one the model cites back crookedly.
+//
+// It used to be the first pageFacts by number, since that is all that
+// was read. Harmless while a page held a handful of sentences; on a page
+// of eighty the one the search had matched was almost never among the
+// oldest five, and the loose-fact loop that carries the matches
+// afterwards had spent its blocks and its tokens on those same pages. So
+// the page arrived in the prompt and the sentence that answered the
+// question did not.
+func factsToShow(considered, hit []*models.AgentFact) []*models.AgentFact {
+	stored := make(map[string]*models.AgentFact, len(considered))
+	for _, fact := range considered {
+		stored[fact.ID] = fact
+	}
+	chosen := make([]*models.AgentFact, 0, pageFacts)
+	taken := make(map[string]bool, pageFacts)
+	keep := func(fact *models.AgentFact) {
+		taken[fact.ID] = true
+		chosen = append(chosen, fact)
+	}
+	for _, fact := range hit {
+		if len(chosen) >= pageFacts {
+			break
+		}
+		if taken[fact.ID] {
+			continue
+		}
+		// A page long enough to run past the window read above must
+		// still give up the sentence that was matched, so the search's
+		// own copy of it stands in where the store's was not read.
+		if found := stored[fact.ID]; found != nil {
+			keep(found)
+		} else {
+			keep(fact)
+		}
+	}
+	for _, fact := range considered {
+		if len(chosen) >= pageFacts {
+			break
+		}
+		if !taken[fact.ID] {
+			keep(fact)
+		}
+	}
+	sort.SliceStable(chosen, func(first, second int) bool {
+		return chosen[first].Number < chosen[second].Number
+	})
+	return chosen
 }
 
 // writeRecalled expands what was found into the overlay the next round
