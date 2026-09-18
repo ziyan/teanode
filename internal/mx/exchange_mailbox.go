@@ -303,7 +303,11 @@ func searchDocument(mail *models.Mail, names []string) string {
 			return character
 		}, name))
 	}
-	return builder.String()
+	// A body that claims to be text but carries a byte no encoding of it
+	// explains, or one cut mid-character by the bound above, is not a
+	// document PostgreSQL will index: it refuses the whole row, and with it
+	// the message. What search runs over is the readable part.
+	return strings.ToValidUTF8(builder.String(), " ")
 }
 
 // indexMail records what search and threading need once a message is stored:
