@@ -6,25 +6,11 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
-### Added
+## [0.28.1] - 2026-09-18
 
-- Adding a place for your agent to read, on the Agent page, now asks the same
-  things the command line does: where in its pages what it finds is filed, how
-  often to read it, and — for your own sent mail — which mailbox to read.
-  Leave the first two empty and nothing changes: it files what it finds where
-  it thinks it belongs and reads the place once a night.
+### Fixed
 
-- A dream that marked documents read without reading them can be put right
-  from the dashboard. Re-read, beside Dream now, asks how far back to go and
-  says how many documents are waiting to be read again.
-
-- A new conversation in the agent drawer can be given what it is for before
-  you say anything, so its first turn already works toward it. The same field
-  as the goal you set on a conversation afterwards.
-
-- Conversations you are done with can be archived from the drawer instead of
-  deleted. They leave the list, keep everything in them, and are under
-  Archived at the foot of the picker, where they can be put back.
+- A checkout whose description the model answered with nothing was asked to describe it again on every page of the pass. It is asked once per head now. (#103)
 
 ## [0.28.0] - 2026-09-18
 
