@@ -734,8 +734,8 @@ const STRIKE_FACT = `
 const KNOWLEDGE_SOURCES = `
   query {
     ListAgentKnowledgeSources {
-      id kind name specification { computer path format }
-      enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
+      id kind name specification { computer path format mailboxId }
+      rootPath enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
       unknownAuthors
     }
   }`
@@ -778,7 +778,8 @@ type KnowledgeSource = {
   id: string
   kind: string
   name: string
-  specification: { computer: string; path: string; format: string }
+  specification: { computer: string; path: string; format: string; mailboxId: string }
+  rootPath: string
   enabled: boolean
   cron: string
   lastRunAt: string | null
@@ -1479,6 +1480,14 @@ function KnowledgeSourcesCard() {
     { refresh: true },
   )
   const [adding, setAdding] = useState(false)
+  // The source the dialog is changing, null while it is adding one.
+  // Adding and changing ask the same questions, so they are one form.
+  // What a source was added as -- the sort of place it is, and the
+  // computer it is on -- is shown in it but cannot be changed: the
+  // documents already read were read from there, and pointing the same
+  // source at somewhere else would leave them saying they came from a
+  // place it no longer reads.
+  const [editing, setEditing] = useState<KnowledgeSource | null>(null)
   const [removing, setRemoving] = useState<KnowledgeSource | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -1507,6 +1516,20 @@ function KnowledgeSourcesCard() {
   const readingMailboxId = mailboxId || views[0]?.mailbox.id || ''
 
   const sources = data?.ListAgentKnowledgeSources ?? []
+
+  // Opening the form on a source, which is the whole of Edit: every box
+  // the add dialog has, holding what the source already says.
+  const openEdit = (source: KnowledgeSource) => {
+    setName(source.name)
+    setShape(shapeOf(source))
+    setComputer(source.specification.computer)
+    setPath(source.specification.path)
+    setRootPath(source.rootPath)
+    setCron(source.cron)
+    setMailboxId(source.specification.mailboxId)
+    setProblem(null)
+    setEditing(source)
+  }
 
   const run = async (document: string, variables: Record<string, unknown>, said: string) => {
     setBusy(true)
@@ -1544,6 +1567,7 @@ function KnowledgeSourcesCard() {
               setCron('')
               setMailboxId('')
               setProblem(null)
+              setEditing(null)
               setAdding(true)
             }}
           >
@@ -1608,6 +1632,15 @@ function KnowledgeSourcesCard() {
                 <button
                   type="button"
                   className="icon-action"
+                  title={t('agent.editKnowledgeSource')}
+                  aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
+                  onClick={() => openEdit(source)}
+                >
+                  <PencilIcon size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-action"
                   title={t('agent.knowledgeSync')}
                   aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
                   onClick={() => void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))}
@@ -1643,36 +1676,52 @@ function KnowledgeSourcesCard() {
           />
         ))}
       </SettingsSection>
-      {adding ? (
+      {adding || editing ? (
         <FormDialog
-          title={t('agent.addKnowledgeSource')}
-          submitLabel={t('agent.addKnowledgeSource')}
+          title={editing ? t('agent.editKnowledgeSource') : t('agent.addKnowledgeSource')}
+          submitLabel={editing ? t('common.save') : t('agent.addKnowledgeSource')}
           busy={busy}
           error={problem}
           canSubmit={
             name.trim() !== '' &&
             (kind === 'sent' ? readingMailboxId !== '' : path.trim() !== '' && computer.trim() !== '')
           }
-          onClose={() => setAdding(false)}
+          onClose={() => {
+            setAdding(false)
+            setEditing(null)
+          }}
           onSubmit={() => {
             void (async () => {
               if (
                 await run(
                   SAVE_KNOWLEDGE_SOURCE,
                   {
+                    // Every box the form holds, on a change as much as on
+                    // an add. The server writes only the fields a call
+                    // names and keeps the rest, so one left out silently
+                    // keeps its old value -- which is what is wanted for
+                    // the sort of place and the computer, fixed once the
+                    // source exists, and not for a name or a path the
+                    // person has just retyped.
+                    sourceId: editing?.id,
                     name: name.trim(),
-                    kind,
-                    computer: computer.trim(),
+                    kind: editing ? editing.kind : kind,
+                    computer: editing ? editing.specification.computer : computer.trim(),
                     path: path.trim(),
-                    format,
+                    format: editing ? editing.specification.format : format,
                     rootPath: rootPath.trim() || undefined,
                     cron: cron.trim() || undefined,
                     mailboxId: kind === 'sent' ? readingMailboxId : undefined,
+                    // Not whether it is paused. That is the row's own
+                    // action, and a save carrying it would put a source
+                    // that was merely renamed back at the front of the
+                    // reading queue.
                   },
                   t('agent.knowledgeSaved'),
                 )
               ) {
                 setAdding(false)
+                setEditing(null)
               }
             })()
           }}
@@ -1683,13 +1732,17 @@ function KnowledgeSourcesCard() {
           </label>
           <label>
             <span>{t('agent.knowledgeKind')}</span>
-            <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
-              {OFFERED_SHAPES.map((value) => (
-                <option key={value} value={value}>
-                  {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
-                </option>
-              ))}
-            </select>
+            {editing ? (
+              <input value={t(`agent.knowledgeShape.${shape}` as 'agent.knowledgeShape.files')} readOnly disabled />
+            ) : (
+              <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
+                {OFFERED_SHAPES.map((value) => (
+                  <option key={value} value={value}>
+                    {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
           {kind !== 'sent' ? (
             <>
@@ -1698,7 +1751,11 @@ function KnowledgeSourcesCard() {
               {format === 'records' ? <p className="muted">{t('agent.knowledgeShape.recordsHint')}</p> : null}
               <label>
                 <span>{t('agent.knowledgeComputer')}</span>
-                <input value={computer} onChange={(event) => setComputer(event.target.value)} />
+                {editing ? (
+                  <input value={computer} readOnly disabled />
+                ) : (
+                  <input value={computer} onChange={(event) => setComputer(event.target.value)} />
+                )}
               </label>
               <label>
                 <span>{t('agent.knowledgePath')}</span>
@@ -1731,6 +1788,7 @@ function KnowledgeSourcesCard() {
             <input value={cron} placeholder="17 3 * * *" onChange={(event) => setCron(event.target.value)} />
           </label>
           <p className="muted">{t('agent.knowledgeCronHint')}</p>
+          {editing ? <p className="muted">{t('agent.knowledgeEditKeeps')}</p> : null}
         </FormDialog>
       ) : null}
       {removing ? (

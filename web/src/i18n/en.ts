@@ -2502,6 +2502,17 @@ export const en = {
   'knowledge.relation.related_to': 'related to',
   'knowledge.relation.decided_in': 'decided in',
   'knowledge.relation.about': 'about',
+  // The lookup answers "is this written down"; recall answers "will it be
+  // read", which is a different question and the one behind most of "why
+  // did it not know that".
+  'knowledge.recall.title': 'What would it recall?',
+  'knowledge.recall.hint':
+    'Ask it the way you would ask your agent. This shows the pages and facts that question would carry into the ' +
+    'turn; nothing is said to a model, and nothing is marked as used.',
+  'knowledge.recall.question': 'The question',
+  'knowledge.recall.placeholder': 'What is Alice working on?',
+  'knowledge.recall.ask': 'Show what it carries',
+  'knowledge.recall.nothing': 'That question carries nothing. Your agent would answer it from the conversation alone.',
   // The whole graph, drawn. A page of its own rather than a bigger card: a
   // drawing you pan and zoom wants the window, and the card beside a page is
   // about that page.
@@ -2530,6 +2541,8 @@ export const en = {
     'Places you have pointed your agent at: a checkout on one of your computers, a chat export, your notes. It reads them on a schedule and can search them.',
   'agent.noKnowledgeSources': 'Nothing is indexed yet.',
   'agent.addKnowledgeSource': 'Add a source',
+  'agent.editKnowledgeSource': 'Edit this source',
+  'agent.knowledgeEditKeeps': 'A box you empty keeps what it already says; these can be changed here but not cleared.',
   'agent.knowledgeCounts': '{documents} documents, {chunks} passages',
   'agent.knowledgeReading': 'Still reading',
   'agent.knowledgePausedBadge': 'Paused',

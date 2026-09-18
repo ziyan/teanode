@@ -2490,6 +2490,13 @@ export const ja: Catalog = {
   'knowledge.relation.related_to': 'に関係する',
   'knowledge.relation.decided_in': 'で決まった',
   'knowledge.relation.about': 'について',
+  'knowledge.recall.title': '何を思い出しますか？',
+  'knowledge.recall.hint':
+    'エージェントに尋ねるときと同じように書いてください。その質問が対話に持ち込むページと事実を表示します。モデルには何も送らず、使用済みの印も付けません。',
+  'knowledge.recall.question': '質問',
+  'knowledge.recall.placeholder': 'Alice は何に取り組んでいますか？',
+  'knowledge.recall.ask': '持ち込む内容を見る',
+  'knowledge.recall.nothing': 'この質問は何も持ち込みません。エージェントは会話だけを頼りに答えることになります。',
   'knowledge.explore.title': 'グラフ',
   'knowledge.explore.go': 'グラフを見る',
   'knowledge.explore.from': 'ここから辿る',
@@ -2514,6 +2521,9 @@ export const ja: Catalog = {
     'あなたがエージェントに示した場所です。あなたのコンピューター上のリポジトリ、チャットの書き出し、メモなど。決まった時刻に読み、検索できます。',
   'agent.noKnowledgeSources': 'まだ何も取り込まれていません。',
   'agent.addKnowledgeSource': '読む場所を追加',
+  'agent.editKnowledgeSource': 'この読む場所を編集',
+  'agent.knowledgeEditKeeps':
+    '入力欄を空にしても、いまの値がそのまま残ります。ここでは変更はできますが、消すことはできません。',
   'agent.knowledgeCounts': '{documents} 件の文書、{chunks} 件の断片',
   'agent.knowledgeReading': '読み取り中',
   'agent.knowledgePausedBadge': '一時停止中',

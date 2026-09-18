@@ -67,6 +67,15 @@ const SEARCH = `query ($query: String!, $first: Int) {
   }
 }`
 
+// What a turn asking this question would have been carried from the
+// graph. It says nothing to a model and marks nothing used, so it can be
+// asked as often as it takes to see why an answer read the way it did.
+const RECALL = `query ($question: String!) {
+  RecallAgentMemory(question: $question) {
+    pages { path facts { number text } }
+  }
+}`
+
 const SAVE_NODE = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $aliases: [String!], $pinned: Boolean) {
   SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, aliases: $aliases, pinned: $pinned) { id path }
 }`
@@ -174,6 +183,11 @@ type Revision = {
 // one that absorbed it.
 type FoldedFact = { into: number; fact: { id: string; number: number; text: string } }
 
+// A page as recall carries it: its path, and the facts from it that
+// would have gone in front of the model. Not the whole fact -- what is
+// being asked is what the model was told.
+type RecalledPage = { path: string; facts: { number: number; text: string }[] }
+
 type Page = {
   node: Node
   facts: Fact[]
@@ -264,6 +278,10 @@ export function KnowledgePage() {
   const onePane = (width === null ? (desktop ? 2 : 1) : width >= 760 ? 2 : 1) === 1
   const [filter, setFilter] = useState('')
   const search = filter.trim()
+  // Whether the recall preview is open. A dialog rather than a third box
+  // in the column: the answer is a list of pages with their facts under
+  // them, which is more than fits beside a folder list on a phone.
+  const [recalling, setRecalling] = useState(false)
   // The page the navigator is showing the inside of, when the URL alone
   // would have shown the folder it is filed in. A page with children is
   // two things at one address -- something to read and something to walk
@@ -351,6 +369,16 @@ export function KnowledgePage() {
   // it may be a page with children itself.
   const goUp = useCallback(() => goTo(parentOf(folder ?? ''), true), [goTo, folder])
 
+  const recall = recalling ? (
+    <RecallDialog
+      onSelect={(next: string) => {
+        setRecalling(false)
+        goPage(next)
+      }}
+      onClose={() => setRecalling(false)}
+    />
+  ) : null
+
   // The lookup, and beside it the whole graph drawn. They are the two ways
   // in and they answer different questions -- what is this called, and what
   // does this sit among -- so neither one is behind the other.
@@ -364,6 +392,13 @@ export function KnowledgePage() {
         aria-label={t('knowledge.find')}
         onChange={(event) => setFilter(event.target.value)}
       />
+      {/* The third question the column answers: not what a page is
+          called, nor what it sits among, but what a question would
+          actually carry into a turn. A word rather than an icon, because
+          nothing draws it. */}
+      <button type="button" className="knowledge-chip" onClick={() => setRecalling(true)}>
+        {t('knowledge.recall.title')}
+      </button>
       {/* An icon beside the box, the way the mailbox lays out its
           toolbar: the words are the title and the label. */}
       <Link
@@ -443,6 +478,7 @@ export function KnowledgePage() {
       <div ref={setFrameElement} className="knowledge-phone">
         {showingDetail ? detail : lookup}
         {showingDetail ? null : <div className="card knowledge-list">{list}</div>}
+        {recall}
       </div>
     )
   }
@@ -454,6 +490,7 @@ export function KnowledgePage() {
         <div className="card knowledge-list">{list}</div>
       </div>
       <div className="knowledge-column knowledge-page">{detail}</div>
+      {recall}
     </div>
   )
 }
@@ -877,6 +914,95 @@ function SearchResults({
         </>
       ) : null}
     </>
+  )
+}
+
+// RecallDialog is what a question would carry into a turn.
+//
+// The lookup beside it answers "is this written down"; this answers "will
+// it be read". They are different questions: a page can be on the graph
+// and still never reach a turn about it, and the only way to see that
+// before this was to ask the agent and read what it cited. Nothing is
+// said to a model here and nothing is marked used, so it can be asked
+// over and over while a page is being corrected.
+function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void; onClose: () => void }) {
+  const { t } = useTranslation()
+  const [question, setQuestion] = useState('')
+  // The question the pages in hand answer, so that typing on after an
+  // answer puts the old one away rather than leaving it under a question
+  // it no longer belongs to.
+  const [asked, setAsked] = useState<string | null>(null)
+  const [pages, setPages] = useState<RecalledPage[]>([])
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const wanted = question.trim()
+
+  const ask = () => {
+    if (wanted === '' || busy) return
+    setBusy(true)
+    setProblem(null)
+    void (async () => {
+      try {
+        const answer = await graphql<{ RecallAgentMemory: { pages: RecalledPage[] } }>(RECALL, { question: wanted })
+        setPages(answer.RecallAgentMemory.pages)
+        setAsked(wanted)
+      } catch (caught) {
+        setProblem(messageOf(caught))
+        setAsked(null)
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  return (
+    <FormDialog
+      title={t('knowledge.recall.title')}
+      submitLabel={t('knowledge.recall.ask')}
+      busy={busy}
+      error={problem}
+      canSubmit={wanted !== ''}
+      // Nothing is changed by asking, so the way out is Close: Cancel
+      // would name something that is not being cancelled.
+      closeLabel={t('common.close')}
+      onClose={onClose}
+      onSubmit={ask}
+    >
+      <p className="muted">{t('knowledge.recall.hint')}</p>
+      <label>
+        <span>{t('knowledge.recall.question')}</span>
+        <input
+          value={question}
+          placeholder={t('knowledge.recall.placeholder')}
+          onChange={(event) => setQuestion(event.target.value)}
+        />
+      </label>
+      {asked !== null && asked === wanted ? (
+        pages.length === 0 ? (
+          // Carrying nothing is an ordinary answer -- a question about
+          // something it has never been told -- so it is said quietly
+          // here rather than raised as a failure.
+          <p className="muted">{t('knowledge.recall.nothing')}</p>
+        ) : (
+          <ul className="recall-pages">
+            {pages.map((page) => (
+              <li key={page.path}>
+                <button type="button" className="link" onClick={() => onSelect(page.path)}>
+                  {page.path}
+                </button>
+                <ul className="recall-facts">
+                  {page.facts.map((fact) => (
+                    <li key={fact.number}>
+                      <span className="mono">#{fact.number}</span> {fact.text}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+    </FormDialog>
   )
 }
 
